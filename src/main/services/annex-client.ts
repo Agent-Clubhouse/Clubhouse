@@ -48,6 +48,9 @@ export interface SatelliteSnapshot {
   lastSeq: number;
   plugins?: unknown[];
   protocolVersion?: number;
+  groupProjects?: unknown[];
+  bulletinDigests?: Record<string, unknown[]>;
+  groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -858,6 +861,65 @@ export function requestFileRead(fingerprint: string, projectId: string, path: st
     });
     req.on('error', (err) => reject(err));
     req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+  });
+}
+
+/**
+ * Fetch group project bulletin digest from a satellite via HTTPS REST.
+ */
+export function requestBulletinDigest(fingerprint: string, groupProjectId: string, since?: string): Promise<unknown[]> {
+  const sat = satellites.get(fingerprint);
+  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
+
+  const identity = annexIdentity.getOrCreateIdentity();
+  const tlsOptions = annexTls.createTlsClientOptions(identity);
+  const params = new URLSearchParams();
+  if (since) params.set('since', since);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+
+  return new Promise<unknown[]>((resolve) => {
+    const url = `https://${sat.host}:${sat.mainPort}/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/digest${qs}`;
+    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
+        catch { resolve([]); }
+      });
+    });
+    req.on('error', () => resolve([]));
+    req.on('timeout', () => { req.destroy(); resolve([]); });
+  });
+}
+
+/**
+ * Fetch group project bulletin topic messages from a satellite via HTTPS REST.
+ */
+export function requestBulletinTopicMessages(fingerprint: string, groupProjectId: string, topic: string, since?: string, limit?: number): Promise<unknown[]> {
+  const sat = satellites.get(fingerprint);
+  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
+
+  const identity = annexIdentity.getOrCreateIdentity();
+  const tlsOptions = annexTls.createTlsClientOptions(identity);
+  const params = new URLSearchParams();
+  if (since) params.set('since', since);
+  if (limit !== undefined) params.set('limit', String(limit));
+  const qs = params.toString() ? `?${params.toString()}` : '';
+
+  return new Promise<unknown[]>((resolve) => {
+    const url = `https://${sat.host}:${sat.mainPort}/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`;
+    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
+        catch { resolve([]); }
+      });
+    });
+    req.on('error', () => resolve([]));
+    req.on('timeout', () => { req.destroy(); resolve([]); });
   });
 }
 

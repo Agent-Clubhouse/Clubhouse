@@ -582,6 +582,12 @@ export interface SatelliteSnapshot {
   appCanvasState?: { canvases: unknown[]; activeCanvasId: string } | null;
   /** Whether the satellite session is currently paused. */
   sessionPaused?: boolean;
+  /** Group projects from the satellite. */
+  groupProjects?: unknown[];
+  /** Bulletin digests per group project ID. */
+  bulletinDigests?: Record<string, unknown[]>;
+  /** Group project members per group project ID. */
+  groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
 }
 
 // --- Auto-update types ---

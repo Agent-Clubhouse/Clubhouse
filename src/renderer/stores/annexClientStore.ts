@@ -461,6 +461,21 @@ export function initAnnexClientListener(): () => void {
       useAnnexClientStore.setState((state) => ({
         satellitePaused: { ...state.satellitePaused, [satelliteId]: false },
       }));
+    } else if (type === 'group-project:changed') {
+      const p = payload as { action?: string; project?: unknown };
+      if (p.action && p.project) {
+        useRemoteProjectStore.getState().updateRemoteGroupProject(satelliteId, p.action as string, p.project);
+      }
+    } else if (type === 'bulletin:message') {
+      const p = payload as { projectId?: string; message?: unknown };
+      if (p.projectId && p.message) {
+        useRemoteProjectStore.getState().addRemoteBulletinMessage(satelliteId, p.projectId, p.message);
+      }
+    } else if (type === 'group-project:list') {
+      const p = payload as { projects?: unknown[] };
+      if (p.projects) {
+        useRemoteProjectStore.getState().setRemoteGroupProjects(satelliteId, p.projects);
+      }
     }
   });
 

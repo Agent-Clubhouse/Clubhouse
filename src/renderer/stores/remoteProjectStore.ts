@@ -99,6 +99,15 @@ interface RemoteProjectStoreState {
   /** App-level (global) canvas state keyed by satelliteId */
   remoteAppCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }>;
 
+  /** Remote group projects keyed by satelliteId */
+  remoteGroupProjects: Record<string, unknown[]>;
+
+  /** Remote bulletin digests keyed by "satelliteId::projectId" */
+  remoteBulletinDigests: Record<string, unknown[]>;
+
+  /** Remote group project members keyed by "satelliteId::projectId" */
+  remoteGroupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
+
   /** Apply a satellite snapshot to the store. */
   applySatelliteSnapshot: (satelliteId: string, satelliteName: string, snapshot: SatelliteSnapshot) => void;
 
@@ -119,6 +128,15 @@ interface RemoteProjectStoreState {
 
   /** Update canvas state for a remote project. */
   updateRemoteCanvasState: (namespacedProjectId: string, state: { canvases: unknown[]; activeCanvasId: string }) => void;
+
+  /** Update a remote group project (create/update/delete). */
+  updateRemoteGroupProject: (satelliteId: string, action: string, project: unknown) => void;
+
+  /** Add a bulletin message from a remote satellite. */
+  addRemoteBulletinMessage: (satelliteId: string, projectId: string, message: unknown) => void;
+
+  /** Set the full list of remote group projects for a satellite. */
+  setRemoteGroupProjects: (satelliteId: string, projects: unknown[]) => void;
 
   /** Get all remote projects (flattened). */
   getAllRemoteProjects: () => RemoteProject[];
@@ -194,6 +212,9 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   remoteAgentIcons: {},
   remoteCanvasState: {},
   remoteAppCanvasState: {},
+  remoteGroupProjects: {},
+  remoteBulletinDigests: {},
+  remoteGroupProjectMembers: {},
 
   applySatelliteSnapshot: (satelliteId, satelliteName, snapshot) => {
     // Map projects to RemoteProject
@@ -319,6 +340,27 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         remoteAppCanvasState: snapshot.appCanvasState
           ? { ...state.remoteAppCanvasState, [satelliteId]: snapshot.appCanvasState }
           : state.remoteAppCanvasState,
+        remoteGroupProjects: snapshot.groupProjects
+          ? { ...state.remoteGroupProjects, [satelliteId]: snapshot.groupProjects }
+          : state.remoteGroupProjects,
+        remoteBulletinDigests: snapshot.bulletinDigests
+          ? (() => {
+              const updated = { ...state.remoteBulletinDigests };
+              for (const [gpId, digest] of Object.entries(snapshot.bulletinDigests!)) {
+                updated[`${satelliteId}::${gpId}`] = digest as unknown[];
+              }
+              return updated;
+            })()
+          : state.remoteBulletinDigests,
+        remoteGroupProjectMembers: snapshot.groupProjectMembers
+          ? (() => {
+              const updated = { ...state.remoteGroupProjectMembers };
+              for (const [gpId, members] of Object.entries(snapshot.groupProjectMembers!)) {
+                updated[`${satelliteId}::${gpId}`] = members as Array<{ agentId: string; agentName: string; status: string }>;
+              }
+              return updated;
+            })()
+          : state.remoteGroupProjectMembers,
       };
     });
   },
@@ -357,6 +399,19 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       const newAppCanvasState = { ...state.remoteAppCanvasState };
       delete newAppCanvasState[satelliteId];
 
+      const newGroupProjects = { ...state.remoteGroupProjects };
+      delete newGroupProjects[satelliteId];
+
+      const newBulletinDigests = { ...state.remoteBulletinDigests };
+      const newGroupProjectMembers = { ...state.remoteGroupProjectMembers };
+      const satPrefix = `${satelliteId}::`;
+      for (const key of Object.keys(newBulletinDigests)) {
+        if (key.startsWith(satPrefix)) delete newBulletinDigests[key];
+      }
+      for (const key of Object.keys(newGroupProjectMembers)) {
+        if (key.startsWith(satPrefix)) delete newGroupProjectMembers[key];
+      }
+
       return {
         satelliteProjects: newProjects,
         remoteAgents: newAgents,
@@ -366,6 +421,9 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         remoteAgentIcons: newAgentIcons,
         remoteCanvasState: newCanvasState,
         remoteAppCanvasState: newAppCanvasState,
+        remoteGroupProjects: newGroupProjects,
+        remoteBulletinDigests: newBulletinDigests,
+        remoteGroupProjectMembers: newGroupProjectMembers,
       };
     });
   },
@@ -453,6 +511,42 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         ...state.remoteCanvasState,
         [nsProjId]: canvasData,
       },
+    }));
+  },
+
+  updateRemoteGroupProject: (satelliteId, action, project) => {
+    set((state) => {
+      const existing = [...(state.remoteGroupProjects[satelliteId] || [])];
+      const gp = project as { id: string };
+      if (action === 'created') {
+        existing.push(project);
+      } else if (action === 'updated') {
+        const idx = existing.findIndex((p: any) => p.id === gp.id);
+        if (idx >= 0) existing[idx] = project;
+        else existing.push(project);
+      } else if (action === 'deleted') {
+        const idx = existing.findIndex((p: any) => p.id === gp.id);
+        if (idx >= 0) existing.splice(idx, 1);
+      }
+      return {
+        remoteGroupProjects: { ...state.remoteGroupProjects, [satelliteId]: existing },
+      };
+    });
+  },
+
+  addRemoteBulletinMessage: (satelliteId, projectId, _message) => {
+    // A new message was posted — invalidate the cached digest so UI re-fetches
+    const key = `${satelliteId}::${projectId}`;
+    set((state) => {
+      const newDigests = { ...state.remoteBulletinDigests };
+      delete newDigests[key]; // Force re-fetch
+      return { remoteBulletinDigests: newDigests };
+    });
+  },
+
+  setRemoteGroupProjects: (satelliteId, projects) => {
+    set((state) => ({
+      remoteGroupProjects: { ...state.remoteGroupProjects, [satelliteId]: projects },
     }));
   },
 

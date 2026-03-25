@@ -9,6 +9,7 @@ import { getBulletinBoard, destroyBulletinBoard } from '../services/group-projec
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
+import * as annexEventBus from '../services/annex-event-bus';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -47,6 +48,7 @@ export function registerGroupProjectHandlers(): void {
     [stringArg()],
     async (_event, name) => {
       const project = await groupProjectRegistry.create(name as string);
+      annexEventBus.emitGroupProjectChanged('created', project);
       appLog('core:group-project', 'info', 'Group project created', { meta: { id: project.id, name: project.name } });
       return project;
     },
@@ -64,6 +66,7 @@ export function registerGroupProjectHandlers(): void {
     async (_event, id, fields) => {
       const updated = await groupProjectRegistry.update(id as string, fields as { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> });
       if (updated) {
+        annexEventBus.emitGroupProjectChanged('updated', updated);
         appLog('core:group-project', 'info', 'Group project updated', { meta: { id } });
       }
       return updated;
@@ -73,8 +76,10 @@ export function registerGroupProjectHandlers(): void {
   ipcMain.handle(IPC.GROUP_PROJECT.DELETE, withValidatedArgs(
     [stringArg()],
     async (_event, id) => {
+      const project = await groupProjectRegistry.get(id as string);
       const deleted = await groupProjectRegistry.delete(id as string);
       if (deleted) {
+        if (project) annexEventBus.emitGroupProjectChanged('deleted', project);
         await destroyBulletinBoard(id as string);
         appLog('core:group-project', 'info', 'Group project deleted', { meta: { id } });
       }
@@ -117,7 +122,9 @@ export function registerGroupProjectHandlers(): void {
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectId, topic, body) => {
       const board = getBulletinBoard(projectId as string);
-      return board.postMessage('user', topic as string, body as string);
+      const message = await board.postMessage('user', topic as string, body as string);
+      annexEventBus.emitBulletinMessage(projectId as string, message);
+      return message;
     },
   ));
 

@@ -9,6 +9,7 @@ import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { isAgentAlive } from '../../group-project-lifecycle';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
+import * as annexEventBus from '../../annex-event-bus';
 import type { McpToolResult } from '../types';
 
 /** Resolve agent status for a member entry. */
@@ -108,6 +109,7 @@ export function registerGroupProjectTools(): void {
       try {
         const board = getBulletinBoard(targetId);
         const msg = await board.postMessage(sender, topic, body);
+        annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
             type: 'text',

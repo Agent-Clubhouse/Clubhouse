@@ -21,6 +21,10 @@ import * as permissionQueue from './annex-permission-queue';
 import * as structuredManager from './structured-manager';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
+import { groupProjectRegistry } from './group-project-registry';
+import { getBulletinBoard } from './group-project-bulletin';
+import { executeShoulderTap } from './group-project-shoulder-tap';
+import { bindingManager } from './clubhouse-mcp/binding-manager';
 import * as fileService from './file-service';
 import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
@@ -74,6 +78,9 @@ let unsubPtyExit: (() => void) | null = null;
 let unsubAgentSpawned: (() => void) | null = null;
 let unsubPermissionRequest: (() => void) | null = null;
 let unsubStructuredEvent: (() => void) | null = null;
+let unsubGroupProjectChanged: (() => void) | null = null;
+let unsubBulletinMessage: (() => void) | null = null;
+let unsubGroupProjectRegistry: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
 
 /** Whether the satellite session is currently paused (tracks across reconnects). */
@@ -87,12 +94,18 @@ function unsubscribeEventBus(): void {
   unsubAgentSpawned?.();
   unsubPermissionRequest?.();
   unsubStructuredEvent?.();
+  unsubGroupProjectChanged?.();
+  unsubBulletinMessage?.();
+  unsubGroupProjectRegistry?.();
   unsubPtyData = null;
   unsubHookEvent = null;
   unsubPtyExit = null;
   unsubAgentSpawned = null;
   unsubPermissionRequest = null;
   unsubStructuredEvent = null;
+  unsubGroupProjectChanged = null;
+  unsubBulletinMessage = null;
+  unsubGroupProjectRegistry = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -490,6 +503,38 @@ async function buildSnapshot(): Promise<object> {
     // App-level canvas data not available — skip
   }
 
+  // Read group project data
+  const groupProjects = await groupProjectRegistry.list();
+  const bulletinDigests: Record<string, unknown[]> = {};
+  await Promise.all(groupProjects.map(async (gp) => {
+    try {
+      const board = getBulletinBoard(gp.id);
+      bulletinDigests[gp.id] = await board.getDigest();
+    } catch {
+      // Bulletin not available — skip
+    }
+  }));
+
+  // Read group project members from binding manager
+  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string }>> = {};
+  try {
+    const allBindings = bindingManager.getAllBindings();
+    for (const gp of groupProjects) {
+      const members = allBindings
+        .filter(b => b.targetKind === 'group-project' && b.targetId === gp.id)
+        .map(b => ({
+          agentId: b.agentId,
+          agentName: b.agentName || b.agentId,
+          status: ptyManager.isRunning(b.agentId) ? 'connected' : 'sleeping',
+        }));
+      if (members.length > 0) {
+        groupProjectMembers[gp.id] = members;
+      }
+    }
+  } catch {
+    // Binding manager not available — skip
+  }
+
   return {
     protocolVersion: 2,
     projects,
@@ -506,6 +551,9 @@ async function buildSnapshot(): Promise<object> {
     canvasState,
     appCanvasState,
     sessionPaused,
+    groupProjects,
+    bulletinDigests,
+    groupProjectMembers,
   };
 }
 
@@ -1583,6 +1631,185 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // --- Group Project endpoints (bulletin board wire protocol) ---
+
+  // GET /api/v1/group-projects
+  if (method === 'GET' && url === '/api/v1/group-projects') {
+    const projects = await groupProjectRegistry.list();
+    sendJson(res, 200, projects);
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id
+  const gpGetMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+?)(\?.*)?$/);
+  if (method === 'GET' && gpGetMatch && !url.includes('/bulletin/')) {
+    const gpId = decodeURIComponent(gpGetMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    // Include members
+    let members: Array<{ agentId: string; agentName: string; status: string }> = [];
+    try {
+      const allBindings = bindingManager.getAllBindings();
+      members = allBindings
+        .filter(b => b.targetKind === 'group-project' && b.targetId === gpId)
+        .map(b => ({
+          agentId: b.agentId,
+          agentName: b.agentName || b.agentId,
+          status: ptyManager.isRunning(b.agentId) ? 'connected' : 'sleeping',
+        }));
+    } catch { /* ignore */ }
+    sendJson(res, 200, { ...project, members });
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id/bulletin/digest?since=<ISO8601>
+  const gpDigestMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/digest(\?.*)?$/);
+  if (method === 'GET' && gpDigestMatch) {
+    const gpId = decodeURIComponent(gpDigestMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    const params = new URLSearchParams(gpDigestMatch[2]?.slice(1) || '');
+    const since = params.get('since') || undefined;
+    const board = getBulletinBoard(gpId);
+    const digest = await board.getDigest(since);
+    sendJson(res, 200, digest);
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id/bulletin/topics/:topic?since=<ISO8601>&limit=<n>
+  const gpTopicMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)(\?.*)?$/);
+  if (method === 'GET' && gpTopicMatch) {
+    const gpId = decodeURIComponent(gpTopicMatch[1]);
+    const topic = decodeURIComponent(gpTopicMatch[2]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    const params = new URLSearchParams(gpTopicMatch[3]?.slice(1) || '');
+    const since = params.get('since') || undefined;
+    const limit = params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined;
+    const board = getBulletinBoard(gpId);
+    const messages = await board.getTopicMessages(topic, since, limit);
+    sendJson(res, 200, messages);
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id/bulletin/messages?since=<ISO8601>&limit=<n>
+  const gpAllMsgsMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages(\?.*)?$/);
+  if (method === 'GET' && gpAllMsgsMatch) {
+    const gpId = decodeURIComponent(gpAllMsgsMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    const params = new URLSearchParams(gpAllMsgsMatch[2]?.slice(1) || '');
+    const since = params.get('since') || undefined;
+    const limit = params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined;
+    const board = getBulletinBoard(gpId);
+    const messages = await board.getAllMessages(since, limit);
+    sendJson(res, 200, messages);
+    return;
+  }
+
+  // POST /api/v1/group-projects/:id/bulletin/messages (destructive — requires mTLS)
+  const gpPostMsgMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages$/);
+  if (method === 'POST' && gpPostMsgMatch) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpPostMsgMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    readJsonBody(req, res, async (body) => {
+      const sender = body.sender as string;
+      const topic = body.topic as string;
+      const msgBody = body.body as string;
+      if (!sender || !topic || !msgBody) {
+        sendJson(res, 400, { error: 'sender, topic, and body are required' });
+        return;
+      }
+      if (topic === 'system') {
+        sendJson(res, 400, { error: 'system topic is reserved' });
+        return;
+      }
+      try {
+        const board = getBulletinBoard(gpId);
+        const message = await board.postMessage(sender, topic, msgBody);
+        annexEventBus.emitBulletinMessage(gpId, message);
+        sendJson(res, 201, message);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : 'post_failed' });
+      }
+    });
+    return;
+  }
+
+  // POST /api/v1/group-projects/:id/shoulder-tap (destructive — requires mTLS)
+  const gpShoulderTapMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/);
+  if (method === 'POST' && gpShoulderTapMatch) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpShoulderTapMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    readJsonBody(req, res, async (body) => {
+      const sender = (body.sender as string) || 'remote';
+      const targetAgentId = (body.targetAgentId as string) || null;
+      const message = body.message as string;
+      if (!message) {
+        sendJson(res, 400, { error: 'message is required' });
+        return;
+      }
+      try {
+        const result = await executeShoulderTap({
+          projectId: gpId,
+          senderLabel: sender,
+          targetAgentId,
+          message,
+        });
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
+      }
+    });
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id/members
+  const gpMembersMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/members$/);
+  if (method === 'GET' && gpMembersMatch) {
+    const gpId = decodeURIComponent(gpMembersMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    let members: Array<{ agentId: string; agentName: string; status: string }> = [];
+    try {
+      const allBindings = bindingManager.getAllBindings();
+      members = allBindings
+        .filter(b => b.targetKind === 'group-project' && b.targetId === gpId)
+        .map(b => ({
+          agentId: b.agentId,
+          agentName: b.agentName || b.agentId,
+          status: ptyManager.isRunning(b.agentId) ? 'connected' : 'sleeping',
+        }));
+    } catch { /* ignore */ }
+    sendJson(res, 200, members);
+    return;
+  }
+
   sendJson(res, 404, { error: 'not_found' });
 }
 
@@ -2071,6 +2298,22 @@ export function start(): void {
       message: permission.message,
       timeout: permission.timeoutMs,
       deadline: permission.createdAt + permission.timeoutMs,
+    });
+  });
+
+  unsubGroupProjectChanged = annexEventBus.onGroupProjectChanged((action, project) => {
+    broadcastWs({ type: 'group-project:changed', payload: { action, project } });
+  });
+
+  unsubBulletinMessage = annexEventBus.onBulletinMessage((projectId, message) => {
+    broadcastWs({ type: 'bulletin:message', payload: { projectId, message } });
+  });
+
+  // Listen for group project registry changes and broadcast them
+  unsubGroupProjectRegistry = groupProjectRegistry.onChange(() => {
+    // Registry changed — broadcast updated list to all clients
+    void groupProjectRegistry.list().then((projects) => {
+      broadcastWs({ type: 'group-project:list', payload: { projects } });
     });
   });
 
