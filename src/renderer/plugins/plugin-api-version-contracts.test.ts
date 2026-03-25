@@ -672,8 +672,8 @@ describe('§2 Per-version manifest validation', () => {
           extras.allowedCommands = ['node'];
         }
 
-        // Version-gated permissions need the appropriate manifest version
-        const manifestFn = perm === 'canvas' || perm === 'annex' ? minimalV08Manifest : minimalV07Manifest;
+        // Canvas/annex permissions require API >= 0.9, use v0.9 manifest
+        const manifestFn = perm === 'canvas' || perm === 'annex' ? minimalV09Manifest : minimalV07Manifest;
         const result = validateManifest(manifestFn({
           permissions,
           ...extras,
@@ -682,10 +682,10 @@ describe('§2 Per-version manifest validation', () => {
       });
     }
 
-    it('v0.9 manifests are rejected (reserved for v0.39)', () => {
+    it('v0.9 manifests are accepted', () => {
       const result = validateManifest(minimalV09Manifest());
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.includes('API version'))).toBe(true);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
     });
 
   });
