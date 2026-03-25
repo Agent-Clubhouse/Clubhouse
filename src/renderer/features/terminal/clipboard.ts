@@ -115,7 +115,7 @@ function isCopy(e: KeyboardEvent): boolean {
 /**
  * Attach clipboard key handling and right-click context menu to a terminal.
  *
- * Returns a cleanup function that removes the context-menu listener.
+ * Returns a cleanup function that removes all listeners.
  *
  * Handles:
  * - Ctrl+V / Cmd+V — paste from clipboard
@@ -130,13 +130,29 @@ export function attachClipboardHandlers(
   writeToPty: (data: string) => void,
   onImagePaste?: (image: ClipboardImageData) => void,
 ): () => void {
+  // --- Suppress native paste events ---
+  // On Windows/Electron, Ctrl+V fires both a keydown (handled below) and a
+  // native browser `paste` event that xterm.js's internal textarea catches.
+  // Since we handle paste ourselves via the keyboard shortcut, we suppress
+  // the native paste event to prevent xterm from writing the clipboard text
+  // a second time through onData.
+  const onPaste = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  container.addEventListener('paste', onPaste, true);
+
   // --- Keyboard shortcuts ---
   term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
     if (e.type !== 'keydown') return true;
 
     // Paste: Cmd+V (mac) or Ctrl+V / Ctrl+Shift+V (win/linux)
     if (isPaste(e)) {
-      pasteIntoTerminal(term, writeToPty, onImagePaste);
+      // Ignore key-repeat events to prevent rapid repeated pastes when
+      // the user holds Ctrl+V on Windows.
+      if (!e.repeat) {
+        pasteIntoTerminal(term, writeToPty, onImagePaste);
+      }
       return false;
     }
 
@@ -184,6 +200,7 @@ export function attachClipboardHandlers(
   container.addEventListener('contextmenu', onContextMenu, true);
 
   return () => {
+    container.removeEventListener('paste', onPaste, true);
     container.removeEventListener('contextmenu', onContextMenu, true);
   };
 }
