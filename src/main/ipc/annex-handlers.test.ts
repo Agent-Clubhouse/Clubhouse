@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('electron', () => ({
-  app: { getVersion: vi.fn(() => '0.38.1-beta.1') },
+  app: { getVersion: vi.fn(() => '0.38.1-beta.1'), isPackaged: true },
   ipcMain: { handle: vi.fn() },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
@@ -279,6 +279,17 @@ describe('maybeStartAnnex', () => {
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
     maybeStartAnnex();
     expect(annexServer.start).toHaveBeenCalled();
+  });
+
+  it('starts server on unpackaged (dev/test) build even with stable version', () => {
+    (app as any).isPackaged = false;
+    vi.mocked(app.getVersion).mockReturnValue('0.38.0');
+    vi.mocked(autoUpdateService.getSettings).mockReturnValue({ previewChannel: false, autoUpdate: true, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
+    maybeStartAnnex();
+    expect(annexServer.start).toHaveBeenCalled();
+    (app as any).isPackaged = true;
   });
 
   it('logs error when auto-start fails', () => {

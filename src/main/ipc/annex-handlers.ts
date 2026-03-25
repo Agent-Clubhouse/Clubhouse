@@ -151,8 +151,9 @@ export function registerAnnexHandlers(): void {
   });
 }
 
-/** Returns true when the build is a prerelease (beta, rc, etc.) or user opted into preview channel. */
+/** Returns true when the build is a prerelease (beta, rc, etc.), user opted into preview channel, or running unpackaged (dev/test). */
 function isPreviewEligible(): boolean {
+  if (!app.isPackaged) return true;
   const version = app.getVersion();
   if (/-(beta|rc|alpha|dev|canary)/.test(version)) return true;
   const updateSettings = autoUpdateService.getSettings();
