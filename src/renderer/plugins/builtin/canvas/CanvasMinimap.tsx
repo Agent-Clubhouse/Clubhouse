@@ -23,6 +23,8 @@ interface CanvasMinimapProps {
   selectedViewIds: string[];
   attentionMap: Map<string, CanvasViewAttention>;
   onViewportChange: (viewport: Viewport) => void;
+  autoHide: boolean;
+  onAutoHideChange: (value: boolean) => void;
 }
 
 // ── Tiny SVG icons for minimap view type badges ─────────────────────
@@ -119,8 +121,9 @@ export function CanvasMinimap({
   selectedViewIds,
   attentionMap,
   onViewportChange,
+  autoHide,
+  onAutoHideChange,
 }: CanvasMinimapProps) {
-  const [autoHide, setAutoHide] = useState(true);
   const [visible, setVisible] = useState(true);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const minimapRef = useRef<HTMLDivElement>(null);
@@ -360,7 +363,7 @@ export function CanvasMinimap({
           type="checkbox"
           checked={autoHide}
           onChange={(e) => {
-            setAutoHide(e.target.checked);
+            onAutoHideChange(e.target.checked);
             if (!e.target.checked) setVisible(true);
           }}
           className="w-2.5 h-2.5 accent-ctp-blue cursor-pointer"

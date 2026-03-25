@@ -82,6 +82,8 @@ export interface CanvasInstance {
   zoomedViewId: string | null;
   /** Which view is currently selected (receives keyboard/scroll events). Ephemeral — not persisted. */
   selectedViewId: string | null;
+  /** Whether the minimap auto-hides after pan/zoom interactions. Persisted per canvas. */
+  minimapAutoHide: boolean;
 }
 
 /** Serialisable snapshot persisted to storage */
@@ -92,6 +94,7 @@ export interface CanvasInstanceData {
   viewport: Viewport;
   nextZIndex: number;
   zoomedViewId?: string | null;
+  minimapAutoHide?: boolean;
 }
 
 // ── Display name deduplication ────────────────────────────────────────

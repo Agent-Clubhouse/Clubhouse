@@ -73,6 +73,8 @@ interface CanvasWorkspaceProps {
   onClearSelection: () => void;
   onRemoveZone: (zoneId: string, removeContents: boolean) => void;
   onUpdateZoneTheme: (zoneId: string, themeId: string) => void;
+  minimapAutoHide: boolean;
+  onMinimapAutoHideChange: (value: boolean) => void;
 }
 
 export function CanvasWorkspace({
@@ -102,6 +104,8 @@ export function CanvasWorkspace({
   onClearSelection,
   onRemoveZone,
   onUpdateZoneTheme,
+  minimapAutoHide,
+  onMinimapAutoHideChange,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -878,6 +882,8 @@ export function CanvasWorkspace({
           selectedViewIds={selectedViewIds}
           attentionMap={attentionMap}
           onViewportChange={onViewportChange}
+          autoHide={minimapAutoHide}
+          onAutoHideChange={onMinimapAutoHideChange}
         />
       )}
 
