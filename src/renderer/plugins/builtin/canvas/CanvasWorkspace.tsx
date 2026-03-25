@@ -917,7 +917,7 @@ export function CanvasWorkspace({
                 return (
                   <Component
                     widgetId={zoomedView.id}
-                    api={api}
+                    api={registered.pluginApi ?? api}
                     metadata={zoomedView.metadata}
                     onUpdateMetadata={(updates: CanvasWidgetMetadata) => onUpdateView(zoomedView.id, { metadata: { ...zoomedView.metadata, ...updates } })}
                     size={zoomedView.size}
@@ -935,19 +935,35 @@ export function CanvasWorkspace({
         onNavigate={handleSearchSelect}
       />
 
-      {/* Controls overlay */}
-      <CanvasControls
-        zoom={viewport.zoom}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onZoomReset={handleZoomReset}
-        onCenter={handleCenter}
-        onSizeToFit={handleSizeToFit}
-        hasViews={views.length > 0}
-        views={views}
-        onSelectView={handleSearchSelect}
-        attentionMap={attentionMap}
-      />
+      {/* Compute pinned widgets for controls bar */}
+      {useMemo(() => {
+        const pinnedWidgets = views
+          .filter((v): v is PluginCanvasViewType =>
+            v.type === 'plugin' && !!(v.metadata as CanvasWidgetMetadata).__pinnedToControls
+          )
+          .map((view) => {
+            const registered = getRegisteredWidgetType(view.pluginWidgetType);
+            return registered ? { view, registered, onUpdateMetadata: (updates: CanvasWidgetMetadata) => onUpdateView(view.id, { metadata: { ...view.metadata, ...updates } }) } : null;
+          })
+          .filter((item): item is NonNullable<typeof item> => item !== null);
+
+        return (
+          <CanvasControls
+            zoom={viewport.zoom}
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onZoomReset={handleZoomReset}
+            onCenter={handleCenter}
+            onSizeToFit={handleSizeToFit}
+            hasViews={views.length > 0}
+            views={views}
+            onSelectView={handleSearchSelect}
+            attentionMap={attentionMap}
+            api={api}
+            pinnedWidgets={pinnedWidgets}
+          />
+        );
+      }, [views, viewport.zoom, handleZoomIn, handleZoomOut, handleZoomReset, handleCenter, handleSizeToFit, handleSearchSelect, attentionMap, api, onUpdateView])}
 
       {/* Context menu */}
       {contextMenu && (

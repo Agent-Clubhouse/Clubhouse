@@ -1,5 +1,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
-import type { CanvasView, CanvasViewAttention } from './canvas-types';
+import type { CanvasView, CanvasViewAttention, PluginCanvasView } from './canvas-types';
+import type { CanvasWidgetMetadata, PluginAPI } from '../../../../shared/plugin-types';
+import type { RegisteredCanvasWidget } from '../../canvas-widget-registry';
 import { CanvasSearch } from './CanvasSearch';
 import { useAttentionCycler } from './canvas-attention';
 
@@ -54,9 +56,15 @@ interface CanvasControlsProps {
   onSizeToFit: () => void;
   onSelectView: (viewId: string) => void;
   attentionMap?: Map<string, CanvasViewAttention>;
+  api?: PluginAPI;
+  pinnedWidgets?: Array<{
+    view: PluginCanvasView;
+    registered: RegisteredCanvasWidget;
+    onUpdateMetadata: (updates: CanvasWidgetMetadata) => void;
+  }>;
 }
 
-export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, attentionMap }: CanvasControlsProps) {
+export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, attentionMap, api, pinnedWidgets }: CanvasControlsProps) {
   const zoomPercent = Math.round(zoom * 100);
   const effectiveMap = attentionMap ?? new Map();
   const { count, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
@@ -166,6 +174,29 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
       {hasViews && <CanvasSearch views={views} onSelectView={onSelectView} />}
 
       {hasViews && <div className="w-px h-4 bg-surface-0 mx-0.5" />}
+
+      {/* Pinned widgets section */}
+      {pinnedWidgets && pinnedWidgets.length > 0 && (
+        <>
+          <div className="flex items-center gap-0.5">
+            {pinnedWidgets.map(({ view, registered, onUpdateMetadata }) => {
+              const PinnedComponent = registered.descriptor.pinnedComponent;
+              if (!PinnedComponent) return null;
+              const widgetApi = registered.pluginApi ?? api;
+              return (
+                <PinnedComponent
+                  key={view.id}
+                  widgetId={view.id}
+                  api={widgetApi}
+                  metadata={view.metadata as CanvasWidgetMetadata}
+                  onUpdateMetadata={onUpdateMetadata}
+                />
+              );
+            })}
+          </div>
+          <div className="w-px h-4 bg-surface-0 mx-0.5" />
+        </>
+      )}
 
       {/* Center viewport */}
       <button

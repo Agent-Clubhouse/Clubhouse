@@ -447,7 +447,7 @@ export function CanvasViewComponent({
         return (
           <Component
             widgetId={view.id}
-            api={api}
+            api={registered.pluginApi ?? api}
             metadata={view.metadata}
             onUpdateMetadata={handleUpdateMetadata}
             size={currentSize}
@@ -758,6 +758,29 @@ export function CanvasViewComponent({
               </svg>
             )}
           </button>
+          {/* Pin to controls bar button (plugin widgets with pinnableToControls: true) */}
+          {view.type === 'plugin' && (() => {
+            const pluginView = view as PluginCanvasViewType;
+            const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
+            if (!registered?.declaration.pinnableToControls) return null;
+            const isPinned = !!(view.metadata as CanvasWidgetMetadata).__pinnedToControls;
+            return (
+              <button
+                className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                  isPinned
+                    ? 'text-ctp-blue bg-surface-1'
+                    : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
+                }`}
+                onClick={(e) => { e.stopPropagation(); handleUpdateMetadata({ __pinnedToControls: !isPinned }); }}
+                title={isPinned ? 'Unpin from toolbar' : 'Pin to toolbar'}
+                data-testid="canvas-view-pin"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M12 2L15 10H24L17 15L20 23L12 18L4 23L7 15L0 10H9L12 2Z" />
+                </svg>
+              </button>
+            );
+          })()}
           <button
             className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400 transition-colors"
             onClick={(e) => { e.stopPropagation(); onClose(); }}
