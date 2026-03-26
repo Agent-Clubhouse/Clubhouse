@@ -257,7 +257,6 @@ export function ProjectRail() {
   const setSettingsContext = useUIStore((s) => s.setSettingsContext);
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
-  const toggleHelp = useUIStore((s) => s.toggleHelp);
   const toggleAssistant = useUIStore((s) => s.toggleAssistant);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);

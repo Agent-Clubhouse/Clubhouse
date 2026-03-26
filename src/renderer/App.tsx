@@ -359,7 +359,7 @@ export function App() {
     );
   }
 
-  if (isHelp || isAssistant) {
+  if (isHelp) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
@@ -377,7 +377,37 @@ export function App() {
           <PluginUpdateBanner />
         </div>
         <RailSection>
-          {isAssistant ? <AssistantView /> : <HelpView />}
+          <HelpView />
+        </RailSection>
+        <CommandPalette />
+        <QuickAgentDialog />
+        <WhatsNewDialog />
+        <OnboardingModal />
+        <ConfigChangesDialog />
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  if (isAssistant) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+        {lockOverlay}
+        <TitleBar />
+        <div ref={bannerRef}>
+          <PermissionViolationBanner />
+          <UpdateBanner />
+          <ResumeBanner
+            sessions={resumeSessions}
+            onManualResume={(agentId) => {
+              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+            }}
+            onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+          />
+          <PluginUpdateBanner />
+        </div>
+        <RailSection>
+          <AssistantView />
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
