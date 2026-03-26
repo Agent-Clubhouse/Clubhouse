@@ -17,13 +17,19 @@ import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
 import * as hookServer from '../services/hook-server';
-import { registerBuiltinProviders } from '../orchestrators';
+import { registerBuiltinProviders, getAllProviders } from '../orchestrators';
+import { autoDetectDefaults } from '../services/orchestrator-settings';
 import * as logService from '../services/log-service';
 import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
 
 export function registerAllHandlers(): void {
   // Register orchestrator providers before anything else
   registerBuiltinProviders();
+
+  // Auto-detect available CLIs on first run so users only see providers
+  // they actually have installed.  Fire-and-forget: store.save() updates
+  // the in-memory cache synchronously; the disk write is async.
+  autoDetectDefaults(getAllProviders()).catch(() => {});
 
   // Initialize logging service early so handlers can use it
   logService.init();

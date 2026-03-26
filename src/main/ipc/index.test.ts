@@ -18,7 +18,8 @@ vi.mock('./annex-handlers', () => ({
 }));
 vi.mock('./marketplace-handlers', () => ({ registerMarketplaceHandlers: vi.fn() }));
 vi.mock('./profile-handlers', () => ({ registerProfileHandlers: vi.fn() }));
-vi.mock('../orchestrators', () => ({ registerBuiltinProviders: vi.fn() }));
+vi.mock('../orchestrators', () => ({ registerBuiltinProviders: vi.fn(), getAllProviders: vi.fn(() => []) }));
+vi.mock('../services/orchestrator-settings', () => ({ autoDetectDefaults: vi.fn(async () => {}) }));
 vi.mock('../services/hook-server', () => ({
   start: vi.fn(async () => {}),
 }));
@@ -44,7 +45,8 @@ import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
-import { registerBuiltinProviders } from '../orchestrators';
+import { registerBuiltinProviders, getAllProviders } from '../orchestrators';
+import { autoDetectDefaults } from '../services/orchestrator-settings';
 import * as hookServer from '../services/hook-server';
 import * as logService from '../services/log-service';
 import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
