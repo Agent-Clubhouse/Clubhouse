@@ -68,11 +68,6 @@ vi.mock('../orchestrators', () => ({
     getProfileEnvKeys: vi.fn(() => ['ANTHROPIC_API_KEY']),
   })),
 }));
-vi.mock('../services/orchestrator-settings', () => ({
-  autoDetectDefaults: vi.fn(async () => {}),
-  getSettings: vi.fn(() => ({ enabled: ['claude-code'] })),
-  saveSettings: vi.fn(async () => {}),
-}));
 
 vi.mock('../services/hook-server', () => ({
   start: vi.fn(async () => {}),
@@ -100,6 +95,7 @@ vi.mock('../services/theme-service', () => ({
 }));
 
 vi.mock('../services/orchestrator-settings', () => ({
+  autoDetectDefaults: vi.fn(async () => {}),
   getSettings: vi.fn(() => ({ enabled: ['claude-code'] })),
   saveSettings: vi.fn(),
 }));
