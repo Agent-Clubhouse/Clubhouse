@@ -38,7 +38,46 @@ wip  -->  stable  -->  deprecated  -->  removed
 
 ---
 
-## 2. Stability Guarantees
+## 2. Hash Locking Architecture
+
+The SDK surface is protected by a two-tier hash locking system:
+
+### Legacy hash (v0.5–v0.8)
+
+A single SHA-256 hash of the full `src/shared/plugin-types.ts` file. This covers the entire v0.5–v0.8 API surface as one frozen blob. These versions will be retired via deprecation rather than maintained independently.
+
+- **Hash file:** `src/shared/sdk-hashes/legacy.sha256`
+- **Source:** `src/shared/plugin-types.ts`
+
+### Per-version surface hashes (v0.9+)
+
+Starting from v0.9, each version gets its own **surface contract file** in `src/shared/sdk-surfaces/`. These files explicitly declare only what that version adds to the API, with compile-time type assertions against `plugin-types.ts` to prove correctness. Each surface file gets its own hash.
+
+- **Surface files:** `src/shared/sdk-surfaces/<version>.surface.ts`
+- **Hash files:** `src/shared/sdk-hashes/<version>.sha256`
+
+Surface files serve as both documentation (what did this version add?) and enforcement (compile-time + hash-locked).
+
+### Adding a new version
+
+When creating a new API version (e.g. v0.10):
+
+1. Add types to `plugin-types.ts` as usual
+2. Create `src/shared/sdk-surfaces/v0.10.surface.ts` declaring the new additions
+3. Run `node scripts/compute-sdk-hash.mjs update legacy` (since plugin-types.ts changed)
+4. The new version starts unlocked (wip) — its hash is generated when it becomes stable
+
+### Locking a version
+
+When a wip version is ready to become stable:
+
+1. Run `node scripts/compute-sdk-hash.mjs update <version>` to generate its hash
+2. Update the version status in this document and `SUPPORTED_PLUGIN_API_VERSIONS`
+3. From this point, CI will block any changes to the surface file without a hash update
+
+---
+
+## 3. Stability Guarantees
 
 ### For `stable` versions
 
@@ -73,13 +112,13 @@ When you see a deprecation warning, check the migration guide and update your pl
 
 ---
 
-## 3. How Patches Work on Stable Versions
+## 4. How Patches Work on Stable Versions
 
 Occasionally, a security fix or critical bug fix requires modifying a stable API. This is the explicit process:
 
-1. **Make the change** to the SDK types or implementation
+1. **Make the change** to the SDK types or surface file
 2. **CI fails** — the integrity hash check detects the modification
-3. **Run the hash update script**: `node scripts/compute-sdk-hash.mjs update <version>`
+3. **Run the hash update script**: `node scripts/compute-sdk-hash.mjs update <version|legacy>`
 4. **Document the change** in the version's `PATCHES.md` file with:
    - Date
    - Reason (security, bug fix)
@@ -92,38 +131,58 @@ Patches to stable versions are rare and require explicit justification. Adding a
 
 ---
 
-## 4. For Contributors
+## 5. For Contributors
 
 ### Before modifying SDK files
 
-1. Check `versions.json` in the Workshop repo for the version's status
+1. Check the version status in this document or `SUPPORTED_PLUGIN_API_VERSIONS`
 2. If the version is `stable` or `deprecated`, **do not modify** without a patch justification
 3. If the version is `wip`, modify freely
+
+### Using the hash tool
+
+```bash
+# Check current status of all hashes
+node scripts/compute-sdk-hash.mjs status
+
+# Verify all hashes (CI mode — exits non-zero on mismatch)
+node scripts/compute-sdk-hash.mjs verify
+
+# Update a specific hash after an intentional change
+node scripts/compute-sdk-hash.mjs update legacy
+node scripts/compute-sdk-hash.mjs update v0.9
+
+# Update all hashes at once
+node scripts/compute-sdk-hash.mjs update all
+```
 
 ### If CI fails with an integrity hash mismatch
 
 This means you changed a file that belongs to a hash-locked version. Options:
 
 - **Unintentional**: revert your change to the locked files
-- **Intentional (patch)**: follow the patch process in Section 3
+- **Intentional (patch)**: follow the patch process in Section 4
 - **Wrong version**: make your change in the `wip` version instead
 
-### How to propose changes to a stable API
+### Creating a surface file for a new version
 
-You can't modify a stable API without a patch justification. If you need new capabilities:
+A surface file is a TypeScript file that imports types from `plugin-types.ts` and uses compile-time assertions to prove that the declared surface matches the real types. See `src/shared/sdk-surfaces/v0.9.surface.ts` for the pattern.
 
-1. Target the current `wip` version instead
-2. If the change is a critical fix for a stable version, open an issue describing the need and follow the patch process
+Each surface file should:
+- Import only the types it asserts against
+- Use `satisfies`, type assignment, or `Extract` checks to prove type compatibility
+- Freeze exact function signatures so parameter/return type changes break compilation
+- Be self-contained and readable as a "contract card" for that version
 
 ---
 
-## 5. For Plugin Developers
+## 6. For Plugin Developers
 
 ### Which versions are safe to build against
 
 Build against **stable** versions for production plugins. These versions are frozen and will not change under you.
 
-Check the current version states in `versions.json` or this document. As of v0.38:
+Check the current version states in this document. As of v0.38:
 - **v0.7** and **v0.8** are stable and recommended
 - **v0.9** is wip — use for early access only
 

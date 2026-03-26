@@ -161,10 +161,6 @@ jobs:
       - run: npx tsc --noEmit
       # API version contract tests only
       - run: npx vitest run --project shared -- plugin-api-versions
-      # Annotate PR if plugin-types.ts was modified
-      - name: Check plugin-types changes
-        if: github.event_name == 'pull_request'
-        run: |
-          if git diff --name-only ${{ github.event.pull_request.base.sha }}..HEAD | grep -q 'plugin-types.ts'; then
-            echo "::warning file=src/shared/plugin-types.ts::plugin-types.ts was modified — verify API backward compatibility"
-          fi
+      # SDK surface hash integrity check
+      - name: Verify SDK surface hashes
+        run: node scripts/compute-sdk-hash.mjs verify
