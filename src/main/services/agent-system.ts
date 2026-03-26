@@ -6,6 +6,7 @@ import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
 import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
+import * as freeAgentSettings from './free-agent-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry } from './agent-config';
@@ -127,6 +128,9 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       }
     }
 
+    // Resolve the free-agent permission mode (auto vs skip-all) from settings
+    const permissionMode = freeAgentSettings.getPermissionMode(params.projectPath);
+
     // Try structured path when enabled and provider supports it
     // TODO: Apply launch wrapper transform to structured path once adapter architecture supports external binary override
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
@@ -141,6 +145,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         env: profileEnv,
         allowedTools,
         freeAgentMode: params.freeAgentMode,
+        permissionMode,
         commandPrefix,
       }, (exitAgentId) => {
         if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
@@ -160,6 +165,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         agentId: params.agentId,
         noSessionPersistence: true,
         freeAgentMode: params.freeAgentMode,
+        permissionMode,
       });
 
       if (headlessResult) {
@@ -256,6 +262,7 @@ async function spawnPtyAgent(
       allowedTools,
       agentId: params.agentId,
       freeAgentMode: params.freeAgentMode,
+      permissionMode,
       resume: params.resume,
       sessionId: params.sessionId,
     }),

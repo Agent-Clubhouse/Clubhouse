@@ -22,7 +22,7 @@ export interface StreamJsonAdapterOpts {
  *
  * Limitations:
  * - Single-turn only (`-p` mode): sendMessage() is not supported
- * - Uses `--dangerously-skip-permissions`: respondToPermission() is not supported
+ * - Uses autonomous permission mode (auto or bypass): respondToPermission() is not supported
  */
 export class StreamJsonAdapter implements StructuredAdapter {
   private proc: ChildProcess | null = null;
@@ -54,7 +54,12 @@ export class StreamJsonAdapter implements StructuredAdapter {
     args.push('--output-format', 'stream-json');
     args.push('--verbose');
     args.push('--include-partial-messages');
-    args.push('--dangerously-skip-permissions');
+    // Structured agents need autonomous permission handling
+    if (sessionOpts.permissionMode === 'skip-all') {
+      args.push('--dangerously-skip-permissions');
+    } else {
+      args.push('--permission-mode', 'auto');
+    }
 
     if (sessionOpts.model && sessionOpts.model !== 'default') {
       args.push('--model', sessionOpts.model);
@@ -77,7 +82,7 @@ export class StreamJsonAdapter implements StructuredAdapter {
     }
 
     if (sessionOpts.freeAgentMode) {
-      // Already using --dangerously-skip-permissions above
+      // Permission handling already applied above via permissionMode
     }
 
     const proc = sessionOpts.commandPrefix

@@ -172,6 +172,8 @@ export const IPC = {
     GET_ARCH_INFO: 'app:get-arch-info',
     GET_HEADLESS_SETTINGS: 'app:get-headless-settings',
     SAVE_HEADLESS_SETTINGS: 'app:save-headless-settings',
+    GET_FREE_AGENT_SETTINGS: 'app:get-free-agent-settings',
+    SAVE_FREE_AGENT_SETTINGS: 'app:save-free-agent-settings',
     SET_DOCK_BADGE: 'app:set-dock-badge',
     GET_BADGE_SETTINGS: 'app:get-badge-settings',
     SAVE_BADGE_SETTINGS: 'app:save-badge-settings',

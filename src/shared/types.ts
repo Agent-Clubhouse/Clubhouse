@@ -10,6 +10,9 @@ export type AgentExecutionMode = 'pty' | 'headless' | 'structured';
 
 export type SpawnMode = 'headless' | 'interactive' | 'structured';
 
+/** Controls what CLI flag is used when agents need autonomous permissions. */
+export type FreeAgentPermissionMode = 'auto' | 'skip-all';
+
 export interface ProviderCapabilities {
   headless: boolean;
   structuredOutput: boolean;

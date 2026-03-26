@@ -6,6 +6,7 @@ import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
 import * as headlessSettings from '../services/headless-settings';
+import * as freeAgentSettings from '../services/free-agent-settings';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
 import { clipboardSettings } from './settings-handlers';
@@ -131,6 +132,17 @@ export function registerAppHandlers(): void {
     [objectArg<headlessSettings.HeadlessSettings>()],
     async (_event, settings) => {
       await headlessSettings.saveSettings(settings);
+    },
+  ));
+
+  ipcMain.handle(IPC.APP.GET_FREE_AGENT_SETTINGS, () => {
+    return freeAgentSettings.getSettings();
+  });
+
+  ipcMain.handle(IPC.APP.SAVE_FREE_AGENT_SETTINGS, withValidatedArgs(
+    [objectArg<freeAgentSettings.FreeAgentSettings>()],
+    async (_event, settings) => {
+      await freeAgentSettings.saveSettings(settings);
     },
   ));
 
