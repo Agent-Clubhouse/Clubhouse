@@ -575,7 +575,7 @@ export function CanvasViewComponent({
                 </svg>
               </button>
               <button
-                className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors"
                 onClick={(e) => { e.stopPropagation(); onClose(); }}
                 onMouseDown={(e) => e.stopPropagation()}
                 title="Remove anchor"
@@ -762,7 +762,7 @@ export function CanvasViewComponent({
             )}
           </button>
           <button
-            className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+            className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors"
             onClick={(e) => { e.stopPropagation(); onClose(); }}
             title="Close view"
             data-testid="canvas-view-close"

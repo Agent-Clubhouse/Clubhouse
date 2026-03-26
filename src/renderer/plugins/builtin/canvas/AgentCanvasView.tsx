@@ -198,8 +198,8 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
                   {agent.name || agent.id}
                 </span>
                 <span className={`text-[10px] ${
-                  agent.status === 'running' ? 'text-green-400' :
-                  agent.status === 'error' ? 'text-red-400' :
+                  agent.status === 'running' ? 'text-ctp-success' :
+                  agent.status === 'error' ? 'text-ctp-error' :
                   'text-ctp-overlay0'
                 }`}>{agent.status}</span>
               </button>

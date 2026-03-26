@@ -37,7 +37,7 @@ export function ZoneDeleteDialog({ zoneName, containedCount, onConfirm, onCancel
             Keep Widgets
           </button>
           <button
-            className="px-3 py-1.5 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+            className="px-3 py-1.5 text-xs rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30 transition-colors"
             onClick={() => onConfirm(true)}
           >
             Remove All

@@ -187,10 +187,37 @@ describe('applyTheme', () => {
     });
   });
 
+  describe('shadow CSS variables (theme-aware)', () => {
+    it('sets dark theme shadows for dark themes', () => {
+      applyTheme(makeTheme({ type: 'dark' }));
+
+      expect(mockSetProperty).toHaveBeenCalledWith('--shadow-depth', '0 4px 24px rgba(0, 0, 0, 0.5)');
+      expect(mockSetProperty).toHaveBeenCalledWith('--shadow-elevation', '0 12px 40px rgba(0, 0, 0, 0.6)');
+      expect(mockSetProperty).toHaveBeenCalledWith('--grid-dot-color', 'rgba(255, 255, 255, 0.1)');
+    });
+
+    it('sets light theme shadows for light themes', () => {
+      applyTheme(makeTheme({ type: 'light' }));
+
+      expect(mockSetProperty).toHaveBeenCalledWith('--shadow-depth', '0 4px 24px rgba(0, 0, 0, 0.1)');
+      expect(mockSetProperty).toHaveBeenCalledWith('--shadow-elevation', '0 12px 40px rgba(0, 0, 0, 0.08)');
+      expect(mockSetProperty).toHaveBeenCalledWith('--grid-dot-color', 'rgba(0, 0, 0, 0.08)');
+    });
+
+    it('includes shadow variables in localStorage cache', () => {
+      applyTheme(makeTheme({ type: 'light' }));
+
+      const cached = JSON.parse(mockLocalStorage.get('clubhouse-theme-vars')!);
+      expect(cached['--shadow-depth']).toBe('0 4px 24px rgba(0, 0, 0, 0.1)');
+      expect(cached['--shadow-elevation']).toBe('0 12px 40px rgba(0, 0, 0, 0.08)');
+      expect(cached['--grid-dot-color']).toBe('rgba(0, 0, 0, 0.08)');
+    });
+  });
+
   describe('total variable count', () => {
-    it('sets exactly 31 CSS variables for a plain theme (15 colors + 16 hljs)', () => {
+    it('sets exactly 34 CSS variables for a plain theme (15 colors + 16 hljs + 3 shadows)', () => {
       applyTheme(makeTheme());
-      expect(mockSetProperty).toHaveBeenCalledTimes(31);
+      expect(mockSetProperty).toHaveBeenCalledTimes(34);
     });
   });
 

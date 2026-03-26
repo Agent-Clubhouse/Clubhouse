@@ -111,7 +111,7 @@ export function ZoneCard({ zone, mcpEnabled, dragOffset, onRename, onThemeChange
 
       {/* Delete button */}
       <button
-        className="w-6 h-6 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400 transition-colors mr-1.5 flex-shrink-0"
+        className="w-6 h-6 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors mr-1.5 flex-shrink-0"
         onClick={handleDeleteClick}
         onMouseDown={(e) => e.stopPropagation()}
         title="Delete zone"
