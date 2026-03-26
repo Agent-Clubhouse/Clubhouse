@@ -225,13 +225,25 @@ describe('Provider integration tests', () => {
   });
 
   describe('freeAgentMode flag generation', () => {
-    it('ClaudeCode: adds --dangerously-skip-permissions when freeAgentMode is true', async () => {
+    it('ClaudeCode: uses --permission-mode auto when freeAgentMode is true (default)', async () => {
       const provider = new ClaudeCodeProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
       });
+      expect(args).toContain('--permission-mode');
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
+    });
+
+    it('ClaudeCode: uses --dangerously-skip-permissions when permissionMode is skip-all', async () => {
+      const provider = new ClaudeCodeProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        freeAgentMode: true,
+        permissionMode: 'skip-all',
+      });
       expect(args).toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
     });
 
     it('ClaudeCode: no permission flag when freeAgentMode is false', async () => {
@@ -241,6 +253,7 @@ describe('Provider integration tests', () => {
         freeAgentMode: false,
       });
       expect(args).not.toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
     });
 
     it('CopilotCli: adds --yolo and --autopilot when freeAgentMode is true', async () => {
@@ -289,7 +302,8 @@ describe('Provider integration tests', () => {
         model: 'sonnet',
         mission: 'Deploy',
       });
-      expect(args).toContain('--dangerously-skip-permissions');
+      expect(args).toContain('--permission-mode');
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
       expect(args).toContain('--model');
       expect(args).toContain('sonnet');
       expect(args[args.length - 1]).toBe('Deploy');
@@ -317,8 +331,9 @@ describe('Provider integration tests', () => {
       expect(args[args.indexOf('-p') + 1]).toBe('Fix the auth bug');
       expect(args).toContain('--output-format');
       expect(args[args.indexOf('--output-format') + 1]).toBe('stream-json');
-      // Permission is handled via --dangerously-skip-permissions flag
-      expect(args).toContain('--dangerously-skip-permissions');
+      // Permission is handled via --permission-mode auto by default
+      expect(args).toContain('--permission-mode');
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
       expect(result!.env).toBeUndefined();
       expect(args).toContain('--model');
       expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
@@ -330,15 +345,29 @@ describe('Provider integration tests', () => {
       expect(args.filter(a => a === '--allowedTools')).toHaveLength(2);
     });
 
-    it('ClaudeCode: always adds --dangerously-skip-permissions even without permissionMode', async () => {
+    it('ClaudeCode: defaults to --permission-mode auto for headless', async () => {
       const provider = new ClaudeCodeProvider();
       const result = await provider.buildHeadlessCommand({
         cwd: '/p',
         mission: 'test',
       });
       expect(result).not.toBeNull();
-      expect(result!.args).toContain('--dangerously-skip-permissions');
+      expect(result!.args).toContain('--permission-mode');
+      expect(result!.args[result!.args.indexOf('--permission-mode') + 1]).toBe('auto');
+      expect(result!.args).not.toContain('--dangerously-skip-permissions');
       expect(result!.env).toBeUndefined();
+    });
+
+    it('ClaudeCode: uses --dangerously-skip-permissions when permissionMode is skip-all', async () => {
+      const provider = new ClaudeCodeProvider();
+      const result = await provider.buildHeadlessCommand({
+        cwd: '/p',
+        mission: 'test',
+        permissionMode: 'skip-all',
+      });
+      expect(result).not.toBeNull();
+      expect(result!.args).toContain('--dangerously-skip-permissions');
+      expect(result!.args).not.toContain('--permission-mode');
     });
 
     it('ClaudeCode: returns null when no mission provided', async () => {

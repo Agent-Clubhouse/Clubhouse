@@ -179,35 +179,50 @@ describe('ClaudeCodeProvider', () => {
       expect(args[args.length - 1]).toBe('Deploy it');
     });
 
-    it('adds --dangerously-skip-permissions when freeAgentMode is true', async () => {
+    it('uses --permission-mode auto when freeAgentMode is true (default)', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
       });
-      expect(args).toContain('--dangerously-skip-permissions');
+      expect(args).toContain('--permission-mode');
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
+      expect(args).not.toContain('--dangerously-skip-permissions');
     });
 
-    it('does not add --dangerously-skip-permissions when freeAgentMode is false', async () => {
+    it('uses --dangerously-skip-permissions when freeAgentMode is true and permissionMode is skip-all', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        freeAgentMode: true,
+        permissionMode: 'skip-all',
+      });
+      expect(args).toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
+    });
+
+    it('does not add permission flags when freeAgentMode is false', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: false,
       });
       expect(args).not.toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
     });
 
-    it('does not add --dangerously-skip-permissions when freeAgentMode is undefined', async () => {
+    it('does not add permission flags when freeAgentMode is undefined', async () => {
       const { args } = await provider.buildSpawnCommand({ cwd: '/p' });
       expect(args).not.toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
     });
 
-    it('places --dangerously-skip-permissions before other flags', async () => {
+    it('places --permission-mode before other flags', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
         model: 'opus',
         mission: 'Fix bug',
       });
-      expect(args[0]).toBe('--dangerously-skip-permissions');
+      expect(args[0]).toBe('--permission-mode');
+      expect(args[1]).toBe('auto');
       expect(args).toContain('--model');
       expect(args[args.length - 1]).toBe('Fix bug');
     });

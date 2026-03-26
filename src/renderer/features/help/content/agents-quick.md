@@ -15,9 +15,11 @@ Quick agents are one-shot task runners. Give them a mission, they execute it, an
 
 ## Free Agent Mode
 
-Check **Free Agent** to skip all permission prompts (`--dangerously-skip-permissions`). The agent runs fully autonomously without pausing for approvals.
+Check **Free Agent** to enable autonomous permission handling. By default this uses **Auto mode**, which runs a background safety classifier to approve safe actions and block dangerous ones.
 
-> **Use with caution:** Free Agent mode is best for trusted tasks in sandboxed environments. For destructive operations, keep it off.
+You can switch to the legacy **Skip All Permissions** behavior in **Settings > Orchestrators & Agents > Free Agent Permission Mode** (globally or per-project).
+
+> **Note:** Auto mode provides safer autonomous execution than skipping all permissions. It blocks high-risk operations like force pushes, mass deletions, and credential exfiltration.
 
 ## Headless vs Interactive Mode
 
