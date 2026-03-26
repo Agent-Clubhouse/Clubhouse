@@ -45,6 +45,13 @@ vi.mock('./headless-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
+// Mock free-agent-settings
+vi.mock('./free-agent-settings', () => ({
+  getPermissionMode: vi.fn(() => 'auto'),
+  getSettings: vi.fn(() => ({ defaultMode: 'auto' })),
+  saveSettings: vi.fn(),
+}));
+
 // Mock fs/promises for readProjectOrchestrator
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(() => { throw new Error('ENOENT'); }),
@@ -395,8 +402,8 @@ describe('Headless integration', () => {
     });
   });
 
-  describe('does not pass outputFormat or permissionMode to provider', () => {
-    it('omits outputFormat and permissionMode from headless opts', async () => {
+  describe('does not pass outputFormat to provider but passes permissionMode', () => {
+    it('omits outputFormat from headless opts', async () => {
       mockGetSpawnMode.mockReturnValue('headless');
 
       await spawnAgent({
@@ -409,7 +416,21 @@ describe('Headless integration', () => {
 
       const callArgs = mockBuildHeadlessCommand.mock.calls[0][0];
       expect(callArgs.outputFormat).toBeUndefined();
-      expect(callArgs.permissionMode).toBeUndefined();
+    });
+
+    it('passes permissionMode from free-agent-settings to headless opts', async () => {
+      mockGetSpawnMode.mockReturnValue('headless');
+
+      await spawnAgent({
+        agentId: 'test-agent',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'Fix bug',
+      });
+
+      const callArgs = mockBuildHeadlessCommand.mock.calls[0][0];
+      expect(callArgs.permissionMode).toBe('auto');
     });
   });
 

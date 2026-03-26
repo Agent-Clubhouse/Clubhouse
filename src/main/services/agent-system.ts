@@ -239,6 +239,9 @@ async function spawnPtyAgent(
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 
+  // Resolve the free-agent permission mode (auto vs skip-all) from settings
+  const permissionMode = freeAgentSettings.getPermissionMode(params.projectPath);
+
   // Run hook server setup, MCP bridge setup, and command building in parallel.
   let mcpPort = 0;
   const [, , spawnCmd] = await Promise.all([

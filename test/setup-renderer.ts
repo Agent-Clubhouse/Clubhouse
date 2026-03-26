@@ -269,6 +269,8 @@ vi.stubGlobal('clubhouse', {
     getArchInfo: async () => ({ arch: 'arm64', platform: 'darwin', rosetta: false }),
     getHeadlessSettings: async () => ({ enabled: true }),
     saveHeadlessSettings: asyncNoop,
+    getFreeAgentSettings: async () => ({ defaultMode: 'auto' }),
+    saveFreeAgentSettings: asyncNoop,
     setDockBadge: asyncNoop,
     getBadgeSettings: async () => ({ showBadge: true }),
     saveBadgeSettings: asyncNoop,

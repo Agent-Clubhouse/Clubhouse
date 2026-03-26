@@ -23,7 +23,6 @@ export interface SpawnOpts {
 
 export interface HeadlessOpts extends SpawnOpts {
   outputFormat?: string;
-  permissionMode?: string;
   noSessionPersistence?: boolean;
   disallowedTools?: string[];
 }
