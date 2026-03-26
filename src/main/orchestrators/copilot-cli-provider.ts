@@ -192,6 +192,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       binary: this.findBinary(),
       args: ['--acp', '--stdio'],
       toolVerbs: TOOL_VERBS,
+      freeAgentArgs: ['--yolo', '--autopilot'],
     });
   }
 
