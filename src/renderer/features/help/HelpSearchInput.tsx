@@ -13,7 +13,7 @@ export function HelpSearchInput({ query, onQueryChange }: HelpSearchInputProps) 
   }, []);
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 border-b border-surface-0 bg-ctp-mantle">
+    <div className="flex items-center gap-2 px-3 py-2 bg-ctp-mantle">
       <svg
         className="w-4 h-4 text-ctp-subtext0 flex-shrink-0"
         fill="none"

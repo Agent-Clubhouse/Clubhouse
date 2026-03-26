@@ -75,6 +75,7 @@ const DEFAULT_SHORTCUTS: Omit<ShortcutDefinition, 'currentBinding'>[] = [
   { id: 'command-palette', label: 'Command Palette', category: 'General', defaultBinding: 'Meta+K' },
   { id: 'toggle-settings', label: 'Toggle Settings', category: 'General', defaultBinding: 'Meta+,' },
   { id: 'toggle-help', label: 'Toggle Help', category: 'General', defaultBinding: 'Meta+Shift+/' },
+  { id: 'toggle-assistant', label: 'Toggle Assistant', category: 'General', defaultBinding: 'Meta+Shift+.' },
 
   // Navigation
   { id: 'go-home', label: 'Go to Home', category: 'Navigation', defaultBinding: 'Meta+Shift+H' },
