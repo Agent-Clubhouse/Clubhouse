@@ -5,9 +5,10 @@ import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
+import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
 import { Toggle } from '../../components/Toggle';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
-import type { SourceControlProvider } from '../../../shared/types';
+import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 
 interface Props {
   projectId?: string;
@@ -32,13 +33,17 @@ function AppAgentSettings() {
   const promptForName = useSessionSettingsStore((s) => s.promptForName);
   const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
   const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
+  const freeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.defaultMode);
+  const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
+  const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     loadSettings().then(() => checkAllAvailability());
     loadClubhouseSettings();
     loadSessionSettings();
-  }, [loadSettings, checkAllAvailability, loadClubhouseSettings, loadSessionSettings]);
+    loadFreeAgentSettings();
+  }, [loadSettings, checkAllAvailability, loadClubhouseSettings, loadSessionSettings, loadFreeAgentSettings]);
 
   const handleClubhouseToggle = () => {
     if (!clubhouseEnabled) {
@@ -71,6 +76,21 @@ function AppAgentSettings() {
           </select>
           <p className="text-xs text-ctp-subtext0">
             How quick agents run by default. Headless runs faster with richer summaries.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <label className="block text-sm text-ctp-text">Free Agent Permission Mode</label>
+          <select
+            value={freeAgentDefaultMode}
+            onChange={(e) => setFreeAgentDefaultMode(e.target.value as FreeAgentPermissionMode)}
+            className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
+              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+          >
+            <option value="auto">Auto (recommended)</option>
+            <option value="skip-all">Skip All Permissions</option>
+          </select>
+          <p className="text-xs text-ctp-subtext0">
+            How agents handle permissions in Free Agent mode. Auto uses a safety classifier; Skip All bypasses all checks.
           </p>
         </div>
       </div>
@@ -265,6 +285,12 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const clearSessionOverride = useSessionSettingsStore((s) => s.clearProjectOverride);
   const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
 
+  const freeAgentGlobalMode = useFreeAgentSettingsStore((s) => s.defaultMode);
+  const freeAgentOverrides = useFreeAgentSettingsStore((s) => s.projectOverrides);
+  const setFreeAgentProjectMode = useFreeAgentSettingsStore((s) => s.setProjectMode);
+  const clearFreeAgentProjectMode = useFreeAgentSettingsStore((s) => s.clearProjectMode);
+  const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
+
   const mcpGlobalEnabled = useMcpSettingsStore((s) => s.enabled);
   const mcpProjectOverrides = (useMcpSettingsStore((s) => s.projectOverrides) ?? {}) as Record<string, boolean>;
   const mcpSaveSettings = useMcpSettingsStore((s) => s.saveSettings);
@@ -276,11 +302,12 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   useEffect(() => {
     loadClubhouseSettings();
     loadSessionSettings();
+    loadFreeAgentSettings();
     loadMcpSettings();
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setShowMcp(!!s.mcp);
     });
-  }, [loadClubhouseSettings, loadSessionSettings, loadMcpSettings]);
+  }, [loadClubhouseSettings, loadSessionSettings, loadFreeAgentSettings, loadMcpSettings]);
 
   if (!project) return null;
 
@@ -314,6 +341,15 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const handleSessionModeChange = (value: string) => {
     if (value === 'global') clearSessionOverride(projectPath);
     else setSessionOverride(projectPath, value === 'on');
+  };
+
+  // Free agent permission mode
+  const freeAgentOverride = freeAgentOverrides[projectPath];
+  const currentFreeAgentMode = freeAgentOverride !== undefined ? freeAgentOverride : 'global';
+  const freeAgentGlobalLabel = freeAgentGlobalMode === 'auto' ? 'Auto' : 'Skip All';
+  const handleFreeAgentModeChange = (value: string) => {
+    if (value === 'global') clearFreeAgentProjectMode(projectPath);
+    else setFreeAgentProjectMode(projectPath, value as FreeAgentPermissionMode);
   };
 
   // MCP override
@@ -360,6 +396,19 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
             <option value="global">Global Default ({headlessDefaultMode.charAt(0).toUpperCase() + headlessDefaultMode.slice(1)})</option>
             <option value="interactive">Interactive</option>
             <option value="headless">Headless</option>
+          </select>
+        </DefaultRow>
+
+        {/* Free Agent Permission Mode */}
+        <DefaultRow label="Free Agent Permission Mode" description="Permission handling for agents in Free Agent mode">
+          <select
+            value={currentFreeAgentMode}
+            onChange={(e) => handleFreeAgentModeChange(e.target.value)}
+            className={DROPDOWN_SELECT_CLASS}
+          >
+            <option value="global">Global Default ({freeAgentGlobalLabel})</option>
+            <option value="auto">Auto</option>
+            <option value="skip-all">Skip All Permissions</option>
           </select>
         </DefaultRow>
 

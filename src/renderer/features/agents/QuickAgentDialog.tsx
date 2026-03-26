@@ -172,7 +172,7 @@ export function QuickAgentDialog() {
         {/* Free Agent Mode */}
         <label
           className={`flex items-center gap-2 mb-4 ${supportsPermissions ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-          title={supportsPermissions ? 'Skip all permission prompts' : 'Not supported by this orchestrator'}
+          title={supportsPermissions ? 'Autonomous permissions (auto mode by default)' : 'Not supported by this orchestrator'}
         >
           <input
             type="checkbox"
@@ -183,7 +183,7 @@ export function QuickAgentDialog() {
           />
           <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
           <span className="text-[10px] text-ctp-subtext0/70 ml-1">
-            {supportsPermissions ? '(skip all permissions)' : '(not supported)'}
+            {supportsPermissions ? '(autonomous permissions)' : '(not supported)'}
           </span>
         </label>
 
