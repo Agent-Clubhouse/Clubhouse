@@ -241,14 +241,17 @@ export function MainContentView() {
   if (explorerTab.startsWith('plugin:')) {
     const pluginId = explorerTab.slice('plugin:'.length);
 
-    // Security gate: block plugin rendering unless explicitly annex-enabled on remote projects
+    // Security gate: block plugin rendering unless explicitly annex-enabled on remote projects.
+    // Only enforce once satellite snapshot has loaded (matches !== undefined).
     if (isRemoteProject && activeProjectId) {
       const parsed = parseNamespacedId(activeProjectId);
       if (parsed) {
-        const matches = pluginMatchState[parsed.satelliteId] || [];
-        const match = matches.find((p) => p.id === pluginId);
-        if (!match?.annexEnabled) {
-          return <AnnexDisabledView pluginName={match?.name || pluginId} />;
+        const matches = pluginMatchState[parsed.satelliteId];
+        if (matches !== undefined) {
+          const match = matches.find((p) => p.id === pluginId);
+          if (!match?.annexEnabled) {
+            return <AnnexDisabledView pluginName={match?.name || pluginId} />;
+          }
         }
       }
     }

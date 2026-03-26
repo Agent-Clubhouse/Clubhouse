@@ -96,6 +96,19 @@ export function App() {
     };
   }, []);
 
+  // ── Clear stale activeHostId if annex experimental flag is off ──────────
+  // This prevents non-experimental users from seeing broken satellite UI
+  // due to a leftover localStorage value from a previous session.
+  useEffect(() => {
+    if (!activeHostId) return;
+    window.clubhouse.app.getExperimentalSettings().then((s: Record<string, unknown>) => {
+      if (!s.annex) {
+        useUIStore.getState().setActiveHost(null);
+      }
+    }).catch(() => { /* ignore */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only on mount — avoids re-running when activeHostId changes
+
   // ── Reactive effects (depend on state already subscribed for routing) ───
 
   // Load durable agents for all projects so the dashboard shows them
@@ -249,17 +262,18 @@ export function App() {
     // When a satellite is active, show its app-level canvas instead of the local Dashboard.
     // The canvas plugin checks activeHostId to hydrate from remoteAppCanvasState.
     const isSatelliteHome = !!activeHostId;
-    const satelliteCanvasMatch = isSatelliteHome
-      ? (pluginMatchState[activeHostId] || []).find((p) => p.id === 'canvas')
-      : null;
+    const satelliteMatches = isSatelliteHome ? pluginMatchState[activeHostId] : undefined;
+    const satelliteCanvasMatch = satelliteMatches?.find((p) => p.id === 'canvas');
     const canShowRemoteCanvas = satelliteCanvasMatch?.status === 'matched' && satelliteCanvasMatch.annexEnabled;
 
     let homeContent;
     if (isSatelliteHome && canShowRemoteCanvas) {
       homeContent = <PluginContentView pluginId="canvas" mode="app" />;
-    } else if (isSatelliteHome) {
+    } else if (isSatelliteHome && satelliteMatches !== undefined) {
+      // Satellite snapshot loaded but canvas is not annex-enabled
       homeContent = <AnnexDisabledView pluginName="Home" />;
     } else {
+      // Local mode, or satellite data not yet loaded — show local dashboard
       homeContent = <Dashboard />;
     }
 
@@ -298,12 +312,17 @@ export function App() {
     // When a satellite is active, gate app plugins by annex permission
     let appPluginContent;
     if (activeHostId) {
-      const matches = pluginMatchState[activeHostId] || [];
-      const match = matches.find((p) => p.id === appPluginId);
-      if (match?.status === 'matched' && match.annexEnabled) {
-        appPluginContent = <PluginContentView pluginId={appPluginId} mode="app" />;
+      const matches = pluginMatchState[activeHostId];
+      if (matches !== undefined) {
+        const match = matches.find((p) => p.id === appPluginId);
+        if (match?.status === 'matched' && match.annexEnabled) {
+          appPluginContent = <PluginContentView pluginId={appPluginId} mode="app" />;
+        } else {
+          appPluginContent = <AnnexDisabledView pluginName={match?.name || appPluginId} />;
+        }
       } else {
-        appPluginContent = <AnnexDisabledView pluginName={match?.name || appPluginId} />;
+        // Satellite data not yet loaded — render plugin locally as fallback
+        appPluginContent = <PluginContentView pluginId={appPluginId} mode="app" />;
       }
     } else {
       appPluginContent = <PluginContentView pluginId={appPluginId} mode="app" />;

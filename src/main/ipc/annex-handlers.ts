@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { AnnexSettings } from '../../shared/types';
 import * as annexSettings from '../services/annex-settings';
@@ -8,6 +8,7 @@ import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
 import * as experimentalSettings from '../services/experimental-settings';
+import * as autoUpdateService from '../services/auto-update-service';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, objectArg, stringArg, booleanArg } from './validation';
@@ -150,12 +151,23 @@ export function registerAnnexHandlers(): void {
   });
 }
 
-/** Conditionally start Annex server if enableServer is on AND experimental flag is on. */
+/** Returns true when the build is a prerelease (beta, rc, etc.), user opted into preview channel, or running unpackaged (dev/test). */
+function isPreviewEligible(): boolean {
+  if (!app.isPackaged) return true;
+  const version = app.getVersion();
+  if (/-(beta|rc|alpha|dev|canary)/.test(version)) return true;
+  const updateSettings = autoUpdateService.getSettings();
+  return !!updateSettings.previewChannel;
+}
+
+/** Conditionally start Annex server if enableServer is on AND experimental flag is on AND build is preview-eligible. */
 export function maybeStartAnnex(): void {
   const expSettings = experimentalSettings.getSettings();
   if (!expSettings.annex) {
     return; // Annex feature not enabled in experimental settings
   }
+
+  if (!isPreviewEligible()) return;
 
   const settings = annexSettings.getSettings();
   if (settings.enableServer) {
@@ -170,10 +182,12 @@ export function maybeStartAnnex(): void {
   }
 }
 
-/** Conditionally start the Annex Bonjour client if enableClient is on AND experimental flag is on. */
+/** Conditionally start the Annex Bonjour client if enableClient is on AND experimental flag is on AND build is preview-eligible. */
 export function maybeStartAnnexClient(): void {
   const expSettings = experimentalSettings.getSettings();
   if (!expSettings.annex) return;
+
+  if (!isPreviewEligible()) return;
 
   const settings = annexSettings.getSettings();
   if (!settings.enableClient) return;
