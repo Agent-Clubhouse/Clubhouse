@@ -17,7 +17,7 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
-import { resolve, basename } from 'node:path';
+import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const HASHES_DIR = resolve(ROOT, 'src/shared/sdk-hashes');
