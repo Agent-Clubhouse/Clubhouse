@@ -92,13 +92,13 @@ describe('getBuiltinPlugins catch-all', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('only terminal, files, and canvas declare the annex permission', () => {
+  it('only terminal, files, canvas, and group-project declare the annex permission', () => {
     const plugins = getBuiltinPlugins({ sessions: true, review: true, canvas: true });
     const annexPlugins = plugins
       .filter((p) => p.manifest.permissions.includes('annex'))
       .map((p) => p.manifest.id)
       .sort();
-    expect(annexPlugins).toEqual(['canvas', 'files', 'terminal']);
+    expect(annexPlugins).toEqual(['canvas', 'files', 'group-project', 'terminal']);
   });
 
   it('does not include the sessions plugin without experimental flag', () => {
