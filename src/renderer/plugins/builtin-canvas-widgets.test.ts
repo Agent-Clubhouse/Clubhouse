@@ -312,7 +312,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
 
     expect(getRegisteredWidgetType('plugin:terminal:shell')!.declaration.label).toBe('Terminal');
     expect(getRegisteredWidgetType('plugin:files:file-viewer')!.declaration.label).toBe('File Viewer');
-    expect(getRegisteredWidgetType('plugin:git:git-status')!.declaration.label).toBe('Git Status');
+    expect(getRegisteredWidgetType('plugin:git:git-status')!.declaration.label).toBe('Git Diff');
     expect(getRegisteredWidgetType('plugin:browser:webview')!.declaration.label).toBe('Browser');
     expect(getRegisteredWidgetType('plugin:group-project:group-project')!.declaration.label).toBe('Group Project');
   });
