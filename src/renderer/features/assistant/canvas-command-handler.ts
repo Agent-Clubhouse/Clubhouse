@@ -5,9 +5,11 @@
  * canvas-store operations, and sends results back via CANVAS_CMD.RESULT.
  */
 
-import { useAppCanvasStore } from '../../plugins/builtin/canvas/main';
+import { useAppCanvasStore, getProjectCanvasStore } from '../../plugins/builtin/canvas/main';
 import type { CanvasViewType, Position, Size, CanvasView, CanvasInstance } from '../../plugins/builtin/canvas/canvas-types';
 import type { CanvasState } from '../../plugins/builtin/canvas/canvas-store';
+import { createScopedStorage } from '../../plugins/plugin-api-storage';
+import type { ScopedStorage } from '../../../shared/plugin-types';
 
 interface CanvasCommandRequest {
   callId: string;
@@ -25,17 +27,37 @@ function sendResult(callId: string, result: CanvasCommandResult): void {
   window.clubhouse.canvas?.sendCommandResult?.(callId, result);
 }
 
-function getStore(): CanvasState {
+function getStore(projectId?: string): CanvasState {
+  if (projectId) return getProjectCanvasStore(projectId).getState();
   return useAppCanvasStore.getState();
 }
 
-function findCanvas(canvasId: string): CanvasInstance | undefined {
-  return getStore().canvases.find((c: CanvasInstance) => c.id === canvasId);
+function getStorage(projectId?: string): ScopedStorage {
+  if (projectId) return createScopedStorage('canvas', 'project-local', projectId);
+  return createScopedStorage('canvas', 'global');
 }
 
+function findCanvas(canvasId: string, projectId?: string): CanvasInstance | undefined {
+  return getStore(projectId).canvases.find((c: CanvasInstance) => c.id === canvasId);
+}
+
+async function persistCanvas(projectId?: string): Promise<void> {
+  try {
+    const store = getStore(projectId);
+    const storage = getStorage(projectId);
+    await store.saveCanvas(storage);
+    await store.saveWires(storage);
+    console.log('[assistant] Canvas saved', { projectId: projectId || 'app' });
+  } catch (err) {
+    console.warn('[assistant] Canvas save failed:', err);
+  }
+}
+
+const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views']);
+
 /** Execute a command on a specific canvas, temporarily switching active canvas if needed. */
-function withCanvas<T>(canvasId: string, fn: (store: CanvasState) => T): T | { error: string } {
-  const store = getStore();
+function withCanvas<T>(canvasId: string, fn: (store: CanvasState) => T, projectId?: string): T | { error: string } {
+  const store = getStore(projectId);
   const canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
   if (!canvas) return { error: `Canvas not found: ${canvasId}` };
 
@@ -48,16 +70,18 @@ function withCanvas<T>(canvasId: string, fn: (store: CanvasState) => T): T | { e
 
 const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandResult> = {
   add_canvas(args) {
-    const store = getStore();
+    const pid = args.project_id as string | undefined;
+    const store = getStore(pid);
     const id = store.addCanvas();
     if (args.name) {
       store.renameCanvas(id, args.name as string);
     }
-    return { success: true, data: { canvas_id: id } };
+    return { success: true, data: { canvas_id: id, project_id: pid || 'app' } };
   },
 
-  list_canvases() {
-    const store = getStore();
+  list_canvases(args) {
+    const pid = args.project_id as string | undefined;
+    const store = getStore(pid);
     const canvases = store.canvases.map((c: CanvasInstance) => ({
       id: c.id,
       name: c.name,
@@ -68,6 +92,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
 
   add_view(args) {
     const canvasId = args.canvas_id as string;
+    const pid = args.project_id as string | undefined;
     const result = withCanvas(canvasId, (store) => {
       const type = args.type as CanvasViewType;
       const position: Position = args.position
@@ -110,51 +135,56 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
       }
 
       return { view_id: viewId, agent_bound: !!(args.agent_id) };
-    });
+    }, pid);
 
     if ('error' in result) return { success: false, error: result.error };
     return { success: true, data: result };
   },
 
   move_view(args) {
+    const pid = args.project_id as string | undefined;
     const result = withCanvas(args.canvas_id as string, (store) => {
       const pos = args.position as Record<string, number>;
       store.moveView(args.view_id as string, { x: pos?.x || 0, y: pos?.y || 0 });
-    });
+    }, pid);
     if (result && 'error' in result) return { success: false, error: result.error };
     return { success: true };
   },
 
   resize_view(args) {
+    const pid = args.project_id as string | undefined;
     const result = withCanvas(args.canvas_id as string, (store) => {
       const sizeArg = args.size as Record<string, number>;
       store.resizeView(args.view_id as string, {
         width: sizeArg?.w || sizeArg?.width || 300,
         height: sizeArg?.h || sizeArg?.height || 200,
       });
-    });
+    }, pid);
     if (result && 'error' in result) return { success: false, error: result.error };
     return { success: true };
   },
 
   remove_view(args) {
+    const pid = args.project_id as string | undefined;
     const result = withCanvas(args.canvas_id as string, (store) => {
       store.removeView(args.view_id as string);
-    });
+    }, pid);
     if (result && 'error' in result) return { success: false, error: result.error };
     return { success: true };
   },
 
   rename_view(args) {
+    const pid = args.project_id as string | undefined;
     const result = withCanvas(args.canvas_id as string, (store) => {
       store.renameView(args.view_id as string, args.name as string);
-    });
+    }, pid);
     if (result && 'error' in result) return { success: false, error: result.error };
     return { success: true };
   },
 
   query_views(args) {
-    const canvas = findCanvas(args.canvas_id as string);
+    const pid = args.project_id as string | undefined;
+    const canvas = findCanvas(args.canvas_id as string, pid);
     if (!canvas) return { success: false, error: `Canvas not found: ${args.canvas_id}` };
 
     const views = canvas.views.map((v: CanvasView) => ({
@@ -171,8 +201,9 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
     const canvasId = args.canvas_id as string;
     const sourceViewId = args.source_view_id as string;
     const targetViewId = args.target_view_id as string;
+    const pid = args.project_id as string | undefined;
 
-    const canvas = findCanvas(canvasId);
+    const canvas = findCanvas(canvasId, pid);
     if (!canvas) return { success: false, error: `Canvas not found: ${canvasId}` };
 
     const sourceView = canvas.views.find((v: CanvasView) => v.id === sourceViewId);
@@ -225,7 +256,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
     });
 
     // Persist wire definition
-    const store = getStore();
+    const store = getStore(pid);
     store.addWireDefinition({
       agentId: sourceAgentId,
       targetId,
@@ -257,6 +288,11 @@ export function initCanvasCommandHandler(): (() => void) | undefined {
       const result = handler(request.args);
       console.log('[assistant] Canvas command result:', request.command, result.success);
       sendResult(request.callId, result);
+
+      // Auto-save after mutating commands
+      if (MUTATING_COMMANDS.has(request.command) && result.success) {
+        persistCanvas(request.args.project_id as string | undefined);
+      }
     } catch (err) {
       console.error('[assistant] Canvas command error:', request.command, err);
       sendResult(request.callId, {
