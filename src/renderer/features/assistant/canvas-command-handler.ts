@@ -89,7 +89,27 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
         store.resizeView(viewId, size);
       }
 
-      return { view_id: viewId };
+      // Bind agent ID and project ID if provided (makes the card a real agent card, not a placeholder)
+      if (viewId && type === 'agent' && args.agent_id) {
+        const agentId = args.agent_id as string;
+        const projectId = args.project_id as string | undefined;
+        const agentName = (args.display_name as string) || agentId;
+        store.updateView(viewId, {
+          agentId,
+          projectId,
+          title: agentName,
+          displayName: agentName,
+          metadata: {
+            agentId,
+            projectId: projectId ?? null,
+            agentName,
+            projectName: null, // could resolve from project store but not critical
+          },
+        } as any);
+        console.log('[assistant] Agent card bound:', { viewId, agentId, projectId });
+      }
+
+      return { view_id: viewId, agent_bound: !!(args.agent_id) };
     });
 
     if ('error' in result) return { success: false, error: result.error };

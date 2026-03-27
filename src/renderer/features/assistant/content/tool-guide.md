@@ -37,7 +37,7 @@ You have MCP tools for configuring Clubhouse. Here's when and how to use each.
 |------|----------|
 | `create_canvas` | User wants a new visual workspace. Returns canvas_id for subsequent calls. |
 | `list_canvases` | Check existing canvases before creating new ones. |
-| `add_card` | Add agent/zone/anchor cards. Types: "agent", "zone", "anchor". |
+| `add_card` | Add cards. For agent cards, provide agent_id + project_id to bind a real agent. Types: "agent", "zone", "anchor". |
 | `move_card` | Reposition cards after adding them. |
 | `resize_card` | Adjust card size (useful for zones). |
 | `remove_card` | Remove a card from canvas. |
@@ -60,7 +60,9 @@ You have MCP tools for configuring Clubhouse. Here's when and how to use each.
 `find_git_repos` → `add_project` → `create_agent` → `write_agent_instructions`
 
 **Multi-agent canvas:**
-`list_projects` → `create_canvas` → `add_card` (multiple) → `layout_canvas` → `connect_cards` (multiple)
+`list_projects` → `list_agents` → `create_canvas` → `add_card` with agent_id+project_id (multiple) → `layout_canvas` → `connect_cards` (multiple)
+
+**Important:** When adding agent cards, ALWAYS provide `agent_id` and `project_id` from `list_agents` and `list_projects`. Without these, the card is a placeholder that can't be wired.
 
 **Agent reconfiguration:**
 `list_agents` → `update_agent` → `write_agent_instructions`

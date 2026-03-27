@@ -837,13 +837,17 @@ registerToolTemplate('assistant', 'list_canvases', {
 });
 
 registerToolTemplate('assistant', 'add_card', {
-  description: 'Add a card to a canvas. Types: "agent", "zone" (grouping container), "anchor" (text note).',
+  description:
+    'Add a card to a canvas. Types: "agent" (for durable agents), "zone" (grouping container), "anchor" (text note). ' +
+    'For agent cards, provide agent_id and project_id to bind a real agent — otherwise the card is a placeholder that must be assigned in the UI.',
   inputSchema: {
     type: 'object',
     properties: {
       canvas_id: { type: 'string', description: 'Canvas ID.' },
       type: { type: 'string', description: 'Card type: "agent", "zone", or "anchor".' },
       display_name: { type: 'string', description: 'Display name for the card.' },
+      agent_id: { type: 'string', description: 'For agent cards: the durable agent ID (from list_agents) to bind to this card.' },
+      project_id: { type: 'string', description: 'For agent cards: the project ID the agent belongs to (from list_projects).' },
       position_x: { type: 'number', description: 'X position (default 100).' },
       position_y: { type: 'number', description: 'Y position (default 100).' },
       width: { type: 'number', description: 'Width in pixels (default 300).' },
@@ -852,7 +856,10 @@ registerToolTemplate('assistant', 'add_card', {
     required: ['canvas_id', 'type'],
   },
 }, async (_t, _a, args) => {
-  const cmdArgs: Record<string, unknown> = { canvas_id: args.canvas_id, type: args.type, display_name: args.display_name };
+  const cmdArgs: Record<string, unknown> = {
+    canvas_id: args.canvas_id, type: args.type, display_name: args.display_name,
+    agent_id: args.agent_id, project_id: args.project_id,
+  };
   if (args.position_x !== undefined || args.position_y !== undefined) {
     cmdArgs.position = { x: args.position_x || 100, y: args.position_y || 100 };
   }
