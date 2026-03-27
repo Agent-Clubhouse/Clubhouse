@@ -41,6 +41,7 @@ vi.mock('./agent-config', () => ({
 vi.mock('./pty-manager', () => ({
   getBuffer: vi.fn().mockReturnValue(''),
   isRunning: vi.fn().mockReturnValue(false),
+  write: vi.fn(),
 }));
 
 // Mock file-service
@@ -170,6 +171,7 @@ vi.mock('./agent-system', () => ({
 vi.mock('./structured-manager', () => ({
   isStructuredSession: vi.fn().mockReturnValue(false),
   respondToPermission: vi.fn().mockResolvedValue(undefined),
+  sendMessage: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock name-generator
@@ -1801,6 +1803,70 @@ describe('annex-server', () => {
       expect(fnBlock).toContain('metadata');
       // Must parse the remote|| prefix
       expect(fnBlock).toContain("'remote'");
+    });
+  });
+
+  describe('agent message endpoint', () => {
+    it('POST /api/v1/agents/:id/message sends to PTY agent', async () => {
+      const { port, token } = await startAndPair();
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
+      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
+
+      const res = await request(port, 'POST', '/api/v1/agents/agent-1/message', { message: 'hello\n' }, authHeaders(token));
+      const body = JSON.parse(res.body);
+      expect(res.status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(body.mode).toBe('pty');
+      expect(ptyManagerModule.write).toHaveBeenCalledWith('agent-1', 'hello\n');
+    });
+
+    it('POST /api/v1/agents/:id/message sends to structured agent', async () => {
+      const { port, token } = await startAndPair();
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
+
+      const res = await request(port, 'POST', '/api/v1/agents/agent-2/message', { message: 'do something' }, authHeaders(token));
+      const body = JSON.parse(res.body);
+      expect(res.status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(body.mode).toBe('structured');
+      expect(structuredManagerModule.sendMessage).toHaveBeenCalledWith('agent-2', 'do something');
+    });
+
+    it('returns 400 when message is missing', async () => {
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/agents/agent-1/message', {}, authHeaders(token));
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body).error).toBe('message is required');
+    });
+
+    it('returns 400 for headless agent', async () => {
+      const { port, token } = await startAndPair();
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
+      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(true);
+
+      const res = await request(port, 'POST', '/api/v1/agents/agent-1/message', { message: 'hello' }, authHeaders(token));
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body).error).toContain('headless');
+    });
+  });
+
+  describe('theme broadcast includes terminal colors', () => {
+    it('snapshot includes terminalColors field', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      // Verify snapshot includes terminalColors
+      expect(source).toContain('terminalColors: getTerminalColors()');
+    });
+
+    it('broadcastThemeChanged includes terminalColors', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      // Verify theme broadcast includes terminal colors
+      expect(source).toContain('terminalColors: getTerminalColors()');
+      expect(source).toContain("type: 'theme:changed'");
     });
   });
 });

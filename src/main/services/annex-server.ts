@@ -347,6 +347,12 @@ function getThemeColors(): ThemeColors {
   return theme ? theme.colors : THEMES['catppuccin-mocha'].colors;
 }
 
+function getTerminalColors(): import('../../shared/types').TerminalColors {
+  const { themeId } = themeService.getSettings();
+  const theme = THEMES[themeId];
+  return theme ? theme.terminal : THEMES['catppuccin-mocha'].terminal;
+}
+
 function getOrchestratorsMap(): Record<string, { displayName: string; shortName: string; badge?: string }> {
   const result: Record<string, { displayName: string; shortName: string; badge?: string }> = {};
   for (const o of getAvailableOrchestrators()) {
@@ -542,6 +548,7 @@ async function buildSnapshot(): Promise<object> {
     quickAgents,
     agentsMeta,
     theme: getThemeColors(),
+    terminalColors: getTerminalColors(),
     orchestrators: getOrchestratorsMap(),
     pendingPermissions: permissionQueue.listPending(),
     lastSeq: eventReplay.getLastSeq(),
@@ -1526,6 +1533,42 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (requireMtls()) return;
     const agentId = decodeURIComponent(structuredPermMatch[1]);
     readJsonBody(req, res, (body) => handleStructuredPermissionResponse(res, agentId, body));
+    return;
+  }
+
+  // POST /api/v1/agents/:id/message (control — requires mTLS)
+  const messageMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/message$/);
+  if (method === 'POST' && messageMatch) {
+    if (requireMtls()) return;
+    const agentId = decodeURIComponent(messageMatch[1]);
+    readJsonBody(req, res, async (body) => {
+      const message = body.message as string | undefined;
+      if (!message || typeof message !== 'string') {
+        sendJson(res, 400, { error: 'message is required' });
+        return;
+      }
+      if (message.length > MAX_PTY_INPUT_SIZE) {
+        sendJson(res, 400, { error: 'message exceeds 64KB limit' });
+        return;
+      }
+      const mode = getAgentExecutionMode(agentId);
+      try {
+        if (mode === 'structured') {
+          await structuredManager.sendMessage(agentId, message);
+        } else if (mode === 'pty' && ptyManager.isRunning(agentId)) {
+          ptyManager.write(agentId, message);
+        } else {
+          sendJson(res, 400, { error: `cannot send message to agent in '${mode}' mode` });
+          return;
+        }
+        sendJson(res, 200, { ok: true, agentId, mode });
+      } catch (err) {
+        appLog('core:annex', 'error', 'Failed to send message to agent', {
+          meta: { agentId, mode, error: err instanceof Error ? err.message : String(err) },
+        });
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'send_failed' });
+      }
+    });
     return;
   }
 
@@ -2534,7 +2577,7 @@ export function broadcastSnapshotRefresh(): void {
 
 /** Broadcast theme change to all connected WS clients. */
 export function broadcastThemeChanged(): void {
-  broadcastWs({ type: 'theme:changed', payload: getThemeColors() });
+  broadcastWs({ type: 'theme:changed', payload: { ...getThemeColors(), terminalColors: getTerminalColors() } });
 }
 
 // ---------------------------------------------------------------------------
