@@ -151,44 +151,91 @@ export function registerAnnexHandlers(): void {
   });
 }
 
-/** Conditionally start Annex server if enableServer is on AND experimental flag is on AND build is preview-eligible. */
-export function maybeStartAnnex(): void {
+/** Conditionally start Annex server if experimental flag is on AND build is preview-eligible.
+ *  If enableServer is off but the experimental flag is on, auto-enable it so existing users
+ *  don't have to re-toggle after the settings split. */
+export async function maybeStartAnnex(): Promise<void> {
   const expSettings = experimentalSettings.getSettings();
+  const previewEligible = isPreviewEligible();
+
+  appLog('core:annex', 'info', 'Annex server startup check', {
+    meta: {
+      experimentalAnnex: !!expSettings.annex,
+      previewEligible,
+    },
+  });
+
   if (!expSettings.annex) {
-    return; // Annex feature not enabled in experimental settings
+    appLog('core:annex', 'debug', 'Annex server skipped: experimental flag is off');
+    return;
   }
 
-  if (!isPreviewEligible()) return;
+  if (!previewEligible) {
+    appLog('core:annex', 'debug', 'Annex server skipped: build is not preview-eligible');
+    return;
+  }
 
-  const settings = annexSettings.getSettings();
-  if (settings.enableServer) {
-    try {
-      annexServer.start();
-      appLog('core:annex', 'info', 'Annex server auto-started on launch');
-    } catch (err) {
-      appLog('core:annex', 'error', 'Failed to auto-start Annex server', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-    }
+  let settings = annexSettings.getSettings();
+
+  appLog('core:annex', 'info', 'Annex settings at startup', {
+    meta: {
+      enableServer: settings.enableServer,
+      enableClient: settings.enableClient,
+      deviceName: settings.deviceName,
+    },
+  });
+
+  // Auto-enable server + client for existing users who have the experimental flag on
+  // but haven't toggled the new split settings yet (e.g. annex-settings.json missing)
+  if (!settings.enableServer || !settings.enableClient) {
+    appLog('core:annex', 'info', 'Auto-enabling annex server/client (experimental flag is on but toggles were off)', {
+      meta: { enableServer: settings.enableServer, enableClient: settings.enableClient },
+    });
+    const updated = {
+      ...settings,
+      enableServer: true,
+      enableClient: true,
+    };
+    await annexSettings.saveSettings(updated);
+    settings = updated;
+  }
+
+  try {
+    annexServer.start();
+    appLog('core:annex', 'info', 'Annex server auto-started on launch');
+  } catch (err) {
+    appLog('core:annex', 'error', 'Failed to auto-start Annex server', {
+      meta: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
+    });
   }
 }
 
-/** Conditionally start the Annex Bonjour client if enableClient is on AND experimental flag is on AND build is preview-eligible. */
+/** Conditionally start the Annex Bonjour client if experimental flag is on AND build is preview-eligible.
+ *  The server startup (maybeStartAnnex) handles auto-enabling enableClient, so this just checks the flag. */
 export function maybeStartAnnexClient(): void {
   const expSettings = experimentalSettings.getSettings();
-  if (!expSettings.annex) return;
+  if (!expSettings.annex) {
+    appLog('core:annex', 'debug', 'Annex client skipped: experimental flag is off');
+    return;
+  }
 
-  if (!isPreviewEligible()) return;
+  if (!isPreviewEligible()) {
+    appLog('core:annex', 'debug', 'Annex client skipped: build is not preview-eligible');
+    return;
+  }
 
   const settings = annexSettings.getSettings();
-  if (!settings.enableClient) return;
+  if (!settings.enableClient) {
+    appLog('core:annex', 'debug', 'Annex client skipped: enableClient is off');
+    return;
+  }
 
   try {
     annexClient.startClient();
     appLog('core:annex', 'info', 'Annex client auto-started on launch');
   } catch (err) {
     appLog('core:annex', 'error', 'Failed to auto-start Annex client', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
+      meta: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
     });
   }
 }

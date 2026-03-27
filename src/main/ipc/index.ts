@@ -68,10 +68,15 @@ export function registerAllHandlers(): void {
   });
 
   // Conditionally start Annex LAN server if enabled in settings
-  maybeStartAnnex();
-
-  // Conditionally start Annex client (Bonjour discovery) for satellite detection
-  maybeStartAnnexClient();
+  // maybeStartAnnex is async (may auto-enable settings) — fire and forget but log errors
+  maybeStartAnnex().then(() => {
+    // Start client after server auto-enable has persisted
+    maybeStartAnnexClient();
+  }).catch((err) => {
+    logService.appLog('core:annex', 'error', 'Annex startup failed', {
+      meta: { error: err?.message ?? String(err), stack: err?.stack },
+    });
+  });
 
   // Conditionally start MCP bridge server for agent-widget interaction
   maybeStartMcpBridge();
