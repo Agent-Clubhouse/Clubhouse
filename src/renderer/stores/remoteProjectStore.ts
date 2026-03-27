@@ -94,10 +94,10 @@ interface RemoteProjectStoreState {
   remoteAgentIcons: Record<string, string>;
 
   /** Remote canvas state keyed by namespaced project ID */
-  remoteCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }>;
+  remoteCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }>;
 
   /** App-level (global) canvas state keyed by satelliteId */
-  remoteAppCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }>;
+  remoteAppCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }>;
 
   /** Remote group projects keyed by satelliteId */
   remoteGroupProjects: Record<string, unknown[]>;
@@ -127,7 +127,7 @@ interface RemoteProjectStoreState {
   removeRemoteAgent: (satelliteId: string, agentId: string) => void;
 
   /** Update canvas state for a remote project. */
-  updateRemoteCanvasState: (namespacedProjectId: string, state: { canvases: unknown[]; activeCanvasId: string }) => void;
+  updateRemoteCanvasState: (namespacedProjectId: string, state: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }) => void;
 
   /** Update a remote group project (create/update/delete). */
   updateRemoteGroupProject: (satelliteId: string, action: string, project: unknown) => void;

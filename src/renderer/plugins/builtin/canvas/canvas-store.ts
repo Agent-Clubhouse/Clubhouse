@@ -29,7 +29,7 @@ export interface CanvasState {
   // Lifecycle
   loadCanvas: (storage: ScopedStorage) => Promise<void>;
   saveCanvas: (storage: ScopedStorage) => Promise<void>;
-  hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string) => void;
+  hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string, wireDefinitions?: unknown[]) => void;
 
   // Wire persistence — wireDefinitions is the canvas-owned source of truth for
   // wires, independent of the MCP binding runtime.  Wires survive agent sleep
@@ -339,7 +339,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
     },
 
-    hydrateFromRemote: (canvasData, activeId) => {
+    hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
       const existingState = get();
       const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
@@ -375,7 +375,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           : (activeId && canvases.find((c) => c.id === activeId) ? activeId : canvases[0].id))
         : (activeId && canvases.find((c) => c.id === activeId) ? activeId : canvases[0].id);
 
-      set({ canvases, activeCanvasId: resolvedActive, loaded: true, ...syncDerivedState(canvases, resolvedActive) });
+      // Restore wire definitions from remote state if provided.
+      // Wire definitions are already namespaced by the annex client handler.
+      const wireUpdate = remoteWireDefinitions && Array.isArray(remoteWireDefinitions) && remoteWireDefinitions.length > 0
+        ? { wireDefinitions: remoteWireDefinitions as McpBindingEntry[] }
+        : {};
+
+      set({ canvases, activeCanvasId: resolvedActive, loaded: true, ...wireUpdate, ...syncDerivedState(canvases, resolvedActive) });
     },
 
     // ── Canvas tab management ────────────────────────────────────

@@ -151,14 +151,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (isRemoteApp && activeHostId) {
       const remoteState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
       if (remoteState) {
-        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId);
+        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions);
         return;
       }
     }
     if (isRemote && projectId) {
       const remoteState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
       if (remoteState) {
-        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId);
+        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions);
         return;
       }
     }
@@ -180,7 +180,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const newState = state.remoteCanvasState[projectId];
       if (newState && newState !== prevState && store.getState().loaded) {
         prevState = newState;
-        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId);
+        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions);
       }
     });
   }, [store, isRemote, projectId]);
@@ -193,7 +193,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const newState = state.remoteAppCanvasState[activeHostId];
       if (newState && newState !== prevState && store.getState().loaded) {
         prevState = newState;
-        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId);
+        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions);
       }
     });
   }, [store, isRemoteApp, activeHostId]);
