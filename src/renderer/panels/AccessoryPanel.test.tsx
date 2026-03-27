@@ -80,7 +80,7 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
   });
 
   it('shows External Editor nav item in app settings', async () => {
-    window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('1.0.0');
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
     render(<AccessoryPanel />);
     expect(screen.getByText('External Editor')).toBeInTheDocument();
   });

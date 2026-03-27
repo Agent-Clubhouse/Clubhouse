@@ -266,6 +266,7 @@ vi.stubGlobal('clubhouse', {
     getOrchestratorSettings: async () => ({ enabled: ['claude-code'] }),
     saveOrchestratorSettings: asyncNoop,
     getVersion: async () => '0.0.0-test',
+    isPreviewEligible: async () => false,
     getArchInfo: async () => ({ arch: 'arm64', platform: 'darwin', rosetta: false }),
     getHeadlessSettings: async () => ({ enabled: true }),
     saveHeadlessSettings: asyncNoop,
