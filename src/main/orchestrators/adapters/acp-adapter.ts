@@ -9,6 +9,8 @@ export interface AcpAdapterOpts {
   args: string[];
   env?: Record<string, string>;
   toolVerbs?: Record<string, string>;
+  /** CLI flags to append when freeAgentMode is enabled (e.g. ['--yolo', '--autopilot']) */
+  freeAgentArgs?: string[];
 }
 
 /**
@@ -37,6 +39,9 @@ export class AcpAdapter implements StructuredAdapter {
     });
 
     const args = [...this.opts.args];
+    if (sessionOpts.freeAgentMode && this.opts.freeAgentArgs?.length) {
+      args.push(...this.opts.freeAgentArgs);
+    }
     if (sessionOpts.model) {
       args.push('--model', sessionOpts.model);
     }
@@ -78,6 +83,7 @@ export class AcpAdapter implements StructuredAdapter {
       systemPrompt: sessionOpts.systemPrompt,
       allowedTools: sessionOpts.allowedTools,
       disallowedTools: sessionOpts.disallowedTools,
+      autoApprove: sessionOpts.freeAgentMode || undefined,
     }).catch((err) => {
       queue.push(this.makeEvent('error', {
         code: 'session_start_failed',

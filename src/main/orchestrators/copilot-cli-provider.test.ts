@@ -39,6 +39,7 @@ vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` })),
 }));
 
+const mockAcpConstructorArgs: unknown[] = [];
 vi.mock('./adapters', () => ({
   AcpAdapter: class MockAcpAdapter {
     start = vi.fn();
@@ -46,6 +47,9 @@ vi.mock('./adapters', () => ({
     respondToPermission = vi.fn();
     cancel = vi.fn();
     dispose = vi.fn();
+    constructor(opts: unknown) {
+      mockAcpConstructorArgs.push(opts);
+    }
   },
 }));
 
@@ -122,6 +126,14 @@ describe('CopilotCliProvider', () => {
       expect(typeof adapter.respondToPermission).toBe('function');
       expect(typeof adapter.cancel).toBe('function');
       expect(typeof adapter.dispose).toBe('function');
+    });
+
+    it('passes freeAgentArgs with --yolo and --autopilot to AcpAdapter', () => {
+      mockAcpConstructorArgs.length = 0;
+      provider.createStructuredAdapter!();
+      expect(mockAcpConstructorArgs).toHaveLength(1);
+      const opts = mockAcpConstructorArgs[0] as Record<string, unknown>;
+      expect(opts.freeAgentArgs).toEqual(['--yolo', '--autopilot']);
     });
   });
 

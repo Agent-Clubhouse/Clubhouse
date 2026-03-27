@@ -114,6 +114,7 @@ describe('AcpAdapter', () => {
       systemPrompt: 'Be helpful',
       allowedTools: ['shell'],
       disallowedTools: undefined,
+      autoApprove: undefined,
     });
   });
 
@@ -123,6 +124,81 @@ describe('AcpAdapter', () => {
 
     const opts = MockAcpClient.mock.calls[0][0];
     expect(opts.args).toEqual(['--acp', '--model', 'gpt-5']);
+  });
+
+  // ── Free agent mode ─────────────────────────────────────────────────────────
+
+  it('appends freeAgentArgs to CLI args when freeAgentMode is true', () => {
+    const adapter = new AcpAdapter({
+      binary: 'copilot',
+      args: ['--acp', '--stdio'],
+      freeAgentArgs: ['--yolo', '--autopilot'],
+    });
+    adapter.start({ ...defaultSessionOpts, freeAgentMode: true });
+
+    const opts = MockAcpClient.mock.calls[0][0];
+    expect(opts.args).toEqual(['--acp', '--stdio', '--yolo', '--autopilot']);
+  });
+
+  it('does not append freeAgentArgs when freeAgentMode is false', () => {
+    const adapter = new AcpAdapter({
+      binary: 'copilot',
+      args: ['--acp', '--stdio'],
+      freeAgentArgs: ['--yolo', '--autopilot'],
+    });
+    adapter.start({ ...defaultSessionOpts, freeAgentMode: false });
+
+    const opts = MockAcpClient.mock.calls[0][0];
+    expect(opts.args).toEqual(['--acp', '--stdio']);
+  });
+
+  it('does not append freeAgentArgs when freeAgentMode is undefined', () => {
+    const adapter = new AcpAdapter({
+      binary: 'copilot',
+      args: ['--acp', '--stdio'],
+      freeAgentArgs: ['--yolo', '--autopilot'],
+    });
+    adapter.start(defaultSessionOpts);
+
+    const opts = MockAcpClient.mock.calls[0][0];
+    expect(opts.args).toEqual(['--acp', '--stdio']);
+  });
+
+  it('does not fail when freeAgentMode is true but no freeAgentArgs configured', () => {
+    const adapter = new AcpAdapter({
+      binary: 'copilot',
+      args: ['--acp'],
+    });
+    adapter.start({ ...defaultSessionOpts, freeAgentMode: true });
+
+    const opts = MockAcpClient.mock.calls[0][0];
+    expect(opts.args).toEqual(['--acp']);
+  });
+
+  it('sends autoApprove in session/start when freeAgentMode is true', () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    adapter.start({ ...defaultSessionOpts, freeAgentMode: true });
+
+    expect(mockClient.request).toHaveBeenCalledWith('session/start', {
+      mission: 'Fix the bug',
+      systemPrompt: undefined,
+      allowedTools: undefined,
+      disallowedTools: undefined,
+      autoApprove: true,
+    });
+  });
+
+  it('does not send autoApprove in session/start when freeAgentMode is false', () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    adapter.start({ ...defaultSessionOpts, freeAgentMode: false });
+
+    expect(mockClient.request).toHaveBeenCalledWith('session/start', {
+      mission: 'Fix the bug',
+      systemPrompt: undefined,
+      allowedTools: undefined,
+      disallowedTools: undefined,
+      autoApprove: undefined,
+    });
   });
 
   // ── Notification mapping tests ────────────────────────────────────────────
