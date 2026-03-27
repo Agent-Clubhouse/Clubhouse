@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+/**
+ * Assistant agent backend tests.
+ *
+ * TEST GAPS (documented):
+ * - Cannot test full agent communication — requires running orchestrator
+ * - Cannot test headless transcript reading — requires real agent run
+ * - Cannot test AgentTerminal rendering — requires xterm DOM
+ */
+
 const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
 const mockSendStructuredMessage = vi.fn().mockResolvedValue(undefined);
 const mockKillAgent = vi.fn().mockResolvedValue(undefined);
@@ -7,6 +16,8 @@ const mockCheckOrchestrator = vi.fn().mockResolvedValue({ available: true });
 const mockOnStructuredEvent = vi.fn().mockReturnValue(() => {});
 const mockReadTranscript = vi.fn().mockResolvedValue(null);
 const mockAssistantSpawn = vi.fn().mockResolvedValue({ success: true });
+const mockSendFollowup = vi.fn().mockResolvedValue({ agentId: 'assistant_followup_123' });
+const mockOnResult = vi.fn().mockReturnValue(() => {});
 const mockPtyWrite = vi.fn();
 const mockPtyOnData = vi.fn().mockReturnValue(() => {});
 const mockPtyOnExit = vi.fn().mockReturnValue(() => {});
@@ -27,6 +38,8 @@ vi.stubGlobal('window', {
       spawn: mockAssistantSpawn,
       bind: vi.fn().mockResolvedValue(undefined),
       unbind: vi.fn().mockResolvedValue(undefined),
+      sendFollowup: mockSendFollowup,
+      onResult: mockOnResult,
     },
     pty: { write: mockPtyWrite, onData: mockPtyOnData, onExit: mockPtyOnExit },
   },
@@ -46,6 +59,7 @@ describe('assistant-agent', () => {
     expect(agent.getStatus()).toBe('idle');
     expect(agent.getMode()).toBe('interactive');
     expect(agent.getOrchestrator()).toBeNull();
+    expect(agent.getAgentId()).toBeNull();
   });
 
   it('sendMessage adds user message', async () => {
@@ -62,11 +76,20 @@ describe('assistant-agent', () => {
     }
   });
 
-  it('interactive sets up PTY listeners', async () => {
+  it('interactive mode sets up PTY exit listener (not data)', async () => {
     await agent.sendMessage('Hello');
     if (mockAssistantSpawn.mock.calls.length > 0) {
-      expect(mockPtyOnData).toHaveBeenCalled();
+      // Interactive renders AgentTerminal directly — no data listener needed
       expect(mockPtyOnExit).toHaveBeenCalled();
+      expect(mockPtyOnData).not.toHaveBeenCalled();
+    }
+  });
+
+  it('interactive mode exposes agentId for terminal rendering', async () => {
+    await agent.sendMessage('Hello');
+    if (mockAssistantSpawn.mock.calls.length > 0) {
+      expect(agent.getAgentId()).not.toBeNull();
+      expect(agent.getStatus()).toBe('active');
     }
   });
 
@@ -75,6 +98,15 @@ describe('assistant-agent', () => {
     await agent.sendMessage('Hello');
     if (mockAssistantSpawn.mock.calls.length > 0) {
       expect(mockAssistantSpawn.mock.calls[0][0].executionMode).toBe('structured');
+    }
+  });
+
+  it('headless passes mode to spawn and listens for result', async () => {
+    agent.setMode('headless');
+    await agent.sendMessage('Hello');
+    if (mockAssistantSpawn.mock.calls.length > 0) {
+      expect(mockAssistantSpawn.mock.calls[0][0].executionMode).toBe('headless');
+      expect(mockOnResult).toHaveBeenCalled();
     }
   });
 
@@ -114,5 +146,14 @@ describe('assistant-agent', () => {
   it('notifies orchestrator listeners', () => {
     const l = vi.fn(); const u = agent.onOrchestratorChange(l);
     agent.setOrchestrator('copilot-cli'); expect(l).toHaveBeenCalledWith('copilot-cli'); u();
+  });
+
+  it('notifies agentId listeners', async () => {
+    const l = vi.fn(); const u = agent.onAgentIdChange(l);
+    await agent.sendMessage('Hello');
+    if (mockAssistantSpawn.mock.calls.length > 0) {
+      expect(l).toHaveBeenCalled();
+    }
+    u();
   });
 });

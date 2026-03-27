@@ -6,6 +6,7 @@
  * - Explicit execution mode control (interactive/structured/headless)
  * - Automatic MCP binding creation so tools are visible
  * - MCP config injection into the assistant workspace
+ * - Session persistence for headless conversational follow-ups
  * - Comprehensive logging for debugging
  */
 
@@ -27,6 +28,7 @@ import * as freeAgentSettings from '../services/free-agent-settings';
 import { waitReady as waitHookServerReady } from '../services/hook-server';
 import { waitReady as waitMcpBridgeReady } from '../services/clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../services/clubhouse-mcp/injection';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { isHookCapable, isHeadlessCapable, isStructuredCapable } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
 
@@ -57,6 +59,12 @@ interface AssistantSpawnParams {
   mission: string;
   systemPrompt: string;
   executionMode: 'interactive' | 'structured' | 'headless';
+  orchestrator?: string;
+  model?: string;
+}
+
+interface AssistantFollowupParams {
+  message: string;
   orchestrator?: string;
   model?: string;
 }
@@ -144,6 +152,104 @@ export function registerAssistantHandlers(): void {
         untrackAgent(agentId);
         throw new Error(msg);
       }
+    },
+  ));
+
+  // ── SEND_FOLLOWUP ───────────────────────────────────────────────────────
+  // Spawns a new headless agent with --continue to resume the previous
+  // session in the assistant workspace. Returns { agentId } so the renderer
+  // can track the follow-up. Broadcasts ASSISTANT.RESULT on completion.
+  ipcMain.handle(IPC.ASSISTANT.SEND_FOLLOWUP, withValidatedArgs(
+    [objectArg<AssistantFollowupParams>()],
+    async (_event, params) => {
+      const { message, model } = params as AssistantFollowupParams;
+      const orchestratorId = (params as AssistantFollowupParams).orchestrator;
+
+      const agentId = `assistant_followup_${Date.now()}_${randomUUID().slice(0, 8)}`;
+      const workspace = getAssistantWorkspace();
+
+      appLog(LOG_NS, 'info', 'Follow-up requested', {
+        meta: { agentId, orchestrator: orchestratorId || 'default', messageLength: message.length },
+      });
+
+      // Resolve orchestrator
+      const provider = await resolveOrchestrator(workspace, orchestratorId as OrchestratorId | undefined);
+      if (!isHeadlessCapable(provider)) {
+        throw new Error(`${provider.displayName} does not support headless mode`);
+      }
+
+      const profileEnv = await resolveProfileEnv(workspace, provider.id);
+      const permissionMode = freeAgentSettings.getPermissionMode(workspace);
+
+      const nonce = randomUUID();
+      agentRegistry.register(agentId, {
+        projectPath: workspace,
+        orchestrator: provider.id as OrchestratorId,
+        runtime: 'headless',
+      });
+      agentRegistry.setNonce(agentId, nonce);
+
+      // MCP injection
+      let mcpPort = 0;
+      const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
+      const mcpJsonPath = path.join(workspace, mcpConfigFile);
+      configPipeline.snapshotFile(agentId, mcpJsonPath);
+
+      try {
+        mcpPort = await waitMcpBridgeReady();
+        await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, provider.conventions);
+      } catch {
+        appLog(LOG_NS, 'warn', 'MCP bridge not available for follow-up', { meta: { agentId } });
+      }
+
+      // Build headless command — session persists so --continue works
+      const headlessResult = await provider.buildHeadlessCommand({
+        cwd: workspace, model, mission: message,
+        agentId, freeAgentMode: true, permissionMode,
+        // No noSessionPersistence — sessions must persist for --continue
+        resume: true, // signals continuation
+      });
+
+      if (!headlessResult) {
+        throw new Error('Provider returned null for headless command');
+      }
+
+      const { binary } = headlessResult;
+      let { args } = headlessResult;
+
+      // Add --continue to resume the most recent session
+      args = [...args, '--continue'];
+
+      if (mcpPort > 0 && provider.buildMcpArgs) {
+        const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
+        args = [...args, ...provider.buildMcpArgs(serverDef)];
+      }
+
+      appLog(LOG_NS, 'info', 'Follow-up headless spawn', {
+        meta: { agentId, binary, args: args.join(' '), cwd: workspace },
+      });
+
+      const spawnEnv: Record<string, string> = {
+        ...headlessResult.env, ...profileEnv,
+        CLUBHOUSE_AGENT_ID: agentId,
+        CLUBHOUSE_HOOK_NONCE: nonce,
+        ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
+      };
+
+      await headlessManager.spawnHeadless(
+        agentId, workspace, binary, args, spawnEnv,
+        headlessResult.outputKind || 'stream-json',
+        (exitAgentId, exitCode) => {
+          appLog(LOG_NS, 'info', 'Follow-up headless exited', { meta: { agentId: exitAgentId, exitCode } });
+          // Notify renderer that the follow-up completed
+          broadcastToAllWindows(IPC.ASSISTANT.RESULT, { agentId: exitAgentId, exitCode });
+          configPipeline.restoreForAgent(exitAgentId);
+          bindingManager.unbindAgent(exitAgentId);
+          untrackAgent(exitAgentId);
+        },
+      );
+
+      return { agentId };
     },
   ));
 
@@ -294,10 +400,11 @@ async function spawnHeadless(
     appLog(LOG_NS, 'warn', 'MCP bridge not available for headless', { meta: { agentId } });
   }
 
+  // Session persistence is enabled (no noSessionPersistence flag) so that
+  // follow-up messages can use --continue to resume the conversation.
   const headlessResult = await provider.buildHeadlessCommand({
     cwd: workspace, model, mission, systemPrompt,
     agentId, freeAgentMode: true, permissionMode,
-    noSessionPersistence: true,
   });
 
   if (!headlessResult) {
@@ -325,8 +432,10 @@ async function spawnHeadless(
   await headlessManager.spawnHeadless(
     agentId, workspace, binary, args, spawnEnv,
     headlessResult.outputKind || 'stream-json',
-    (exitAgentId) => {
-      appLog(LOG_NS, 'info', 'Headless exited', { meta: { agentId: exitAgentId } });
+    (exitAgentId, exitCode) => {
+      appLog(LOG_NS, 'info', 'Headless exited', { meta: { agentId: exitAgentId, exitCode } });
+      // Notify renderer that the headless agent completed
+      broadcastToAllWindows(IPC.ASSISTANT.RESULT, { agentId: exitAgentId, exitCode });
       configPipeline.restoreForAgent(exitAgentId);
       bindingManager.unbindAgent(exitAgentId);
       untrackAgent(exitAgentId);
