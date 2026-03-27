@@ -118,8 +118,22 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
     }
   }, [activeProjectForCreate, api.agents, handlePickAgent]);
 
+  // Agent assigned but not yet available in the store (e.g. remote agent
+  // whose status hasn't synced yet) — show a pending state instead of the
+  // picker so the card doesn't flash the "assign agent" UI.
+  if (view.agentId && !assignedAgent) {
+    const name = view.displayName || view.title || view.agentId;
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-2 p-4">
+        <div className="w-8 h-8 rounded-full bg-surface-1 animate-pulse" />
+        <span className="text-xs text-ctp-subtext0 truncate max-w-full">{name}</span>
+        <span className="text-[10px] text-ctp-overlay0">Connecting...</span>
+      </div>
+    );
+  }
+
   // No agent assigned — show picker
-  if (!view.agentId || !assignedAgent) {
+  if (!view.agentId) {
     // App mode: two-step picker (project -> agents)
     if (isAppMode && !selectedProjectId) {
       return (
