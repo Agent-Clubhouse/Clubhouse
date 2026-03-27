@@ -11,10 +11,6 @@ import { PluginErrorBoundary } from './PluginContentView';
 import { AgentList } from '../features/agents/AgentList';
 import { SettingsSubPage } from '../../shared/types';
 
-/** Returns true when the app version contains a prerelease tag (e.g. -beta, -rc). */
-function isBetaBuild(version: string): boolean {
-  return /-(beta|rc|alpha|dev|canary)/.test(version);
-}
 
 function SettingsCategoryNav() {
   const settingsContext = useUIStore((s) => s.settingsContext);
@@ -26,8 +22,7 @@ function SettingsCategoryNav() {
   const [showMcp, setShowMcp] = useState(false);
 
   useEffect(() => {
-    window.clubhouse.app.getVersion().then((v) => {
-      const isPreview = isBetaBuild(v) || previewChannel;
+    window.clubhouse.app.isPreviewEligible().then((isPreview) => {
       setShowExperimental(isPreview);
       if (isPreview) {
         window.clubhouse.app.getExperimentalSettings().then((s) => {

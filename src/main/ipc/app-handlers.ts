@@ -15,6 +15,7 @@ import * as soundService from '../services/sound-service';
 import * as sessionSettings from '../services/session-settings';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
+import { isPreviewEligible } from '../services/preview-eligible';
 import { ClipboardSettings, ClubhouseModeSettings, ExperimentalSettings, SoundEvent, SoundSettings, UpdateSettings } from '../../shared/types';
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
@@ -36,6 +37,10 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.GET_VERSION, () => {
     return app.getVersion();
+  });
+
+  ipcMain.handle(IPC.APP.IS_PREVIEW_ELIGIBLE, () => {
+    return isPreviewEligible();
   });
 
   ipcMain.handle(IPC.APP.GET_ARCH_INFO, (): ArchInfo => {

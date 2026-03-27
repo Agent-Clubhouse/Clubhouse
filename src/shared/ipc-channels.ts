@@ -169,6 +169,7 @@ export const IPC = {
     GET_ORCHESTRATOR_SETTINGS: 'app:get-orchestrator-settings',
     SAVE_ORCHESTRATOR_SETTINGS: 'app:save-orchestrator-settings',
     GET_VERSION: 'app:get-version',
+    IS_PREVIEW_ELIGIBLE: 'app:is-preview-eligible',
     GET_ARCH_INFO: 'app:get-arch-info',
     GET_HEADLESS_SETTINGS: 'app:get-headless-settings',
     SAVE_HEADLESS_SETTINGS: 'app:save-headless-settings',

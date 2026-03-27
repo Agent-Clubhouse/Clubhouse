@@ -662,6 +662,8 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, settings),
     getVersion: (): Promise<string> =>
       ipcRenderer.invoke(IPC.APP.GET_VERSION),
+    isPreviewEligible: (): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.APP.IS_PREVIEW_ELIGIBLE),
     getArchInfo: (): Promise<{ arch: string; platform: string; rosetta: boolean }> =>
       ipcRenderer.invoke(IPC.APP.GET_ARCH_INFO),
     getHeadlessSettings: () =>
