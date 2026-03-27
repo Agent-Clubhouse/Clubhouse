@@ -585,6 +585,8 @@ const api = {
       ipcRenderer.invoke(IPC.MARKETPLACE.REMOVE_CUSTOM, req),
     toggleCustomMarketplace: (req: { id: string; enabled: boolean }) =>
       ipcRenderer.invoke(IPC.MARKETPLACE.TOGGLE_CUSTOM, req),
+    fetchCustomRegistries: () =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.FETCH_CUSTOM_REGISTRIES),
   },
   pluginMcp: {
     contributeTools: (pluginId: string, tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>) =>

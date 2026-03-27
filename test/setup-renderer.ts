@@ -232,6 +232,7 @@ vi.stubGlobal('clubhouse', {
     addCustomMarketplace: asyncNoop,
     removeCustomMarketplace: asyncNoop,
     toggleCustomMarketplace: asyncNoop,
+    fetchCustomRegistries: async () => [],
   },
   log: {
     write: noop,

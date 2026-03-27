@@ -201,38 +201,27 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
           if (cancelled) return;
           setCustomMarketplaces(customs);
 
-          const enabledCustoms = customs.filter((m: CustomMarketplace) => m.enabled);
           const officialIds = new Set(result.registry.plugins.map((p: MarketplacePlugin) => p.id));
           const allCustomPlugins: MarketplacePluginWithSource[] = [];
           const errors: Record<string, string> = {};
 
-          // Fetch each custom marketplace
-          await Promise.allSettled(
-            enabledCustoms.map(async (m: CustomMarketplace) => {
-              try {
-                // Fetch the custom registry.json directly
-                const res = await window.fetch(m.url);
-                if (!res.ok) {
-                  throw new Error(`HTTP ${res.status}`);
+          const customResults = await window.clubhouse.marketplace.fetchCustomRegistries();
+          for (const entry of customResults) {
+            if (entry.error) {
+              errors[entry.marketplace.id] = entry.error;
+            } else {
+              for (const plugin of entry.registry.plugins) {
+                if (!officialIds.has(plugin.id)) {
+                  officialIds.add(plugin.id);
+                  allCustomPlugins.push({
+                    ...plugin,
+                    marketplaceId: entry.marketplace.id,
+                    marketplaceName: entry.marketplace.name,
+                  });
                 }
-                const registry = await res.json();
-                if (registry.plugins && Array.isArray(registry.plugins)) {
-                  for (const plugin of registry.plugins) {
-                    if (!officialIds.has(plugin.id)) {
-                      officialIds.add(plugin.id);
-                      allCustomPlugins.push({
-                        ...plugin,
-                        marketplaceId: m.id,
-                        marketplaceName: m.name,
-                      });
-                    }
-                  }
-                }
-              } catch (err: unknown) {
-                errors[m.id] = err instanceof Error ? err.message : String(err);
               }
-            }),
-          );
+            }
+          }
 
           if (!cancelled) {
             setCustomPlugins(allCustomPlugins);
