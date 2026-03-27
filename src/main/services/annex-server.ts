@@ -1810,6 +1810,41 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // PATCH /api/v1/group-projects/:id (destructive — requires mTLS)
+  const gpPatchMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+?)$/);
+  if (method === 'PATCH' && gpPatchMatch && !url.includes('/bulletin/')) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpPatchMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    readJsonBody(req, res, async (body) => {
+      const fields: Record<string, unknown> = {};
+      if (body.name !== undefined) fields.name = body.name;
+      if (body.description !== undefined) fields.description = body.description;
+      if (body.instructions !== undefined) fields.instructions = body.instructions;
+      if (body.metadata !== undefined) fields.metadata = body.metadata;
+      if (Object.keys(fields).length === 0) {
+        sendJson(res, 400, { error: 'no_fields_to_update' });
+        return;
+      }
+      try {
+        const updated = await groupProjectRegistry.update(gpId, fields as any);
+        if (!updated) {
+          sendJson(res, 404, { error: 'group_project_not_found' });
+          return;
+        }
+        annexEventBus.emitGroupProjectChanged('updated', updated);
+        sendJson(res, 200, updated);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'update_failed' });
+      }
+    });
+    return;
+  }
+
   sendJson(res, 404, { error: 'not_found' });
 }
 
