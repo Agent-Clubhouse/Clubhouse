@@ -86,11 +86,11 @@ function AppAgentSettings() {
             className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
               text-ctp-text focus:outline-none focus:border-ctp-accent/50"
           >
-            <option value="auto">Auto (recommended)</option>
-            <option value="skip-all">Skip All Permissions</option>
+            <option value="skip-all">Skip All Permissions (default)</option>
+            <option value="auto">Auto (requires CLI support)</option>
           </select>
           <p className="text-xs text-ctp-subtext0">
-            How agents handle permissions in Free Agent mode. Auto uses a safety classifier; Skip All bypasses all checks.
+            How agents handle permissions in Free Agent mode. Skip All bypasses all checks; Auto uses a safety classifier (requires <code className="text-ctp-subtext1">--permission-mode</code> support in your CLI).
           </p>
         </div>
       </div>

@@ -15,14 +15,14 @@ interface FreeAgentSettingsState {
 }
 
 export const useFreeAgentSettingsStore = create<FreeAgentSettingsState>((set, get) => ({
-  defaultMode: 'auto',
+  defaultMode: 'skip-all',
   projectOverrides: {},
 
   loadSettings: async () => {
     try {
       const settings = await window.clubhouse.app.getFreeAgentSettings();
       set({
-        defaultMode: settings?.defaultMode ?? 'auto',
+        defaultMode: settings?.defaultMode ?? 'skip-all',
         projectOverrides: settings?.projectOverrides ?? {},
       });
     } catch {
