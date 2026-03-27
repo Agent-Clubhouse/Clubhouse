@@ -133,6 +133,7 @@ const api = {
       allowedTools?: string[];
       orchestrator?: string;
       freeAgentMode?: boolean;
+      structuredMode?: boolean;
       resume?: boolean;
       sessionId?: string;
       pluginOwner?: string;

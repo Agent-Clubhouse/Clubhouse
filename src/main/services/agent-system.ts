@@ -134,9 +134,12 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     const permissionMode = freeAgentSettings.getPermissionMode(params.projectPath);
 
     // Try structured path when enabled and provider supports it
+    // Quick agents use structured mode based on project spawn mode setting.
+    // Durable agents opt in via per-agent structuredMode config flag.
     // TODO: Apply launch wrapper transform to structured path once adapter architecture supports external binary override
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
-    if (spawnMode === 'structured' && params.kind === 'quick' && isStructuredCapable(provider)) {
+    const useStructured = (spawnMode === 'structured' && params.kind === 'quick') || params.structuredMode;
+    if (useStructured && isStructuredCapable(provider)) {
       agentRegistry.setRuntime(params.agentId, 'structured');
       const adapter = provider.createStructuredAdapter();
       await structuredManager.startStructuredSession(params.agentId, adapter, {
