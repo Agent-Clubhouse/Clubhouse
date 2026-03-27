@@ -608,7 +608,38 @@ describe('App.tsx – project switch handling', () => {
   });
 });
 
-// ─── 7. Import Verification ───────────────────────────────────────────────
+// ─── 7. Home Satellite Routing ──────────────────────────────────────────────
+
+describe('App.tsx – Home renders SatelliteDashboard for satellite hosts', () => {
+  const returnPaths = findReturnPaths(appFn);
+  const homePath = returnPaths.find((p) => p.label === 'Home')!;
+
+  it('Home path should include SatelliteDashboard (not AnnexDisabledView)', () => {
+    expect(homePath, 'Home return path not found').toBeDefined();
+    expect(
+      homePath.tagNames.has('SatelliteDashboard'),
+      'Home return path should include <SatelliteDashboard />',
+    ).toBe(true);
+    expect(
+      homePath.tagNames.has('AnnexDisabledView'),
+      'Home return path should NOT include <AnnexDisabledView /> — Home is not gated by plugin annex status',
+    ).toBe(false);
+  });
+
+  it('Home path should include Dashboard for local mode', () => {
+    expect(
+      homePath.tagNames.has('Dashboard'),
+      'Home return path should include <Dashboard /> for local mode',
+    ).toBe(true);
+  });
+
+  it('SatelliteDashboard should be imported from annex features', () => {
+    const imports = findImportedNames(appAst);
+    expect(imports.has('SatelliteDashboard'), 'Missing import: SatelliteDashboard').toBe(true);
+  });
+});
+
+// ─── 8. Import Verification ───────────────────────────────────────────────
 
 describe('App.tsx – required imports', () => {
   const appImports = findImportedNames(appAst);

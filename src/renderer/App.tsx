@@ -28,6 +28,7 @@ import { initAppEventBridge } from './app-event-bridge';
 import { ToastContainer } from './components/ToastContainer';
 import { useToastStore } from './stores/toastStore';
 import { SatelliteLockOverlay } from './features/annex/SatelliteLockOverlay';
+import { SatelliteDashboard } from './features/annex/SatelliteDashboard';
 import { useLockStore } from './stores/lockStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from './stores/remoteProjectStore';
 import { AnnexDisabledView } from './panels/AnnexDisabledView';
@@ -261,24 +262,6 @@ export function App() {
   );
 
   if (isHome) {
-    // When a satellite is active, show its app-level canvas instead of the local Dashboard.
-    // The canvas plugin checks activeHostId to hydrate from remoteAppCanvasState.
-    const isSatelliteHome = !!activeHostId;
-    const satelliteMatches = isSatelliteHome ? pluginMatchState[activeHostId] : undefined;
-    const satelliteCanvasMatch = satelliteMatches?.find((p) => p.id === 'canvas');
-    const canShowRemoteCanvas = satelliteCanvasMatch?.status === 'matched' && satelliteCanvasMatch.annexEnabled;
-
-    let homeContent;
-    if (isSatelliteHome && canShowRemoteCanvas) {
-      homeContent = <PluginContentView pluginId="canvas" mode="app" />;
-    } else if (isSatelliteHome && satelliteMatches !== undefined) {
-      // Satellite snapshot loaded but canvas is not annex-enabled
-      homeContent = <AnnexDisabledView pluginName="Home" />;
-    } else {
-      // Local mode, or satellite data not yet loaded — show local dashboard
-      homeContent = <Dashboard />;
-    }
-
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
@@ -296,7 +279,9 @@ export function App() {
           <PluginUpdateBanner />
         </div>
         <RailSection>
-          {homeContent}
+          {activeHostId
+            ? <SatelliteDashboard activeHostId={activeHostId} />
+            : <Dashboard />}
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
