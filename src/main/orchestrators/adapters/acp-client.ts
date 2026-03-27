@@ -246,11 +246,12 @@ export class AcpClient {
     } else if (hasMethod) {
       // Notification
       this.opts.onNotification?.(msg.method as string, msg.params);
+    } else {
+      // Messages with neither id nor method are logged and ignored
+      this.log('warn', 'ACP message with neither id nor method', {
+        keys: Object.keys(msg),
+      });
     }
-    // Messages with neither id nor method are logged and ignored
-    this.log('warn', 'ACP message with neither id nor method', {
-      keys: Object.keys(msg),
-    });
   }
 
   private handleResponse(msg: JsonRpcResponse): void {

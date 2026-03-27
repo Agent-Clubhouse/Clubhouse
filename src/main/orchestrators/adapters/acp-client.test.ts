@@ -530,8 +530,8 @@ describe('AcpClient', () => {
     const client = new AcpClient({ binary: 'copilot', args: [], onLog });
     await client.start();
 
-    expect(onLog).toHaveBeenCalledWith('info', 'Starting ACP init handshake');
-    expect(onLog).toHaveBeenCalledWith('info', 'ACP init handshake complete');
+    expect(onLog).toHaveBeenCalledWith('info', 'Starting ACP init handshake', undefined);
+    expect(onLog).toHaveBeenCalledWith('info', 'ACP init handshake complete', undefined);
   });
 
   it('calls onLog for RPC requests', async () => {
