@@ -17,9 +17,9 @@ export const manifest: PluginManifest = {
     canvasWidgets: [
       {
         id: 'git-status',
-        label: 'Git Status',
+        label: 'Git Diff',
         icon: GIT_ICON,
-        defaultSize: { width: 400, height: 360 },
+        defaultSize: { width: 700, height: 500 },
         metadataKeys: ['projectId', 'worktreePath'],
       },
     ],
