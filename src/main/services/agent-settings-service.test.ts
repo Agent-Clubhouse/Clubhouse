@@ -33,6 +33,13 @@ import {
 
 const WORKTREE = '/test/worktree';
 
+/** Create an error that mimics Node.js ENOENT (has .code property). */
+function makeEnoent(filePath = ''): NodeJS.ErrnoException {
+  const err: NodeJS.ErrnoException = new Error(`ENOENT: no such file or directory, open '${filePath}'`);
+  err.code = 'ENOENT';
+  return err;
+}
+
 describe('readClaudeMd', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -110,10 +117,11 @@ describe('readPermissions', () => {
   });
 
   it('returns empty object when file does not exist', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
 
     const result = await readPermissions(WORKTREE);
     expect(result).toEqual({});
+    expect(appLog).not.toHaveBeenCalled();
   });
 
   it('returns empty object when permissions key is missing', async () => {
@@ -180,7 +188,7 @@ describe('writePermissions', () => {
   });
 
   it('creates settings parent directory if it does not exist', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
 
     await writePermissions(WORKTREE, { allow: ['Read'] });
 
@@ -188,6 +196,7 @@ describe('writePermissions', () => {
       path.dirname(path.join(WORKTREE, '.claude', 'settings.local.json')),
       { recursive: true },
     );
+    expect(appLog).not.toHaveBeenCalled();
   });
 
   it('handles only allow without deny', async () => {
@@ -354,9 +363,10 @@ describe('readMcpRawJson', () => {
   });
 
   it('returns default JSON when file does not exist', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
     const result = await readMcpRawJson(WORKTREE);
     expect(JSON.parse(result)).toEqual({ mcpServers: {} });
+    expect(appLog).not.toHaveBeenCalled();
   });
 });
 
@@ -414,8 +424,9 @@ describe('readProjectAgentDefaults', () => {
   });
 
   it('returns empty object when settings file missing', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
     expect(await readProjectAgentDefaults(PROJECT)).toEqual({});
+    expect(appLog).not.toHaveBeenCalled();
   });
 });
 
@@ -502,12 +513,13 @@ describe('applyAgentDefaults', () => {
   });
 
   it('does nothing when no defaults are set', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
 
     await applyAgentDefaults(WORKTREE, PROJECT);
 
     // Only the readFile call, no writes
     expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(appLog).not.toHaveBeenCalled();
   });
 });
 
@@ -687,13 +699,14 @@ describe('orchestrator convention routing', () => {
   });
 
   it('writePermissions creates parent directory of settings file if missing', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
     await writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS);
     // Should create the parent dir of hooks/hooks.json, which is .github/hooks
     expect(fsp.mkdir).toHaveBeenCalledWith(
       path.dirname(path.join(WORKTREE, '.github', 'hooks', 'hooks.json')),
       { recursive: true },
     );
+    expect(appLog).not.toHaveBeenCalled();
   });
 
   it('applyAgentDefaults uses convention for MCP and permissions', async () => {
@@ -788,7 +801,7 @@ describe('TOML settingsFormat guard', () => {
           },
         }));
       }
-      return Promise.reject(new Error('ENOENT'));
+      return Promise.reject(makeEnoent());
     });
 
     const writeInstructions = vi.fn();
@@ -829,6 +842,29 @@ describe('error logging in catch blocks', () => {
     );
   });
 
+  it('readProjectAgentDefaults does not log warning on ENOENT', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
+    await readProjectAgentDefaults(PROJECT);
+    expect(appLog).not.toHaveBeenCalled();
+  });
+
+  it('readProjectAgentDefaults logs warning on non-ENOENT failure', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('EACCES'));
+    await readProjectAgentDefaults(PROJECT);
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to read project settings'),
+      expect.objectContaining({ meta: { error: 'EACCES' } }),
+    );
+  });
+
+  it('readMcpConfig does not log warning on ENOENT', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
+    const result = await readMcpConfig(WORKTREE);
+    expect(result).toEqual([]);
+    expect(appLog).not.toHaveBeenCalled();
+  });
+
   it('readMcpConfig logs warning on corrupt JSON', async () => {
     vi.mocked(fsp.readFile).mockResolvedValue('not valid json');
     const result = await readMcpConfig(WORKTREE);
@@ -860,6 +896,13 @@ describe('error logging in catch blocks', () => {
       expect.stringContaining('Failed to list agent templates'),
       expect.objectContaining({ meta: { error: 'EACCES' } }),
     );
+  });
+
+  it('readPermissions does not log warning on ENOENT', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
+    const result = await readPermissions(WORKTREE);
+    expect(result).toEqual({});
+    expect(appLog).not.toHaveBeenCalled();
   });
 
   it('readPermissions logs warning on parse failure', async () => {
@@ -895,15 +938,21 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('readMcpRawJson logs warning on read failure', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+  it('readMcpRawJson logs warning on non-ENOENT read failure', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('EACCES'));
     const result = await readMcpRawJson(WORKTREE);
     expect(JSON.parse(result)).toEqual({ mcpServers: {} });
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
       expect.stringContaining('Failed to read MCP config'),
-      expect.objectContaining({ meta: { error: 'ENOENT' } }),
+      expect.objectContaining({ meta: { error: 'EACCES' } }),
     );
+  });
+
+  it('readMcpRawJson does not log warning on ENOENT', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
+    await readMcpRawJson(WORKTREE);
+    expect(appLog).not.toHaveBeenCalled();
   });
 
   it('listAgentTemplateFiles logs warning on directory read failure', async () => {
@@ -931,6 +980,13 @@ describe('error logging in catch blocks', () => {
       expect.stringContaining('Skipped invalid MCP config'),
       expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
     );
+  });
+
+  it('writePermissions does not log warning when existing file is ENOENT', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
+    await writePermissions(WORKTREE, { allow: ['Read'] });
+    expect(appLog).not.toHaveBeenCalled();
+    expect(fsp.writeFile).toHaveBeenCalled();
   });
 
   it('writePermissions logs warning when existing settings are corrupt', async () => {
