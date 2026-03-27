@@ -69,10 +69,42 @@ export function computeActivityState(
 const activityMap = new Map<string, WireTimestamps>();
 const listeners = new Set<() => void>();
 let snapshotVersion = 0;
+let decayTimerCount = 0;
+let decayTimerId: ReturnType<typeof setInterval> | null = null;
 
 function notifyListeners(): void {
   snapshotVersion++;
   for (const fn of listeners) fn();
+}
+
+/**
+ * Single shared decay timer that checks all wires for expiration.
+ * Started when the first hook mounts, stopped when the last unmounts.
+ */
+function startDecayTimer(): void {
+  decayTimerCount++;
+  if (decayTimerId !== null) return;
+  decayTimerId = setInterval(() => {
+    const now = Date.now();
+    let anyExpired = false;
+    for (const ts of activityMap.values()) {
+      const fwdExpired = ts.lastForward > 0 && (now - ts.lastForward) >= ACTIVITY_DECAY_MS;
+      const revExpired = ts.lastReverse > 0 && (now - ts.lastReverse) >= ACTIVITY_DECAY_MS;
+      if (fwdExpired || revExpired) {
+        anyExpired = true;
+        break;
+      }
+    }
+    if (anyExpired) notifyListeners();
+  }, DECAY_CHECK_INTERVAL);
+}
+
+function stopDecayTimer(): void {
+  decayTimerCount--;
+  if (decayTimerCount === 0 && decayTimerId !== null) {
+    clearInterval(decayTimerId);
+    decayTimerId = null;
+  }
 }
 
 function subscribe(listener: () => void): () => void {
@@ -127,6 +159,11 @@ export function getWireTimestamps(wireKey: string): WireTimestamps | undefined {
 export function _resetForTesting(): void {
   activityMap.clear();
   snapshotVersion = 0;
+  decayTimerCount = 0;
+  if (decayTimerId !== null) {
+    clearInterval(decayTimerId);
+    decayTimerId = null;
+  }
 }
 
 // ── React hook ──────────────────────────────────────────────────────
@@ -141,25 +178,10 @@ export function useWireActivity(wireKey: string, alive: boolean = true): WireAct
   // Subscribe to the singleton store
   useSyncExternalStore(subscribe, getSnapshot);
 
-  // Set up decay timer to re-render when activity expires.
-  // Capture the interval ID directly in the cleanup closure so that rapid
-  // wireKey changes always clear the correct (old) interval.
+  // Participate in the shared decay timer (one timer for all wires)
   useEffect(() => {
-    const timer = setInterval(() => {
-      const ts = activityMap.get(wireKey);
-      if (ts) {
-        const now = Date.now();
-        const fwdExpired = ts.lastForward > 0 && (now - ts.lastForward) >= ACTIVITY_DECAY_MS;
-        const revExpired = ts.lastReverse > 0 && (now - ts.lastReverse) >= ACTIVITY_DECAY_MS;
-        if (fwdExpired || revExpired) {
-          notifyListeners(); // trigger re-render to update state
-        }
-      }
-    }, DECAY_CHECK_INTERVAL);
-
-    return () => {
-      clearInterval(timer);
-    };
+    startDecayTimer();
+    return stopDecayTimer;
   }, [wireKey]);
 
   const timestamps = activityMap.get(wireKey);

@@ -10,7 +10,7 @@ import type { CanvasView, AgentCanvasView as AgentCanvasViewType } from './canva
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { computeWirePath, bezierPathWithOffsets, viewRect } from './wire-utils';
 import type { EdgeMidpoint } from './wire-utils';
-import { WireFlowDots } from './WireFlowDots';
+import { WireFlowDots, WireFlowDotFilters } from './WireFlowDots';
 import { useWirePhysics } from './useWirePhysics';
 import { useWireActivity } from './useWireActivity';
 
@@ -224,6 +224,22 @@ export const WireOverlay = React.memo(function WireOverlay({
 
   const wireOffsets = useWirePhysics(wireSpecs, viewPositions, wires.length > 0);
 
+  // Pre-compute physics-adjusted paths once per wire per render,
+  // avoiding duplicate bezierPathWithOffsets calls for <defs> and <WireGroup>.
+  const resolvedPaths = useMemo(() => {
+    const result = new Map<string, string>();
+    for (const { key, path, from, to } of wires) {
+      const offsets = wireOffsets.get(key);
+      result.set(
+        key,
+        offsets
+          ? bezierPathWithOffsets(from, to, { dx: offsets.fromDx, dy: offsets.fromDy }, { dx: offsets.toDx, dy: offsets.toDy })
+          : path,
+      );
+    }
+    return result;
+  }, [wires, wireOffsets]);
+
   if (wires.length === 0) return null;
 
   return (
@@ -233,6 +249,8 @@ export const WireOverlay = React.memo(function WireOverlay({
     >
       <style>{WIRE_GLOW_KEYFRAMES}</style>
       <defs>
+        {/* Shared glow filters for flow dots (ambient + active) */}
+        <WireFlowDotFilters />
         {/* Forward arrowhead (at target end) */}
         <marker
           id="wire-arrow-fwd"
@@ -258,31 +276,21 @@ export const WireOverlay = React.memo(function WireOverlay({
           <path d="M 7 1 L 1 4 L 7 7" fill="none" stroke="rgb(var(--ctp-accent, 137 180 250))" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
         {/* Wire path definitions (referenced by flow dots via <mpath>) */}
-        {wires.map(({ key, path, from, to }) => {
-          const offsets = wireOffsets.get(key);
-          const defPath = offsets
-            ? bezierPathWithOffsets(from, to, { dx: offsets.fromDx, dy: offsets.fromDy }, { dx: offsets.toDx, dy: offsets.toDy })
-            : path;
-          return <path key={`def-${key}`} id={`wire-path-${key}`} d={defPath} fill="none" />;
-        })}
+        {wires.map(({ key }) => (
+          <path key={`def-${key}`} id={`wire-path-${key}`} d={resolvedPaths.get(key)!} fill="none" />
+        ))}
       </defs>
-      {wires.map(({ key, path, from, to, binding, bidir }) => {
-        const offsets = wireOffsets.get(key);
-        const physicsPath = offsets
-          ? bezierPathWithOffsets(from, to, { dx: offsets.fromDx, dy: offsets.fromDy }, { dx: offsets.toDx, dy: offsets.toDy })
-          : path;
-        return (
-          <WireGroup
-            key={key}
-            wireKey={key}
-            path={physicsPath}
-            binding={binding}
-            bidir={bidir}
-            sleepingAgentIds={sleepingAgentIds}
-            onWireClick={onWireClick}
-          />
-        );
-      })}
+      {wires.map(({ key, binding, bidir }) => (
+        <WireGroup
+          key={key}
+          wireKey={key}
+          path={resolvedPaths.get(key)!}
+          binding={binding}
+          bidir={bidir}
+          sleepingAgentIds={sleepingAgentIds}
+          onWireClick={onWireClick}
+        />
+      ))}
     </svg>
   );
 });

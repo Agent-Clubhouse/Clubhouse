@@ -19,6 +19,8 @@ const AMBIENT_FREQ = 0.3; // Hz
 const MAX_OFFSET = 20;
 const MAX_DT = 0.033; // clamp dt to ~30fps
 const IDLE_THRESHOLD = 0.1;
+/** Minimum visible change (px) before we push a new offsets map to React. */
+const RENDER_THRESHOLD = 0.15;
 
 export interface WireEndpointOffsets {
   fromDx: number;
@@ -73,6 +75,7 @@ export function useWirePhysics(
   enabled: boolean,
 ): Map<string, WireEndpointOffsets> {
   const [offsets, setOffsets] = useState<Map<string, WireEndpointOffsets>>(new Map());
+  const prevOffsetsRef = useRef<Map<string, WireEndpointOffsets>>(new Map());
   const springsRef = useRef<Map<string, { from: EndpointSpring; to: EndpointSpring }>>(new Map());
   const rafRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
@@ -176,8 +179,10 @@ export function useWirePhysics(
       });
     }
 
-    // Ambient sway always keeps the loop active
-    anyActive = true;
+    // Ambient sway naturally keeps the loop alive because sway amplitude
+    // (1.5) exceeds IDLE_THRESHOLD (0.1). No need to force anyActive here —
+    // letting it go false when displacement and velocity settle allows the
+    // RAF loop to sleep when the canvas is truly idle.
 
     // Update tracked previous positions
     if (currentViewPos) {
@@ -186,7 +191,29 @@ export function useWirePhysics(
       }
     }
 
-    setOffsets(newOffsets);
+    // Only push to React when offsets changed enough to be visible,
+    // avoiding a new Map + re-render on every animation frame.
+    const prev = prevOffsetsRef.current;
+    let changed = newOffsets.size !== prev.size;
+    if (!changed) {
+      for (const [key, o] of newOffsets) {
+        const p = prev.get(key);
+        if (
+          !p ||
+          Math.abs(o.fromDx - p.fromDx) > RENDER_THRESHOLD ||
+          Math.abs(o.fromDy - p.fromDy) > RENDER_THRESHOLD ||
+          Math.abs(o.toDx - p.toDx) > RENDER_THRESHOLD ||
+          Math.abs(o.toDy - p.toDy) > RENDER_THRESHOLD
+        ) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (changed) {
+      prevOffsetsRef.current = newOffsets;
+      setOffsets(newOffsets);
+    }
 
     if (anyActive) {
       rafRef.current = requestAnimationFrame(tick);

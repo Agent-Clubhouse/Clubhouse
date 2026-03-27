@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { WireFlowDots } from './WireFlowDots';
+import { WireFlowDots, WireFlowDotFilters } from './WireFlowDots';
 
 function renderWithSvg(element: React.ReactElement) {
   return render(
     <svg>
       <defs>
+        <WireFlowDotFilters />
         <path id="wire-path-test-wire" d="M 0 0 C 80 0, 220 0, 300 0" />
       </defs>
       {element}
@@ -98,11 +99,12 @@ describe('WireFlowDots', () => {
     expect(anim?.getAttribute('values')).toBe('0;1;1;0');
   });
 
-  it('renders a glow filter for the wire', () => {
+  it('renders shared glow filters', () => {
     const { container } = renderWithSvg(
       <WireFlowDots wireKey="test-wire" activity="ambient" />,
     );
-    expect(container.querySelector('#wire-dot-glow-test-wire')).toBeTruthy();
+    expect(container.querySelector('#wire-dot-glow-ambient')).toBeTruthy();
+    expect(container.querySelector('#wire-dot-glow-active')).toBeTruthy();
   });
 
   it('uses small radius for ambient dots', () => {
@@ -125,7 +127,7 @@ describe('WireFlowDots', () => {
     const { container } = renderWithSvg(
       <WireFlowDots wireKey="test-wire" activity="active-forward" />,
     );
-    const blur = container.querySelector('#wire-dot-glow-test-wire feGaussianBlur');
+    const blur = container.querySelector('#wire-dot-glow-active feGaussianBlur');
     expect(blur?.getAttribute('stdDeviation')).toBe('3.5');
   });
 
@@ -133,7 +135,7 @@ describe('WireFlowDots', () => {
     const { container } = renderWithSvg(
       <WireFlowDots wireKey="test-wire" activity="ambient" />,
     );
-    const blur = container.querySelector('#wire-dot-glow-test-wire feGaussianBlur');
+    const blur = container.querySelector('#wire-dot-glow-ambient feGaussianBlur');
     expect(blur?.getAttribute('stdDeviation')).toBe('2');
   });
 });

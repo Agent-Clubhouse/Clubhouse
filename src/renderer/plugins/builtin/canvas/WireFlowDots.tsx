@@ -34,6 +34,26 @@ interface WireFlowDotsProps {
   activity: WireActivityState;
 }
 
+/**
+ * Shared SVG filter definitions for dot glow — rendered once in <defs>,
+ * referenced by all WireFlowDots via url(#wire-dot-glow-ambient/active).
+ * This avoids creating a separate <feGaussianBlur> per wire (24+ filters).
+ */
+export function WireFlowDotFilters(): React.ReactElement {
+  return (
+    <>
+      <filter id="wire-dot-glow-ambient">
+        <feGaussianBlur stdDeviation={AMBIENT_GLOW_STD_DEV} result="blur" />
+        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+      </filter>
+      <filter id="wire-dot-glow-active">
+        <feGaussianBlur stdDeviation={ACTIVE_GLOW_STD_DEV} result="blur" />
+        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+      </filter>
+    </>
+  );
+}
+
 export const WireFlowDots = React.memo(function WireFlowDots({
   wireKey,
   activity,
@@ -48,29 +68,20 @@ export const WireFlowDots = React.memo(function WireFlowDots({
   const stagger = isActive ? ACTIVE_DOT_STAGGER : AMBIENT_DOT_STAGGER;
   const opacityValues = isActive ? ACTIVE_OPACITY : AMBIENT_OPACITY;
   const dotRadius = isActive ? ACTIVE_DOT_RADIUS : AMBIENT_DOT_RADIUS;
-  const glowStdDev = isActive ? ACTIVE_GLOW_STD_DEV : AMBIENT_GLOW_STD_DEV;
+  const filterId = isActive ? 'wire-dot-glow-active' : 'wire-dot-glow-ambient';
 
   const showForward = activity === 'ambient' || activity === 'active-forward' || activity === 'active-both';
   const showReverse = activity === 'active-reverse' || activity === 'active-both';
 
   return (
     <>
-      {/* Glow filter for dots */}
-      <filter id={`wire-dot-glow-${wireKey}`}>
-        <feGaussianBlur stdDeviation={glowStdDev} result="blur" />
-        <feMerge>
-          <feMergeNode in="blur" />
-          <feMergeNode in="SourceGraphic" />
-        </feMerge>
-      </filter>
-
       {/* Forward dots (source → target) */}
       {showForward && Array.from({ length: dotCount }, (_, i) => (
         <circle
           key={`fwd-${i}`}
           r={dotRadius}
           fill="rgb(var(--ctp-accent, 137 180 250))"
-          filter={`url(#wire-dot-glow-${wireKey})`}
+          filter={`url(#${filterId})`}
           data-testid={`wire-dot-fwd-${wireKey}-${i}`}
         >
           <animateMotion
@@ -97,7 +108,7 @@ export const WireFlowDots = React.memo(function WireFlowDots({
           key={`rev-${i}`}
           r={dotRadius}
           fill="rgb(var(--ctp-accent, 137 180 250))"
-          filter={`url(#wire-dot-glow-${wireKey})`}
+          filter={`url(#${filterId})`}
           data-testid={`wire-dot-rev-${wireKey}-${i}`}
         >
           <animateMotion
