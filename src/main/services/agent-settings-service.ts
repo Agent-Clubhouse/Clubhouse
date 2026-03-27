@@ -7,6 +7,11 @@ import { pathExists } from './fs-utils';
 
 const LOG_NS = 'core:agent-settings';
 
+/** Check whether an error is a filesystem "file not found" (ENOENT). */
+function isEnoent(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException)?.code === 'ENOENT';
+}
+
 /**
  * Orchestrator convention paths used by settings functions.
  * When omitted, functions fall back to Claude Code defaults for backward compatibility.
@@ -68,7 +73,9 @@ async function parseMcpServers(filePath: string, scope: 'project' | 'global'): P
       scope,
     }));
   } catch (err) {
-    appLog(LOG_NS, 'warn', `Failed to parse MCP config from ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    if (!isEnoent(err)) {
+      appLog(LOG_NS, 'warn', `Failed to parse MCP config from ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
     return [];
   }
 }
@@ -129,7 +136,10 @@ async function readSettings(projectPath: string): Promise<ProjectSettings> {
     if (!raw.quickOverrides) raw.quickOverrides = {};
     return raw;
   } catch (err) {
-    appLog(LOG_NS, 'warn', `Failed to read project settings from ${settingsFile}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    // Missing settings file is a normal condition — most projects won't have one.
+    if (!isEnoent(err)) {
+      appLog(LOG_NS, 'warn', `Failed to read project settings from ${settingsFile}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
     return { defaults: {}, quickOverrides: {} };
   }
 }
@@ -326,7 +336,9 @@ export async function readPermissions(worktreePath: string, conv?: SettingsConve
       deny: Array.isArray(perms.deny) ? perms.deny : undefined,
     };
   } catch (err) {
-    appLog(LOG_NS, 'warn', `Failed to read permissions from ${settingsPath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    if (!isEnoent(err)) {
+      appLog(LOG_NS, 'warn', `Failed to read permissions from ${settingsPath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
     return {};
   }
 }
@@ -455,7 +467,9 @@ export async function readMcpRawJson(worktreePath: string, conv?: SettingsConven
   try {
     return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
-    appLog(LOG_NS, 'warn', `Failed to read MCP config from ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    if (!isEnoent(err)) {
+      appLog(LOG_NS, 'warn', `Failed to read MCP config from ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
     return '{\n  "mcpServers": {}\n}';
   }
 }
@@ -499,7 +513,9 @@ export async function writePermissions(worktreePath: string, permissions: Permis
   try {
     existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
   } catch (err) {
-    appLog(LOG_NS, 'warn', `Failed to read existing settings at ${settingsPath}, starting fresh`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    if (!isEnoent(err)) {
+      appLog(LOG_NS, 'warn', `Failed to read existing settings at ${settingsPath}, starting fresh`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
   }
 
   // Build the permissions object, omitting empty arrays
