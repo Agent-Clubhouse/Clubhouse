@@ -15,7 +15,7 @@ import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
 import * as structuredManager from './structured-manager';
 import { applyLaunchWrapper } from '../orchestrators/shared';
-import type { LaunchWrapperConfig } from '../../shared/types';
+import type { LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
@@ -48,6 +48,8 @@ export interface SpawnAgentParams {
   pluginOwner?: string;
   /** Path to companion workspace (auto-set for companion agents). @since 0.9 */
   companionWorkspace?: string;
+  /** Permission mode override for resume (preserves pre-restart mode) */
+  permissionMode?: FreeAgentPermissionMode;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -130,8 +132,9 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       }
     }
 
-    // Resolve the free-agent permission mode (auto vs skip-all) from settings
-    const permissionMode = freeAgentSettings.getPermissionMode(params.projectPath);
+    // Resolve the free-agent permission mode (auto vs skip-all) from settings,
+    // but honour an explicit override (e.g. from session resume)
+    const permissionMode = params.permissionMode ?? freeAgentSettings.getPermissionMode(params.projectPath);
 
     // Try structured path when enabled and provider supports it
     // Quick agents use structured mode based on project spawn mode setting.
@@ -244,8 +247,9 @@ async function spawnPtyAgent(
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 
-  // Resolve the free-agent permission mode (auto vs skip-all) from settings
-  const permissionMode = freeAgentSettings.getPermissionMode(params.projectPath);
+  // Resolve the free-agent permission mode (auto vs skip-all) from settings,
+  // but honour an explicit override (e.g. from session resume)
+  const permissionMode = params.permissionMode ?? freeAgentSettings.getPermissionMode(params.projectPath);
 
   // Run hook server setup, MCP bridge setup, and command building in parallel.
   let mcpPort = 0;

@@ -413,7 +413,7 @@ export function registerAppHandlers(): void {
     async (_event, data) => {
       const agentNames = new Map(Object.entries(data.agentNames));
 
-      let agentMeta: Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string }> | undefined;
+      let agentMeta: Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string; permissionMode?: import('../../shared/types').FreeAgentPermissionMode }> | undefined;
       if (data.agentMeta) {
         agentMeta = new Map(Object.entries(data.agentMeta)) as typeof agentMeta;
       }
@@ -437,7 +437,7 @@ export function registerAppHandlers(): void {
       async (_event, data) => {
         const agentNames = new Map(Object.entries(data.agentNames));
 
-        let agentMeta: Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string }> | undefined;
+        let agentMeta: Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string; permissionMode?: import('../../shared/types').FreeAgentPermissionMode }> | undefined;
         if (data.agentMeta) {
           agentMeta = new Map(Object.entries(data.agentMeta)) as typeof agentMeta;
         }

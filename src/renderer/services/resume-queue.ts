@@ -90,6 +90,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       orchestrator: entry.orchestrator,
       model: entry.model,
       mission: entry.mission,
+      permissionMode: entry.permissionMode,
     });
 
     // Clear the resuming spinner overlay and mark resume complete
@@ -116,6 +117,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
           orchestrator: entry.orchestrator,
           model: entry.model,
           mission: entry.mission,
+          permissionMode: entry.permissionMode,
         });
         useAgentStore.setState((s) => {
           const agent = s.agents[entry.agentId];

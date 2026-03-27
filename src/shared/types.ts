@@ -900,6 +900,8 @@ export interface SpawnAgentParams {
   resume?: boolean;
   /** Specific session ID to resume (provider-specific format) */
   sessionId?: string;
+  /** Permission mode override for resume (preserves pre-restart mode) */
+  permissionMode?: FreeAgentPermissionMode;
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';
@@ -1014,6 +1016,7 @@ export interface RestartSessionEntry {
   kind: AgentKind;
   mission?: string;
   model?: string;
+  permissionMode?: FreeAgentPermissionMode;
 }
 
 export interface RestartSessionState {

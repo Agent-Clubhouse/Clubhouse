@@ -138,6 +138,7 @@ const api = {
       sessionId?: string;
       pluginOwner?: string;
       companionWorkspace?: string;
+      permissionMode?: 'auto' | 'skip-all';
     }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
     killAgent: (agentId: string, projectPath: string) =>

@@ -6,7 +6,8 @@ import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
 import { getProvider, isSessionCapable } from '../orchestrators';
 import { pathExists } from './fs-utils';
-import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo } from '../../shared/types';
+import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo, FreeAgentPermissionMode } from '../../shared/types';
+import * as freeAgentSettings from './free-agent-settings';
 
 const SCHEMA_VERSION = 1;
 const STALENESS_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -18,7 +19,7 @@ function getStatePath(): string {
 
 export async function captureSessionState(
   agentNames: Map<string, string>,
-  agentMeta?: Map<string, { kind: AgentKind; mission?: string; model?: string; worktreePath?: string }>,
+  agentMeta?: Map<string, { kind: AgentKind; mission?: string; model?: string; worktreePath?: string; permissionMode?: FreeAgentPermissionMode }>,
 ): Promise<void> {
   const all = agentRegistry.getAllRegistrations();
   const sessions: RestartSessionEntry[] = [];
@@ -38,6 +39,10 @@ export async function captureSessionState(
     const canResume = isSessionCapable(provider);
     const meta = agentMeta?.get(agentId);
 
+    // Capture the permission mode the agent was running with.
+    // Prefer per-agent meta (future-proofing), fall back to project-level setting.
+    const permissionMode = meta?.permissionMode ?? freeAgentSettings.getPermissionMode(reg.projectPath);
+
     sessions.push({
       agentId,
       agentName: agentNames.get(agentId) || agentId,
@@ -49,6 +54,7 @@ export async function captureSessionState(
       kind: meta?.kind || 'durable',
       mission: meta?.mission,
       model: meta?.model,
+      permissionMode,
     });
   }
 
