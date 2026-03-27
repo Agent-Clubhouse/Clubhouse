@@ -12,6 +12,8 @@ export interface CodexAppServerClientOpts {
   onServerRequest?: (id: number | string, method: string, params: unknown) => void;
   /** Called when the process exits */
   onExit?: (code: number | null, signal: string | null) => void;
+  /** Optional logger for diagnostic messages */
+  onLog?: (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 }
 
 /**
@@ -36,13 +38,24 @@ export class CodexAppServerClient {
   private chunks: string[] = [];
   private opts: CodexAppServerClientOpts;
   private killed = false;
+  private stderrBuffer: string[] = [];
 
   constructor(opts: CodexAppServerClientOpts) {
     this.opts = opts;
   }
 
+  private log(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
+    this.opts.onLog?.(level, message, meta);
+  }
+
   /** Spawn the child process, begin parsing stdout, and complete the init handshake. */
   async start(): Promise<void> {
+    this.log('info', 'Spawning Codex app-server process', {
+      binary: this.opts.binary,
+      args: this.opts.args,
+      cwd: this.opts.cwd,
+    });
+
     this.proc = spawn(this.opts.binary, this.opts.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.opts.cwd,
@@ -53,8 +66,9 @@ export class CodexAppServerClient {
     this.proc.stdout?.on('data', (chunk: string) => this.feed(chunk));
 
     this.proc.stderr?.setEncoding('utf8');
-    this.proc.stderr?.on('data', () => {
-      // Stderr consumed to prevent backpressure; not forwarded
+    this.proc.stderr?.on('data', (chunk: string) => {
+      this.stderrBuffer.push(chunk);
+      this.log('warn', 'Codex app-server stderr', { text: chunk.trim() });
     });
 
     this.proc.on('exit', (code, signal) => {
@@ -62,11 +76,13 @@ export class CodexAppServerClient {
     });
 
     this.proc.on('error', (err) => {
+      this.log('error', 'Codex app-server spawn error', { error: err.message });
       this.rejectAllPending(err);
       this.opts.onExit?.(null, null);
     });
 
     // Perform initialization handshake
+    this.log('info', 'Starting Codex init handshake');
     await this.request('initialize', {
       clientInfo: this.opts.clientInfo ?? {
         name: 'clubhouse',
@@ -76,6 +92,12 @@ export class CodexAppServerClient {
       capabilities: {},
     });
     this.notify('initialized');
+    this.log('info', 'Codex init handshake complete');
+  }
+
+  /** Return collected stderr output. */
+  getStderr(): string {
+    return this.stderrBuffer.join('');
   }
 
   /** Send a JSON-RPC request and wait for the response. */
@@ -83,6 +105,8 @@ export class CodexAppServerClient {
     const id = this.nextId++;
     const msg: Record<string, unknown> = { id, method };
     if (params !== undefined) msg.params = params;
+
+    this.log('info', `RPC request → ${method}`, { id, method, params });
 
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
@@ -143,7 +167,9 @@ export class CodexAppServerClient {
         const parsed = JSON.parse(line);
         this.dispatch(parsed);
       } catch {
-        // Skip malformed lines
+        this.log('warn', 'Malformed JSON line from Codex stdout', {
+          line: line.length > 500 ? line.substring(0, 500) + '…' : line,
+        });
       }
     }
 
@@ -182,21 +208,34 @@ export class CodexAppServerClient {
       // Notification
       this.opts.onNotification?.(msg.method as string, msg.params);
     }
-    // Messages with neither id nor method are silently ignored
+    this.log('warn', 'Codex message with neither id nor method', {
+      keys: Object.keys(msg),
+    });
   }
 
   private handleResponse(msg: Record<string, unknown>): void {
     const id = msg.id as number | string;
     const pending = this.pending.get(id);
-    if (!pending) return;
+    if (!pending) {
+      this.log('warn', 'RPC response for unknown request', { id });
+      return;
+    }
     this.pending.delete(id);
 
     if (msg.error) {
-      const err = msg.error as { code?: number; message?: string };
+      const err = msg.error as { code?: number; message?: string; data?: unknown };
+      this.log('error', `RPC error ← id=${id}`, {
+        code: err.code,
+        message: err.message,
+        data: err.data,
+      });
       pending.reject(
         new Error(`RPC error ${err.code ?? 'unknown'}: ${err.message ?? 'unknown error'}`),
       );
     } else {
+      this.log('info', `RPC response ← id=${id}`, {
+        resultType: typeof msg.result,
+      });
       pending.resolve(msg.result);
     }
   }
@@ -205,6 +244,13 @@ export class CodexAppServerClient {
     code: number | null,
     signal: string | null,
   ): void {
+    const stderr = this.getStderr().trim();
+    this.log(code === 0 ? 'info' : 'error', 'Codex app-server process exited', {
+      code,
+      signal,
+      pendingRequests: this.pending.size,
+      ...(stderr ? { stderr: stderr.length > 2000 ? stderr.substring(0, 2000) + '…' : stderr } : {}),
+    });
     this.flush();
     this.rejectAllPending(
       new Error(`Process exited with code ${code}, signal ${signal}`),

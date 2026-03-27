@@ -4,6 +4,7 @@ import type { StructuredEvent } from '../../../shared/structured-events';
 import { AsyncQueue } from './async-queue';
 import { JsonlParser, StreamJsonEvent } from '../../services/jsonl-parser';
 import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
+import { appLog } from '../../services/log-service';
 
 export interface StreamJsonAdapterOpts {
   binary: string;
@@ -85,17 +86,28 @@ export class StreamJsonAdapter implements StructuredAdapter {
       // Permission handling already applied above via permissionMode
     }
 
-    const proc = sessionOpts.commandPrefix
-      ? cpSpawn('sh', ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args], {
-          cwd: sessionOpts.cwd,
-          env,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        })
-      : cpSpawn(this.opts.binary, args, {
-          cwd: sessionOpts.cwd,
-          env,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
+    const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
+    const spawnArgs = sessionOpts.commandPrefix
+      ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
+      : args;
+
+    appLog('core:structured', 'info', 'StreamJsonAdapter starting session', {
+      meta: {
+        binary: spawnBinary,
+        args: spawnArgs,
+        cwd: sessionOpts.cwd,
+        model: sessionOpts.model,
+        hasMission: !!sessionOpts.mission,
+        permissionMode: sessionOpts.permissionMode,
+        commandPrefix: sessionOpts.commandPrefix || 'none',
+      },
+    });
+
+    const proc = cpSpawn(spawnBinary, spawnArgs, {
+      cwd: sessionOpts.cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     this.proc = proc;
 
     // Close stdin immediately — -p mode uses CLI arg, not stdin
@@ -132,6 +144,10 @@ export class StreamJsonAdapter implements StructuredAdapter {
       if (exited) return;
       exited = true;
 
+      appLog('core:structured', code === 0 ? 'info' : 'error', 'StreamJsonAdapter process exited', {
+        meta: { code },
+      });
+
       parser.flush();
 
       queue.push(this.makeEvent('end', {
@@ -142,7 +158,12 @@ export class StreamJsonAdapter implements StructuredAdapter {
     };
 
     proc.on('close', (code) => handleExit(code));
-    proc.on('error', () => handleExit(1));
+    proc.on('error', (err) => {
+      appLog('core:structured', 'error', 'StreamJsonAdapter process spawn error', {
+        meta: { error: err.message },
+      });
+      handleExit(1);
+    });
 
     return queue;
   }

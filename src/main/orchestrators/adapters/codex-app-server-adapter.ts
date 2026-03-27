@@ -3,6 +3,7 @@ import type { StructuredEvent } from '../../../shared/structured-events';
 import { AsyncQueue } from './async-queue';
 import { CodexAppServerClient } from './codex-app-server-client';
 import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
+import { appLog } from '../../services/log-service';
 
 export interface CodexAppServerAdapterOpts {
   binary: string;
@@ -48,6 +49,19 @@ export class CodexAppServerAdapter implements StructuredAdapter {
       ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
       : args;
 
+    appLog('core:structured', 'info', 'CodexAppServerAdapter starting session', {
+      meta: {
+        binary: spawnBinary,
+        args: spawnArgs,
+        cwd: sessionOpts.cwd,
+        model: sessionOpts.model,
+        hasMission: !!sessionOpts.mission,
+        hasSystemPrompt: !!sessionOpts.systemPrompt,
+        freeAgentMode: sessionOpts.freeAgentMode,
+        commandPrefix: sessionOpts.commandPrefix || 'none',
+      },
+    });
+
     this.client = new CodexAppServerClient({
       binary: spawnBinary,
       args: spawnArgs,
@@ -62,6 +76,12 @@ export class CodexAppServerAdapter implements StructuredAdapter {
         if (event) queue.push(event);
       },
       onExit: (code) => {
+        const stderr = this.client?.getStderr()?.trim();
+        if (stderr) {
+          appLog('core:structured', 'warn', 'CodexAppServerAdapter process stderr on exit', {
+            meta: { stderr: stderr.length > 2000 ? stderr.substring(0, 2000) + '…' : stderr },
+          });
+        }
         if (!this.turnEnded) {
           queue.push(this.makeEvent('end', {
             reason: code === 0 ? 'complete' : 'error',
@@ -70,12 +90,18 @@ export class CodexAppServerAdapter implements StructuredAdapter {
         }
         queue.finish();
       },
+      onLog: (level, message, meta) => {
+        appLog('core:structured:codex', level, message, { meta });
+      },
     });
 
     // Start client (spawns process + init handshake) then create thread + turn
     this.client.start()
       .then(() => this.startThread(sessionOpts))
       .catch((err) => {
+        appLog('core:structured', 'error', 'CodexAppServerAdapter startup failed', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
         queue.push(this.makeEvent('error', {
           code: 'startup_failed',
           message: err instanceof Error ? err.message : String(err),
@@ -136,6 +162,10 @@ export class CodexAppServerAdapter implements StructuredAdapter {
   private async startThread(sessionOpts: StructuredSessionOpts): Promise<void> {
     if (!this.client) return;
 
+    appLog('core:structured:codex', 'info', 'Creating thread', {
+      meta: { model: sessionOpts.model, cwd: sessionOpts.cwd, freeAgentMode: sessionOpts.freeAgentMode },
+    });
+
     // Create thread
     const threadResult = await this.client.request('thread/start', {
       model: sessionOpts.model,
@@ -146,8 +176,13 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     this.threadId = threadResult?.thread?.id ?? null;
 
     if (!this.threadId) {
+      appLog('core:structured:codex', 'error', 'thread/start returned no thread ID', {
+        meta: { result: threadResult },
+      });
       throw new Error('Failed to create thread: no thread ID returned');
     }
+
+    appLog('core:structured:codex', 'info', 'Thread created', { meta: { threadId: this.threadId } });
 
     // Build the prompt
     const parts: string[] = [];
@@ -280,6 +315,9 @@ export class CodexAppServerAdapter implements StructuredAdapter {
       }
 
       default:
+        appLog('core:structured:codex', 'info', `Unmapped Codex notification: ${method}`, {
+          meta: { method, paramsKeys: Object.keys(p) },
+        });
         return null;
     }
   }

@@ -65,14 +65,30 @@ export async function startStructuredSession(
   sessions.set(agentId, session);
 
   appLog('core:structured', 'info', 'Starting structured session', {
-    meta: { agentId, cwd: opts.cwd, model: opts.model },
+    meta: {
+      agentId,
+      cwd: opts.cwd,
+      model: opts.model,
+      adapterType: adapter.constructor.name,
+      hasMission: !!opts.mission,
+      hasSystemPrompt: !!opts.systemPrompt,
+      allowedTools: opts.allowedTools,
+      permissionMode: opts.permissionMode,
+      freeAgentMode: opts.freeAgentMode,
+      commandPrefix: opts.commandPrefix || 'none',
+    },
   });
 
   // Consume the event stream in the background
   consumeEvents(session, opts).catch((err) => {
     if (!abortController.signal.aborted) {
       appLog('core:structured', 'error', 'Structured session stream failed', {
-        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+        meta: {
+          agentId,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          errorType: err?.constructor?.name,
+        },
       });
       const errorEvent: StructuredEvent = {
         type: 'error',
