@@ -403,6 +403,7 @@ vi.stubGlobal('clubhouse', {
     onToolActivity: () => noop,
   },
   assistant: {
+    spawn: asyncNoop,
     bind: asyncNoop,
     unbind: asyncNoop,
   },

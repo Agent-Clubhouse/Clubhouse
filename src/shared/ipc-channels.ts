@@ -371,6 +371,8 @@ export const IPC = {
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },
   ASSISTANT: {
+    /** Spawn the assistant agent with explicit execution mode. */
+    SPAWN: 'assistant:spawn',
     /** Create assistant MCP binding for the given agent ID. */
     BIND: 'assistant:bind',
     /** Remove assistant MCP binding. */

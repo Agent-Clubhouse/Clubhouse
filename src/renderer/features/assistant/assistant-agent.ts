@@ -9,6 +9,7 @@ export type AssistantMode = 'interactive' | 'structured' | 'headless';
 interface AssistantState {
   status: AssistantStatus;
   mode: AssistantMode;
+  orchestrator: string | null;
   agentId: string | null;
   error: string | null;
   pendingText: string;
@@ -17,45 +18,45 @@ interface AssistantState {
 type Listener = (items: FeedItem[]) => void;
 type StatusListener = (status: AssistantStatus, error: string | null) => void;
 type ModeListener = (mode: AssistantMode) => void;
+type OrchestratorListener = (orchestrator: string | null) => void;
 
-// ── Singleton State ────────────────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────────────────────────
 
 let state: AssistantState = {
-  status: 'idle',
-  mode: 'interactive',
-  agentId: null,
-  error: null,
-  pendingText: '',
+  status: 'idle', mode: 'interactive', orchestrator: null,
+  agentId: null, error: null, pendingText: '',
 };
 
 let nextMsgId = 1;
 const feedListeners = new Set<Listener>();
 const statusListeners = new Set<StatusListener>();
 const modeListeners = new Set<ModeListener>();
+const orchestratorListeners = new Set<OrchestratorListener>();
 const pendingItems: FeedItem[] = [];
 let cleanupListeners: Array<() => void> = [];
 let messageQueue: string[] = [];
-/** Accumulator for PTY output between user messages */
 let ptyAccumulator = '';
-/** Timer for detecting PTY idle (agent done responding) */
 let ptyIdleTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ── Logging ────────────────────────────────────────────────────────────────
+
+function log(msg: string, data?: Record<string, unknown>): void {
+  if (data) console.log(`[assistant] ${msg}`, data);
+  else console.log(`[assistant] ${msg}`);
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function generateId(): string {
-  return `assistant-msg-${nextMsgId++}`;
-}
+function generateId(): string { return `assistant-msg-${nextMsgId++}`; }
 
 function setStatus(status: AssistantStatus, error: string | null = null): void {
   state.status = status;
   state.error = error;
+  log(`status -> ${status}`, error ? { error } : undefined);
   for (const listener of statusListeners) listener(status, error);
 }
 
-function pushItem(item: FeedItem): void {
-  pendingItems.push(item);
-  notifyFeedListeners();
-}
+function pushItem(item: FeedItem): void { pendingItems.push(item); notifyFeedListeners(); }
 
 function notifyFeedListeners(): void {
   const snapshot = [...pendingItems];
@@ -63,10 +64,7 @@ function notifyFeedListeners(): void {
 }
 
 function pushAssistantMessage(text: string): void {
-  pushItem({
-    type: 'message',
-    message: { id: generateId(), role: 'assistant', content: text, timestamp: Date.now() },
-  });
+  pushItem({ type: 'message', message: { id: generateId(), role: 'assistant', content: text, timestamp: Date.now() } });
 }
 
 function cleanupAll(): void {
@@ -75,321 +73,170 @@ function cleanupAll(): void {
   if (ptyIdleTimer) { clearTimeout(ptyIdleTimer); ptyIdleTimer = null; }
 }
 
-function getHomeDir(): string {
-  try {
-    const platform = window.clubhouse.platform;
-    if (platform === 'win32') {
-      return (typeof process !== 'undefined' && process.env?.USERPROFILE) || 'C:\\Users';
-    }
-    return (typeof process !== 'undefined' && process.env?.HOME) || '/tmp';
-  } catch { return '/tmp'; }
-}
-
-// ── ANSI Stripping ─────────────────────────────────────────────────────────
-
-/** Strip ANSI escape sequences from terminal output. */
 function stripAnsi(text: string): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
 }
 
-// ── Structured Event Handler ───────────────────────────────────────────────
+// ── Structured Events ──────────────────────────────────────────────────────
 
-function handleStructuredEvent(_agentId: string, event: { type: string; timestamp: number; data: any }): void {
-  if (_agentId !== state.agentId) return;
-
+function handleStructuredEvent(agentId: string, event: { type: string; timestamp: number; data: any }): void {
+  if (agentId !== state.agentId) return;
+  log('structured event', { type: event.type });
   switch (event.type) {
     case 'text_delta': {
       state.pendingText += event.data.text;
-      const lastItem = pendingItems[pendingItems.length - 1];
-      if (lastItem?.type === 'message' && lastItem.message?.role === 'assistant' && lastItem.message.id.startsWith('streaming-')) {
-        lastItem.message.content = state.pendingText;
-        notifyFeedListeners();
+      const last = pendingItems[pendingItems.length - 1];
+      if (last?.type === 'message' && last.message?.role === 'assistant' && last.message.id.startsWith('streaming-')) {
+        last.message.content = state.pendingText; notifyFeedListeners();
       } else {
-        pendingItems.push({
-          type: 'message',
-          message: { id: 'streaming-' + generateId(), role: 'assistant', content: state.pendingText, timestamp: Date.now() },
-        });
+        pendingItems.push({ type: 'message', message: { id: 'streaming-' + generateId(), role: 'assistant', content: state.pendingText, timestamp: Date.now() } });
         notifyFeedListeners();
       }
       break;
     }
     case 'text_done': {
-      const lastItem = pendingItems[pendingItems.length - 1];
-      if (lastItem?.type === 'message' && lastItem.message?.role === 'assistant' && lastItem.message.id.startsWith('streaming-')) {
-        lastItem.message.content = event.data.text;
-        lastItem.message.id = generateId();
-        notifyFeedListeners();
+      const last = pendingItems[pendingItems.length - 1];
+      if (last?.type === 'message' && last.message?.role === 'assistant' && last.message.id.startsWith('streaming-')) {
+        last.message.content = event.data.text; last.message.id = generateId(); notifyFeedListeners();
       }
-      state.pendingText = '';
-      setStatus('active');
-      break;
+      state.pendingText = ''; setStatus('active'); break;
     }
     case 'tool_start':
-      pushItem({ type: 'action', action: { id: event.data.id, toolName: event.data.displayVerb || event.data.name, description: getPrimaryInput(event.data.input), status: 'running', input: event.data.input } });
-      break;
+      pushItem({ type: 'action', action: { id: event.data.id, toolName: event.data.displayVerb || event.data.name, description: getPrimaryInput(event.data.input), status: 'running', input: event.data.input } }); break;
     case 'tool_end': {
-      const actionItem = pendingItems.find(i => i.type === 'action' && i.action?.id === event.data.id);
-      if (actionItem?.action) {
-        actionItem.action.status = event.data.status === 'error' ? 'error' : 'completed';
-        actionItem.action.output = event.data.result;
-        actionItem.action.durationMs = event.data.durationMs;
-        if (event.data.status === 'error') actionItem.action.error = event.data.result;
-        notifyFeedListeners();
-      }
+      const a = pendingItems.find(i => i.type === 'action' && i.action?.id === event.data.id);
+      if (a?.action) { a.action.status = event.data.status === 'error' ? 'error' : 'completed'; a.action.output = event.data.result; a.action.durationMs = event.data.durationMs; if (event.data.status === 'error') a.action.error = event.data.result; notifyFeedListeners(); }
       break;
     }
-    case 'error':
-      pushAssistantMessage(`Error: ${event.data.message}`);
-      setStatus('error', event.data.message);
-      break;
-    case 'end':
-      state.pendingText = '';
-      setStatus(event.data.reason === 'error' ? 'error' : 'active', event.data.reason === 'error' ? (event.data.summary || 'Session ended with error') : null);
-      break;
+    case 'error': pushAssistantMessage(`Error: ${event.data.message}`); setStatus('error', event.data.message); break;
+    case 'end': state.pendingText = ''; log('session ended', { reason: event.data.reason }); setStatus(event.data.reason === 'error' ? 'error' : 'active', event.data.reason === 'error' ? event.data.summary : null); break;
   }
 }
 
 function getPrimaryInput(input: Record<string, unknown>): string {
-  for (const key of ['file_path', 'command', 'query', 'pattern', 'url', 'path']) {
-    if (typeof input[key] === 'string') return input[key] as string;
-  }
+  for (const key of ['file_path', 'command', 'query', 'pattern', 'url', 'path']) { if (typeof input[key] === 'string') return input[key] as string; }
   return '';
 }
 
-// ── PTY Output Handler ─────────────────────────────────────────────────────
+// ── PTY Handlers ───────────────────────────────────────────────────────────
 
 function handlePtyData(agentId: string, data: string): void {
   if (agentId !== state.agentId) return;
-
   ptyAccumulator += data;
-
-  // Reset idle timer — we consider the agent "done responding" after 1.5s of silence
+  log('PTY data', { length: data.length, total: ptyAccumulator.length });
   if (ptyIdleTimer) clearTimeout(ptyIdleTimer);
   ptyIdleTimer = setTimeout(() => {
     if (ptyAccumulator.trim()) {
       const cleaned = stripAnsi(ptyAccumulator).trim();
       if (cleaned) {
-        // Update existing streaming message or create new one
-        const lastItem = pendingItems[pendingItems.length - 1];
-        if (lastItem?.type === 'message' && lastItem.message?.role === 'assistant' && lastItem.message.id.startsWith('streaming-')) {
-          lastItem.message.content = cleaned;
-          lastItem.message.id = generateId();
-          notifyFeedListeners();
-        } else {
-          pushAssistantMessage(cleaned);
-        }
+        const last = pendingItems[pendingItems.length - 1];
+        if (last?.type === 'message' && last.message?.role === 'assistant' && last.message.id.startsWith('streaming-')) {
+          last.message.content = cleaned; last.message.id = generateId(); notifyFeedListeners();
+        } else { pushAssistantMessage(cleaned); }
       }
       ptyAccumulator = '';
     }
     setStatus('active');
   }, 1500);
-
-  // Show streaming preview
   const cleaned = stripAnsi(ptyAccumulator).trim();
   if (cleaned) {
-    const lastItem = pendingItems[pendingItems.length - 1];
-    if (lastItem?.type === 'message' && lastItem.message?.role === 'assistant' && lastItem.message.id.startsWith('streaming-')) {
-      lastItem.message.content = cleaned;
-      notifyFeedListeners();
+    const last = pendingItems[pendingItems.length - 1];
+    if (last?.type === 'message' && last.message?.role === 'assistant' && last.message.id.startsWith('streaming-')) {
+      last.message.content = cleaned; notifyFeedListeners();
     } else {
-      pendingItems.push({
-        type: 'message',
-        message: { id: 'streaming-' + generateId(), role: 'assistant', content: cleaned, timestamp: Date.now() },
-      });
+      pendingItems.push({ type: 'message', message: { id: 'streaming-' + generateId(), role: 'assistant', content: cleaned, timestamp: Date.now() } });
       notifyFeedListeners();
     }
   }
 }
 
-function handlePtyExit(agentId: string, _exitCode: number): void {
+function handlePtyExit(agentId: string, exitCode: number): void {
   if (agentId !== state.agentId) return;
-
-  // Flush any remaining PTY output
-  if (ptyAccumulator.trim()) {
-    const cleaned = stripAnsi(ptyAccumulator).trim();
-    if (cleaned) pushAssistantMessage(cleaned);
-    ptyAccumulator = '';
-  }
-
-  if (state.mode === 'headless') {
-    // For headless, read the transcript
-    readHeadlessResult(agentId);
-  } else {
-    setStatus('active');
-  }
+  log('PTY exited', { exitCode });
+  if (ptyAccumulator.trim()) { const c = stripAnsi(ptyAccumulator).trim(); if (c) pushAssistantMessage(c); ptyAccumulator = ''; }
+  if (state.mode === 'headless') { readHeadlessResult(agentId); }
+  else { if (exitCode !== 0) pushAssistantMessage(`_Agent exited with code ${exitCode}_`); setStatus('idle'); }
 }
 
-// ── Headless Result Reader ─────────────────────────────────────────────────
-
 async function readHeadlessResult(agentId: string): Promise<void> {
+  log('reading headless transcript', { agentId });
   try {
     const transcript = await window.clubhouse.agent.readTranscript(agentId);
     if (transcript) {
-      // Parse JSONL transcript to find text content
       const lines = transcript.split('\n').filter((l: string) => l.trim());
-      let responseText = '';
-      for (const line of lines) {
-        try {
-          const event = JSON.parse(line);
-          if (event.type === 'text' || event.type === 'text_done') {
-            responseText = event.text || event.data?.text || responseText;
-          } else if (event.type === 'result') {
-            responseText = event.result || responseText;
-          }
-        } catch { /* skip malformed lines */ }
-      }
-      if (responseText) {
-        pushAssistantMessage(responseText);
-      } else {
-        pushAssistantMessage('_The agent completed but produced no text response._');
-      }
-    } else {
-      pushAssistantMessage('_No transcript available from the agent._');
-    }
-  } catch (err) {
-    pushAssistantMessage(`_Failed to read agent response: ${err instanceof Error ? err.message : String(err)}_`);
-  }
-  setStatus('idle'); // Headless agents are one-shot, back to idle
+      let text = '';
+      for (const line of lines) { try { const e = JSON.parse(line); if (e.type === 'text' || e.type === 'text_done') text = e.text || e.data?.text || text; else if (e.type === 'result') text = e.result || text; } catch { /* skip */ } }
+      pushAssistantMessage(text || '_Agent completed with no text response._');
+    } else { pushAssistantMessage('_No transcript available._'); }
+  } catch (err) { pushAssistantMessage(`_Failed to read response: ${err instanceof Error ? err.message : String(err)}_`); }
+  setStatus('idle');
 }
 
 // ── Core API ───────────────────────────────────────────────────────────────
 
 export async function sendMessage(text: string): Promise<void> {
-  pushItem({
-    type: 'message',
-    message: { id: generateId(), role: 'user', content: text, timestamp: Date.now() },
-  });
-
-  if (state.status === 'starting') {
-    messageQueue.push(text);
-    return;
-  }
-
-  if (state.status === 'idle' || state.status === 'error') {
-    await startAgent(text);
-    return;
-  }
-
+  pushItem({ type: 'message', message: { id: generateId(), role: 'user', content: text, timestamp: Date.now() } });
+  if (state.status === 'starting') { messageQueue.push(text); return; }
+  if (state.status === 'idle' || state.status === 'error') { await startAgent(text); return; }
   if (state.status === 'active' && state.agentId) {
     setStatus('responding');
     try {
-      if (state.mode === 'structured') {
-        await window.clubhouse.agent.sendStructuredMessage(state.agentId, text);
-      } else if (state.mode === 'interactive') {
-        ptyAccumulator = '';
-        window.clubhouse.pty.write(state.agentId, text + '\n');
-      } else {
-        // Headless: spawn a new agent for each message
-        await startAgent(text);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      pushAssistantMessage(`Failed to send message: ${msg}`);
-      setStatus('error', msg);
-    }
-    return;
+      if (state.mode === 'structured') { log('sending structured message'); await window.clubhouse.agent.sendStructuredMessage(state.agentId, text); }
+      else if (state.mode === 'interactive') { log('sending PTY input'); ptyAccumulator = ''; window.clubhouse.pty.write(state.agentId, text + '\n'); }
+      else { await startAgent(text); }
+    } catch (err) { const msg = err instanceof Error ? err.message : String(err); log('send failed', { error: msg }); pushAssistantMessage(`Failed to send: ${msg}`); setStatus('error', msg); }
   }
 }
 
 async function startAgent(firstMessage: string): Promise<void> {
   setStatus('starting');
-
   try {
-    const availability = await window.clubhouse.agent.checkOrchestrator();
+    const availability = await window.clubhouse.agent.checkOrchestrator(undefined, state.orchestrator || undefined);
+    log('orchestrator check', { available: availability.available, error: availability.error });
     if (!availability.available) {
-      pushAssistantMessage(
-        'I need an orchestrator to be installed and configured before I can help.\n\n' +
-        '**How to fix this:**\n' +
-        '1. Install an orchestrator CLI (Claude Code, GitHub Copilot CLI, or Codex CLI)\n' +
-        '2. Open **Settings** (gear icon below) > **Orchestrators**\n' +
-        '3. The orchestrator should be auto-detected once installed\n\n' +
-        `_${availability.error || 'No orchestrator configured'}_`,
-      );
-      setStatus('error', availability.error || 'No orchestrator configured');
-      return;
+      pushAssistantMessage('I need an orchestrator to be installed and configured.\n\n**How to fix:**\n1. Install a CLI (Claude Code, Copilot CLI, or Codex CLI)\n2. Open **Settings** > **Orchestrators**\n\n_' + (availability.error || 'None configured') + '_');
+      setStatus('error', availability.error || 'No orchestrator'); return;
     }
 
     const suffix = globalThis.crypto.randomUUID().slice(0, 8);
     const agentId = `assistant_${Date.now()}_${suffix}`;
     state.agentId = agentId;
-
-    const homeDir = getHomeDir();
     const systemPrompt = buildAssistantInstructions();
 
+    log('spawning', { agentId, mode: state.mode, orchestrator: state.orchestrator || 'default' });
+
+    // Use dedicated assistant spawn IPC — handles MCP binding, workspace, execution mode
+    await window.clubhouse.assistant.spawn({
+      agentId, mission: firstMessage, systemPrompt,
+      executionMode: state.mode,
+      orchestrator: state.orchestrator || undefined,
+    });
+
+    log('spawn succeeded', { agentId });
+
+    // Mode-specific listeners
     if (state.mode === 'interactive') {
-      await startInteractive(agentId, homeDir, systemPrompt, firstMessage);
+      cleanupListeners.push(window.clubhouse.pty.onData(handlePtyData), window.clubhouse.pty.onExit(handlePtyExit));
+      ptyAccumulator = '';
     } else if (state.mode === 'structured') {
-      await startStructured(agentId, homeDir, systemPrompt, firstMessage);
+      cleanupListeners.push(window.clubhouse.agent.onStructuredEvent(handleStructuredEvent));
     } else {
-      await startHeadless(agentId, homeDir, systemPrompt, firstMessage);
+      cleanupListeners.push(window.clubhouse.pty.onExit(handlePtyExit));
+      pushAssistantMessage('_Processing..._');
+    }
+    setStatus('responding');
+    while (messageQueue.length > 0) {
+      const q = messageQueue.shift()!;
+      if (state.mode === 'structured') await window.clubhouse.agent.sendStructuredMessage(agentId, q);
+      else if (state.mode === 'interactive') window.clubhouse.pty.write(agentId, q + '\n');
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    pushAssistantMessage(
-      `Failed to start the assistant in **${state.mode}** mode.\n\n` +
-      `**Error:** ${msg}\n\n` +
-      'Try switching modes using the toggle in the header, or click reset.',
-    );
-    setStatus('error', msg);
-    messageQueue = [];
+    log('spawn failed', { error: msg, mode: state.mode });
+    pushAssistantMessage(`Failed to start in **${state.mode}** mode.\n\n**Error:** ${msg}\n\nTry switching modes or click reset.`);
+    setStatus('error', msg); messageQueue = [];
   }
-}
-
-async function startInteractive(agentId: string, homeDir: string, systemPrompt: string, mission: string): Promise<void> {
-  // PTY mode: spawn agent normally (no structuredMode flag), it falls through to PTY
-  await window.clubhouse.agent.spawnAgent({
-    agentId, projectPath: homeDir, cwd: homeDir, kind: 'quick',
-    systemPrompt, mission, freeAgentMode: true,
-  });
-
-  // Listen for PTY output
-  const unsubData = window.clubhouse.pty.onData(handlePtyData);
-  const unsubExit = window.clubhouse.pty.onExit(handlePtyExit);
-  cleanupListeners.push(unsubData, unsubExit);
-
-  ptyAccumulator = '';
-  setStatus('responding');
-
-  while (messageQueue.length > 0) {
-    const queued = messageQueue.shift()!;
-    window.clubhouse.pty.write(agentId, queued + '\n');
-  }
-}
-
-async function startStructured(agentId: string, homeDir: string, systemPrompt: string, mission: string): Promise<void> {
-  // Structured mode: set structuredMode flag so spawnAgent starts a structured session internally
-  await window.clubhouse.agent.spawnAgent({
-    agentId, projectPath: homeDir, cwd: homeDir, kind: 'quick',
-    systemPrompt, mission, freeAgentMode: true,
-    structuredMode: true,
-  });
-
-  // Listen for structured events (the session is already started by spawnAgent)
-  const unsub = window.clubhouse.agent.onStructuredEvent(handleStructuredEvent);
-  cleanupListeners.push(unsub);
-
-  setStatus('responding');
-
-  while (messageQueue.length > 0) {
-    const queued = messageQueue.shift()!;
-    await window.clubhouse.agent.sendStructuredMessage(agentId, queued);
-  }
-}
-
-async function startHeadless(agentId: string, homeDir: string, systemPrompt: string, mission: string): Promise<void> {
-  // Headless: spawn agent, it runs mission to completion then exits
-  // We listen for PTY.EXIT to know when it's done, then read transcript
-  await window.clubhouse.agent.spawnAgent({
-    agentId, projectPath: homeDir, cwd: homeDir, kind: 'quick',
-    systemPrompt, mission, freeAgentMode: true,
-  });
-
-  const unsubExit = window.clubhouse.pty.onExit(handlePtyExit);
-  cleanupListeners.push(unsubExit);
-
-  pushAssistantMessage('_Processing your request..._');
-  setStatus('responding');
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -397,42 +244,33 @@ async function startHeadless(agentId: string, homeDir: string, systemPrompt: str
 export function getStatus(): AssistantStatus { return state.status; }
 export function getError(): string | null { return state.error; }
 export function getMode(): AssistantMode { return state.mode; }
+export function getOrchestrator(): string | null { return state.orchestrator; }
 export function getFeedItems(): FeedItem[] { return [...pendingItems]; }
 
 export function setMode(mode: AssistantMode): void {
   if (mode === state.mode) return;
-  reset();
-  state.mode = mode;
-  for (const listener of modeListeners) listener(mode);
+  log('mode change', { from: state.mode, to: mode });
+  reset(); state.mode = mode;
+  for (const l of modeListeners) l(mode);
 }
 
-export function onFeedUpdate(listener: Listener): () => void {
-  feedListeners.add(listener);
-  return () => feedListeners.delete(listener);
+export function setOrchestrator(id: string | null): void {
+  if (id === state.orchestrator) return;
+  log('orchestrator change', { from: state.orchestrator, to: id });
+  reset(); state.orchestrator = id;
+  for (const l of orchestratorListeners) l(id);
 }
 
-export function onStatusChange(listener: StatusListener): () => void {
-  statusListeners.add(listener);
-  return () => statusListeners.delete(listener);
-}
-
-export function onModeChange(listener: ModeListener): () => void {
-  modeListeners.add(listener);
-  return () => modeListeners.delete(listener);
-}
+export function onFeedUpdate(l: Listener): () => void { feedListeners.add(l); return () => feedListeners.delete(l); }
+export function onStatusChange(l: StatusListener): () => void { statusListeners.add(l); return () => statusListeners.delete(l); }
+export function onModeChange(l: ModeListener): () => void { modeListeners.add(l); return () => modeListeners.delete(l); }
+export function onOrchestratorChange(l: OrchestratorListener): () => void { orchestratorListeners.add(l); return () => orchestratorListeners.delete(l); }
 
 export function reset(): void {
-  if (state.agentId) {
-    const homeDir = getHomeDir();
-    window.clubhouse.agent.killAgent(state.agentId, homeDir).catch(() => {});
-  }
+  if (state.agentId) { log('killing', { agentId: state.agentId }); window.clubhouse.agent.killAgent(state.agentId, '').catch(() => {}); }
   cleanupAll();
-  const currentMode = state.mode;
-  state = { status: 'idle', mode: currentMode, agentId: null, error: null, pendingText: '' };
-  pendingItems.length = 0;
-  messageQueue = [];
-  ptyAccumulator = '';
-  nextMsgId = 1;
-  notifyFeedListeners();
-  setStatus('idle');
+  const { mode, orchestrator } = state;
+  state = { status: 'idle', mode, orchestrator, agentId: null, error: null, pendingText: '' };
+  pendingItems.length = 0; messageQueue = []; ptyAccumulator = ''; nextMsgId = 1;
+  notifyFeedListeners(); setStatus('idle');
 }

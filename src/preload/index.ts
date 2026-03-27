@@ -1230,6 +1230,15 @@ const api = {
     },
   },
   assistant: {
+    /** Spawn the assistant agent with explicit execution mode. */
+    spawn: (params: {
+      agentId: string;
+      mission: string;
+      systemPrompt: string;
+      executionMode: 'interactive' | 'structured' | 'headless';
+      orchestrator?: string;
+      model?: string;
+    }) => ipcRenderer.invoke(IPC.ASSISTANT.SPAWN, params),
     /** Create the assistant MCP binding for the given agent. */
     bind: (agentId: string) =>
       ipcRenderer.invoke(IPC.ASSISTANT.BIND, agentId),
