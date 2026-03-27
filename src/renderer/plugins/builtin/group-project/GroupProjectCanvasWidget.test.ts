@@ -70,9 +70,9 @@ describe('GroupProjectCanvasWidget — activity summary', () => {
     expect(source).toMatch(/\+.*new/);
   });
 
-  it('polls bulletin digest on the compact card', () => {
-    // Compact card should call getBulletinDigest for activity data
-    expect(source).toContain('getBulletinDigest(groupProjectId)');
+  it('polls bulletin digest on the compact card via context hook', () => {
+    // Compact card should call fetchDigest for activity data (abstracted via context hook)
+    expect(source).toContain('fetchDigest(groupProjectId)');
   });
 });
 
@@ -91,23 +91,28 @@ describe('GroupProjectCanvasWidget — main.ts generateDisplayName', () => {
   });
 });
 
-// ── PTY injection helper ────────────────────────────────────────────
+// ── PTY injection (via context hook) ────────────────────────────────
 
-describe('GroupProjectCanvasWidget — PTY injection', () => {
-  it('imports ptyWrite from project-proxy', () => {
-    expect(source).toContain("from '../../../services/project-proxy'");
-    expect(source).toContain('ptyWrite');
+describe('GroupProjectCanvasWidget — PTY injection via context', () => {
+  const hookSource = readFileSync(join(__dirname, 'useGroupProjectContext.ts'), 'utf-8');
+
+  it('imports ptyWrite from project-proxy in the context hook', () => {
+    expect(hookSource).toContain("from '../../../services/project-proxy'");
+    expect(hookSource).toContain('ptyWrite');
   });
 
-  it('defines injectPtyMessage helper that uses bracketed paste', () => {
-    expect(source).toContain('function injectPtyMessage');
-    expect(source).toContain('\\x1b[200~');
-    expect(source).toContain('\\x1b[201~');
+  it('uses bracketed paste for multiline messages', () => {
+    expect(hookSource).toContain('\\x1b[200~');
+    expect(hookSource).toContain('\\x1b[201~');
   });
 
   it('sends Enter after injection with a delay', () => {
-    // injectPtyMessage should call ptyWrite with \r after a timeout
-    expect(source).toMatch(/setTimeout\s*\(\s*\(\)\s*=>\s*ptyWrite\s*\(/);
+    expect(hookSource).toMatch(/setTimeout\s*\(/);
+    expect(hookSource).toContain("'\\r'");
+  });
+
+  it('routes remote PTY input through annexClient', () => {
+    expect(hookSource).toContain('annexClient.ptyInput(satelliteId, agentId');
   });
 });
 
@@ -115,14 +120,14 @@ describe('GroupProjectCanvasWidget — PTY injection', () => {
 
 describe('GroupProjectCanvasWidget — broadcast modal', () => {
   it('does not use sendShoulderTap for broadcast', () => {
-    // The broadcast modal should use injectPtyMessage, not sendShoulderTap
+    // The broadcast modal should use injectMessage, not sendShoulderTap
     expect(source).not.toMatch(/sendShoulderTap\s*\(/);
   });
 
-  it('calls injectPtyMessage for each target agent in broadcast', () => {
-    // ShoulderTapModal handleSend should iterate targets and call injectPtyMessage
-    expect(source).toMatch(/for\s*\(const\s+agent\s+of\s+targets\)/);
-    expect(source).toContain('injectPtyMessage(agent.agentId');
+  it('calls injectMessage for each target member in broadcast', () => {
+    // ShoulderTapModal handleSend should iterate targets and call injectMessage
+    expect(source).toMatch(/for\s*\(const\s+member\s+of\s+targets\)/);
+    expect(source).toContain('injectMessage(member.agentId');
   });
 });
 
@@ -182,9 +187,10 @@ describe('GroupProjectCanvasWidget — message ordering', () => {
 // ── Polling toggle uses PTY injection ───────────────────────────────
 
 describe('GroupProjectCanvasWidget — polling toggle', () => {
-  it('injects polling message to connected agents via PTY', () => {
-    // handleTogglePolling should iterate connectedAgents and call injectPtyMessage
-    expect(source).toMatch(/for\s*\(const\s+agent\s+of\s+connectedAgents\)/);
+  it('injects polling message to members via context hook', () => {
+    // handleTogglePolling should iterate members and call injectMessage
+    expect(source).toMatch(/for\s*\(const\s+member\s+of\s+members\)/);
+    expect(source).toContain('injectMessage(member.agentId');
   });
 });
 
@@ -232,10 +238,10 @@ describe('GroupProjectCanvasWidget — orchestrator-aware polling', () => {
     expect(source).toContain('useAgentStore');
   });
 
-  it('looks up orchestrator per agent in handleTogglePolling', () => {
-    // Should get agents from store and look up orchestrator per connected agent
+  it('looks up orchestrator per member in handleTogglePolling', () => {
+    // Should get agents from store and look up orchestrator per connected member
     expect(source).toContain('useAgentStore.getState().agents');
-    expect(source).toContain('agents[agent.agentId]?.orchestrator');
+    expect(source).toContain('agents[member.agentId]?.orchestrator');
   });
 
   it('passes orchestrator to pollingStartMsg and pollingStopMsg', () => {
@@ -305,5 +311,177 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
     expect(source).toContain('description: editDesc');
     expect(source).toContain('instructions: editInstr');
     expect(source).toContain('metadata: { shoulderTapEnabled }');
+  });
+});
+
+// ── Annex remote support ─────────────────────────────────────────────
+
+describe('GroupProjectCanvasWidget — Annex remote support', () => {
+  const hookSource = readFileSync(join(__dirname, 'useGroupProjectContext.ts'), 'utf-8');
+  const manifestSource = readFileSync(join(__dirname, 'manifest.ts'), 'utf-8');
+
+  it('manifest declares annex permission', () => {
+    expect(manifestSource).toContain("'annex'");
+  });
+
+  it('does not show AnnexUnsupportedPlaceholder for remote', () => {
+    expect(source).not.toContain('AnnexUnsupportedPlaceholder');
+  });
+
+  it('uses useRemoteProject hook to detect remote context', () => {
+    expect(source).toContain('useRemoteProject');
+    expect(source).toContain('remote.isRemote');
+  });
+
+  it('passes isRemote and satelliteId to ProjectView', () => {
+    expect(source).toContain('isRemote={remote.isRemote}');
+    expect(source).toContain('satelliteId={remote.satelliteId}');
+  });
+
+  it('uses useGroupProjectContext hook for data abstraction', () => {
+    expect(source).toContain('useGroupProjectContext');
+    expect(source).toContain('ctx');
+  });
+
+  it('MCP check only applies to local mode', () => {
+    // MCP gate should be conditioned on !remote.isRemote
+    expect(source).toContain('!remote.isRemote && !mcpEnabled');
+  });
+
+  it('context hook reads from remote store when isRemote', () => {
+    expect(hookSource).toContain('useRemoteProjectStore');
+    expect(hookSource).toContain('remoteGroupProjects');
+    expect(hookSource).toContain('remoteGroupProjectMembers');
+  });
+
+  it('context hook routes mutations through annexClient for remote', () => {
+    expect(hookSource).toContain('annexClient.gpUpdate');
+    expect(hookSource).toContain('annexClient.gpBulletinDigest');
+    expect(hookSource).toContain('annexClient.gpBulletinTopic');
+    expect(hookSource).toContain('annexClient.gpBulletinAll');
+  });
+
+  it('context hook routes PTY input through annexClient for remote', () => {
+    expect(hookSource).toContain('annexClient.ptyInput(satelliteId, agentId');
+  });
+
+  it('context hook falls back to local API for non-remote', () => {
+    expect(hookSource).toContain('window.clubhouse.groupProject.getBulletinDigest');
+    expect(hookSource).toContain('window.clubhouse.groupProject.getTopicMessages');
+    expect(hookSource).toContain('window.clubhouse.groupProject.getAllMessages');
+  });
+});
+
+// ── Annex API route (PATCH) ─────────────────────────────────────────
+
+describe('GroupProjectCanvasWidget — annex PATCH route', () => {
+  const serverSource = readFileSync(join(__dirname, '../../../../main/services/annex-server.ts'), 'utf-8');
+
+  it('annex server has PATCH route for group project updates', () => {
+    expect(serverSource).toContain("method === 'PATCH' && gpPatchMatch");
+  });
+
+  it('PATCH route requires mTLS', () => {
+    // The PATCH handler should call requireMtls()
+    expect(serverSource).toMatch(/PATCH.*gpPatchMatch[\s\S]*?requireMtls\(\)/);
+  });
+
+  it('PATCH route supports name, description, instructions, and metadata fields', () => {
+    expect(serverSource).toMatch(/body\.name/);
+    expect(serverSource).toMatch(/body\.description/);
+    expect(serverSource).toMatch(/body\.instructions/);
+    expect(serverSource).toMatch(/body\.metadata/);
+  });
+
+  it('PATCH route emits group project changed event', () => {
+    expect(serverSource).toContain("emitGroupProjectChanged('updated'");
+  });
+});
+
+// ── Annex client proxy methods ──────────────────────────────────────
+
+describe('GroupProjectCanvasWidget — annex client proxy', () => {
+  const clientSource = readFileSync(join(__dirname, '../../../../main/services/annex-client.ts'), 'utf-8');
+  const ipcSource = readFileSync(join(__dirname, '../../../../shared/ipc-channels.ts'), 'utf-8');
+  const handlersSource = readFileSync(join(__dirname, '../../../../main/ipc/annex-client-handlers.ts'), 'utf-8');
+
+  it('annex-client exports requestGroupProjectGet', () => {
+    expect(clientSource).toContain('export function requestGroupProjectGet');
+  });
+
+  it('annex-client exports requestGroupProjectUpdate', () => {
+    expect(clientSource).toContain('export function requestGroupProjectUpdate');
+  });
+
+  it('annex-client exports requestBulletinAllMessages', () => {
+    expect(clientSource).toContain('export function requestBulletinAllMessages');
+  });
+
+  it('annex-client exports requestBulletinPostMessage', () => {
+    expect(clientSource).toContain('export function requestBulletinPostMessage');
+  });
+
+  it('annex-client exports requestShoulderTap', () => {
+    expect(clientSource).toContain('export function requestShoulderTap');
+  });
+
+  it('ipc-channels defines GP_ channels', () => {
+    expect(ipcSource).toContain('GP_GET');
+    expect(ipcSource).toContain('GP_UPDATE');
+    expect(ipcSource).toContain('GP_BULLETIN_DIGEST');
+    expect(ipcSource).toContain('GP_BULLETIN_TOPIC');
+    expect(ipcSource).toContain('GP_BULLETIN_ALL');
+    expect(ipcSource).toContain('GP_BULLETIN_POST');
+    expect(ipcSource).toContain('GP_SHOULDER_TAP');
+  });
+
+  it('annex-client-handlers registers GP IPC handlers', () => {
+    expect(handlersSource).toContain('IPC.ANNEX_CLIENT.GP_GET');
+    expect(handlersSource).toContain('IPC.ANNEX_CLIENT.GP_UPDATE');
+    expect(handlersSource).toContain('IPC.ANNEX_CLIENT.GP_BULLETIN_DIGEST');
+    expect(handlersSource).toContain('IPC.ANNEX_CLIENT.GP_BULLETIN_ALL');
+    expect(handlersSource).toContain('IPC.ANNEX_CLIENT.GP_BULLETIN_POST');
+    expect(handlersSource).toContain('IPC.ANNEX_CLIENT.GP_SHOULDER_TAP');
+  });
+
+  it('satelliteHttpsRequest supports PATCH method', () => {
+    expect(clientSource).toMatch(/'GET'\s*\|\s*'POST'\s*\|\s*'PATCH'/);
+  });
+});
+
+// ── Snapshot richness ───────────────────────────────────────────────
+
+describe('GroupProjectCanvasWidget — snapshot data richness', () => {
+  const serverSource = readFileSync(join(__dirname, '../../../../main/services/annex-server.ts'), 'utf-8');
+  const typesSource = readFileSync(join(__dirname, '../../../../shared/types.ts'), 'utf-8');
+
+  it('snapshot includes groupProjects list', () => {
+    expect(serverSource).toMatch(/groupProjects.*=.*groupProjectRegistry\.list/);
+  });
+
+  it('snapshot includes bulletinDigests per project', () => {
+    expect(serverSource).toMatch(/bulletinDigests\[gp\.id\]\s*=\s*await\s+board\.getDigest/);
+  });
+
+  it('snapshot includes groupProjectMembers per project', () => {
+    expect(serverSource).toContain('groupProjectMembers[gp.id] = members');
+  });
+
+  it('SatelliteSnapshot type defines groupProjects field', () => {
+    expect(typesSource).toContain('groupProjects?: unknown[]');
+  });
+
+  it('SatelliteSnapshot type defines bulletinDigests field', () => {
+    expect(typesSource).toContain('bulletinDigests?: Record<string, unknown[]>');
+  });
+
+  it('SatelliteSnapshot type defines groupProjectMembers field', () => {
+    expect(typesSource).toContain('groupProjectMembers?: Record<string, Array<');
+  });
+
+  it('annex server broadcasts real-time group project events', () => {
+    expect(serverSource).toContain("type: 'group-project:changed'");
+    expect(serverSource).toContain("type: 'bulletin:message'");
+    expect(serverSource).toContain("type: 'group-project:list'");
   });
 });
