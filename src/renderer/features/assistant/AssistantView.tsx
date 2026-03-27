@@ -1,39 +1,38 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AssistantHeader } from './AssistantHeader';
 import { AssistantFeed } from './AssistantFeed';
 import { AssistantInput } from './AssistantInput';
+import * as assistantAgent from './assistant-agent';
 import type { FeedItem } from './types';
-
-let nextId = 1;
-function generateId(): string {
-  return `msg-${nextId++}`;
-}
 
 /**
  * Top-level container for the Clubhouse Assistant.
- * Manages conversation state (Phase 1: local only, no agent backend).
+ * Wired to the assistant agent backend for live conversations.
  */
 export function AssistantView() {
-  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [feedItems, setFeedItems] = useState<FeedItem[]>(() => assistantAgent.getFeedItems());
+  const [status, setStatus] = useState(() => assistantAgent.getStatus());
+
+  useEffect(() => {
+    const unsubFeed = assistantAgent.onFeedUpdate(setFeedItems);
+    const unsubStatus = assistantAgent.onStatusChange((s) => setStatus(s));
+    return () => {
+      unsubFeed();
+      unsubStatus();
+    };
+  }, []);
 
   const handleSend = useCallback((content: string) => {
-    const userItem: FeedItem = {
-      type: 'message',
-      message: {
-        id: generateId(),
-        role: 'user',
-        content,
-        timestamp: Date.now(),
-      },
-    };
-    setFeedItems((prev) => [...prev, userItem]);
+    assistantAgent.sendMessage(content);
   }, []);
+
+  const isDisabled = status === 'starting' || status === 'responding';
 
   return (
     <div className="h-full min-h-0 flex flex-col" data-testid="assistant-view">
-      <AssistantHeader />
+      <AssistantHeader onReset={assistantAgent.reset} />
       <AssistantFeed items={feedItems} onSendPrompt={handleSend} />
-      <AssistantInput onSend={handleSend} />
+      <AssistantInput onSend={handleSend} disabled={isDisabled} />
     </div>
   );
 }
