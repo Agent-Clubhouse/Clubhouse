@@ -73,6 +73,8 @@ export interface Agent {
   /** Execution mode: 'pty' (terminal), 'headless' (feed), or 'structured' (rich UI) */
   executionMode?: AgentExecutionMode;
   freeAgentMode?: boolean;
+  /** When true, this agent runs in structured mode instead of PTY */
+  structuredMode?: boolean;
   /** MCP IDs active for this agent via launch wrapper */
   mcpIds?: string[];
   /** Set when the agent is resuming a previous CLI session (spinner overlay) */
@@ -193,6 +195,8 @@ export interface DurableAgentConfig {
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** When true, this durable agent spawns in structured mode instead of PTY */
+  structuredMode?: boolean;
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;

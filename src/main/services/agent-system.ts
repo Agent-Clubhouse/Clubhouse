@@ -38,6 +38,8 @@ export interface SpawnAgentParams {
   maxTurns?: number;
   maxBudgetUsd?: number;
   freeAgentMode?: boolean;
+  /** When true, spawn this agent in structured mode instead of PTY */
+  structuredMode?: boolean;
   /** When true, attempt to resume the previous CLI session instead of starting fresh */
   resume?: boolean;
   /** Specific session ID to resume (provider-specific format) */

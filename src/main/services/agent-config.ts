@@ -478,6 +478,7 @@ export async function createDurable(
   orchestrator?: OrchestratorId,
   freeAgentMode?: boolean,
   mcpIds?: string[],
+  structuredMode?: boolean,
 ): Promise<DurableAgentConfig> {
   await ensureDir(clubhouseDir(projectPath));
   await ensureGitignore(projectPath);
@@ -559,6 +560,7 @@ export async function createDurable(
     ...(model && model !== 'default' ? { model } : {}),
     ...(orchestrator ? { orchestrator } : {}),
     ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
+    ...(structuredMode ? { structuredMode } : {}),
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
   };
 
