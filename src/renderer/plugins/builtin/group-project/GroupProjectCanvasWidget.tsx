@@ -2,31 +2,17 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
 import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
-import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
-import { ptyWrite } from '../../../services/project-proxy';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
-import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { useAgentStore } from '../../../stores/agentStore';
 import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { Toggle } from '../../../components/Toggle';
+import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
 const ALL_TOPICS_KEY = '__all__';
-
-/** Inject a message into an agent's PTY using bracketed paste + Enter. */
-function injectPtyMessage(agentId: string, message: string): void {
-  const isMultiLine = message.includes('\n');
-  if (isMultiLine) {
-    ptyWrite(agentId, `\x1b[200~${message}\x1b[201~`);
-  } else {
-    ptyWrite(agentId, message);
-  }
-  // Delayed Enter so the agent processes the pasted content first
-  setTimeout(() => ptyWrite(agentId, '\r'), 150);
-}
 
 export function GroupProjectCanvasWidget({
   widgetId: _widgetId,
@@ -41,18 +27,8 @@ export function GroupProjectCanvasWidget({
 
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
 
-  // Group project bulletin board is not yet proxied over annex
-  if (remote.isRemote) {
-    const name = metadata.name as string | undefined;
-    return (
-      <AnnexUnsupportedPlaceholder
-        widgetType="Group Project"
-        reason={name ? `"${name}" is running on the satellite.` : 'Group project data is not yet available over Annex.'}
-      />
-    );
-  }
-
-  if (!mcpEnabled) {
+  // MCP check — only relevant for local (remote satellites manage their own MCP)
+  if (!remote.isRemote && !mcpEnabled) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 p-4 text-center" data-testid="group-project-mcp-disabled">
         <div className="w-10 h-10 rounded-lg bg-surface-1 flex items-center justify-center">
@@ -74,11 +50,22 @@ export function GroupProjectCanvasWidget({
 
   const groupProjectId = metadata.groupProjectId as string | undefined;
 
-  if (!groupProjectId) {
+  if (!groupProjectId && !remote.isRemote) {
     return <CreationForm onUpdateMetadata={onUpdateMetadata} />;
   }
 
-  return <ProjectView groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} />;
+  if (!groupProjectId) {
+    return <div className="flex items-center justify-center h-full text-xs text-ctp-overlay0 italic p-4">No group project selected</div>;
+  }
+
+  return (
+    <ProjectView
+      groupProjectId={groupProjectId}
+      onUpdateMetadata={onUpdateMetadata}
+      isRemote={remote.isRemote}
+      satelliteId={remote.satelliteId}
+    />
+  );
 }
 
 /* ---------- Creation Form ---------- */
@@ -147,12 +134,17 @@ function CreationForm({
 function ProjectView({
   groupProjectId,
   onUpdateMetadata,
+  isRemote,
+  satelliteId,
 }: {
   groupProjectId: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
+  isRemote: boolean;
+  satelliteId: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const ctx = useGroupProjectContext(groupProjectId, isRemote, satelliteId);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -169,25 +161,12 @@ function ProjectView({
   return (
     <div ref={containerRef} className="h-full w-full">
       {isExpanded ? (
-        <ExpandedProjectView groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} />
+        <ExpandedProjectView groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} ctx={ctx} />
       ) : (
-        <ProjectCard groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} />
+        <ProjectCard groupProjectId={groupProjectId} onUpdateMetadata={onUpdateMetadata} ctx={ctx} />
       )}
     </div>
   );
-}
-
-/* ---------- Deduplicate connected agents helper ---------- */
-
-function dedupeAgents(bindings: McpBindingEntry[], groupProjectId: string): McpBindingEntry[] {
-  const seen = new Set<string>();
-  return bindings.filter((b) => {
-    if (b.targetKind !== 'group-project' || b.targetId !== groupProjectId) return false;
-    const key = `${b.agentId}:${b.targetId}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 /* ---------- Compact Card ---------- */
@@ -195,16 +174,13 @@ function dedupeAgents(bindings: McpBindingEntry[], groupProjectId: string): McpB
 function ProjectCard({
   groupProjectId,
   onUpdateMetadata,
+  ctx,
 }: {
   groupProjectId: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
+  ctx: GroupProjectContextValue;
 }) {
-  const bindings = useMcpBindingStore((s) => s.bindings);
-  const projects = useGroupProjectStore((s) => s.projects);
-  const loaded = useGroupProjectStore((s) => s.loaded);
-  const loadProjects = useGroupProjectStore((s) => s.loadProjects);
-  const update = useGroupProjectStore((s) => s.update);
-
+  const { project, members, loaded, loadProjects, update, fetchDigest, injectMessage } = ctx;
 
   const [showTapModal, setShowTapModal] = useState(false);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
@@ -219,26 +195,16 @@ function ProjectCard({
     const refresh = async () => {
       if (cancelled) return;
       try {
-        const digest = await window.clubhouse.groupProject.getBulletinDigest(groupProjectId) as TopicDigest[];
+        const digest = await fetchDigest(groupProjectId);
         if (!cancelled) setTopics(digest);
       } catch { /* ignore */ }
     };
     refresh();
     const interval = setInterval(refresh, POLL_INTERVAL_MS);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [groupProjectId]);
+  }, [groupProjectId, fetchDigest]);
 
-  const project = useMemo(
-    () => projects.find((p) => p.id === groupProjectId),
-    [projects, groupProjectId],
-  );
-
-  const connectedAgents = useMemo(
-    () => dedupeAgents(bindings, groupProjectId),
-    [bindings, groupProjectId],
-  );
-
-  const hasActivity = connectedAgents.length > 0;
+  const hasActivity = members.length > 0;
   const description = project?.description || '';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
 
@@ -247,16 +213,16 @@ function ProjectCard({
 
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
-    await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
+    await update(groupProjectId, { metadata: { pollingEnabled: newVal } });
     onUpdateMetadata({ pollingEnabled: newVal });
     const name = project?.name || groupProjectId;
     const agents = useAgentStore.getState().agents;
-    for (const agent of connectedAgents) {
-      const orchestrator = agents[agent.agentId]?.orchestrator;
+    for (const member of members) {
+      const orchestrator = agents[member.agentId]?.orchestrator;
       const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
-      injectPtyMessage(agent.agentId, msg);
+      injectMessage(member.agentId, msg);
     }
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents, project]);
+  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, members, project, injectMessage]);
 
   return (
     <div className="flex flex-col h-full p-4 gap-3">
@@ -269,7 +235,7 @@ function ProjectCard({
         />
         <RobotIcon size={14} />
         <span className="text-xs text-ctp-subtext0 flex-1 truncate">
-          {connectedAgents.length} agent{connectedAgents.length !== 1 ? 's' : ''}
+          {members.length} agent{members.length !== 1 ? 's' : ''}
         </span>
         {/* Megaphone button */}
         <button
@@ -308,14 +274,14 @@ function ProjectCard({
       )}
 
       {/* Agent list */}
-      {connectedAgents.length > 0 && (
+      {members.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-1">
-          {connectedAgents.map((b) => (
+          {members.map((m) => (
             <span
-              key={b.agentId}
+              key={m.agentId}
               className="px-2 py-0.5 text-[10px] bg-surface-0 text-ctp-subtext1 rounded-full"
             >
-              {b.agentName || b.agentId}
+              {m.agentName || m.agentId}
             </span>
           ))}
         </div>
@@ -324,9 +290,10 @@ function ProjectCard({
       {/* Shoulder Tap Modal */}
       {showTapModal && (
         <ShoulderTapModal
-          connectedAgents={connectedAgents}
+          members={members}
           projectInstructions={project?.instructions || ''}
           onClose={() => setShowTapModal(false)}
+          injectMessage={injectMessage}
         />
       )}
     </div>
@@ -338,16 +305,13 @@ function ProjectCard({
 function ExpandedProjectView({
   groupProjectId,
   onUpdateMetadata,
+  ctx,
 }: {
   groupProjectId: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
+  ctx: GroupProjectContextValue;
 }) {
-  const bindings = useMcpBindingStore((s) => s.bindings);
-  const projects = useGroupProjectStore((s) => s.projects);
-  const loaded = useGroupProjectStore((s) => s.loaded);
-  const loadProjects = useGroupProjectStore((s) => s.loadProjects);
-  const update = useGroupProjectStore((s) => s.update);
-
+  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage } = ctx;
 
   const [selectedTopic, setSelectedTopic] = useState<string>(ALL_TOPICS_KEY);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -358,11 +322,6 @@ function ExpandedProjectView({
   useEffect(() => {
     if (!loaded) loadProjects();
   }, [loaded, loadProjects]);
-
-  const project = useMemo(
-    () => projects.find((p) => p.id === groupProjectId),
-    [projects, groupProjectId],
-  );
 
   // Inline editable description, instructions & shoulder tap toggle
   const [editDesc, setEditDesc] = useState(project?.description || '');
@@ -393,16 +352,11 @@ function ExpandedProjectView({
         description: editDesc,
         instructions: editInstr,
         metadata: { shoulderTapEnabled },
-      } as any);
+      });
     } finally {
       setSaving(false);
     }
   }, [hasUnsavedChanges, saving, update, groupProjectId, editDesc, editInstr, shoulderTapEnabled]);
-
-  const connectedAgents = useMemo(
-    () => dedupeAgents(bindings, groupProjectId),
-    [bindings, groupProjectId],
-  );
 
   const displayName = project?.name || 'Group Project';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
@@ -413,18 +367,18 @@ function ExpandedProjectView({
     const refresh = async () => {
       if (cancelled) return;
       try {
-        const digest = await window.clubhouse.groupProject.getBulletinDigest(groupProjectId) as TopicDigest[];
+        const digest = await fetchDigest(groupProjectId);
         if (!cancelled) setTopics(digest);
       } catch { /* ignore */ }
 
       if (selectedTopic === ALL_TOPICS_KEY) {
         try {
-          const allMsgs = await window.clubhouse.groupProject.getAllMessages(groupProjectId) as BulletinMessage[];
+          const allMsgs = await fetchAllMessages(groupProjectId);
           if (!cancelled) setMessages(allMsgs);
         } catch { /* ignore */ }
       } else if (selectedTopic) {
         try {
-          const msgs = await window.clubhouse.groupProject.getTopicMessages(groupProjectId, selectedTopic) as BulletinMessage[];
+          const msgs = await fetchTopicMessages(groupProjectId, selectedTopic);
           if (!cancelled) setMessages(msgs);
         } catch { /* ignore */ }
       }
@@ -433,7 +387,7 @@ function ExpandedProjectView({
     refresh();
     const interval = setInterval(refresh, POLL_INTERVAL_MS);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [groupProjectId, selectedTopic]);
+  }, [groupProjectId, selectedTopic, fetchDigest, fetchAllMessages, fetchTopicMessages]);
 
   // Sort messages newest-first so the feed shows latest on top
   const sortedMessages = useMemo(
@@ -454,16 +408,16 @@ function ExpandedProjectView({
 
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
-    await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
+    await update(groupProjectId, { metadata: { pollingEnabled: newVal } });
     onUpdateMetadata({ pollingEnabled: newVal });
     const name = project?.name || groupProjectId;
     const agents = useAgentStore.getState().agents;
-    for (const agent of connectedAgents) {
-      const orchestrator = agents[agent.agentId]?.orchestrator;
+    for (const member of members) {
+      const orchestrator = agents[member.agentId]?.orchestrator;
       const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
-      injectPtyMessage(agent.agentId, msg);
+      injectMessage(member.agentId, msg);
     }
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents, project]);
+  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, members, project, injectMessage]);
 
   return (
     <div className="flex flex-col h-full text-ctp-text">
@@ -628,16 +582,17 @@ function ExpandedProjectView({
       <div className="flex items-center gap-2 px-3 py-1.5 border-t border-surface-1 bg-ctp-mantle">
         <RobotIcon size={12} />
         <span className="text-[10px] text-ctp-subtext0">
-          {connectedAgents.length} agent{connectedAgents.length !== 1 ? 's' : ''} connected
+          {members.length} agent{members.length !== 1 ? 's' : ''} connected
         </span>
       </div>
 
       {/* Shoulder Tap Modal */}
       {showTapModal && (
         <ShoulderTapModal
-          connectedAgents={connectedAgents}
+          members={members}
           projectInstructions={project?.instructions || ''}
           onClose={() => setShowTapModal(false)}
+          injectMessage={injectMessage}
         />
       )}
     </div>
@@ -657,7 +612,7 @@ function ExpandedHeader({
 }: {
   displayName: string;
   groupProjectId: string;
-  update: (id: string, fields: { name?: string }) => Promise<void>;
+  update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   onShowTapModal: () => void;
   pollingEnabled: boolean;
@@ -738,13 +693,15 @@ function ExpandedHeader({
 /* ---------- Shoulder Tap Modal ---------- */
 
 function ShoulderTapModal({
-  connectedAgents,
+  members,
   projectInstructions,
   onClose,
+  injectMessage,
 }: {
-  connectedAgents: McpBindingEntry[];
+  members: GroupProjectMember[];
   projectInstructions: string;
   onClose: () => void;
+  injectMessage: (agentId: string, message: string) => void;
 }) {
   const [target, setTarget] = useState<string>('all');
   const [message, setMessage] = useState('');
@@ -765,16 +722,16 @@ function ShoulderTapModal({
     const fullMessage = parts.join('\n\n');
 
     const targets = target === 'all'
-      ? connectedAgents
-      : connectedAgents.filter((a) => a.agentId === target);
+      ? members
+      : members.filter((m) => m.agentId === target);
 
-    for (const agent of targets) {
-      injectPtyMessage(agent.agentId, fullMessage);
+    for (const member of targets) {
+      injectMessage(member.agentId, fullMessage);
     }
 
     setSending(false);
     onClose();
-  }, [message, includeInstructions, projectInstructions, sending, target, connectedAgents, onClose]);
+  }, [message, includeInstructions, projectInstructions, sending, target, members, onClose, injectMessage]);
 
   return (
     <div
@@ -801,9 +758,9 @@ function ShoulderTapModal({
             className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
           >
             <option value="all">Broadcast to all</option>
-            {connectedAgents.map((a) => (
-              <option key={a.agentId} value={a.agentId}>
-                {a.agentName || a.agentId}
+            {members.map((m) => (
+              <option key={m.agentId} value={m.agentId}>
+                {m.agentName || m.agentId}
               </option>
             ))}
           </select>
