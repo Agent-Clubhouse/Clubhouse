@@ -344,6 +344,13 @@ export const IPC = {
     AGENT_WORKTREE_STATUS: 'annex-client:agent-worktree-status',
     AGENT_REORDER: 'annex-client:agent-reorder',
     CANVAS_MUTATION: 'annex-client:canvas-mutation',
+    GP_GET: 'annex-client:gp-get',
+    GP_UPDATE: 'annex-client:gp-update',
+    GP_BULLETIN_DIGEST: 'annex-client:gp-bulletin-digest',
+    GP_BULLETIN_TOPIC: 'annex-client:gp-bulletin-topic',
+    GP_BULLETIN_ALL: 'annex-client:gp-bulletin-all',
+    GP_BULLETIN_POST: 'annex-client:gp-bulletin-post',
+    GP_SHOULDER_TAP: 'annex-client:gp-shoulder-tap',
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',

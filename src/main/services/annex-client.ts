@@ -923,6 +923,96 @@ export function requestBulletinTopicMessages(fingerprint: string, groupProjectId
   });
 }
 
+/**
+ * Fetch a single group project from a satellite via HTTPS REST.
+ */
+export function requestGroupProjectGet(fingerprint: string, groupProjectId: string): Promise<unknown> {
+  return satelliteHttpsRequest(fingerprint, 'GET', `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}`);
+}
+
+/**
+ * Update a group project on a satellite via HTTPS REST (PATCH).
+ */
+export function requestGroupProjectUpdate(
+  fingerprint: string,
+  groupProjectId: string,
+  fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> },
+): Promise<unknown> {
+  return satelliteHttpsRequest(fingerprint, 'PATCH', `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}`, fields);
+}
+
+/**
+ * Fetch all bulletin messages from a satellite group project via HTTPS REST.
+ */
+export function requestBulletinAllMessages(
+  fingerprint: string,
+  groupProjectId: string,
+  since?: string,
+  limit?: number,
+): Promise<unknown[]> {
+  const params = new URLSearchParams();
+  if (since) params.set('since', since);
+  if (limit !== undefined) params.set('limit', String(limit));
+  const qs = params.toString() ? `?${params.toString()}` : '';
+
+  const sat = satellites.get(fingerprint);
+  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
+
+  const identity = annexIdentity.getOrCreateIdentity();
+  const tlsOptions = annexTls.createTlsClientOptions(identity);
+
+  return new Promise<unknown[]>((resolve) => {
+    const url = `https://${sat.host}:${sat.mainPort}/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`;
+    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
+        catch { resolve([]); }
+      });
+    });
+    req.on('error', () => resolve([]));
+    req.on('timeout', () => { req.destroy(); resolve([]); });
+  });
+}
+
+/**
+ * Post a bulletin message to a satellite group project via HTTPS REST.
+ */
+export function requestBulletinPostMessage(
+  fingerprint: string,
+  groupProjectId: string,
+  sender: string,
+  topic: string,
+  body: string,
+): Promise<unknown> {
+  return satelliteHttpsRequest(
+    fingerprint,
+    'POST',
+    `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages`,
+    { sender, topic, body },
+  );
+}
+
+/**
+ * Send a shoulder tap / broadcast to a satellite group project via HTTPS REST.
+ */
+export function requestShoulderTap(
+  fingerprint: string,
+  groupProjectId: string,
+  targetAgentId: string | null,
+  message: string,
+  sender?: string,
+): Promise<unknown> {
+  return satelliteHttpsRequest(
+    fingerprint,
+    'POST',
+    `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/shoulder-tap`,
+    { targetAgentId, message, sender: sender || 'remote' },
+  );
+}
+
 export function getDiscoveredServices(): DiscoveredService[] {
   return Array.from(discoveredServices.values());
 }
@@ -933,7 +1023,7 @@ export function getDiscoveredServices(): DiscoveredService[] {
 
 function satelliteHttpsRequest(
   fingerprint: string,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PATCH',
   urlPath: string,
   body?: Record<string, unknown>,
 ): Promise<unknown> {

@@ -937,6 +937,20 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_REORDER, satelliteId, projectId, orderedIds),
     canvasMutation: (satelliteId: string, projectId: string, canvasId: string, scope: string, mutation: unknown): Promise<void> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.CANVAS_MUTATION, satelliteId, projectId, canvasId, scope, mutation),
+    gpGet: (satelliteId: string, groupProjectId: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_GET, satelliteId, groupProjectId),
+    gpUpdate: (satelliteId: string, groupProjectId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_UPDATE, satelliteId, groupProjectId, fields),
+    gpBulletinDigest: (satelliteId: string, groupProjectId: string, since?: string): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_DIGEST, satelliteId, groupProjectId, since),
+    gpBulletinTopic: (satelliteId: string, groupProjectId: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_TOPIC, satelliteId, groupProjectId, topic, since, limit),
+    gpBulletinAll: (satelliteId: string, groupProjectId: string, since?: string, limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_ALL, satelliteId, groupProjectId, since, limit),
+    gpBulletinPost: (satelliteId: string, groupProjectId: string, sender: string, topic: string, body: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_POST, satelliteId, groupProjectId, sender, topic, body),
+    gpShoulderTap: (satelliteId: string, groupProjectId: string, targetAgentId: string | null, message: string, sender?: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_SHOULDER_TAP, satelliteId, groupProjectId, targetAgentId, message, sender),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>

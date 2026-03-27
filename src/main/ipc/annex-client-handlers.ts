@@ -244,4 +244,62 @@ export function registerAnnexClientHandlers(): void {
       });
     },
   ));
+
+  // Group Project proxy: get a group project from a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_GET, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, satelliteId, groupProjectId) => {
+      return annexClient.requestGroupProjectGet(satelliteId, groupProjectId);
+    },
+  ));
+
+  // Group Project proxy: update a group project on a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_UPDATE, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg()],
+    async (_event, satelliteId, groupProjectId, fields) => {
+      return annexClient.requestGroupProjectUpdate(satelliteId, groupProjectId, fields as {
+        name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown>;
+      });
+    },
+  ));
+
+  // Group Project proxy: get bulletin digest from satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_BULLETIN_DIGEST, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, satelliteId, groupProjectId, since) => {
+      return annexClient.requestBulletinDigest(satelliteId, groupProjectId, since);
+    },
+  ));
+
+  // Group Project proxy: get topic messages from satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_BULLETIN_TOPIC, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
+    async (_event, satelliteId, groupProjectId, topic, since, limit) => {
+      return annexClient.requestBulletinTopicMessages(satelliteId, groupProjectId, topic, since, limit);
+    },
+  ));
+
+  // Group Project proxy: get all bulletin messages from satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_BULLETIN_ALL, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
+    async (_event, satelliteId, groupProjectId, since, limit) => {
+      return annexClient.requestBulletinAllMessages(satelliteId, groupProjectId, since, limit);
+    },
+  ));
+
+  // Group Project proxy: post bulletin message to satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_BULLETIN_POST, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg(), stringArg()],
+    async (_event, satelliteId, groupProjectId, sender, topic, body) => {
+      return annexClient.requestBulletinPostMessage(satelliteId, groupProjectId, sender, topic, body);
+    },
+  ));
+
+  // Group Project proxy: shoulder tap / broadcast on satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_SHOULDER_TAP, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true }), stringArg(), stringArg({ optional: true })],
+    async (_event, satelliteId, groupProjectId, targetAgentId, message, sender) => {
+      return annexClient.requestShoulderTap(satelliteId, groupProjectId, targetAgentId, message, sender);
+    },
+  ));
 }
