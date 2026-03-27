@@ -370,6 +370,11 @@ export function initAnnexClientListener(): () => void {
           selectedViewId?: string | null; name: string;
           allCanvasTabs?: Array<{ id: string; name: string }>;
           activeCanvasId?: string;
+          wireDefinitions?: Array<{
+            agentId: string; targetId: string; targetKind: string; label: string;
+            agentName?: string; targetName?: string; projectName?: string;
+            instructions?: Record<string, string>; disabledTools?: string[];
+          }>;
         };
 
         // Re-namespace agent/project IDs in views — the satellite stores
@@ -392,6 +397,19 @@ export function initAnnexClientListener(): () => void {
               meta.projectId = `remote||${satelliteId}||${meta.projectId}`;
             }
             patched.metadata = meta;
+          }
+          return patched;
+        });
+
+        // Re-namespace agent/target IDs in wire definitions so wires resolve
+        // correctly on the controller using namespaced agent IDs.
+        const namespacedWires = cs.wireDefinitions?.map((w) => {
+          const patched = { ...w };
+          if (patched.agentId && !patched.agentId.startsWith('remote||')) {
+            patched.agentId = `remote||${satelliteId}||${patched.agentId}`;
+          }
+          if (patched.targetId && !patched.targetId.startsWith('remote||')) {
+            patched.targetId = `remote||${satelliteId}||${patched.targetId}`;
           }
           return patched;
         });
@@ -420,6 +438,7 @@ export function initAnnexClientListener(): () => void {
           useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
             canvases,
             activeCanvasId: cs.activeCanvasId || cs.canvasId,
+            wireDefinitions: namespacedWires,
           });
         } else if (existing) {
           // No tab metadata — merge single canvas into existing state
@@ -439,6 +458,7 @@ export function initAnnexClientListener(): () => void {
           useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
             canvases,
             activeCanvasId: existing.activeCanvasId,
+            wireDefinitions: namespacedWires ?? existing.wireDefinitions,
           });
         } else {
           // First canvas state for this project
@@ -450,6 +470,7 @@ export function initAnnexClientListener(): () => void {
               selectedViewId: cs.selectedViewId ?? null,
             }],
             activeCanvasId: cs.canvasId,
+            wireDefinitions: namespacedWires,
           });
         }
       }

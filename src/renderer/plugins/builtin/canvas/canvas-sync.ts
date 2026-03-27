@@ -143,6 +143,20 @@ export function broadcastCanvasState(
     // Tab metadata for annex controllers
     allCanvasTabs: state.canvases.map((c) => ({ id: c.id, name: c.name })),
     activeCanvasId: state.activeCanvasId,
+    // Wire definitions for annex controllers — ensures wires are visible on the controller
+    wireDefinitions: state.wireDefinitions.length > 0
+      ? state.wireDefinitions.map((w) => ({
+        agentId: w.agentId,
+        targetId: w.targetId,
+        targetKind: w.targetKind,
+        label: w.label,
+        agentName: w.agentName,
+        targetName: w.targetName,
+        projectName: w.projectName,
+        ...(w.instructions ? { instructions: w.instructions } : {}),
+        ...(w.disabledTools && w.disabledTools.length > 0 ? { disabledTools: w.disabledTools } : {}),
+      }))
+      : undefined,
   };
 
   window.clubhouse.window.broadcastCanvasState(snapshot);

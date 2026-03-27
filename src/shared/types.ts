@@ -997,6 +997,18 @@ export interface CanvasStateSnapshot {
   allCanvasTabs?: Array<{ id: string; name: string }>;
   /** Active canvas tab ID on the source — enables tab sync for annex controllers. */
   activeCanvasId?: string;
+  /** Wire definitions for remote canvas sync — ensures wires are visible on the controller. */
+  wireDefinitions?: Array<{
+    agentId: string;
+    targetId: string;
+    targetKind: string;
+    label: string;
+    agentName?: string;
+    targetName?: string;
+    projectName?: string;
+    instructions?: Record<string, string>;
+    disabledTools?: string[];
+  }>;
 }
 
 // --- Session Resume on Update types ---
