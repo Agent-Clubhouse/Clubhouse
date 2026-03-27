@@ -441,15 +441,18 @@ describe('AcpClient', () => {
     );
   });
 
-  it('logs process exit with stderr and pending count', () => {
+  it('logs process exit with stderr and pending count', async () => {
     const onLog = vi.fn();
     const client = new AcpClient({ binary: 'copilot', args: [], onLog });
     client.start();
 
     mockProc.stderr.emit('data', 'fatal error\n');
-    client.request('session/start', {});
+    const pendingRequest = client.request('session/start', {});
 
     mockProc.emit('exit', 1, null);
+
+    // Consume the rejection to avoid unhandled promise rejection
+    await expect(pendingRequest).rejects.toThrow('Process exited');
 
     expect(onLog).toHaveBeenCalledWith(
       'error',

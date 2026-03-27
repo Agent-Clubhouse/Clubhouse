@@ -585,13 +585,23 @@ describe('AcpAdapter', () => {
     const { RpcError } = await import('./acp-client');
     const rpcErr = new RpcError(-32601, 'Method not found');
 
-    mockClient.request.mockRejectedValueOnce(rpcErr);
+    // Override request to reject for session/start
+    mockClient.request.mockImplementation((method: string) => {
+      if (method === 'session/start') return Promise.reject(rpcErr);
+      return Promise.resolve(undefined);
+    });
 
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
-    // Wait for error to propagate
-    const events = await collectEvents(stream, 2);
+    // Let the async catch handler run before triggering exit
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onExit(1, null);
+
+    const events: StructuredEvent[] = [];
+    for await (const event of stream) {
+      events.push(event);
+    }
 
     expect(events.some(e => e.type === 'error')).toBe(true);
     const errorEvent = events.find(e => e.type === 'error')!;

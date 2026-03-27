@@ -532,9 +532,12 @@ describe('CodexAppServerClient', () => {
     await client.start();
 
     mockProc.stderr.emit('data', 'fatal error\n');
-    client.request('thread/start', {});
+    const pendingRequest = client.request('thread/start', {});
 
     mockProc.emit('exit', 1, null);
+
+    // Consume the rejection to avoid unhandled promise rejection
+    await expect(pendingRequest).rejects.toThrow('Process exited');
 
     expect(onLog).toHaveBeenCalledWith(
       'error',
@@ -570,6 +573,6 @@ describe('CodexAppServerClient', () => {
     setTimeout(() => autoRespondInit(mockProc), 0);
     await client.start();
 
-    expect(onLog).toHaveBeenCalledWith('info', 'Codex init handshake complete');
+    expect(onLog).toHaveBeenCalledWith('info', 'Codex init handshake complete', undefined);
   });
 });
