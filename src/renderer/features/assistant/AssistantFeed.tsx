@@ -4,10 +4,10 @@ import { AssistantActionCard } from './AssistantActionCard';
 import type { FeedItem } from './types';
 
 const SUGGESTED_PROMPTS = [
-  'Help me set up a new project',
-  'Create a canvas for my workflow',
-  'What can Clubhouse do?',
-  'I need help with multi-agent coordination',
+  'Find my projects and add them to Clubhouse',
+  'Create a multi-agent canvas for debugging',
+  'Help me write agent instructions',
+  'What orchestrators are available?',
 ];
 
 interface Props {
@@ -67,7 +67,8 @@ export function AssistantFeed({ items, onSendPrompt }: Props) {
             Hi! I&apos;m the Clubhouse Assistant.
           </p>
           <p className="text-xs text-ctp-subtext0 mb-4">
-            I can help you set up projects, create agents, build canvases, and more.
+            I can set up projects, create and configure agents, build canvases
+            with wired-up workflows, write agent instructions, and more.
           </p>
           <div className="flex flex-wrap gap-2 justify-center" data-testid="suggested-prompts">
             {SUGGESTED_PROMPTS.map((prompt) => (

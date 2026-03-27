@@ -225,9 +225,12 @@ async function startAgent(firstMessage: string): Promise<void> {
     if (!availability.available) {
       const errorMsg = availability.error || 'No orchestrator configured';
       pushAssistantMessage(
-        'I need an orchestrator (like Claude Code) to be configured before I can help. ' +
-        'Go to **Settings > Orchestrators** to set one up.\n\n' +
-        `_Error: ${errorMsg}_`,
+        'I need an orchestrator to be installed and configured before I can help.\n\n' +
+        '**How to fix this:**\n' +
+        '1. Install an orchestrator CLI (Claude Code, GitHub Copilot CLI, or Codex CLI)\n' +
+        '2. Open **Settings** (gear icon below) > **Orchestrators**\n' +
+        '3. The orchestrator should be auto-detected once installed\n\n' +
+        `_${errorMsg}_`,
       );
       setStatus('error', errorMsg);
       return;
@@ -273,7 +276,22 @@ async function startAgent(firstMessage: string): Promise<void> {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    pushAssistantMessage(`Failed to start the assistant: ${msg}`);
+    const isStructuredError = msg.includes('structured') || msg.includes('does not support');
+    if (isStructuredError) {
+      pushAssistantMessage(
+        'The assistant could not start a structured session with your orchestrator.\n\n' +
+        'This may mean the orchestrator CLI needs to be updated, or structured mode ' +
+        'is not fully supported yet.\n\n' +
+        '**Try:** Update your orchestrator CLI to the latest version and try again.\n\n' +
+        `_${msg}_`,
+      );
+    } else {
+      pushAssistantMessage(
+        `Something went wrong starting the assistant.\n\n` +
+        `**Error:** ${msg}\n\n` +
+        'Try clicking the reset button (top right) to start a fresh conversation.',
+      );
+    }
     setStatus('error', msg);
     messageQueue = [];
   }
