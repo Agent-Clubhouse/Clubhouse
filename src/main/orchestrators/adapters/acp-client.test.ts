@@ -7,7 +7,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { spawn } from 'child_process';
-import { AcpClient } from './acp-client';
+import { AcpClient, RpcError } from './acp-client';
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -328,5 +328,151 @@ describe('AcpClient', () => {
       (call) => JSON.parse((call[0] as string).replace('\n', '')).id,
     );
     expect(ids).toEqual([1, 2]);
+  });
+
+  // ── RpcError tests ────────────────────────────────────────────────────────
+
+  it('rejects with RpcError preserving code and data', async () => {
+    const client = new AcpClient({ binary: 'copilot', args: [] });
+    client.start();
+
+    const promise = client.request('session/start', {});
+
+    emitData(
+      mockProc,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        error: { code: -32601, message: 'Method not found', data: { detail: 'no such method' } },
+      }) + '\n',
+    );
+
+    await expect(promise).rejects.toThrow(RpcError);
+    try {
+      await promise;
+    } catch (err) {
+      const rpcErr = err as RpcError;
+      expect(rpcErr.code).toBe(-32601);
+      expect(rpcErr.data).toEqual({ detail: 'no such method' });
+      expect(rpcErr.message).toContain('Method not found');
+    }
+  });
+
+  // ── onLog callback tests ──────────────────────────────────────────────────
+
+  it('calls onLog for spawn', () => {
+    const onLog = vi.fn();
+    const client = new AcpClient({
+      binary: '/usr/bin/copilot',
+      args: ['--acp'],
+      onLog,
+    });
+    client.start();
+
+    expect(onLog).toHaveBeenCalledWith(
+      'info',
+      'Spawning ACP process',
+      expect.objectContaining({
+        binary: '/usr/bin/copilot',
+        args: ['--acp'],
+      }),
+    );
+  });
+
+  it('calls onLog for RPC requests', () => {
+    const onLog = vi.fn();
+    const client = new AcpClient({ binary: 'copilot', args: [], onLog });
+    client.start();
+
+    client.request('session/start', { model: 'gpt-5' });
+
+    expect(onLog).toHaveBeenCalledWith(
+      'info',
+      'RPC request → session/start',
+      expect.objectContaining({
+        method: 'session/start',
+      }),
+    );
+  });
+
+  it('calls onLog for RPC errors', async () => {
+    const onLog = vi.fn();
+    const client = new AcpClient({ binary: 'copilot', args: [], onLog });
+    client.start();
+
+    const promise = client.request('bad/method', {});
+
+    emitData(
+      mockProc,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        error: { code: -32601, message: 'Method not found' },
+      }) + '\n',
+    );
+
+    await expect(promise).rejects.toThrow();
+
+    expect(onLog).toHaveBeenCalledWith(
+      'error',
+      'RPC error ← id=1',
+      expect.objectContaining({
+        code: -32601,
+        message: 'Method not found',
+      }),
+    );
+  });
+
+  // ── stderr capture tests ──────────────────────────────────────────────────
+
+  it('captures stderr output and makes it accessible via getStderr', () => {
+    const onLog = vi.fn();
+    const client = new AcpClient({ binary: 'copilot', args: [], onLog });
+    client.start();
+
+    mockProc.stderr.emit('data', 'Warning: something\n');
+    mockProc.stderr.emit('data', 'Error: broken\n');
+
+    expect(client.getStderr()).toBe('Warning: something\nError: broken\n');
+    expect(onLog).toHaveBeenCalledWith(
+      'warn',
+      'ACP process stderr',
+      expect.objectContaining({ text: 'Warning: something' }),
+    );
+  });
+
+  it('logs process exit with stderr and pending count', () => {
+    const onLog = vi.fn();
+    const client = new AcpClient({ binary: 'copilot', args: [], onLog });
+    client.start();
+
+    mockProc.stderr.emit('data', 'fatal error\n');
+    client.request('session/start', {});
+
+    mockProc.emit('exit', 1, null);
+
+    expect(onLog).toHaveBeenCalledWith(
+      'error',
+      'ACP process exited',
+      expect.objectContaining({
+        code: 1,
+        pendingRequests: 1,
+        stderr: 'fatal error',
+      }),
+    );
+  });
+
+  it('logs malformed JSON lines', () => {
+    const onLog = vi.fn();
+    const client = new AcpClient({ binary: 'copilot', args: [], onLog });
+    client.start();
+
+    emitData(mockProc, 'this is not json\n');
+
+    expect(onLog).toHaveBeenCalledWith(
+      'warn',
+      'Malformed JSON line from ACP stdout',
+      expect.objectContaining({ line: 'this is not json' }),
+    );
   });
 });
