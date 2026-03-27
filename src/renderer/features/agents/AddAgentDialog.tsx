@@ -7,7 +7,7 @@ import type { McpCatalogEntry } from '../../../shared/types';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) => void;
+  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean) => void;
   projectPath?: string;
 }
 
@@ -16,6 +16,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
+  const [structuredMode, setStructuredMode] = useState(false);
   const [freeAgentMode, setFreeAgentMode] = useState(false);
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
@@ -28,6 +29,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
 
   const selectedOrch = allOrchestrators.find((o) => o.id === orchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
+  const supportsStructured = selectedOrch?.capabilities?.structuredMode ?? false;
 
   useEffect(() => {
     if (!projectPath) return;
@@ -45,7 +47,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined);
+    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined, structuredMode || undefined);
   };
 
   return (
@@ -155,6 +157,24 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use git worktree</span>
             <span className="text-[10px] text-ctp-subtext0/70 ml-1">
               (isolated branch + directory)
+            </span>
+          </label>
+
+          {/* Structured Mode */}
+          <label
+            className={`flex items-center gap-2 mb-3 ${supportsStructured ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
+            title={supportsStructured ? 'Run in structured mode with rich event streaming' : 'Not supported by this orchestrator'}
+          >
+            <input
+              type="checkbox"
+              checked={structuredMode}
+              onChange={(e) => setStructuredMode(e.target.checked)}
+              disabled={!supportsStructured}
+              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+            />
+            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use Structured Mode</span>
+            <span className="text-[10px] text-ctp-subtext0/70 ml-1">
+              {supportsStructured ? '(rich event UI)' : '(not supported)'}
             </span>
           </label>
 
