@@ -139,7 +139,13 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     // TODO: Apply launch wrapper transform to structured path once adapter architecture supports external binary override
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
     const useStructured = (spawnMode === 'structured' && params.kind === 'quick') || params.structuredMode;
-    if (useStructured && isStructuredCapable(provider)) {
+    const hasMission = !!params.mission && params.mission.trim() !== '';
+    if (useStructured && !hasMission) {
+      appLog('core:agent', 'warn', 'Structured mode requested but mission is empty — falling back to PTY', {
+        meta: { agentId: params.agentId, kind: params.kind },
+      });
+    }
+    if (useStructured && hasMission && isStructuredCapable(provider)) {
       appLog('core:agent', 'info', `Spawning ${params.kind} agent in structured mode`, {
         meta: {
           agentId: params.agentId,
@@ -155,7 +161,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       agentRegistry.setRuntime(params.agentId, 'structured');
       const adapter = provider.createStructuredAdapter();
       await structuredManager.startStructuredSession(params.agentId, adapter, {
-        mission: params.mission || '',
+        mission: params.mission!,
         systemPrompt: params.systemPrompt,
         model: params.model,
         cwd: params.cwd,

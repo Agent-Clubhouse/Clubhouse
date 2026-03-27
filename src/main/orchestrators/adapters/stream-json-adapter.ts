@@ -39,6 +39,10 @@ export class StreamJsonAdapter implements StructuredAdapter {
   }
 
   start(sessionOpts: StructuredSessionOpts): AsyncIterable<StructuredEvent> {
+    if (!sessionOpts.mission || sessionOpts.mission.trim() === '') {
+      throw new Error('StreamJsonAdapter requires a non-empty mission for -p mode');
+    }
+
     const queue = new AsyncQueue<StructuredEvent>();
     this.queue = queue;
 
