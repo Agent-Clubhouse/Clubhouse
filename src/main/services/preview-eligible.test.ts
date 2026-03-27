@@ -8,6 +8,10 @@ vi.mock('./auto-update-service', () => ({
   getSettings: vi.fn(() => ({ previewChannel: false })),
 }));
 
+vi.mock('./log-service', () => ({
+  appLog: vi.fn(),
+}));
+
 import { app } from 'electron';
 import * as autoUpdateService from './auto-update-service';
 import { isPreviewEligible } from './preview-eligible';

@@ -242,48 +242,70 @@ describe('maybeStartAnnex', () => {
     vi.clearAllMocks();
   });
 
-  it('starts server when settings.enableServer is true', () => {
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
-    maybeStartAnnex();
+  it('starts server when settings.enableServer is true', async () => {
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
+    await maybeStartAnnex();
     expect(annexServer.start).toHaveBeenCalled();
     expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('auto-started'));
   });
 
-  it('does not start server when settings.enableServer is false', () => {
+  it('auto-enables server+client when experimental flag on but toggles off', async () => {
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
-    maybeStartAnnex();
-    expect(annexServer.start).not.toHaveBeenCalled();
+    await maybeStartAnnex();
+    expect(annexSettings.saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ enableServer: true, enableClient: true }),
+    );
+    expect(annexServer.start).toHaveBeenCalled();
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('Auto-enabling'));
   });
 
-  it('does not start server when experimental annex flag is off', () => {
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({});
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
-    maybeStartAnnex();
-    expect(annexServer.start).not.toHaveBeenCalled();
-  });
-
-  it('does not start server when isPreviewEligible returns false', () => {
-    vi.mocked(isPreviewEligible).mockReturnValue(false);
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
-    maybeStartAnnex();
-    expect(annexServer.start).not.toHaveBeenCalled();
-  });
-
-  it('starts server when isPreviewEligible returns true', () => {
-    vi.mocked(isPreviewEligible).mockReturnValue(true);
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
-    maybeStartAnnex();
+  it('does not re-save settings when both toggles already on', async () => {
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
+    await maybeStartAnnex();
+    expect(annexSettings.saveSettings).not.toHaveBeenCalled();
     expect(annexServer.start).toHaveBeenCalled();
   });
 
-  it('logs error when auto-start fails', () => {
+  it('does not start server when experimental annex flag is off', async () => {
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({});
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
+    await maybeStartAnnex();
+    expect(annexServer.start).not.toHaveBeenCalled();
+  });
+
+  it('does not start server when isPreviewEligible returns false', async () => {
+    vi.mocked(isPreviewEligible).mockReturnValue(false);
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
+    await maybeStartAnnex();
+    expect(annexServer.start).not.toHaveBeenCalled();
+  });
+
+  it('starts server when isPreviewEligible returns true', async () => {
+    vi.mocked(isPreviewEligible).mockReturnValue(true);
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
+    await maybeStartAnnex();
+    expect(annexServer.start).toHaveBeenCalled();
+  });
+
+  it('logs error when auto-start fails', async () => {
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
     vi.mocked(annexServer.start).mockImplementationOnce(() => { throw new Error('bind failed'); });
-    maybeStartAnnex();
+    await maybeStartAnnex();
     expect(appLog).toHaveBeenCalledWith('core:annex', 'error', expect.any(String), expect.objectContaining({
       meta: expect.objectContaining({ error: 'bind failed' }),
+    }));
+  });
+
+  it('logs diagnostic info at startup', async () => {
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
+    await maybeStartAnnex();
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'info', 'Annex server startup check', expect.objectContaining({
+      meta: expect.objectContaining({ experimentalAnnex: true, previewEligible: true }),
+    }));
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'info', 'Annex settings at startup', expect.objectContaining({
+      meta: expect.objectContaining({ enableServer: true, enableClient: true }),
     }));
   });
 });
