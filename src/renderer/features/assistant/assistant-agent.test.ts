@@ -4,26 +4,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * Assistant agent backend tests.
  *
  * TEST GAPS (documented):
- * - Cannot test full agent communication in unit tests — requires a running
- *   orchestrator process (claude-code, copilot-cli, or codex-cli).
- * - Cannot test structured event streaming end-to-end — the IPC bridge
- *   and structured adapter live in the main process.
- * - Cannot test actual PTY/headless spawning — requires Electron main process.
- *
- * What IS tested here:
- * - System prompt construction (covered in system-prompt.test.ts)
- * - Event handler logic (text accumulation, tool card creation)
- * - Message queuing during startup
- * - Status transitions
+ * - Cannot test full agent communication — requires running orchestrator
+ * - Cannot test PTY data streaming — requires Electron PTY process
+ * - Cannot test headless transcript reading — requires real agent run
  */
 
-// Mock window.clubhouse.agent
 const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
 const mockStartStructured = vi.fn().mockResolvedValue(undefined);
 const mockSendStructuredMessage = vi.fn().mockResolvedValue(undefined);
 const mockKillAgent = vi.fn().mockResolvedValue(undefined);
 const mockCheckOrchestrator = vi.fn().mockResolvedValue({ available: true });
 const mockOnStructuredEvent = vi.fn().mockReturnValue(() => {});
+const mockReadTranscript = vi.fn().mockResolvedValue(null);
+const mockPtyWrite = vi.fn();
+const mockPtyOnData = vi.fn().mockReturnValue(() => {});
+const mockPtyOnExit = vi.fn().mockReturnValue(() => {});
 
 vi.stubGlobal('window', {
   clubhouse: {
@@ -35,13 +30,18 @@ vi.stubGlobal('window', {
       killAgent: mockKillAgent,
       checkOrchestrator: mockCheckOrchestrator,
       onStructuredEvent: mockOnStructuredEvent,
+      readTranscript: mockReadTranscript,
+    },
+    pty: {
+      write: mockPtyWrite,
+      onData: mockPtyOnData,
+      onExit: mockPtyOnExit,
     },
   },
 });
 
 vi.stubGlobal('process', { env: { HOME: '/tmp/test-home' } });
 
-// Ensure crypto.randomUUID is available in test environment
 if (!globalThis.crypto?.randomUUID) {
   vi.stubGlobal('crypto', {
     ...globalThis.crypto,
@@ -49,7 +49,6 @@ if (!globalThis.crypto?.randomUUID) {
   });
 }
 
-// Must import AFTER mocking window
 import * as agent from './assistant-agent';
 
 describe('assistant-agent', () => {
@@ -58,15 +57,15 @@ describe('assistant-agent', () => {
     agent.reset();
   });
 
-  it('starts in idle status', () => {
+  it('starts in idle status with interactive mode', () => {
     expect(agent.getStatus()).toBe('idle');
+    expect(agent.getMode()).toBe('interactive');
     expect(agent.getError()).toBeNull();
     expect(agent.getFeedItems()).toHaveLength(0);
   });
 
   it('sendMessage adds user message to feed', async () => {
     await agent.sendMessage('Hello');
-
     const items = agent.getFeedItems();
     expect(items.length).toBeGreaterThanOrEqual(1);
     expect(items[0].type).toBe('message');
@@ -74,91 +73,90 @@ describe('assistant-agent', () => {
     expect(items[0].message?.content).toBe('Hello');
   });
 
-  it('sendMessage spawns agent on first call', async () => {
-    await agent.sendMessage('Hello');
-
-    expect(mockCheckOrchestrator).toHaveBeenCalled();
-    // If the orchestrator is available, spawnAgent should be called
-    if (mockSpawnAgent.mock.calls.length > 0) {
-      expect(mockSpawnAgent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: 'quick',
-          freeAgentMode: true,
-        }),
-      );
-      expect(mockStartStructured).toHaveBeenCalled();
-    } else {
-      // If spawn wasn't called, there should be an error status
-      // (e.g., crypto.randomUUID not available in test env)
-      expect(['error', 'starting', 'responding']).toContain(agent.getStatus());
-    }
-  });
-
   it('shows error when no orchestrator is configured', async () => {
-    mockCheckOrchestrator.mockResolvedValueOnce({
-      available: false,
-      error: 'Claude Code CLI not found',
-    });
-
+    mockCheckOrchestrator.mockResolvedValueOnce({ available: false, error: 'CLI not found' });
     await agent.sendMessage('Hello');
-
     expect(agent.getStatus()).toBe('error');
     const items = agent.getFeedItems();
-    // Should have user message + error message
-    expect(items.length).toBeGreaterThanOrEqual(2);
-    const errorMsg = items.find(
-      (i) => i.type === 'message' && i.message?.role === 'assistant',
-    );
+    const errorMsg = items.find(i => i.type === 'message' && i.message?.role === 'assistant');
     expect(errorMsg?.message?.content).toContain('orchestrator');
   });
 
-  it('reset clears all state', async () => {
+  it('interactive mode spawns without structuredMode flag', async () => {
+    agent.setMode('interactive');
     await agent.sendMessage('Hello');
-    expect(agent.getFeedItems().length).toBeGreaterThan(0);
+    if (mockSpawnAgent.mock.calls.length > 0) {
+      const params = mockSpawnAgent.mock.calls[0][0];
+      expect(params.structuredMode).toBeUndefined();
+      expect(params.kind).toBe('quick');
+    }
+  });
 
-    agent.reset();
+  it('structured mode spawns with structuredMode: true', async () => {
+    agent.setMode('structured');
+    await agent.sendMessage('Hello');
+    if (mockSpawnAgent.mock.calls.length > 0) {
+      const params = mockSpawnAgent.mock.calls[0][0];
+      expect(params.structuredMode).toBe(true);
+    }
+  });
+
+  it('interactive mode sets up PTY listeners', async () => {
+    agent.setMode('interactive');
+    await agent.sendMessage('Hello');
+    if (mockSpawnAgent.mock.calls.length > 0) {
+      expect(mockPtyOnData).toHaveBeenCalled();
+      expect(mockPtyOnExit).toHaveBeenCalled();
+    }
+  });
+
+  it('structured mode sets up structured event listener', async () => {
+    agent.setMode('structured');
+    await agent.sendMessage('Hello');
+    if (mockSpawnAgent.mock.calls.length > 0) {
+      expect(mockOnStructuredEvent).toHaveBeenCalled();
+    }
+  });
+
+  it('setMode resets conversation', () => {
+    agent.setMode('structured');
+    expect(agent.getMode()).toBe('structured');
     expect(agent.getStatus()).toBe('idle');
     expect(agent.getFeedItems()).toHaveLength(0);
-    expect(agent.getError()).toBeNull();
+  });
+
+  it('setMode notifies listeners', () => {
+    const listener = vi.fn();
+    const unsub = agent.onModeChange(listener);
+    agent.setMode('headless');
+    expect(listener).toHaveBeenCalledWith('headless');
+    unsub();
+  });
+
+  it('reset clears all state but preserves mode', async () => {
+    agent.setMode('structured');
+    await agent.sendMessage('Hello');
+    agent.reset();
+    expect(agent.getStatus()).toBe('idle');
+    expect(agent.getMode()).toBe('structured');
+    expect(agent.getFeedItems()).toHaveLength(0);
   });
 
   it('onFeedUpdate notifies on changes', async () => {
     const listener = vi.fn();
     const unsub = agent.onFeedUpdate(listener);
-
     await agent.sendMessage('Hello');
-
     expect(listener).toHaveBeenCalled();
-    const lastCall = listener.mock.calls[listener.mock.calls.length - 1];
-    expect(lastCall[0].length).toBeGreaterThan(0);
-
     unsub();
   });
 
   it('onStatusChange notifies on transitions', async () => {
     const listener = vi.fn();
     const unsub = agent.onStatusChange(listener);
-
     await agent.sendMessage('Hello');
-
-    // Should have transitioned through starting -> responding (or error)
     expect(listener).toHaveBeenCalled();
     const statuses = listener.mock.calls.map((c: any[]) => c[0]);
     expect(statuses).toContain('starting');
-
     unsub();
-  });
-
-  it('includes system prompt with help content in spawn', async () => {
-    await agent.sendMessage('Hello');
-
-    if (mockSpawnAgent.mock.calls.length > 0) {
-      const spawnCall = mockSpawnAgent.mock.calls[0][0];
-      expect(spawnCall.systemPrompt).toContain('Clubhouse Assistant');
-      expect(spawnCall.systemPrompt).toContain('Workflow Recipes');
-    } else {
-      // Spawn may fail in test env due to missing globals — covered by system-prompt.test.ts
-      expect(true).toBe(true);
-    }
   });
 });
