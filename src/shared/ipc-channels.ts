@@ -375,6 +375,12 @@ export const IPC = {
     /** Remove assistant MCP binding. */
     UNBIND: 'assistant:unbind',
   },
+  CANVAS_CMD: {
+    /** Main→renderer push: request a canvas operation. */
+    REQUEST: 'canvas-cmd:request',
+    /** Renderer→main: result of a canvas operation. */
+    RESULT: 'canvas-cmd:result',
+  },
   PLUGIN_MCP: {
     CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
     REMOVE_TOOLS: 'plugin-mcp:remove-tools',

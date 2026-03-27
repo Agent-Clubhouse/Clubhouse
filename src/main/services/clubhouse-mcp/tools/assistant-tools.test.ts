@@ -113,6 +113,16 @@ describe('assistant-tools', () => {
     expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__delete_agent`);
     expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__write_agent_instructions`);
     expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__update_settings`);
+    // Canvas tools
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__create_canvas`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__list_canvases`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__add_card`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__move_card`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__resize_card`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__remove_card`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__rename_card`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__connect_cards`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__layout_canvas`);
   });
 
   it('tools are not visible to other agents', () => {

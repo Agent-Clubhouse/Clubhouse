@@ -3,6 +3,7 @@
  *
  * Read-only tools (Phase 3) let the assistant understand app state.
  * Write tools (Phase 4) let the assistant configure projects, agents, and settings.
+ * Canvas tools (Phase 5) let the assistant build visual workflows.
  *
  * All tools are registered as 'assistant' target kind and scoped exclusively
  * to the assistant agent via a binding.
@@ -17,6 +18,8 @@ import { listDurable, createDurable, updateDurable, updateDurableConfig, deleteD
 import { getAvailableOrchestrators, checkAvailability, resolveOrchestrator } from '../../agent-system';
 import { appLog } from '../../log-service';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
+import { sendCanvasCommand } from '../canvas-command';
+import { computeLayout } from '../canvas-layout';
 
 /**
  * Register all assistant MCP tools (read + write).
@@ -811,10 +814,172 @@ registerToolTemplate(
   },
 );
 
+// ══════════════════════════════════════════════════════════════════════════
+// CANVAS TOOLS (Phase 5)
+// ══════════════════════════════════════════════════════════════════════════
+
+registerToolTemplate('assistant', 'create_canvas', {
+  description: 'Create a new canvas tab. Returns the canvas ID.',
+  inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Canvas name. Auto-generated if omitted.' } } },
+}, async (_t, _a, args) => {
+  const result = await sendCanvasCommand('add_canvas', { name: args.name });
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to create canvas' }], isError: true };
+  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+});
+
+registerToolTemplate('assistant', 'list_canvases', {
+  description: 'List all canvases with their IDs, names, and card counts.',
+  inputSchema: { type: 'object', properties: {} },
+}, async (_t, _a, _args) => {
+  const result = await sendCanvasCommand('list_canvases', {});
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to list canvases' }], isError: true };
+  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+});
+
+registerToolTemplate('assistant', 'add_card', {
+  description: 'Add a card to a canvas. Types: "agent", "zone" (grouping container), "anchor" (text note).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      type: { type: 'string', description: 'Card type: "agent", "zone", or "anchor".' },
+      display_name: { type: 'string', description: 'Display name for the card.' },
+      position_x: { type: 'number', description: 'X position (default 100).' },
+      position_y: { type: 'number', description: 'Y position (default 100).' },
+      width: { type: 'number', description: 'Width in pixels (default 300).' },
+      height: { type: 'number', description: 'Height in pixels (default 200).' },
+    },
+    required: ['canvas_id', 'type'],
+  },
+}, async (_t, _a, args) => {
+  const cmdArgs: Record<string, unknown> = { canvas_id: args.canvas_id, type: args.type, display_name: args.display_name };
+  if (args.position_x !== undefined || args.position_y !== undefined) {
+    cmdArgs.position = { x: args.position_x || 100, y: args.position_y || 100 };
+  }
+  if (args.width !== undefined || args.height !== undefined) {
+    cmdArgs.size = { w: args.width || 300, h: args.height || 200 };
+  }
+  const result = await sendCanvasCommand('add_view', cmdArgs);
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to add card' }], isError: true };
+  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+});
+
+registerToolTemplate('assistant', 'move_card', {
+  description: 'Move a card to a new position on the canvas.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      view_id: { type: 'string', description: 'Card view ID.' },
+      x: { type: 'number', description: 'New X position.' },
+      y: { type: 'number', description: 'New Y position.' },
+    },
+    required: ['canvas_id', 'view_id', 'x', 'y'],
+  },
+}, async (_t, _a, args) => {
+  const result = await sendCanvasCommand('move_view', { canvas_id: args.canvas_id, view_id: args.view_id, position: { x: args.x, y: args.y } });
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to move card' }], isError: true };
+  return { content: [{ type: 'text', text: 'Card moved.' }] };
+});
+
+registerToolTemplate('assistant', 'resize_card', {
+  description: 'Resize a card on the canvas.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      view_id: { type: 'string', description: 'Card view ID.' },
+      width: { type: 'number', description: 'New width.' },
+      height: { type: 'number', description: 'New height.' },
+    },
+    required: ['canvas_id', 'view_id', 'width', 'height'],
+  },
+}, async (_t, _a, args) => {
+  const result = await sendCanvasCommand('resize_view', { canvas_id: args.canvas_id, view_id: args.view_id, size: { w: args.width, h: args.height } });
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to resize card' }], isError: true };
+  return { content: [{ type: 'text', text: 'Card resized.' }] };
+});
+
+registerToolTemplate('assistant', 'remove_card', {
+  description: 'Remove a card from the canvas.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      view_id: { type: 'string', description: 'Card view ID to remove.' },
+    },
+    required: ['canvas_id', 'view_id'],
+  },
+}, async (_t, _a, args) => {
+  const result = await sendCanvasCommand('remove_view', { canvas_id: args.canvas_id, view_id: args.view_id });
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to remove card' }], isError: true };
+  return { content: [{ type: 'text', text: 'Card removed.' }] };
+});
+
+registerToolTemplate('assistant', 'rename_card', {
+  description: 'Rename a card on the canvas.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      view_id: { type: 'string', description: 'Card view ID.' },
+      name: { type: 'string', description: 'New display name.' },
+    },
+    required: ['canvas_id', 'view_id', 'name'],
+  },
+}, async (_t, _a, args) => {
+  const result = await sendCanvasCommand('rename_view', { canvas_id: args.canvas_id, view_id: args.view_id, name: args.name });
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to rename card' }], isError: true };
+  return { content: [{ type: 'text', text: 'Card renamed.' }] };
+});
+
+registerToolTemplate('assistant', 'connect_cards', {
+  description: 'Create a wire (MCP binding) between two cards. Source must be an agent card.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      source_view_id: { type: 'string', description: 'Source card view ID (must be an agent card).' },
+      target_view_id: { type: 'string', description: 'Target card view ID.' },
+    },
+    required: ['canvas_id', 'source_view_id', 'target_view_id'],
+  },
+}, async (_t, _a, args) => {
+  const result = await sendCanvasCommand('connect_views', { canvas_id: args.canvas_id, source_view_id: args.source_view_id, target_view_id: args.target_view_id });
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to connect cards' }], isError: true };
+  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+});
+
+registerToolTemplate('assistant', 'layout_canvas', {
+  description: 'Auto-arrange cards. Patterns: "horizontal" (row), "vertical" (column), "grid", "hub_spoke" (center + circle).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      pattern: { type: 'string', description: 'Layout: "horizontal", "vertical", "grid", or "hub_spoke".' },
+    },
+    required: ['canvas_id', 'pattern'],
+  },
+}, async (_t, _a, args) => {
+  const canvasId = args.canvas_id as string;
+  const pattern = args.pattern as 'horizontal' | 'vertical' | 'grid' | 'hub_spoke';
+
+  const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId });
+  if (!queryResult.success) return { content: [{ type: 'text', text: queryResult.error || 'Failed to query views' }], isError: true };
+
+  const views = queryResult.data as Array<{ id: string; size: { width: number; height: number } }>;
+  if (!views || views.length === 0) return { content: [{ type: 'text', text: 'No cards to arrange.' }] };
+
+  const positions = computeLayout(pattern, views.map(v => ({ id: v.id, width: v.size.width, height: v.size.height })));
+  for (const pos of positions) {
+    await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: pos.id, position: { x: pos.x, y: pos.y } });
+  }
+  return { content: [{ type: 'text', text: `Arranged ${views.length} cards in "${pattern}" layout.` }] };
+});
+
 // ── Plugin Tools ───────────────────────────────────────────────────────────
 // NOTE: Plugin enable/disable lives in the renderer store (plugin-store.ts)
 // and has no main-process API. These tools will be added when renderer-side
-// IPC for plugin management is available. For now, the assistant can list
-// plugins (read-only) and instruct users to enable/disable via Settings.
+// IPC for plugin management is available.
 
 } // end registerAssistantTools
