@@ -71,6 +71,24 @@ describe('StreamJsonAdapter', () => {
     mockSpawn.mockReturnValue(mockProc);
   });
 
+  // ── Empty mission guard ──────────────────────────────────────────────────
+
+  it('throws when mission is empty string', () => {
+    const adapter = new StreamJsonAdapter({ binary: 'claude' });
+    expect(() => adapter.start({ ...defaultSessionOpts, mission: '' })).toThrow(
+      'non-empty mission',
+    );
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('throws when mission is whitespace-only', () => {
+    const adapter = new StreamJsonAdapter({ binary: 'claude' });
+    expect(() => adapter.start({ ...defaultSessionOpts, mission: '   ' })).toThrow(
+      'non-empty mission',
+    );
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
   // ── Spawn & args ─────────────────────────────────────────────────────────
 
   it('spawns with correct binary and stream-json flags', () => {

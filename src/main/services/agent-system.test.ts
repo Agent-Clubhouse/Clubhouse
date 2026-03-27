@@ -1260,6 +1260,44 @@ describe('agent-system', () => {
       expect(mockPtySpawn).toHaveBeenCalled();
     });
 
+    it('falls back to PTY when mission is empty string in structured mode', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: '',
+      });
+
+      expect(mockStartStructured).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('falls back to PTY when mission is undefined in structured mode', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+      });
+
+      expect(mockStartStructured).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('falls back to PTY when mission is whitespace-only in structured mode', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: '   ',
+      });
+
+      expect(mockStartStructured).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
     it('tracks structured agent and marks it as structured', async () => {
       await spawnAgent({
         agentId: 'test-structured',
