@@ -204,8 +204,11 @@ async function spawnInteractive(
     }).catch((err) => {
       appLog(LOG_NS, 'warn', 'MCP bridge not available', { meta: { agentId, error: String(err) } });
     }),
+    // Don't pass systemPrompt to buildSpawnCommand for PTY mode — the full
+    // prompt is 30K+ chars which gets echoed as raw text in the terminal.
+    // The orchestrator reads CLAUDE.md from the workspace (already written).
     provider.buildSpawnCommand({
-      cwd: workspace, model, mission, systemPrompt,
+      cwd: workspace, model, mission,
       agentId, freeAgentMode: true, permissionMode,
     }),
   ]);

@@ -819,19 +819,24 @@ registerToolTemplate(
 // ══════════════════════════════════════════════════════════════════════════
 
 registerToolTemplate('assistant', 'create_canvas', {
-  description: 'Create a new canvas tab. Returns the canvas ID.',
-  inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Canvas name. Auto-generated if omitted.' } } },
+  description: 'Create a new canvas tab. Provide project_id to create in a specific project, otherwise creates at app level.',
+  inputSchema: { type: 'object', properties: {
+    name: { type: 'string', description: 'Canvas name. Auto-generated if omitted.' },
+    project_id: { type: 'string', description: 'Project ID to create canvas in. Omit for app-level.' },
+  } },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('add_canvas', { name: args.name });
+  const result = await sendCanvasCommand('add_canvas', { name: args.name, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to create canvas' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
 });
 
 registerToolTemplate('assistant', 'list_canvases', {
   description: 'List all canvases with their IDs, names, and card counts.',
-  inputSchema: { type: 'object', properties: {} },
-}, async (_t, _a, _args) => {
-  const result = await sendCanvasCommand('list_canvases', {});
+  inputSchema: { type: 'object', properties: {
+    project_id: { type: 'string', description: 'Project ID to list canvases for. Omit for app-level.' },
+  } },
+}, async (_t, _a, args) => {
+  const result = await sendCanvasCommand('list_canvases', { project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to list canvases' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
 });
@@ -884,7 +889,7 @@ registerToolTemplate('assistant', 'move_card', {
     required: ['canvas_id', 'view_id', 'x', 'y'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('move_view', { canvas_id: args.canvas_id, view_id: args.view_id, position: { x: args.x, y: args.y } });
+  const result = await sendCanvasCommand('move_view', { canvas_id: args.canvas_id, view_id: args.view_id, position: { x: args.x, y: args.y }, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to move card' }], isError: true };
   return { content: [{ type: 'text', text: 'Card moved.' }] };
 });
@@ -902,7 +907,7 @@ registerToolTemplate('assistant', 'resize_card', {
     required: ['canvas_id', 'view_id', 'width', 'height'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('resize_view', { canvas_id: args.canvas_id, view_id: args.view_id, size: { w: args.width, h: args.height } });
+  const result = await sendCanvasCommand('resize_view', { canvas_id: args.canvas_id, view_id: args.view_id, size: { w: args.width, h: args.height }, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to resize card' }], isError: true };
   return { content: [{ type: 'text', text: 'Card resized.' }] };
 });
@@ -918,7 +923,7 @@ registerToolTemplate('assistant', 'remove_card', {
     required: ['canvas_id', 'view_id'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('remove_view', { canvas_id: args.canvas_id, view_id: args.view_id });
+  const result = await sendCanvasCommand('remove_view', { canvas_id: args.canvas_id, view_id: args.view_id, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to remove card' }], isError: true };
   return { content: [{ type: 'text', text: 'Card removed.' }] };
 });
@@ -935,7 +940,7 @@ registerToolTemplate('assistant', 'rename_card', {
     required: ['canvas_id', 'view_id', 'name'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('rename_view', { canvas_id: args.canvas_id, view_id: args.view_id, name: args.name });
+  const result = await sendCanvasCommand('rename_view', { canvas_id: args.canvas_id, view_id: args.view_id, name: args.name, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to rename card' }], isError: true };
   return { content: [{ type: 'text', text: 'Card renamed.' }] };
 });
@@ -952,7 +957,7 @@ registerToolTemplate('assistant', 'connect_cards', {
     required: ['canvas_id', 'source_view_id', 'target_view_id'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('connect_views', { canvas_id: args.canvas_id, source_view_id: args.source_view_id, target_view_id: args.target_view_id });
+  const result = await sendCanvasCommand('connect_views', { canvas_id: args.canvas_id, source_view_id: args.source_view_id, target_view_id: args.target_view_id, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to connect cards' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
 });
