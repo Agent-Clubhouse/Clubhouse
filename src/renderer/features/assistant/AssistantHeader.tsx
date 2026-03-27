@@ -17,9 +17,9 @@ interface Props {
 }
 
 const MODE_LABELS: Record<AssistantMode, { label: string; title: string }> = {
-  interactive: { label: 'PTY', title: 'Interactive (PTY) — most reliable' },
-  structured: { label: 'Struct', title: 'Structured — experimental, typed events' },
-  headless: { label: 'Headless', title: 'Headless — single response per message' },
+  interactive: { label: 'Terminal', title: 'Terminal — full interactive PTY, same as durable agents' },
+  headless: { label: 'Chat', title: 'Chat — multi-turn conversation, most reliable' },
+  structured: { label: 'Structured', title: 'Structured — experimental, typed events' },
 };
 
 export function AssistantHeader({ onReset, mode, onModeChange, orchestrator, onOrchestratorChange }: Props) {

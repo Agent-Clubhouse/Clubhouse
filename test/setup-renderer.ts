@@ -413,6 +413,8 @@ vi.stubGlobal('clubhouse', {
     spawn: asyncNoop,
     bind: asyncNoop,
     unbind: asyncNoop,
+    sendFollowup: asyncNoop,
+    onResult: () => noop,
   },
   canvas: {
     onCommand: () => noop,

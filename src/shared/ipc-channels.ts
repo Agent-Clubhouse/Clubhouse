@@ -384,6 +384,10 @@ export const IPC = {
     BIND: 'assistant:bind',
     /** Remove assistant MCP binding. */
     UNBIND: 'assistant:unbind',
+    /** Send a follow-up message to a conversational headless session. */
+    SEND_FOLLOWUP: 'assistant:send-followup',
+    /** Main → renderer: headless agent completed (agentId, exitCode). */
+    RESULT: 'assistant:result',
   },
   CANVAS_CMD: {
     /** Main→renderer push: request a canvas operation. */

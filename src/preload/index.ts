@@ -1260,6 +1260,15 @@ const api = {
     /** Remove the assistant MCP binding. */
     unbind: (agentId: string) =>
       ipcRenderer.invoke(IPC.ASSISTANT.UNBIND, agentId),
+    /** Send a follow-up message to a conversational headless session. */
+    sendFollowup: (params: { message: string; orchestrator?: string; model?: string }) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.SEND_FOLLOWUP, params),
+    /** Listen for headless agent completion events. */
+    onResult: (callback: (result: { agentId: string; exitCode: number }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, result: any) => callback(result);
+      ipcRenderer.on(IPC.ASSISTANT.RESULT, listener);
+      return () => { ipcRenderer.removeListener(IPC.ASSISTANT.RESULT, listener); };
+    },
   },
   canvas: {
     /** Listen for canvas commands from the main process (assistant). */
