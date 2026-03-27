@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockToggle = vi.fn();
 const mockToggleSettings = vi.fn();
 const mockToggleHelp = vi.fn();
+const mockToggleAssistant = vi.fn();
 const mockSetActiveProject = vi.fn();
 const mockToggleExplorerCollapse = vi.fn();
 const mockToggleAccessoryCollapse = vi.fn();
@@ -18,7 +19,7 @@ vi.mock('../../stores/commandPaletteStore', () => ({
 }));
 
 vi.mock('../../stores/uiStore', () => ({
-  useUIStore: { getState: () => ({ toggleSettings: mockToggleSettings, toggleHelp: mockToggleHelp, setExplorerTab: mockSetExplorerTab, openQuickAgentDialog: mockOpenQuickAgentDialog }) },
+  useUIStore: { getState: () => ({ toggleSettings: mockToggleSettings, toggleHelp: mockToggleHelp, toggleAssistant: mockToggleAssistant, setExplorerTab: mockSetExplorerTab, openQuickAgentDialog: mockOpenQuickAgentDialog }) },
 }));
 
 vi.mock('../../stores/projectStore', () => ({
@@ -56,6 +57,7 @@ describe('command-actions', () => {
     expect(ids).toContain('command-palette');
     expect(ids).toContain('toggle-settings');
     expect(ids).toContain('toggle-help');
+    expect(ids).toContain('toggle-assistant');
     expect(ids).toContain('go-home');
     expect(ids).toContain('toggle-sidebar');
     expect(ids).toContain('toggle-accessory');
@@ -91,6 +93,11 @@ describe('command-actions', () => {
   it('toggle-help calls toggleHelp', () => {
     findAction('toggle-help')?.execute();
     expect(mockToggleHelp).toHaveBeenCalled();
+  });
+
+  it('toggle-assistant calls toggleAssistant', () => {
+    findAction('toggle-assistant')?.execute();
+    expect(mockToggleAssistant).toHaveBeenCalled();
   });
 
   it('go-home calls setActiveProject(null)', () => {

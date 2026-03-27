@@ -27,6 +27,10 @@ export function getCommandActions(): CommandAction[] {
       execute: () => useUIStore.getState().toggleHelp(),
     },
     {
+      id: 'toggle-assistant',
+      execute: () => useUIStore.getState().toggleAssistant(),
+    },
+    {
       id: 'go-home',
       execute: () => useProjectStore.getState().setActiveProject(null),
     },
