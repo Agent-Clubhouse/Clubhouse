@@ -90,6 +90,80 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
     cache[varName] = value;
   }
 
+  // Set ANSI color CSS variables (theme-aware for light/dark terminal output)
+  const ansiColorMap: Record<string, Record<'dark' | 'light', string>> = {
+    '--ansi-black': {
+      dark: theme.colors.text,  // Dark theme: use text color (light)
+      light: theme.colors.text,  // Light theme: use text color (dark)
+    },
+    '--ansi-red': {
+      dark: '#ff6b6b',
+      light: theme.colors.error,
+    },
+    '--ansi-green': {
+      dark: '#51cf66',
+      light: theme.colors.success,
+    },
+    '--ansi-yellow': {
+      dark: '#ffd43b',
+      light: theme.colors.warning,
+    },
+    '--ansi-blue': {
+      dark: '#74c0fc',
+      light: theme.colors.info,
+    },
+    '--ansi-magenta': {
+      dark: '#e599f7',
+      light: '#bd5edc',
+    },
+    '--ansi-cyan': {
+      dark: '#4dabf7',
+      light: '#0a8db8',
+    },
+    '--ansi-white': {
+      dark: '#e7e5eb',
+      light: '#5c5f77',  // Latte: use subtext1 for light theme
+    },
+    '--ansi-bright-black': {
+      dark: '#909296',
+      light: '#9ca0b0',
+    },
+    '--ansi-bright-red': {
+      dark: '#ff8787',
+      light: '#d20f39',
+    },
+    '--ansi-bright-green': {
+      dark: '#69db7c',
+      light: '#40a02b',
+    },
+    '--ansi-bright-yellow': {
+      dark: '#ffe066',
+      light: '#df8e1d',
+    },
+    '--ansi-bright-blue': {
+      dark: '#91a7ff',
+      light: '#1e66f5',
+    },
+    '--ansi-bright-magenta': {
+      dark: '#ff8cff',
+      light: '#ea76cb',
+    },
+    '--ansi-bright-cyan': {
+      dark: '#72e4ff',
+      light: '#179299',
+    },
+    '--ansi-bright-white': {
+      dark: '#ffffff',
+      light: '#acb0be',  // Latte: use surface0 for light theme
+    },
+  };
+
+  for (const [varName, themeValues] of Object.entries(ansiColorMap)) {
+    const value = themeValues[theme.type];
+    s.setProperty(varName, value);
+    cache[varName] = value;
+  }
+
   // Font override (Terminal theme)
   if (theme.fontOverride) {
     el.classList.add('theme-mono');

@@ -85,13 +85,20 @@ function renderAnsi(text: string): string {
   // eslint-disable-next-line no-control-regex
   html = html.replace(/\x1b\[(\d+(?:;\d+)*)m/g, (_match, codes: string) => {
     const parts = codes.split(';').map(Number);
-    const classes: string[] = [];
+    const styles: string[] = [];
+    let isBold = false;
     for (const code of parts) {
-      const cls = ANSI_MAP[code];
-      if (cls) classes.push(cls);
       if (code === 0) return '</span>';
+      if (code === 1) {
+        isBold = true;
+        continue;
+      }
+      const style = ANSI_MAP[code];
+      if (style) styles.push(style);
     }
-    return classes.length > 0 ? `<span class="${classes.join(' ')}">` : '';
+    if (styles.length === 0 && !isBold) return '';
+    const styleAttr = styles.join(';') + (isBold ? ';font-weight:bold' : '');
+    return `<span style="${styleAttr}">`;
   });
 
   // Clean up any remaining escape sequences
@@ -101,22 +108,22 @@ function renderAnsi(text: string): string {
   return html;
 }
 
+// Map ANSI color codes to CSS variable references (theme-aware)
 const ANSI_MAP: Record<number, string> = {
-  1: 'font-bold',
-  30: 'text-gray-900',
-  31: 'text-red-400',
-  32: 'text-green-400',
-  33: 'text-yellow-400',
-  34: 'text-blue-400',
-  35: 'text-purple-400',
-  36: 'text-cyan-400',
-  37: 'text-gray-300',
-  90: 'text-gray-500',
-  91: 'text-red-300',
-  92: 'text-green-300',
-  93: 'text-yellow-300',
-  94: 'text-blue-300',
-  95: 'text-purple-300',
-  96: 'text-cyan-300',
-  97: 'text-white',
+  30: 'color:var(--ansi-black)',
+  31: 'color:var(--ansi-red)',
+  32: 'color:var(--ansi-green)',
+  33: 'color:var(--ansi-yellow)',
+  34: 'color:var(--ansi-blue)',
+  35: 'color:var(--ansi-magenta)',
+  36: 'color:var(--ansi-cyan)',
+  37: 'color:var(--ansi-white)',
+  90: 'color:var(--ansi-bright-black)',
+  91: 'color:var(--ansi-bright-red)',
+  92: 'color:var(--ansi-bright-green)',
+  93: 'color:var(--ansi-bright-yellow)',
+  94: 'color:var(--ansi-bright-blue)',
+  95: 'color:var(--ansi-bright-magenta)',
+  96: 'color:var(--ansi-bright-cyan)',
+  97: 'color:var(--ansi-bright-white)',
 };

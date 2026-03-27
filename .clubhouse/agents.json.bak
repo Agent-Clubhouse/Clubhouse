@@ -1,0 +1,85 @@
+[
+  {
+    "id": "durable_1774043423435_tm82fi",
+    "name": "fuzzy-bobcat",
+    "color": "cyan",
+    "branch": "fuzzy-bobcat/standby",
+    "worktreePath": "/Users/cazzone/Repos/Clubhouse/.clubhouse/agents/fuzzy-bobcat",
+    "createdAt": "2026-03-20T21:50:23.620Z",
+    "orchestrator": "claude-code",
+    "sessionHistory": [
+      {
+        "sessionId": "f9e0e0a4-2684-4e5a-a8b0-12444d3ac552",
+        "startedAt": "2026-03-23T07:56:11.238Z",
+        "lastActiveAt": "2026-03-23T07:56:11.238Z"
+      },
+      {
+        "sessionId": "88272043-dbfa-4909-b858-b384ebb3bcd8",
+        "startedAt": "2026-03-24T17:07:44.820Z",
+        "lastActiveAt": "2026-03-24T17:07:44.820Z"
+      },
+      {
+        "sessionId": "58730189-9d8a-47c4-8161-c0f426255d9a",
+        "startedAt": "2026-03-26T06:54:05.351Z",
+        "lastActiveAt": "2026-03-26T06:54:05.351Z"
+      }
+    ],
+    "lastSessionId": "58730189-9d8a-47c4-8161-c0f426255d9a",
+    "clubhouseModeOverride": true
+  },
+  {
+    "id": "durable_1774060708932_8ocycc",
+    "name": "crafty-toad",
+    "color": "teal",
+    "createdAt": "2026-03-21T02:38:28.932Z",
+    "orchestrator": "claude-code",
+    "sessionHistory": [
+      {
+        "sessionId": "1ae611c5-ff16-435c-8bac-c52135b48871",
+        "startedAt": "2026-03-23T07:56:14.526Z",
+        "lastActiveAt": "2026-03-23T07:56:14.526Z"
+      },
+      {
+        "sessionId": "a904c61d-aa2e-409e-a303-099ca2c87b47",
+        "startedAt": "2026-03-24T17:07:47.291Z",
+        "lastActiveAt": "2026-03-24T17:07:47.291Z"
+      }
+    ],
+    "lastSessionId": "a904c61d-aa2e-409e-a303-099ca2c87b47"
+  },
+  {
+    "id": "durable_1774214722700_axghtc",
+    "name": "warm-alpaca",
+    "color": "teal",
+    "branch": "warm-alpaca/standby",
+    "worktreePath": "/Users/cazzone/Repos/Clubhouse/.clubhouse/agents/warm-alpaca",
+    "createdAt": "2026-03-22T21:25:22.911Z",
+    "orchestrator": "claude-code",
+    "sessionHistory": [
+      {
+        "sessionId": "083d5980-bb44-4a8d-9061-0ec944029ab4",
+        "startedAt": "2026-03-23T02:53:37.113Z",
+        "lastActiveAt": "2026-03-23T02:53:37.113Z"
+      }
+    ],
+    "lastSessionId": "083d5980-bb44-4a8d-9061-0ec944029ab4"
+  },
+  {
+    "id": "durable_1774228354911_0l0p2w",
+    "name": "rich-python",
+    "color": "teal",
+    "branch": "rich-python/standby",
+    "worktreePath": "/Users/cazzone/Repos/Clubhouse/.clubhouse/agents/rich-python",
+    "createdAt": "2026-03-23T01:12:35.163Z",
+    "orchestrator": "claude-code",
+    "sessionHistory": [
+      {
+        "sessionId": "9ec8b291-a840-4812-ab4b-2b0291e38ad6",
+        "startedAt": "2026-03-23T03:41:13.176Z",
+        "lastActiveAt": "2026-03-23T03:41:13.176Z"
+      }
+    ],
+    "lastSessionId": "9ec8b291-a840-4812-ab4b-2b0291e38ad6",
+    "clubhouseModeOverride": true
+  }
+]
