@@ -2100,10 +2100,18 @@ async function handleWakeAgentWs(
 // ---------------------------------------------------------------------------
 
 export function start(): void {
-  if (tlsServer || httpServer) return;
+  if (tlsServer || httpServer) {
+    appLog('core:annex', 'debug', 'Annex server start() called but already running');
+    return;
+  }
+
+  appLog('core:annex', 'info', 'Annex server starting...');
 
   // Generate identity on first enable (lazy creation)
   const identity = annexIdentity.getOrCreateIdentity();
+  appLog('core:annex', 'info', 'Annex identity ready', {
+    meta: { fingerprint: identity.fingerprint },
+  });
 
   currentPin = generatePin();
 
@@ -2326,9 +2334,10 @@ export function start(): void {
   function publishBonjour() {
     if (!mainReady || !pairingReady) return;
     try {
+      appLog('core:annex', 'info', 'Creating Bonjour instance for mDNS advertisement...');
       bonjour = new Bonjour();
       const settings = annexSettings.getSettings();
-      bonjourService = bonjour.publish({
+      const serviceConfig = {
         name: settings.deviceName,
         type: 'clubhouse-annex',
         port: serverPort,
@@ -2337,16 +2346,32 @@ export function start(): void {
           pairingPort: String(pairingPort),
           fingerprint: identity.fingerprint,
         },
+      };
+      appLog('core:annex', 'info', 'Publishing mDNS service', {
+        meta: { name: serviceConfig.name, type: serviceConfig.type, port: serviceConfig.port, pairingPort },
       });
+      bonjourService = bonjour.publish(serviceConfig);
+
+      if (bonjourService) {
+        bonjourService.on('error', (err: Error) => {
+          appLog('core:annex', 'error', 'Bonjour service error after publish', {
+            meta: { error: err.message, stack: err.stack },
+          });
+        });
+        bonjourService.on('up', () => {
+          appLog('core:annex', 'info', 'Bonjour service confirmed UP by mDNS stack');
+        });
+      }
+
       appLog('core:annex', 'info', 'mDNS service published (v2)', {
-        meta: { name: settings.deviceName, mainPort: serverPort, pairingPort },
+        meta: { name: settings.deviceName, mainPort: serverPort, pairingPort, fingerprint: identity.fingerprint },
       });
 
       // Broadcast updated status to renderer so UI reflects "Advertising" instead of "Starting..."
       broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
     } catch (err) {
       appLog('core:annex', 'error', 'Failed to publish mDNS', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
+        meta: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
       });
     }
   }

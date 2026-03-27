@@ -148,9 +148,18 @@ export function registerAnnexHandlers(): void {
 
 /** Conditionally start Annex server if enableServer is on AND build is preview-eligible. */
 export function maybeStartAnnex(): void {
-  if (!isPreviewEligible()) return;
+  const previewEligible = isPreviewEligible();
+  appLog('core:annex', 'info', 'Annex server startup check', {
+    meta: { previewEligible },
+  });
+
+  if (!previewEligible) return;
 
   const settings = annexSettings.getSettings();
+  appLog('core:annex', 'info', 'Annex settings at startup', {
+    meta: { enableServer: settings.enableServer, enableClient: settings.enableClient, deviceName: settings.deviceName },
+  });
+
   if (settings.enableServer) {
     try {
       annexServer.start();

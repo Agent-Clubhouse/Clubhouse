@@ -14,10 +14,6 @@ vi.mock('../services/annex-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
-vi.mock('../services/experimental-settings', () => ({
-  getSettings: vi.fn(() => ({ annex: true })),
-}));
-
 vi.mock('../services/annex-server', () => ({
   start: vi.fn(),
   stop: vi.fn(),
@@ -64,7 +60,6 @@ import * as annexClient from '../services/annex-client';
 import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
-import * as experimentalSettings from '../services/experimental-settings';
 import { isPreviewEligible } from '../services/preview-eligible';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -255,27 +250,11 @@ describe('maybeStartAnnex', () => {
     expect(annexServer.start).not.toHaveBeenCalled();
   });
 
-  it('does not start server when experimental annex flag is off', () => {
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({});
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
-    maybeStartAnnex();
-    expect(annexServer.start).not.toHaveBeenCalled();
-  });
-
   it('does not start server when isPreviewEligible returns false', () => {
     vi.mocked(isPreviewEligible).mockReturnValue(false);
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
     maybeStartAnnex();
     expect(annexServer.start).not.toHaveBeenCalled();
-  });
-
-  it('starts server when isPreviewEligible returns true', () => {
-    vi.mocked(isPreviewEligible).mockReturnValue(true);
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
-    maybeStartAnnex();
-    expect(annexServer.start).toHaveBeenCalled();
   });
 
   it('logs error when auto-start fails', () => {
@@ -293,37 +272,27 @@ describe('maybeStartAnnexClient', () => {
     vi.clearAllMocks();
   });
 
-  it('starts client when experimental annex flag is on and enableClient is true', () => {
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+  it('starts client when enableClient is true', () => {
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
     maybeStartAnnexClient();
     expect(annexClient.startClient).toHaveBeenCalled();
     expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('client auto-started'));
   });
 
-  it('does not start client when experimental annex flag is off', () => {
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({});
-    maybeStartAnnexClient();
-    expect(annexClient.startClient).not.toHaveBeenCalled();
-  });
-
   it('does not start client when isPreviewEligible returns false', () => {
     vi.mocked(isPreviewEligible).mockReturnValue(false);
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
     maybeStartAnnexClient();
     expect(annexClient.startClient).not.toHaveBeenCalled();
   });
 
   it('does not start client when enableClient is false', () => {
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
     maybeStartAnnexClient();
     expect(annexClient.startClient).not.toHaveBeenCalled();
   });
 
   it('logs error when client start fails', () => {
-    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
     vi.mocked(annexClient.startClient).mockImplementationOnce(() => { throw new Error('bonjour failed'); });
     maybeStartAnnexClient();

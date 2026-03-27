@@ -164,10 +164,10 @@ vi.mock('../../plugins/plugin-commands', () => ({
   pluginCommandRegistry: { execute: vi.fn() },
 }));
 
-// Mock window.clubhouse.plugin and app for cross-project hub storage + experimental settings
+// Mock window.clubhouse.plugin and app for cross-project hub storage + preview eligibility
 const mockStorageRead = vi.fn();
 const mockStorageWrite = vi.fn();
-const mockGetExperimentalSettings = vi.fn().mockResolvedValue({ annex: true });
+const mockIsPreviewEligible = vi.fn().mockResolvedValue(true);
 (window as any).clubhouse = {
   ...(window as any).clubhouse,
   plugin: {
@@ -176,7 +176,7 @@ const mockGetExperimentalSettings = vi.fn().mockResolvedValue({ annex: true });
   },
   app: {
     ...(window as any).clubhouse?.app,
-    getExperimentalSettings: mockGetExperimentalSettings,
+    isPreviewEligible: mockIsPreviewEligible,
   },
 };
 
@@ -201,12 +201,12 @@ describe('useCommandSource', () => {
     // Default: no hubs/canvases in other projects
     mockStorageRead.mockResolvedValue(null);
     mockStorageWrite.mockResolvedValue(undefined);
-    // Default: annex experimental flag on (restored after clearAllMocks)
-    mockGetExperimentalSettings.mockResolvedValue({ annex: true });
+    // Default: preview-eligible (restored after clearAllMocks)
+    mockIsPreviewEligible.mockResolvedValue(true);
   });
 
-  it('annex commands hidden when experimental flag is off', async () => {
-    mockGetExperimentalSettings.mockResolvedValueOnce({});
+  it('annex commands hidden when not preview-eligible', async () => {
+    mockIsPreviewEligible.mockResolvedValueOnce(false);
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     expect(findItem(result.current, 'action:toggle-annex-server')).toBeUndefined();
@@ -214,7 +214,7 @@ describe('useCommandSource', () => {
     expect(findItem(result.current, 'action:annex-show-pin')).toBeUndefined();
   });
 
-  it('includes toggle annex server action when experimental flag is on', async () => {
+  it('includes toggle annex server action when preview-eligible', async () => {
     annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
@@ -242,7 +242,7 @@ describe('useCommandSource', () => {
     expect(mockSaveAnnexSettings).toHaveBeenCalledWith({ enableServer: true, enableClient: false, deviceName: '' });
   });
 
-  it('includes show annex PIN action when experimental flag is on', async () => {
+  it('includes show annex PIN action when preview-eligible', async () => {
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:annex-show-pin');

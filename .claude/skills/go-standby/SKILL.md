@@ -12,7 +12,7 @@ Return to your standby branch and prepare for the next task.
 1. Check for uncommitted changes — if any exist, warn the user before proceeding
 2. Switch to your standby branch:
    ```bash
-   git checkout mega-fox/standby
+   git checkout mega-camel/standby
    ```
 3. Pull latest from main:
    ```bash
