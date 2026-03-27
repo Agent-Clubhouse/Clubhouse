@@ -130,6 +130,20 @@ vi.mock('../services/annex-server', () => ({
   broadcastThemeChanged: vi.fn(),
 }));
 
+vi.mock('../services/annex-settings', () => ({
+  getSettings: vi.fn(() => ({ enableServer: false, enableClient: false, deviceName: 'My Mac', alias: 'My Mac', icon: 'computer', color: 'indigo', autoReconnect: true })),
+  saveSettings: vi.fn(),
+}));
+
+vi.mock('../services/experimental-settings', () => ({
+  getSettings: vi.fn(() => ({})),
+  saveSettings: vi.fn(),
+}));
+
+vi.mock('../services/preview-eligible', () => ({
+  isPreviewEligible: vi.fn(() => true),
+}));
+
 vi.mock('./mcp-binding-handlers', () => ({
   onMcpSettingsChanged: vi.fn(),
 }));
@@ -149,6 +163,8 @@ import * as soundService from '../services/sound-service';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
 import * as annexServer from '../services/annex-server';
+import * as annexSettings from '../services/annex-settings';
+import * as experimentalSettings from '../services/experimental-settings';
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
 
@@ -630,5 +646,55 @@ describe('app-handlers', () => {
   it('rejects non-object for LOG_WRITE', () => {
     const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
     expect(() => handler({}, 'not-object')).toThrow('must be an object');
+  });
+
+  // --- Experimental settings: auto-enable annex ---
+
+  it('auto-enables annex server and client when annex experimental flag is first turned on', async () => {
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({});
+    vi.mocked(annexSettings.getSettings).mockReturnValue({
+      enableServer: false, enableClient: false, deviceName: 'Mac',
+      alias: 'Mac', icon: 'computer', color: 'indigo', autoReconnect: true,
+    });
+
+    const handler = handleHandlers.get(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS)!;
+    await handler({}, { annex: true });
+
+    expect(experimentalSettings.saveSettings).toHaveBeenCalledWith({ annex: true });
+    expect(annexSettings.saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ enableServer: true, enableClient: true }),
+    );
+  });
+
+  it('does not modify annex settings when annex flag was already on', async () => {
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+
+    const handler = handleHandlers.get(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS)!;
+    await handler({}, { annex: true });
+
+    expect(annexSettings.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('does not modify annex settings when annex flag is turned off', async () => {
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+
+    const handler = handleHandlers.get(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS)!;
+    await handler({}, { annex: false });
+
+    expect(annexSettings.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite already-enabled annex settings', async () => {
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({});
+    vi.mocked(annexSettings.getSettings).mockReturnValue({
+      enableServer: true, enableClient: true, deviceName: 'Mac',
+      alias: 'Mac', icon: 'computer', color: 'indigo', autoReconnect: true,
+    });
+
+    const handler = handleHandlers.get(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS)!;
+    await handler({}, { annex: true });
+
+    // Both already enabled, so no save needed
+    expect(annexSettings.saveSettings).not.toHaveBeenCalled();
   });
 });
