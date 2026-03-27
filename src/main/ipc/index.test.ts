@@ -13,7 +13,7 @@ vi.mock('./process-handlers', () => ({ registerProcessHandlers: vi.fn() }));
 vi.mock('./window-handlers', () => ({ registerWindowHandlers: vi.fn() }));
 vi.mock('./annex-handlers', () => ({
   registerAnnexHandlers: vi.fn(),
-  maybeStartAnnex: vi.fn(),
+  maybeStartAnnex: vi.fn(async () => {}),
   maybeStartAnnexClient: vi.fn(),
 }));
 vi.mock('./marketplace-handlers', () => ({ registerMarketplaceHandlers: vi.fn() }));
@@ -112,8 +112,10 @@ describe('registerAllHandlers', () => {
     expect(maybeStartAnnex).toHaveBeenCalled();
   });
 
-  it('calls maybeStartAnnexClient after handler registration', () => {
+  it('calls maybeStartAnnexClient after handler registration', async () => {
     registerAllHandlers();
+    // maybeStartAnnexClient is chained via .then() on the async maybeStartAnnex
+    await vi.mocked(maybeStartAnnex).mock.results[0]?.value;
     expect(maybeStartAnnexClient).toHaveBeenCalled();
   });
 });

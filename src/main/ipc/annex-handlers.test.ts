@@ -11,7 +11,7 @@ vi.mock('../services/preview-eligible', () => ({
 
 vi.mock('../services/annex-settings', () => ({
   getSettings: vi.fn(() => ({ enableServer: false, enableClient: false, deviceName: 'My Mac' })),
-  saveSettings: vi.fn(),
+  saveSettings: vi.fn(async () => {}),
 }));
 
 vi.mock('../services/experimental-settings', () => ({
@@ -240,6 +240,8 @@ describe('annex-handlers', () => {
 describe('maybeStartAnnex', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Re-establish async mock after clearAllMocks resets implementations
+    vi.mocked(annexSettings.saveSettings).mockResolvedValue(undefined);
   });
 
   it('starts server when settings.enableServer is true', async () => {
@@ -256,7 +258,7 @@ describe('maybeStartAnnex', () => {
       expect.objectContaining({ enableServer: true, enableClient: true }),
     );
     expect(annexServer.start).toHaveBeenCalled();
-    expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('Auto-enabling'));
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('Auto-enabling'), expect.anything());
   });
 
   it('does not re-save settings when both toggles already on', async () => {
