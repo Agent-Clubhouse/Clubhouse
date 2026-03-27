@@ -13,6 +13,7 @@ import { handleProjectSwitch, getBuiltinProjectPluginIds, pluginSystemReady } fr
 import { rendererLog } from './plugins/renderer-logger';
 import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
+import { AssistantView } from './features/assistant/AssistantView';
 import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
 import { UpdateBanner } from './features/app/UpdateBanner';
 import { ResumeBanner, ResumeBannerSession } from './features/app/ResumeBanner';
@@ -238,7 +239,8 @@ export function App() {
   // ── Derived routing state ──────────────────────────────────────────────
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
-  const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
+  const isAssistant = explorerTab === 'assistant';
+  const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp && !isAssistant;
 
   // Lock overlay element (shared across all return paths)
   const lockOverlay = (
@@ -376,6 +378,36 @@ export function App() {
         </div>
         <RailSection>
           <HelpView />
+        </RailSection>
+        <CommandPalette />
+        <QuickAgentDialog />
+        <WhatsNewDialog />
+        <OnboardingModal />
+        <ConfigChangesDialog />
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  if (isAssistant) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+        {lockOverlay}
+        <TitleBar />
+        <div ref={bannerRef}>
+          <PermissionViolationBanner />
+          <UpdateBanner />
+          <ResumeBanner
+            sessions={resumeSessions}
+            onManualResume={(agentId) => {
+              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+            }}
+            onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+          />
+          <PluginUpdateBanner />
+        </div>
+        <RailSection>
+          <AssistantView />
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />

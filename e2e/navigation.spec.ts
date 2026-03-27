@@ -174,22 +174,22 @@ test.describe('Explorer Tabs', () => {
     expect(title).not.toContain('Settings');
   });
 
-  test('help toggle opens help view', async () => {
-    const helpBtn = window.locator('[data-testid="nav-help"]');
-    await helpBtn.click();
+  test('assistant toggle opens assistant view', async () => {
+    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
+    await assistantBtn.click();
     await window.waitForTimeout(500);
 
     const title = await getTitleBarText();
-    expect(title).toContain('Help');
+    expect(title).toContain('Assistant');
   });
 
-  test('help toggle again returns to previous tab', async () => {
-    const helpBtn = window.locator('[data-testid="nav-help"]');
-    await helpBtn.click();
+  test('assistant toggle again returns to previous tab', async () => {
+    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
+    await assistantBtn.click();
     await window.waitForTimeout(500);
 
     const title = await getTitleBarText();
-    expect(title).not.toContain('Help');
+    expect(title).not.toContain('Assistant');
   });
 });
 
@@ -428,23 +428,23 @@ test.describe('Settings Context', () => {
     expect(title).not.toContain('Settings');
   });
 
-  test('opening help then clicking a project exits help', async () => {
-    // Open help
-    const helpBtn = window.locator('[data-testid="nav-help"]');
-    await helpBtn.click();
+  test('opening assistant then clicking a project exits assistant', async () => {
+    // Open assistant
+    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
+    await assistantBtn.click();
     await window.waitForTimeout(500);
 
     let title = await getTitleBarText();
-    expect(title).toContain('Help');
+    expect(title).toContain('Assistant');
 
-    // Click project-a — should exit help
+    // Click project-a — should exit assistant
     const projA = window.locator('[title="project-a"]').first();
     await projA.click();
     await window.waitForTimeout(500);
 
     title = await getTitleBarText();
     expect(title).toContain('project-a');
-    expect(title).not.toContain('Help');
+    expect(title).not.toContain('Assistant');
   });
 });
 

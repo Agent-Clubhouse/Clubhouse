@@ -365,6 +365,14 @@ export function useCommandSource(): CommandItem[] {
     });
 
     items.push({
+      id: 'nav:assistant',
+      label: 'Open Assistant',
+      category: 'Navigation',
+      shortcut: getShortcut(shortcuts, 'toggle-assistant'),
+      execute: () => useUIStore.getState().toggleAssistant(),
+    });
+
+    items.push({
       id: 'nav:about',
       label: 'Open About',
       category: 'Navigation',

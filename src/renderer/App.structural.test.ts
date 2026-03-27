@@ -68,6 +68,7 @@ const CONDITION_LABELS: Record<string, string> = {
   isHome: 'Home',
   isAppPlugin: 'AppPlugin',
   isHelp: 'Help',
+  isAssistant: 'Assistant',
 };
 
 /**
@@ -311,10 +312,10 @@ const initializerSource = readFileSync(join(__dirname, 'app-initializer.ts'), 'u
 describe('App.tsx – global dialog presence in all return paths', () => {
   const returnPaths = findReturnPaths(appFn);
 
-  it('should have exactly 4 JSX return blocks (Home, AppPlugin, Help, MainProject)', () => {
-    expect(returnPaths.length).toBe(4);
+  it('should have exactly 5 JSX return blocks (Home, AppPlugin, Help, Assistant, MainProject)', () => {
+    expect(returnPaths.length).toBe(5);
     const labels = returnPaths.map((p) => p.label).sort();
-    expect(labels).toEqual(['AppPlugin', 'Help', 'Home', 'MainProject']);
+    expect(labels).toEqual(['AppPlugin', 'Assistant', 'Help', 'Home', 'MainProject']);
   });
 
   const requiredDialogs = [

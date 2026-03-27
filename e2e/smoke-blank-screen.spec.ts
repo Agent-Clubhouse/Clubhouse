@@ -96,24 +96,24 @@ test.describe('Blank-Screen Prevention — Navigation', () => {
     await window.waitForTimeout(500);
   });
 
-  test('help view renders content (not blank)', async () => {
-    const helpBtn = window.locator('[data-testid="nav-help"]');
-    await helpBtn.click();
+  test('assistant view renders content (not blank)', async () => {
+    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
+    await assistantBtn.click();
     await window.waitForTimeout(500);
 
     await assertNotBlankScreen(window);
-    await assertTitleBarContains(window, 'Help');
+    await assertTitleBarContains(window, 'Assistant');
   });
 
-  test('returning from help to project view renders content', async () => {
-    // Toggle help off
-    const helpBtn = window.locator('[data-testid="nav-help"]');
-    await helpBtn.click();
+  test('returning from assistant to project view renders content', async () => {
+    // Toggle assistant off
+    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
+    await assistantBtn.click();
     await window.waitForTimeout(500);
 
     await assertNotBlankScreen(window);
     const titleText = await getTitleBarText(window);
-    expect(titleText).not.toContain('Help');
+    expect(titleText).not.toContain('Assistant');
   });
 
   test('switching between projects does not blank screen', async () => {
@@ -146,22 +146,22 @@ test.describe('Blank-Screen Prevention — Navigation', () => {
     const projSmoke = window.locator('[title="project-smoke"]').first();
     const projB = window.locator('[title="project-b"]').first();
     const settingsBtn = window.locator('[data-testid="nav-settings"]');
-    const helpBtn = window.locator('[data-testid="nav-help"]');
+    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
 
     await projSmoke.click();
     await settingsBtn.click();
     await projB.click();
-    await helpBtn.click();
+    await assistantBtn.click();
     await projSmoke.click();
     await settingsBtn.click();
-    await helpBtn.click();
+    await assistantBtn.click();
     await projB.click();
 
     await window.waitForTimeout(1_000);
     await assertNotBlankScreen(window);
   });
 
-  test('navigating home → project → settings → help → project does not blank screen', async () => {
+  test('navigating home → project → settings → assistant → project does not blank screen', async () => {
     // Home
     const homeBtn = window.locator('[data-testid="nav-home"]');
     const homeVisible = await homeBtn.isVisible({ timeout: 3_000 }).catch(() => false);
@@ -181,9 +181,9 @@ test.describe('Blank-Screen Prevention — Navigation', () => {
     await window.waitForTimeout(500);
     await assertNotBlankScreen(window);
 
-    // Help (while settings is open)
-    const helpBtn = window.locator('[data-testid="nav-help"]');
-    await helpBtn.click();
+    // Assistant (while settings is open)
+    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
+    await assistantBtn.click();
     await window.waitForTimeout(500);
     await assertNotBlankScreen(window);
 

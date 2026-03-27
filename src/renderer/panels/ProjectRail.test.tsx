@@ -687,14 +687,14 @@ describe('ProjectRail annex-gated plugins', () => {
     expect(canvasBtn.className).not.toContain('opacity-40');
   });
 
-  it('help and settings are always visible regardless of host mode', () => {
+  it('assistant and settings are always visible regardless of host mode', () => {
     useAnnexClientStore.setState({
       satellites: [makeSatellite({ id: 'sat-1' })],
     });
     useUIStore.setState({ activeHostId: 'sat-1' });
 
     render(<ProjectRail />);
-    expect(screen.getByTestId('nav-help')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-assistant')).toBeInTheDocument();
     expect(screen.getByTestId('nav-settings')).toBeInTheDocument();
   });
 });
