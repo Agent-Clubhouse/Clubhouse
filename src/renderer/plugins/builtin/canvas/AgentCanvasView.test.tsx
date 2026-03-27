@@ -3,7 +3,7 @@
  * shown when a remote agent card has an agentId but the agent isn't in the
  * store yet (timing issue during remote canvas hydration).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { AgentCanvasView } from './AgentCanvasView';
