@@ -1197,12 +1197,48 @@ describe('agent-system', () => {
       expect(mockHeadlessSpawn).not.toHaveBeenCalled();
     });
 
-    it('does not spawn structured for durable agents', async () => {
+    it('does not spawn structured for durable agents without structuredMode flag', async () => {
       await spawnAgent({
         agentId: 'test-structured',
         projectPath: '/project',
         cwd: '/project',
         kind: 'durable',
+      });
+
+      expect(mockStartStructured).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('spawns structured for durable agents with structuredMode: true', async () => {
+      await spawnAgent({
+        agentId: 'test-durable-structured',
+        projectPath: '/project',
+        cwd: '/project/worktree',
+        kind: 'durable',
+        mission: 'build feature',
+        structuredMode: true,
+      });
+
+      expect(mockProvider.createStructuredAdapter).toHaveBeenCalled();
+      expect(mockStartStructured).toHaveBeenCalledWith(
+        'test-durable-structured',
+        mockAdapter,
+        expect.objectContaining({
+          mission: 'build feature',
+          cwd: '/project/worktree',
+        }),
+        expect.any(Function),
+      );
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+
+    it('does not spawn structured for durable agents with structuredMode: false', async () => {
+      await spawnAgent({
+        agentId: 'test-no-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        structuredMode: false,
       });
 
       expect(mockStartStructured).not.toHaveBeenCalled();

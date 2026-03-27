@@ -382,6 +382,21 @@ describe('createDurable', () => {
     expect(config).not.toHaveProperty('freeAgentMode');
   });
 
+  it('includes structuredMode when true', async () => {
+    const config = await createDurable(PROJECT_PATH, 'structured-agent', 'indigo', 'default', true, undefined, false, undefined, true);
+    expect(config.structuredMode).toBe(true);
+  });
+
+  it('omits structuredMode when false', async () => {
+    const config = await createDurable(PROJECT_PATH, 'no-structured', 'indigo', 'default', true, undefined, false, undefined, false);
+    expect(config).not.toHaveProperty('structuredMode');
+  });
+
+  it('omits structuredMode when undefined', async () => {
+    const config = await createDurable(PROJECT_PATH, 'default-mode', 'indigo');
+    expect(config).not.toHaveProperty('structuredMode');
+  });
+
   it('ensureGitignore skips when all patterns already present', async () => {
     vi.mocked(pathExists).mockImplementation(async (p: any) => {
       const s = String(p);
