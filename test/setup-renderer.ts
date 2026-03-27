@@ -411,6 +411,7 @@ vi.stubGlobal('clubhouse', {
   },
   assistant: {
     spawn: asyncNoop,
+    sendFollowup: asyncNoop,
     bind: asyncNoop,
     unbind: asyncNoop,
   },

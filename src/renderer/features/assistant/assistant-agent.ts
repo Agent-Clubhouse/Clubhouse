@@ -4,7 +4,7 @@ import type { FeedItem } from './types';
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type AssistantStatus = 'idle' | 'starting' | 'active' | 'responding' | 'error';
-export type AssistantMode = 'interactive' | 'structured' | 'headless';
+export type AssistantMode = 'conversational' | 'structured' | 'headless';
 
 interface AssistantState {
   status: AssistantStatus;
@@ -23,7 +23,7 @@ type OrchestratorListener = (orchestrator: string | null) => void;
 // ── State ──────────────────────────────────────────────────────────────────
 
 let state: AssistantState = {
-  status: 'idle', mode: 'interactive', orchestrator: null,
+  status: 'idle', mode: 'conversational', orchestrator: null,
   agentId: null, error: null, pendingText: '',
 };
 
@@ -168,8 +168,12 @@ function handlePtyExit(agentId: string, exitCode: number): void {
   if (agentId !== state.agentId) return;
   log('PTY exited', { exitCode });
   if (ptyAccumulator.trim()) { const c = stripAnsi(ptyAccumulator).trim(); if (c) pushAssistantMessage(c); ptyAccumulator = ''; }
-  if (state.mode === 'headless') { readHeadlessResult(agentId); }
-  else { if (exitCode !== 0) pushAssistantMessage(`_Agent exited with code ${exitCode}_`); setStatus('idle'); }
+  if (state.mode === 'headless' || state.mode === 'conversational') {
+    readHeadlessResult(agentId);
+  } else {
+    if (exitCode !== 0) pushAssistantMessage(`_Agent exited with code ${exitCode}_`);
+    setStatus('idle');
+  }
 }
 
 async function readHeadlessResult(agentId: string): Promise<void> {
@@ -183,7 +187,8 @@ async function readHeadlessResult(agentId: string): Promise<void> {
       pushAssistantMessage(text || '_Agent completed with no text response._');
     } else { pushAssistantMessage('_No transcript available._'); }
   } catch (err) { pushAssistantMessage(`_Failed to read response: ${err instanceof Error ? err.message : String(err)}_`); }
-  setStatus('idle');
+  // Conversational: go to 'active' so follow-ups work. Headless: go to 'idle'.
+  setStatus(state.mode === 'conversational' ? 'active' : 'idle');
 }
 
 // ── Core API ───────────────────────────────────────────────────────────────
@@ -196,7 +201,11 @@ export async function sendMessage(text: string): Promise<void> {
     setStatus('responding');
     try {
       if (state.mode === 'structured') { log('sending structured message'); await window.clubhouse.agent.sendStructuredMessage(state.agentId, text); }
-      else if (state.mode === 'interactive') { log('sending PTY input'); ptyAccumulator = ''; window.clubhouse.pty.write(state.agentId, text + '\n'); }
+      else if (state.mode === 'conversational') {
+        log('sending conversational follow-up');
+        pushAssistantMessage('_Processing..._');
+        await window.clubhouse.assistant.sendFollowup({ agentId: state.agentId, message: text, orchestrator: state.orchestrator || undefined });
+      }
       else { await startAgent(text); }
     } catch (err) { const msg = err instanceof Error ? err.message : String(err); log('send failed', { error: msg }); pushAssistantMessage(`Failed to send: ${msg}`); setStatus('error', msg); }
   }
@@ -229,12 +238,14 @@ async function startAgent(firstMessage: string): Promise<void> {
     log('spawn succeeded', { agentId });
 
     // Mode-specific listeners
-    if (state.mode === 'interactive') {
-      cleanupListeners.push(window.clubhouse.pty.onData(handlePtyData), window.clubhouse.pty.onExit(handlePtyExit));
-      ptyAccumulator = '';
+    if (state.mode === 'conversational') {
+      // Conversational uses headless under the hood — listen for exit to read transcript
+      cleanupListeners.push(window.clubhouse.pty.onExit(handlePtyExit));
+      pushAssistantMessage('_Processing..._');
     } else if (state.mode === 'structured') {
       cleanupListeners.push(window.clubhouse.agent.onStructuredEvent(handleStructuredEvent));
     } else {
+      // Headless: one-shot
       cleanupListeners.push(window.clubhouse.pty.onExit(handlePtyExit));
       pushAssistantMessage('_Processing..._');
     }
@@ -242,7 +253,7 @@ async function startAgent(firstMessage: string): Promise<void> {
     while (messageQueue.length > 0) {
       const q = messageQueue.shift()!;
       if (state.mode === 'structured') await window.clubhouse.agent.sendStructuredMessage(agentId, q);
-      else if (state.mode === 'interactive') window.clubhouse.pty.write(agentId, q + '\n');
+      else if (state.mode === 'conversational') await window.clubhouse.assistant.sendFollowup({ agentId, message: q, orchestrator: state.orchestrator || undefined });
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

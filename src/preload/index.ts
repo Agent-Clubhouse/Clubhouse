@@ -1249,10 +1249,13 @@ const api = {
       agentId: string;
       mission: string;
       systemPrompt: string;
-      executionMode: 'interactive' | 'structured' | 'headless';
+      executionMode: 'conversational' | 'structured' | 'headless';
       orchestrator?: string;
       model?: string;
     }) => ipcRenderer.invoke(IPC.ASSISTANT.SPAWN, params),
+    /** Send a follow-up message in conversational mode. */
+    sendFollowup: (params: { agentId: string; message: string; orchestrator?: string; model?: string }) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.SEND_FOLLOWUP, params),
     /** Create the assistant MCP binding for the given agent. */
     bind: (agentId: string) =>
       ipcRenderer.invoke(IPC.ASSISTANT.BIND, agentId),

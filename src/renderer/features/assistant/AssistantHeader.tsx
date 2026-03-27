@@ -17,7 +17,7 @@ interface Props {
 }
 
 const MODE_LABELS: Record<AssistantMode, { label: string; title: string }> = {
-  interactive: { label: 'PTY', title: 'Interactive (PTY) — most reliable' },
+  conversational: { label: 'Chat', title: 'Conversational — multi-turn, most reliable' },
   structured: { label: 'Struct', title: 'Structured — experimental, typed events' },
   headless: { label: 'Headless', title: 'Headless — single response per message' },
 };

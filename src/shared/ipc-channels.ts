@@ -380,6 +380,8 @@ export const IPC = {
   ASSISTANT: {
     /** Spawn the assistant agent with explicit execution mode. */
     SPAWN: 'assistant:spawn',
+    /** Send a follow-up message in conversational mode (spawns new headless process with --continue). */
+    SEND_FOLLOWUP: 'assistant:send-followup',
     /** Create assistant MCP binding for the given agent ID. */
     BIND: 'assistant:bind',
     /** Remove assistant MCP binding. */

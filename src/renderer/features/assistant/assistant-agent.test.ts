@@ -25,6 +25,7 @@ vi.stubGlobal('window', {
     },
     assistant: {
       spawn: mockAssistantSpawn,
+      sendFollowup: vi.fn().mockResolvedValue({ success: true }),
       bind: vi.fn().mockResolvedValue(undefined),
       unbind: vi.fn().mockResolvedValue(undefined),
     },
@@ -44,7 +45,7 @@ describe('assistant-agent', () => {
 
   it('starts idle with interactive mode', () => {
     expect(agent.getStatus()).toBe('idle');
-    expect(agent.getMode()).toBe('interactive');
+    expect(agent.getMode()).toBe('conversational');
     expect(agent.getOrchestrator()).toBeNull();
   });
 
@@ -57,7 +58,7 @@ describe('assistant-agent', () => {
     await agent.sendMessage('Hello');
     if (mockAssistantSpawn.mock.calls.length > 0) {
       const p = mockAssistantSpawn.mock.calls[0][0];
-      expect(p.executionMode).toBe('interactive');
+      expect(p.executionMode).toBe('conversational');
       expect(p.mission).toBe('Hello');
     }
   });

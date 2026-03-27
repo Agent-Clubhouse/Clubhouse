@@ -56,7 +56,7 @@ interface AssistantSpawnParams {
   agentId: string;
   mission: string;
   systemPrompt: string;
-  executionMode: 'interactive' | 'structured' | 'headless';
+  executionMode: 'conversational' | 'structured' | 'headless';
   orchestrator?: string;
   model?: string;
 }
@@ -107,7 +107,8 @@ export function registerAssistantHandlers(): void {
       }
 
       // Register agent
-      const runtime = executionMode === 'structured' ? 'structured' : executionMode === 'headless' ? 'headless' : 'pty';
+      // Conversational mode uses headless (-p) under the hood for non-TUI output
+      const runtime = executionMode === 'structured' ? 'structured' : 'headless';
       agentRegistry.register(agentId, {
         projectPath: workspace,
         orchestrator: provider.id as OrchestratorId,
@@ -163,6 +164,72 @@ export function registerAssistantHandlers(): void {
     },
   ));
 
+  // ── SEND_FOLLOWUP (conversational mode) ───────────────────────────────
+  ipcMain.handle(IPC.ASSISTANT.SEND_FOLLOWUP, withValidatedArgs(
+    [objectArg<{ agentId: string; message: string; orchestrator?: string; model?: string }>()],
+    async (_event, params) => {
+      const { agentId, message, model } = params as { agentId: string; message: string; orchestrator?: string; model?: string };
+      const orchestratorId = (params as any).orchestrator;
+
+      appLog(LOG_NS, 'info', 'Conversational follow-up requested', { meta: { agentId, messageLength: message.length } });
+
+      const workspace = getAssistantWorkspace();
+      const provider = await resolveOrchestrator(workspace, orchestratorId as OrchestratorId | undefined);
+
+      if (!isHeadlessCapable(provider)) {
+        throw new Error(`${provider.displayName} does not support headless mode`);
+      }
+
+      const nonce = agentRegistry.get(agentId)?.nonce || randomUUID();
+      const profileEnv = await resolveProfileEnv(workspace, provider.id);
+      const permissionMode = freeAgentSettings.getPermissionMode(workspace);
+
+      // Build headless command with --continue to resume the previous session
+      const headlessResult = await provider.buildHeadlessCommand({
+        cwd: workspace, model, mission: message,
+        agentId, freeAgentMode: true, permissionMode,
+      });
+
+      if (!headlessResult) throw new Error('Provider returned null for headless command');
+
+      // MCP injection for follow-up
+      let mcpPort = 0;
+      try {
+        mcpPort = await waitMcpBridgeReady();
+        await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, provider.conventions);
+      } catch { /* continue without MCP */ }
+
+      const { binary } = headlessResult;
+      let { args } = headlessResult;
+
+      if (mcpPort > 0 && provider.buildMcpArgs) {
+        const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
+        args = [...args, ...provider.buildMcpArgs(serverDef)];
+      }
+
+      appLog(LOG_NS, 'info', 'Conversational follow-up spawning', {
+        meta: { agentId, binary, args: args.join(' ') },
+      });
+
+      const spawnEnv: Record<string, string> = {
+        ...headlessResult.env, ...profileEnv,
+        CLUBHOUSE_AGENT_ID: agentId,
+        CLUBHOUSE_HOOK_NONCE: nonce,
+        ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
+      };
+
+      await headlessManager.spawnHeadless(
+        agentId, workspace, binary, args, spawnEnv,
+        headlessResult.outputKind || 'stream-json',
+        (exitAgentId) => {
+          appLog(LOG_NS, 'info', 'Follow-up turn exited', { meta: { agentId: exitAgentId } });
+        },
+      );
+
+      return { success: true };
+    },
+  ));
+
   // ── UNBIND ───────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.ASSISTANT.UNBIND, withValidatedArgs(
     [stringArg()],
@@ -175,71 +242,82 @@ export function registerAssistantHandlers(): void {
 
 // ── Spawn Paths ──────────────────────────────────────────────────────────────
 
+/**
+ * "Conversational" mode uses headless (-p) for clean non-TUI output but
+ * preserves conversation state via session persistence.  Follow-up messages
+ * spawn a new process with --continue to resume the session.
+ *
+ * Why not PTY?  Claude Code's PTY mode is a full TUI with trust prompts,
+ * cursor navigation, and xterm rendering — incompatible with the assistant's
+ * React chat UI which just sends/receives text.
+ */
 async function spawnInteractive(
   agentId: string, workspace: string, provider: any,
-  mission: string, systemPrompt: string, model: string | undefined,
+  mission: string, _systemPrompt: string, model: string | undefined,
   profileEnv: Record<string, string> | undefined, permissionMode: 'auto' | 'skip-all',
 ): Promise<void> {
+  if (!isHeadlessCapable(provider)) {
+    throw new Error(`${provider.displayName} does not support headless mode (needed for conversational mode)`);
+  }
+
   const nonce = randomUUID();
   agentRegistry.setNonce(agentId, nonce);
+  agentRegistry.setRuntime(agentId, 'headless');
 
-  // Snapshot MCP config before injection
+  // MCP injection
   const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
   const mcpJsonPath = path.join(workspace, mcpConfigFile);
   configPipeline.snapshotFile(agentId, mcpJsonPath);
 
-  // Parallel: hook server + MCP bridge + spawn command
   let mcpPort = 0;
-  const [, , spawnCmd] = await Promise.all([
-    waitHookServerReady().then(async (port) => {
-      if (isHookCapable(provider)) {
-        await provider.writeHooksConfig(workspace, `http://127.0.0.1:${port}/hook`);
-        appLog(LOG_NS, 'info', 'Hook config written', { meta: { agentId, hookPort: port } });
-      }
-    }),
-    waitMcpBridgeReady().then(async (port) => {
-      mcpPort = port;
-      await injectClubhouseMcp(workspace, agentId, port, nonce, provider.conventions);
-      appLog(LOG_NS, 'info', 'MCP config injected', { meta: { agentId, mcpPort: port } });
-    }).catch((err) => {
-      appLog(LOG_NS, 'warn', 'MCP bridge not available', { meta: { agentId, error: String(err) } });
-    }),
-    // Don't pass systemPrompt to buildSpawnCommand for PTY mode — the full
-    // prompt is 30K+ chars which gets echoed as raw text in the terminal.
-    // The orchestrator reads CLAUDE.md from the workspace (already written).
-    provider.buildSpawnCommand({
-      cwd: workspace, model, mission,
-      agentId, freeAgentMode: true, permissionMode,
-    }),
-  ]);
+  try {
+    mcpPort = await waitMcpBridgeReady();
+    await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, provider.conventions);
+    appLog(LOG_NS, 'info', 'MCP config injected (conversational)', { meta: { agentId, mcpPort } });
+  } catch {
+    appLog(LOG_NS, 'warn', 'MCP bridge not available for conversational mode', { meta: { agentId } });
+  }
 
-  const { binary } = spawnCmd;
-  let { args } = spawnCmd;
-  const { env } = spawnCmd;
+  // Build headless command — uses -p for non-TUI output, keeps session persistence
+  // so follow-up messages can use --continue
+  const headlessResult = await provider.buildHeadlessCommand({
+    cwd: workspace, model, mission,
+    agentId, freeAgentMode: true, permissionMode,
+    // DO NOT set noSessionPersistence — we want to resume this session
+  });
 
-  // CLI-based MCP args for providers that need them
+  if (!headlessResult) {
+    throw new Error('Provider returned null for headless command');
+  }
+
+  const { binary } = headlessResult;
+  let { args } = headlessResult;
+
   if (mcpPort > 0 && provider.buildMcpArgs) {
     const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
     args = [...args, ...provider.buildMcpArgs(serverDef)];
   }
 
-  appLog(LOG_NS, 'info', 'PTY spawn starting', {
+  appLog(LOG_NS, 'info', 'Conversational spawn starting', {
     meta: { agentId, binary, args: args.join(' '), cwd: workspace, mcpPort },
   });
 
   const spawnEnv: Record<string, string> = {
-    ...env, ...profileEnv,
+    ...headlessResult.env, ...profileEnv,
     CLUBHOUSE_AGENT_ID: agentId,
     CLUBHOUSE_HOOK_NONCE: nonce,
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
 
-  await ptyManager.spawn(agentId, workspace, binary, args, spawnEnv, (exitAgentId, exitCode, buffer) => {
-    appLog(LOG_NS, 'info', 'PTY exited', { meta: { agentId: exitAgentId, exitCode, bufferLength: buffer?.length || 0 } });
-    configPipeline.restoreForAgent(exitAgentId);
-    bindingManager.unbindAgent(exitAgentId);
-    untrackAgent(exitAgentId);
-  });
+  await headlessManager.spawnHeadless(
+    agentId, workspace, binary, args, spawnEnv,
+    headlessResult.outputKind || 'stream-json',
+    (exitAgentId) => {
+      appLog(LOG_NS, 'info', 'Conversational turn exited', { meta: { agentId: exitAgentId } });
+      // Don't cleanup MCP config or unbind — we want to resume this session
+      // Cleanup happens on explicit reset only
+    },
+  );
 }
 
 async function spawnStructured(
