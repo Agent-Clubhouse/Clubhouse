@@ -17,7 +17,7 @@ export interface LayoutResult {
   y: number;
 }
 
-const SPACING = 40;
+const SPACING = 60;
 const GRID_SIZE = 20;
 
 /** Snap a value to the nearest grid point. */

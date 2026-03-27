@@ -27,18 +27,32 @@ function sendResult(callId: string, result: CanvasCommandResult): void {
   window.clubhouse.canvas?.sendCommandResult?.(callId, result);
 }
 
+/** Normalize project ID — treat 'app', '', null as app-level (no project). */
+function normPid(pid: unknown): string | undefined {
+  if (!pid || pid === 'app' || pid === '') return undefined;
+  return pid as string;
+}
+
 function getStore(projectId?: string): CanvasState {
-  if (projectId) return getProjectCanvasStore(projectId).getState();
+  const pid = normPid(projectId);
+  if (pid) return getProjectCanvasStore(pid).getState();
   return useAppCanvasStore.getState();
 }
 
 function getStorage(projectId?: string): ScopedStorage {
-  if (projectId) return createScopedStorage('canvas', 'project-local', projectId);
+  const pid = normPid(projectId);
+  if (pid) return createScopedStorage('canvas', 'project-local', pid);
   return createScopedStorage('canvas', 'global');
 }
 
 function findCanvas(canvasId: string, projectId?: string): CanvasInstance | undefined {
-  return getStore(projectId).canvases.find((c: CanvasInstance) => c.id === canvasId);
+  const store = getStore(projectId);
+  const canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+  if (!canvas) {
+    const allIds = store.canvases.map((c: CanvasInstance) => c.id);
+    console.warn('[assistant] Canvas not found:', canvasId, 'available:', allIds, 'pid:', normPid(projectId) || 'app');
+  }
+  return canvas;
 }
 
 async function persistCanvas(projectId?: string): Promise<void> {
@@ -76,7 +90,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
     if (args.name) {
       store.renameCanvas(id, args.name as string);
     }
-    return { success: true, data: { canvas_id: id, project_id: pid || 'app' } };
+    return { success: true, data: { canvas_id: id } };
   },
 
   list_canvases(args) {
@@ -246,27 +260,38 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
       return { success: false, error: 'Source agent card has no agent assigned' };
     }
 
-    // Create MCP binding
-    window.clubhouse.mcpBinding.bind(sourceAgentId, {
-      targetId,
-      targetKind,
-      label: targetView.displayName || targetView.title,
-      agentName: sourceView.displayName || sourceView.title,
-      targetName: targetView.displayName || targetView.title,
-    });
+    const wireLabel = targetView.displayName || targetView.title;
+    const wireSrcName = sourceView.displayName || sourceView.title;
+    const wireTgtName = wireLabel;
 
-    // Persist wire definition
+    // Always persist wire definition — survives agent sleep/wake
     const store = getStore(pid);
     store.addWireDefinition({
       agentId: sourceAgentId,
       targetId,
       targetKind: targetKind as any,
-      label: targetView.displayName || targetView.title,
-      agentName: sourceView.displayName || sourceView.title,
-      targetName: targetView.displayName || targetView.title,
+      label: wireLabel,
+      agentName: wireSrcName,
+      targetName: wireTgtName,
     });
 
-    return { success: true, data: { sourceAgentId, targetId, targetKind } };
+    // Try to create live MCP binding — may fail if agent is sleeping (that's OK,
+    // the wire definition will activate the binding when the agent wakes up)
+    let bindingCreated = false;
+    try {
+      window.clubhouse.mcpBinding.bind(sourceAgentId, {
+        targetId,
+        targetKind,
+        label: wireLabel,
+        agentName: wireSrcName,
+        targetName: wireTgtName,
+      });
+      bindingCreated = true;
+    } catch (err) {
+      console.warn('[assistant] MCP binding failed (agent may be sleeping):', sourceAgentId, err);
+    }
+
+    return { success: true, data: { sourceAgentId, targetId, targetKind, bindingCreated } };
   },
 };
 

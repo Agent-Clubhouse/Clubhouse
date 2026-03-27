@@ -35,15 +35,29 @@ You have MCP tools for configuring Clubhouse. Here's when and how to use each.
 
 | Tool | Use when |
 |------|----------|
-| `create_canvas` | User wants a new visual workspace. Returns canvas_id for subsequent calls. |
+| `create_canvas` | User wants a new visual workspace. Returns canvas_id. |
 | `list_canvases` | Check existing canvases before creating new ones. |
-| `add_card` | Add cards. For agent cards, provide agent_id + project_id to bind a real agent. Types: "agent", "zone", "anchor". |
+| `add_card` | Add cards. ALWAYS provide agent_id + project_id for agent cards. |
 | `move_card` | Reposition cards after adding them. |
-| `resize_card` | Adjust card size (useful for zones). |
+| `resize_card` | Adjust card size (zones need 600x400+). |
 | `remove_card` | Remove a card from canvas. |
 | `rename_card` | Change card display name. |
-| `connect_cards` | Create MCP wire between two cards. Source must be an agent card. |
-| `layout_canvas` | Auto-arrange: "horizontal", "vertical", "grid", "hub_spoke". |
+| `connect_cards` | Create MCP wire. Source must be agent card with agent_id. Wires persist even if agent sleeps. |
+| `layout_canvas` | Auto-arrange: "horizontal", "vertical", "grid", "hub_spoke". ALWAYS use this instead of manual positioning. |
+
+### Card types and dimensions
+
+- **Agent cards** (300x200): Represent durable agents. ALWAYS set agent_id + project_id.
+- **Zone cards** (600x400 recommended): Visual containers that group other cards. Use for team grouping.
+- **Anchor cards** (200x100): Text-only labels. CANNOT be wired. CANNOT coordinate. Just decorative text.
+- Default card spacing: 340px+ horizontal, 240px+ vertical.
+
+### IMPORTANT: Do NOT use anchors for coordination
+
+Anchors are just text labels. For coordination between agents, use **group project** wires:
+- Wire agents to each other directly (agent-to-agent), or
+- Wire agents to a group project card for bulletin board coordination.
+Do NOT create "coordination hub" anchors — they have no functionality.
 
 ## Settings and info tools
 
@@ -60,9 +74,14 @@ You have MCP tools for configuring Clubhouse. Here's when and how to use each.
 `find_git_repos` → `add_project` → `create_agent` → `write_agent_instructions`
 
 **Multi-agent canvas:**
-`list_projects` → `list_agents` → `create_canvas` → `add_card` with agent_id+project_id (multiple) → `layout_canvas` → `connect_cards` (multiple)
+`list_projects` → `list_agents` → `create_canvas` → `add_card` with agent_id+project_id (repeat for each agent) → `layout_canvas` (to auto-arrange) → `connect_cards` (repeat for each wire)
 
-**Important:** When adding agent cards, ALWAYS provide `agent_id` and `project_id` from `list_agents` and `list_projects`. Without these, the card is a placeholder that can't be wired.
+**Rules for canvas building:**
+1. ALWAYS provide `agent_id` and `project_id` when adding agent cards
+2. ALWAYS use `layout_canvas` after adding all cards — never manually position
+3. NEVER use anchors for coordination — use direct agent-to-agent wires
+4. Use zones only for visual grouping, not for functionality
+5. When connecting agents, wire them directly to each other (agent-to-agent)
 
 **Agent reconfiguration:**
 `list_agents` → `update_agent` → `write_agent_instructions`

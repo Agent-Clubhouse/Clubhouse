@@ -843,8 +843,11 @@ registerToolTemplate('assistant', 'list_canvases', {
 
 registerToolTemplate('assistant', 'add_card', {
   description:
-    'Add a card to a canvas. Types: "agent" (for durable agents), "zone" (grouping container), "anchor" (text note). ' +
-    'For agent cards, provide agent_id and project_id to bind a real agent — otherwise the card is a placeholder that must be assigned in the UI.',
+    'Add a card to a canvas. Types: "agent" (for durable agents), "zone" (visual grouping container), "anchor" (text-only label). ' +
+    'For agent cards, ALWAYS provide agent_id and project_id to bind a real agent. ' +
+    'IMPORTANT: Default card size is 300x200px. Space cards at least 340px apart horizontally. ' +
+    'Prefer using layout_canvas after adding cards instead of manual positioning. ' +
+    'Anchors are just labels — they CANNOT be wired or used for coordination. Use group project cards for coordination.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -871,7 +874,12 @@ registerToolTemplate('assistant', 'add_card', {
   if (args.width !== undefined || args.height !== undefined) {
     cmdArgs.size = { w: args.width || 300, h: args.height || 200 };
   }
-  const result = await sendCanvasCommand('add_view', cmdArgs);
+  let result = await sendCanvasCommand('add_view', cmdArgs);
+  // Retry once if canvas not found — handles race between create_canvas and add_card
+  if (!result.success && result.error?.includes('Canvas not found')) {
+    await new Promise(r => setTimeout(r, 500));
+    result = await sendCanvasCommand('add_view', cmdArgs);
+  }
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to add card' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
 });
@@ -946,7 +954,9 @@ registerToolTemplate('assistant', 'rename_card', {
 });
 
 registerToolTemplate('assistant', 'connect_cards', {
-  description: 'Create a wire (MCP binding) between two cards. Source must be an agent card.',
+  description: 'Create a wire (MCP binding) between two cards. Source must be an agent card with agent_id set. ' +
+    'Target must be another agent card (NOT an anchor). Wire persists even if agents are sleeping. ' +
+    'Cannot wire to anchors — they are text-only labels.',
   inputSchema: {
     type: 'object',
     properties: {

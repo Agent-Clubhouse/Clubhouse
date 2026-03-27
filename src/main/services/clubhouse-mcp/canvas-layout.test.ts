@@ -32,9 +32,9 @@ describe('canvas-layout', () => {
     it('arranges cards left-to-right', () => {
       const result = layoutHorizontal(cards, 100, 200);
       expect(result).toHaveLength(4);
-      // Each card should be 300 + 40 = 340px apart
+      // Each card should be 300 + 60 = 360px apart
       expect(result[0].x).toBe(100);
-      expect(result[1].x).toBe(440); // 100 + 300 + 40 = 440
+      expect(result[1].x).toBe(460); // 100 + 300 + 60 = 460
       expect(result[0].y).toBe(200);
       expect(result[1].y).toBe(200);
     });
@@ -49,7 +49,7 @@ describe('canvas-layout', () => {
       const result = layoutVertical(cards, 200, 100);
       expect(result).toHaveLength(4);
       expect(result[0].y).toBe(100);
-      expect(result[1].y).toBe(340); // 100 + 200 + 40 = 340
+      expect(result[1].y).toBe(360); // 100 + 200 + 60 = 360
       expect(result[0].x).toBe(200);
       expect(result[1].x).toBe(200);
     });
