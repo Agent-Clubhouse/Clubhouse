@@ -63,6 +63,7 @@ vi.mock('fs', async (importOriginal) => {
 // ── Orchestrator / index.ts orchestration deps ─────────────────────────
 vi.mock('../orchestrators', () => ({
   registerBuiltinProviders: vi.fn(),
+  getAllProviders: vi.fn(() => []),
   getProvider: vi.fn(() => ({
     getProfileEnvKeys: vi.fn(() => ['ANTHROPIC_API_KEY']),
   })),
@@ -94,6 +95,7 @@ vi.mock('../services/theme-service', () => ({
 }));
 
 vi.mock('../services/orchestrator-settings', () => ({
+  autoDetectDefaults: vi.fn(async () => {}),
   getSettings: vi.fn(() => ({ enabled: ['claude-code'] })),
   saveSettings: vi.fn(),
 }));

@@ -18,7 +18,8 @@ vi.mock('./annex-handlers', () => ({
 }));
 vi.mock('./marketplace-handlers', () => ({ registerMarketplaceHandlers: vi.fn() }));
 vi.mock('./profile-handlers', () => ({ registerProfileHandlers: vi.fn() }));
-vi.mock('../orchestrators', () => ({ registerBuiltinProviders: vi.fn() }));
+vi.mock('../orchestrators', () => ({ registerBuiltinProviders: vi.fn(), getAllProviders: vi.fn(() => []) }));
+vi.mock('../services/orchestrator-settings', () => ({ autoDetectDefaults: vi.fn(async () => {}) }));
 vi.mock('../services/hook-server', () => ({
   start: vi.fn(async () => {}),
 }));
