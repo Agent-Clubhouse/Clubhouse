@@ -16,6 +16,7 @@ import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
+import { registerAssistantHandlers } from './assistant-handlers';
 import * as hookServer from '../services/hook-server';
 import { registerBuiltinProviders, getAllProviders } from '../orchestrators';
 import { autoDetectDefaults } from '../services/orchestrator-settings';
@@ -57,6 +58,7 @@ export function registerAllHandlers(): void {
   registerMcpBindingHandlers();
   registerGroupProjectHandlers();
   registerAgentQueueHandlers();
+  registerAssistantHandlers();
 
   // Start the hook server for agent status events
   hookServer.start().catch((err) => {

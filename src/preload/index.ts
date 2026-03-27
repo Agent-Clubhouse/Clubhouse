@@ -1226,6 +1226,14 @@ const api = {
       return () => { ipcRenderer.removeListener(IPC.MCP_BINDING.TOOL_ACTIVITY, listener); };
     },
   },
+  assistant: {
+    /** Create the assistant MCP binding for the given agent. */
+    bind: (agentId: string) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.BIND, agentId),
+    /** Remove the assistant MCP binding. */
+    unbind: (agentId: string) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.UNBIND, agentId),
+  },
 };
 
 export type ClubhouseAPI = typeof api;

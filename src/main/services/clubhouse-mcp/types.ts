@@ -3,7 +3,7 @@
  */
 
 /** The kind of target a binding points to. */
-export type BindingTargetKind = 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue' | 'plugin';
+export type BindingTargetKind = 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue' | 'plugin' | 'assistant';
 
 /** A single binding between an agent and a canvas widget or another agent. */
 export interface McpBinding {

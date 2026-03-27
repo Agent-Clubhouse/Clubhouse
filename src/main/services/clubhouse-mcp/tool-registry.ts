@@ -91,7 +91,7 @@ export function buildToolName(binding: McpBinding, suffix: string): string {
 
 /** Parse a tool name back into its components. Returns null if format doesn't match. */
 export function parseToolName(name: string): { prefix: string; toolKey: string; suffix: string } | null {
-  const match = name.match(/^(clubhouse|browser|terminal|group|queue)__([a-zA-Z0-9_]+)__([a-zA-Z_]+)$/);
+  const match = name.match(/^(clubhouse|browser|terminal|group|queue|assistant)__([a-zA-Z0-9_]+)__([a-zA-Z_]+)$/);
   if (!match) return null;
   return { prefix: match[1], toolKey: match[2], suffix: match[3] };
 }

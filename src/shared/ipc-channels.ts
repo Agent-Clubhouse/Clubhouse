@@ -369,6 +369,12 @@ export const IPC = {
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },
+  ASSISTANT: {
+    /** Create assistant MCP binding for the given agent ID. */
+    BIND: 'assistant:bind',
+    /** Remove assistant MCP binding. */
+    UNBIND: 'assistant:unbind',
+  },
   PLUGIN_MCP: {
     CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
     REMOVE_TOOLS: 'plugin-mcp:remove-tools',
