@@ -52,6 +52,7 @@ export interface AcpClientOpts {
   args: string[];
   cwd?: string;
   env?: Record<string, string>;
+  clientInfo?: { name: string; version: string };
   /** Called for notifications (method, no id) */
   onNotification?: (method: string, params: unknown) => void;
   /** Called for server-initiated requests (method + id) */
@@ -89,8 +90,8 @@ export class AcpClient {
     this.opts.onLog?.(level, message, meta);
   }
 
-  /** Spawn the child process and begin parsing stdout. */
-  start(): void {
+  /** Spawn the child process, begin parsing stdout, and complete the ACP init handshake. */
+  async start(): Promise<void> {
     this.log('info', 'Spawning ACP process', {
       binary: this.opts.binary,
       args: this.opts.args,
@@ -121,6 +122,16 @@ export class AcpClient {
       this.rejectAllPending(err);
       this.opts.onExit?.(null, null);
     });
+
+    // Perform ACP initialization handshake
+    this.log('info', 'Starting ACP init handshake');
+    await this.request('initialize', {
+      protocolVersion: 1,
+      clientInfo: this.opts.clientInfo ?? { name: 'clubhouse', version: '1.0.0' },
+      capabilities: {},
+    });
+    this.notify('initialized');
+    this.log('info', 'ACP init handshake complete');
   }
 
   /** Return collected stderr output. */
@@ -139,6 +150,13 @@ export class AcpClient {
       this.pending.set(id, { resolve, reject });
       this.send(msg);
     });
+  }
+
+  /** Send a JSON-RPC notification (no id, no response expected). */
+  notify(method: string, params?: unknown): void {
+    const msg: Record<string, unknown> = { jsonrpc: '2.0', method };
+    if (params !== undefined) msg.params = params;
+    this.send(msg as unknown as JsonRpcRequest);
   }
 
   /** Send a JSON-RPC response back to the server (e.g. for permission approvals). */
@@ -228,11 +246,12 @@ export class AcpClient {
     } else if (hasMethod) {
       // Notification
       this.opts.onNotification?.(msg.method as string, msg.params);
+    } else {
+      // Messages with neither id nor method are logged and ignored
+      this.log('warn', 'ACP message with neither id nor method', {
+        keys: Object.keys(msg),
+      });
     }
-    // Messages with neither id nor method are logged and ignored
-    this.log('warn', 'ACP message with neither id nor method', {
-      keys: Object.keys(msg),
-    });
   }
 
   private handleResponse(msg: JsonRpcResponse): void {
