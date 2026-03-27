@@ -160,6 +160,18 @@ describe('auto-update-service', () => {
       expect(ext).toBe('.dmg');
     });
 
+    it('extracts .deb for Linux package URLs', () => {
+      const url = 'https://stclubhousereleases.blob.core.windows.net/releases/artifacts/Clubhouse-1.0.0-linux-x64.deb';
+      const ext = path.extname(new URL(url).pathname) || '.zip';
+      expect(ext).toBe('.deb');
+    });
+
+    it('extracts .rpm for Linux package URLs', () => {
+      const url = 'https://stclubhousereleases.blob.core.windows.net/releases/artifacts/Clubhouse-1.0.0-linux-x64.rpm';
+      const ext = path.extname(new URL(url).pathname) || '.zip';
+      expect(ext).toBe('.rpm');
+    });
+
     it('defaults to .zip when URL has no extension', () => {
       const url = 'https://example.com/artifacts/Clubhouse';
       const ext = path.extname(new URL(url).pathname) || '.zip';
