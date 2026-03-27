@@ -239,7 +239,7 @@ async function startAgent(firstMessage: string): Promise<void> {
     state.agentId = agentId;
 
     // Use home directory as the working directory (assistant has no project)
-    const homeDir = await getHomeDir();
+    const homeDir = getHomeDir();
     const systemPrompt = buildAssistantInstructions();
 
     // Spawn the agent process
@@ -279,14 +279,16 @@ async function startAgent(firstMessage: string): Promise<void> {
   }
 }
 
-async function getHomeDir(): Promise<string> {
-  // Use a lightweight IPC or fallback to a known path
-  // The platform is available on window.clubhouse.platform
-  const platform = window.clubhouse.platform;
-  if (platform === 'win32') {
-    return process.env.USERPROFILE || 'C:\\Users';
+function getHomeDir(): string {
+  try {
+    const platform = window.clubhouse.platform;
+    if (platform === 'win32') {
+      return (typeof process !== 'undefined' && process.env?.USERPROFILE) || 'C:\\Users';
+    }
+    return (typeof process !== 'undefined' && process.env?.HOME) || '/tmp';
+  } catch {
+    return '/tmp';
   }
-  return process.env.HOME || '/tmp';
 }
 
 /** Get current status */
@@ -319,12 +321,8 @@ export function onStatusChange(listener: StatusListener): () => void {
 /** Reset the assistant — kills agent, clears state */
 export function reset(): void {
   if (state.agentId) {
-    // Fire and forget — we don't need to wait for kill
-    getHomeDir().then((homeDir) => {
-      if (state.agentId) {
-        window.clubhouse.agent.killAgent(state.agentId, homeDir).catch(() => {});
-      }
-    });
+    const homeDir = getHomeDir();
+    window.clubhouse.agent.killAgent(state.agentId, homeDir).catch(() => {});
   }
   if (cleanupEventListener) {
     cleanupEventListener();
