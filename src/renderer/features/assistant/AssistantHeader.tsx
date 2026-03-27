@@ -1,10 +1,14 @@
 import { useUIStore } from '../../stores/uiStore';
 
+interface Props {
+  onReset: () => void;
+}
+
 /**
  * Header bar for the assistant panel.
- * Shows robot icon, title, and a button to switch to classic help.
+ * Shows robot icon, title, new conversation button, and classic help toggle.
  */
-export function AssistantHeader() {
+export function AssistantHeader({ onReset }: Props) {
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
 
   return (
@@ -31,29 +35,53 @@ export function AssistantHeader() {
         <span className="text-sm font-semibold text-ctp-text">Clubhouse Assistant</span>
       </div>
 
-      {/* Classic Help button */}
-      <button
-        onClick={() => setExplorerTab('help')}
-        className="flex items-center gap-1.5 px-2 py-1 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors cursor-pointer"
-        title="Classic Help"
-        data-testid="classic-help-button"
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      <div className="flex items-center gap-1">
+        {/* New conversation button */}
+        <button
+          onClick={onReset}
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors cursor-pointer"
+          title="New conversation"
+          data-testid="assistant-reset-button"
         >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-          <line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-        <span>Help docs</span>
-      </button>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+        </button>
+
+        {/* Classic Help button */}
+        <button
+          onClick={() => setExplorerTab('help')}
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors cursor-pointer"
+          title="Classic Help"
+          data-testid="classic-help-button"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span>Help docs</span>
+        </button>
+      </div>
     </div>
   );
 }
