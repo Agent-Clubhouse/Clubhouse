@@ -215,9 +215,9 @@ describe('applyTheme', () => {
   });
 
   describe('total variable count', () => {
-    it('sets exactly 50 CSS variables for a plain theme (15 colors + 16 hljs + 3 shadows + 16 ansi)', () => {
+    it('sets exactly 34 CSS variables for a plain theme (15 colors + 16 hljs + 3 shadows)', () => {
       applyTheme(makeTheme());
-      expect(mockSetProperty).toHaveBeenCalledTimes(50);
+      expect(mockSetProperty).toHaveBeenCalledTimes(34);
     });
   });
 
