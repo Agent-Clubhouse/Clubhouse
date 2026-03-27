@@ -5,6 +5,16 @@ import type { StructuredSessionOpts } from '../types';
 // Mock AcpClient
 vi.mock('./acp-client', () => ({
   AcpClient: vi.fn(),
+  RpcError: class RpcError extends Error {
+    code: number;
+    data?: unknown;
+    constructor(code: number, message: string, data?: unknown) {
+      super(`RPC error ${code}: ${message}`);
+      this.name = 'RpcError';
+      this.code = code;
+      this.data = data;
+    }
+  },
 }));
 
 // Mock shell environment
@@ -13,8 +23,14 @@ vi.mock('../../util/shell', () => ({
   cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
 }));
 
+// Mock log service
+vi.mock('../../services/log-service', () => ({
+  appLog: vi.fn(),
+}));
+
 import { AcpClient } from './acp-client';
 import { AcpAdapter } from './acp-adapter';
+import { appLog } from '../../services/log-service';
 
 const MockAcpClient = vi.mocked(AcpClient);
 
@@ -23,9 +39,11 @@ interface MockClientInstance {
   request: ReturnType<typeof vi.fn>;
   respond: ReturnType<typeof vi.fn>;
   kill: ReturnType<typeof vi.fn>;
+  getStderr: ReturnType<typeof vi.fn>;
   onNotification: (method: string, params: unknown) => void;
   onServerRequest: (id: number | string, method: string, params: unknown) => void;
   onExit: (code: number | null, signal: string | null) => void;
+  onLog: (level: string, message: string, meta?: Record<string, unknown>) => void;
 }
 
 async function collectEvents(
@@ -53,9 +71,11 @@ describe('AcpAdapter', () => {
       request: vi.fn().mockResolvedValue(undefined),
       respond: vi.fn(),
       kill: vi.fn(),
+      getStderr: vi.fn().mockReturnValue(''),
       onNotification: () => {},
       onServerRequest: () => {},
       onExit: () => {},
+      onLog: () => {},
     };
 
     // Use regular function (not arrow) so it can be called with `new`
@@ -64,6 +84,7 @@ describe('AcpAdapter', () => {
       mockClient.onNotification = opts.onNotification!;
       mockClient.onServerRequest = opts.onServerRequest!;
       mockClient.onExit = opts.onExit!;
+      if (opts.onLog) mockClient.onLog = opts.onLog;
       Object.assign(this as object, mockClient);
       return this as unknown as AcpClient;
     } as unknown as ConstructorParameters<typeof MockAcpClient['mockImplementation']>[0]);
@@ -523,5 +544,111 @@ describe('AcpAdapter', () => {
 
     const events = await collectEvents(stream, 2);
     expect((events[0].data as { displayVerb: string }).displayVerb).toBe('Using tool');
+  });
+
+  // ── Diagnostic logging tests ──────────────────────────────────────────────
+
+  it('logs session start parameters', () => {
+    const mockAppLog = vi.mocked(appLog);
+    mockAppLog.mockClear();
+
+    const adapter = new AcpAdapter({
+      binary: '/usr/bin/copilot',
+      args: ['--acp'],
+    });
+    adapter.start({
+      ...defaultSessionOpts,
+      model: 'gpt-5',
+      systemPrompt: 'Be helpful',
+    });
+
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured',
+      'info',
+      'AcpAdapter starting session',
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          binary: '/usr/bin/copilot',
+          cwd: '/tmp/project',
+          model: 'gpt-5',
+          hasMission: true,
+          hasSystemPrompt: true,
+        }),
+      }),
+    );
+  });
+
+  it('logs session/start failure with error details', async () => {
+    const mockAppLog = vi.mocked(appLog);
+    mockAppLog.mockClear();
+
+    const { RpcError } = await import('./acp-client');
+    const rpcErr = new RpcError(-32601, 'Method not found');
+
+    // Override request to reject for session/start
+    mockClient.request.mockImplementation((method: string) => {
+      if (method === 'session/start') return Promise.reject(rpcErr);
+      return Promise.resolve(undefined);
+    });
+
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+
+    // Let the async catch handler run before triggering exit
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onExit(1, null);
+
+    const events: StructuredEvent[] = [];
+    for await (const event of stream) {
+      events.push(event);
+    }
+
+    expect(events.some(e => e.type === 'error')).toBe(true);
+    const errorEvent = events.find(e => e.type === 'error')!;
+    expect((errorEvent.data as { code: string }).code).toBe('session_start_failed');
+
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured',
+      'error',
+      'AcpAdapter session/start failed',
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          rpcCode: -32601,
+        }),
+      }),
+    );
+  });
+
+  it('logs unmapped notification methods', async () => {
+    const mockAppLog = vi.mocked(appLog);
+    mockAppLog.mockClear();
+
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+
+    mockClient.onNotification('unknown_future_method', { foo: 'bar' });
+    mockClient.onExit(0, null);
+
+    await collectEvents(stream, 1);
+
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured:acp',
+      'info',
+      'Unmapped ACP notification: unknown_future_method',
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          method: 'unknown_future_method',
+          paramsKeys: ['foo'],
+        }),
+      }),
+    );
+  });
+
+  it('passes onLog callback to AcpClient', () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    adapter.start(defaultSessionOpts);
+
+    const opts = MockAcpClient.mock.calls[0][0];
+    expect(opts.onLog).toBeDefined();
   });
 });

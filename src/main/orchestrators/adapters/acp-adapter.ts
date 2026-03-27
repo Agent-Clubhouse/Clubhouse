@@ -1,8 +1,9 @@
 import type { StructuredAdapter, StructuredSessionOpts } from '../types';
 import type { StructuredEvent } from '../../../shared/structured-events';
 import { AsyncQueue } from './async-queue';
-import { AcpClient } from './acp-client';
+import { AcpClient, RpcError } from './acp-client';
 import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
+import { appLog } from '../../services/log-service';
 
 export interface AcpAdapterOpts {
   binary: string;
@@ -47,6 +48,20 @@ export class AcpAdapter implements StructuredAdapter {
       ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
       : args;
 
+    appLog('core:structured', 'info', 'AcpAdapter starting session', {
+      meta: {
+        binary: spawnBinary,
+        args: spawnArgs,
+        cwd: sessionOpts.cwd,
+        model: sessionOpts.model,
+        hasMission: !!sessionOpts.mission,
+        hasSystemPrompt: !!sessionOpts.systemPrompt,
+        allowedTools: sessionOpts.allowedTools,
+        permissionMode: sessionOpts.permissionMode,
+        commandPrefix: sessionOpts.commandPrefix || 'none',
+      },
+    });
+
     this.client = new AcpClient({
       binary: spawnBinary,
       args: spawnArgs,
@@ -61,11 +76,20 @@ export class AcpAdapter implements StructuredAdapter {
         if (event) queue.push(event);
       },
       onExit: (code) => {
+        const stderr = this.client?.getStderr()?.trim();
+        if (stderr) {
+          appLog('core:structured', 'warn', 'AcpAdapter process stderr on exit', {
+            meta: { stderr: stderr.length > 2000 ? stderr.substring(0, 2000) + '…' : stderr },
+          });
+        }
         queue.push(this.makeEvent('end', {
           reason: code === 0 ? 'complete' : 'error',
           summary: code === 0 ? undefined : `Process exited with code ${code}`,
         }));
         queue.finish();
+      },
+      onLog: (level, message, meta) => {
+        appLog('core:structured:acp', level, message, { meta });
       },
     });
 
@@ -79,6 +103,13 @@ export class AcpAdapter implements StructuredAdapter {
       allowedTools: sessionOpts.allowedTools,
       disallowedTools: sessionOpts.disallowedTools,
     }).catch((err) => {
+      const isRpcError = err instanceof RpcError;
+      appLog('core:structured', 'error', 'AcpAdapter session/start failed', {
+        meta: {
+          error: err instanceof Error ? err.message : String(err),
+          ...(isRpcError ? { rpcCode: err.code, rpcData: err.data } : {}),
+        },
+      });
       queue.push(this.makeEvent('error', {
         code: 'session_start_failed',
         message: err instanceof Error ? err.message : String(err),
@@ -214,7 +245,9 @@ export class AcpAdapter implements StructuredAdapter {
         });
 
       default:
-        // Graceful degradation: unknown methods silently ignored
+        appLog('core:structured:acp', 'info', `Unmapped ACP notification: ${method}`, {
+          meta: { method, paramsKeys: Object.keys(p) },
+        });
         return null;
     }
   }

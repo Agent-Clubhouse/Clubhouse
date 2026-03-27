@@ -15,6 +15,11 @@ vi.mock('../../util/shell', () => ({
   cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
 }));
 
+// Mock log service
+vi.mock('../../services/log-service', () => ({
+  appLog: vi.fn(),
+}));
+
 import { StreamJsonAdapter } from './stream-json-adapter';
 
 interface MockProcess extends EventEmitter {

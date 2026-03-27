@@ -1,5 +1,18 @@
 import { spawn, type ChildProcess } from 'child_process';
 
+/** Rich RPC error that preserves error code and optional data from the JSON-RPC response. */
+export class RpcError extends Error {
+  readonly code: number;
+  readonly data?: unknown;
+
+  constructor(code: number, message: string, data?: unknown) {
+    super(`RPC error ${code}: ${message}`);
+    this.name = 'RpcError';
+    this.code = code;
+    this.data = data;
+  }
+}
+
 /** JSON-RPC 2.0 message types */
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -45,6 +58,8 @@ export interface AcpClientOpts {
   onServerRequest?: (id: number | string, method: string, params: unknown) => void;
   /** Called when the process exits */
   onExit?: (code: number | null, signal: string | null) => void;
+  /** Optional logger for diagnostic messages */
+  onLog?: (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 }
 
 /**
@@ -64,13 +79,24 @@ export class AcpClient {
   private chunks: string[] = [];
   private opts: AcpClientOpts;
   private killed = false;
+  private stderrBuffer: string[] = [];
 
   constructor(opts: AcpClientOpts) {
     this.opts = opts;
   }
 
+  private log(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
+    this.opts.onLog?.(level, message, meta);
+  }
+
   /** Spawn the child process and begin parsing stdout. */
   start(): void {
+    this.log('info', 'Spawning ACP process', {
+      binary: this.opts.binary,
+      args: this.opts.args,
+      cwd: this.opts.cwd,
+    });
+
     this.proc = spawn(this.opts.binary, this.opts.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.opts.cwd,
@@ -81,8 +107,9 @@ export class AcpClient {
     this.proc.stdout?.on('data', (chunk: string) => this.feed(chunk));
 
     this.proc.stderr?.setEncoding('utf8');
-    this.proc.stderr?.on('data', () => {
-      // Stderr consumed to prevent backpressure; not forwarded
+    this.proc.stderr?.on('data', (chunk: string) => {
+      this.stderrBuffer.push(chunk);
+      this.log('warn', 'ACP process stderr', { text: chunk.trim() });
     });
 
     this.proc.on('exit', (code, signal) => {
@@ -90,15 +117,23 @@ export class AcpClient {
     });
 
     this.proc.on('error', (err) => {
+      this.log('error', 'ACP process spawn error', { error: err.message });
       this.rejectAllPending(err);
       this.opts.onExit?.(null, null);
     });
+  }
+
+  /** Return collected stderr output. */
+  getStderr(): string {
+    return this.stderrBuffer.join('');
   }
 
   /** Send a JSON-RPC request and wait for the response. */
   request(method: string, params?: unknown): Promise<unknown> {
     const id = this.nextId++;
     const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
+
+    this.log('info', `RPC request → ${method}`, { id, method, params });
 
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
@@ -153,7 +188,9 @@ export class AcpClient {
         const parsed = JSON.parse(line);
         this.dispatch(parsed);
       } catch {
-        // Skip malformed lines
+        this.log('warn', 'Malformed JSON line from ACP stdout', {
+          line: line.length > 500 ? line.substring(0, 500) + '…' : line,
+        });
       }
     }
 
@@ -192,19 +229,36 @@ export class AcpClient {
       // Notification
       this.opts.onNotification?.(msg.method as string, msg.params);
     }
-    // Messages with neither id nor method are silently ignored
+    // Messages with neither id nor method are logged and ignored
+    this.log('warn', 'ACP message with neither id nor method', {
+      keys: Object.keys(msg),
+    });
   }
 
   private handleResponse(msg: JsonRpcResponse): void {
     const pending = this.pending.get(msg.id);
-    if (!pending) return;
+    if (!pending) {
+      this.log('warn', 'RPC response for unknown request', { id: msg.id });
+      return;
+    }
     this.pending.delete(msg.id);
 
     if (msg.error) {
-      pending.reject(
-        new Error(`RPC error ${msg.error.code}: ${msg.error.message}`),
+      this.log('error', `RPC error ← id=${msg.id}`, {
+        code: msg.error.code,
+        message: msg.error.message,
+        data: msg.error.data,
+      });
+      const rpcError = new RpcError(
+        msg.error.code,
+        msg.error.message,
+        msg.error.data,
       );
+      pending.reject(rpcError);
     } else {
+      this.log('info', `RPC response ← id=${msg.id}`, {
+        resultType: typeof msg.result,
+      });
       pending.resolve(msg.result);
     }
   }
@@ -213,6 +267,13 @@ export class AcpClient {
     code: number | null,
     signal: string | null,
   ): void {
+    const stderr = this.getStderr().trim();
+    this.log(code === 0 ? 'info' : 'error', 'ACP process exited', {
+      code,
+      signal,
+      pendingRequests: this.pending.size,
+      ...(stderr ? { stderr: stderr.length > 2000 ? stderr.substring(0, 2000) + '…' : stderr } : {}),
+    });
     this.flush();
     this.rejectAllPending(
       new Error(`Process exited with code ${code}, signal ${signal}`),

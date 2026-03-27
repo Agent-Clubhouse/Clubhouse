@@ -437,4 +437,142 @@ describe('CodexAppServerClient', () => {
 
     await expect(client.start()).rejects.toThrow('RPC error -32603: Internal error');
   });
+
+  // ── onLog callback tests ──────────────────────────────────────────────────
+
+  it('calls onLog for spawn', async () => {
+    const onLog = vi.fn();
+    const client = new CodexAppServerClient({
+      binary: '/usr/bin/codex',
+      args: ['app-server'],
+      onLog,
+    });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await client.start();
+
+    expect(onLog).toHaveBeenCalledWith(
+      'info',
+      'Spawning Codex app-server process',
+      expect.objectContaining({
+        binary: '/usr/bin/codex',
+        args: ['app-server'],
+      }),
+    );
+  });
+
+  it('calls onLog for RPC requests', async () => {
+    const onLog = vi.fn();
+    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await client.start();
+
+    client.request('thread/start', { model: 'gpt-5' });
+
+    expect(onLog).toHaveBeenCalledWith(
+      'info',
+      'RPC request → thread/start',
+      expect.objectContaining({
+        method: 'thread/start',
+      }),
+    );
+  });
+
+  it('calls onLog for RPC errors', async () => {
+    const onLog = vi.fn();
+    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await client.start();
+
+    const promise = client.request('bad/method', {});
+
+    emitData(
+      mockProc,
+      JSON.stringify({ id: 2, error: { code: -32601, message: 'Method not found' } }) + '\n',
+    );
+
+    await expect(promise).rejects.toThrow();
+
+    expect(onLog).toHaveBeenCalledWith(
+      'error',
+      'RPC error ← id=2',
+      expect.objectContaining({
+        code: -32601,
+        message: 'Method not found',
+      }),
+    );
+  });
+
+  // ── stderr capture tests ──────────────────────────────────────────────────
+
+  it('captures stderr and makes it accessible via getStderr', async () => {
+    const onLog = vi.fn();
+    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await client.start();
+
+    mockProc.stderr.emit('data', 'Warning: something\n');
+
+    expect(client.getStderr()).toBe('Warning: something\n');
+    expect(onLog).toHaveBeenCalledWith(
+      'warn',
+      'Codex app-server stderr',
+      expect.objectContaining({ text: 'Warning: something' }),
+    );
+  });
+
+  it('logs process exit with stderr and pending count', async () => {
+    const onLog = vi.fn();
+    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await client.start();
+
+    mockProc.stderr.emit('data', 'fatal error\n');
+    const pendingRequest = client.request('thread/start', {});
+
+    mockProc.emit('exit', 1, null);
+
+    // Consume the rejection to avoid unhandled promise rejection
+    await expect(pendingRequest).rejects.toThrow('Process exited');
+
+    expect(onLog).toHaveBeenCalledWith(
+      'error',
+      'Codex app-server process exited',
+      expect.objectContaining({
+        code: 1,
+        pendingRequests: 1,
+        stderr: 'fatal error',
+      }),
+    );
+  });
+
+  it('logs malformed JSON lines', async () => {
+    const onLog = vi.fn();
+    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await client.start();
+
+    emitData(mockProc, 'garbage data\n');
+
+    expect(onLog).toHaveBeenCalledWith(
+      'warn',
+      'Malformed JSON line from Codex stdout',
+      expect.objectContaining({ line: 'garbage data' }),
+    );
+  });
+
+  it('logs init handshake completion', async () => {
+    const onLog = vi.fn();
+    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await client.start();
+
+    expect(onLog).toHaveBeenCalledWith('info', 'Codex init handshake complete', undefined);
+  });
 });

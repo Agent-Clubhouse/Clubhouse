@@ -13,8 +13,14 @@ vi.mock('../../util/shell', () => ({
   cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
 }));
 
+// Mock log service
+vi.mock('../../services/log-service', () => ({
+  appLog: vi.fn(),
+}));
+
 import { CodexAppServerClient } from './codex-app-server-client';
 import { CodexAppServerAdapter } from './codex-app-server-adapter';
+import { appLog } from '../../services/log-service';
 
 const MockClient = vi.mocked(CodexAppServerClient);
 
@@ -24,9 +30,11 @@ interface MockClientInstance {
   respond: ReturnType<typeof vi.fn>;
   notify: ReturnType<typeof vi.fn>;
   kill: ReturnType<typeof vi.fn>;
+  getStderr: ReturnType<typeof vi.fn>;
   onNotification: (method: string, params: unknown) => void;
   onServerRequest: (id: number | string, method: string, params: unknown) => void;
   onExit: (code: number | null, signal: string | null) => void;
+  onLog: (level: string, message: string, meta?: Record<string, unknown>) => void;
 }
 
 async function collectEvents(
@@ -67,15 +75,18 @@ describe('CodexAppServerAdapter', () => {
       respond: vi.fn(),
       notify: vi.fn(),
       kill: vi.fn(),
+      getStderr: vi.fn().mockReturnValue(''),
       onNotification: () => {},
       onServerRequest: () => {},
       onExit: () => {},
+      onLog: () => {},
     };
 
     MockClient.mockImplementation(function (this: unknown, opts: ConstructorParameters<typeof CodexAppServerClient>[0]) {
       mockClient.onNotification = opts.onNotification!;
       mockClient.onServerRequest = opts.onServerRequest!;
       mockClient.onExit = opts.onExit!;
+      if (opts.onLog) mockClient.onLog = opts.onLog;
       Object.assign(this as object, mockClient);
       return this as unknown as CodexAppServerClient;
     } as unknown as ConstructorParameters<typeof MockClient['mockImplementation']>[0]);
@@ -793,5 +804,91 @@ describe('CodexAppServerAdapter', () => {
     const events = await collectEvents(stream, 2);
     expect(events[0].type).toBe('text_done');
     expect(events[0].data).toEqual({ text: 'Hello!' });
+  });
+
+  // ── Diagnostic logging tests ──────────────────────────────────────────────
+
+  it('logs session start parameters', () => {
+    const mockAppLog = vi.mocked(appLog);
+    mockAppLog.mockClear();
+
+    const adapter = new CodexAppServerAdapter({ binary: '/usr/bin/codex' });
+    adapter.start({
+      ...defaultSessionOpts,
+      model: 'gpt-5.3-codex',
+      systemPrompt: 'Be helpful',
+    });
+
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured',
+      'info',
+      'CodexAppServerAdapter starting session',
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          binary: '/usr/bin/codex',
+          cwd: '/tmp/project',
+          model: 'gpt-5.3-codex',
+          hasMission: true,
+          hasSystemPrompt: true,
+        }),
+      }),
+    );
+  });
+
+  it('logs startup failure', async () => {
+    const mockAppLog = vi.mocked(appLog);
+    mockAppLog.mockClear();
+
+    mockClient.start.mockRejectedValue(new Error('Connection refused'));
+
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    const events = await collectEvents(stream, 2);
+    expect(events[0].type).toBe('error');
+
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured',
+      'error',
+      'CodexAppServerAdapter startup failed',
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          error: 'Connection refused',
+        }),
+      }),
+    );
+  });
+
+  it('logs unmapped notification methods', async () => {
+    const mockAppLog = vi.mocked(appLog);
+    mockAppLog.mockClear();
+
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    mockClient.onNotification('future/notification', { key: 'value' });
+    mockClient.onExit(0, null);
+
+    await collectEvents(stream, 1);
+
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured:codex',
+      'info',
+      'Unmapped Codex notification: future/notification',
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          method: 'future/notification',
+          paramsKeys: ['key'],
+        }),
+      }),
+    );
+  });
+
+  it('passes onLog callback to CodexAppServerClient', () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start(defaultSessionOpts);
+
+    const opts = MockClient.mock.calls[0][0];
+    expect(opts.onLog).toBeDefined();
   });
 });

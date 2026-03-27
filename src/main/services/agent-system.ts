@@ -140,6 +140,18 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
     const useStructured = (spawnMode === 'structured' && params.kind === 'quick') || params.structuredMode;
     if (useStructured && isStructuredCapable(provider)) {
+      appLog('core:agent', 'info', `Spawning ${params.kind} agent in structured mode`, {
+        meta: {
+          agentId: params.agentId,
+          orchestrator: provider.id,
+          cwd: params.cwd,
+          model: params.model,
+          allowedTools: allowedTools?.join(',') || 'none',
+          commandPrefix: commandPrefix || 'none',
+          freeAgentMode: params.freeAgentMode,
+          permissionMode,
+        },
+      });
       agentRegistry.setRuntime(params.agentId, 'structured');
       const adapter = provider.createStructuredAdapter();
       await structuredManager.startStructuredSession(params.agentId, adapter, {
