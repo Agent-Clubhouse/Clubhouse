@@ -1,12 +1,84 @@
 import { useEffect, type RefObject } from 'react';
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
+import { rendererLog } from '../../plugins/renderer-logger';
+
+const SCROLL_LOG_NS = 'ui:terminal:scroll';
 
 /** Delay (ms) after wake-from-sleep before re-fitting the terminal.
  *  Gives the browser layout engine time to recalculate dimensions and
  *  font metrics — particularly important for canvas views where CSS
  *  transforms affect rendered element sizes. */
 const WAKE_SETTLE_MS = 150;
+
+/**
+ * Save the terminal viewport's scroll position so it can be restored
+ * after a `fit()` call that may trigger a buffer reflow.
+ *
+ * xterm.js reflows the buffer when the column count changes during
+ * `terminal.resize()`.  This can shift the viewport — particularly
+ * when there is significant scrollback — causing the user's view to
+ * jump to the top.  We record the viewport state before `fit()` and
+ * restore it immediately after.
+ */
+function saveViewportScroll(container: HTMLElement): { scrollTop: number; atBottom: boolean } | null {
+  const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null;
+  if (!viewport) return null;
+  const atBottom = viewport.scrollTop >= viewport.scrollHeight - viewport.clientHeight - 5;
+  return { scrollTop: viewport.scrollTop, atBottom };
+}
+
+function restoreViewportScroll(container: HTMLElement, saved: { scrollTop: number; atBottom: boolean } | null, sessionId?: string): void {
+  if (!saved) return;
+  const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null;
+  if (!viewport) return;
+
+  const applyScroll = () => {
+    if (saved.atBottom) {
+      viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
+    } else {
+      viewport.scrollTop = saved.scrollTop;
+    }
+  };
+
+  // Apply immediately…
+  applyScroll();
+
+  const afterScrollTop = viewport.scrollTop;
+  if (Math.abs(afterScrollTop - saved.scrollTop) > 5 || saved.atBottom) {
+    rendererLog(SCROLL_LOG_NS, 'debug', 'Viewport scroll restored after fit', {
+      meta: {
+        sessionId,
+        savedScrollTop: saved.scrollTop,
+        savedAtBottom: saved.atBottom,
+        restoredTo: afterScrollTop,
+        scrollHeight: viewport.scrollHeight,
+        clientHeight: viewport.clientHeight,
+      },
+    });
+  }
+
+  // …and once more in the next frame.  xterm.js schedules its own
+  // requestAnimationFrame render after fit() which can overwrite our
+  // scrollTop.  The deferred restore catches that async clobber.
+  requestAnimationFrame(() => {
+    const beforeDeferred = viewport.scrollTop;
+    applyScroll();
+    if (Math.abs(beforeDeferred - viewport.scrollTop) > 5) {
+      rendererLog(SCROLL_LOG_NS, 'warn', 'Deferred scroll restore corrected xterm clobber', {
+        meta: {
+          sessionId,
+          clobberedTo: beforeDeferred,
+          restoredTo: viewport.scrollTop,
+          savedScrollTop: saved.scrollTop,
+          savedAtBottom: saved.atBottom,
+          scrollHeight: viewport.scrollHeight,
+          clientHeight: viewport.clientHeight,
+        },
+      });
+    }
+  });
+}
 
 /**
  * Manages terminal fit/resize with focus-awareness for multi-window correctness.
@@ -43,12 +115,25 @@ export function useTerminalFit(
      */
     const doResize = onResize ?? window.clubhouse.pty.resize;
 
-    const fitAndResize = (sendResize: boolean) => {
+    const fitAndResize = (sendResize: boolean, trigger?: string) => {
       requestAnimationFrame(() => {
         if (!fitAddonRef.current || !terminalRef.current) return;
         const el = containerRef.current;
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
+        const saved = saveViewportScroll(el);
+        rendererLog(SCROLL_LOG_NS, 'debug', 'fitAndResize', {
+          meta: {
+            sessionId,
+            trigger: trigger ?? 'unknown',
+            sendResize,
+            savedScrollTop: saved?.scrollTop,
+            savedAtBottom: saved?.atBottom,
+            containerWidth: el.clientWidth,
+            containerHeight: el.clientHeight,
+          },
+        });
         fitAddonRef.current.fit();
+        restoreViewportScroll(el, saved, sessionId);
         if (sendResize) {
           doResize(
             sessionId,
@@ -61,7 +146,7 @@ export function useTerminalFit(
 
     // Container size changes: only resize PTY if this window is focused
     const resizeObserver = new ResizeObserver(() => {
-      fitAndResize(document.hasFocus());
+      fitAndResize(document.hasFocus(), 'resize-observer');
     });
     resizeObserver.observe(container);
 
@@ -70,13 +155,13 @@ export function useTerminalFit(
     let wakeTimer: ReturnType<typeof setTimeout> | null = null;
     const onVisibility = () => {
       if (!document.hidden) {
-        wakeTimer = setTimeout(() => fitAndResize(true), WAKE_SETTLE_MS);
+        wakeTimer = setTimeout(() => fitAndResize(true, 'visibility-change'), WAKE_SETTLE_MS);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
     // Window regains focus: ensure PTY matches this window's terminal size
-    const onWindowFocus = () => fitAndResize(true);
+    const onWindowFocus = () => fitAndResize(true, 'window-focus');
     window.addEventListener('focus', onWindowFocus);
 
     return () => {
@@ -96,7 +181,23 @@ export function useTerminalFit(
     const doResize = onResize ?? window.clubhouse.pty.resize;
     requestAnimationFrame(() => {
       if (fitAddonRef.current && terminalRef.current) {
-        fitAddonRef.current.fit();
+        const el = containerRef.current;
+        if (el) {
+          const saved = saveViewportScroll(el);
+          rendererLog(SCROLL_LOG_NS, 'debug', 'fitAndResize', {
+            meta: {
+              sessionId,
+              trigger: 'pane-focus',
+              sendResize: true,
+              savedScrollTop: saved?.scrollTop,
+              savedAtBottom: saved?.atBottom,
+            },
+          });
+          fitAddonRef.current.fit();
+          restoreViewportScroll(el, saved, sessionId);
+        } else {
+          fitAddonRef.current.fit();
+        }
         doResize(
           sessionId,
           terminalRef.current.cols,

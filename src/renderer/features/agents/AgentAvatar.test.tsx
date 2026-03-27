@@ -123,4 +123,14 @@ describe('AgentAvatarWithRing', () => {
     expect(styledEl).toBeTruthy();
     expect(styledEl!.getAttribute('style')).toContain('border');
   });
+
+  it('renders amber ring for waking agent', () => {
+    const { container } = render(
+      <AgentAvatarWithRing agent={makeAgent({ status: 'waking' })} />,
+    );
+    const styledEl = container.querySelector('[style]');
+    expect(styledEl).toBeTruthy();
+    // Waking uses amber ring color — rendered as rgb(245, 158, 11) from #f59e0b
+    expect(styledEl!.getAttribute('style')).toContain('245, 158, 11');
+  });
 });

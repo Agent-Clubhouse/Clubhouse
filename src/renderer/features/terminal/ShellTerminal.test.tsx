@@ -321,6 +321,86 @@ describe('ShellTerminal', () => {
     });
   });
 
+  describe('IO stability', () => {
+    it('does not recreate terminal when io prop changes', () => {
+      const io1 = {
+        write: vi.fn(),
+        resize: vi.fn(),
+        getBuffer: vi.fn().mockResolvedValue(''),
+        onData: vi.fn().mockReturnValue(vi.fn()),
+        onExit: vi.fn().mockReturnValue(vi.fn()),
+      };
+      const io2 = {
+        write: vi.fn(),
+        resize: vi.fn(),
+        getBuffer: vi.fn().mockResolvedValue(''),
+        onData: vi.fn().mockReturnValue(vi.fn()),
+        onExit: vi.fn().mockReturnValue(vi.fn()),
+      };
+
+      const { rerender } = render(<ShellTerminal sessionId="shell-1" io={io1} />);
+      const firstTerm = term();
+      expect(firstTerm).toBeDefined();
+      firstTerm.dispose.mockClear();
+
+      // Changing io should NOT recreate the terminal
+      rerender(<ShellTerminal sessionId="shell-1" io={io2} />);
+      expect(firstTerm.dispose).not.toHaveBeenCalled();
+    });
+
+    it('re-subscribes IO listeners when io prop changes', () => {
+      const unsub1 = vi.fn();
+      const io1 = {
+        write: vi.fn(),
+        resize: vi.fn(),
+        getBuffer: vi.fn().mockResolvedValue(''),
+        onData: vi.fn().mockReturnValue(unsub1),
+        onExit: vi.fn().mockReturnValue(vi.fn()),
+      };
+      const io2 = {
+        write: vi.fn(),
+        resize: vi.fn(),
+        getBuffer: vi.fn().mockResolvedValue(''),
+        onData: vi.fn().mockReturnValue(vi.fn()),
+        onExit: vi.fn().mockReturnValue(vi.fn()),
+      };
+
+      const { rerender } = render(<ShellTerminal sessionId="shell-1" io={io1} />);
+      expect(io1.onData).toHaveBeenCalled();
+
+      rerender(<ShellTerminal sessionId="shell-1" io={io2} />);
+      // Old listener cleaned up, new one registered
+      expect(unsub1).toHaveBeenCalled();
+      expect(io2.onData).toHaveBeenCalled();
+    });
+
+    it('uses the latest io ref for write operations after io change', () => {
+      const io1 = {
+        write: vi.fn(),
+        resize: vi.fn(),
+        getBuffer: vi.fn().mockResolvedValue(''),
+        onData: vi.fn().mockReturnValue(vi.fn()),
+        onExit: vi.fn().mockReturnValue(vi.fn()),
+      };
+      const io2 = {
+        write: vi.fn(),
+        resize: vi.fn(),
+        getBuffer: vi.fn().mockResolvedValue(''),
+        onData: vi.fn().mockReturnValue(vi.fn()),
+        onExit: vi.fn().mockReturnValue(vi.fn()),
+      };
+
+      const { rerender } = render(<ShellTerminal sessionId="shell-1" io={io1} />);
+      rerender(<ShellTerminal sessionId="shell-1" io={io2} />);
+
+      // Simulate user typing — should route through io2
+      const onDataCb = term().onData.mock.calls[0][0];
+      onDataCb('test input');
+      expect(io2.write).toHaveBeenCalledWith('shell-1', 'test input');
+      expect(io1.write).not.toHaveBeenCalled();
+    });
+  });
+
   describe('container rendering', () => {
     it('renders a container div with padding', () => {
       const { getByTestId } = render(<ShellTerminal sessionId="shell-1" />);

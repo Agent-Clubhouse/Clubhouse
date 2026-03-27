@@ -60,7 +60,6 @@ vi.mock('./annex-tls', () => ({
 }));
 
 vi.mock('./annex-peers', () => ({
-  isPairedPeer: vi.fn().mockReturnValue(false),
   getPeer: vi.fn().mockReturnValue(undefined),
   addPeer: vi.fn(),
   updateLastSeen: vi.fn(),
@@ -111,10 +110,10 @@ function resetAllMocks() {
   resetBonjourMocks();
   vi.mocked(annexIdentity.getOrCreateIdentity).mockReturnValue(LOCAL_IDENTITY);
   vi.mocked(annexIdentity.getIdentity).mockReturnValue(LOCAL_IDENTITY);
-  vi.mocked(annexPeers.isPairedPeer).mockReturnValue(false);
   vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
   vi.mocked(annexSettings.getSettings).mockReturnValue({
-    enabled: true,
+    enableServer: true,
+    enableClient: true,
     deviceName: 'Test Mac',
     alias: 'Test Mac',
     icon: 'computer',
@@ -235,7 +234,7 @@ describe('annex-client', () => {
         color: 'blue',
         publicKey: 'remote-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(false);
+
 
       annexClient.startClient();
       expect(bonjourFindCallback).not.toBeNull();
@@ -288,7 +287,7 @@ describe('annex-client', () => {
         color: 'blue',
         publicKey: 'remote-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(false);
+
 
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
@@ -312,7 +311,7 @@ describe('annex-client', () => {
         color: 'green',
         publicKey: 'paired-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -347,13 +346,13 @@ describe('annex-client', () => {
       });
 
       // First discovery: unpaired
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(false);
+
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
       expect(annexClient.getDiscoveredServices()).toHaveLength(1);
 
       // Second discovery: now paired
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'XX:YY:ZZ:11',
         alias: 'Remote Mac',
@@ -381,7 +380,7 @@ describe('annex-client', () => {
         color: 'blue',
         publicKey: 'remote-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(false);
+
 
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
@@ -407,7 +406,7 @@ describe('annex-client', () => {
         color: 'blue',
         publicKey: 'remote-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(false);
+
 
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
@@ -526,7 +525,7 @@ describe('annex-client', () => {
         color: 'green',
         publicKey: 'paired-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -566,7 +565,7 @@ describe('annex-client', () => {
         color: 'green',
         publicKey: 'paired-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -603,7 +602,7 @@ describe('annex-client', () => {
         color: 'green',
         publicKey: 'paired-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -637,7 +636,7 @@ describe('annex-client', () => {
         color: 'green',
         publicKey: 'paired-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -821,7 +820,7 @@ describe('annex-client', () => {
         color: 'green',
         publicKey: 'paired-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -833,9 +832,7 @@ describe('annex-client', () => {
       });
 
       // Mock WebSocket instance to have OPEN state but throw on send
-      let wsInstance: any = null;
       vi.mocked(WsMock).mockImplementation(function (this: any) {
-        wsInstance = this;
         this.readyState = 1; // WebSocket.OPEN
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') setTimeout(cb, 0);
@@ -869,7 +866,7 @@ describe('annex-client', () => {
         color: 'green',
         publicKey: 'paired-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -922,7 +919,7 @@ describe('annex-client', () => {
         color: 'green',
         publicKey: 'paired-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -987,7 +984,7 @@ describe('annex-client', () => {
         color: 'green',
         publicKey: 'paired-pub-key',
       });
-      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+
       vi.mocked(annexPeers.getPeer).mockReturnValue({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -1002,6 +999,7 @@ describe('annex-client', () => {
       let wsInstance: any = null;
 
       vi.mocked(WsMock).mockImplementation(function (this: any) {
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
         wsInstance = this;
         this.readyState = 1;
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {

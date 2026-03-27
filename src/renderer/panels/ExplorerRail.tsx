@@ -7,6 +7,7 @@ import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { Badge } from '../components/Badge';
 import { AGENT_COLORS } from '../../shared/name-generator';
+import { sanitizeSvg } from '../utils/sanitize-svg';
 
 const EMPTY_STRING_ARRAY: string[] = [];
 
@@ -218,24 +219,25 @@ export function ExplorerRail() {
         })
         .map((p) => {
           const contributes = p.contributes as { tab: { label: string; icon?: string } };
-          // Built-in plugins with matching versions are fully available;
-          // 3P (community/marketplace) plugins are shown but disabled since
-          // their code is not guaranteed to support remote operations.
-          const isThirdParty = p.source !== 'builtin';
-          const isAvailable = p.status === 'matched' && !isThirdParty;
+          // Plugins with the annex permission and matching versions are fully available.
+          // Non-annex plugins are clickable (dimmed) — MainContentView shows a placeholder.
+          // Missing/version_mismatch plugins remain disabled.
+          const isMissing = p.status === 'missing' || p.status === 'version_mismatch';
+          const isDimmed = !isMissing && !p.annexEnabled;
+          const isAvailable = p.status === 'matched' && p.annexEnabled;
           return {
             id: `plugin:${p.id}`,
             label: contributes.tab.label,
             icon: contributes.tab.icon
-              ? <span className={isAvailable ? '' : 'opacity-40'} dangerouslySetInnerHTML={{ __html: contributes.tab.icon }} />
-              : <span className={isAvailable ? '' : 'opacity-40'}>{PLUGIN_FALLBACK_ICON}</span>,
-            disabled: !isAvailable,
-            disabledReason: isThirdParty
-              ? `${p.name} is not available for remote control`
-              : p.status === 'missing'
-                ? `${p.name} is not installed on this machine`
-                : p.status === 'version_mismatch'
-                  ? `${p.name} version mismatch (local: ${p.localVersion}, remote: ${p.remoteVersion})`
+              ? <span className={isAvailable ? '' : 'opacity-60'} dangerouslySetInnerHTML={{ __html: sanitizeSvg(contributes.tab.icon) }} />
+              : <span className={isAvailable ? '' : 'opacity-60'}>{PLUGIN_FALLBACK_ICON}</span>,
+            disabled: isMissing,
+            disabledReason: p.status === 'missing'
+              ? `${p.name} is not installed on this machine`
+              : p.status === 'version_mismatch'
+                ? `${p.name} version mismatch (local: ${p.localVersion}, remote: ${p.remoteVersion})`
+                : isDimmed
+                  ? `${p.name} is not annex enabled`
                   : undefined,
           };
         });
@@ -247,7 +249,7 @@ export function ExplorerRail() {
         id: `plugin:${entry.manifest.id}`,
         label: entry.manifest.contributes!.tab!.label,
         icon: entry.manifest.contributes!.tab!.icon
-          ? <span dangerouslySetInnerHTML={{ __html: entry.manifest.contributes!.tab!.icon }} />
+          ? <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(entry.manifest.contributes!.tab!.icon) }} />
           : PLUGIN_FALLBACK_ICON,
       }));
   }, [pluginTabKey]);

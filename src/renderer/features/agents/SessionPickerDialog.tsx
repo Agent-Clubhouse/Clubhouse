@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, RefObject } from 'react';
+import { createPortal } from 'react-dom';
 
 const RECENT_COUNT = 5;
 
@@ -178,7 +179,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
     setEditValue(session.friendlyName || '');
   }, []);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div
         ref={dialogRef}
@@ -297,6 +298,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

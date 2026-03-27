@@ -233,7 +233,7 @@ describe('profile-settings', () => {
       expect(codexResult).toBeDefined();
       expect(codexResult!.OPENAI_API_KEY).toBe('sk-work');
 
-      const otherResult = resolveProfileEnv(profile, 'opencode');
+      const otherResult = resolveProfileEnv(profile, 'copilot-cli');
       expect(otherResult).toBeUndefined();
     });
   });

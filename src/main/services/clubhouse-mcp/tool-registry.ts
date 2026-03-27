@@ -5,7 +5,12 @@
 
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { bindingManager } from './binding-manager';
+import { agentRegistry } from '../agent-registry';
+import { groupProjectRegistry } from '../group-project-registry';
 import { appLog } from '../log-service';
+
+/** Tool suffixes gated behind the group-project shoulderTapEnabled setting. */
+const SHOULDER_TAP_SUFFIXES = new Set(['shoulder_tap', 'broadcast']);
 
 /**
  * Tool templates keyed by targetKind.
@@ -63,7 +68,7 @@ export function buildToolKey(binding: McpBinding): string {
     const hash = shortHash(binding.targetId);
     return `${project}_${name}_${hash}`;
   }
-  if (binding.targetKind === 'group-project') {
+  if (binding.targetKind === 'group-project' || binding.targetKind === 'agent-queue') {
     const name = sanitizeId(binding.targetName || binding.label || binding.targetId);
     const hash = shortHash(binding.targetId);
     return `${name}_${hash}`;
@@ -79,13 +84,14 @@ export function buildToolKey(binding: McpBinding): string {
 export function buildToolName(binding: McpBinding, suffix: string): string {
   const prefix = binding.targetKind === 'agent' ? 'clubhouse'
     : binding.targetKind === 'group-project' ? 'group'
+    : binding.targetKind === 'agent-queue' ? 'queue'
     : binding.targetKind;
   return `${prefix}__${buildToolKey(binding)}__${suffix}`;
 }
 
 /** Parse a tool name back into its components. Returns null if format doesn't match. */
 export function parseToolName(name: string): { prefix: string; toolKey: string; suffix: string } | null {
-  const match = name.match(/^(clubhouse|browser|terminal|group)__([a-zA-Z0-9_]+)__([a-zA-Z_]+)$/);
+  const match = name.match(/^(clubhouse|browser|terminal|group|queue|assistant)__([a-zA-Z0-9_]+)__([a-zA-Z_]+)$/);
   if (!match) return null;
   return { prefix: match[1], toolKey: match[2], suffix: match[3] };
 }
@@ -101,9 +107,46 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     const templates = toolTemplates.get(binding.targetKind);
     if (!templates) continue;
 
+    // When target agent is sleeping (not in registry), only expose status and wake tools
+    const isTargetSleeping = binding.targetKind === 'agent' && !agentRegistry.get(binding.targetId);
+
+    // For group-project bindings, check if shoulder tap is enabled at the project level
+    let shoulderTapEnabled = false;
+    if (binding.targetKind === 'group-project') {
+      const project = groupProjectRegistry.getSync(binding.targetId);
+      shoulderTapEnabled = !!(project?.metadata?.shoulderTapEnabled);
+    }
+
     for (const template of templates) {
+      if (isTargetSleeping && template.nameSuffix !== 'get_status' && template.nameSuffix !== 'wake') {
+        continue;
+      }
+
+      // Skip tools disabled at the wire level
+      if (binding.disabledTools?.includes(template.nameSuffix)) {
+        continue;
+      }
+
+      // Skip shoulder tap tools when not enabled at the group project level
+      if (binding.targetKind === 'group-project' && SHOULDER_TAP_SUFFIXES.has(template.nameSuffix) && !shoulderTapEnabled) {
+        continue;
+      }
+
+      let description = template.definition.description;
+
+      // Inject per-wire custom instructions into tool description
+      if (binding.instructions) {
+        const specificInstruction = binding.instructions[template.nameSuffix];
+        const globalInstruction = binding.instructions['*'];
+        const instruction = specificInstruction || globalInstruction;
+        if (instruction) {
+          description += `\n\nWIRE INSTRUCTIONS: ${instruction}`;
+        }
+      }
+
       tools.push({
         ...template.definition,
+        description,
         name: buildToolName(binding, template.nameSuffix),
       });
     }
@@ -136,6 +179,7 @@ export async function callTool(
   const binding = bindings.find(b => {
     const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse'
       : b.targetKind === 'group-project' ? 'group'
+      : b.targetKind === 'agent-queue' ? 'queue'
       : b.targetKind;
     return expectedPrefix === parsed.prefix && buildToolKey(b) === parsed.toolKey;
   });
@@ -167,6 +211,35 @@ export async function callTool(
       content: [{ type: 'text', text: `Unknown tool action: ${parsed.suffix}` }],
       isError: true,
     };
+  }
+
+  // Validate arguments against the tool's declared inputSchema
+  const schema = template.definition.inputSchema;
+  if (schema && typeof schema === 'object') {
+    const schemaObj = schema as Record<string, unknown>;
+    const required = (schemaObj.required as string[]) || [];
+    const properties = (schemaObj.properties as Record<string, { type?: string }>) || {};
+
+    // Check required fields are present
+    for (const field of required) {
+      if (args[field] === undefined || args[field] === null) {
+        return {
+          content: [{ type: 'text', text: `Missing required argument: ${field}` }],
+          isError: true,
+        };
+      }
+    }
+
+    // Check types of provided fields
+    for (const [key, value] of Object.entries(args)) {
+      const propSchema = properties[key];
+      if (propSchema?.type && typeof value !== propSchema.type) {
+        return {
+          content: [{ type: 'text', text: `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}` }],
+          isError: true,
+        };
+      }
+    }
   }
 
   return template.handler(binding.targetId, agentId, args);

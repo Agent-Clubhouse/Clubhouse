@@ -479,7 +479,7 @@ function ContextMenu({ x, y, node: _node, multiSelectCount, onClose, onAction }:
 
   return React.createElement('div', {
     ref: menuRef,
-    className: 'fixed z-50 bg-ctp-mantle border border-ctp-surface0 rounded shadow-lg py-1 min-w-[140px]',
+    className: 'fixed z-50 bg-ctp-mantle border border-surface-0 rounded shadow-lg py-1 min-w-[140px]',
     style,
   },
     ...items.map((item) =>
@@ -488,7 +488,7 @@ function ContextMenu({ x, y, node: _node, multiSelectCount, onClose, onAction }:
         className: `w-full text-left px-2.5 py-1 mx-1 rounded-sm text-xs transition-colors ${
           item.action === 'delete' || item.action === 'deleteSelected'
             ? 'text-ctp-error hover:bg-ctp-error/10'
-            : 'text-ctp-subtext1 hover:bg-ctp-surface1 hover:text-ctp-text'
+            : 'text-ctp-subtext1 hover:bg-surface-1 hover:text-ctp-text'
         }`,
         style: { width: 'calc(100% - 8px)' },
         onClick: () => { onAction(item.action); onClose(); },
@@ -1221,7 +1221,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
   },
     // Header
     React.createElement('div', {
-      className: 'flex flex-col border-b border-ctp-surface0 flex-shrink-0',
+      className: 'flex flex-col border-b border-surface-0 flex-shrink-0',
     },
       // Row 1: Branch + Worktree selector
       React.createElement('div', {
@@ -1242,7 +1242,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         // Worktree selector
         worktrees.length > 0
           ? React.createElement('select', {
-              className: 'flex-1 min-w-0 text-[10px] bg-ctp-surface0 text-ctp-text border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none',
+              className: 'flex-1 min-w-0 text-[10px] bg-surface-0 text-ctp-text border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none',
               value: rootPath,
               onChange: (e: React.ChangeEvent<HTMLSelectElement>) => handleRootChange(e.target.value),
               title: 'Switch worktree root',
@@ -1271,43 +1271,43 @@ export function FileTree({ api }: { api: PluginAPI }) {
           : null,
         // New File
         React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
           onClick: handleNewFile,
           title: 'New File',
         }, NewFileIcon),
         // New Folder
         React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
           onClick: handleNewFolder,
           title: 'New Folder',
         }, NewFolderIcon),
         // Separator
-        React.createElement('div', { className: 'w-px h-3 bg-ctp-surface0 mx-0.5' }),
+        React.createElement('div', { className: 'w-px h-3 bg-surface-0 mx-0.5' }),
         // Expand All
         React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
           onClick: expandAll,
           title: 'Expand All',
         }, ExpandAllIcon),
         // Collapse All
         React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
           onClick: collapseAll,
           title: 'Collapse All',
         }, CollapseAllIcon),
         // Separator
-        React.createElement('div', { className: 'w-px h-3 bg-ctp-surface0 mx-0.5' }),
+        React.createElement('div', { className: 'w-px h-3 bg-surface-0 mx-0.5' }),
         // Search
         React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
           onClick: () => fileState.setSearchMode(true),
           title: 'Search Across Files (Cmd+Shift+F)',
         }, SearchIcon),
         // Separator
-        React.createElement('div', { className: 'w-px h-3 bg-ctp-surface0 mx-0.5' }),
+        React.createElement('div', { className: 'w-px h-3 bg-surface-0 mx-0.5' }),
         // Refresh
         React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
           onClick: () => { loadTree(); loadGitStatus(); loadBranch(); },
           title: 'Refresh',
         }, RefreshIcon),
@@ -1324,7 +1324,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
             value: filterText,
             onChange: (e: React.ChangeEvent<HTMLInputElement>) => setFilterText(e.target.value),
             onKeyDown: (e: React.KeyboardEvent) => e.stopPropagation(), // prevent tree keyboard nav while typing
-            className: 'w-full bg-ctp-surface0 text-ctp-text placeholder-ctp-subtext0 text-xs rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-ctp-blue/50 pr-5',
+            className: 'w-full bg-surface-0 text-ctp-text placeholder-ctp-subtext0 text-xs rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-ctp-blue/50 pr-5',
             'aria-label': 'Filter files',
           }),
           filterText

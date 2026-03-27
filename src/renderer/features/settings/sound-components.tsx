@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { useSoundStore } from '../../stores/soundStore';
 import {
   SoundEvent,
@@ -11,7 +10,7 @@ import { Toggle } from '../../components/Toggle';
 
 // ── Volume Slider ─────────────────────────────────────────────────────
 
-function VolumeSlider({ value, onChange, disabled }: { value: number; onChange: (v: number) => void; disabled?: boolean }) {
+export function VolumeSlider({ value, onChange, disabled }: { value: number; onChange: (v: number) => void; disabled?: boolean }) {
   return (
     <div className={`flex items-center gap-2 ${disabled ? 'opacity-40' : ''}`}>
       <input
@@ -30,7 +29,6 @@ function VolumeSlider({ value, onChange, disabled }: { value: number; onChange: 
 
 // ── Slot Dropdown ─────────────────────────────────────────────────────
 
-/** Build options list: packs that have a sound for this event. */
 function buildSlotOptions(event: SoundEvent, packs: SoundPackInfo[]): { packId: string; label: string }[] {
   const options: { packId: string; label: string }[] = [];
   for (const pack of packs) {
@@ -41,7 +39,7 @@ function buildSlotOptions(event: SoundEvent, packs: SoundPackInfo[]): { packId: 
   return options;
 }
 
-function SlotDropdown({
+export function SlotDropdown({
   event,
   packs,
   selectedPackId,
@@ -75,7 +73,7 @@ function SlotDropdown({
 
 // ── Sound Event Row ───────────────────────────────────────────────────
 
-function SoundEventRow({
+export function SoundEventRow({
   event,
   packs,
   disabled,
@@ -152,9 +150,9 @@ function SoundEventRow({
   );
 }
 
-// ── Sound Pack Card (for pack management) ────────────────────────────
+// ── Sound Pack Card ────────────────────────────────────────────────────
 
-function SoundPackCard({
+export function SoundPackCard({
   pack,
   onApplyAll,
   onDelete,
@@ -210,9 +208,9 @@ function SoundPackCard({
   );
 }
 
-// ── Project Override Section ──────────────────────────────────────────
+// ── Project Sound Override Section ──────────────────────────────────────
 
-function ProjectOverrideSection({ projectId, packs }: { projectId: string; packs: SoundPackInfo[] }) {
+export function ProjectSoundOverrideSection({ projectId, packs }: { projectId: string; packs: SoundPackInfo[] }) {
   const { settings, saveSettings } = useSoundStore();
   if (!settings) return null;
 
@@ -289,114 +287,6 @@ function ProjectOverrideSection({ projectId, packs }: { projectId: string; packs
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-// ── Main View ─────────────────────────────────────────────────────────
-
-export function SoundSettingsView({ projectId }: { projectId?: string }) {
-  const { settings, loadSettings, packs, loadPacks, saveSettings, importPack, deletePack, applyAllFromPack } = useSoundStore();
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadSettings();
-    loadPacks();
-  }, [loadSettings, loadPacks]);
-
-  if (!settings) {
-    return <div className="p-6 text-ctp-subtext0 text-sm">Loading...</div>;
-  }
-
-  // Project context: show per-slot override UI
-  if (projectId) {
-    return (
-      <div className="h-full overflow-y-auto p-6">
-        <div className="max-w-2xl">
-          <h2 className="text-lg font-semibold text-ctp-text mb-4">Sounds</h2>
-          <ProjectOverrideSection projectId={projectId} packs={packs} />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-4">Sounds</h2>
-
-        {/* Per-slot sound selection */}
-        <div className="space-y-3 mb-6">
-          <h3 className="text-md font-semibold text-ctp-text">Event Sounds</h3>
-          <p className="text-xs text-ctp-subtext0">
-            Choose which sound to play for each event. Mix and match sounds from different packs.
-          </p>
-
-          <div className="space-y-1">
-            {ALL_SOUND_EVENTS.map((event) => (
-              <SoundEventRow
-                key={event}
-                event={event}
-                packs={packs}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="border-t border-surface-0 mb-6" />
-
-        {/* Sound Packs management */}
-        <div className="space-y-3">
-          <h3 className="text-md font-semibold text-ctp-text">Sound Packs</h3>
-          <p className="text-xs text-ctp-subtext0">
-            Sound packs provide sounds for each slot. Use "Apply All" to set every slot from one pack, or mix and match above.
-            Drop sound files into ~/.clubhouse/sounds/&lt;pack-name&gt;/ or import a folder.
-          </p>
-
-          <div className="space-y-2">
-            {packs.map((pack) => (
-              <SoundPackCard
-                key={pack.id}
-                pack={pack}
-                onApplyAll={() => applyAllFromPack(pack.id)}
-                onDelete={pack.source === 'user' ? () => {
-                  if (confirmDelete === pack.id) {
-                    deletePack(pack.id);
-                    setConfirmDelete(null);
-                  } else {
-                    setConfirmDelete(pack.id);
-                    setTimeout(() => setConfirmDelete(null), 3000);
-                  }
-                } : undefined}
-              />
-            ))}
-
-            {packs.length === 0 && (
-              <p className="text-xs text-ctp-subtext0 py-2">No sound packs installed. Import one to get started.</p>
-            )}
-          </div>
-
-          {/* Import button */}
-          <button
-            type="button"
-            onClick={() => importPack()}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
-          >
-            Import Sound Pack...
-          </button>
-
-          {/* Reset All to OS Default */}
-          {Object.keys(settings.slotAssignments).length > 0 && (
-            <button
-              type="button"
-              onClick={() => saveSettings({ slotAssignments: {} })}
-              className="ml-2 px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-subtext0 hover:bg-surface-1 transition-colors cursor-pointer"
-            >
-              Reset All to OS Default
-            </button>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

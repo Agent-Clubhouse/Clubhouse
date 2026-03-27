@@ -51,6 +51,8 @@ describe('remoteProjectStore', () => {
       pluginMatchState: {},
       remoteProjectIcons: {},
       remoteAgentIcons: {},
+      remoteCanvasState: {},
+      remoteAppCanvasState: {},
     });
   });
 
@@ -234,6 +236,32 @@ describe('remoteProjectStore', () => {
       expect(useRemoteProjectStore.getState().remoteAgentDetailedStatus['remote||sat-1||agent-1']).toBeUndefined();
     });
 
+    it('propagates annexEnabled from snapshot plugins', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Sat 1', makeSnapshot({
+        plugins: [
+          { id: 'hub', name: 'Hub', version: '1.0.0', scope: 'dual', annexEnabled: true },
+          { id: 'community-plugin', name: 'Community Plugin', version: '1.0.0', scope: 'project', annexEnabled: false },
+        ],
+      }));
+
+      const matchState = useRemoteProjectStore.getState().pluginMatchState['sat-1'];
+      expect(matchState.find((p) => p.id === 'hub')?.annexEnabled).toBe(true);
+      expect(matchState.find((p) => p.id === 'community-plugin')?.annexEnabled).toBe(false);
+    });
+
+    it('defaults annexEnabled to false for old satellites without the field', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Sat 1', makeSnapshot({
+        plugins: [
+          { id: 'hub', name: 'Hub', version: '1.0.0', scope: 'dual' } as any,
+        ],
+      }));
+
+      const matchState = useRemoteProjectStore.getState().pluginMatchState['sat-1'];
+      expect(matchState[0].annexEnabled).toBe(false);
+    });
+
     it('tracks source field as builtin for built-in plugins', () => {
       const store = useRemoteProjectStore.getState();
       store.applySatelliteSnapshot('sat-1', 'Sat 1', makeSnapshot({
@@ -314,6 +342,58 @@ describe('remoteProjectStore', () => {
       expect(state.pluginMatchState['sat-1']).toBeUndefined();
       expect(Object.keys(state.remoteProjectIcons)).toHaveLength(0);
       expect(Object.keys(state.remoteAgentIcons)).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // appCanvasState
+  // -------------------------------------------------------------------------
+
+  describe('appCanvasState', () => {
+    it('stores app-level canvas state from snapshot', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Satellite 1', makeSnapshot({
+        appCanvasState: {
+          canvases: [{ id: 'c1', name: 'Main Canvas' }],
+          activeCanvasId: 'c1',
+        },
+      }));
+
+      const state = useRemoteProjectStore.getState();
+      expect(state.remoteAppCanvasState['sat-1']).toBeDefined();
+      expect(state.remoteAppCanvasState['sat-1'].canvases).toHaveLength(1);
+      expect(state.remoteAppCanvasState['sat-1'].activeCanvasId).toBe('c1');
+    });
+
+    it('does not overwrite app canvas state when snapshot has no appCanvasState', () => {
+      useRemoteProjectStore.setState({
+        remoteAppCanvasState: {
+          'sat-1': { canvases: [{ id: 'c1', name: 'Existing' }], activeCanvasId: 'c1' },
+        },
+      });
+
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Satellite 1', makeSnapshot());
+
+      const state = useRemoteProjectStore.getState();
+      // Should keep existing state since snapshot didn't include appCanvasState
+      expect(state.remoteAppCanvasState['sat-1']).toBeDefined();
+      expect(state.remoteAppCanvasState['sat-1'].canvases).toHaveLength(1);
+    });
+
+    it('cleans up app canvas state on removeSatellite', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Satellite 1', makeSnapshot({
+        appCanvasState: {
+          canvases: [{ id: 'c1', name: 'Canvas' }],
+          activeCanvasId: 'c1',
+        },
+      }));
+
+      useRemoteProjectStore.getState().removeSatellite('sat-1');
+
+      const state = useRemoteProjectStore.getState();
+      expect(state.remoteAppCanvasState['sat-1']).toBeUndefined();
     });
   });
 
@@ -422,6 +502,24 @@ describe('remoteProjectStore', () => {
       expect(after.kind).toBe(before.kind);
       expect(after.color).toBe(before.color);
       expect(after.status).toBe('sleeping'); // Only status changed
+    });
+  });
+
+  describe('upsertRemoteAgent', () => {
+    it('uses canonical || namespace format for projectId', () => {
+      const store = useRemoteProjectStore.getState();
+      store.upsertRemoteAgent('sat-1', {
+        id: 'new-agent',
+        name: 'New Agent',
+        kind: 'quick',
+        status: 'running',
+        projectId: 'proj-1',
+        color: 'red',
+      } as any);
+
+      const agent = useRemoteProjectStore.getState().remoteAgents['remote||sat-1||new-agent'];
+      expect(agent).toBeDefined();
+      expect(agent.projectId).toBe('remote||sat-1||proj-1');
     });
   });
 });

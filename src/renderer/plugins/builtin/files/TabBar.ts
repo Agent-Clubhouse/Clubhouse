@@ -95,19 +95,19 @@ function TabContextMenu({ x, y, tab, onClose, onAction }: TabContextMenuProps) {
 
   return React.createElement('div', {
     ref: menuRef,
-    className: 'fixed z-50 bg-ctp-mantle border border-ctp-surface0 rounded shadow-lg py-1 min-w-[170px]',
+    className: 'fixed z-50 bg-ctp-mantle border border-surface-0 rounded shadow-lg py-1 min-w-[170px]',
     style,
   },
     ...items.map((item) => {
       if (item.label === '—') {
         return React.createElement('div', {
           key: item.action,
-          className: 'border-t border-ctp-surface0 my-1',
+          className: 'border-t border-surface-0 my-1',
         });
       }
       return React.createElement('button', {
         key: item.action,
-        className: 'w-full text-left px-2 py-1 mx-1 rounded-sm text-xs text-ctp-text hover:bg-ctp-surface1 hover:text-ctp-text transition-colors',
+        className: 'w-full text-left px-2 py-1 mx-1 rounded-sm text-xs text-ctp-text hover:bg-surface-1 hover:text-ctp-text transition-colors',
         style: { width: 'calc(100% - 8px)' },
         onClick: () => { onAction(item.action); onClose(); },
       }, item.label);
@@ -164,7 +164,7 @@ function TabItem({
         transition-colors duration-100 flex-shrink-0 border-b-2
         ${isActive
           ? 'bg-ctp-base border-ctp-accent'
-          : 'bg-ctp-mantle border-transparent hover:bg-ctp-surface0'
+          : 'bg-ctp-mantle border-transparent hover:bg-surface-0'
         }
         ${isDragTarget ? 'border-l-2 border-l-ctp-accent' : ''}
       `.trim(),
@@ -194,7 +194,7 @@ function TabItem({
       transition-colors duration-100 flex-shrink-0 border-b-2
       ${isActive
         ? 'bg-ctp-base border-ctp-accent'
-        : 'bg-ctp-mantle border-transparent hover:bg-ctp-surface0'
+        : 'bg-ctp-mantle border-transparent hover:bg-surface-0'
       }
       ${isDragTarget ? 'border-l-2 border-l-ctp-accent' : ''}
     `.trim(),
@@ -223,8 +223,8 @@ function TabItem({
         ? React.createElement('button', {
             className: `w-4 h-4 flex items-center justify-center rounded text-[10px]
               ${tab.isDirty
-                ? 'text-ctp-warning hover:bg-ctp-surface1'
-                : 'text-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text'
+                ? 'text-ctp-warning hover:bg-surface-1'
+                : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
               }`,
             onClick: handleClose,
             title: 'Close tab',
@@ -377,13 +377,13 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
   if (tabs.length === 0) return null;
 
   return React.createElement('div', {
-    className: 'flex items-center bg-ctp-mantle border-b border-ctp-surface0 flex-shrink-0',
+    className: 'flex items-center bg-ctp-mantle border-b border-surface-0 flex-shrink-0',
     style: { height: 35 },
   },
     // Left chevron
     showLeftChevron
       ? React.createElement('button', {
-          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay2 bg-ctp-surface0/50 hover:text-ctp-text hover:bg-ctp-surface0 transition-colors',
+          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay2 bg-surface-0/50 hover:text-ctp-text hover:bg-surface-0 transition-colors',
           onClick: scrollLeft,
         }, ChevronLeftIcon)
       : null,
@@ -418,7 +418,7 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
     // Right chevron
     showRightChevron
       ? React.createElement('button', {
-          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay2 bg-ctp-surface0/50 hover:text-ctp-text hover:bg-ctp-surface0 transition-colors',
+          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay2 bg-surface-0/50 hover:text-ctp-text hover:bg-surface-0 transition-colors',
           onClick: scrollRight,
         }, ChevronRightIcon)
       : null,

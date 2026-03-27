@@ -5,6 +5,7 @@
 import type {
   PluginContext,
   PluginManifest,
+  PluginAPI,
   CanvasAPI,
   CanvasWidgetDescriptor,
   CanvasWidgetFilter,
@@ -15,7 +16,7 @@ import {
   registerCanvasWidgetType,
 } from './canvas-widget-registry';
 
-export function createCanvasAPI(ctx: PluginContext, manifest?: PluginManifest): CanvasAPI {
+export function createCanvasAPI(ctx: PluginContext, manifest?: PluginManifest, getPluginApi?: () => PluginAPI): CanvasAPI {
   const declaredWidgets = manifest?.contributes?.canvasWidgets ?? [];
 
   return {
@@ -29,7 +30,7 @@ export function createCanvasAPI(ctx: PluginContext, manifest?: PluginManifest): 
         );
       }
 
-      const disposable = registerCanvasWidgetType(ctx.pluginId, declaration, descriptor);
+      const disposable = registerCanvasWidgetType(ctx.pluginId, declaration, descriptor, getPluginApi?.());
       ctx.subscriptions.push(disposable);
       return disposable;
     },

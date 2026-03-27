@@ -70,12 +70,13 @@ export function useCommandSource(): CommandItem[] {
   const projectActiveCanvasId = useStore(currentCanvasStore, (s) => s.activeCanvasId);
   const appCanvases = useAppCanvasStore((s) => s.canvases);
   const appActiveCanvasId = useAppCanvasStore((s) => s.activeCanvasId);
+  const canvasPluginEnabled = usePluginStore((s) => s.appEnabled.includes('canvas'));
 
-  // Check if Annex experimental flag is enabled
-  const [annexExperimentalEnabled, setAnnexExperimentalEnabled] = useState(false);
+  // Annex is a stable feature — commands always available
+  const [annexEnabled, setAnnexEnabled] = useState(false);
   useEffect(() => {
-    window.clubhouse.app.getExperimentalSettings().then((s) => {
-      setAnnexExperimentalEnabled(!!s.annex);
+    window.clubhouse.app.isPreviewEligible().then((eligible) => {
+      setAnnexEnabled(eligible);
     }).catch(() => {});
   }, []);
 
@@ -255,65 +256,68 @@ export function useCommandSource(): CommandItem[] {
       });
     }
 
-    // Project canvases (active project — from reactive store)
-    if (activeProjectId) {
-      for (const canvas of projectCanvases) {
-        const context = canvas.id === projectActiveCanvasId ? 'Active' : activeProjectLabel;
+    // Canvas items — only shown when canvas plugin is enabled
+    if (canvasPluginEnabled) {
+      // Project canvases (active project — from reactive store)
+      if (activeProjectId) {
+        for (const canvas of projectCanvases) {
+          const context = canvas.id === projectActiveCanvasId ? 'Active' : activeProjectLabel;
+          items.push({
+            id: `canvas:project:${canvas.id}`,
+            label: canvas.name,
+            category: 'Spaces',
+            typeIndicator: '#',
+            keywords: ['canvas', 'workspace', 'space', activeProjectLabel || ''],
+            detail: context ? `Canvas · ${context}` : 'Canvas',
+            execute: () => {
+              setActiveProject(activeProjectId);
+              setExplorerTab(CANVAS_TAB, activeProjectId);
+              getProjectCanvasStore(activeProjectId).getState().setActiveCanvas(canvas.id);
+            },
+          });
+        }
+      }
+
+      // Canvases from other (non-active) projects — loaded from storage
+      for (const entry of otherProjectCanvases) {
         items.push({
-          id: `canvas:project:${canvas.id}`,
-          label: canvas.name,
+          id: `canvas:project:${entry.projectId}:${entry.canvasId}`,
+          label: entry.canvasName,
           category: 'Spaces',
           typeIndicator: '#',
-          keywords: ['canvas', 'workspace', 'space', activeProjectLabel || ''],
-          detail: context ? `Canvas · ${context}` : 'Canvas',
-          execute: () => {
-            setActiveProject(activeProjectId);
-            setExplorerTab(CANVAS_TAB, activeProjectId);
-            getProjectCanvasStore(activeProjectId).getState().setActiveCanvas(canvas.id);
+          keywords: ['canvas', 'workspace', 'space', entry.projectName],
+          detail: `Canvas · ${entry.projectName}`,
+          execute: async () => {
+            await window.clubhouse.plugin.storageWrite({
+              pluginId: 'canvas',
+              scope: 'project-local',
+              key: 'canvas-active-id',
+              value: entry.canvasId,
+              projectPath: entry.projectPath,
+            });
+            setActiveProject(entry.projectId);
+            setExplorerTab(CANVAS_TAB, entry.projectId);
           },
         });
       }
-    }
 
-    // Canvases from other (non-active) projects — loaded from storage
-    for (const entry of otherProjectCanvases) {
-      items.push({
-        id: `canvas:project:${entry.projectId}:${entry.canvasId}`,
-        label: entry.canvasName,
-        category: 'Spaces',
-        typeIndicator: '#',
-        keywords: ['canvas', 'workspace', 'space', entry.projectName],
-        detail: `Canvas · ${entry.projectName}`,
-        execute: async () => {
-          await window.clubhouse.plugin.storageWrite({
-            pluginId: 'canvas',
-            scope: 'project-local',
-            key: 'canvas-active-id',
-            value: entry.canvasId,
-            projectPath: entry.projectPath,
-          });
-          setActiveProject(entry.projectId);
-          setExplorerTab(CANVAS_TAB, entry.projectId);
-        },
-      });
-    }
-
-    // App-level canvases (always shown)
-    for (const canvas of appCanvases) {
-      const context = canvas.id === appActiveCanvasId && !activeProjectId ? 'Active' : 'Home';
-      items.push({
-        id: `canvas:app:${canvas.id}`,
-        label: canvas.name,
-        category: 'Spaces',
-        typeIndicator: '#',
-        keywords: ['canvas', 'workspace', 'space', 'home', 'app'],
-        detail: `Canvas · ${context}`,
-        execute: () => {
-          setActiveProject(null);
-          setExplorerTab(CANVAS_TAB);
-          useAppCanvasStore.getState().setActiveCanvas(canvas.id);
-        },
-      });
+      // App-level canvases
+      for (const canvas of appCanvases) {
+        const context = canvas.id === appActiveCanvasId && !activeProjectId ? 'Active' : 'Home';
+        items.push({
+          id: `canvas:app:${canvas.id}`,
+          label: canvas.name,
+          category: 'Spaces',
+          typeIndicator: '#',
+          keywords: ['canvas', 'workspace', 'space', 'home', 'app'],
+          detail: `Canvas · ${context}`,
+          execute: () => {
+            setActiveProject(null);
+            setExplorerTab(CANVAS_TAB);
+            useAppCanvasStore.getState().setActiveCanvas(canvas.id);
+          },
+        });
+      }
     }
 
     // Navigation (plugin tabs for active project)
@@ -358,6 +362,14 @@ export function useCommandSource(): CommandItem[] {
       category: 'Navigation',
       shortcut: getShortcut(shortcuts, 'toggle-help'),
       execute: () => toggleHelp(),
+    });
+
+    items.push({
+      id: 'nav:assistant',
+      label: 'Open Assistant',
+      category: 'Navigation',
+      shortcut: getShortcut(shortcuts, 'toggle-assistant'),
+      execute: () => useUIStore.getState().toggleAssistant(),
     });
 
     items.push({
@@ -447,7 +459,7 @@ export function useCommandSource(): CommandItem[] {
     }
 
     // Annex actions (only when experimental flag is enabled)
-    if (annexExperimentalEnabled) {
+    if (annexEnabled) {
       items.push({
         id: 'action:toggle-annex-server',
         label: annexSettings.enableServer ? 'Disable Annex Server' : 'Enable Annex Server',
@@ -520,7 +532,7 @@ export function useCommandSource(): CommandItem[] {
     return items;
   }, [
     projects, agents, activeProjectId, pluginsMap, projectEnabled, shortcuts,
-    annexSettings, annexStatus, annexExperimentalEnabled,
+    annexSettings, annexStatus, annexEnabled, canvasPluginEnabled,
     projectHubs, projectActiveHubId, appHubs, appActiveHubId,
     otherProjectHubs,
     projectCanvases, projectActiveCanvasId, appCanvases, appActiveCanvasId,

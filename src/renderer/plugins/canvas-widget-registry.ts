@@ -9,6 +9,7 @@ import type {
   CanvasWidgetDescriptor,
   CanvasWidgetMetadata,
   PluginCanvasWidgetDeclaration,
+  PluginAPI,
 } from '../../shared/plugin-types';
 
 // ── Registered widget entry (manifest metadata + runtime descriptor) ──
@@ -21,6 +22,8 @@ export interface RegisteredCanvasWidget {
   declaration: PluginCanvasWidgetDeclaration;
   /** Runtime descriptor with React component. */
   descriptor: CanvasWidgetDescriptor;
+  /** The source plugin's own API instance, for routing API calls from hosted widgets. */
+  pluginApi?: PluginAPI;
 }
 
 type RegistryListener = () => void;
@@ -63,9 +66,10 @@ export function registerCanvasWidgetType(
   pluginId: string,
   declaration: PluginCanvasWidgetDeclaration,
   descriptor: CanvasWidgetDescriptor,
+  pluginApi?: PluginAPI,
 ): Disposable {
   const key = qualifyWidgetType(pluginId, descriptor.id);
-  registry.set(key, { qualifiedType: key, pluginId, declaration, descriptor });
+  registry.set(key, { qualifiedType: key, pluginId, declaration, descriptor, pluginApi });
   notifyListeners();
   return {
     dispose: () => {

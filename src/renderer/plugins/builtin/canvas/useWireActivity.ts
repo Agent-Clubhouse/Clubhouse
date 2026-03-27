@@ -12,7 +12,7 @@
  * - 'active-both'    — recent traffic in both directions
  */
 
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 /** How long activity persists after the last tool call (ms). */
 export const ACTIVITY_DECAY_MS = 4000;
@@ -138,14 +138,14 @@ export function _resetForTesting(): void {
  * @param alive - Whether both endpoints are alive/connected
  */
 export function useWireActivity(wireKey: string, alive: boolean = true): WireActivityState {
-  const decayTimerRef = useRef<ReturnType<typeof setInterval>>(undefined);
-
   // Subscribe to the singleton store
   useSyncExternalStore(subscribe, getSnapshot);
 
-  // Set up decay timer to re-render when activity expires
+  // Set up decay timer to re-render when activity expires.
+  // Capture the interval ID directly in the cleanup closure so that rapid
+  // wireKey changes always clear the correct (old) interval.
   useEffect(() => {
-    decayTimerRef.current = setInterval(() => {
+    const timer = setInterval(() => {
       const ts = activityMap.get(wireKey);
       if (ts) {
         const now = Date.now();
@@ -158,7 +158,7 @@ export function useWireActivity(wireKey: string, alive: boolean = true): WireAct
     }, DECAY_CHECK_INTERVAL);
 
     return () => {
-      if (decayTimerRef.current) clearInterval(decayTimerRef.current);
+      clearInterval(timer);
     };
   }, [wireKey]);
 

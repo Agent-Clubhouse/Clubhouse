@@ -11,9 +11,6 @@ vi.mock('./copilot-cli-provider', () => ({
 vi.mock('./codex-cli-provider', () => ({
   CodexCliProvider: class { constructor() { return makeFakeProvider('codex-cli', 'Codex CLI'); } },
 }));
-vi.mock('./opencode-provider', () => ({
-  OpenCodeProvider: class { constructor() { return makeFakeProvider('opencode', 'OpenCode'); } },
-}));
 
 function makeFakeProvider(id: OrchestratorId, displayName: string): OrchestratorProvider {
   return {
@@ -122,17 +119,16 @@ describe('Orchestrator Registry', () => {
   });
 
   describe('registerBuiltinProviders', () => {
-    it('registers all four built-in providers', async () => {
+    it('registers all three built-in providers', async () => {
       const { registerBuiltinProviders, getAllProviders, getProvider } = await loadRegistry();
 
       registerBuiltinProviders();
 
       const all = getAllProviders();
-      expect(all).toHaveLength(4);
+      expect(all).toHaveLength(3);
       expect(getProvider('claude-code')).toBeDefined();
       expect(getProvider('copilot-cli')).toBeDefined();
       expect(getProvider('codex-cli')).toBeDefined();
-      expect(getProvider('opencode')).toBeDefined();
     });
 
     it('is idempotent — calling twice does not duplicate providers', async () => {
@@ -141,7 +137,7 @@ describe('Orchestrator Registry', () => {
       registerBuiltinProviders();
       registerBuiltinProviders();
 
-      expect(getAllProviders()).toHaveLength(4);
+      expect(getAllProviders()).toHaveLength(3);
     });
   });
 });

@@ -43,6 +43,7 @@ const mockAgent = {
   listDurable: vi.fn(),
   killAgent: vi.fn(),
   getModelOptions: vi.fn(),
+  createDurable: vi.fn(),
 };
 
 const mockPty = {
@@ -1564,7 +1565,20 @@ describe('plugin-api-factory', () => {
           worktreePath: '.clubhouse/agents/alpha',
           model: 'claude-3',
           parentAgentId: undefined,
+          pluginMetadata: undefined,
         });
+      });
+
+      it('includes pluginMetadata when present on agent', () => {
+        useAgentStore.setState((s) => ({
+          agents: {
+            ...s.agents,
+            'agent-1': { ...s.agents['agent-1'], pluginMetadata: { boardId: 'b1', cardId: 'c1' } },
+          },
+        }));
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const alpha = api.agents.list().find((a) => a.id === 'agent-1')!;
+        expect(alpha.pluginMetadata).toEqual({ boardId: 'b1', cardId: 'c1' });
       });
 
       it('includes parentAgentId for child agents', () => {
@@ -1763,6 +1777,23 @@ describe('plugin-api-factory', () => {
         const completed = api.agents.listCompleted();
         expect(completed).toHaveLength(3);
         expect(completed.map((c) => c.name)).toEqual(['A', 'B', 'C']);
+      });
+
+      it('includes pluginMetadata in completed agents', () => {
+        useQuickAgentStore.setState({
+          completedAgents: {
+            'proj-1': [
+              {
+                id: 'q-meta', projectId: 'proj-1', name: 'Meta', mission: 'test',
+                summary: 'done', filesModified: [], exitCode: 0, completedAt: 1000,
+                pluginMetadata: { boardId: 'b1', stateId: 's2' },
+              },
+            ],
+          },
+        });
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const completed = api.agents.listCompleted();
+        expect(completed[0].pluginMetadata).toEqual({ boardId: 'b1', stateId: 's2' });
       });
     });
 
@@ -2729,6 +2760,79 @@ describe('plugin-api-factory', () => {
       });
     });
 
+    // ── createDurable() ──────────────────────────────────────────────────
+
+    describe('createDurable()', () => {
+      it('creates and spawns a durable agent using context project', async () => {
+        const durableConfig = { id: 'new-agent', name: 'test-agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const result = await api.agents.createDurable({ name: 'test-agent', color: 'blue' });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/my-project', 'test-agent', 'blue', undefined, false, undefined, undefined, undefined,
+        );
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', durableConfig, false);
+        expect(result).toBe('new-agent');
+      });
+
+      it('resolves a different project when projectId is specified', async () => {
+        const { useProjectStore } = await import('../stores/projectStore');
+        useProjectStore.setState({
+          projects: [
+            { id: 'proj-1', name: 'P1', path: '/projects/p1' },
+            { id: 'proj-2', name: 'P2', path: '/projects/p2' },
+          ] as any,
+        });
+        const durableConfig = { id: 'new-agent', name: 'other-agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
+        await api.agents.createDurable({ projectId: 'proj-2', name: 'other-agent', color: 'red' });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/p2', 'other-agent', 'red', undefined, false, undefined, undefined, undefined,
+        );
+        expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', durableConfig, false);
+      });
+
+      it('throws on unknown projectId', async () => {
+        const { useProjectStore } = await import('../stores/projectStore');
+        useProjectStore.setState({ projects: [] });
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        await expect(api.agents.createDurable({ projectId: 'nope', name: 'x', color: 'red' })).rejects.toThrow('Project not found');
+      });
+
+      it('throws without project context', async () => {
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
+        await expect(api.agents.createDurable({ name: 'x', color: 'red' })).rejects.toThrow('createDurable requires a project context');
+      });
+
+      it('passes model, worktree, orchestrator, and mcpIds through', async () => {
+        const durableConfig = { id: 'new-agent', name: 'full-agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        await api.agents.createDurable({
+          name: 'full-agent', color: 'green', model: 'opus',
+          useWorktree: true, orchestrator: 'claude-code', mcpIds: ['mcp-1'],
+        });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/my-project', 'full-agent', 'green', 'opus', true, 'claude-code', undefined, ['mcp-1'],
+        );
+      });
+
+      it('strips default model', async () => {
+        const durableConfig = { id: 'new-agent', name: 'agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        await api.agents.createDurable({ name: 'agent', color: 'red', model: 'default' });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/my-project', 'agent', 'red', undefined, false, undefined, undefined, undefined,
+        );
+      });
+    });
+
     // ── runQuick() — projectId override ─────────────────────────────────
 
     describe('runQuick()', () => {
@@ -2736,7 +2840,7 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-1');
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('do stuff');
-        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'do stuff', undefined, undefined, undefined, undefined);
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'do stuff', undefined, undefined, undefined, undefined, undefined);
       });
 
       it('uses override projectId to resolve different project path', async () => {
@@ -2750,7 +2854,7 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-2');
         const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
         await api.agents.runQuick('task', { projectId: 'proj-2' });
-        expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', 'task', undefined, undefined, undefined, undefined);
+        expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', 'task', undefined, undefined, undefined, undefined, undefined);
       });
 
       it('throws on unknown projectId', async () => {
@@ -2769,7 +2873,15 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-3');
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('task', { model: 'opus' });
-        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'task', 'opus', undefined, undefined, undefined);
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'task', 'opus', undefined, undefined, undefined, undefined);
+      });
+
+      it('passes metadata option through to spawnQuickAgent', async () => {
+        const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-4');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const meta = { boardId: 'b1', cardId: 'c1', stateId: 's1' };
+        await api.agents.runQuick('implement feature', { metadata: meta });
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'implement feature', undefined, undefined, undefined, undefined, meta);
       });
     });
   });

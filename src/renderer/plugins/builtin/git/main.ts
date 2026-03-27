@@ -201,7 +201,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
 
   return h('div', { className: 'flex flex-col h-full bg-ctp-mantle overflow-y-auto', 'data-testid': 'git-sidebar-panel' },
     // Branch header
-    h('div', { className: 'px-3 py-2 border-b border-ctp-surface0 flex items-center gap-2' },
+    h('div', { className: 'px-3 py-2 border-b border-surface-0 flex items-center gap-2' },
       h('span', { className: 'text-xs font-medium text-ctp-text truncate' }, gitInfo.branch),
       gitInfo.ahead > 0 && h('span', { className: 'text-[9px] text-ctp-green' }, `↑${gitInfo.ahead}`),
       gitInfo.behind > 0 && h('span', { className: 'text-[9px] text-ctp-red' }, `↓${gitInfo.behind}`),
@@ -216,20 +216,20 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     // Untracked
     renderFileSection('Untracked', 'untracked', untracked, expandedSections, handleSelectFile, null, handleStage),
     // Stage all / Unstage all buttons
-    (staged.length > 0 || unstaged.length > 0 || untracked.length > 0) && h('div', { className: 'px-3 py-1 flex gap-1 border-b border-ctp-surface0' },
+    (staged.length > 0 || unstaged.length > 0 || untracked.length > 0) && h('div', { className: 'px-3 py-1 flex gap-1 border-b border-surface-0' },
       (unstaged.length > 0 || untracked.length > 0) && h('button', {
-        className: 'text-[10px] px-2 py-0.5 rounded bg-ctp-surface0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
+        className: 'text-[10px] px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
         onClick: handleStageAll,
       }, 'Stage All'),
       staged.length > 0 && h('button', {
-        className: 'text-[10px] px-2 py-0.5 rounded bg-ctp-surface0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
+        className: 'text-[10px] px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
         onClick: handleUnstageAll,
       }, 'Unstage All'),
     ),
     // Commit box
-    staged.length > 0 && h('div', { className: 'px-3 py-2 border-b border-ctp-surface0' },
+    staged.length > 0 && h('div', { className: 'px-3 py-2 border-b border-surface-0' },
       h('textarea', {
-        className: 'w-full bg-ctp-base text-ctp-text text-[11px] rounded p-1.5 border border-ctp-surface0 resize-none focus:outline-none focus:border-ctp-blue',
+        className: 'w-full bg-ctp-base text-ctp-text text-[11px] rounded p-1.5 border border-surface-0 resize-none focus:outline-none focus:border-ctp-blue',
         rows: 3,
         placeholder: 'Commit message...',
         value: commitMessage,
@@ -261,11 +261,11 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     gitInfo.stashCount > 0 && renderCollapseSection(`Stash (${gitInfo.stashCount})`, 'stash', expandedSections, () =>
       h('div', { className: 'px-3 py-1 flex gap-1' },
         h('button', {
-          className: 'text-[10px] px-2 py-0.5 rounded bg-ctp-surface0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
+          className: 'text-[10px] px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
           onClick: handleStash,
         }, 'Stash'),
         h('button', {
-          className: 'text-[10px] px-2 py-0.5 rounded bg-ctp-surface0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
+          className: 'text-[10px] px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
           onClick: handleStashPop,
         }, 'Pop'),
       ),
@@ -354,19 +354,19 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // Commit detail view
   if (selectedCommit) {
     return h('div', { className: 'flex flex-col h-full bg-ctp-base', 'data-testid': 'git-main-panel' },
-      h('div', { className: 'flex items-center gap-2 px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0' },
+      h('div', { className: 'flex items-center gap-2 px-3 py-1.5 border-b border-surface-0 bg-ctp-mantle flex-shrink-0' },
         h('span', { className: 'text-xs font-medium text-ctp-text' }, `Commit ${selectedCommit.slice(0, 7)}`),
         h('span', { className: 'text-[9px] text-ctp-subtext0' }, `${selectedCommitFiles.length} files`),
       ),
       h('div', { className: 'flex flex-1 min-h-0' },
-        h('div', { className: 'w-48 flex-shrink-0 overflow-y-auto border-r border-ctp-surface0 bg-ctp-mantle/30' },
+        h('div', { className: 'w-48 flex-shrink-0 overflow-y-auto border-r border-surface-0 bg-ctp-mantle/30' },
           selectedCommitFiles.map((f) => {
             const info = statusInfo(f.status);
             const name = f.path.split('/').pop() || f.path;
             return h('button', {
               key: f.path,
               className: `w-full text-left px-2 py-1 text-[11px] transition-colors ${
-                commitFilePath === f.path ? 'bg-ctp-surface1' : 'hover:bg-surface-0'
+                commitFilePath === f.path ? 'bg-surface-1' : 'hover:bg-surface-0'
               }`,
               onClick: () => setCommitFilePath(f.path),
             },
@@ -388,7 +388,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   // Working tree diff view
   return h('div', { className: 'flex flex-col h-full bg-ctp-base', 'data-testid': 'git-main-panel' },
-    h('div', { className: 'flex items-center gap-2 px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0' },
+    h('div', { className: 'flex items-center gap-2 px-3 py-1.5 border-b border-surface-0 bg-ctp-mantle flex-shrink-0' },
       h('span', { className: 'text-xs font-medium text-ctp-text' },
         selectedFile ? selectedFile.split('/').pop() || selectedFile : 'Git',
       ),
@@ -428,13 +428,13 @@ function renderFileSection(
   const expanded = expandedSections[sectionKey] !== false;
   return h(React.Fragment, null,
     h('button', {
-      className: 'w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-ctp-surface0 hover:bg-surface-0',
+      className: 'w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0 hover:bg-surface-0',
       onClick: () => gitState.toggleSection(sectionKey),
     },
       h('span', { className: `transition-transform ${expanded ? 'rotate-90' : ''}` }, '▸'),
       `${title} (${files.length})`,
     ),
-    expanded && h('div', { className: 'border-b border-ctp-surface0' },
+    expanded && h('div', { className: 'border-b border-surface-0' },
       files.map((file) => {
         const info = statusInfo(file.status);
         const name = file.path.split('/').pop() || file.path;
@@ -442,7 +442,7 @@ function renderFileSection(
         return h('div', {
           key: file.path,
           className: `flex items-center gap-1 px-3 py-1 cursor-pointer transition-colors ${
-            gitState.selectedFile === file.path ? 'bg-ctp-surface1' : 'hover:bg-surface-0'
+            gitState.selectedFile === file.path ? 'bg-surface-1' : 'hover:bg-surface-0'
           }`,
           onClick: () => onSelect(file.path),
         },
@@ -476,13 +476,13 @@ function renderCollapseSection(
   const expanded = expandedSections[sectionKey] !== false;
   return h(React.Fragment, null,
     h('button', {
-      className: 'w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-ctp-surface0 hover:bg-surface-0',
+      className: 'w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0 hover:bg-surface-0',
       onClick: () => gitState.toggleSection(sectionKey),
     },
       h('span', { className: `transition-transform ${expanded ? 'rotate-90' : ''}` }, '▸'),
       title,
     ),
-    expanded && h('div', { className: 'border-b border-ctp-surface0' }, renderContent()),
+    expanded && h('div', { className: 'border-b border-surface-0' }, renderContent()),
   );
 }
 

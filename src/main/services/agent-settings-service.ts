@@ -12,7 +12,7 @@ const LOG_NS = 'core:agent-settings';
  * When omitted, functions fall back to Claude Code defaults for backward compatibility.
  */
 export interface SettingsConventions {
-  configDir: string;           // e.g. '.claude', '.github', '.opencode'
+  configDir: string;           // e.g. '.claude', '.github', '.codex'
   skillsDir: string;           // e.g. 'skills'
   agentTemplatesDir: string;   // e.g. 'agents'
   mcpConfigFile: string;       // e.g. '.mcp.json', '.github/mcp.json'
@@ -551,7 +551,7 @@ export async function writeProjectAgentDefaults(projectPath: string, defaults: P
 export async function applyAgentDefaults(
   worktreePath: string,
   projectPath: string,
-  writeInstructions?: (worktreePath: string, content: string) => void,
+  writeInstructions?: (worktreePath: string, content: string) => void | Promise<void>,
   conv?: SettingsConventions,
 ): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
@@ -560,7 +560,7 @@ export async function applyAgentDefaults(
 
   if (defaults.instructions) {
     if (writeInstructions) {
-      writeInstructions(worktreePath, defaults.instructions);
+      await writeInstructions(worktreePath, defaults.instructions);
     } else {
       await writeClaudeMd(worktreePath, defaults.instructions);
     }
@@ -570,15 +570,24 @@ export async function applyAgentDefaults(
     await writePermissions(worktreePath, defaults.permissions, conv);
   }
 
-  if (defaults.mcpJson && (!c.settingsFormat || c.settingsFormat === 'json')) {
+  if (defaults.mcpJson) {
     try {
-      JSON.parse(defaults.mcpJson); // Validate before writing
       const mcpPath = path.join(worktreePath, c.mcpConfigFile);
       const dir = path.dirname(mcpPath);
       await fsp.mkdir(dir, { recursive: true });
-      await fsp.writeFile(mcpPath, defaults.mcpJson, 'utf-8');
+
+      if (c.settingsFormat === 'toml') {
+        const { jsonMcpToToml } = await import('./toml-utils');
+        const tomlContent = jsonMcpToToml(defaults.mcpJson);
+        if (tomlContent) {
+          await fsp.writeFile(mcpPath, tomlContent, 'utf-8');
+        }
+      } else {
+        JSON.parse(defaults.mcpJson); // Validate before writing
+        await fsp.writeFile(mcpPath, defaults.mcpJson, 'utf-8');
+      }
     } catch (err) {
-      appLog(LOG_NS, 'warn', 'Skipped invalid MCP JSON in agent defaults', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      appLog(LOG_NS, 'warn', 'Skipped invalid MCP config in agent defaults', { meta: { error: err instanceof Error ? err.message : String(err) } });
     }
   }
 }

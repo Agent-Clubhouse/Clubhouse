@@ -3,6 +3,7 @@ import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useProjectStore } from '../stores/projectStore';
 import { useUpdateStore } from '../stores/updateStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { PluginAPIProvider } from '../plugins/plugin-context';
 import { createPluginAPI } from '../plugins/plugin-api-factory';
 import { getActiveContext } from '../plugins/plugin-loader';
@@ -10,10 +11,6 @@ import { PluginErrorBoundary } from './PluginContentView';
 import { AgentList } from '../features/agents/AgentList';
 import { SettingsSubPage } from '../../shared/types';
 
-/** Returns true when the app version contains a prerelease tag (e.g. -beta, -rc). */
-function isBetaBuild(version: string): boolean {
-  return /-(beta|rc|alpha|dev|canary)/.test(version);
-}
 
 function SettingsCategoryNav() {
   const settingsContext = useUIStore((s) => s.settingsContext);
@@ -22,14 +19,16 @@ function SettingsCategoryNav() {
   const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
+  const [showMcp, setShowMcp] = useState(false);
 
   useEffect(() => {
-    window.clubhouse.app.getVersion().then((v) => {
-      const isPreview = isBetaBuild(v) || previewChannel;
+    window.clubhouse.app.isPreviewEligible().then((isPreview) => {
       setShowExperimental(isPreview);
+      // Annex is always available on preview-eligible builds
+      setShowAnnex(isPreview);
       if (isPreview) {
         window.clubhouse.app.getExperimentalSettings().then((s) => {
-          setShowAnnex(!!s.annex);
+          setShowMcp(!!s.mcp);
         });
       }
     });
@@ -66,24 +65,21 @@ function SettingsCategoryNav() {
             {navButton('Display & UI', 'display')}
             {navButton('External Editor', 'editor')}
             {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
-            {navButton('Notifications', 'notifications')}
-            {navButton('Sounds', 'sounds')}
+            {navButton('Notifications & Alerts', 'notifications')}
             {navButton('Plugins', 'plugins')}
-            {showAnnex && navButton('Annex Server', 'annex')}
+            {showAnnex && navButton('Annex', 'annex')}
             {showAnnex && navButton('Annex Control', 'annex-control')}
-            {showExperimental && navButton('Clubhouse MCP', 'mcp')}
+            {showMcp && navButton('Clubhouse MCP', 'mcp')}
             {navButton('Updates', 'updates')}
             {navButton('Logging', 'logging')}
             {showExperimental && navButton('Experimental', 'experimental')}
-            {navButton('Getting Started', 'getting-started')}
             {navButton("What's New", 'whats-new')}
           </>
         ) : (
           <>
             {navButton('Project Settings', 'project')}
             {navButton('Orchestrators & Agents', 'orchestrators')}
-            {navButton('Notifications', 'notifications')}
-            {navButton('Sounds', 'sounds')}
+            {navButton('Notifications & Alerts', 'notifications')}
             {navButton('Plugins', 'plugins')}
           </>
         )}
@@ -119,6 +115,9 @@ export function AccessoryPanel() {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
   const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
+  const isRemoteProject = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
 
   if (explorerTab === 'agents') {
     return (
@@ -134,6 +133,21 @@ export function AccessoryPanel() {
 
   // Plugin tabs with sidebar layout
   if (activePluginId) {
+    // Security gate: block sidebar rendering for non-annex-enabled plugins on remote projects.
+    // Only enforce once satellite snapshot has loaded (matches !== undefined).
+    if (isRemoteProject && activeProjectId) {
+      const parsed = parseNamespacedId(activeProjectId);
+      if (parsed) {
+        const matches = pluginMatchState[parsed.satelliteId];
+        if (matches !== undefined) {
+          const match = matches.find((p) => p.id === activePluginId);
+          if (!match?.annexEnabled) {
+            return null;
+          }
+        }
+      }
+    }
+
     const layout = activePluginEntry?.manifest.contributes?.tab?.layout ?? 'sidebar-content';
 
     if (layout === 'sidebar-content') {

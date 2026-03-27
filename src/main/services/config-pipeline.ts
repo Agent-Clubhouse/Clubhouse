@@ -3,6 +3,7 @@ import * as path from 'path';
 import { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
+import { stripClubhouseMcpToml } from './clubhouse-mcp/injection';
 
 interface FileSnapshot {
   originalContent: string | null; // null = file didn't exist before us
@@ -15,70 +16,86 @@ const snapshots = new Map<string, FileSnapshot>();
 const agentFiles = new Map<string, Set<string>>();
 
 /**
+ * Simple promise-based mutex to serialize snapshot/restore operations.
+ * Prevents concurrent agent exits from corrupting config files via
+ * overlapping read-modify-write cycles on the shared snapshots Map.
+ */
+let mutexChain = Promise.resolve();
+function withMutex<T>(fn: () => Promise<T>): Promise<T> {
+  const result = mutexChain.then(fn, fn);
+  mutexChain = result.then(() => {}, () => {});
+  return result;
+}
+
+/**
  * Snapshot a config file before the first agent writes to it.
  * Increments refCount for subsequent agents referencing the same file.
  */
-export async function snapshotFile(agentId: string, filePath: string): Promise<void> {
-  const absPath = path.resolve(filePath);
+export function snapshotFile(agentId: string, filePath: string): Promise<void> {
+  return withMutex(async () => {
+    const absPath = path.resolve(filePath);
 
-  if (!snapshots.has(absPath)) {
-    let originalContent: string | null = null;
-    try {
-      originalContent = await fsp.readFile(absPath, 'utf-8');
-    } catch {
-      // File doesn't exist yet — we'll delete it on restore
+    if (!snapshots.has(absPath)) {
+      let originalContent: string | null = null;
+      try {
+        originalContent = await fsp.readFile(absPath, 'utf-8');
+      } catch {
+        // File doesn't exist yet — we'll delete it on restore
+      }
+      snapshots.set(absPath, { originalContent, refCount: 0 });
+      appLog('core:config-pipeline', 'info', `Snapshot saved`, {
+        meta: { filePath: absPath, existed: originalContent !== null },
+      });
     }
-    snapshots.set(absPath, { originalContent, refCount: 0 });
-    appLog('core:config-pipeline', 'info', `Snapshot saved`, {
-      meta: { filePath: absPath, existed: originalContent !== null },
-    });
-  }
 
-  const snapshot = snapshots.get(absPath)!;
-  snapshot.refCount++;
+    const snapshot = snapshots.get(absPath)!;
+    snapshot.refCount++;
 
-  let files = agentFiles.get(agentId);
-  if (!files) {
-    files = new Set();
-    agentFiles.set(agentId, files);
-  }
-  files.add(absPath);
+    let files = agentFiles.get(agentId);
+    if (!files) {
+      files = new Set();
+      agentFiles.set(agentId, files);
+    }
+    files.add(absPath);
+  });
 }
 
 /**
  * Restore config files for a single agent.
  * Decrements refCount; when it hits 0, restores the original file.
  */
-export async function restoreForAgent(agentId: string): Promise<void> {
-  const files = agentFiles.get(agentId);
-  if (!files) return;
+export function restoreForAgent(agentId: string): Promise<void> {
+  return withMutex(async () => {
+    const files = agentFiles.get(agentId);
+    if (!files) return;
 
-  // Remove agent tracking first to prevent double-call with the same agentId
-  agentFiles.delete(agentId);
+    // Remove agent tracking first to prevent double-call with the same agentId
+    agentFiles.delete(agentId);
 
-  for (const absPath of files) {
-    const snapshot = snapshots.get(absPath);
-    if (!snapshot) continue;
+    for (const absPath of files) {
+      const snapshot = snapshots.get(absPath);
+      if (!snapshot) continue;
 
-    snapshot.refCount--;
-    if (snapshot.refCount <= 0) {
-      // Remove from map before restoring — atomic decrement-and-check
-      // prevents a concurrent caller from finding and restoring the same snapshot
-      snapshots.delete(absPath);
-      await restoreSnapshot(absPath, snapshot);
+      snapshot.refCount--;
+      if (snapshot.refCount <= 0) {
+        snapshots.delete(absPath);
+        await restoreSnapshot(absPath, snapshot);
+      }
     }
-  }
+  });
 }
 
 /**
  * Restore all snapshots immediately (for app quit).
  */
-export async function restoreAll(): Promise<void> {
-  for (const [absPath, snapshot] of snapshots) {
-    await restoreSnapshot(absPath, snapshot);
-  }
-  snapshots.clear();
-  agentFiles.clear();
+export function restoreAll(): Promise<void> {
+  return withMutex(async () => {
+    for (const [absPath, snapshot] of snapshots) {
+      await restoreSnapshot(absPath, snapshot);
+    }
+    snapshots.clear();
+    agentFiles.clear();
+  });
 }
 
 /**
@@ -162,6 +179,11 @@ export function stripClubhouseHooks(settings: Record<string, unknown>): Record<s
   return result;
 }
 
+/** Check if a file path looks like a TOML config file. */
+function isTomlFile(filePath: string): boolean {
+  return filePath.endsWith('.toml');
+}
+
 async function restoreSnapshot(absPath: string, snapshot: FileSnapshot): Promise<void> {
   try {
     if (snapshot.originalContent === null) {
@@ -169,36 +191,19 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot): Promise
       // instead of deleting it, since permissions or other settings may have
       // been written after the snapshot was taken.
       if (await pathExists(absPath)) {
-        try {
-          const current = JSON.parse(await fsp.readFile(absPath, 'utf-8'));
-          const cleaned = stripClubhouseHooks(current);
-          // If only hooks existed and they were all ours, delete the file
-          if (Object.keys(cleaned).length === 0) {
-            await fsp.unlink(absPath);
-            appLog('core:config-pipeline', 'info', `Restored (deleted, no remaining settings)`, { meta: { filePath: absPath } });
-          } else {
-            await fsp.writeFile(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
-            appLog('core:config-pipeline', 'info', `Restored (stripped Clubhouse hooks, preserved other settings)`, { meta: { filePath: absPath } });
-          }
-        } catch {
-          // File isn't valid JSON — fall back to deleting
-          await fsp.unlink(absPath);
-          appLog('core:config-pipeline', 'info', `Restored (deleted, not valid JSON)`, { meta: { filePath: absPath } });
+        if (isTomlFile(absPath)) {
+          await restoreTomlSnapshot(absPath, null);
+        } else {
+          await restoreJsonSnapshot(absPath, null);
         }
       }
     } else {
-      // File existed before — read current state, strip our hooks, and
-      // merge with any settings that were in the original snapshot.
-      // This preserves permissions and other settings added after snapshot.
-      try {
-        const current = JSON.parse(await fsp.readFile(absPath, 'utf-8'));
-        const cleaned = stripClubhouseHooks(current);
-        await fsp.writeFile(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
-        appLog('core:config-pipeline', 'info', `Restored (stripped Clubhouse hooks)`, { meta: { filePath: absPath } });
-      } catch {
-        // Current file is corrupt — fall back to original snapshot
-        await fsp.writeFile(absPath, snapshot.originalContent, 'utf-8');
-        appLog('core:config-pipeline', 'info', `Restored original (current file corrupt)`, { meta: { filePath: absPath } });
+      // File existed before — read current state, strip our entries, and
+      // preserve any settings added after snapshot.
+      if (isTomlFile(absPath)) {
+        await restoreTomlSnapshot(absPath, snapshot.originalContent);
+      } else {
+        await restoreJsonSnapshot(absPath, snapshot.originalContent);
       }
     }
   } catch (err) {
@@ -208,8 +213,70 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot): Promise
   }
 }
 
+async function restoreJsonSnapshot(absPath: string, originalContent: string | null): Promise<void> {
+  if (originalContent === null) {
+    try {
+      const current = JSON.parse(await fsp.readFile(absPath, 'utf-8'));
+      const cleaned = stripClubhouseHooks(current);
+      if (Object.keys(cleaned).length === 0) {
+        await fsp.unlink(absPath);
+        appLog('core:config-pipeline', 'info', `Restored (deleted, no remaining settings)`, { meta: { filePath: absPath } });
+      } else {
+        await fsp.writeFile(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
+        appLog('core:config-pipeline', 'info', `Restored (stripped Clubhouse hooks, preserved other settings)`, { meta: { filePath: absPath } });
+      }
+    } catch {
+      await fsp.unlink(absPath);
+      appLog('core:config-pipeline', 'info', `Restored (deleted, not valid JSON)`, { meta: { filePath: absPath } });
+    }
+  } else {
+    try {
+      const current = JSON.parse(await fsp.readFile(absPath, 'utf-8'));
+      const cleaned = stripClubhouseHooks(current);
+      await fsp.writeFile(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
+      appLog('core:config-pipeline', 'info', `Restored (stripped Clubhouse hooks)`, { meta: { filePath: absPath } });
+    } catch {
+      await fsp.writeFile(absPath, originalContent, 'utf-8');
+      appLog('core:config-pipeline', 'info', `Restored original (current file corrupt)`, { meta: { filePath: absPath } });
+    }
+  }
+}
+
+async function restoreTomlSnapshot(absPath: string, originalContent: string | null): Promise<void> {
+  if (originalContent === null) {
+    // File didn't exist before — strip Clubhouse MCP entry, delete if empty
+    try {
+      const current = await fsp.readFile(absPath, 'utf-8');
+      const cleaned = stripClubhouseMcpToml(current).trim();
+      if (cleaned.length === 0) {
+        await fsp.unlink(absPath);
+        appLog('core:config-pipeline', 'info', `Restored TOML (deleted, no remaining config)`, { meta: { filePath: absPath } });
+      } else {
+        await fsp.writeFile(absPath, cleaned + '\n', 'utf-8');
+        appLog('core:config-pipeline', 'info', `Restored TOML (stripped Clubhouse MCP, preserved other config)`, { meta: { filePath: absPath } });
+      }
+    } catch {
+      // File can't be read — try to delete
+      try { await fsp.unlink(absPath); } catch { /* already gone */ }
+      appLog('core:config-pipeline', 'info', `Restored TOML (deleted, unreadable)`, { meta: { filePath: absPath } });
+    }
+  } else {
+    // File existed before — strip Clubhouse MCP from current state
+    try {
+      const current = await fsp.readFile(absPath, 'utf-8');
+      const cleaned = stripClubhouseMcpToml(current);
+      await fsp.writeFile(absPath, cleaned, 'utf-8');
+      appLog('core:config-pipeline', 'info', `Restored TOML (stripped Clubhouse MCP)`, { meta: { filePath: absPath } });
+    } catch {
+      await fsp.writeFile(absPath, originalContent, 'utf-8');
+      appLog('core:config-pipeline', 'info', `Restored TOML original (current file unreadable)`, { meta: { filePath: absPath } });
+    }
+  }
+}
+
 /** For testing: reset all internal state */
 export function _resetForTesting(): void {
   snapshots.clear();
   agentFiles.clear();
+  mutexChain = Promise.resolve();
 }

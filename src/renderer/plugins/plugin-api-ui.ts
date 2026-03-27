@@ -1,6 +1,7 @@
 import React from 'react';
-import { showInputDialog, showConfirmDialog } from './PluginDialog';
+import { showInputDialog, showConfirmDialog, showApprovalDialog } from './PluginDialog';
 import type {
+  ApprovalDialogOptions,
   PluginContext,
   UIAPI,
   CommandsAPI,
@@ -15,6 +16,7 @@ import { pluginCommandRegistry } from './plugin-commands';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { useAgentStore } from '../stores/agentStore';
 import { useProjectStore } from '../stores/projectStore';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { useUIStore } from '../stores/uiStore';
 
 export function createUIAPI(ctx: PluginContext): UIAPI {
@@ -33,6 +35,14 @@ export function createUIAPI(ctx: PluginContext): UIAPI {
     },
     async showInput(prompt: string, defaultValue = ''): Promise<string | null> {
       const { promise, cleanup } = showInputDialog(prompt, defaultValue);
+      ctx.subscriptions.push({ dispose: cleanup });
+      return promise;
+    },
+    async showApprovalDialog(options: ApprovalDialogOptions): Promise<string | null> {
+      if (!options.actions || options.actions.length === 0) {
+        throw new Error('showApprovalDialog requires at least one action');
+      }
+      const { promise, cleanup } = showApprovalDialog(options);
       ctx.subscriptions.push({ dispose: cleanup });
       return promise;
     },
@@ -125,14 +135,12 @@ export function createNavigationAPI(): NavigationAPI {
     },
     toggleSidebar(): void {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { usePanelStore } = require('../stores/panelStore');
         usePanelStore.getState().toggleExplorerCollapse();
       } catch { /* ignore in test */ }
     },
     toggleAccessoryPanel(): void {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { usePanelStore } = require('../stores/panelStore');
         usePanelStore.getState().toggleAccessoryCollapse();
       } catch { /* ignore in test */ }
@@ -160,15 +168,10 @@ export function createWidgetsAPI(): WidgetsAPI {
   let AgentAvatarWithRingComponent: React.ComponentType<any>;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     AgentTerminalComponent = require('../features/agents/AgentTerminal').AgentTerminal;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     SleepingAgentComponent = require('../features/agents/SleepingAgent').SleepingAgent;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     AgentAvatarComponent = require('../features/agents/AgentAvatar').AgentAvatar;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     AgentAvatarWithRingComponent = require('../features/agents/AgentAvatar').AgentAvatarWithRing;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     QuickAgentGhostComponent = require('../features/agents/QuickAgentGhost').QuickAgentGhost;
   } catch {
     // In test environments, return stub components
@@ -182,16 +185,22 @@ export function createWidgetsAPI(): WidgetsAPI {
     return _widgetsCache;
   }
 
-  // SleepingAgent adapter: plugin passes agentId, we resolve to Agent reactively
+  // SleepingAgent adapter: plugin passes agentId, we resolve to Agent reactively.
+  // Checks both local and remote agent stores so remote canvas views work.
   const SleepingAgentAdapter = ({ agentId }: { agentId: string }) => {
-    const agent = useAgentStore((s) => s.agents[agentId]);
+    const localAgent = useAgentStore((s) => s.agents[agentId]);
+    const remoteAgent = useRemoteProjectStore((s) => s.remoteAgents[agentId]);
+    const agent = localAgent || remoteAgent;
     if (!agent) return null;
     return React.createElement(SleepingAgentComponent, { agent });
   };
 
-  // AgentAvatar adapter: when showStatusRing is true, use the ring variant with status colors
+  // AgentAvatar adapter: when showStatusRing is true, use the ring variant with status colors.
+  // Checks both local and remote agent stores so remote canvas views work.
   const AgentAvatarAdapter = ({ agentId, size, showStatusRing }: { agentId: string; size?: 'sm' | 'md'; showStatusRing?: boolean }) => {
-    const agent = useAgentStore((s) => s.agents[agentId]);
+    const localAgent = useAgentStore((s) => s.agents[agentId]);
+    const remoteAgent = useRemoteProjectStore((s) => s.remoteAgents[agentId]);
+    const agent = localAgent || remoteAgent;
     if (!agent) return null;
     if (showStatusRing && AgentAvatarWithRingComponent) {
       return React.createElement(AgentAvatarWithRingComponent, { agent });

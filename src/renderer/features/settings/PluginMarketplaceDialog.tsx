@@ -7,7 +7,7 @@ import type {
   MarketplacePluginWithSource,
 } from '../../../shared/marketplace-types';
 import { SUPPORTED_REGISTRY_VERSION } from '../../../shared/marketplace-types';
-import { SUPPORTED_API_VERSIONS } from '../../plugins/manifest-validator';
+import { SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from '../../plugins/manifest-validator';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { PluginPermission, PermissionRiskLevel } from '../../../shared/plugin-types';
@@ -59,6 +59,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall }: Plug
   if (!release) return null;
 
   const compatible = SUPPORTED_API_VERSIONS.includes(release.api);
+  const deprecatedRemoval = DEPRECATED_PLUGIN_API_VERSIONS[release.api];
   const [showPerms, setShowPerms] = useState(false);
 
   return (
@@ -81,6 +82,9 @@ function PluginCard({ plugin, featured, installed, installing, onInstall }: Plug
             </span>
             {!compatible && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Incompatible</span>
+            )}
+            {compatible && deprecatedRemoval && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400" title={`API ${release.api} will be removed in ${deprecatedRemoval}`}>Deprecated</span>
             )}
             {installed && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Installed</span>

@@ -6,6 +6,7 @@ import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
 import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
+import * as freeAgentSettings from './free-agent-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry } from './agent-config';
@@ -28,7 +29,7 @@ export interface SpawnAgentParams {
   agentId: string;
   projectPath: string;
   cwd: string;
-  kind: 'durable' | 'quick';
+  kind: 'durable' | 'quick' | 'companion';
   model?: string;
   mission?: string;
   systemPrompt?: string;
@@ -37,10 +38,16 @@ export interface SpawnAgentParams {
   maxTurns?: number;
   maxBudgetUsd?: number;
   freeAgentMode?: boolean;
+  /** When true, spawn this agent in structured mode instead of PTY */
+  structuredMode?: boolean;
   /** When true, attempt to resume the previous CLI session instead of starting fresh */
   resume?: boolean;
   /** Specific session ID to resume (provider-specific format) */
   sessionId?: string;
+  /** Plugin ID that owns this companion agent (required when kind === 'companion'). @since 0.9 */
+  pluginOwner?: string;
+  /** Path to companion workspace (auto-set for companion agents). @since 0.9 */
+  companionWorkspace?: string;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -123,10 +130,16 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       }
     }
 
+    // Resolve the free-agent permission mode (auto vs skip-all) from settings
+    const permissionMode = freeAgentSettings.getPermissionMode(params.projectPath);
+
     // Try structured path when enabled and provider supports it
+    // Quick agents use structured mode based on project spawn mode setting.
+    // Durable agents opt in via per-agent structuredMode config flag.
     // TODO: Apply launch wrapper transform to structured path once adapter architecture supports external binary override
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
-    if (spawnMode === 'structured' && params.kind === 'quick' && isStructuredCapable(provider)) {
+    const useStructured = (spawnMode === 'structured' && params.kind === 'quick') || params.structuredMode;
+    if (useStructured && isStructuredCapable(provider)) {
       agentRegistry.setRuntime(params.agentId, 'structured');
       const adapter = provider.createStructuredAdapter();
       await structuredManager.startStructuredSession(params.agentId, adapter, {
@@ -137,9 +150,10 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         env: profileEnv,
         allowedTools,
         freeAgentMode: params.freeAgentMode,
+        permissionMode,
         commandPrefix,
       }, (exitAgentId) => {
-        bindingManager.unbindAgent(exitAgentId);
+        if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
         untrackAgent(exitAgentId);
       });
       return;
@@ -156,6 +170,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         agentId: params.agentId,
         noSessionPersistence: true,
         freeAgentMode: params.freeAgentMode,
+        permissionMode,
       });
 
       if (headlessResult) {
@@ -177,7 +192,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
           headlessResult.outputKind || 'stream-json',
           (exitAgentId) => {
             configPipeline.restoreForAgent(exitAgentId);
-            bindingManager.unbindAgent(exitAgentId);
+            if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
             untrackAgent(exitAgentId);
           },
           commandPrefix,
@@ -223,9 +238,14 @@ async function spawnPtyAgent(
     } catch { /* config not available */ }
   }
   const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
+  // Snapshot MCP config for all formats — TOML injection is now supported
+  // and the config-pipeline restore logic handles both JSON and TOML files.
   if (mcpEnabledForSpawn) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
+
+  // Resolve the free-agent permission mode (auto vs skip-all) from settings
+  const permissionMode = freeAgentSettings.getPermissionMode(params.projectPath);
 
   // Run hook server setup, MCP bridge setup, and command building in parallel.
   let mcpPort = 0;
@@ -250,6 +270,7 @@ async function spawnPtyAgent(
       allowedTools,
       agentId: params.agentId,
       freeAgentMode: params.freeAgentMode,
+      permissionMode,
       resume: params.resume,
       sessionId: params.sessionId,
     }),
@@ -300,9 +321,9 @@ async function spawnPtyAgent(
     });
   }
 
-  ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
+  await ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
-    bindingManager.unbindAgent(exitAgentId);
+    if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
 
     // Capture session ID for durable agents — works for all providers

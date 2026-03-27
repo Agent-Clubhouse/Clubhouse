@@ -28,6 +28,10 @@ describe('git plugin manifest', () => {
     expect(manifest.permissions).toHaveLength(6);
   });
 
+  it('does not declare annex permission', () => {
+    expect(manifest.permissions).not.toContain('annex');
+  });
+
   it('contributes tab.title', () => {
     expect(manifest.contributes!.tab!.title).toBe('Git');
   });
@@ -38,8 +42,8 @@ describe('git plugin manifest', () => {
     expect(widgets).toHaveLength(1);
     const widget = widgets![0];
     expect(widget.id).toBe('git-status');
-    expect(widget.label).toBe('Git Status');
-    expect(widget.defaultSize).toEqual({ width: 400, height: 360 });
+    expect(widget.label).toBe('Git Diff');
+    expect(widget.defaultSize).toEqual({ width: 700, height: 500 });
     expect(widget.metadataKeys).toEqual(['projectId', 'worktreePath']);
   });
 

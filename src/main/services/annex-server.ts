@@ -20,7 +20,11 @@ import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import * as structuredManager from './structured-manager';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
-import { readKey as readPluginStorageKey } from './plugin-storage';
+import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
+import { groupProjectRegistry } from './group-project-registry';
+import { getBulletinBoard } from './group-project-bulletin';
+import { executeShoulderTap } from './group-project-shoulder-tap';
+import { bindingManager } from './clubhouse-mcp/binding-manager';
 import * as fileService from './file-service';
 import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
@@ -59,7 +63,8 @@ let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
 let serverPort = 0; // Main TLS port
 let currentPin = '';
-const sessionTokens = new Set<string>();
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const sessionTokens = new Map<string, { issuedAt: number }>();
 
 // Tag WebSocket connections with auth type for security gating
 type WsAuthType = 'bearer' | 'mtls';
@@ -73,7 +78,35 @@ let unsubPtyExit: (() => void) | null = null;
 let unsubAgentSpawned: (() => void) | null = null;
 let unsubPermissionRequest: (() => void) | null = null;
 let unsubStructuredEvent: (() => void) | null = null;
+let unsubGroupProjectChanged: (() => void) | null = null;
+let unsubBulletinMessage: (() => void) | null = null;
+let unsubGroupProjectRegistry: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
+
+/** Whether the satellite session is currently paused (tracks across reconnects). */
+let sessionPaused = false;
+
+/** Unsubscribe all event bus listeners to prevent accumulation on restart cycles. */
+function unsubscribeEventBus(): void {
+  unsubPtyData?.();
+  unsubHookEvent?.();
+  unsubPtyExit?.();
+  unsubAgentSpawned?.();
+  unsubPermissionRequest?.();
+  unsubStructuredEvent?.();
+  unsubGroupProjectChanged?.();
+  unsubBulletinMessage?.();
+  unsubGroupProjectRegistry?.();
+  unsubPtyData = null;
+  unsubHookEvent = null;
+  unsubPtyExit = null;
+  unsubAgentSpawned = null;
+  unsubPermissionRequest = null;
+  unsubStructuredEvent = null;
+  unsubGroupProjectChanged = null;
+  unsubBulletinMessage = null;
+  unsubGroupProjectRegistry = null;
+}
 
 // ---------------------------------------------------------------------------
 // Detailed status cache (Issue 3)
@@ -170,7 +203,7 @@ export function getAgentExecutionMode(agentId: string): AgentExecutionMode {
 // Clipboard image forwarding
 // ---------------------------------------------------------------------------
 
-const CLIPBOARD_IMAGE_CLEANUP_MS = 5 * 60 * 1000; // 5 minutes
+const CLIPBOARD_IMAGE_CLEANUP_MS = 30 * 60 * 1000; // 30 minutes
 
 function handleClipboardImage(agentId: string, base64: string, mimeType: string): void {
   const ext = mimeType === 'image/png' ? '.png'
@@ -186,15 +219,26 @@ function handleClipboardImage(agentId: string, base64: string, mimeType: string)
     const buffer = Buffer.from(base64, 'base64');
     fs.writeFileSync(filePath, buffer);
 
-    // Inject the file path into the agent's PTY input
-    ptyManager.write(agentId, filePath);
+    appLog('core:annex-server', 'info', 'clipboard:image — wrote temp file', {
+      meta: { agentId, filePath, size: buffer.length },
+    });
 
-    // Schedule cleanup
+    // Inject the file path into the agent's PTY input using bracketed paste
+    // so the terminal treats it as pasted content (same as Cmd+V text paste).
+    ptyManager.write(agentId, `\x1b[200~${filePath}\x1b[201~`);
+
+    // Schedule cleanup (30 minutes — long enough for the agent to read the file)
     setTimeout(() => {
-      try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+      try { fs.unlinkSync(filePath); } catch (err) {
+        appLog('core:annex', 'debug', 'Clipboard image cleanup failed (file may already be removed)', {
+          meta: { filePath, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }, CLIPBOARD_IMAGE_CLEANUP_MS);
-  } catch {
-    // Silently fail — image paste is best-effort
+  } catch (err) {
+    appLog('core:annex-server', 'error', 'clipboard:image — failed to write temp file', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    });
   }
 }
 
@@ -227,7 +271,14 @@ function generatePin(): string {
 }
 
 function isValidToken(token: string | undefined): boolean {
-  return !!token && sessionTokens.has(token);
+  if (!token) return false;
+  const entry = sessionTokens.get(token);
+  if (!entry) return false;
+  if (Date.now() - entry.issuedAt > TOKEN_TTL_MS) {
+    sessionTokens.delete(token);
+    return false;
+  }
+  return true;
 }
 
 function extractBearerToken(req: http.IncomingMessage): string | undefined {
@@ -338,34 +389,31 @@ async function buildSnapshot(): Promise<object> {
   const projects = await projectStore.list();
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
-
-  // Resolve project icon data URLs for remote display
   const projectIcons: Record<string, string> = {};
-  for (const proj of projects) {
+  const agentIcons: Record<string, string> = {};
+
+  // Fetch project icons in parallel
+  await Promise.all(projects.map(async (proj) => {
     if (proj.icon) {
       const dataUrl = await projectStore.readIconData(proj.icon);
       if (dataUrl) projectIcons[proj.id] = dataUrl;
     }
-  }
+  }));
 
-  // Resolve agent icon data URLs
-  const agentIcons: Record<string, string> = {};
-
-  for (const proj of projects) {
+  // Fetch agents and their icons per project in parallel
+  await Promise.all(projects.map(async (proj) => {
     const durables = await agentConfig.listDurable(proj.path);
-    const mapped = durables.map((d) => mapDurableAgent(d, proj.id));
+    agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id));
+    quickAgents[proj.id] = [];
 
-    // Resolve agent icon data URLs
-    for (const d of durables) {
+    // Fetch agent icons in parallel within this project
+    await Promise.all(durables.map(async (d) => {
       if (d.icon) {
         const dataUrl = await agentConfig.readAgentIconData(d.icon);
         if (dataUrl) agentIcons[d.id] = dataUrl;
       }
-    }
-
-    agents[proj.id] = mapped;
-    quickAgents[proj.id] = [];
-  }
+    }));
+  }));
 
   // Add tracked quick agents to their project buckets
   for (const qa of trackedQuickAgents.values()) {
@@ -398,24 +446,27 @@ async function buildSnapshot(): Promise<object> {
     version: m.version,
     scope: m.scope,
     contributes: m.contributes,
+    annexEnabled: (m.permissions ?? []).includes('annex'),
   }));
 
-  // Read per-project canvas state from plugin storage
+  // Read per-project canvas state in parallel
   const canvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }> = {};
-  for (const proj of projects) {
+  await Promise.all(projects.map(async (proj) => {
     try {
-      const canvases = await readPluginStorageKey({
-        pluginId: 'canvas',
-        scope: 'project-local',
-        key: 'canvas-instances',
-        projectPath: proj.path,
-      });
-      const activeId = await readPluginStorageKey({
-        pluginId: 'canvas',
-        scope: 'project-local',
-        key: 'canvas-active-id',
-        projectPath: proj.path,
-      });
+      const [canvases, activeId] = await Promise.all([
+        readPluginStorageKey({
+          pluginId: 'canvas',
+          scope: 'project-local',
+          key: 'canvas-instances',
+          projectPath: proj.path,
+        }),
+        readPluginStorageKey({
+          pluginId: 'canvas',
+          scope: 'project-local',
+          key: 'canvas-active-id',
+          projectPath: proj.path,
+        }),
+      ]);
       if (canvases && Array.isArray(canvases) && canvases.length > 0) {
         canvasState[proj.id] = {
           canvases,
@@ -425,6 +476,63 @@ async function buildSnapshot(): Promise<object> {
     } catch {
       // Canvas data not available — skip
     }
+  }));
+
+  // Read app-level (global scope) canvas state
+  let appCanvasState: { canvases: unknown[]; activeCanvasId: string } | null = null;
+  try {
+    const [appCanvases, appActiveId] = await Promise.all([
+      readPluginStorageKey({
+        pluginId: 'canvas',
+        scope: 'global',
+        key: 'canvas-instances',
+      }),
+      readPluginStorageKey({
+        pluginId: 'canvas',
+        scope: 'global',
+        key: 'canvas-active-id',
+      }),
+    ]);
+    if (appCanvases && Array.isArray(appCanvases) && appCanvases.length > 0) {
+      appCanvasState = {
+        canvases: appCanvases,
+        activeCanvasId: (appActiveId as string) || (appCanvases[0] as any)?.id || '',
+      };
+    }
+  } catch {
+    // App-level canvas data not available — skip
+  }
+
+  // Read group project data
+  const groupProjects = await groupProjectRegistry.list();
+  const bulletinDigests: Record<string, unknown[]> = {};
+  await Promise.all(groupProjects.map(async (gp) => {
+    try {
+      const board = getBulletinBoard(gp.id);
+      bulletinDigests[gp.id] = await board.getDigest();
+    } catch {
+      // Bulletin not available — skip
+    }
+  }));
+
+  // Read group project members from binding manager
+  const groupProjectMembers: Record<string, Array<{ agentId: string; agentName: string; status: string }>> = {};
+  try {
+    const allBindings = bindingManager.getAllBindings();
+    for (const gp of groupProjects) {
+      const members = allBindings
+        .filter(b => b.targetKind === 'group-project' && b.targetId === gp.id)
+        .map(b => ({
+          agentId: b.agentId,
+          agentName: b.agentName || b.agentId,
+          status: ptyManager.isRunning(b.agentId) ? 'connected' : 'sleeping',
+        }));
+      if (members.length > 0) {
+        groupProjectMembers[gp.id] = members;
+      }
+    }
+  } catch {
+    // Binding manager not available — skip
   }
 
   return {
@@ -441,6 +549,11 @@ async function buildSnapshot(): Promise<object> {
     projectIcons,
     agentIcons,
     canvasState,
+    appCanvasState,
+    sessionPaused,
+    groupProjects,
+    bulletinDigests,
+    groupProjectMembers,
   };
 }
 
@@ -715,7 +828,7 @@ async function handleWakeAgent(
   }
 
   // Check if already running
-  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
+  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
     sendJson(res, 409, { error: 'agent_already_running' });
     return;
   }
@@ -738,12 +851,13 @@ async function handleWakeAgent(
       sessionId: resume ? config.lastSessionId : undefined,
     });
 
-    // Broadcast agent:woken
+    // Broadcast agent:woken + refresh snapshot so controllers see updated status
     broadcastAndBuffer('agent:woken', {
       agentId: config.id,
       message,
       source: 'annex',
     });
+    broadcastSnapshotRefresh();
 
     sendJson(res, 200, {
       id: config.id,
@@ -925,13 +1039,25 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
 
       annexPeers.recordSuccessfulAttempt(source);
       const token = randomUUID();
-      sessionTokens.add(token);
+      sessionTokens.set(token, { issuedAt: Date.now() });
 
       const identity = annexIdentity.getOrCreateIdentity();
       const settings = annexSettings.getSettings();
 
       const clientPublicKey = body.publicKey as string | undefined;
       if (clientPublicKey) {
+        // Validate public key: must be a valid Ed25519 SPKI/DER key encoded as base64
+        try {
+          const keyBuf = Buffer.from(clientPublicKey, 'base64');
+          const keyObj = require('crypto').createPublicKey({ key: keyBuf, format: 'der', type: 'spki' });
+          if (keyObj.asymmetricKeyType !== 'ed25519') {
+            sendJson(res, 400, { error: 'invalid_public_key' });
+            return;
+          }
+        } catch {
+          sendJson(res, 400, { error: 'invalid_public_key' });
+          return;
+        }
         annexPeers.addPeer({
           fingerprint: annexIdentity.computeFingerprint(clientPublicKey),
           publicKey: clientPublicKey,
@@ -987,12 +1113,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   // to bearer token. Without this, REST calls from the controller using only
   // mTLS certs (e.g. buffer fetch) would be rejected with 401.
   let authenticated = false;
+  let isMtlsAuthenticated = false;
   if (req.socket && 'getPeerCertificate' in req.socket) {
     const peerFingerprint = annexTls.extractPeerFingerprint(req.socket as tls.TLSSocket);
     if (peerFingerprint) {
       const peer = annexPeers.getPeer(peerFingerprint);
       if (peer && (peer.role === 'controller' || !peer.role)) {
         authenticated = true;
+        isMtlsAuthenticated = true;
         annexPeers.updateLastSeen(peerFingerprint);
       }
     }
@@ -1003,6 +1131,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       sendJson(res, 401, { error: 'unauthorized' });
       return;
     }
+  }
+
+  /** Require mTLS for destructive operations when TLS is active. Returns true if rejected. */
+  function requireMtls(): boolean {
+    // Only enforce mTLS when the server is running with TLS.
+    // In HTTP fallback mode, bearer tokens are sufficient (no TLS available).
+    if (tlsServer && !isMtlsAuthenticated) {
+      appLog('core:annex', 'warn', 'Rejected destructive REST request — mTLS required', {
+        meta: { method, url },
+      });
+      sendJson(res, 403, { error: 'mtls_required', message: 'Destructive operations require mTLS authentication' });
+      return true;
+    }
+    return false;
   }
 
   // GET /api/v1/status
@@ -1073,8 +1215,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const includeHidden = params.get('includeHidden') === 'true';
 
     // Resolve and validate path stays within project
-    const fullPath = relPath === '.' ? project.path : `${project.path}/${relPath}`;
-    if (!fullPath.startsWith(project.path)) {
+    const resolvedProject = path.resolve(project.path);
+    const fullPath = relPath === '.' ? resolvedProject : path.resolve(resolvedProject, relPath);
+    if (fullPath !== resolvedProject && !fullPath.startsWith(resolvedProject + path.sep)) {
       sendJson(res, 403, { error: 'path_traversal' });
       return;
     }
@@ -1104,8 +1247,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    const fullPath = relPath.startsWith('/') ? relPath : `${project.path}/${relPath}`;
-    if (!fullPath.startsWith(project.path)) {
+    const resolvedProject = path.resolve(project.path);
+    const fullPath = path.resolve(resolvedProject, relPath);
+    if (fullPath !== resolvedProject && !fullPath.startsWith(resolvedProject + path.sep)) {
       sendJson(res, 403, { error: 'path_traversal' });
       return;
     }
@@ -1219,9 +1363,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // POST /api/v1/projects/:id/git/:operation
+  // POST /api/v1/projects/:id/git/:operation (destructive — requires mTLS)
   const gitOpMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/(stage|unstage|stage-all|unstage-all|commit|push|pull|checkout|stash|stash-pop)$/);
   if (method === 'POST' && gitOpMatch) {
+    if (requireMtls()) return;
     const projectId = decodeURIComponent(gitOpMatch[1]);
     const operation = gitOpMatch[2];
     const project = await findProjectById(projectId);
@@ -1334,17 +1479,19 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   // --- POST endpoints (Issues 4, 6, 7) ---
 
-  // POST /api/v1/projects/:id/agents/quick
+  // POST /api/v1/projects/:id/agents/quick (destructive — requires mTLS)
   const quickProjectMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/quick$/);
   if (method === 'POST' && quickProjectMatch) {
+    if (requireMtls()) return;
     const projectId = decodeURIComponent(quickProjectMatch[1]);
     readJsonBody(req, res, (body) => handleSpawnQuickAgent(res, projectId, null, body));
     return;
   }
 
-  // POST /api/v1/agents/:id/agents/quick
+  // POST /api/v1/agents/:id/agents/quick (destructive — requires mTLS)
   const quickAgentMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/agents\/quick$/);
   if (method === 'POST' && quickAgentMatch) {
+    if (requireMtls()) return;
     const parentAgentId = decodeURIComponent(quickAgentMatch[1]);
     const parentInfo = await findAgentAcrossProjects(parentAgentId);
     if (!parentInfo) {
@@ -1355,33 +1502,37 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // POST /api/v1/agents/:id/wake
+  // POST /api/v1/agents/:id/wake (destructive — requires mTLS)
   const wakeMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/wake$/);
   if (method === 'POST' && wakeMatch) {
+    if (requireMtls()) return;
     const agentId = decodeURIComponent(wakeMatch[1]);
     readJsonBody(req, res, (body) => handleWakeAgent(res, agentId, body));
     return;
   }
 
-  // POST /api/v1/agents/:id/permission-response
+  // POST /api/v1/agents/:id/permission-response (control — requires mTLS)
   const permissionMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/permission-response$/);
   if (method === 'POST' && permissionMatch) {
+    if (requireMtls()) return;
     const agentId = decodeURIComponent(permissionMatch[1]);
     readJsonBody(req, res, (body) => handlePermissionResponse(res, agentId, body));
     return;
   }
 
-  // POST /api/v1/agents/:id/structured-permission
+  // POST /api/v1/agents/:id/structured-permission (control — requires mTLS)
   const structuredPermMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/structured-permission$/);
   if (method === 'POST' && structuredPermMatch) {
+    if (requireMtls()) return;
     const agentId = decodeURIComponent(structuredPermMatch[1]);
     readJsonBody(req, res, (body) => handleStructuredPermissionResponse(res, agentId, body));
     return;
   }
 
-  // POST /api/v1/projects/:id/agents/durable — create a durable agent
+  // POST /api/v1/projects/:id/agents/durable — create a durable agent (destructive — requires mTLS)
   const durableCreateMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/durable$/);
   if (method === 'POST' && durableCreateMatch) {
+    if (requireMtls()) return;
     const projectId = decodeURIComponent(durableCreateMatch[1]);
     const project = await findProjectById(projectId);
     if (!project) {
@@ -1416,9 +1567,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // POST /api/v1/projects/:id/agents/:agentId/delete — delete a durable agent
+  // POST /api/v1/projects/:id/agents/:agentId/delete — delete a durable agent (destructive — requires mTLS)
   const durableDeleteMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/([^/]+)\/delete$/);
   if (method === 'POST' && durableDeleteMatch) {
+    if (requireMtls()) return;
     const projectId = decodeURIComponent(durableDeleteMatch[1]);
     const agentId = decodeURIComponent(durableDeleteMatch[2]);
     const project = await findProjectById(projectId);
@@ -1476,6 +1628,220 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     } catch (err) {
       sendJson(res, 500, { error: err instanceof Error ? err.message : 'status_failed' });
     }
+    return;
+  }
+
+  // --- Group Project endpoints (bulletin board wire protocol) ---
+
+  // GET /api/v1/group-projects
+  if (method === 'GET' && url === '/api/v1/group-projects') {
+    const projects = await groupProjectRegistry.list();
+    sendJson(res, 200, projects);
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id
+  const gpGetMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+?)(\?.*)?$/);
+  if (method === 'GET' && gpGetMatch && !url.includes('/bulletin/')) {
+    const gpId = decodeURIComponent(gpGetMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    // Include members
+    let members: Array<{ agentId: string; agentName: string; status: string }> = [];
+    try {
+      const allBindings = bindingManager.getAllBindings();
+      members = allBindings
+        .filter(b => b.targetKind === 'group-project' && b.targetId === gpId)
+        .map(b => ({
+          agentId: b.agentId,
+          agentName: b.agentName || b.agentId,
+          status: ptyManager.isRunning(b.agentId) ? 'connected' : 'sleeping',
+        }));
+    } catch { /* ignore */ }
+    sendJson(res, 200, { ...project, members });
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id/bulletin/digest?since=<ISO8601>
+  const gpDigestMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/digest(\?.*)?$/);
+  if (method === 'GET' && gpDigestMatch) {
+    const gpId = decodeURIComponent(gpDigestMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    const params = new URLSearchParams(gpDigestMatch[2]?.slice(1) || '');
+    const since = params.get('since') || undefined;
+    const board = getBulletinBoard(gpId);
+    const digest = await board.getDigest(since);
+    sendJson(res, 200, digest);
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id/bulletin/topics/:topic?since=<ISO8601>&limit=<n>
+  const gpTopicMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)(\?.*)?$/);
+  if (method === 'GET' && gpTopicMatch) {
+    const gpId = decodeURIComponent(gpTopicMatch[1]);
+    const topic = decodeURIComponent(gpTopicMatch[2]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    const params = new URLSearchParams(gpTopicMatch[3]?.slice(1) || '');
+    const since = params.get('since') || undefined;
+    const limit = params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined;
+    const board = getBulletinBoard(gpId);
+    const messages = await board.getTopicMessages(topic, since, limit);
+    sendJson(res, 200, messages);
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id/bulletin/messages?since=<ISO8601>&limit=<n>
+  const gpAllMsgsMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages(\?.*)?$/);
+  if (method === 'GET' && gpAllMsgsMatch) {
+    const gpId = decodeURIComponent(gpAllMsgsMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    const params = new URLSearchParams(gpAllMsgsMatch[2]?.slice(1) || '');
+    const since = params.get('since') || undefined;
+    const limit = params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined;
+    const board = getBulletinBoard(gpId);
+    const messages = await board.getAllMessages(since, limit);
+    sendJson(res, 200, messages);
+    return;
+  }
+
+  // POST /api/v1/group-projects/:id/bulletin/messages (destructive — requires mTLS)
+  const gpPostMsgMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages$/);
+  if (method === 'POST' && gpPostMsgMatch) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpPostMsgMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    readJsonBody(req, res, async (body) => {
+      const sender = body.sender as string;
+      const topic = body.topic as string;
+      const msgBody = body.body as string;
+      if (!sender || !topic || !msgBody) {
+        sendJson(res, 400, { error: 'sender, topic, and body are required' });
+        return;
+      }
+      if (topic === 'system') {
+        sendJson(res, 400, { error: 'system topic is reserved' });
+        return;
+      }
+      try {
+        const board = getBulletinBoard(gpId);
+        const message = await board.postMessage(sender, topic, msgBody);
+        annexEventBus.emitBulletinMessage(gpId, message);
+        sendJson(res, 201, message);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : 'post_failed' });
+      }
+    });
+    return;
+  }
+
+  // POST /api/v1/group-projects/:id/shoulder-tap (destructive — requires mTLS)
+  const gpShoulderTapMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/);
+  if (method === 'POST' && gpShoulderTapMatch) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpShoulderTapMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    readJsonBody(req, res, async (body) => {
+      const sender = (body.sender as string) || 'remote';
+      const targetAgentId = (body.targetAgentId as string) || null;
+      const message = body.message as string;
+      if (!message) {
+        sendJson(res, 400, { error: 'message is required' });
+        return;
+      }
+      try {
+        const result = await executeShoulderTap({
+          projectId: gpId,
+          senderLabel: sender,
+          targetAgentId,
+          message,
+        });
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
+      }
+    });
+    return;
+  }
+
+  // GET /api/v1/group-projects/:id/members
+  const gpMembersMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/members$/);
+  if (method === 'GET' && gpMembersMatch) {
+    const gpId = decodeURIComponent(gpMembersMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    let members: Array<{ agentId: string; agentName: string; status: string }> = [];
+    try {
+      const allBindings = bindingManager.getAllBindings();
+      members = allBindings
+        .filter(b => b.targetKind === 'group-project' && b.targetId === gpId)
+        .map(b => ({
+          agentId: b.agentId,
+          agentName: b.agentName || b.agentId,
+          status: ptyManager.isRunning(b.agentId) ? 'connected' : 'sleeping',
+        }));
+    } catch { /* ignore */ }
+    sendJson(res, 200, members);
+    return;
+  }
+
+  // PATCH /api/v1/group-projects/:id (destructive — requires mTLS)
+  const gpPatchMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+?)$/);
+  if (method === 'PATCH' && gpPatchMatch && !url.includes('/bulletin/')) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpPatchMatch[1]);
+    const project = await groupProjectRegistry.get(gpId);
+    if (!project) {
+      sendJson(res, 404, { error: 'group_project_not_found' });
+      return;
+    }
+    readJsonBody(req, res, async (body) => {
+      const fields: Record<string, unknown> = {};
+      if (body.name !== undefined) fields.name = body.name;
+      if (body.description !== undefined) fields.description = body.description;
+      if (body.instructions !== undefined) fields.instructions = body.instructions;
+      if (body.metadata !== undefined) fields.metadata = body.metadata;
+      if (Object.keys(fields).length === 0) {
+        sendJson(res, 400, { error: 'no_fields_to_update' });
+        return;
+      }
+      try {
+        const updated = await groupProjectRegistry.update(gpId, fields as any);
+        if (!updated) {
+          sendJson(res, 404, { error: 'group_project_not_found' });
+          return;
+        }
+        annexEventBus.emitGroupProjectChanged('updated', updated);
+        sendJson(res, 200, updated);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'update_failed' });
+      }
+    });
     return;
   }
 
@@ -1538,7 +1904,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const authType = wsAuthTypes.get(ws);
   const isMtls = authType === 'mtls';
 
-  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'clipboard:image')) {
+  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image')) {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
   }
@@ -1585,13 +1951,13 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const sessionId = payload.sessionId as string;
       const projectId = payload.projectId as string;
       if (!sessionId || !projectId) break;
-      findProjectById(projectId).then((project) => {
+      findProjectById(projectId).then(async (project) => {
         if (!project) {
           ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
         try {
-          ptyManager.spawnShell(sessionId, project.path);
+          await ptyManager.spawnShell(sessionId, project.path);
           ws.send(JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId } }));
         } catch (err) {
           ws.send(JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));
@@ -1631,6 +1997,54 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       if (!agentId) break;
       ptyManager.gracefulKill(agentId);
       ws.send(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
+      break;
+    }
+
+    case 'canvas:mutation': {
+      // Apply canvas mutation server-side and broadcast the result directly
+      // to controller clients.  Also forward to the local renderer so its
+      // in-memory store stays in sync (this is the path that previously was
+      // the *only* path, but it fails when the renderer's canvas store for
+      // the target project isn't loaded).
+      const projectId = payload.projectId as string;
+      const canvasId = payload.canvasId as string;
+      const scope = (payload.scope as string) || 'project';
+      const mutation = payload.mutation as Record<string, unknown>;
+      if (!canvasId || !mutation) break;
+
+      // Forward to renderer for in-memory sync (best-effort)
+      broadcastToAllWindows(IPC.WINDOW.REQUEST_CANVAS_MUTATION, canvasId, scope, mutation, projectId);
+
+      // Server-side: read → apply → write → broadcast
+      applyCanvasMutationServerSide(projectId, canvasId, mutation).catch((err) => {
+        const message = err instanceof Error ? err.message : 'canvas_mutation_failed';
+        appLog('core:annex', 'error', 'Canvas mutation failed server-side', {
+          meta: { projectId, canvasId, mutationType: mutation.type, error: message },
+        });
+        ws.send(JSON.stringify({
+          type: 'canvas:mutation:error',
+          payload: { projectId, canvasId, mutationType: mutation.type, message },
+        }));
+      });
+      break;
+    }
+
+    case 'agent:reorder': {
+      const projectId = payload.projectId as string;
+      const orderedIds = payload.orderedIds as string[];
+      if (!projectId || !Array.isArray(orderedIds)) break;
+      findProjectById(projectId).then((project) => {
+        if (!project) {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          return;
+        }
+        agentConfig.reorderDurable(project.path, orderedIds).then(() => {
+          broadcastSnapshotRefresh();
+          ws.send(JSON.stringify({ type: 'agent:reorder:ack', payload: { projectId } }));
+        }).catch(() => {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
+        });
+      });
       break;
     }
   }
@@ -1674,7 +2088,7 @@ async function handleSpawnQuickAgentWs(
       parentAgentId, projectId: project.id, headless: true,
     });
     ws.send(JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
-  } catch (err) {
+  } catch {
     tracked.status = 'failed';
     trackedQuickAgents.delete(agentId);
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
@@ -1692,7 +2106,7 @@ async function handleWakeAgentWs(
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
     return;
   }
-  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
+  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_already_running' } }));
     return;
   }
@@ -1709,8 +2123,9 @@ async function handleWakeAgentWs(
       sessionId: options.resume ? config.lastSessionId : undefined,
     });
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-v2' });
+    broadcastSnapshotRefresh();
     ws.send(JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
-  } catch (err) {
+  } catch {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));
   }
 }
@@ -1720,10 +2135,18 @@ async function handleWakeAgentWs(
 // ---------------------------------------------------------------------------
 
 export function start(): void {
-  if (tlsServer || httpServer) return;
+  if (tlsServer || httpServer) {
+    appLog('core:annex', 'debug', 'Annex server start() called but already running');
+    return;
+  }
+
+  appLog('core:annex', 'info', 'Annex server starting...');
 
   // Generate identity on first enable (lazy creation)
   const identity = annexIdentity.getOrCreateIdentity();
+  appLog('core:annex', 'info', 'Annex identity ready', {
+    meta: { fingerprint: identity.fingerprint },
+  });
 
   currentPin = generatePin();
 
@@ -1813,7 +2236,11 @@ export function start(): void {
       });
       try {
         ws.send(JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
-      } catch { /* client already gone */ }
+      } catch (sendErr) {
+        appLog('core:annex', 'debug', 'Failed to send error to client (client likely disconnected)', {
+          meta: { error: sendErr instanceof Error ? sendErr.message : String(sendErr) },
+        });
+      }
     }
 
     // Broadcast lock state when an mTLS controller connects
@@ -1847,6 +2274,7 @@ export function start(): void {
           (client) => client !== ws && client.readyState === WebSocket.OPEN && wsAuthTypes.get(client) === 'mtls',
         );
         if (!hasMtlsClient) {
+          sessionPaused = false;
           broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
             locked: false,
             remainingMs: 0,
@@ -1856,7 +2284,8 @@ export function start(): void {
     });
   });
 
-  // Subscribe to event bus
+  // Subscribe to event bus (clean up any stale listeners first)
+  unsubscribeEventBus();
   annexEventBus.setActive(true);
 
   unsubPtyData = annexEventBus.onPtyData((agentId, data) => {
@@ -1915,6 +2344,22 @@ export function start(): void {
     });
   });
 
+  unsubGroupProjectChanged = annexEventBus.onGroupProjectChanged((action, project) => {
+    broadcastWs({ type: 'group-project:changed', payload: { action, project } });
+  });
+
+  unsubBulletinMessage = annexEventBus.onBulletinMessage((projectId, message) => {
+    broadcastWs({ type: 'bulletin:message', payload: { projectId, message } });
+  });
+
+  // Listen for group project registry changes and broadcast them
+  unsubGroupProjectRegistry = groupProjectRegistry.onChange(() => {
+    // Registry changed — broadcast updated list to all clients
+    void groupProjectRegistry.list().then((projects) => {
+      broadcastWs({ type: 'group-project:list', payload: { projects } });
+    });
+  });
+
   staleEvictionInterval = setInterval(() => { eventReplay.evictStale(); }, 60_000);
 
   // Start both servers
@@ -1924,9 +2369,10 @@ export function start(): void {
   function publishBonjour() {
     if (!mainReady || !pairingReady) return;
     try {
+      appLog('core:annex', 'info', 'Creating Bonjour instance for mDNS advertisement...');
       bonjour = new Bonjour();
       const settings = annexSettings.getSettings();
-      bonjourService = bonjour.publish({
+      const serviceConfig = {
         name: settings.deviceName,
         type: 'clubhouse-annex',
         port: serverPort,
@@ -1935,16 +2381,32 @@ export function start(): void {
           pairingPort: String(pairingPort),
           fingerprint: identity.fingerprint,
         },
+      };
+      appLog('core:annex', 'info', 'Publishing mDNS service', {
+        meta: { name: serviceConfig.name, type: serviceConfig.type, port: serviceConfig.port, pairingPort },
       });
+      bonjourService = bonjour.publish(serviceConfig);
+
+      if (bonjourService) {
+        bonjourService.on('error', (err: Error) => {
+          appLog('core:annex', 'error', 'Bonjour service error after publish', {
+            meta: { error: err.message, stack: err.stack },
+          });
+        });
+        bonjourService.on('up', () => {
+          appLog('core:annex', 'info', 'Bonjour service confirmed UP by mDNS stack');
+        });
+      }
+
       appLog('core:annex', 'info', 'mDNS service published (v2)', {
-        meta: { name: settings.deviceName, mainPort: serverPort, pairingPort },
+        meta: { name: settings.deviceName, mainPort: serverPort, pairingPort, fingerprint: identity.fingerprint },
       });
 
       // Broadcast updated status to renderer so UI reflects "Advertising" instead of "Starting..."
       broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
     } catch (err) {
       appLog('core:annex', 'error', 'Failed to publish mDNS', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
+        meta: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
       });
     }
   }
@@ -1972,18 +2434,7 @@ export function start(): void {
 
 export function stop(): void {
   // Unsubscribe from event bus
-  unsubPtyData?.();
-  unsubHookEvent?.();
-  unsubPtyExit?.();
-  unsubAgentSpawned?.();
-  unsubPermissionRequest?.();
-  unsubStructuredEvent?.();
-  unsubPtyData = null;
-  unsubHookEvent = null;
-  unsubPtyExit = null;
-  unsubAgentSpawned = null;
-  unsubPermissionRequest = null;
-  unsubStructuredEvent = null;
+  unsubscribeEventBus();
 
   if (staleEvictionInterval) {
     clearInterval(staleEvictionInterval);
@@ -1995,7 +2446,11 @@ export function stop(): void {
   // Close all WebSocket clients
   if (wss) {
     for (const client of wss.clients) {
-      try { client.close(); } catch { /* ignore */ }
+      try { client.close(); } catch (err) {
+        appLog('core:annex', 'debug', 'Failed to close WebSocket client during shutdown', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }
     wss.close();
     wss = null;
@@ -2003,11 +2458,19 @@ export function stop(): void {
 
   // Un-publish mDNS
   if (bonjourService) {
-    try { bonjourService.stop?.(); } catch { /* ignore */ }
+    try { bonjourService.stop?.(); } catch (err) {
+      appLog('core:annex', 'debug', 'Failed to stop Bonjour service during shutdown', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
     bonjourService = null;
   }
   if (bonjour) {
-    try { bonjour.destroy(); } catch { /* ignore */ }
+    try { bonjour.destroy(); } catch (err) {
+      appLog('core:annex', 'debug', 'Failed to destroy Bonjour instance during shutdown', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
     bonjour = null;
   }
 
@@ -2074,6 +2537,253 @@ export function broadcastThemeChanged(): void {
   broadcastWs({ type: 'theme:changed', payload: getThemeColors() });
 }
 
+// ---------------------------------------------------------------------------
+// Server-side canvas mutation processing
+// ---------------------------------------------------------------------------
+//
+// Reads the persisted canvas state from plugin storage, applies the mutation
+// in-memory, writes the result back, and broadcasts to WS clients.  This
+// runs in the main process and does not depend on the renderer's canvas
+// store being loaded for the target project.
+
+interface CanvasInstanceJSON {
+  id: string;
+  name: string;
+  views: any[];
+  viewport: { panX: number; panY: number; zoom: number };
+  nextZIndex: number;
+  zoomedViewId?: string | null;
+  selectedViewId?: string | null;
+}
+
+/**
+ * Strip `remote||satelliteId||originalId` namespace prefixes from agent/project
+ * IDs in view update payloads.  Controllers send namespaced IDs but the
+ * satellite must store originals so its renderer can resolve agents locally.
+ */
+function stripNamespacedIds(updates: Record<string, unknown>): Record<string, unknown> {
+  const cleaned = { ...updates };
+  for (const key of ['agentId', 'projectId'] as const) {
+    if (typeof cleaned[key] === 'string') {
+      const parts = (cleaned[key] as string).split('||');
+      if (parts.length === 3 && parts[0] === 'remote') {
+        cleaned[key] = parts[2];
+      }
+    }
+  }
+  if (cleaned.metadata && typeof cleaned.metadata === 'object') {
+    const meta = { ...(cleaned.metadata as Record<string, unknown>) };
+    for (const key of ['agentId', 'projectId'] as const) {
+      if (typeof meta[key] === 'string') {
+        const parts = (meta[key] as string).split('||');
+        if (parts.length === 3 && parts[0] === 'remote') {
+          meta[key] = parts[2];
+        }
+      }
+    }
+    cleaned.metadata = meta;
+  }
+  return cleaned;
+}
+
+async function applyCanvasMutationServerSide(
+  projectId: string,
+  canvasId: string,
+  mutation: Record<string, unknown>,
+): Promise<void> {
+  const project = await findProjectById(projectId);
+  if (!project) return;
+
+  // Read current canvas state
+  const raw = await readPluginStorageKey({
+    pluginId: 'canvas',
+    scope: 'project-local',
+    key: 'canvas-instances',
+    projectPath: project.path,
+  });
+
+  let canvases: CanvasInstanceJSON[] = Array.isArray(raw) && raw.length > 0
+    ? (raw as CanvasInstanceJSON[])
+    : [{ id: canvasId, name: 'Canvas', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null }];
+
+  const activeIdRaw = await readPluginStorageKey({
+    pluginId: 'canvas',
+    scope: 'project-local',
+    key: 'canvas-active-id',
+    projectPath: project.path,
+  });
+  let activeCanvasId = (typeof activeIdRaw === 'string' && activeIdRaw) || canvases[0]?.id || canvasId;
+
+  // Apply the mutation to the JSON data
+  const type = mutation.type as string;
+
+  switch (type) {
+    case 'addCanvas': {
+      const newId = `hub_${randomUUID().slice(0, 8)}`;
+      canvases.push({ id: newId, name: 'Canvas', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null });
+      activeCanvasId = newId;
+      break;
+    }
+    case 'removeCanvas': {
+      const removeId = mutation.canvasId as string;
+      if (canvases.length <= 1) break;
+      canvases = canvases.filter((c) => c.id !== removeId);
+      if (activeCanvasId === removeId) activeCanvasId = canvases[0].id;
+      break;
+    }
+    case 'renameCanvas': {
+      const renameId = mutation.canvasId as string;
+      const name = mutation.name as string;
+      const canvas = canvases.find((c) => c.id === renameId);
+      if (canvas) canvas.name = name;
+      break;
+    }
+    case 'setActiveCanvas': {
+      const setId = mutation.canvasId as string;
+      if (canvases.find((c) => c.id === setId)) activeCanvasId = setId;
+      break;
+    }
+    default: {
+      // View-level mutations — find the target canvas
+      const canvas = canvases.find((c) => c.id === canvasId);
+      if (!canvas) return;
+
+      switch (type) {
+        case 'addView': {
+          const viewId = `cv_${randomUUID().slice(0, 8)}`;
+          canvas.views.push({
+            id: viewId,
+            type: mutation.viewType as string || 'agent',
+            position: mutation.position || { x: 200, y: 200 },
+            size: { width: 480, height: 480 },
+            title: mutation.viewType === 'anchor' ? 'Anchor' : 'Agent',
+            displayName: mutation.viewType === 'anchor' ? 'Anchor' : 'Agent',
+            zIndex: canvas.nextZIndex,
+            metadata: {},
+          });
+          canvas.nextZIndex++;
+          break;
+        }
+        case 'addPluginView': {
+          const viewId = `cv_${randomUUID().slice(0, 8)}`;
+          const defaultSize = mutation.defaultSize as { width: number; height: number } | undefined;
+          canvas.views.push({
+            id: viewId,
+            type: 'plugin',
+            pluginId: mutation.pluginId,
+            pluginWidgetType: mutation.qualifiedType,
+            position: mutation.position || { x: 300, y: 300 },
+            size: defaultSize || { width: 480, height: 480 },
+            title: mutation.label as string || 'Plugin',
+            displayName: mutation.label as string || 'Plugin',
+            zIndex: canvas.nextZIndex,
+            metadata: {},
+          });
+          canvas.nextZIndex++;
+          break;
+        }
+        case 'removeView': {
+          const viewId = mutation.viewId as string;
+          canvas.views = canvas.views.filter((v: any) => v.id !== viewId);
+          break;
+        }
+        case 'moveView': {
+          const viewId = mutation.viewId as string;
+          const pos = mutation.position as { x: number; y: number };
+          const view = canvas.views.find((v: any) => v.id === viewId);
+          if (view) view.position = pos;
+          break;
+        }
+        case 'moveViews': {
+          const positions = mutation.positions as Record<string, { x: number; y: number }>;
+          if (positions) {
+            for (const [vid, pos] of Object.entries(positions)) {
+              const view = canvas.views.find((v: any) => v.id === vid);
+              if (view) view.position = pos;
+            }
+          }
+          break;
+        }
+        case 'resizeView': {
+          const viewId = mutation.viewId as string;
+          const size = mutation.size as { width: number; height: number };
+          const view = canvas.views.find((v: any) => v.id === viewId);
+          if (view) view.size = size;
+          break;
+        }
+        case 'updateView': {
+          const viewId = mutation.viewId as string;
+          const updates = mutation.updates as Record<string, unknown>;
+          const idx = canvas.views.findIndex((v: any) => v.id === viewId);
+          if (idx >= 0 && updates) {
+            // Strip namespace prefixes from agent/project IDs — controllers
+            // send namespaced IDs (remote||satId||origId) but the satellite
+            // stores original IDs so its own renderer can resolve them.
+            const cleaned = stripNamespacedIds(updates);
+            canvas.views[idx] = { ...canvas.views[idx], ...cleaned };
+          }
+          break;
+        }
+        case 'focusView': {
+          const viewId = mutation.viewId as string;
+          const view = canvas.views.find((v: any) => v.id === viewId);
+          if (view) {
+            view.zIndex = canvas.nextZIndex;
+            canvas.nextZIndex++;
+          }
+          break;
+        }
+        case 'setViewport': {
+          const vp = mutation.viewport as { panX: number; panY: number; zoom: number };
+          if (vp) canvas.viewport = vp;
+          break;
+        }
+        case 'zoomView': {
+          canvas.zoomedViewId = (mutation.viewId as string) ?? null;
+          break;
+        }
+        case 'selectView': {
+          canvas.selectedViewId = (mutation.viewId as string) ?? null;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  // Write updated state back to plugin storage
+  await writePluginStorageKey({
+    pluginId: 'canvas',
+    scope: 'project-local',
+    key: 'canvas-instances',
+    value: canvases,
+    projectPath: project.path,
+  });
+  await writePluginStorageKey({
+    pluginId: 'canvas',
+    scope: 'project-local',
+    key: 'canvas-active-id',
+    value: activeCanvasId,
+    projectPath: project.path,
+  });
+
+  // Broadcast the updated canvas state directly to WS clients
+  const targetCanvas = canvases.find((c) => c.id === canvasId) || canvases.find((c) => c.id === activeCanvasId);
+  if (targetCanvas) {
+    broadcastCanvasStateToClients(projectId, {
+      canvasId: targetCanvas.id,
+      name: targetCanvas.name,
+      views: targetCanvas.views,
+      viewport: targetCanvas.viewport,
+      nextZIndex: targetCanvas.nextZIndex,
+      zoomedViewId: targetCanvas.zoomedViewId ?? null,
+      selectedViewId: targetCanvas.selectedViewId ?? null,
+      allCanvasTabs: canvases.map((c) => ({ id: c.id, name: c.name })),
+      activeCanvasId,
+    });
+  }
+}
+
 /** Broadcast canvas state update to all connected controller clients. */
 export function broadcastCanvasStateToClients(projectId: string, state: unknown): void {
   broadcastWs({ type: 'canvas:state', payload: { projectId, state } });
@@ -2081,6 +2791,7 @@ export function broadcastCanvasStateToClients(projectId: string, state: unknown)
 
 /** Broadcast session pause/resume to all connected WS clients. */
 export function notifySessionPause(paused: boolean): void {
+  sessionPaused = paused;
   broadcastWs({ type: paused ? 'session:paused' : 'session:resumed', payload: { paused } });
 }
 
@@ -2090,7 +2801,11 @@ export function regeneratePin(): void {
   // Close all WS clients so they must re-pair
   if (wss) {
     for (const client of wss.clients) {
-      try { client.close(); } catch { /* ignore */ }
+      try { client.close(); } catch (err) {
+        appLog('core:annex', 'debug', 'Failed to close WebSocket client during pin regeneration', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }
   }
 }
@@ -2101,7 +2816,11 @@ export function disconnectPeer(fingerprint: string): void {
   if (!wss) return;
   for (const client of wss.clients) {
     if (wsPeerFingerprints.get(client) === fingerprint) {
-      try { client.close(1000, 'disconnected_by_satellite'); } catch { /* ignore */ }
+      try { client.close(1000, 'disconnected_by_satellite'); } catch (err) {
+        appLog('core:annex', 'debug', 'Failed to close peer WebSocket connection', {
+          meta: { fingerprint, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }
   }
 }

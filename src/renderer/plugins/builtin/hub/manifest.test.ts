@@ -36,6 +36,10 @@ describe('hub manifest', () => {
     expect(manifest.permissions).toHaveLength(7);
   });
 
+  it('does not declare annex permission', () => {
+    expect(manifest.permissions).not.toContain('annex');
+  });
+
   it('contributes help topics', () => {
     expect(manifest.contributes?.help).toBeDefined();
     expect(manifest.contributes!.help!.topics).toBeDefined();

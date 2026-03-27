@@ -21,9 +21,9 @@ describe('files plugin', () => {
 
     it('declares required permissions including canvas', () => {
       expect(manifest.permissions).toEqual(
-        expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas']),
+        expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas', 'annex']),
       );
-      expect(manifest.permissions).toHaveLength(7);
+      expect(manifest.permissions).toHaveLength(8);
     });
 
     it('is project-scoped', () => {

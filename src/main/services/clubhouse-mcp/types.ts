@@ -3,7 +3,7 @@
  */
 
 /** The kind of target a binding points to. */
-export type BindingTargetKind = 'browser' | 'agent' | 'terminal' | 'group-project';
+export type BindingTargetKind = 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue' | 'plugin' | 'assistant';
 
 /** A single binding between an agent and a canvas widget or another agent. */
 export interface McpBinding {
@@ -17,6 +17,16 @@ export interface McpBinding {
   targetName?: string;
   /** Human-readable project name (e.g. "my-frontend-app"). */
   projectName?: string;
+  /**
+   * Per-wire custom instructions injected into tool descriptions.
+   * Keys are tool suffixes (e.g. "send_message") or "*" for all tools.
+   */
+  instructions?: Record<string, string>;
+  /**
+   * Tool suffixes disabled on this wire (e.g. ["read_output", "broadcast"]).
+   * Tools in this list are excluded from the scoped tool list.
+   */
+  disabledTools?: string[];
 }
 
 /** MCP JSON-RPC request envelope. */

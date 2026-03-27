@@ -379,6 +379,7 @@ jobs:
             echo "size_deb_${ARCH}=${SIZE}" >> "$GITHUB_OUTPUT"
           fi
 
+
       - name: Rename artifacts for upload
         run: |
           VERSION="${{ needs.verify-tag.outputs.version }}"

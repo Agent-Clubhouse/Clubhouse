@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 interface SessionNamePromptDialogProps {
   agentId: string;
@@ -49,7 +50,7 @@ export function SessionNamePromptDialog({ agentId, projectPath, onDone }: Sessio
     onDone();
   }, [onDone]);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div
         ref={dialogRef}
@@ -103,6 +104,7 @@ export function SessionNamePromptDialog({ agentId, projectPath, onDone }: Sessio
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

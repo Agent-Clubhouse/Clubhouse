@@ -10,7 +10,7 @@
  * @see https://github.com/Agent-Clubhouse/Clubhouse/issues/239
  */
 import { describe, it, expect } from 'vitest';
-import { validateManifest, SUPPORTED_API_VERSIONS } from './manifest-validator';
+import { validateManifest, SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
 import { createMockAPI, createMockContext } from './testing';
 import type {
   PluginAPI,
@@ -126,7 +126,7 @@ const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'p
 const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'project', 'projects', 'git', 'storage', 'ui', 'commands', 'events',
   'settings', 'agents', 'hub', 'navigation', 'widgets', 'terminal',
-  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'canvas', 'window', 'context',
+  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'canvas', 'window', 'mcp', 'context',
 ];
 
 // ── Helper: minimal valid manifest per version ─────────────────────────────
@@ -233,6 +233,19 @@ function minimalV08Manifest(overrides?: Partial<PluginManifest>): Record<string,
   };
 }
 
+function minimalV09Manifest(overrides?: Partial<PluginManifest>): Record<string, unknown> {
+  return {
+    id: 'test-plugin',
+    name: 'Test Plugin',
+    version: '1.0.0',
+    engine: { api: 0.9 },
+    scope: 'app',
+    permissions: ['files'],
+    contributes: { help: {} },
+    ...overrides,
+  };
+}
+
 function minimalPackManifest(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
     id: 'test-pack',
@@ -300,8 +313,8 @@ describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
     }
   });
 
-  it('contains exactly [0.5, 0.6, 0.7, 0.8]', () => {
-    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8]);
+  it('contains exactly [0.5, 0.6, 0.7, 0.8, 0.9]', () => {
+    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8, 0.9]);
   });
 
   it('does NOT contain v0.4 (dropped this cycle)', () => {
@@ -316,7 +329,56 @@ describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
 
   it('does NOT contain v1.0 or higher (not yet released)', () => {
     expect(SUPPORTED_API_VERSIONS).not.toContain(1.0);
-    expect(SUPPORTED_API_VERSIONS).not.toContain(0.9);
+  });
+});
+
+// =============================================================================
+// § 1b. DEPRECATED_PLUGIN_API_VERSIONS
+// =============================================================================
+
+describe('§1b DEPRECATED_PLUGIN_API_VERSIONS', () => {
+  it('marks v0.5 and v0.6 as deprecated', () => {
+    expect(DEPRECATED_PLUGIN_API_VERSIONS[0.5]).toBeDefined();
+    expect(DEPRECATED_PLUGIN_API_VERSIONS[0.6]).toBeDefined();
+  });
+
+  it('does not mark v0.7 or v0.8 as deprecated', () => {
+    expect(DEPRECATED_PLUGIN_API_VERSIONS[0.7]).toBeUndefined();
+    expect(DEPRECATED_PLUGIN_API_VERSIONS[0.8]).toBeUndefined();
+  });
+
+  it('v0.5 manifest validates but returns deprecation warning', () => {
+    const result = validateManifest(minimalV05Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings.some(w => w.includes('deprecated'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('0.5'))).toBe(true);
+  });
+
+  it('v0.6 manifest validates but returns deprecation warning', () => {
+    const result = validateManifest(minimalV06Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings.some(w => w.includes('deprecated'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('0.6'))).toBe(true);
+  });
+
+  it('v0.7 manifest validates with no deprecation warnings', () => {
+    const result = validateManifest(minimalV07Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('v0.8 manifest validates with no deprecation warnings', () => {
+    const result = validateManifest(minimalV08Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('deprecation warning includes removal target version', () => {
+    const result = validateManifest(minimalV05Manifest());
+    const removalTarget = DEPRECATED_PLUGIN_API_VERSIONS[0.5];
+    expect(result.warnings.some(w => w.includes(removalTarget))).toBe(true);
   });
 });
 
@@ -575,7 +637,12 @@ describe('§2 Per-version manifest validation', () => {
   });
 
   describe('every permission in ALL_PLUGIN_PERMISSIONS is accepted individually', () => {
+    // v0.9-gated permissions are not loadable in 0.38 (v0.9 not supported)
+    const V09_PERMISSIONS = new Set(['companion', 'mcp.tools']);
+
     for (const perm of ALL_PLUGIN_PERMISSIONS) {
+      if (V09_PERMISSIONS.has(perm)) continue;
+
       // Skip sub-permissions that require base permissions
       const requiresBase = ['agent-config.cross-project', 'agent-config.permissions', 'agent-config.mcp', 'agents.free-agent-mode', 'files.watch'];
       const needsExternalRoots = perm === 'files.external';
@@ -605,8 +672,8 @@ describe('§2 Per-version manifest validation', () => {
           extras.allowedCommands = ['node'];
         }
 
-        // Canvas permission requires API >= 0.8, use v0.8 manifest
-        const manifestFn = perm === 'canvas' ? minimalV08Manifest : minimalV07Manifest;
+        // Canvas/annex permissions require API >= 0.9, use v0.9 manifest
+        const manifestFn = perm === 'canvas' || perm === 'annex' ? minimalV09Manifest : minimalV07Manifest;
         const result = validateManifest(manifestFn({
           permissions,
           ...extras,
@@ -614,6 +681,13 @@ describe('§2 Per-version manifest validation', () => {
         expect(result.valid).toBe(true);
       });
     }
+
+    it('v0.9 manifests are accepted', () => {
+      const result = validateManifest(minimalV09Manifest());
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
   });
 
   describe('scope/contributes consistency for all versions', () => {
@@ -1700,7 +1774,8 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
       'agents.free-agent-mode', 'agent-config.mcp', 'sounds', 'theme',
       'workspace', 'workspace.watch', 'workspace.cross-plugin', 'workspace.shared', 'workspace.cross-project',
-      'canvas',
+      'canvas', 'annex',
+      'companion', 'mcp.tools',
     ];
     expect([...ALL_PLUGIN_PERMISSIONS].sort()).toEqual([...expected].sort());
   });

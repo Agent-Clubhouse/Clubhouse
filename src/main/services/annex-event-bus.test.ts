@@ -127,7 +127,7 @@ describe('annex-event-bus', () => {
   describe('getListenerCounts', () => {
     it('returns zero counts when no listeners registered', () => {
       const counts = getListenerCounts();
-      expect(counts).toEqual({ ptyData: 0, hookEvent: 0, ptyExit: 0, agentSpawned: 0, structuredEvent: 0, total: 0 });
+      expect(counts).toEqual({ ptyData: 0, hookEvent: 0, ptyExit: 0, agentSpawned: 0, structuredEvent: 0, groupProjectChanged: 0, bulletinMessage: 0, total: 0 });
     });
 
     it('tracks listener counts per type', () => {

@@ -7,12 +7,14 @@ import { StructuredSessionOpts } from '../orchestrators/types';
 import { isSessionCapable, isStructuredCapable } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
+import { agentRegistry } from '../services/agent-registry';
 import * as headlessManager from '../services/headless-manager';
 import * as structuredManager from '../services/structured-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from '../services/session-reader';
 import { appLog } from '../services/log-service';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
+import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
 
 type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
@@ -28,9 +30,9 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds) => {
-        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds);
+      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), booleanArg({ optional: true })],
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode) => {
+        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode);
         broadcastSnapshotRefresh();
         return config;
       },
@@ -41,6 +43,8 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
       const result = await agentConfig.deleteDurable(projectPath, agentId);
+      bindingManager.unbindAgent(agentId);
+      bindingManager.unbindTarget(agentId);
       broadcastSnapshotRefresh();
       return result;
     },
@@ -122,7 +126,9 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.REORDER_DURABLE, withValidatedArgs(
     [stringArg(), arrayArg(stringArg())],
     async (_event, projectPath, orderedIds) => {
-      return agentConfig.reorderDurable(projectPath, orderedIds);
+      const result = await agentConfig.reorderDurable(projectPath, orderedIds);
+      broadcastSnapshotRefresh();
+      return result;
     },
   ));
 
@@ -420,4 +426,76 @@ export function registerAgentHandlers(): void {
       },
     ),
   );
+
+  // ── Backup & recovery ──────────────────────────────────────────────
+
+  ipcMain.handle(IPC.AGENT.GET_BACKUP_INFO, withValidatedArgs(
+    [stringArg()],
+    async (_event, projectPath) => {
+      return agentConfig.getBackupInfo(projectPath);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.RESTORE_FROM_BACKUP, withValidatedArgs(
+    [stringArg()],
+    async (_event, projectPath) => {
+      const result = await agentConfig.restoreFromBackup(projectPath);
+      if (result.restoredCount > 0) broadcastSnapshotRefresh();
+      return result;
+    },
+  ));
+
+  // ── Companion agent handlers (v0.9+) ───────────────────────────────
+
+  // Track companion agents by plugin ID (singleton enforcement)
+  const companionAgents = new Map<string, string>();
+
+  ipcMain.handle(IPC.AGENT.SPAWN_COMPANION, withValidatedArgs(
+    [stringArg(), objectArg({ optional: true })],
+    async (_event, pluginId, options?: { model?: string; systemPrompt?: string }) => {
+      const companionWs = await import('../services/companion-workspace');
+      const wsPath = await companionWs.ensureCompanionWorkspace(pluginId);
+
+      // Check if a companion agent already exists for this plugin
+      const existingId = companionAgents.get(pluginId);
+      if (existingId && agentRegistry.get(existingId)) {
+        appLog('core:companion', 'info', `Companion agent already exists for ${pluginId}: ${existingId}`);
+        return existingId;
+      }
+
+      // Create new companion agent
+      const agentId = `companion-${pluginId}-${Date.now()}`;
+      await agentSystem.spawnAgent({
+        agentId,
+        projectPath: wsPath,
+        cwd: wsPath,
+        kind: 'companion',
+        model: options?.model,
+        systemPrompt: options?.systemPrompt,
+        pluginOwner: pluginId,
+        companionWorkspace: wsPath,
+      });
+
+      companionAgents.set(pluginId, agentId);
+      return agentId;
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.GET_COMPANION_STATUS, withValidatedArgs(
+    [stringArg()],
+    async (_event, pluginId) => {
+      const existingId = companionAgents.get(pluginId);
+      if (!existingId) return 'none';
+      const reg = agentRegistry.get(existingId);
+      return reg ? 'active' : 'sleeping';
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.GET_COMPANION_WORKSPACE, withValidatedArgs(
+    [stringArg()],
+    async (_event, pluginId) => {
+      const companionWs = await import('../services/companion-workspace');
+      return companionWs.getCompanionWorkspacePath(pluginId);
+    },
+  ));
 }

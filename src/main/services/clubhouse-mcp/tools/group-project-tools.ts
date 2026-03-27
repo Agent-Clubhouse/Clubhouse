@@ -7,8 +7,15 @@ import { registerToolTemplate } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
+import { isAgentAlive } from '../../group-project-lifecycle';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
+import * as annexEventBus from '../../annex-event-bus';
 import type { McpToolResult } from '../types';
+
+/** Resolve agent status for a member entry. */
+function resolveAgentStatus(agentId: string): 'connected' | 'sleeping' {
+  return isAgentAlive(agentId) ? 'connected' : 'sleeping';
+}
 
 /** Register all group-project tool templates. */
 export function registerGroupProjectTools(): void {
@@ -19,8 +26,11 @@ export function registerGroupProjectTools(): void {
     {
       description:
         'List all agents currently connected to this group project.\n\n' +
-        'Returns a JSON array of { agentId, agentName } objects. Use this to discover ' +
+        'Returns a JSON array of { agentId, agentName, status } objects. Use this to discover ' +
         'who is collaborating with you in this group project.\n\n' +
+        'Status values:\n' +
+        '- "connected": agent has a live process and is actively participating\n' +
+        '- "sleeping": agent is bound but has no live process (exited or sleeping)\n\n' +
         'For full project context including instructions, use get_project_info.',
       inputSchema: {
         type: 'object',
@@ -32,7 +42,11 @@ export function registerGroupProjectTools(): void {
       const allBindings = bindingManager.getAllBindings();
       const members = allBindings
         .filter(b => b.targetKind === 'group-project' && b.targetId === targetId)
-        .map(b => ({ agentId: b.agentId, agentName: b.agentName || b.agentId }));
+        .map(b => ({
+          agentId: b.agentId,
+          agentName: b.agentName || b.agentId,
+          status: resolveAgentStatus(b.agentId),
+        }));
 
       return {
         content: [{ type: 'text', text: JSON.stringify(members, null, 2) }],
@@ -95,6 +109,7 @@ export function registerGroupProjectTools(): void {
       try {
         const board = getBulletinBoard(targetId);
         const msg = await board.postMessage(sender, topic, body);
+        annexEventBus.emitBulletinMessage(targetId, msg);
         return {
           content: [{
             type: 'text',
@@ -225,13 +240,18 @@ export function registerGroupProjectTools(): void {
         name: project.name,
         description: project.description,
         instructions: project.instructions,
+        systemInstructions: 'Post messages in plain text or markdown format when possible for best readability.',
       };
 
       if (includeMembersList) {
         const allBindings = bindingManager.getAllBindings();
         result.members = allBindings
           .filter(b => b.targetKind === 'group-project' && b.targetId === targetId)
-          .map(b => ({ agentId: b.agentId, agentName: b.agentName || b.agentId }));
+          .map(b => ({
+            agentId: b.agentId,
+            agentName: b.agentName || b.agentId,
+            status: resolveAgentStatus(b.agentId),
+          }));
       }
 
       return {
@@ -246,38 +266,35 @@ export function registerGroupProjectTools(): void {
     'shoulder_tap',
     {
       description:
-        'Send an urgent direct message to another agent in this group project.\n\n' +
-        'The message is injected directly into the target agent\'s input — use this for ' +
-        'time-sensitive requests that cannot wait for bulletin board polling.\n\n' +
-        'The target agent will receive response instructions to reply via the bulletin board ' +
-        'on the "shoulder-tap" topic. Omit target_agent_id or set to "all" to broadcast.\n\n' +
-        'Returns delivery results: { taskId, messageId, delivered[], failed[] }.',
+        'Send an urgent direct message to a specific agent in this group project.\n\n' +
+        'WARNING: This tool is NOT for normal communication. Use the bulletin board ' +
+        '(post_bulletin / read_bulletin) for routine coordination. Shoulder tap should ' +
+        'ONLY be used when you need immediate attention from a specific agent and the ' +
+        'bulletin board is insufficient (e.g. the agent is unresponsive to bulletin posts, ' +
+        'or there is a time-critical blocker).\n\n' +
+        'The message is injected directly into the target agent\'s terminal input. ' +
+        'The target agent\'s name must match one returned by list_members.\n\n' +
+        'A record of the tap is also posted to the "shoulder-tap" bulletin board topic.',
       inputSchema: {
         type: 'object',
         properties: {
+          target_agent_id: {
+            type: 'string',
+            description: 'The agentId of the target agent (from list_members).',
+          },
           message: {
             type: 'string',
             description: 'The urgent message to deliver.',
           },
-          target_agent_id: {
-            type: 'string',
-            description: 'Agent ID to tap. Omit or "all" to broadcast to all members.',
-          },
-          task_id: {
-            type: 'string',
-            description: 'Optional task ID for tracking responses.',
-          },
         },
-        required: ['message'],
+        required: ['target_agent_id', 'message'],
       },
     },
     async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const targetAgentId = args.target_agent_id as string;
       const message = args.message as string;
-      if (!message) {
-        return {
-          content: [{ type: 'text', text: 'message is required.' }],
-          isError: true,
-        };
+      if (!targetAgentId || !message) {
+        return { content: [{ type: 'text', text: 'Both target_agent_id and message are required.' }], isError: true };
       }
 
       // Resolve sender identity
@@ -287,19 +304,24 @@ export function registerGroupProjectTools(): void {
         ? `${binding.agentName}${binding.projectName ? '@' + binding.projectName : ''}`
         : agentId;
 
-      const targetAgentId = (args.target_agent_id as string) || null;
-
       try {
         const result = await executeShoulderTap({
           projectId: targetId,
           senderLabel,
-          targetAgentId: targetAgentId === 'all' ? null : targetAgentId,
+          targetAgentId,
           message,
-          taskId: args.task_id as string | undefined,
         });
 
         return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              taskId: result.taskId,
+              delivered: result.delivered.length,
+              failed: result.failed.length,
+              details: [...result.delivered, ...result.failed],
+            }, null, 2),
+          }],
         };
       } catch (err) {
         return {
@@ -309,4 +331,71 @@ export function registerGroupProjectTools(): void {
       }
     },
   );
+
+  // group__<name>_<hash>__broadcast
+  registerToolTemplate(
+    'group-project',
+    'broadcast',
+    {
+      description:
+        'Broadcast an urgent message to ALL agents in this group project.\n\n' +
+        'WARNING: This tool is NOT for normal communication. Use the bulletin board ' +
+        '(post_bulletin / read_bulletin) for routine coordination. Broadcast should ' +
+        'ONLY be used for critical announcements that require immediate attention from ' +
+        'every agent (e.g. "stop all work, critical issue found", "project goals changed").\n\n' +
+        'The message is injected directly into each agent\'s terminal input. ' +
+        'You (the sender) are excluded from the broadcast.\n\n' +
+        'A record of the broadcast is also posted to the "shoulder-tap" bulletin board topic.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          message: {
+            type: 'string',
+            description: 'The urgent message to broadcast to all agents.',
+          },
+        },
+        required: ['message'],
+      },
+    },
+    async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const message = args.message as string;
+      if (!message) {
+        return { content: [{ type: 'text', text: 'message is required.' }], isError: true };
+      }
+
+      // Resolve sender identity
+      const agentBindings = bindingManager.getBindingsForAgent(agentId);
+      const binding = agentBindings.find(b => b.targetId === targetId && b.targetKind === 'group-project');
+      const senderLabel = binding?.agentName
+        ? `${binding.agentName}${binding.projectName ? '@' + binding.projectName : ''}`
+        : agentId;
+
+      try {
+        const result = await executeShoulderTap({
+          projectId: targetId,
+          senderLabel,
+          targetAgentId: null, // broadcast to all
+          message,
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              taskId: result.taskId,
+              delivered: result.delivered.length,
+              failed: result.failed.length,
+              details: [...result.delivered, ...result.failed],
+            }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Broadcast failed: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
 }

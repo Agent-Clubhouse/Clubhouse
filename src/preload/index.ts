@@ -84,8 +84,8 @@ const api = {
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
-    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds),
+    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>
@@ -126,19 +126,31 @@ const api = {
       agentId: string;
       projectPath: string;
       cwd: string;
-      kind: 'durable' | 'quick';
+      kind: 'durable' | 'quick' | 'companion';
       model?: string;
       mission?: string;
       systemPrompt?: string;
       allowedTools?: string[];
       orchestrator?: string;
       freeAgentMode?: boolean;
+      structuredMode?: boolean;
       resume?: boolean;
       sessionId?: string;
+      pluginOwner?: string;
+      companionWorkspace?: string;
     }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
     killAgent: (agentId: string, projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.KILL_AGENT, agentId, projectPath),
+
+    spawnCompanion: (pluginId: string, options?: { model?: string; systemPrompt?: string }) =>
+      ipcRenderer.invoke(IPC.AGENT.SPAWN_COMPANION, pluginId, options),
+
+    getCompanionStatus: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_COMPANION_STATUS, pluginId),
+
+    getCompanionWorkspace: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_COMPANION_WORKSPACE, pluginId),
 
     getModelOptions: (projectPath: string, orchestrator?: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_MODEL_OPTIONS, projectPath, orchestrator),
@@ -188,6 +200,13 @@ const api = {
       };
       ipcRenderer.on(IPC.AGENT.HOOK_EVENT, listener);
       return () => { ipcRenderer.removeListener(IPC.AGENT.HOOK_EVENT, listener); };
+    },
+
+    onAgentWaking: (callback: (agentId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string) =>
+        callback(agentId);
+      ipcRenderer.on(IPC.AGENT.AGENT_WAKING, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT.AGENT_WAKING, listener); };
     },
 
     listSessions: (projectPath: string, agentId: string, orchestrator?: string): Promise<Array<{
@@ -258,6 +277,12 @@ const api = {
 
     respondPermission: (agentId: string, requestId: string, approved: boolean, reason?: string) =>
       ipcRenderer.invoke(IPC.AGENT.RESPOND_PERMISSION, agentId, requestId, approved, reason),
+
+    // Backup & recovery
+    getBackupInfo: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_BACKUP_INFO, projectPath),
+    restoreFromBackup: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.RESTORE_FROM_BACKUP, projectPath),
 
     onStructuredEvent: (callback: (agentId: string, event: {
       type: string;
@@ -561,6 +586,21 @@ const api = {
     toggleCustomMarketplace: (req: { id: string; enabled: boolean }) =>
       ipcRenderer.invoke(IPC.MARKETPLACE.TOGGLE_CUSTOM, req),
   },
+  pluginMcp: {
+    contributeTools: (pluginId: string, tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>) =>
+      ipcRenderer.invoke(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS, pluginId, tools),
+    removeTools: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.PLUGIN_MCP.REMOVE_TOOLS, pluginId),
+    listTools: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.PLUGIN_MCP.LIST_TOOLS, pluginId) as Promise<string[]>,
+    onToolCall: (callback: (data: { callId: string; pluginId: string; toolName: string; args: Record<string, unknown> }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { callId: string; pluginId: string; toolName: string; args: Record<string, unknown> }) => callback(data);
+      ipcRenderer.on(IPC.PLUGIN_MCP.TOOL_CALL, listener);
+      return () => { ipcRenderer.removeListener(IPC.PLUGIN_MCP.TOOL_CALL, listener); };
+    },
+    sendToolResult: (callId: string, result: { content: Array<{ type: 'text'; text: string }>; isError?: boolean }) =>
+      ipcRenderer.send(IPC.PLUGIN_MCP.TOOL_RESULT, { callId, result }),
+  },
   log: {
     write: (entry: { ts: string; ns: string; level: string; msg: string; projectId?: string; meta?: Record<string, unknown> }) =>
       ipcRenderer.send(IPC.LOG.LOG_WRITE, entry),
@@ -622,12 +662,18 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, settings),
     getVersion: (): Promise<string> =>
       ipcRenderer.invoke(IPC.APP.GET_VERSION),
+    isPreviewEligible: (): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.APP.IS_PREVIEW_ELIGIBLE),
     getArchInfo: (): Promise<{ arch: string; platform: string; rosetta: boolean }> =>
       ipcRenderer.invoke(IPC.APP.GET_ARCH_INFO),
     getHeadlessSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_HEADLESS_SETTINGS),
     saveHeadlessSettings: (settings: { enabled?: boolean; defaultMode?: string; projectOverrides?: Record<string, string> }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_HEADLESS_SETTINGS, settings),
+    getFreeAgentSettings: () =>
+      ipcRenderer.invoke(IPC.APP.GET_FREE_AGENT_SETTINGS),
+    saveFreeAgentSettings: (settings: { defaultMode: string; projectOverrides?: Record<string, string> }) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_FREE_AGENT_SETTINGS, settings),
     setDockBadge: (count: number) =>
       ipcRenderer.invoke(IPC.APP.SET_DOCK_BADGE, count),
     getBadgeSettings: () =>
@@ -644,6 +690,31 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_UPDATE_STATUS),
     applyUpdate: () =>
       ipcRenderer.invoke(IPC.APP.APPLY_UPDATE),
+    getLiveAgentsForUpdate: () =>
+      ipcRenderer.invoke(IPC.APP.GET_LIVE_AGENTS_FOR_UPDATE),
+    getPendingResumes: () =>
+      ipcRenderer.invoke(IPC.APP.GET_PENDING_RESUMES),
+    resumeManualAgent: (agentId: string, projectPath: string, sessionId?: string) =>
+      ipcRenderer.invoke(IPC.APP.RESUME_MANUAL_AGENT, agentId, projectPath, sessionId),
+    resolveWorkingAgent: (agentId: string, action: string) =>
+      ipcRenderer.invoke(IPC.APP.RESOLVE_WORKING_AGENT, agentId, action),
+    confirmUpdateRestart: (data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }) =>
+      ipcRenderer.invoke(IPC.APP.CONFIRM_UPDATE_RESTART, data),
+    devSimulateUpdateRestart: (data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }) => {
+      if (process.env.NODE_ENV !== 'development') return Promise.reject(new Error('dev-only API'));
+      return ipcRenderer.invoke(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, data);
+    },
+    onDevSimulateUpdateRestart: (callback: () => void) => {
+      if (process.env.NODE_ENV !== 'development') return () => {};
+      const listener = () => callback();
+      ipcRenderer.on(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener); };
+    },
+    onResumeStatusUpdate: (callback: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => callback(data);
+      ipcRenderer.on(IPC.APP.RESUME_STATUS_UPDATE, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.RESUME_STATUS_UPDATE, listener); };
+    },
     getPendingReleaseNotes: () =>
       ipcRenderer.invoke(IPC.APP.GET_PENDING_RELEASE_NOTES),
     clearPendingReleaseNotes: () =>
@@ -654,6 +725,8 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_CLIPBOARD_SETTINGS),
     saveClipboardSettings: (settings: { clipboardCompat: boolean }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_CLIPBOARD_SETTINGS, settings),
+    readClipboardImage: (): Promise<{ base64: string; mimeType: string } | null> =>
+      ipcRenderer.invoke(IPC.APP.READ_CLIPBOARD_IMAGE),
     getSessionSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_SESSION_SETTINGS),
     saveSessionSettings: (settings: { promptForName: boolean; projectOverrides?: Record<string, boolean> }) =>
@@ -860,6 +933,24 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DELETE_DURABLE, satelliteId, projectId, agentId, mode),
     agentWorktreeStatus: (satelliteId: string, projectId: string, agentId: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WORKTREE_STATUS, satelliteId, projectId, agentId),
+    agentReorder: (satelliteId: string, projectId: string, orderedIds: string[]) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_REORDER, satelliteId, projectId, orderedIds),
+    canvasMutation: (satelliteId: string, projectId: string, canvasId: string, scope: string, mutation: unknown): Promise<void> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.CANVAS_MUTATION, satelliteId, projectId, canvasId, scope, mutation),
+    gpGet: (satelliteId: string, groupProjectId: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_GET, satelliteId, groupProjectId),
+    gpUpdate: (satelliteId: string, groupProjectId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_UPDATE, satelliteId, groupProjectId, fields),
+    gpBulletinDigest: (satelliteId: string, groupProjectId: string, since?: string): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_DIGEST, satelliteId, groupProjectId, since),
+    gpBulletinTopic: (satelliteId: string, groupProjectId: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_TOPIC, satelliteId, groupProjectId, topic, since, limit),
+    gpBulletinAll: (satelliteId: string, groupProjectId: string, since?: string, limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_ALL, satelliteId, groupProjectId, since, limit),
+    gpBulletinPost: (satelliteId: string, groupProjectId: string, sender: string, topic: string, body: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_POST, satelliteId, groupProjectId, sender, topic, body),
+    gpShoulderTap: (satelliteId: string, groupProjectId: string, targetAgentId: string | null, message: string, sender?: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_SHOULDER_TAP, satelliteId, groupProjectId, targetAgentId, message, sender),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>
@@ -1060,6 +1151,33 @@ const api = {
     },
   },
 
+  agentQueue: {
+    list: (): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.AGENT_QUEUE.LIST),
+    create: (name: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.AGENT_QUEUE.CREATE, name),
+    get: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.AGENT_QUEUE.GET, id),
+    update: (id: string, fields: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.AGENT_QUEUE.UPDATE, id, fields),
+    delete: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.AGENT_QUEUE.DELETE, id),
+    listTasks: (queueId: string): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.AGENT_QUEUE.LIST_TASKS, queueId),
+    getTask: (queueId: string, taskId: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.AGENT_QUEUE.GET_TASK, queueId, taskId),
+    onChanged: (callback: (queues: unknown[]) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, queues: unknown[]) => callback(queues);
+      ipcRenderer.on(IPC.AGENT_QUEUE.CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT_QUEUE.CHANGED, listener); };
+    },
+    onTaskChanged: (callback: (data: { queueId: string; taskId: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on(IPC.AGENT_QUEUE.TASK_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT_QUEUE.TASK_CHANGED, listener); };
+    },
+  },
+
   groupProject: {
     list: (): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.LIST),
@@ -1067,7 +1185,7 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.CREATE, name),
     get: (id: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET, id),
-    update: (id: string, fields: { name?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
+    update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.UPDATE, id, fields),
     delete: (id: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id),
@@ -1075,6 +1193,8 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, id, since),
     getTopicMessages: (id: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, id, topic, since, limit),
+    getAllMessages: (id: string, since?: string, limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_ALL_MESSAGES, id, since, limit),
     postBulletinMessage: (projectId: string, topic: string, body: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE, projectId, topic, body),
     sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string): Promise<unknown> =>
@@ -1097,10 +1217,14 @@ const api = {
       ipcRenderer.invoke(IPC.MCP_BINDING.REGISTER_WEBVIEW, widgetId, webContentsId),
     unregisterWebview: (widgetId: string) =>
       ipcRenderer.invoke(IPC.MCP_BINDING.UNREGISTER_WEBVIEW, widgetId),
+    setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) =>
+      ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
+    setDisabledTools: (agentId: string, targetId: string, disabledTools: string[]) =>
+      ipcRenderer.invoke(IPC.MCP_BINDING.SET_DISABLED_TOOLS, agentId, targetId, disabledTools),
     onBindingsChanged: (callback: (bindings: Array<{
       agentId: string;
       targetId: string;
-      targetKind: 'browser' | 'agent' | 'terminal' | 'group-project';
+      targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue';
       label: string;
     }>) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, bindings: any) => callback(bindings);
@@ -1117,6 +1241,35 @@ const api = {
       const listener = (_event: Electron.IpcRendererEvent, activity: any) => callback(activity);
       ipcRenderer.on(IPC.MCP_BINDING.TOOL_ACTIVITY, listener);
       return () => { ipcRenderer.removeListener(IPC.MCP_BINDING.TOOL_ACTIVITY, listener); };
+    },
+  },
+  assistant: {
+    /** Spawn the assistant agent with explicit execution mode. */
+    spawn: (params: {
+      agentId: string;
+      mission: string;
+      systemPrompt: string;
+      executionMode: 'interactive' | 'structured' | 'headless';
+      orchestrator?: string;
+      model?: string;
+    }) => ipcRenderer.invoke(IPC.ASSISTANT.SPAWN, params),
+    /** Create the assistant MCP binding for the given agent. */
+    bind: (agentId: string) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.BIND, agentId),
+    /** Remove the assistant MCP binding. */
+    unbind: (agentId: string) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.UNBIND, agentId),
+  },
+  canvas: {
+    /** Listen for canvas commands from the main process (assistant). */
+    onCommand: (callback: (request: { callId: string; command: string; args: Record<string, unknown> }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, request: any) => callback(request);
+      ipcRenderer.on(IPC.CANVAS_CMD.REQUEST, listener);
+      return () => { ipcRenderer.removeListener(IPC.CANVAS_CMD.REQUEST, listener); };
+    },
+    /** Send canvas command result back to main process. */
+    sendCommandResult: (callId: string, result: { success: boolean; data?: unknown; error?: string }) => {
+      ipcRenderer.send(IPC.CANVAS_CMD.RESULT, { callId, result });
     },
   },
 };

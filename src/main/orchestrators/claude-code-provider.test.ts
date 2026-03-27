@@ -179,35 +179,50 @@ describe('ClaudeCodeProvider', () => {
       expect(args[args.length - 1]).toBe('Deploy it');
     });
 
-    it('adds --dangerously-skip-permissions when freeAgentMode is true', async () => {
+    it('uses --permission-mode auto when freeAgentMode is true and permissionMode is not skip-all', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
       });
-      expect(args).toContain('--dangerously-skip-permissions');
+      expect(args).toContain('--permission-mode');
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
+      expect(args).not.toContain('--dangerously-skip-permissions');
     });
 
-    it('does not add --dangerously-skip-permissions when freeAgentMode is false', async () => {
+    it('uses --dangerously-skip-permissions when freeAgentMode is true and permissionMode is skip-all', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        freeAgentMode: true,
+        permissionMode: 'skip-all',
+      });
+      expect(args).toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
+    });
+
+    it('does not add permission flags when freeAgentMode is false', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: false,
       });
       expect(args).not.toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
     });
 
-    it('does not add --dangerously-skip-permissions when freeAgentMode is undefined', async () => {
+    it('does not add permission flags when freeAgentMode is undefined', async () => {
       const { args } = await provider.buildSpawnCommand({ cwd: '/p' });
       expect(args).not.toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
     });
 
-    it('places --dangerously-skip-permissions before other flags', async () => {
+    it('places --permission-mode before other flags', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
         model: 'opus',
         mission: 'Fix bug',
       });
-      expect(args[0]).toBe('--dangerously-skip-permissions');
+      expect(args[0]).toBe('--permission-mode');
+      expect(args[1]).toBe('auto');
       expect(args).toContain('--model');
       expect(args[args.length - 1]).toBe('Fix bug');
     });
@@ -380,31 +395,29 @@ describe('ClaudeCodeProvider', () => {
   });
 
   describe('readInstructions', () => {
-    it('reads from CLAUDE.md at project root', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('project instructions');
-      const result = provider.readInstructions('/project');
+    it('reads from CLAUDE.md at project root', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('project instructions');
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('project instructions');
-      expect(fs.readFileSync).toHaveBeenCalledWith(path.join('/project', 'CLAUDE.md'), 'utf-8');
+      expect(fsp.readFile).toHaveBeenCalledWith(path.join('/project', 'CLAUDE.md'), 'utf-8');
     });
 
-    it('returns empty string when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      const result = provider.readInstructions('/project');
+    it('returns empty string when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('');
     });
   });
 
   describe('writeInstructions', () => {
-    it('writes CLAUDE.md at project root', () => {
-      const projectDir = path.join('/project');
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isClaudePath(s) || s === projectDir;
-      });
+    it('writes CLAUDE.md at project root', async () => {
+      await provider.writeInstructions('/project', 'new instructions');
 
-      provider.writeInstructions('/project', 'new instructions');
-
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project'),
+        { recursive: true }
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', 'CLAUDE.md'),
         'new instructions',
         'utf-8'

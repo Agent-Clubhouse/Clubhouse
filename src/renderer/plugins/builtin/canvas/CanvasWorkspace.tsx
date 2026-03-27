@@ -1,7 +1,13 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
-import { GRID_SIZE } from './canvas-types';
+import type { CanvasView, CanvasViewType, ZoneCanvasView, Viewport, Position, Size } from './canvas-types';
+import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
+import type { ResizeDirection } from './CanvasView';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect } from './canvas-operations';
+import { ZoneBackground } from './ZoneBackground';
+import { ZoneCard } from './ZoneCard';
+import { ZoneDeleteDialog } from './ZoneDeleteDialog';
+import { ZoneThemeProvider } from './ZoneThemeProvider';
+import { useZoneContainment, getViewThemeOverride } from './zone-containment';
 import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
 import { CanvasControls } from './CanvasControls';
@@ -11,20 +17,18 @@ import { useCanvasAttention, computeOffScreenIndicators } from './canvas-attenti
 import { WireOverlay } from './WireOverlay';
 import { WireDragOverlay } from './WireDragOverlay';
 import { WireConfigPopover } from './WireConfigPopover';
-import { useWiring } from './useWiring';
+import { CanvasMinimap } from './CanvasMinimap';
+import { useWiring, type ZoneWireCallback } from './useWiring';
+import { useZoneWireStore } from './zone-wire-store';
+import { expandZoneWires, reconcileZoneBindings } from './zone-wire-expansion';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
-import type { AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType } from './canvas-types';
+import type { PluginCanvasView as PluginCanvasViewType } from './canvas-types';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 
 /** Pixels to pan per arrow key press (2 grid units). */
 const ARROW_PAN_STEP = 40;
-
-/** Number of ghost cards shown behind the primary in the drag stack. */
-const STACK_GHOST_COUNT = 3;
-/** Pixel offset between stacked ghost cards. */
-const STACK_OFFSET = 4;
 
 interface SelectionRect {
   startX: number;
@@ -47,6 +51,11 @@ interface CanvasWorkspaceProps {
   zoomedViewId: string | null;
   selectedViewId: string | null;
   selectedViewIds: string[];
+  /** Canvas-owned wire definitions — persists across agent sleep/wake cycles. */
+  wireDefinitions: McpBindingEntry[];
+  onAddWireDefinition: (entry: McpBindingEntry) => void;
+  onRemoveWireDefinition: (agentId: string, targetId: string) => void;
+  onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
   api: PluginAPI;
   onViewportChange: (viewport: Viewport) => void;
   onAddView: (type: CanvasViewType, position: Position) => void;
@@ -62,6 +71,10 @@ interface CanvasWorkspaceProps {
   onToggleSelectView: (viewId: string) => void;
   onSetSelectedViewIds: (ids: string[]) => void;
   onClearSelection: () => void;
+  onRemoveZone: (zoneId: string, removeContents: boolean) => void;
+  onUpdateZoneTheme: (zoneId: string, themeId: string) => void;
+  minimapAutoHide: boolean;
+  onMinimapAutoHideChange: (value: boolean) => void;
 }
 
 export function CanvasWorkspace({
@@ -70,6 +83,10 @@ export function CanvasWorkspace({
   zoomedViewId,
   selectedViewId,
   selectedViewIds,
+  wireDefinitions,
+  onAddWireDefinition,
+  onRemoveWireDefinition,
+  onUpdateWireDefinition,
   api,
   onViewportChange,
   onAddView,
@@ -85,6 +102,10 @@ export function CanvasWorkspace({
   onToggleSelectView,
   onSetSelectedViewIds,
   onClearSelection,
+  onRemoveZone,
+  onUpdateZoneTheme,
+  minimapAutoHide,
+  onMinimapAutoHideChange,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -99,14 +120,81 @@ export function CanvasWorkspace({
   const [multiDrag, setMultiDrag] = useState<MultiDragState | null>(null);
   const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
 
+  // ── Zone drag state ─────────────────────────────────────────
+  const [zoneDrag, setZoneDrag] = useState<{ zoneId: string; containedViewIds: string[] } | null>(null);
+  const [zoneDragDelta, setZoneDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+
+  // ── Zone resize state ──────────────────────────────────────
+  const [zoneResize, setZoneResize] = useState<{ zoneId: string; size: Size; position: Position } | null>(null);
+
   // ── Single-view drag position tracking (for wire overlay) ─────
   const [singleDragPos, setSingleDragPos] = useState<Map<string, Position>>(new Map());
 
   // ── MCP wiring state ──────────────────────────────────────────
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
+  // Live bindings used for the config popover's live state (instructions, etc.)
   const mcpBindings = useMcpBindingStore((s) => s.bindings);
-  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef);
+  const addZoneWire = useZoneWireStore((s) => s.addWire);
+  const mcpBind = useMcpBindingStore((s) => s.bind);
+
+  // Merge wireDefinitions with live MCP bindings so the overlay shows both
+  // canvas-persisted wires (survive sleep) and zone-expanded wires (dynamic).
+  const mergedWireBindings = useMemo(() => {
+    const definitionKeys = new Set(wireDefinitions.map((w) => `${w.agentId}\0${w.targetId}`));
+    // Start with all wire definitions, then add any live MCP bindings not
+    // already covered (e.g. zone-expanded bindings).
+    const extras = mcpBindings.filter((b) => !definitionKeys.has(`${b.agentId}\0${b.targetId}`));
+    return extras.length > 0 ? [...wireDefinitions, ...extras] : wireDefinitions;
+  }, [wireDefinitions, mcpBindings]);
+
+  const handleZoneWire: ZoneWireCallback = useCallback((sourceZoneId, targetId, targetType) => {
+    addZoneWire({ sourceZoneId, targetId, targetType });
+    // Immediately expand and reconcile bindings
+    const allWires = [...useZoneWireStore.getState().wires];
+    const expanded = expandZoneWires(allWires, views);
+    const current = useMcpBindingStore.getState().bindings;
+    const { toAdd } = reconcileZoneBindings(expanded, current);
+    for (const b of toAdd) {
+      mcpBind(b.agentId, {
+        targetId: b.targetId,
+        targetKind: b.targetKind,
+        label: b.label,
+        agentName: b.agentName,
+        targetName: b.targetName,
+      });
+    }
+  }, [views, addZoneWire, mcpBind]);
+
+  const handleAddWireDef = useCallback((entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => {
+    onAddWireDefinition(entry as McpBindingEntry);
+  }, [onAddWireDefinition]);
+
+  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef, handleZoneWire, handleAddWireDef);
   const [wirePopover, setWirePopover] = useState<{ binding: McpBindingEntry; x: number; y: number } | null>(null);
+
+  // ── Zone state ──────────────────────────────────────────────────
+  const zoneContainment = useZoneContainment(views);
+  const zones = useMemo(() => views.filter((v): v is ZoneCanvasView => v.type === 'zone'), [views]);
+  const nonZoneViews = useMemo(() => views.filter((v) => v.type !== 'zone'), [views]);
+  const [zoneDeleteDialog, setZoneDeleteDialog] = useState<{ zoneId: string; zoneName: string; containedCount: number } | null>(null);
+
+  // ── Sleeping agent tracking (for wire dimming) ─────────────────
+  const [agentTick, setAgentTick] = useState(0);
+  useEffect(() => {
+    const sub = api.agents.onAnyChange(() => setAgentTick((n) => n + 1));
+    return () => sub.dispose();
+  }, [api]);
+  const sleepingAgentIds = useMemo(() => {
+    void agentTick; // reactive dependency
+    const agents = api.agents.list();
+    const sleeping = new Set<string>();
+    for (const agent of agents) {
+      if (agent.status === 'sleeping' || agent.status === 'error') {
+        sleeping.add(agent.id);
+      }
+    }
+    return sleeping;
+  }, [api, agentTick]);
 
   const handleWireClick = useCallback((binding: McpBindingEntry, event: React.MouseEvent) => {
     setWirePopover({ binding, x: event.clientX, y: event.clientY });
@@ -444,6 +532,136 @@ export function CanvasWorkspace({
     }
   }, [views, viewport.zoom, zoomedViewId, onZoomView, onViewportChange]);
 
+  // ── Zone handlers ────────────────────────────────────────────────
+
+  const handleZoneDragStart = useCallback((zoneId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const zone = zones.find((z) => z.id === zoneId);
+    if (!zone) return;
+
+    setZoneDrag({ zoneId, containedViewIds: [...zone.containedViewIds] });
+    setZoneDragDelta({ dx: 0, dy: 0 });
+
+    const startMouseX = e.clientX;
+    const startMouseY = e.clientY;
+    const startPositions = new Map<string, Position>();
+    startPositions.set(zone.id, zone.position);
+    for (const viewId of zone.containedViewIds) {
+      const view = views.find((v) => v.id === viewId);
+      if (view) startPositions.set(viewId, view.position);
+    }
+
+    const handleMove = (ev: MouseEvent) => {
+      const dx = (ev.clientX - startMouseX) / viewport.zoom;
+      const dy = (ev.clientY - startMouseY) / viewport.zoom;
+      setZoneDragDelta({ dx, dy });
+      // Update positions for wire overlay tracking
+      const dragPositions = new Map<string, Position>();
+      for (const [id, pos] of startPositions) {
+        dragPositions.set(id, { x: pos.x + dx, y: pos.y + dy });
+      }
+      setSingleDragPos(dragPositions);
+    };
+
+    const handleUp = (ev: MouseEvent) => {
+      const dx = (ev.clientX - startMouseX) / viewport.zoom;
+      const dy = (ev.clientY - startMouseY) / viewport.zoom;
+      const positions = new Map<string, Position>();
+      for (const [id, pos] of startPositions) {
+        positions.set(id, snapPosition({ x: pos.x + dx, y: pos.y + dy }));
+      }
+      onMoveViews(positions);
+      setSingleDragPos(new Map());
+      setZoneDrag(null);
+      setZoneDragDelta({ dx: 0, dy: 0 });
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  }, [zones, views, viewport.zoom, onMoveViews]);
+
+  const handleZoneResizeStart = useCallback((zoneId: string, direction: ResizeDirection, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const zone = zones.find((z) => z.id === zoneId);
+    if (!zone) return;
+
+    const startMouseX = e.clientX;
+    const startMouseY = e.clientY;
+    const startW = zone.size.width;
+    const startH = zone.size.height;
+    const startX = zone.position.x;
+    const startY = zone.position.y;
+
+    const handleMove = (ev: MouseEvent) => {
+      const dx = (ev.clientX - startMouseX) / viewport.zoom;
+      const dy = (ev.clientY - startMouseY) / viewport.zoom;
+
+      let newW = startW;
+      let newH = startH;
+      let newX = startX;
+      let newY = startY;
+
+      if (direction === 'e' || direction === 'se' || direction === 'ne') newW = startW + dx;
+      if (direction === 'w' || direction === 'sw' || direction === 'nw') { newW = startW - dx; newX = startX + dx; }
+      if (direction === 's' || direction === 'se' || direction === 'sw') newH = startH + dy;
+      if (direction === 'n' || direction === 'ne' || direction === 'nw') { newH = startH - dy; newY = startY + dy; }
+
+      if (newW < MIN_VIEW_WIDTH) {
+        if (direction === 'w' || direction === 'sw' || direction === 'nw') newX = startX + startW - MIN_VIEW_WIDTH;
+        newW = MIN_VIEW_WIDTH;
+      }
+      if (newH < MIN_VIEW_HEIGHT) {
+        if (direction === 'n' || direction === 'ne' || direction === 'nw') newY = startY + startH - MIN_VIEW_HEIGHT;
+        newH = MIN_VIEW_HEIGHT;
+      }
+
+      setZoneResize({ zoneId, size: { width: newW, height: newH }, position: { x: newX, y: newY } });
+    };
+
+    const handleUp = () => {
+      setZoneResize((current) => {
+        if (current) {
+          const snappedSize = snapSize(current.size);
+          const snappedPos = snapPosition(current.position);
+          onResizeView(zoneId, snappedSize);
+          onMoveView(zoneId, snappedPos);
+        }
+        return null;
+      });
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  }, [zones, viewport.zoom, onResizeView, onMoveView]);
+
+  const handleZoneDelete = useCallback((zoneId: string) => {
+    const zone = zones.find((z) => z.id === zoneId);
+    if (!zone) return;
+    if (zone.containedViewIds.length === 0) {
+      // No contained widgets — just delete
+      onRemoveZone(zoneId, false);
+    } else {
+      setZoneDeleteDialog({
+        zoneId,
+        zoneName: zone.displayName,
+        containedCount: zone.containedViewIds.length,
+      });
+    }
+  }, [zones, onRemoveZone]);
+
+  const handleZoneDeleteConfirm = useCallback((removeContents: boolean) => {
+    if (zoneDeleteDialog) {
+      onRemoveZone(zoneDeleteDialog.zoneId, removeContents);
+      setZoneDeleteDialog(null);
+    }
+  }, [zoneDeleteDialog, onRemoveZone]);
+
   // ── Dot grid background ────────────────────────────────────────
 
   const gridSpacing = GRID_SIZE * viewport.zoom;
@@ -533,48 +751,90 @@ export function CanvasWorkspace({
           left: 0,
         }}
       >
-        {/* MCP wire overlay — rendered BEFORE views (z-order: behind) */}
+        {/* Layer 1: Zone backgrounds (behind everything) */}
+        {zones.map((zone) => (
+          <ZoneBackground
+            key={`zone-bg-${zone.id}`}
+            zone={zone}
+            dragOffset={zoneDrag?.zoneId === zone.id ? zoneDragDelta : undefined}
+            resizeOverride={zoneResize?.zoneId === zone.id ? { size: zoneResize.size, position: zoneResize.position } : undefined}
+            onResizeStart={(dir, e) => handleZoneResizeStart(zone.id, dir, e)}
+          />
+        ))}
+
+        {/* Layer 2: MCP wire overlay — rendered from wireDefinitions merged
+            with live MCP bindings.  wireDefinitions ensure individually-created
+            wires survive agent sleep; live bindings cover zone-expanded wires
+            and any other dynamically-created bindings. */}
         {mcpEnabled && (
           <WireOverlay
             views={views}
-            bindings={mcpBindings}
+            bindings={mergedWireBindings}
             viewPositions={wireViewPositions}
+            sleepingAgentIds={sleepingAgentIds}
             onWireClick={handleWireClick}
           />
         )}
 
-        {views.map((view) => {
+        {/* Layer 3: Non-zone views (with zone theme scoping) */}
+        {nonZoneViews.map((view) => {
+          const themeOverride = getViewThemeOverride(view.id, zoneContainment);
           return (
-            <CanvasViewComponent
-              key={view.id}
-              view={view}
-              api={api}
-              zoom={viewport.zoom}
-              isZoomed={zoomedViewId === view.id}
-              isSelected={selectedViewId === view.id}
-              isMultiSelected={selectedViewIds.includes(view.id)}
-              multiDragHidden={multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId}
-              attention={attentionMap.get(view.id) ?? null}
-              allViews={views}
-              mcpEnabled={mcpEnabled}
-              onStartWireDrag={startWireDrag}
-              onClose={() => onRemoveView(view.id)}
-              onFocus={() => onFocusView(view.id)}
-              onSelect={() => {
-                onClearSelection();
-                onSelectView(view.id);
-              }}
-              onToggleSelect={() => onToggleSelectView(view.id)}
-              onCenterView={() => handleCenterView(view.id)}
-              onZoomView={() => handleToggleZoomView(view.id)}
-              onDragStart={handleViewMultiDragStart}
-              onDragMove={handleViewDragMove}
-              onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
-              onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
-              onUpdate={(updates) => onUpdateView(view.id, updates)}
-            />
+            <ZoneThemeProvider key={view.id} themeId={themeOverride}>
+              <CanvasViewComponent
+                view={view}
+                api={api}
+                zoom={viewport.zoom}
+                isZoomed={zoomedViewId === view.id}
+                isSelected={selectedViewId === view.id}
+                isMultiSelected={selectedViewIds.includes(view.id)}
+                dragOffset={
+                  // Multi-drag: non-primary selected views move with the drag delta
+                  (multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId)
+                    ? multiDragDelta
+                    // Zone drag: contained views move with the zone
+                    : (zoneDrag != null && zoneDrag.containedViewIds.includes(view.id))
+                      ? zoneDragDelta
+                      : undefined
+                }
+                attention={attentionMap.get(view.id) ?? null}
+                allViews={views}
+                mcpEnabled={mcpEnabled}
+                zoneThemeId={themeOverride}
+                onStartWireDrag={startWireDrag}
+                onClose={() => onRemoveView(view.id)}
+                onFocus={() => onFocusView(view.id)}
+                onSelect={() => {
+                  onClearSelection();
+                  onSelectView(view.id);
+                }}
+                onToggleSelect={() => onToggleSelectView(view.id)}
+                onCenterView={() => handleCenterView(view.id)}
+                onZoomView={() => handleToggleZoomView(view.id)}
+                onDragStart={handleViewMultiDragStart}
+                onDragMove={handleViewDragMove}
+                onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
+                onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
+                onUpdate={(updates) => onUpdateView(view.id, updates)}
+              />
+            </ZoneThemeProvider>
           );
         })}
+
+        {/* Layer 4: Zone cards */}
+        {zones.map((zone) => (
+          <ZoneCard
+            key={`zone-card-${zone.id}`}
+            zone={zone}
+            mcpEnabled={mcpEnabled}
+            dragOffset={zoneDrag?.zoneId === zone.id ? zoneDragDelta : undefined}
+            onRename={(name) => onUpdateView(zone.id, { displayName: name, title: name })}
+            onThemeChange={(themeId) => onUpdateZoneTheme(zone.id, themeId)}
+            onDelete={() => handleZoneDelete(zone.id)}
+            onDragStart={(e) => handleZoneDragStart(zone.id, e)}
+            onStartWireDrag={() => startWireDrag(zone)}
+          />
+        ))}
 
         {/* Selection rectangle (lasso) */}
         {selectionRect && (
@@ -594,44 +854,38 @@ export function CanvasWorkspace({
         {/* Wire drag overlay (high z-index, inside transform container) */}
         {wireDrag && <WireDragOverlay wireDrag={wireDrag} views={views} />}
 
-        {/* Multi-drag stack visual */}
+        {/* Multi-drag count badge (floating on the primary view) */}
         {multiDrag && selectedViewIds.length > 1 && (() => {
           const primaryView = views.find((v) => v.id === multiDrag.dragViewId);
           if (!primaryView) return null;
-          const stackX = primaryView.position.x + multiDragDelta.dx;
-          const stackY = primaryView.position.y + multiDragDelta.dy;
-          const ghostCount = Math.min(STACK_GHOST_COUNT, selectedViewIds.length - 1);
-
+          const badgeX = primaryView.position.x + multiDragDelta.dx + primaryView.size.width - 8;
+          const badgeY = primaryView.position.y + multiDragDelta.dy - 8;
           return (
             <div
-              className="absolute pointer-events-none"
-              style={{ left: stackX, top: stackY, zIndex: 99997 }}
-              data-testid="canvas-multi-drag-stack"
+              className="absolute pointer-events-none bg-ctp-blue text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
+              style={{ left: badgeX, top: badgeY, zIndex: 99997 }}
+              data-testid="canvas-multi-drag-badge"
             >
-              {/* Ghost cards stacked behind */}
-              {Array.from({ length: ghostCount }, (_, i) => (
-                <div
-                  key={i}
-                  className="absolute bg-ctp-mantle border border-surface-2 rounded-lg opacity-40"
-                  style={{
-                    left: (i + 1) * STACK_OFFSET,
-                    top: (i + 1) * STACK_OFFSET,
-                    width: primaryView.size.width,
-                    height: primaryView.size.height,
-                  }}
-                />
-              ))}
-              {/* Count badge */}
-              <div
-                className="absolute -top-3 -right-3 bg-ctp-blue text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
-                style={{ zIndex: 1 }}
-              >
-                {selectedViewIds.length}
-              </div>
+              {selectedViewIds.length}
             </div>
           );
         })()}
       </div>
+
+      {/* Minimap */}
+      {views.length > 0 && !zoomedView && (
+        <CanvasMinimap
+          views={views}
+          viewport={viewport}
+          containerSize={containerSize}
+          selectedViewId={selectedViewId}
+          selectedViewIds={selectedViewIds}
+          attentionMap={attentionMap}
+          onViewportChange={onViewportChange}
+          autoHide={minimapAutoHide}
+          onAutoHideChange={onMinimapAutoHideChange}
+        />
+      )}
 
       {/* Zoomed view overlay */}
       {zoomedView && (
@@ -669,7 +923,7 @@ export function CanvasWorkspace({
                 return (
                   <Component
                     widgetId={zoomedView.id}
-                    api={api}
+                    api={registered.pluginApi ?? api}
                     metadata={zoomedView.metadata}
                     onUpdateMetadata={(updates: CanvasWidgetMetadata) => onUpdateView(zoomedView.id, { metadata: { ...zoomedView.metadata, ...updates } })}
                     size={zoomedView.size}
@@ -687,19 +941,154 @@ export function CanvasWorkspace({
         onNavigate={handleSearchSelect}
       />
 
-      {/* Controls overlay */}
-      <CanvasControls
-        zoom={viewport.zoom}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onZoomReset={handleZoomReset}
-        onCenter={handleCenter}
-        onSizeToFit={handleSizeToFit}
-        hasViews={views.length > 0}
-        views={views}
-        onSelectView={handleSearchSelect}
-        attentionMap={attentionMap}
-      />
+      {/* Compute pinned widgets */}
+      {useMemo(() => {
+        const pinnedWidgets = views
+          .filter((v): v is PluginCanvasViewType =>
+            v.type === 'plugin' && !!(v.metadata as CanvasWidgetMetadata).__pinnedToControls
+          )
+          .map((view) => {
+            const registered = getRegisteredWidgetType(view.pluginWidgetType);
+            return registered ? {
+              view,
+              registered,
+              onUpdateMetadata: (updates: CanvasWidgetMetadata) => {
+                // When unpinning, place widget in current viewport instead of old position
+                const newMetadata = { ...view.metadata, ...updates };
+                const isUnpinning = updates.__pinnedToControls === false && (view.metadata as CanvasWidgetMetadata).__pinnedToControls === true;
+
+                if (isUnpinning) {
+                  // Use existing screenToCanvas to convert viewport center to canvas coords
+                  const rect = containerRef.current?.getBoundingClientRect();
+                  if (!rect) {
+                    onUpdateView(view.id, { metadata: newMetadata });
+                    return;
+                  }
+
+                  const viewportCenter = screenToCanvas(
+                    rect.left + containerSize.width / 2,
+                    rect.top + containerSize.height / 2,
+                    rect,
+                    viewport
+                  );
+
+                  // Use widget's current size or a sensible default
+                  const widgetSize = view.size || { width: 300, height: 300 };
+
+                  // Helper to check if position overlaps with any view
+                  const doesOverlap = (px: number, py: number) => {
+                    for (const otherView of views) {
+                      if (otherView.id === view.id || otherView.type === 'zone') continue;
+                      const ox = otherView.position.x;
+                      const oy = otherView.position.y;
+                      const ow = otherView.size.width;
+                      const oh = otherView.size.height;
+                      if (px < ox + ow && px + widgetSize.width > ox &&
+                          py < oy + oh && py + widgetSize.height > oy) {
+                        return true;
+                      }
+                    }
+                    return false;
+                  };
+
+                  // Try viewport center first, then corners
+                  const viewportWidth = containerSize.width / viewport.zoom;
+                  const viewportHeight = containerSize.height / viewport.zoom;
+
+                  const candidates = [
+                    // Center
+                    { x: viewportCenter.x - widgetSize.width / 2, y: viewportCenter.y - widgetSize.height / 2 },
+                    // Top-left
+                    { x: viewportCenter.x - viewportWidth / 3, y: viewportCenter.y - viewportHeight / 3 },
+                    // Top-right
+                    { x: viewportCenter.x + viewportWidth / 3 - widgetSize.width, y: viewportCenter.y - viewportHeight / 3 },
+                    // Bottom-left
+                    { x: viewportCenter.x - viewportWidth / 3, y: viewportCenter.y + viewportHeight / 3 - widgetSize.height },
+                    // Bottom-right
+                    { x: viewportCenter.x + viewportWidth / 3 - widgetSize.width, y: viewportCenter.y + viewportHeight / 3 - widgetSize.height },
+                  ];
+
+                  let finalPos = candidates[0]; // Default to center
+                  for (const candidate of candidates) {
+                    if (!doesOverlap(candidate.x, candidate.y)) {
+                      finalPos = candidate;
+                      break;
+                    }
+                  }
+
+                  onUpdateView(view.id, {
+                    metadata: newMetadata,
+                    position: finalPos,
+                    size: widgetSize,
+                  });
+                } else {
+                  onUpdateView(view.id, { metadata: newMetadata });
+                }
+              }
+            } : null;
+          })
+          .filter((item): item is NonNullable<typeof item> => item !== null);
+
+        return (
+          <>
+            <CanvasControls
+              zoom={viewport.zoom}
+              onZoomIn={handleZoomIn}
+              onZoomOut={handleZoomOut}
+              onZoomReset={handleZoomReset}
+              onCenter={handleCenter}
+              onSizeToFit={handleSizeToFit}
+              hasViews={views.length > 0}
+              views={views}
+              onSelectView={handleSearchSelect}
+              attentionMap={attentionMap}
+              api={api}
+              pinnedWidgets={pinnedWidgets}
+            />
+
+            {/* Pinned widgets bar */}
+            {pinnedWidgets.length > 0 && (
+              <div
+                className="absolute top-12 right-3 flex items-center gap-1 bg-ctp-mantle/90 backdrop-blur-sm rounded-lg border border-surface-0 px-1.5 py-1 shadow-sm flex-wrap max-w-[calc(100%-24px)]"
+                data-testid="canvas-pinned-widgets"
+              >
+                {pinnedWidgets.map((item) => {
+                  const PinnedComponent = item.registered.descriptor.pinnedComponent;
+                  if (!PinnedComponent) return null;
+
+                  return (
+                    <div
+                      key={item.view.id}
+                      className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 rounded"
+                    >
+                      <div className="flex-1">
+                        <PinnedComponent
+                          widgetId={item.view.id}
+                          api={item.registered.pluginApi ?? api}
+                          metadata={item.view.metadata}
+                          onUpdateMetadata={item.onUpdateMetadata}
+                        />
+                      </div>
+                      <button
+                        onClick={() => item.onUpdateMetadata({ __pinnedToControls: false })}
+                        className="w-4 h-4 flex items-center justify-center rounded text-ctp-blue hover:bg-surface-1 transition-colors flex-shrink-0"
+                        title="Unpin from toolbar"
+                        data-testid={`canvas-unpin-${item.view.id}`}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                          <polygon points="12 2 8 8 16 8" />
+                          <rect x="11" y="8" width="2" height="8" />
+                          <circle cx="12" cy="19" r="3" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+      }, [views, viewport.zoom, handleZoomIn, handleZoomOut, handleZoomReset, handleCenter, handleSizeToFit, handleSearchSelect, attentionMap, api, onUpdateView])}
 
       {/* Context menu */}
       {contextMenu && (
@@ -718,6 +1107,19 @@ export function CanvasWorkspace({
           x={wirePopover.x}
           y={wirePopover.y}
           onClose={handleWirePopoverClose}
+          onAddWireDefinition={onAddWireDefinition}
+          onRemoveWireDefinition={onRemoveWireDefinition}
+          onUpdateWireDefinition={onUpdateWireDefinition}
+        />
+      )}
+
+      {/* Zone delete confirmation dialog */}
+      {zoneDeleteDialog && (
+        <ZoneDeleteDialog
+          zoneName={zoneDeleteDialog.zoneName}
+          containedCount={zoneDeleteDialog.containedCount}
+          onConfirm={handleZoneDeleteConfirm}
+          onCancel={() => setZoneDeleteDialog(null)}
         />
       )}
     </div>

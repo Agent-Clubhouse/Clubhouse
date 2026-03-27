@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import type { ApprovalDialogAction, ApprovalDialogOptions } from '../../shared/plugin-types';
+
 // ── Types ──────────────────────────────────────────────────────────────
 
 interface InputDialogProps {
@@ -12,6 +14,11 @@ interface InputDialogProps {
 interface ConfirmDialogProps {
   message: string;
   onResolve: (confirmed: boolean) => void;
+}
+
+interface ApprovalDialogProps {
+  options: ApprovalDialogOptions;
+  onResolve: (value: string | null) => void;
 }
 
 // ── InputDialog ────────────────────────────────────────────────────────
@@ -39,12 +46,12 @@ function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
       data-testid="plugin-dialog-overlay"
     >
       <div
-        className="bg-ctp-mantle border border-ctp-surface1 rounded-xl shadow-2xl w-[400px] flex flex-col"
+        className="bg-ctp-mantle border border-surface-1 rounded-xl shadow-2xl w-[400px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
         data-testid="plugin-dialog"
       >
         {/* Header */}
-        <div className="px-4 py-3 border-b border-ctp-surface0">
+        <div className="px-4 py-3 border-b border-surface-0">
           <h3 className="text-sm font-semibold text-ctp-text">{prompt}</h3>
         </div>
 
@@ -56,7 +63,7 @@ function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
             value={value}
             onChange={(e) => setValue(e.target.value)}
             data-testid="plugin-dialog-input"
-            className="w-full bg-ctp-base border border-ctp-surface1 rounded-lg px-3 py-2 text-sm text-ctp-text
+            className="w-full bg-ctp-base border border-surface-1 rounded-lg px-3 py-2 text-sm text-ctp-text
               placeholder:text-ctp-subtext0 focus:outline-none focus:border-ctp-accent"
             onKeyDown={(e) => {
               if (e.key === 'Enter') resolve(value);
@@ -66,12 +73,12 @@ function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-ctp-surface0">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-surface-0">
           <button
             onClick={() => resolve(null)}
             data-testid="plugin-dialog-cancel"
             className="px-3 py-1.5 text-xs rounded-lg text-ctp-subtext0 hover:text-ctp-text
-              hover:bg-ctp-surface0 cursor-pointer transition-colors"
+              hover:bg-surface-0 cursor-pointer transition-colors"
           >
             Cancel
           </button>
@@ -120,12 +127,12 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
       data-testid="plugin-dialog-overlay"
     >
       <div
-        className="bg-ctp-mantle border border-ctp-surface1 rounded-xl shadow-2xl w-[400px] flex flex-col"
+        className="bg-ctp-mantle border border-surface-1 rounded-xl shadow-2xl w-[400px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
         data-testid="plugin-dialog"
       >
         {/* Header */}
-        <div className="px-4 py-3 border-b border-ctp-surface0">
+        <div className="px-4 py-3 border-b border-surface-0">
           <h3 className="text-sm font-semibold text-ctp-text">Confirm</h3>
         </div>
 
@@ -135,12 +142,12 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-ctp-surface0">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-surface-0">
           <button
             onClick={() => resolve(false)}
             data-testid="plugin-dialog-cancel"
             className="px-3 py-1.5 text-xs rounded-lg text-ctp-subtext0 hover:text-ctp-text
-              hover:bg-ctp-surface0 cursor-pointer transition-colors"
+              hover:bg-surface-0 cursor-pointer transition-colors"
           >
             Cancel
           </button>
@@ -149,7 +156,7 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
             data-testid="plugin-dialog-confirm"
             className={`px-4 py-1.5 text-xs rounded-lg cursor-pointer transition-colors font-medium ${
               isDestructive
-                ? 'bg-ctp-red text-ctp-base hover:opacity-90'
+                ? 'bg-ctp-error text-ctp-base hover:opacity-90'
                 : 'bg-ctp-accent text-ctp-base hover:opacity-90'
             }`}
           >
@@ -217,4 +224,106 @@ export function showConfirmDialog(message: string): { promise: Promise<boolean>;
   );
 
   return { promise, cleanup: () => handleResolve(false) };
+}
+
+// ── ApprovalDialog ────────────────────────────────────────────────────
+
+const ACTION_STYLE_CLASSES: Record<NonNullable<ApprovalDialogAction['style']>, string> = {
+  primary: 'bg-ctp-accent text-ctp-base hover:opacity-90 font-medium',
+  danger: 'bg-ctp-error text-ctp-base hover:opacity-90 font-medium',
+  default: 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0',
+};
+
+function ApprovalDialog({ options, onResolve }: ApprovalDialogProps) {
+  const resolved = useRef(false);
+
+  const resolve = useCallback((value: string | null) => {
+    if (resolved.current) return;
+    resolved.current = true;
+    onResolve(value);
+  }, [onResolve]);
+
+  // Find the primary action for Enter key (first 'primary', or first action)
+  const primaryAction = options.actions.find((a) => a.style === 'primary') ?? options.actions[0];
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') resolve(null);
+      if (e.key === 'Enter' && primaryAction) resolve(primaryAction.value);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [resolve, primaryAction]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={() => resolve(null)}
+      data-testid="plugin-dialog-overlay"
+    >
+      <div
+        className="bg-ctp-mantle border border-surface-1 rounded-xl shadow-2xl w-[480px] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        data-testid="plugin-approval-dialog"
+      >
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-surface-0">
+          <h3 className="text-sm font-semibold text-ctp-text" data-testid="plugin-approval-title">
+            {options.title}
+          </h3>
+        </div>
+
+        {/* Summary */}
+        <div className="px-4 py-4">
+          <p className="text-sm text-ctp-subtext1 whitespace-pre-wrap" data-testid="plugin-approval-summary">
+            {options.summary}
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-surface-0">
+          {options.actions.map((action) => (
+            <button
+              key={action.value}
+              onClick={() => resolve(action.value)}
+              data-testid={`plugin-approval-action-${action.value}`}
+              className={`px-4 py-1.5 text-xs rounded-lg cursor-pointer transition-colors ${
+                ACTION_STYLE_CLASSES[action.style ?? 'default']
+              }`}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function showApprovalDialog(options: ApprovalDialogOptions): { promise: Promise<string | null>; cleanup: () => void } {
+  const container = document.createElement('div');
+  container.setAttribute('data-plugin-dialog', 'approval');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  let resolvePromise: (value: string | null) => void;
+  const promise = new Promise<string | null>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  const cleanup = () => {
+    root.unmount();
+    container.remove();
+  };
+
+  const handleResolve = (value: string | null) => {
+    cleanup();
+    resolvePromise(value);
+  };
+
+  root.render(
+    <ApprovalDialog options={options} onResolve={handleResolve} />
+  );
+
+  return { promise, cleanup: () => handleResolve(null) };
 }

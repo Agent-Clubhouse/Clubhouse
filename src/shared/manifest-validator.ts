@@ -1,9 +1,11 @@
 import type { PluginManifest } from './plugin-types';
 import { ALL_PLUGIN_PERMISSIONS, PERMISSION_HIERARCHY } from './plugin-types';
-import { SUPPORTED_PLUGIN_API_VERSIONS } from './marketplace-types';
+import { SUPPORTED_PLUGIN_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './marketplace-types';
 
 /** @deprecated Use SUPPORTED_PLUGIN_API_VERSIONS from shared/marketplace-types instead. */
 export const SUPPORTED_API_VERSIONS = SUPPORTED_PLUGIN_API_VERSIONS;
+
+export { DEPRECATED_PLUGIN_API_VERSIONS };
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 
@@ -11,13 +13,15 @@ interface ValidationResult {
   valid: boolean;
   manifest?: PluginManifest;
   errors: string[];
+  warnings: string[];
 }
 
 export function validateManifest(raw: unknown): ValidationResult {
   const errors: string[] = [];
+  const warnings: string[] = [];
 
   if (!raw || typeof raw !== 'object') {
-    return { valid: false, errors: ['Manifest must be a JSON object'] };
+    return { valid: false, errors: ['Manifest must be a JSON object'], warnings: [] };
   }
 
   const m = raw as Record<string, unknown>;
@@ -49,17 +53,31 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
   }
 
+  // Deprecation warning for old API versions
+  {
+    const engObj = m.engine as Record<string, unknown> | undefined;
+    const ver = engObj && typeof engObj.api === 'number' ? engObj.api : 0;
+    const removalTarget = DEPRECATED_PLUGIN_API_VERSIONS[ver];
+    if (removalTarget) {
+      warnings.push(`API version ${ver} is deprecated and will be removed in ${removalTarget}. Please migrate to a newer API version.`);
+    }
+  }
+
   // Kind validation (v0.7+)
   const engineObj = m.engine as Record<string, unknown> | undefined;
   const apiVersion = engineObj && typeof engineObj.api === 'number' ? engineObj.api : 0;
   const isPack = m.kind === 'pack';
+  const isWorkspace = m.kind === 'workspace';
 
   if (m.kind !== undefined) {
-    if (m.kind !== 'plugin' && m.kind !== 'pack') {
-      errors.push(`Invalid kind: "${String(m.kind)}". Must be "plugin" or "pack"`);
+    if (m.kind !== 'plugin' && m.kind !== 'pack' && m.kind !== 'workspace') {
+      errors.push(`Invalid kind: "${String(m.kind)}". Must be "plugin", "pack", or "workspace"`);
     }
     if (isPack && apiVersion < 0.7) {
       errors.push('Pack plugins require API >= 0.7');
+    }
+    if (isWorkspace && apiVersion < 0.9) {
+      errors.push('Workspace plugins require API >= 0.9');
     }
   }
 
@@ -225,6 +243,21 @@ export function validateManifest(raw: unknown): ValidationResult {
     // Canvas permission requires API >= 0.8
     if (permissions.includes('canvas') && apiVersion < 0.8) {
       errors.push('Canvas permission requires API >= 0.8');
+    }
+
+    // Annex permission requires API >= 0.8
+    if (permissions.includes('annex') && apiVersion < 0.8) {
+      errors.push('Annex permission requires API >= 0.8');
+    }
+
+    // Companion permission requires API >= 0.9
+    if (permissions.includes('companion') && apiVersion < 0.9) {
+      errors.push('Companion permission requires API >= 0.9');
+    }
+
+    // MCP tools permission requires API >= 0.9
+    if (permissions.includes('mcp.tools') && apiVersion < 0.9) {
+      errors.push('mcp.tools permission requires API >= 0.9');
     }
   }
 
@@ -429,6 +462,13 @@ export function validateManifest(raw: unknown): ValidationResult {
                 }
               }
             }
+            if (widget.pinnableToControls !== undefined) {
+              if (typeof widget.pinnableToControls !== 'boolean') {
+                errors.push(`contributes.canvasWidgets[${i}].pinnableToControls must be a boolean`);
+              } else if (widget.pinnableToControls && apiVersion < 0.9) {
+                errors.push(`contributes.canvasWidgets[${i}].pinnableToControls requires API >= 0.9`);
+              }
+            }
           }
         }
       }
@@ -437,6 +477,40 @@ export function validateManifest(raw: unknown): ValidationResult {
       if (Array.isArray(m.permissions) && !(m.permissions as string[]).includes('canvas')) {
         errors.push('contributes.canvasWidgets requires the "canvas" permission');
       }
+    }
+  }
+
+  // Workspace plugins must be app-scoped and have companion permission
+  if (isWorkspace) {
+    if (m.scope !== 'app') {
+      errors.push('Workspace plugins must be app-scoped');
+    }
+    if (!Array.isArray(m.permissions) || !(m.permissions as string[]).includes('companion')) {
+      errors.push('Workspace plugins require the "companion" permission');
+    }
+  }
+
+  // Companion config validation (v0.9+)
+  if (m.companion !== undefined) {
+    if (apiVersion < 0.9) {
+      errors.push('companion config requires API >= 0.9');
+    }
+    if (!m.companion || typeof m.companion !== 'object') {
+      errors.push('companion must be an object');
+    } else {
+      const comp = m.companion as Record<string, unknown>;
+      if (typeof comp.enabled !== 'boolean') {
+        errors.push('companion.enabled must be a boolean');
+      }
+      if (comp.defaultModel !== undefined && typeof comp.defaultModel !== 'string') {
+        errors.push('companion.defaultModel must be a string');
+      }
+      if (comp.systemPrompt !== undefined && typeof comp.systemPrompt !== 'string') {
+        errors.push('companion.systemPrompt must be a string');
+      }
+    }
+    if (!Array.isArray(m.permissions) || !(m.permissions as string[]).includes('companion')) {
+      errors.push('companion config requires the "companion" permission');
     }
   }
 
@@ -452,12 +526,13 @@ export function validateManifest(raw: unknown): ValidationResult {
   }
 
   if (errors.length > 0) {
-    return { valid: false, errors };
+    return { valid: false, errors, warnings };
   }
 
   return {
     valid: true,
     manifest: raw as PluginManifest,
     errors: [],
+    warnings,
   };
 }

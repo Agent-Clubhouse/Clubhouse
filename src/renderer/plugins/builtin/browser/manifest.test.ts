@@ -28,6 +28,10 @@ describe('browser plugin manifest', () => {
     expect(manifest.permissions).toHaveLength(4);
   });
 
+  it('does not declare annex permission', () => {
+    expect(manifest.permissions).not.toContain('annex');
+  });
+
   it('contributes tab.title', () => {
     expect(manifest.contributes!.tab!.title).toBe('Browser');
   });

@@ -6,6 +6,7 @@ import { clearPendingActivityTimer } from './activityTimers';
 export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCrudSlice {
   return {
     agents: {},
+    pendingRecovery: null,
 
     removeAgent: (id) => {
       clearPendingActivityTimer(id);
@@ -87,6 +88,62 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           .filter((config) => config.icon && agents[config.id])
           .map((config) => get().loadAgentIcon(agents[config.id])),
       );
+
+      // Check if the backup has more agents — offer recovery if so
+      try {
+        const backupInfo = await window.clubhouse.agent.getBackupInfo(projectPath) as
+          { backupAgents: DurableAgentConfig[]; currentCount: number } | null;
+        if (backupInfo && backupInfo.backupAgents.length > configs.length) {
+          const currentIds = new Set(configs.map((c: DurableAgentConfig) => c.id));
+          const missing = backupInfo.backupAgents.filter((a: DurableAgentConfig) => !currentIds.has(a.id));
+          if (missing.length > 0) {
+            set({
+              pendingRecovery: {
+                backupAgentCount: backupInfo.backupAgents.length,
+                currentCount: configs.length,
+                missingNames: missing.map((a: DurableAgentConfig) => a.name),
+                projectPath,
+              },
+            });
+          }
+        }
+      } catch {
+        // Non-fatal — recovery check failed
+      }
+    },
+
+    restoreFromBackup: async (projectPath) => {
+      const result = await window.clubhouse.agent.restoreFromBackup(projectPath);
+      if (result.restoredCount > 0) {
+        // Reload agents into store
+        const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(projectPath);
+        const agents = { ...get().agents };
+        for (const config of configs) {
+          if (!agents[config.id]) {
+            agents[config.id] = {
+              id: config.id,
+              projectId: Object.values(get().agents)[0]?.projectId || '',
+              name: config.name,
+              kind: 'durable',
+              status: 'sleeping',
+              color: config.color,
+              icon: config.icon,
+              worktreePath: config.worktreePath,
+              branch: config.branch,
+              model: config.model,
+              orchestrator: config.orchestrator,
+              freeAgentMode: config.freeAgentMode,
+              mcpIds: config.mcpIds,
+            };
+          }
+        }
+        set({ agents, pendingRecovery: null });
+      }
+      return result.restoredCount;
+    },
+
+    dismissRecovery: () => {
+      set({ pendingRecovery: null });
     },
   };
 }

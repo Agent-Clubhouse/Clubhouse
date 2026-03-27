@@ -114,40 +114,76 @@ describe('multi-drag selection clearing', () => {
   });
 });
 
-// ── multiDragHidden computation ──────────────────────────────────────
+// ── dragOffset computation ───────────────────────────────────────────
 
-describe('multiDragHidden logic', () => {
+describe('dragOffset computation for multi-drag', () => {
   /**
    * Mirrors the computation in CanvasWorkspace:
-   *   multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId
+   *   Non-primary selected views during multi-drag receive a dragOffset
+   *   equal to multiDragDelta so they visually move with the primary view.
    */
-  function isMultiDragHidden(
+  function computeDragOffset(
     multiDragActive: boolean,
     dragViewId: string | null,
     selectedViewIds: string[],
     viewId: string,
-  ): boolean {
-    return multiDragActive && selectedViewIds.includes(viewId) && viewId !== dragViewId;
+    delta: { dx: number; dy: number },
+  ): { dx: number; dy: number } | undefined {
+    if (multiDragActive && selectedViewIds.includes(viewId) && viewId !== dragViewId) {
+      return delta;
+    }
+    return undefined;
   }
 
-  it('returns false when no multi-drag is active', () => {
-    expect(isMultiDragHidden(false, null, ['v1', 'v2'], 'v1')).toBe(false);
+  it('returns undefined when no multi-drag is active', () => {
+    expect(computeDragOffset(false, null, ['v1', 'v2'], 'v1', { dx: 10, dy: 20 })).toBeUndefined();
   });
 
-  it('returns false for the primary drag view', () => {
-    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2'], 'v1')).toBe(false);
+  it('returns undefined for the primary drag view', () => {
+    expect(computeDragOffset(true, 'v1', ['v1', 'v2'], 'v1', { dx: 10, dy: 20 })).toBeUndefined();
   });
 
-  it('returns true for non-primary selected views during multi-drag', () => {
-    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2'], 'v2')).toBe(true);
+  it('returns the delta for non-primary selected views during multi-drag', () => {
+    const delta = { dx: 50, dy: 30 };
+    expect(computeDragOffset(true, 'v1', ['v1', 'v2'], 'v2', delta)).toEqual(delta);
   });
 
-  it('returns false for views not in the selection', () => {
-    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2'], 'v3')).toBe(false);
+  it('returns undefined for views not in the selection', () => {
+    expect(computeDragOffset(true, 'v1', ['v1', 'v2'], 'v3', { dx: 10, dy: 20 })).toBeUndefined();
   });
 
-  it('returns true for all non-primary views in a 3-item selection', () => {
-    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2', 'v3'], 'v2')).toBe(true);
-    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2', 'v3'], 'v3')).toBe(true);
+  it('returns the delta for all non-primary views in a 3-item selection', () => {
+    const delta = { dx: 100, dy: 50 };
+    expect(computeDragOffset(true, 'v1', ['v1', 'v2', 'v3'], 'v2', delta)).toEqual(delta);
+    expect(computeDragOffset(true, 'v1', ['v1', 'v2', 'v3'], 'v3', delta)).toEqual(delta);
+  });
+});
+
+// ── Zone drag offset computation ────────────────────────────────────
+
+describe('dragOffset computation for zone drag', () => {
+  function computeZoneDragOffset(
+    zoneDrag: { zoneId: string; containedViewIds: string[] } | null,
+    viewId: string,
+    delta: { dx: number; dy: number },
+  ): { dx: number; dy: number } | undefined {
+    if (zoneDrag && zoneDrag.containedViewIds.includes(viewId)) {
+      return delta;
+    }
+    return undefined;
+  }
+
+  it('returns undefined when no zone drag is active', () => {
+    expect(computeZoneDragOffset(null, 'v1', { dx: 10, dy: 20 })).toBeUndefined();
+  });
+
+  it('returns the delta for contained views during zone drag', () => {
+    const delta = { dx: 60, dy: 40 };
+    expect(computeZoneDragOffset({ zoneId: 'z1', containedViewIds: ['v1', 'v2'] }, 'v1', delta)).toEqual(delta);
+    expect(computeZoneDragOffset({ zoneId: 'z1', containedViewIds: ['v1', 'v2'] }, 'v2', delta)).toEqual(delta);
+  });
+
+  it('returns undefined for views not contained in the dragged zone', () => {
+    expect(computeZoneDragOffset({ zoneId: 'z1', containedViewIds: ['v1'] }, 'v2', { dx: 10, dy: 20 })).toBeUndefined();
   });
 });

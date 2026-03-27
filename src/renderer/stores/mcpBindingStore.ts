@@ -3,7 +3,7 @@ import { create } from 'zustand';
 export interface McpBindingEntry {
   agentId: string;
   targetId: string;
-  targetKind: 'browser' | 'agent' | 'terminal' | 'group-project';
+  targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue';
   label: string;
   /** Human-readable name of the source agent (e.g. "scrappy-robin"). */
   agentName?: string;
@@ -11,6 +11,15 @@ export interface McpBindingEntry {
   targetName?: string;
   /** Human-readable project name (e.g. "my-frontend-app"). */
   projectName?: string;
+  /**
+   * Per-wire custom instructions injected into tool descriptions.
+   * Keys are tool suffixes (e.g. "send_message") or "*" for all tools.
+   */
+  instructions?: Record<string, string>;
+  /**
+   * Tool suffixes disabled on this wire (e.g. ["read_output", "broadcast"]).
+   */
+  disabledTools?: string[];
 }
 
 interface McpBindingStoreState {
@@ -18,6 +27,8 @@ interface McpBindingStoreState {
   loadBindings: () => Promise<void>;
   bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => Promise<void>;
   unbind: (agentId: string, targetId: string) => Promise<void>;
+  setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) => Promise<void>;
+  setDisabledTools: (agentId: string, targetId: string, disabledTools: string[]) => Promise<void>;
   registerWebview: (widgetId: string, webContentsId: number) => Promise<void>;
   unregisterWebview: (widgetId: string) => Promise<void>;
 }
@@ -36,10 +47,14 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
 
   bind: async (agentId, target) => {
     await window.clubhouse.mcpBinding.bind(agentId, target);
-    // Optimistic update
-    set((state) => ({
-      bindings: [...state.bindings, { agentId, ...target } as McpBindingEntry],
-    }));
+    // Optimistic update — deduplicate since main process may have already broadcast
+    set((state) => {
+      const exists = state.bindings.some(
+        (b) => b.agentId === agentId && b.targetId === target.targetId,
+      );
+      if (exists) return state;
+      return { bindings: [...state.bindings, { agentId, ...target } as McpBindingEntry] };
+    });
   },
 
   unbind: async (agentId, targetId) => {
@@ -48,6 +63,30 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
     set((state) => ({
       bindings: state.bindings.filter(
         (b) => !(b.agentId === agentId && b.targetId === targetId),
+      ),
+    }));
+  },
+
+  setInstructions: async (agentId, targetId, instructions) => {
+    await window.clubhouse.mcpBinding.setInstructions(agentId, targetId, instructions);
+    // Optimistic update
+    set((state) => ({
+      bindings: state.bindings.map((b) =>
+        b.agentId === agentId && b.targetId === targetId
+          ? { ...b, instructions: Object.keys(instructions).length > 0 ? instructions : undefined }
+          : b,
+      ),
+    }));
+  },
+
+  setDisabledTools: async (agentId, targetId, disabledTools) => {
+    await window.clubhouse.mcpBinding.setDisabledTools(agentId, targetId, disabledTools);
+    // Optimistic update
+    set((state) => ({
+      bindings: state.bindings.map((b) =>
+        b.agentId === agentId && b.targetId === targetId
+          ? { ...b, disabledTools: disabledTools.length > 0 ? disabledTools : undefined }
+          : b,
       ),
     }));
   },
@@ -78,7 +117,7 @@ export function initMcpBindingListener(): () => void {
         typeof b.agentId === 'string' &&
         typeof b.targetId === 'string' &&
         typeof b.label === 'string' &&
-        (b.targetKind === 'browser' || b.targetKind === 'agent' || b.targetKind === 'terminal' || b.targetKind === 'group-project'),
+        (b.targetKind === 'browser' || b.targetKind === 'agent' || b.targetKind === 'terminal' || b.targetKind === 'group-project' || b.targetKind === 'agent-queue'),
     );
     useMcpBindingStore.setState({ bindings: validated });
   });

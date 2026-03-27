@@ -1,5 +1,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
-import type { CanvasView, CanvasViewAttention } from './canvas-types';
+import type { CanvasView, CanvasViewAttention, PluginCanvasView } from './canvas-types';
+import type { CanvasWidgetMetadata, PluginAPI } from '../../../../shared/plugin-types';
+import type { RegisteredCanvasWidget } from '../../canvas-widget-registry';
 import { CanvasSearch } from './CanvasSearch';
 import { useAttentionCycler } from './canvas-attention';
 
@@ -54,9 +56,15 @@ interface CanvasControlsProps {
   onSizeToFit: () => void;
   onSelectView: (viewId: string) => void;
   attentionMap?: Map<string, CanvasViewAttention>;
+  api?: PluginAPI;
+  pinnedWidgets?: Array<{
+    view: PluginCanvasView;
+    registered: RegisteredCanvasWidget;
+    onUpdateMetadata: (updates: CanvasWidgetMetadata) => void;
+  }>;
 }
 
-export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, attentionMap }: CanvasControlsProps) {
+export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, attentionMap, api, pinnedWidgets }: CanvasControlsProps) {
   const zoomPercent = Math.round(zoom * 100);
   const effectiveMap = attentionMap ?? new Map();
   const { count, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
@@ -75,7 +83,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
           <div className="flex items-center gap-0.5" data-testid="canvas-attention-cycler">
             <button
               onClick={goPrev}
-              className="w-5 h-5 flex items-center justify-center rounded text-yellow-400 hover:bg-yellow-500/20 transition-colors"
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-warning hover:bg-yellow-500/20 transition-colors"
               title="Previous attention item"
               data-testid="canvas-attention-prev"
             >
@@ -88,7 +96,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
               title={`${count} card${count !== 1 ? 's' : ''} need${count === 1 ? 's' : ''} attention`}
             >
               {/* Exclamation icon */}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-yellow-400">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-ctp-warning">
                 <path
                   d="M12 2L2 22h20L12 2z"
                   fill="currentColor"
@@ -100,13 +108,13 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
                 <line x1="12" y1="10" x2="12" y2="14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 <circle cx="12" cy="17.5" r="1" fill="currentColor" />
               </svg>
-              <span className="text-[10px] font-mono text-yellow-400 min-w-[2ch] text-center">
+              <span className="text-[10px] font-mono text-ctp-warning min-w-[2ch] text-center">
                 {count}
               </span>
             </div>
             <button
               onClick={goNext}
-              className="w-5 h-5 flex items-center justify-center rounded text-yellow-400 hover:bg-yellow-500/20 transition-colors"
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-warning hover:bg-yellow-500/20 transition-colors"
               title="Next attention item"
               data-testid="canvas-attention-next"
             >

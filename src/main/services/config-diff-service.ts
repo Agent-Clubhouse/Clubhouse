@@ -56,7 +56,7 @@ export async function computeConfigDiff(params: {
   const items: ConfigDiffItem[] = [];
 
   // 1. Instructions
-  diffInstructions(items, defaults.instructions, worktreePath, provider, ctx);
+  await diffInstructions(items, defaults.instructions, worktreePath, provider, ctx);
 
   // 2. Permissions
   await diffPermissions(items, defaults.permissions, worktreePath, conv, ctx);
@@ -160,15 +160,15 @@ export async function propagateChanges(params: {
 
 // ── Diff helpers ──────────────────────────────────────────────────────────
 
-function diffInstructions(
+async function diffInstructions(
   items: ConfigDiffItem[],
   defaultInstructions: string | undefined,
   worktreePath: string,
   provider: OrchestratorProvider,
   ctx: ReturnType<typeof buildWildcardContext>,
-): void {
+): Promise<void> {
   const resolvedDefault = defaultInstructions ? replaceWildcards(defaultInstructions, ctx) : '';
-  const agentInstructions = provider.readInstructions(worktreePath);
+  const agentInstructions = await provider.readInstructions(worktreePath);
 
   if (normalizeWhitespace(resolvedDefault) !== normalizeWhitespace(agentInstructions)) {
     if (agentInstructions || resolvedDefault) {

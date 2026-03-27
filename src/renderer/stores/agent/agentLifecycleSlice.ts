@@ -10,7 +10,19 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
   return {
     cancelledAgentIds: {},
 
-    spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode) => {
+    resumingAgents: {},
+
+    setResumeStatus: (agentId, status) => {
+      set((s) => ({
+        resumingAgents: { ...s.resumingAgents, [agentId]: status },
+      }));
+    },
+
+    clearResumingAgents: () => {
+      set({ resumingAgents: {} });
+    },
+
+    spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode, pluginMetadata) => {
       const agentId = generateQuickAgentId();
       const name = generateQuickName();
 
@@ -64,6 +76,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         orchestrator: resolvedOrchestrator,
         headless: isHeadless || undefined,
         freeAgentMode: resolvedFreeAgentMode || undefined,
+        pluginMetadata,
       };
 
       set((s) => ({
@@ -136,6 +149,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         mission,
         orchestrator: config.orchestrator,
         freeAgentMode: config.freeAgentMode || undefined,
+        structuredMode: config.structuredMode || undefined,
         mcpIds: config.mcpIds,
         resuming: resume || undefined,
       };
@@ -159,6 +173,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           mission,
           orchestrator: config.orchestrator,
           freeAgentMode: config.freeAgentMode,
+          structuredMode: config.structuredMode,
           resume,
           sessionId: resume ? config.lastSessionId : undefined,
         });

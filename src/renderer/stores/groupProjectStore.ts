@@ -6,7 +6,7 @@ interface GroupProjectStoreState {
   loaded: boolean;
   loadProjects: () => Promise<void>;
   create: (name: string) => Promise<GroupProject>;
-  update: (id: string, fields: { name?: string; description?: string; instructions?: string }) => Promise<void>;
+  update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   remove: (id: string) => Promise<void>;
   postBulletinMessage: (projectId: string, topic: string, body: string) => Promise<void>;
   sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string) => Promise<unknown>;
@@ -34,9 +34,15 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   update: async (id, fields) => {
     await window.clubhouse.groupProject.update(id, fields);
     set((state) => ({
-      projects: state.projects.map((p) =>
-        p.id === id ? { ...p, ...fields } : p,
-      ),
+      projects: state.projects.map((p) => {
+        if (p.id !== id) return p;
+        const updated = { ...p, ...fields };
+        // Merge metadata rather than replacing it (matches main process behavior)
+        if (fields.metadata) {
+          updated.metadata = { ...p.metadata, ...fields.metadata };
+        }
+        return updated;
+      }),
     }));
   },
 

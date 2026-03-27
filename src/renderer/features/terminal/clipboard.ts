@@ -23,9 +23,21 @@ export interface ClipboardImageData {
 
 /**
  * Read an image from the system clipboard as base64.
- * Returns null if no image is found or on failure.
+ *
+ * Uses Electron's native clipboard.readImage() via IPC as the primary path
+ * because navigator.clipboard.read() is unreliable for images in Electron.
+ * Falls back to the web Clipboard API if the IPC bridge is unavailable.
  */
 export async function readClipboardImage(): Promise<ClipboardImageData | null> {
+  // Primary: Electron native clipboard (reliable for images)
+  try {
+    const result = await window.clubhouse.app.readClipboardImage();
+    if (result) return result;
+  } catch {
+    // IPC bridge unavailable — fall through to web API
+  }
+
+  // Fallback: web Clipboard API
   try {
     const items = await navigator.clipboard.read();
     for (const item of items) {
@@ -103,7 +115,7 @@ function isCopy(e: KeyboardEvent): boolean {
 /**
  * Attach clipboard key handling and right-click context menu to a terminal.
  *
- * Returns a cleanup function that removes the context-menu listener.
+ * Returns a cleanup function that removes all listeners.
  *
  * Handles:
  * - Ctrl+V / Cmd+V — paste from clipboard
@@ -118,13 +130,29 @@ export function attachClipboardHandlers(
   writeToPty: (data: string) => void,
   onImagePaste?: (image: ClipboardImageData) => void,
 ): () => void {
+  // --- Suppress native paste events ---
+  // On Windows/Electron, Ctrl+V fires both a keydown (handled below) and a
+  // native browser `paste` event that xterm.js's internal textarea catches.
+  // Since we handle paste ourselves via the keyboard shortcut, we suppress
+  // the native paste event to prevent xterm from writing the clipboard text
+  // a second time through onData.
+  const onPaste = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  container.addEventListener('paste', onPaste, true);
+
   // --- Keyboard shortcuts ---
   term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
     if (e.type !== 'keydown') return true;
 
     // Paste: Cmd+V (mac) or Ctrl+V / Ctrl+Shift+V (win/linux)
     if (isPaste(e)) {
-      pasteIntoTerminal(term, writeToPty, onImagePaste);
+      // Ignore key-repeat events to prevent rapid repeated pastes when
+      // the user holds Ctrl+V on Windows.
+      if (!e.repeat) {
+        pasteIntoTerminal(term, writeToPty, onImagePaste);
+      }
       return false;
     }
 
@@ -172,6 +200,7 @@ export function attachClipboardHandlers(
   container.addEventListener('contextmenu', onContextMenu, true);
 
   return () => {
+    container.removeEventListener('paste', onPaste, true);
     container.removeEventListener('contextmenu', onContextMenu, true);
   };
 }

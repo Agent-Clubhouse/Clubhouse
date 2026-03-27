@@ -90,9 +90,9 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
   return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-mantle', 'data-testid': 'browser-sidebar-panel' },
     // Protocol status section
     React.createElement('div', {
-      className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-ctp-surface0',
+      className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0',
     }, 'Protocols'),
-    React.createElement('div', { className: 'px-3 py-2 space-y-1.5 border-b border-ctp-surface0' },
+    React.createElement('div', { className: 'px-3 py-2 space-y-1.5 border-b border-surface-0' },
       React.createElement('div', { className: 'flex items-center gap-2 text-xs' },
         React.createElement('span', { className: 'w-2 h-2 rounded-full bg-ctp-green flex-shrink-0' }),
         React.createElement('span', { className: 'text-ctp-subtext1' }, 'HTTPS'),
@@ -274,7 +274,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   },
     // Header bar with navigation
     React.createElement('div', {
-      className: 'flex items-center gap-1 px-2 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
+      className: 'flex items-center gap-1 px-2 py-1.5 border-b border-surface-0 bg-ctp-mantle flex-shrink-0',
     },
       // Back button
       React.createElement('button', {
@@ -303,13 +303,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         value: addressBar,
         onChange: (e: React.ChangeEvent<HTMLInputElement>) => setAddressBar(e.target.value),
         onKeyDown: handleKeyDown,
-        className: 'flex-1 min-w-0 px-2 py-0.5 rounded bg-ctp-surface0 text-xs text-ctp-text border border-surface-1 outline-none focus:border-ctp-accent',
+        className: 'flex-1 min-w-0 px-2 py-0.5 rounded bg-surface-0 text-xs text-ctp-text border border-surface-1 outline-none focus:border-ctp-accent',
         placeholder: 'Enter URL (https://example.com, localhost:3000, file:///path)...',
         'data-testid': 'browser-address-bar',
       }),
       // DevTools button
       React.createElement('button', {
-        className: 'flex items-center gap-1 px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+        className: 'flex items-center gap-1 px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
         onClick: handleDevTools,
         title: 'Toggle DevTools',
         'data-testid': 'browser-devtools-btn',
@@ -361,7 +361,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
               strokeWidth: 1.5,
               strokeLinecap: 'round',
               strokeLinejoin: 'round',
-              className: 'text-ctp-surface2',
+              className: 'text-surface-2',
             },
               React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
               React.createElement('line', { x1: 2, y1: 12, x2: 22, y2: 12 }),

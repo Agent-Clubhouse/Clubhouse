@@ -4,6 +4,7 @@ import { attachClipboardHandlers, readClipboard, readClipboardImage, writeClipbo
 // --- Mocks ---
 
 let mockPlatform = 'win32' as string;
+const mockReadClipboardImage = vi.fn<() => Promise<{ base64: string; mimeType: string } | null>>(async () => null);
 
 // Override the default setup-renderer stub with a getter so tests can swap platform
 Object.defineProperty(window, 'clubhouse', {
@@ -11,6 +12,7 @@ Object.defineProperty(window, 'clubhouse', {
   get: () => ({
     platform: mockPlatform,
     pty: { write: vi.fn(), resize: vi.fn(), getBuffer: vi.fn(async () => ''), onData: () => vi.fn(), onExit: () => vi.fn() },
+    app: { readClipboardImage: mockReadClipboardImage },
   }),
 });
 
@@ -216,6 +218,58 @@ describe('clipboard — keyboard shortcuts', () => {
     });
   });
 
+  // ---------- KEY REPEAT (Windows hold-key) ----------
+
+  describe('key repeat suppression', () => {
+    it('does not paste on repeated Ctrl+V keydown (Windows key-hold)', async () => {
+      const term = createMockTerminal();
+      attachClipboardHandlers(term as any, createContainer(), writeToPty);
+
+      // First keydown (repeat=false) — should paste
+      term._fireKey({ ctrlKey: true, key: 'v', repeat: false });
+      await flush();
+      expect(writeToPty).toHaveBeenCalledTimes(1);
+
+      writeToPty.mockClear();
+      clipboardReadText.mockClear();
+
+      // Repeated keydowns (repeat=true) — should NOT paste
+      term._fireKey({ ctrlKey: true, key: 'v', repeat: true });
+      term._fireKey({ ctrlKey: true, key: 'v', repeat: true });
+      term._fireKey({ ctrlKey: true, key: 'v', repeat: true });
+      await flush();
+      expect(writeToPty).not.toHaveBeenCalled();
+      expect(clipboardReadText).not.toHaveBeenCalled();
+    });
+
+    it('still consumes repeated Ctrl+V events (returns false)', () => {
+      const term = createMockTerminal();
+      attachClipboardHandlers(term as any, createContainer(), writeToPty);
+
+      const consumed = term._fireKey({ ctrlKey: true, key: 'v', repeat: true });
+      expect(consumed).toBe(false); // consumed but no paste triggered
+    });
+
+    it('suppresses repeat for Ctrl+Shift+V as well', async () => {
+      const term = createMockTerminal();
+      attachClipboardHandlers(term as any, createContainer(), writeToPty);
+
+      term._fireKey({ ctrlKey: true, shiftKey: true, key: 'v', repeat: true });
+      await flush();
+      expect(writeToPty).not.toHaveBeenCalled();
+    });
+
+    it('suppresses repeat for Cmd+V on macOS', async () => {
+      mockPlatform = 'darwin';
+      const term = createMockTerminal();
+      attachClipboardHandlers(term as any, createContainer(), writeToPty);
+
+      term._fireKey({ metaKey: true, key: 'v', repeat: true });
+      await flush();
+      expect(writeToPty).not.toHaveBeenCalled();
+    });
+  });
+
   // ---------- UNRELATED KEYS ----------
 
   describe('unrelated keys pass through', () => {
@@ -311,14 +365,109 @@ describe('clipboard — right-click context menu', () => {
   });
 });
 
+describe('clipboard — native paste event suppression', () => {
+  let writeToPty: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockPlatform = 'win32';
+    writeToPty = vi.fn();
+    clipboardReadText.mockReset().mockResolvedValue('pasted text');
+    clipboardWriteText.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('suppresses native paste events on the container to prevent double-paste', () => {
+    const term = createMockTerminal();
+    const container = createContainer();
+    attachClipboardHandlers(term as any, container, writeToPty);
+
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    container.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('prevents native paste from reaching child elements (xterm textarea)', () => {
+    const term = createMockTerminal();
+    const container = createContainer();
+    attachClipboardHandlers(term as any, container, writeToPty);
+
+    // Simulate xterm's internal textarea that would normally receive the paste
+    const textarea = document.createElement('textarea');
+    container.appendChild(textarea);
+    const childPasteHandler = vi.fn();
+    textarea.addEventListener('paste', childPasteHandler);
+
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    textarea.dispatchEvent(event);
+
+    // Our capture-phase handler should have stopped propagation
+    expect(childPasteHandler).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('ensures only one PTY write occurs for a Ctrl+V that fires both keydown and paste', async () => {
+    const term = createMockTerminal();
+    const container = createContainer();
+    attachClipboardHandlers(term as any, container, writeToPty);
+
+    // Simulate the Windows/Electron sequence: keydown fires first, then paste
+    term._fireKey({ ctrlKey: true, key: 'v' });
+    container.dispatchEvent(new Event('paste', { bubbles: true, cancelable: true }));
+
+    await flush();
+
+    // Should only have one PTY write (from our keyboard handler), not two
+    expect(writeToPty).toHaveBeenCalledTimes(1);
+    expect(writeToPty).toHaveBeenCalledWith('pasted text');
+  });
+
+  it('cleanup function removes the paste listener', () => {
+    const term = createMockTerminal();
+    const container = createContainer();
+    const cleanup = attachClipboardHandlers(term as any, container, writeToPty);
+
+    cleanup();
+
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    container.dispatchEvent(event);
+
+    // After cleanup, the paste event should NOT be suppressed
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('suppresses paste events on macOS as well when compat is active', () => {
+    mockPlatform = 'darwin';
+    const term = createMockTerminal();
+    const container = createContainer();
+    attachClipboardHandlers(term as any, container, writeToPty);
+
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    container.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+});
+
 // ─── Exported utility functions ──────────────────────────────────────────────
 
 describe('readClipboardImage', () => {
   beforeEach(() => {
+    mockReadClipboardImage.mockReset().mockResolvedValue(null);
     clipboardRead.mockReset();
   });
 
-  it('reads an image from clipboard as base64', async () => {
+  it('uses Electron native API as primary path', async () => {
+    mockReadClipboardImage.mockResolvedValue({ base64: 'abc123', mimeType: 'image/png' });
+
+    const result = await readClipboardImage();
+    expect(result).toEqual({ base64: 'abc123', mimeType: 'image/png' });
+    expect(mockReadClipboardImage).toHaveBeenCalledTimes(1);
+    // Web API should NOT be called when native succeeds
+    expect(clipboardRead).not.toHaveBeenCalled();
+  });
+
+  it('falls back to web Clipboard API when native returns null', async () => {
+    mockReadClipboardImage.mockResolvedValue(null);
     const pngBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
     const blob = new Blob([pngBytes], { type: 'image/png' });
     const item = { types: ['image/png'], getType: vi.fn(async () => blob) } as unknown as ClipboardItem;
@@ -330,7 +479,20 @@ describe('readClipboardImage', () => {
     expect(result!.base64).toBeTruthy();
   });
 
-  it('returns null when no image types found', async () => {
+  it('falls back to web Clipboard API when native throws', async () => {
+    mockReadClipboardImage.mockRejectedValue(new Error('IPC unavailable'));
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
+    const blob = new Blob([pngBytes], { type: 'image/png' });
+    const item = { types: ['image/png'], getType: vi.fn(async () => blob) } as unknown as ClipboardItem;
+    clipboardRead.mockResolvedValue([item]);
+
+    const result = await readClipboardImage();
+    expect(result).not.toBeNull();
+    expect(result!.mimeType).toBe('image/png');
+  });
+
+  it('returns null when no image types found in web API fallback', async () => {
+    mockReadClipboardImage.mockResolvedValue(null);
     const item = { types: ['text/plain'], getType: vi.fn() } as unknown as ClipboardItem;
     clipboardRead.mockResolvedValue([item]);
 
@@ -338,13 +500,15 @@ describe('readClipboardImage', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when clipboard.read() fails', async () => {
+  it('returns null when both native and web API fail', async () => {
+    mockReadClipboardImage.mockRejectedValue(new Error('IPC unavailable'));
     clipboardRead.mockRejectedValue(new Error('denied'));
     const result = await readClipboardImage();
     expect(result).toBeNull();
   });
 
   it('returns null when clipboard is empty', async () => {
+    mockReadClipboardImage.mockResolvedValue(null);
     clipboardRead.mockResolvedValue([]);
     const result = await readClipboardImage();
     expect(result).toBeNull();
@@ -415,10 +579,8 @@ describe('pasteIntoTerminal', () => {
 
   it('calls onImagePaste when clipboard has image but no text', async () => {
     clipboardReadText.mockResolvedValue('');
-    const pngBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
-    const blob = new Blob([pngBytes], { type: 'image/png' });
-    const item = { types: ['image/png'], getType: vi.fn(async () => blob) } as unknown as ClipboardItem;
-    clipboardRead.mockResolvedValue([item]);
+    // Mock the native Electron clipboard to return an image
+    mockReadClipboardImage.mockResolvedValue({ base64: 'abc123', mimeType: 'image/png' });
 
     const term = createMockTerminal();
     const writeToPty = vi.fn();
@@ -429,7 +591,7 @@ describe('pasteIntoTerminal', () => {
     expect(writeToPty).not.toHaveBeenCalled();
     expect(onImagePaste).toHaveBeenCalledTimes(1);
     expect(onImagePaste.mock.calls[0][0].mimeType).toBe('image/png');
-    expect(onImagePaste.mock.calls[0][0].base64).toBeTruthy();
+    expect(onImagePaste.mock.calls[0][0].base64).toBe('abc123');
   });
 
   it('does not call onImagePaste when text is available', async () => {

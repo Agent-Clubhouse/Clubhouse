@@ -4,9 +4,12 @@ import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
 import { activatePlugin, deactivatePlugin, refreshCommunityPlugins, approvePluginPermissions, rejectPluginPermissions } from '../../plugins/plugin-loader';
+import { CANVAS_SUB_PLUGIN_IDS } from '../../plugins/builtin';
+import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
+import { DEPRECATED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
 
 const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
@@ -397,6 +400,9 @@ function PluginRow({
             {isIncompatible && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Incompatible</span>
             )}
+            {!isIncompatible && DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api] && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400" title={`API ${entry.manifest.engine.api} will be removed in ${DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api]}`}>Deprecated API</span>
+            )}
             {isErrored && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Error</span>
             )}
@@ -742,6 +748,7 @@ export function PluginListSettings() {
   const settingsContext = useUIStore((s) => s.settingsContext);
   const _activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
+  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
 
   // Plugin update state
   const updates = usePluginUpdateStore((s) => s.updates);
@@ -772,7 +779,15 @@ export function PluginListSettings() {
   });
 
   // Split into builtin and external sections (local computation, safe from Zustand gotcha)
-  const builtinPlugins = filteredPlugins.filter((e) => e.source === 'builtin');
+  // Hide canvas sub-plugins (group-project, agent-queue) unless canvas is enabled;
+  // also hide plugins that require MCP when MCP is off
+  const canvasEnabled = appEnabled.includes('canvas');
+  const builtinPlugins = filteredPlugins.filter((e) => {
+    if (e.source !== 'builtin') return false;
+    if (CANVAS_SUB_PLUGIN_IDS.has(e.manifest.id) && !canvasEnabled) return false;
+    if (e.manifest.requiresMcp && !mcpEnabled) return false;
+    return true;
+  });
   const externalPlugins = filteredPlugins.filter((e) => e.source === 'community' || e.source === 'marketplace');
 
   const isEnabled = (pluginId: string): boolean => {
@@ -785,19 +800,25 @@ export function PluginListSettings() {
   const handleToggle = async (pluginId: string) => {
     const enabled = isEnabled(pluginId);
     if (enabled) {
-      if (isAppContext) {
-        await deactivatePlugin(pluginId);
-        disableApp(pluginId);
-      } else if (projectId) {
-        await deactivatePlugin(pluginId, projectId);
-        disableForProject(projectId, pluginId);
+      // When disabling canvas, also disable its sub-plugins
+      const idsToDisable = pluginId === 'canvas'
+        ? [pluginId, ...Array.from(CANVAS_SUB_PLUGIN_IDS).filter((id) => isEnabled(id))]
+        : [pluginId];
+      for (const id of idsToDisable) {
+        if (isAppContext) {
+          await deactivatePlugin(id);
+          disableApp(id);
+        } else if (projectId) {
+          await deactivatePlugin(id, projectId);
+          disableForProject(projectId, id);
+        }
       }
       // Persist
       try {
         const key = isAppContext ? 'app-enabled' : `project-enabled-${projectId}`;
         const currentList = isAppContext
-          ? appEnabled.filter((id) => id !== pluginId)
-          : (projectEnabled[projectId!] || []).filter((id) => id !== pluginId);
+          ? appEnabled.filter((id) => !idsToDisable.includes(id))
+          : (projectEnabled[projectId!] || []).filter((id) => !idsToDisable.includes(id));
         await window.clubhouse.plugin.storageWrite({
           pluginId: '_system',
           scope: 'global',
@@ -813,16 +834,30 @@ export function PluginListSettings() {
         }
         enableApp(pluginId);
         await activatePlugin(pluginId);
+        // When enabling canvas, also cascade-enable its sub-plugins
+        // (symmetric with cascade-disable on canvas off)
+        if (pluginId === 'canvas') {
+          for (const subId of CANVAS_SUB_PLUGIN_IDS) {
+            if (!isEnabled(subId)) {
+              const subEntry = usePluginStore.getState().plugins[subId];
+              if (subEntry?.status === 'disabled') {
+                usePluginStore.getState().setPluginStatus(subId, 'registered');
+              }
+              enableApp(subId);
+              await activatePlugin(subId);
+            }
+          }
+        }
       } else if (projectId) {
         enableForProject(projectId, pluginId);
         const projectPath = project?.path;
         await activatePlugin(pluginId, projectId, projectPath);
       }
-      // Persist
+      // Persist — read current state to capture any cascade-enabled sub-plugins
       try {
         const key = isAppContext ? 'app-enabled' : `project-enabled-${projectId}`;
         const currentList = isAppContext
-          ? [...appEnabled, pluginId]
+          ? usePluginStore.getState().appEnabled
           : [...(projectEnabled[projectId!] || []), pluginId];
         await window.clubhouse.plugin.storageWrite({
           pluginId: '_system',

@@ -155,7 +155,6 @@ describe('shared orchestrator utilities', () => {
       orchestratorMap: {
         'claude-code': { subcommand: 'claude' },
         'copilot-cli': { subcommand: 'copilot' },
-        'opencode': { subcommand: 'opencode' },
       },
     };
 

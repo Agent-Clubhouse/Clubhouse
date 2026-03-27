@@ -12,6 +12,11 @@ import { broadcastHubState } from './hub-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteAgentId } from '../../../stores/remoteProjectStore';
+import { usePluginStore } from '../../plugin-store';
+import { UpgradeToCanvasDialog } from './UpgradeToCanvasDialog';
+import { convertHubToCanvas } from './hub-to-canvas';
+import { useAppCanvasStore, getProjectCanvasStore } from '../canvas/main';
+import { createScopedStorage } from '../../plugin-api-storage';
 
 const PANE_PREFIX = 'hub';
 
@@ -60,6 +65,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const paneTree = store((s) => s.paneTree);
   const focusedPaneId = store((s) => s.focusedPaneId);
   const loaded = store((s) => s.loaded);
+
+  // Check if canvas plugin is enabled (gate "Upgrade to Canvas" action)
+  const canvasEnabled = usePluginStore((s) => s.appEnabled.includes('canvas'));
 
   // Dynamic title: show active hub name
   const activeHub = hubs.find((h) => h.id === activeHubId);
@@ -206,6 +214,50 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     });
   }, [isAppMode, api]);
 
+  // ── Upgrade to canvas ─────────────────────────────────────────────
+
+  const [upgradeHubId, setUpgradeHubId] = useState<string | null>(null);
+  const upgradeHub = upgradeHubId ? hubs.find((h) => h.id === upgradeHubId) : null;
+
+  const canvasStore = isAppMode ? useAppCanvasStore : getProjectCanvasStore(api.context.projectId ?? null);
+  // Build a canvas-scoped storage handle so we can persist across plugin boundaries
+  const canvasStorage = useMemo(() =>
+    isAppMode
+      ? createScopedStorage('canvas', 'global')
+      : createScopedStorage('canvas', 'project-local', api.context.projectPath),
+    [isAppMode, api.context.projectPath],
+  );
+
+  const performUpgrade = useCallback(async (deleteOriginal: boolean) => {
+    if (!upgradeHub) return;
+
+    const canvasInstance = convertHubToCanvas({
+      hubName: upgradeHub.name,
+      paneTree: upgradeHub.paneTree,
+      referenceWidth: window.innerWidth,
+      referenceHeight: window.innerHeight,
+      deleteOriginal,
+      containerWidth: window.innerWidth,
+      containerHeight: window.innerHeight,
+    });
+
+    await canvasStore.getState().loadAndInsertCanvas(canvasInstance, canvasStorage);
+
+    if (deleteOriginal) {
+      store.getState().removeHub(upgradeHub.id, PANE_PREFIX);
+    }
+
+    setUpgradeHubId(null);
+  }, [upgradeHub, canvasStore, canvasStorage, store]);
+
+  const handleUpgradeToCanvas = useCallback((hubId: string) => {
+    setUpgradeHubId(hubId);
+  }, []);
+
+  const handleDuplicateHub = useCallback((hubId: string) => {
+    store.getState().duplicateHub(hubId, PANE_PREFIX);
+  }, [store]);
+
   // ── Stable PaneComponent identity ──────────────────────────────────
   const dataRef = useRef({ api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId, findAgentPopout });
   dataRef.current = { api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId, findAgentPopout };
@@ -258,6 +310,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onRemoveHub: handleRemoveHub,
       onRenameHub: handleRenameHub,
       onPopOutHub: handlePopOutHub,
+      onUpgradeToCanvas: canvasEnabled ? handleUpgradeToCanvas : undefined,
+      onDuplicateHub: handleDuplicateHub,
     }),
     hubPopout
       ? React.createElement('div', { className: 'flex-1 min-h-0' },
@@ -276,6 +330,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onSplitResize: handleSplitResize,
           }),
         ),
+    upgradeHub && React.createElement(UpgradeToCanvasDialog, {
+      hubName: upgradeHub.name,
+      onUpgrade: () => performUpgrade(false),
+      onUpgradeAndDelete: () => performUpgrade(true),
+      onClose: () => setUpgradeHubId(null),
+    }),
   );
 }
 

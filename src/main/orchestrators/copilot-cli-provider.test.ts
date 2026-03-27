@@ -77,6 +77,25 @@ describe('CopilotCliProvider', () => {
     });
   });
 
+  describe('getPasteSubmitTiming', () => {
+    it('returns GHCP-specific timing with extended delays', () => {
+      const timing = provider.getPasteSubmitTiming();
+      expect(timing.initialDelayMs).toBe(800);
+      expect(timing.retryDelayMs).toBe(600);
+      expect(timing.finalCheckDelayMs).toBe(400);
+      expect(timing.chunkSize).toBe(256);
+      expect(timing.chunkDelayMs).toBe(80);
+    });
+
+    it('uses longer delays than the base provider defaults', () => {
+      const timing = provider.getPasteSubmitTiming();
+      // Base provider uses 200/200/200 — GHCP needs more headroom
+      expect(timing.initialDelayMs).toBeGreaterThan(200);
+      expect(timing.retryDelayMs).toBeGreaterThan(200);
+      expect(timing.finalCheckDelayMs).toBeGreaterThan(200);
+    });
+  });
+
   describe('getCapabilities', () => {
     it('reports headless and hooks support', () => {
       const caps = provider.getCapabilities();
@@ -155,9 +174,22 @@ describe('CopilotCliProvider', () => {
       expect(result.args).toEqual([]);
     });
 
-    it('adds --yolo flag for freeAgentMode', async () => {
+    it('adds --yolo and --autopilot flags for freeAgentMode', async () => {
       const result = await provider.buildSpawnCommand({ cwd: '/project', freeAgentMode: true });
       expect(result.args).toContain('--yolo');
+      expect(result.args).toContain('--autopilot');
+    });
+
+    it('does not add --yolo or --autopilot when freeAgentMode is false', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project', freeAgentMode: false });
+      expect(result.args).not.toContain('--yolo');
+      expect(result.args).not.toContain('--autopilot');
+    });
+
+    it('does not add --yolo or --autopilot when freeAgentMode is undefined', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project' });
+      expect(result.args).not.toContain('--yolo');
+      expect(result.args).not.toContain('--autopilot');
     });
 
     it('adds --model flag for non-default model', async () => {
@@ -384,30 +416,32 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('readInstructions', () => {
-    it('reads from .github/copilot-instructions.md', () => {
-      const result = provider.readInstructions('/project');
-      expect(fs.readFileSync).toHaveBeenCalledWith(
+    it('reads from .github/copilot-instructions.md', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('# Instructions');
+      const result = await provider.readInstructions('/project');
+      expect(fsp.readFile).toHaveBeenCalledWith(
         path.join('/project', '.github', 'copilot-instructions.md'),
         'utf-8',
       );
       expect(result).toBe('# Instructions');
     });
 
-    it('returns empty string when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementationOnce(() => {
-        throw new Error('ENOENT');
-      });
-      const result = provider.readInstructions('/project');
+    it('returns empty string when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('');
     });
   });
 
   describe('writeInstructions', () => {
-    it('creates .github directory if needed', () => {
-      vi.mocked(fs.existsSync).mockReturnValueOnce(false);
-      provider.writeInstructions('/project', 'New instructions');
-      expect(fs.mkdirSync).toHaveBeenCalled();
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+    it('creates .github directory and writes copilot-instructions.md', async () => {
+      await provider.writeInstructions('/project', 'New instructions');
+
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project', '.github'),
+        { recursive: true }
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', '.github', 'copilot-instructions.md'),
         'New instructions',
         'utf-8',
@@ -589,7 +623,7 @@ describe('CopilotCliProvider', () => {
       expect(provider.toolVerb('Grep')).toBeUndefined();
     });
 
-    it('does NOT map OpenCode tool names', () => {
+    it('does NOT map other orchestrator tool names', () => {
       expect(provider.toolVerb('bash')).toBeUndefined();
       expect(provider.toolVerb('write')).toBeUndefined();
       expect(provider.toolVerb('glob')).toBeUndefined();

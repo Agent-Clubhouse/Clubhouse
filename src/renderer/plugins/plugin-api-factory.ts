@@ -29,6 +29,10 @@ export { computeDataDir, computeWorkspaceRoot } from './plugin-api-files';
 export { _resetBadgeStoreCache } from './plugin-api-badges';
 
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, manifest?: PluginManifest): PluginAPI {
+  // Ref used to pass the fully-constructed API to createCanvasAPI without a circular reference.
+  // By the time a plugin calls api.canvas.registerWidgetType(), api is already assigned.
+  const apiRef: { current: PluginAPI | null } = { current: null };
+
   const effectiveMode = mode || (ctx.scope === 'app' ? 'app' : 'project');
   const isDual = ctx.scope === 'dual';
 
@@ -130,11 +134,40 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     ),
     canvas: gated(
       true, scopeLabel, 'canvas', 'canvas',
-      ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest),
+      ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest, () => apiRef.current!),
     ),
     window: createWindowAPI(ctx, manifest), // always available (v0.8+)
+    mcp: {
+      async contributeTools(tools) {
+        await window.clubhouse.pluginMcp.contributeTools(ctx.pluginId, tools);
+      },
+      async removeTools() {
+        await window.clubhouse.pluginMcp.removeTools(ctx.pluginId);
+      },
+      async listContributedTools() {
+        return window.clubhouse.pluginMcp.listTools(ctx.pluginId);
+      },
+      onToolCall(handler) {
+        const cleanup = window.clubhouse.pluginMcp.onToolCall(async (data) => {
+          if (data.pluginId !== ctx.pluginId) return;
+          try {
+            const result = await handler(data.toolName, data.args);
+            window.clubhouse.pluginMcp.sendToolResult(data.callId, result);
+          } catch (err) {
+            window.clubhouse.pluginMcp.sendToolResult(data.callId, {
+              content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+              isError: true,
+            });
+          }
+        });
+        const disposable = { dispose() { cleanup(); } };
+        ctx.subscriptions.push(disposable);
+        return disposable;
+      },
+    },
     context: contextInfo, // always available
   };
 
+  apiRef.current = api;
   return api;
 }

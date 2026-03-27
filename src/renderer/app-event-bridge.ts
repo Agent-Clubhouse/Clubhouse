@@ -139,12 +139,15 @@ function initWindowListeners(): (() => void)[] {
     ),
   );
 
-  // Apply canvas mutations forwarded from pop-out windows
+  // Apply canvas mutations forwarded from pop-out windows and annex controllers.
+  // projectId and scope are passed through so that broadcastCanvasState includes
+  // them in the IPC payload — the main process needs projectId to forward the
+  // resulting state to annex controller clients.
   removers.push(
     window.clubhouse.window.onCanvasMutation(
       (canvasId: string, scope: string, mutation: unknown, projectId?: string) => {
         const store = scope === 'global' ? useAppCanvasStore : getProjectCanvasStore(projectId ?? null);
-        applyCanvasMutation(store, canvasId, mutation as CanvasMutation);
+        applyCanvasMutation(store, canvasId, mutation as CanvasMutation, projectId, scope);
       },
     ),
   );
@@ -272,6 +275,7 @@ function initPtyExitListener(): () => void {
           orchestrator: agent.orchestrator || 'claude-code',
           model: agent.model,
           cancelled,
+          pluginMetadata: agent.pluginMetadata,
         });
 
         useAgentStore.getState().removeAgent(agentId);
@@ -304,6 +308,13 @@ function initPtyExitListener(): () => void {
     },
   );
   return removeExitListener;
+}
+
+function initAgentWakingListener(): () => void {
+  const removeListener = window.clubhouse.agent.onAgentWaking((agentId: string) => {
+    useAgentStore.getState().updateAgentStatus(agentId, 'waking');
+  });
+  return removeListener;
 }
 
 function initHookEventListener(): () => void {
@@ -564,6 +575,7 @@ export function initAppEventBridge(): () => void {
 
   cleanups.push(...initWindowListeners());
   cleanups.push(initPtyExitListener());
+  cleanups.push(initAgentWakingListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initAnnexSpawnListener());
   cleanups.push(initAgentStateBroadcast());

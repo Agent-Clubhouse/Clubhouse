@@ -1,6 +1,6 @@
 import { ThemeDefinition } from '../../shared/types';
 
-function hexToRgbChannels(hex: string): string {
+export function hexToRgbChannels(hex: string): string {
   const h = hex.replace('#', '');
   const r = parseInt(h.substring(0, 2), 16);
   const g = parseInt(h.substring(2, 4), 16);
@@ -68,6 +68,28 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
     cache[varName] = hex;
   }
 
+  // Set shadow CSS variables (theme-aware for light/dark)
+  const shadowMap: Record<string, Record<'dark' | 'light', string>> = {
+    '--shadow-depth': {
+      dark: '0 4px 24px rgba(0, 0, 0, 0.5)',
+      light: '0 4px 24px rgba(0, 0, 0, 0.1)',
+    },
+    '--shadow-elevation': {
+      dark: '0 12px 40px rgba(0, 0, 0, 0.6)',
+      light: '0 12px 40px rgba(0, 0, 0, 0.08)',
+    },
+    '--grid-dot-color': {
+      dark: 'rgba(255, 255, 255, 0.1)',
+      light: 'rgba(0, 0, 0, 0.08)',
+    },
+  };
+
+  for (const [varName, themeValues] of Object.entries(shadowMap)) {
+    const value = themeValues[theme.type];
+    s.setProperty(varName, value);
+    cache[varName] = value;
+  }
+
   // Font override (Terminal theme)
   if (theme.fontOverride) {
     el.classList.add('theme-mono');
@@ -132,4 +154,33 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
 
   // Cache to localStorage for flash prevention
   localStorage.setItem('clubhouse-theme-vars', JSON.stringify(cache));
+}
+
+/** Generate CSS variable overrides as a style object for scoped theme application (zones). */
+export function themeToStyleVars(theme: ThemeDefinition): Record<string, string> {
+  const vars: Record<string, string> = {};
+
+  const colorMap: Record<string, string> = {
+    '--ctp-base': theme.colors.base,
+    '--ctp-mantle': theme.colors.mantle,
+    '--ctp-crust': theme.colors.crust,
+    '--ctp-text': theme.colors.text,
+    '--ctp-subtext0': theme.colors.subtext0,
+    '--ctp-subtext1': theme.colors.subtext1,
+    '--ctp-surface0': theme.colors.surface0,
+    '--ctp-surface1': theme.colors.surface1,
+    '--ctp-surface2': theme.colors.surface2,
+    '--ctp-accent': theme.colors.accent,
+    '--ctp-link': theme.colors.link,
+    '--ctp-warning': theme.colors.warning,
+    '--ctp-error': theme.colors.error,
+    '--ctp-info': theme.colors.info,
+    '--ctp-success': theme.colors.success,
+  };
+
+  for (const [varName, hex] of Object.entries(colorMap)) {
+    vars[varName] = hexToRgbChannels(hex);
+  }
+
+  return vars;
 }

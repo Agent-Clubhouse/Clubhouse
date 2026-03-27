@@ -29,8 +29,17 @@ export interface AgentUISlice {
   setSessionNamePrompt: (agentId: string | null) => void;
 }
 
+export interface AgentBackupInfo {
+  backupAgentCount: number;
+  currentCount: number;
+  missingNames: string[];
+  projectPath: string;
+}
+
 export interface AgentCrudSlice {
   agents: Record<string, Agent>;
+  /** Set when a backup has more agents than current — signals the UI to offer recovery */
+  pendingRecovery: AgentBackupInfo | null;
   removeAgent: (id: string) => void;
   renameAgent: (id: string, newName: string, projectPath: string) => Promise<void>;
   updateAgent: (
@@ -40,6 +49,8 @@ export interface AgentCrudSlice {
   ) => Promise<void>;
   reorderAgents: (projectPath: string, orderedIds: string[]) => Promise<void>;
   loadDurableAgents: (projectId: string, projectPath: string) => Promise<void>;
+  restoreFromBackup: (projectPath: string) => Promise<number>;
+  dismissRecovery: () => void;
 }
 
 export interface AgentLifecycleSlice {
@@ -53,6 +64,7 @@ export interface AgentLifecycleSlice {
     parentAgentId?: string,
     orchestrator?: string,
     freeAgentMode?: boolean,
+    pluginMetadata?: Record<string, string>,
   ) => Promise<string>;
   spawnDurableAgent: (
     projectId: string,
@@ -74,6 +86,9 @@ export interface AgentLifecycleSlice {
   /** Clear the resuming flag for an agent (called when session replay finishes) */
   clearResuming: (id: string) => void;
   executeDelete: (mode: DeleteMode, projectPath: string) => Promise<DeleteResult>;
+  resumingAgents: Record<string, import('../../features/app/ResumeBanner').ResumeStatus>;
+  setResumeStatus: (agentId: string, status: import('../../features/app/ResumeBanner').ResumeStatus) => void;
+  clearResumingAgents: () => void;
 }
 
 export interface AgentStatusSlice {

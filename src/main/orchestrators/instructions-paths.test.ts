@@ -8,6 +8,14 @@ vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
 }));
 
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  writeFile: vi.fn(async () => {}),
+  mkdir: vi.fn(async () => {}),
+  stat: vi.fn(async () => ({ isDirectory: () => true })),
+  realpath: vi.fn(async (p: string) => p),
+}));
+
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
   execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb?: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
@@ -21,10 +29,11 @@ vi.mock('../util/shell', () => ({
 }));
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { ClaudeCodeProvider } from './claude-code-provider';
 import { CopilotCliProvider } from './copilot-cli-provider';
 import { CodexCliProvider } from './codex-cli-provider';
-import { OpenCodeProvider } from './opencode-provider';
+
 
 describe('Instructions path resolution', () => {
   // path.join normalizes separators for cross-platform compat ('\project' on Windows)
@@ -35,7 +44,7 @@ describe('Instructions path resolution', () => {
     // Default: binaries found at standard paths
     vi.mocked(fs.existsSync).mockImplementation((p) => {
       const s = String(p);
-      return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode');
+      return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex');
     });
   });
 
@@ -46,61 +55,50 @@ describe('Instructions path resolution', () => {
       provider = new ClaudeCodeProvider();
     });
 
-    it('reads CLAUDE.md at project root', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('project instructions');
-      const result = provider.readInstructions('/project');
+    it('reads CLAUDE.md at project root', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('project instructions');
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('project instructions');
-      expect(fs.readFileSync).toHaveBeenCalledWith(
+      expect(fsp.readFile).toHaveBeenCalledWith(
         path.join('/project', 'CLAUDE.md'),
         'utf-8'
       );
     });
 
-    it('returns empty string when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      const result = provider.readInstructions('/project');
+    it('returns empty string when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('');
     });
 
-    it('writes CLAUDE.md at project root', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
-      });
+    it('writes CLAUDE.md at project root', async () => {
+      await provider.writeInstructions('/project', 'new instructions');
 
-      provider.writeInstructions('/project', 'new instructions');
-
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project'),
+        { recursive: true }
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', 'CLAUDE.md'),
         'new instructions',
         'utf-8'
       );
     });
 
-    it('does not write to .claude/CLAUDE.local.md', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
-      });
+    it('does not write to .claude/CLAUDE.local.md', async () => {
+      await provider.writeInstructions('/project', 'test');
 
-      provider.writeInstructions('/project', 'test');
-
-      const writePath = vi.mocked(fs.writeFileSync).mock.calls[0][0] as string;
+      const writePath = vi.mocked(fsp.writeFile).mock.calls[0][0] as string;
       expect(writePath).not.toContain('CLAUDE.local.md');
       expect(writePath).not.toContain('.claude');
     });
 
-    it('round-trip: write then read returns same content', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
-      });
-
+    it('round-trip: write then read returns same content', async () => {
       const content = 'My custom instructions\nWith multiple lines';
-      provider.writeInstructions('/project', content);
+      await provider.writeInstructions('/project', content);
 
-      vi.mocked(fs.readFileSync).mockReturnValue(content);
-      const result = provider.readInstructions('/project');
+      vi.mocked(fsp.readFile).mockResolvedValue(content);
+      const result = await provider.readInstructions('/project');
       expect(result).toBe(content);
     });
   });
@@ -112,34 +110,33 @@ describe('Instructions path resolution', () => {
       provider = new CopilotCliProvider();
     });
 
-    it('reads from .github/copilot-instructions.md', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('copilot instructions');
-      const result = provider.readInstructions('/project');
+    it('reads from .github/copilot-instructions.md', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('copilot instructions');
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('copilot instructions');
-      expect(fs.readFileSync).toHaveBeenCalledWith(
+      expect(fsp.readFile).toHaveBeenCalledWith(
         path.join('/project', '.github', 'copilot-instructions.md'),
         'utf-8'
       );
     });
 
-    it('writes to .github/copilot-instructions.md', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return s.endsWith('/copilot') || s.includes('.github');
-      });
+    it('writes to .github/copilot-instructions.md', async () => {
+      await provider.writeInstructions('/project', 'new copilot instructions');
 
-      provider.writeInstructions('/project', 'new copilot instructions');
-
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project', '.github'),
+        { recursive: true }
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', '.github', 'copilot-instructions.md'),
         'new copilot instructions',
         'utf-8'
       );
     });
 
-    it('returns empty string when file missing', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(provider.readInstructions('/project')).toBe('');
+    it('returns empty string when file missing', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      expect(await provider.readInstructions('/project')).toBe('');
     });
   });
 
@@ -150,86 +147,43 @@ describe('Instructions path resolution', () => {
       provider = new CodexCliProvider();
     });
 
-    it('reads from AGENTS.md at project root', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('codex instructions');
-      const result = provider.readInstructions('/project');
+    it('reads from AGENTS.md at project root', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('codex instructions');
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('codex instructions');
-      expect(fs.readFileSync).toHaveBeenCalledWith(
+      expect(fsp.readFile).toHaveBeenCalledWith(
         path.join('/project', 'AGENTS.md'),
         'utf-8'
       );
     });
 
-    it('writes to AGENTS.md at project root', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
-      });
+    it('writes to AGENTS.md at project root', async () => {
+      await provider.writeInstructions('/project', 'new codex instructions');
 
-      provider.writeInstructions('/project', 'new codex instructions');
-
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project'),
+        { recursive: true }
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', 'AGENTS.md'),
         'new codex instructions',
         'utf-8'
       );
     });
 
-    it('returns empty string when file missing', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(provider.readInstructions('/project')).toBe('');
+    it('returns empty string when file missing', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      expect(await provider.readInstructions('/project')).toBe('');
     });
 
-    it('round-trip: write then read returns same content', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
-      });
-
+    it('round-trip: write then read returns same content', async () => {
       const content = 'Codex-specific instructions\nWith multiple lines';
-      provider.writeInstructions('/project', content);
+      await provider.writeInstructions('/project', content);
 
-      vi.mocked(fs.readFileSync).mockReturnValue(content);
-      const result = provider.readInstructions('/project');
+      vi.mocked(fsp.readFile).mockResolvedValue(content);
+      const result = await provider.readInstructions('/project');
       expect(result).toBe(content);
     });
   });
 
-  describe('OpenCodeProvider', () => {
-    let provider: OpenCodeProvider;
-
-    beforeEach(() => {
-      provider = new OpenCodeProvider();
-    });
-
-    it('reads from .opencode/instructions.md', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('opencode instructions');
-      const result = provider.readInstructions('/project');
-      expect(result).toBe('opencode instructions');
-      expect(fs.readFileSync).toHaveBeenCalledWith(
-        path.join('/project', '.opencode', 'instructions.md'),
-        'utf-8'
-      );
-    });
-
-    it('writes to .opencode/instructions.md', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return s.endsWith('/opencode') || s.includes('.opencode');
-      });
-
-      provider.writeInstructions('/project', 'new opencode instructions');
-
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
-        path.join('/project', '.opencode', 'instructions.md'),
-        'new opencode instructions',
-        'utf-8'
-      );
-    });
-
-    it('returns empty string when file missing', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(provider.readInstructions('/project')).toBe('');
-    });
-  });
 });

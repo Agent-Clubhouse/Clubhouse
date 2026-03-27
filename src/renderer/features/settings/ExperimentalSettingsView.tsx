@@ -18,19 +18,19 @@ const EXPERIMENTAL_FEATURES: Array<{
     description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
   },
   {
-    id: 'canvas',
-    label: 'Canvas',
-    description: 'Free-form spatial workspace for arranging agent, file, and browser views on a pannable/zoomable surface. Requires app restart.',
-  },
-  {
-    id: 'annex',
-    label: 'Annex (Remote Control)',
-    description: 'Desktop-to-desktop remote control over LAN. Enables the Annex Server and Annex Control settings pages. Requires app restart.',
-  },
-  {
     id: 'sessions',
     label: 'Sessions',
     description: 'Browse and replay historical agent conversation sessions with timeline playback. Requires app restart.',
+  },
+  {
+    id: 'review',
+    label: 'Review Carousel',
+    description: 'Full-screen swipe carousel for browsing and reviewing agents one at a time. Requires app restart.',
+  },
+  {
+    id: 'mcp',
+    label: 'Clubhouse MCP',
+    description: 'Agent-widget and agent-to-agent interaction via MCP bridge. Enables the MCP settings page. Requires app restart.',
   },
 ];
 
@@ -102,7 +102,7 @@ export function ExperimentalSettingsView() {
             </div>
             <button
               onClick={handleRestart}
-              className="px-4 py-1.5 text-sm rounded bg-ctp-surface0 text-ctp-text hover:bg-ctp-surface1 transition-colors cursor-pointer"
+              className="px-4 py-1.5 text-sm rounded bg-surface-0 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
             >
               Restart
             </button>

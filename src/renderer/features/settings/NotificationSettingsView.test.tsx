@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useBadgeSettingsStore } from '../../stores/badgeSettingsStore';
+import { useSoundStore } from '../../stores/soundStore';
 
 vi.mock('../../stores/badgeStore', () => ({
   useBadgeStore: Object.assign(vi.fn((sel: any) => sel({
@@ -10,6 +11,12 @@ vi.mock('../../stores/badgeStore', () => ({
   })), {
     getState: vi.fn(() => ({ clearAll: vi.fn() })),
   }),
+}));
+
+vi.mock('./sound-components', () => ({
+  SoundEventRow: () => null,
+  SoundPackCard: () => null,
+  ProjectSoundOverrideSection: () => null,
 }));
 
 const mockLoadSettings = vi.fn();
@@ -42,6 +49,17 @@ function resetStores(opts: { projectOverrides?: Record<string, any> } = {}) {
     setProjectOverride: mockSetProjectOverride,
     clearProjectOverride: mockClearProjectOverride,
   });
+  useSoundStore.setState({
+    settings: { eventSettings: {}, slotAssignments: {} } as any,
+    packs: [],
+    loadSettings: vi.fn().mockResolvedValue(undefined),
+    loadPacks: vi.fn().mockResolvedValue(undefined),
+    saveSettings: vi.fn().mockResolvedValue(undefined),
+    importPack: vi.fn().mockResolvedValue(undefined),
+    deletePack: vi.fn().mockResolvedValue(undefined),
+    applyAllFromPack: vi.fn(),
+    previewSound: vi.fn(),
+  });
 }
 
 describe('NotificationSettingsView', () => {
@@ -58,14 +76,15 @@ describe('NotificationSettingsView', () => {
   it('renders loading state when settings are null', () => {
     useNotificationStore.setState({ settings: null, loadSettings: mockLoadSettings });
     useBadgeSettingsStore.setState({ loadSettings: mockLoadBadgeSettings });
+    useSoundStore.setState({ loadSettings: vi.fn().mockResolvedValue(undefined), loadPacks: vi.fn().mockResolvedValue(undefined), packs: [] });
     render(<NotificationSettingsView />);
-    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    expect(screen.getByText(/Loading/)).toBeInTheDocument();
   });
 
   it('renders notification toggles in app context', () => {
     resetStores();
     render(<NotificationSettingsView />);
-    expect(screen.getByText('Notifications')).toBeInTheDocument();
+    expect(screen.getByText('Notifications & Alerts')).toBeInTheDocument();
     expect(screen.getByText('Enable Notifications')).toBeInTheDocument();
     expect(screen.getByText('Permission Needed')).toBeInTheDocument();
     expect(screen.getByText('Agent Stopped')).toBeInTheDocument();

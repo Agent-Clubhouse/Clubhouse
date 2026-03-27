@@ -17,11 +17,12 @@ export interface SpawnOpts {
   sessionId?: string;
   agentId?: string;
   freeAgentMode?: boolean;
+  /** Permission mode for autonomous execution: 'auto' uses Claude's auto-approve classifier, 'skip-all' bypasses all permissions */
+  permissionMode?: 'auto' | 'skip-all';
 }
 
 export interface HeadlessOpts extends SpawnOpts {
   outputFormat?: string;
-  permissionMode?: string;
   noSessionPersistence?: boolean;
   disallowedTools?: string[];
 }
@@ -75,6 +76,32 @@ export interface ProviderCapabilities {
   permissions: boolean;
   structuredMode: boolean;
   structuredProtocol?: 'acp';
+}
+
+/**
+ * Timing configuration for the multi-line paste submit sequence.
+ *
+ * When sending a message to a PTY agent, bracketed paste is used for
+ * multi-line content, followed by Enter keystrokes to accept and submit.
+ * Different CLIs process paste events at different speeds, so the delays
+ * between steps are configurable per provider.
+ */
+export interface PasteSubmitTiming {
+  /** Delay (ms) before the first Enter keystroke after pasting content */
+  initialDelayMs: number;
+  /** Delay (ms) before checking the buffer / sending a retry Enter */
+  retryDelayMs: number;
+  /** Delay (ms) for the final buffer check after the last Enter */
+  finalCheckDelayMs: number;
+  /**
+   * Max bytes per write when chunking multi-line bracketed paste content.
+   * If set, the paste body is split into chunks of this size with
+   * `chunkDelayMs` between each write.  Helps slow CLIs process large pastes.
+   * Default (undefined) sends the entire body in a single write.
+   */
+  chunkSize?: number;
+  /** Delay (ms) between chunks when chunking is enabled (default 30). */
+  chunkDelayMs?: number;
 }
 
 // ── Capability Sub-interfaces ───────────────────────────────────────────────
@@ -157,8 +184,8 @@ export interface OrchestratorProvider {
   getExitCommand(): string;
 
   // Instructions
-  readInstructions(worktreePath: string): string;
-  writeInstructions(worktreePath: string, content: string): void;
+  readInstructions(worktreePath: string): Promise<string>;
+  writeInstructions(worktreePath: string, content: string): Promise<void>;
 
   // Conventions
   readonly conventions: OrchestratorConventions;
@@ -167,6 +194,9 @@ export interface OrchestratorProvider {
   getModelOptions(): Promise<Array<{ id: string; label: string }>>;
   getDefaultPermissions(kind: 'durable' | 'quick'): string[];
   toolVerb(toolName: string): string | undefined;
+
+  /** Timing for the paste-then-submit sequence used by agent-to-agent messaging */
+  getPasteSubmitTiming(): PasteSubmitTiming;
 
   // Profile support
   /** Return the env var keys this orchestrator uses for config isolation (e.g. CLAUDE_CONFIG_DIR) */
@@ -193,6 +223,8 @@ export interface StructuredSessionOpts {
   allowedTools?: string[];
   disallowedTools?: string[];
   freeAgentMode?: boolean;
+  /** Permission mode for autonomous execution: 'auto' uses Claude's auto-approve classifier, 'skip-all' bypasses all permissions */
+  permissionMode?: 'auto' | 'skip-all';
   /** Shell command prefix prepended before the CLI binary */
   commandPrefix?: string;
 }

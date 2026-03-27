@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'http';
 import net from 'net';
+import path from 'path';
 
 const mockBonjourService = { stop: vi.fn() };
 const mockBonjour = {
@@ -42,6 +43,12 @@ vi.mock('./pty-manager', () => ({
   isRunning: vi.fn().mockReturnValue(false),
 }));
 
+// Mock file-service
+vi.mock('./file-service', () => ({
+  readTree: vi.fn().mockResolvedValue([]),
+  readFile: vi.fn().mockResolvedValue(''),
+}));
+
 // Mock annex-identity
 vi.mock('./annex-identity', () => ({
   getOrCreateIdentity: vi.fn().mockReturnValue({
@@ -71,7 +78,7 @@ vi.mock('./annex-peers', () => ({
   recordFailedAttempt: vi.fn(),
   recordSuccessfulAttempt: vi.fn(),
   addPeer: vi.fn(),
-  isPairedPeer: vi.fn().mockReturnValue(false),
+  getPeer: vi.fn().mockReturnValue(null),
   updateLastSeen: vi.fn(),
   listPeers: vi.fn().mockReturnValue([]),
   removePeer: vi.fn(),
@@ -87,6 +94,38 @@ vi.mock('./annex-event-bus', () => ({
   onPtyExit: vi.fn().mockReturnValue(() => {}),
   onAgentSpawned: vi.fn().mockReturnValue(() => {}),
   onStructuredEvent: vi.fn().mockReturnValue(() => {}),
+  onGroupProjectChanged: vi.fn().mockReturnValue(() => {}),
+  onBulletinMessage: vi.fn().mockReturnValue(() => {}),
+  emitGroupProjectChanged: vi.fn(),
+  emitBulletinMessage: vi.fn(),
+}));
+
+// Mock group-project modules
+vi.mock('./group-project-registry', () => ({
+  groupProjectRegistry: {
+    list: vi.fn().mockResolvedValue([]),
+    get: vi.fn().mockResolvedValue(null),
+    onChange: vi.fn().mockReturnValue(() => {}),
+  },
+}));
+
+vi.mock('./group-project-bulletin', () => ({
+  getBulletinBoard: vi.fn().mockReturnValue({
+    getDigest: vi.fn().mockResolvedValue([]),
+    getTopicMessages: vi.fn().mockResolvedValue([]),
+    getAllMessages: vi.fn().mockResolvedValue([]),
+    postMessage: vi.fn().mockResolvedValue({ id: 'msg_1', sender: 'test', topic: 'test', body: 'test', timestamp: new Date().toISOString() }),
+  }),
+}));
+
+vi.mock('./group-project-shoulder-tap', () => ({
+  executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', messageId: 'msg_1', delivered: [], failed: [] }),
+}));
+
+vi.mock('./clubhouse-mcp/binding-manager', () => ({
+  bindingManager: {
+    getAllBindings: vi.fn().mockReturnValue([]),
+  },
 }));
 
 // Mock theme-service
@@ -118,23 +157,6 @@ vi.mock('./annex-identity', () => ({
     fingerprint: 'aa:bb:cc',
   }),
   computeFingerprint: vi.fn().mockReturnValue('dd:ee:ff'),
-}));
-
-// Mock annex-tls — force TLS creation to fail so we fall back to plain HTTP
-vi.mock('./annex-tls', () => ({
-  createTlsServerOptions: vi.fn().mockImplementation(() => { throw new Error('TLS disabled in test'); }),
-  extractPeerFingerprint: vi.fn().mockReturnValue(null),
-}));
-
-// Mock annex-peers
-vi.mock('./annex-peers', () => ({
-  checkBruteForce: vi.fn().mockReturnValue({ allowed: true, locked: false }),
-  recordFailedAttempt: vi.fn(),
-  recordSuccessfulAttempt: vi.fn(),
-  addPeer: vi.fn(),
-  getPeer: vi.fn().mockReturnValue(null),
-  isPairedPeer: vi.fn().mockReturnValue(false),
-  updateLastSeen: vi.fn(),
 }));
 
 // Mock agent-system
@@ -175,6 +197,7 @@ import * as structuredManagerModule from './structured-manager';
 import * as _eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
+import * as fileServiceModule from './file-service';
 import { generateQuickName } from '../../shared/name-generator';
 import { appLog } from './log-service';
 import Bonjour from 'bonjour-service';
@@ -245,6 +268,8 @@ describe('annex-server', () => {
     vi.mocked(agentConfigModule.getWorktreeStatus).mockResolvedValue({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true } as any);
     vi.mocked(ptyManagerModule.getBuffer).mockReturnValue('');
     vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
+    vi.mocked(fileServiceModule.readTree).mockResolvedValue([]);
+    vi.mocked(fileServiceModule.readFile).mockResolvedValue('');
     vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
     vi.mocked(agentSystem.spawnAgent).mockResolvedValue(undefined);
     vi.mocked(agentSystem.getAvailableOrchestrators).mockReturnValue([]);
@@ -269,7 +294,6 @@ describe('annex-server', () => {
     });
     vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(null);
     vi.mocked(annexPeers.checkBruteForce).mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 } as any);
-    vi.mocked(annexPeers.isPairedPeer).mockReturnValue(false);
     vi.mocked(annexEventBus.setActive).mockReturnValue(undefined);
     vi.mocked(annexEventBus.onPtyData).mockReturnValue(() => {});
     vi.mocked(annexEventBus.onHookEvent).mockReturnValue(() => {});
@@ -351,6 +375,58 @@ describe('annex-server', () => {
     const res = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
     expect(res.status).toBe(401);
   });
+
+  it('rejects expired bearer tokens after 24 hours', async () => {
+    const { port, token } = await startAndPair();
+
+    // Token works before expiry
+    const res1 = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
+    expect(res1.status).toBe(200);
+
+    // Advance Date.now() past 24h TTL
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 24 * 60 * 60 * 1000 + 1;
+    try {
+      const res2 = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
+      expect(res2.status).toBe(401);
+    } finally {
+      Date.now = originalNow;
+    }
+  }, 10_000);
+
+  it('rejects pairing with invalid public key', async () => {
+    annexServer.start();
+    await new Promise((r) => setTimeout(r, 50));
+    const status = annexServer.getStatus();
+    const pairingPort = (status as any).pairingPort || status.port;
+
+    const invalidKey = Buffer.from('not-a-valid-key').toString('base64');
+    const res = await request(pairingPort, 'POST', '/pair', {
+      pin: status.pin,
+      publicKey: invalidKey,
+    });
+    expect(res.status).toBe(400);
+    expect(JSON.parse(res.body)).toEqual({ error: 'invalid_public_key' });
+  }, 10_000);
+
+  it('accepts pairing with valid Ed25519 SPKI public key', async () => {
+    annexServer.start();
+    await new Promise((r) => setTimeout(r, 50));
+    const status = annexServer.getStatus();
+    const pairingPort = (status as any).pairingPort || status.port;
+
+    const { publicKey } = require('crypto').generateKeyPairSync('ed25519', {
+      publicKeyEncoding: { type: 'spki', format: 'der' },
+    });
+    const validKey = publicKey.toString('base64');
+    const res = await request(pairingPort, 'POST', '/pair', {
+      pin: status.pin,
+      publicKey: validKey,
+      alias: 'Test Client',
+    });
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body).token).toBeDefined();
+  }, 10_000);
 
   it('returns 404 for unknown routes', async () => {
     const { port, token } = await startAndPair();
@@ -1127,7 +1203,7 @@ describe('annex-server', () => {
 
       await request(pairingPort, 'POST', '/pair', {
         pin: status.pin,
-        publicKey: 'client-public-key',
+        publicKey: require('crypto').generateKeyPairSync('ed25519', { publicKeyEncoding: { type: 'spki', format: 'der' } }).publicKey.toString('base64'),
         alias: 'Controller Mac',
         icon: 'laptop',
         color: 'blue',
@@ -1437,6 +1513,294 @@ describe('annex-server', () => {
     it('does not throw when called without active server', () => {
       // Should be safe to call when no WS server is running
       expect(() => annexServer.broadcastSnapshotRefresh()).not.toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // File system endpoints (annex remote file access)
+  // -------------------------------------------------------------------------
+
+  describe('file system endpoints', () => {
+    const PROJECT = { id: 'proj_1', name: 'test', path: '/tmp/test-project' };
+
+    beforeEach(() => {
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT]);
+    });
+
+    describe('GET /api/v1/projects/:id/files/tree', () => {
+      it('returns file tree for existing project', async () => {
+        const mockTree = [
+          { name: 'src', type: 'directory', children: [{ name: 'index.ts', type: 'file' }] },
+          { name: 'package.json', type: 'file' },
+        ];
+        vi.mocked(fileServiceModule.readTree).mockResolvedValue(mockTree as any);
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/tree', undefined, authHeaders(token));
+        expect(res.status).toBe(200);
+        const body = JSON.parse(res.body);
+        expect(body).toEqual(mockTree);
+      }, 10_000);
+
+      it('calls fileService.readTree with project path and default options', async () => {
+        const { port, token } = await startAndPair();
+
+        await request(port, 'GET', '/api/v1/projects/proj_1/files/tree', undefined, authHeaders(token));
+        expect(fileServiceModule.readTree).toHaveBeenCalledWith(path.resolve('/tmp/test-project'), { depth: 2, includeHidden: false });
+      }, 10_000);
+
+      it('passes query parameters (path, depth, includeHidden)', async () => {
+        const { port, token } = await startAndPair();
+
+        await request(port, 'GET', '/api/v1/projects/proj_1/files/tree?path=src&depth=5&includeHidden=true', undefined, authHeaders(token));
+        expect(fileServiceModule.readTree).toHaveBeenCalledWith(path.resolve('/tmp/test-project', 'src'), { depth: 5, includeHidden: true });
+      }, 10_000);
+
+      it('returns 404 for unknown project', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/unknown/files/tree', undefined, authHeaders(token));
+        expect(res.status).toBe(404);
+        expect(JSON.parse(res.body)).toEqual({ error: 'project_not_found' });
+      }, 10_000);
+
+      it('returns 403 for path traversal via ../ sequences', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/tree?path=../../etc', undefined, authHeaders(token));
+        expect(res.status).toBe(403);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_traversal' });
+        expect(fileServiceModule.readTree).not.toHaveBeenCalled();
+      }, 10_000);
+
+      it('returns 403 for path traversal via sibling directory prefix', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/tree?path=../test-project-evil', undefined, authHeaders(token));
+        expect(res.status).toBe(403);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_traversal' });
+        expect(fileServiceModule.readTree).not.toHaveBeenCalled();
+      }, 10_000);
+
+      it('returns 500 when fileService.readTree fails', async () => {
+        vi.mocked(fileServiceModule.readTree).mockRejectedValue(new Error('EACCES: permission denied'));
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/tree', undefined, authHeaders(token));
+        expect(res.status).toBe(500);
+        expect(JSON.parse(res.body).error).toContain('permission denied');
+      }, 10_000);
+    });
+
+    describe('GET /api/v1/projects/:id/files/read', () => {
+      it('returns file content for existing file', async () => {
+        vi.mocked(fileServiceModule.readFile).mockResolvedValue('console.log("hello");');
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=src/index.ts', undefined, authHeaders(token));
+        expect(res.status).toBe(200);
+        expect(res.body).toBe('console.log("hello");');
+      }, 10_000);
+
+      it('calls fileService.readFile with resolved path', async () => {
+        const { port, token } = await startAndPair();
+
+        await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=src/index.ts', undefined, authHeaders(token));
+        expect(fileServiceModule.readFile).toHaveBeenCalledWith(path.resolve('/tmp/test-project', 'src/index.ts'));
+      }, 10_000);
+
+      it('returns 400 when path parameter is missing', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read', undefined, authHeaders(token));
+        expect(res.status).toBe(400);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_required' });
+      }, 10_000);
+
+      it('returns 404 for unknown project', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/unknown/files/read?path=x.ts', undefined, authHeaders(token));
+        expect(res.status).toBe(404);
+        expect(JSON.parse(res.body)).toEqual({ error: 'project_not_found' });
+      }, 10_000);
+
+      it('returns 403 for path traversal via ../ sequences', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=../../etc/passwd', undefined, authHeaders(token));
+        expect(res.status).toBe(403);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_traversal' });
+        expect(fileServiceModule.readFile).not.toHaveBeenCalled();
+      }, 10_000);
+
+      it('returns 403 for path traversal via absolute path', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=/etc/passwd', undefined, authHeaders(token));
+        expect(res.status).toBe(403);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_traversal' });
+        expect(fileServiceModule.readFile).not.toHaveBeenCalled();
+      }, 10_000);
+
+      it('returns 404 when file does not exist (ENOENT)', async () => {
+        const err = new Error('ENOENT') as NodeJS.ErrnoException;
+        err.code = 'ENOENT';
+        vi.mocked(fileServiceModule.readFile).mockRejectedValue(err);
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=missing.ts', undefined, authHeaders(token));
+        expect(res.status).toBe(404);
+        expect(JSON.parse(res.body)).toEqual({ error: 'file_not_found' });
+      }, 10_000);
+
+      it('returns 500 for non-ENOENT errors', async () => {
+        vi.mocked(fileServiceModule.readFile).mockRejectedValue(new Error('EACCES: permission denied'));
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=secret.key', undefined, authHeaders(token));
+        expect(res.status).toBe(500);
+        expect(JSON.parse(res.body).error).toContain('permission denied');
+      }, 10_000);
+    });
+  });
+
+  describe('session pause state tracking', () => {
+    it('notifySessionPause tracks sessionPaused state (structural)', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // notifySessionPause must update the tracked sessionPaused state
+      const notifyFn = source.slice(
+        source.indexOf('export function notifySessionPause'),
+        source.indexOf('}', source.indexOf('export function notifySessionPause') + 80) + 1,
+      );
+      expect(notifyFn).toContain('sessionPaused = paused');
+    });
+
+    it('buildSnapshot includes sessionPaused in payload (structural)', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // The snapshot return object must include sessionPaused
+      const snapshotReturn = source.slice(
+        source.lastIndexOf('return {', source.indexOf('canvasState,')),
+        source.indexOf('};', source.indexOf('canvasState,')) + 2,
+      );
+      expect(snapshotReturn).toContain('sessionPaused');
+    });
+
+    it('resets sessionPaused when last mTLS controller disconnects (structural)', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // When the last mTLS client disconnects and locked=false is broadcast,
+      // sessionPaused must also be reset
+      const unlockBlock = source.slice(
+        source.indexOf('if (!hasMtlsClient)'),
+        source.indexOf('locked: false,') + 100,
+      );
+      expect(unlockBlock).toContain('sessionPaused = false');
+    });
+  });
+
+  describe('canvas mutation error propagation', () => {
+    it('canvas:mutation handler sends error back to client on failure (structural)', () => {
+      // BUG-09: Verify that server-side canvas mutation failures are not
+      // silently swallowed but propagated back to the WebSocket client.
+      // This structural test reads the source to confirm the fix is in place.
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // Find the canvas:mutation case and verify it sends an error message
+      const mutationBlock = source.slice(
+        source.indexOf("case 'canvas:mutation':"),
+        source.indexOf("case 'agent:reorder':"),
+      );
+
+      // Must send error back via ws.send with canvas:mutation:error type
+      expect(mutationBlock).toContain('canvas:mutation:error');
+      expect(mutationBlock).toContain('ws.send');
+      // Must log the error
+      expect(mutationBlock).toContain('appLog');
+      // Must NOT silently swallow — no empty catch body
+      expect(mutationBlock).not.toMatch(/\.catch\(\s*\(\s*\)\s*=>\s*\{\s*\}\s*\)/);
+    });
+  });
+
+  describe('canvas mutation selectView and namespace stripping (structural)', () => {
+    let source: string;
+
+    beforeAll(() => {
+      const fs = require('fs');
+      const path = require('path');
+      source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+    });
+
+    it('applyCanvasMutationServerSide handles selectView mutation', () => {
+      // Verify there is a case for selectView that sets canvas.selectedViewId
+      expect(source).toContain("case 'selectView':");
+      expect(source).toContain('canvas.selectedViewId');
+    });
+
+    it('selectedViewId is included in CanvasInstanceJSON interface', () => {
+      // Verify the interface includes the field
+      const interfaceBlock = source.slice(
+        source.indexOf('interface CanvasInstanceJSON'),
+        source.indexOf('async function applyCanvasMutationServerSide'),
+      );
+      expect(interfaceBlock).toContain('selectedViewId');
+    });
+
+    it('selectedViewId is broadcast to controller clients', () => {
+      // Verify broadcastCanvasStateToClients call includes selectedViewId
+      const broadcastBlock = source.slice(
+        source.indexOf('broadcastCanvasStateToClients(projectId'),
+        source.indexOf('broadcastCanvasStateToClients(projectId') + 400,
+      );
+      expect(broadcastBlock).toContain('selectedViewId');
+    });
+
+    it('stripNamespacedIds is called in updateView handler', () => {
+      // Verify the updateView mutation case uses stripNamespacedIds
+      const updateViewBlock = source.slice(
+        source.indexOf("case 'updateView':"),
+        source.indexOf("case 'focusView':"),
+      );
+      expect(updateViewBlock).toContain('stripNamespacedIds');
+    });
+
+    it('stripNamespacedIds function exists and handles agentId/projectId/metadata', () => {
+      const fnBlock = source.slice(
+        source.indexOf('function stripNamespacedIds'),
+        source.indexOf('async function applyCanvasMutationServerSide'),
+      );
+      // Must handle agentId and projectId fields
+      expect(fnBlock).toContain("'agentId'");
+      expect(fnBlock).toContain("'projectId'");
+      // Must handle nested metadata
+      expect(fnBlock).toContain('metadata');
+      // Must parse the remote|| prefix
+      expect(fnBlock).toContain("'remote'");
     });
   });
 });

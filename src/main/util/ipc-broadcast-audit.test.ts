@@ -40,6 +40,10 @@ const ALLOWED_FILES: Record<string, string> = {
   // BrowserWindow so the dialog is modal to the correct window.
   'ipc/agent-handlers.ts': 'getFocusedWindow used as dialog parent for showOpenDialog / showSaveDialog',
   'ipc/project-handlers.ts': 'getFocusedWindow used as dialog parent for showOpenDialog',
+
+  // getAllWindows()[0] used as dialog parent for user confirmation before
+  // executing agent-supplied JavaScript in browser widgets (SEC-04).
+  'services/clubhouse-mcp/tools/browser-tools.ts': 'getAllWindows()[0] used as dialog parent for evaluate confirmation',
 };
 
 /**

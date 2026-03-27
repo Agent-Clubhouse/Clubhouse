@@ -136,7 +136,11 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     }
 
     if (opts.freeAgentMode) {
-      args.push('--dangerously-skip-permissions');
+      if (opts.permissionMode === 'skip-all') {
+        args.push('--dangerously-skip-permissions');
+      } else {
+        args.push('--permission-mode', 'auto');
+      }
     }
 
     if (opts.model && opts.model !== 'default') {
@@ -231,8 +235,12 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     args.push('--output-format', opts.outputFormat || 'stream-json');
     args.push('--verbose');
 
-    // Skip all permission prompts for headless agents
-    args.push('--dangerously-skip-permissions');
+    // Headless agents need autonomous permission handling
+    if (opts.permissionMode === 'skip-all') {
+      args.push('--dangerously-skip-permissions');
+    } else {
+      args.push('--permission-mode', 'auto');
+    }
 
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);

@@ -150,7 +150,7 @@ export function registerProjectHandlers(): void {
     }
   }));
 
-  ipcMain.handle(IPC.PROJECT.READ_LAUNCH_WRAPPER, async (_event, projectPath: string) => {
+  ipcMain.handle(IPC.PROJECT.READ_LAUNCH_WRAPPER, withValidatedArgs([stringArg()], async (_event, projectPath: string) => {
     try {
       return await readLaunchWrapper(projectPath);
     } catch (err) {
@@ -159,9 +159,9 @@ export function registerProjectHandlers(): void {
       });
       return undefined;
     }
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.WRITE_LAUNCH_WRAPPER, async (_event, projectPath: string, wrapper: unknown) => {
+  ipcMain.handle(IPC.PROJECT.WRITE_LAUNCH_WRAPPER, withValidatedArgs([stringArg(), objectArg({ optional: true })], async (_event, projectPath: string, wrapper: unknown) => {
     try {
       if (wrapper && (typeof wrapper !== 'object' || !('binary' in wrapper) || !('orchestratorMap' in wrapper))) {
         throw new Error('Invalid launch wrapper config: must have binary and orchestratorMap');
@@ -173,9 +173,9 @@ export function registerProjectHandlers(): void {
       });
       throw err;
     }
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.READ_MCP_CATALOG, async (_event, projectPath: string) => {
+  ipcMain.handle(IPC.PROJECT.READ_MCP_CATALOG, withValidatedArgs([stringArg()], async (_event, projectPath: string) => {
     try {
       return await readMcpCatalog(projectPath);
     } catch (err) {
@@ -184,11 +184,10 @@ export function registerProjectHandlers(): void {
       });
       return [];
     }
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.WRITE_MCP_CATALOG, async (_event, projectPath: string, catalog: unknown[]) => {
+  ipcMain.handle(IPC.PROJECT.WRITE_MCP_CATALOG, withValidatedArgs([stringArg(), arrayArg(objectArg())], async (_event, projectPath: string, catalog: unknown[]) => {
     try {
-      if (!Array.isArray(catalog)) throw new Error('MCP catalog must be an array');
       await writeMcpCatalog(projectPath, catalog as any[]);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to write MCP catalog', {
@@ -196,9 +195,9 @@ export function registerProjectHandlers(): void {
       });
       throw err;
     }
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.READ_DEFAULT_MCPS, async (_event, projectPath: string) => {
+  ipcMain.handle(IPC.PROJECT.READ_DEFAULT_MCPS, withValidatedArgs([stringArg()], async (_event, projectPath: string) => {
     try {
       return await readDefaultMcps(projectPath);
     } catch (err) {
@@ -207,17 +206,16 @@ export function registerProjectHandlers(): void {
       });
       return [];
     }
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.WRITE_DEFAULT_MCPS, async (_event, projectPath: string, mcpIds: unknown) => {
+  ipcMain.handle(IPC.PROJECT.WRITE_DEFAULT_MCPS, withValidatedArgs([stringArg(), arrayArg(stringArg())], async (_event, projectPath: string, mcpIds: string[]) => {
     try {
-      if (!Array.isArray(mcpIds)) throw new Error('Default MCPs must be an array');
-      await writeDefaultMcps(projectPath, mcpIds as string[]);
+      await writeDefaultMcps(projectPath, mcpIds);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to write default MCPs', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
       });
       throw err;
     }
-  });
+  }));
 }

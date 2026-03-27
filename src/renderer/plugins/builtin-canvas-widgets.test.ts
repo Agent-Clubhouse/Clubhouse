@@ -21,7 +21,7 @@ import {
   isWidgetPending,
   _resetRegistryForTesting,
 } from './canvas-widget-registry';
-import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
+import { getBuiltinPlugins } from './builtin';
 import { getBuiltinProjectPluginIds } from './plugin-loader';
 import { createMockContext, createMockAPI } from './testing';
 import type { PluginCanvasWidgetDeclaration, CanvasWidgetDescriptor } from '../../shared/plugin-types';
@@ -53,10 +53,11 @@ describe('built-in plugin canvas widget declarations', () => {
     files: ['file-viewer'],
     git: ['git-status'],
     browser: ['webview'],
-    'group-project': ['group-project-card'],
+    'group-project': ['group-project'],
+    'agent-queue': ['agent-queue'],
   };
 
-  const allPlugins = getBuiltinPlugins({ canvas: true });
+  const allPlugins = getBuiltinPlugins();
 
   for (const [pluginId, expectedWidgetIds] of Object.entries(EXPECTED_CANVAS_WIDGETS)) {
     describe(`${pluginId} plugin`, () => {
@@ -112,37 +113,34 @@ describe('getBuiltinProjectPluginIds', () => {
     expect(ids).toContain('git');
   });
 
-  it('includes browser (dual-scoped, also activated per project)', () => {
+  it('includes all project/dual-scoped builtins (app-first gate controls activation)', () => {
     const ids = getBuiltinProjectPluginIds();
+    // All project/dual-scoped builtins should be present
     expect(ids).toContain('browser');
-  });
-
-  it('includes group-project when canvas experimental flag is set', () => {
-    const ids = getBuiltinProjectPluginIds({ canvas: true });
+    expect(ids).toContain('canvas');
     expect(ids).toContain('group-project');
-  });
-
-  it('includes hub (dual-scoped, part of defaults)', () => {
-    const ids = getBuiltinProjectPluginIds();
+    expect(ids).toContain('agent-queue');
     expect(ids).toContain('hub');
   });
 
-  it('includes canvas when experimental flag is set', () => {
-    const ids = getBuiltinProjectPluginIds({ canvas: true });
-    expect(ids).toContain('canvas');
+  it('excludes app-scoped builtins', () => {
+    const allPlugins = getBuiltinPlugins();
+    const ids = getBuiltinProjectPluginIds();
+    const appOnly = allPlugins.filter((p) => p.manifest.scope === 'app');
+    for (const p of appOnly) {
+      expect(ids).not.toContain(p.manifest.id);
+    }
   });
 
-  it('all project-scoped plugins with canvas widgets are in the returned list', () => {
-    const allPlugins = getBuiltinPlugins({ canvas: true });
-    const projectIds = getBuiltinProjectPluginIds({ canvas: true });
-    const defaults = getDefaultEnabledIds({ canvas: true });
+  it('all builtins with canvas widgets and project/dual scope are in the returned list', () => {
+    const allPlugins = getBuiltinPlugins();
+    const projectIds = getBuiltinProjectPluginIds();
 
     const pluginsWithWidgets = allPlugins.filter(
       (p) =>
         p.manifest.contributes?.canvasWidgets &&
         p.manifest.contributes.canvasWidgets.length > 0 &&
-        (p.manifest.scope === 'project' || p.manifest.scope === 'dual') &&
-        defaults.has(p.manifest.id),
+        (p.manifest.scope === 'project' || p.manifest.scope === 'dual'),
     );
 
     for (const p of pluginsWithWidgets) {
@@ -253,7 +251,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
   });
 
   it('pre-registering all built-in canvas widgets populates the registry', () => {
-    const allPlugins = getBuiltinPlugins({ canvas: true });
+    const allPlugins = getBuiltinPlugins();
 
     for (const { manifest } of allPlugins) {
       if (manifest.contributes?.canvasWidgets) {
@@ -272,7 +270,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
     expect(getRegisteredWidgetType('plugin:files:file-viewer')).toBeDefined();
     expect(getRegisteredWidgetType('plugin:git:git-status')).toBeDefined();
     expect(getRegisteredWidgetType('plugin:browser:webview')).toBeDefined();
-    expect(getRegisteredWidgetType('plugin:group-project:group-project-card')).toBeDefined();
+    expect(getRegisteredWidgetType('plugin:group-project:group-project')).toBeDefined();
 
     // All should be pending
     for (const entry of registered) {
@@ -280,8 +278,30 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
     }
   });
 
+  it('only pre-registers widgets for plugins in the enabled set', () => {
+    const allPlugins = getBuiltinPlugins();
+    // Simulate only enabling terminal and files — not group-project or browser
+    const enabledSet = new Set(['terminal', 'files']);
+
+    for (const { manifest } of allPlugins) {
+      if (enabledSet.has(manifest.id) && manifest.contributes?.canvasWidgets) {
+        for (const widgetDecl of manifest.contributes.canvasWidgets) {
+          preRegisterFromManifest(manifest.id, widgetDecl);
+        }
+      }
+    }
+
+    const registered = getRegisteredWidgetTypes();
+    expect(registered).toHaveLength(2);
+    expect(getRegisteredWidgetType('plugin:terminal:shell')).toBeDefined();
+    expect(getRegisteredWidgetType('plugin:files:file-viewer')).toBeDefined();
+    // Disabled plugins should NOT be pre-registered
+    expect(getRegisteredWidgetType('plugin:group-project:group-project')).toBeUndefined();
+    expect(getRegisteredWidgetType('plugin:browser:webview')).toBeUndefined();
+  });
+
   it('pre-registered widgets have correct labels from manifests', () => {
-    const allPlugins = getBuiltinPlugins({ canvas: true });
+    const allPlugins = getBuiltinPlugins();
     for (const { manifest } of allPlugins) {
       if (manifest.contributes?.canvasWidgets) {
         for (const widgetDecl of manifest.contributes.canvasWidgets) {
@@ -292,16 +312,116 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
 
     expect(getRegisteredWidgetType('plugin:terminal:shell')!.declaration.label).toBe('Terminal');
     expect(getRegisteredWidgetType('plugin:files:file-viewer')!.declaration.label).toBe('File Viewer');
-    expect(getRegisteredWidgetType('plugin:git:git-status')!.declaration.label).toBe('Git Status');
+    expect(getRegisteredWidgetType('plugin:git:git-status')!.declaration.label).toBe('Git Diff');
     expect(getRegisteredWidgetType('plugin:browser:webview')!.declaration.label).toBe('Browser');
-    expect(getRegisteredWidgetType('plugin:group-project:group-project-card')!.declaration.label).toBe('Group Project');
+    expect(getRegisteredWidgetType('plugin:group-project:group-project')!.declaration.label).toBe('Group Project');
+  });
+});
+
+// ── Safety: pre-registered widgets with disabled plugins must not crash ──
+
+describe('pre-registered widgets without activation do not crash renderer', () => {
+  beforeEach(() => {
+    _resetRegistryForTesting();
+  });
+
+  it('all pre-registered placeholders have null component (verifies guard is needed)', () => {
+    const allPlugins = getBuiltinPlugins();
+    for (const { manifest } of allPlugins) {
+      if (manifest.contributes?.canvasWidgets) {
+        for (const widgetDecl of manifest.contributes.canvasWidgets) {
+          preRegisterFromManifest(manifest.id, widgetDecl);
+        }
+      }
+    }
+
+    const registered = getRegisteredWidgetTypes();
+    for (const entry of registered) {
+      // All pre-registered placeholders should have null component
+      expect(entry.descriptor.component).toBeNull();
+      // And be marked as pending
+      expect(isWidgetPending(entry.qualifiedType)).toBe(true);
+    }
+  });
+
+  it('CanvasView guards against null component rendering (structural)', () => {
+    // This catches the React error #130 regression: if a plugin widget has
+    // component: null and somehow gets past the isWidgetPending check,
+    // the CanvasView must NOT pass null to React.createElement.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(
+      path.resolve(__dirname, 'builtin/canvas/CanvasView.tsx'),
+      'utf-8',
+    );
+
+    // Find the plugin rendering block (between "const Component =" and the JSX)
+    const componentIdx = source.indexOf('const Component = registered.descriptor.component');
+    expect(componentIdx).toBeGreaterThan(-1);
+
+    const block = source.slice(componentIdx, componentIdx + 500);
+    // Must check for null before rendering
+    expect(block).toContain('if (!Component)');
+  });
+
+  it('group-project manifest declares requiresMcp: true', () => {
+    const allPlugins = getBuiltinPlugins();
+    const groupProject = allPlugins.find((p) => p.manifest.id === 'group-project');
+    expect(groupProject).toBeDefined();
+    expect(groupProject!.manifest.requiresMcp).toBe(true);
+  });
+
+  it('enabling canvas cascades to enable sub-plugins (structural)', () => {
+    // Verifies that the PluginListSettings cascade-enable logic exists,
+    // preventing the scenario where canvas is enabled but sub-plugins
+    // (group-project, agent-queue) are left disabled with null placeholders.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../features/settings/PluginListSettings.tsx'),
+      'utf-8',
+    );
+
+    // After enableApp(pluginId), there should be cascade logic for canvas
+    const enableIdx = source.indexOf('enableApp(pluginId)');
+    expect(enableIdx).toBeGreaterThan(-1);
+
+    const afterEnable = source.slice(enableIdx, enableIdx + 800);
+    expect(afterEnable).toContain('CANVAS_SUB_PLUGIN_IDS');
+    expect(afterEnable).toContain('enableApp(subId)');
+  });
+});
+
+// ── Canvas context menu filters disabled and MCP-dependent widgets ──────
+
+describe('CanvasContextMenu filters widgets by enabled state and MCP', () => {
+  it('filters against appEnabled and requiresMcp (structural)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(
+      path.resolve(__dirname, 'builtin/canvas/CanvasContextMenu.tsx'),
+      'utf-8',
+    );
+
+    // Must import the plugin store for enabled-state filtering
+    expect(source).toContain("from '../../plugin-store'");
+    expect(source).toContain('usePluginStore');
+
+    // Must read appEnabled from the store
+    expect(source).toContain('appEnabled');
+
+    // Must check requiresMcp on the manifest
+    expect(source).toContain('requiresMcp');
+
+    // Must check mcpEnabled
+    expect(source).toContain('mcpEnabled');
   });
 });
 
 // ── Built-in plugin activate() registers canvas widgets ─────────────────
 
 describe('built-in plugin activate() canvas widget registration', () => {
-  const allPlugins = getBuiltinPlugins({ canvas: true });
+  const allPlugins = getBuiltinPlugins();
   const pluginsWithWidgets = allPlugins.filter(
     (p) => p.manifest.contributes?.canvasWidgets && p.manifest.contributes.canvasWidgets.length > 0,
   );

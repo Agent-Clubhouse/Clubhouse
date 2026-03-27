@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { fireEvent, screen, act } from '@testing-library/react';
-import { showInputDialog, showConfirmDialog } from './PluginDialog';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { showInputDialog, showConfirmDialog, showApprovalDialog } from './PluginDialog';
 
 // Cleanup any leftover dialog containers after each test
 afterEach(() => {
@@ -146,7 +148,7 @@ describe('showInputDialog', () => {
     const dialog = screen.getByTestId('plugin-dialog');
     expect(dialog.className).toContain('shadow-2xl');
     expect(dialog.className).toContain('rounded-xl');
-    expect(dialog.className).toContain('border-ctp-surface1');
+    expect(dialog.className).toContain('border-surface-1');
   });
 });
 
@@ -241,7 +243,7 @@ describe('showConfirmDialog', () => {
     });
 
     const confirmBtn = screen.getByTestId('plugin-dialog-confirm');
-    expect(confirmBtn.className).toContain('bg-ctp-red');
+    expect(confirmBtn.className).toContain('bg-ctp-error');
     expect(confirmBtn.textContent).toBe('Delete');
   });
 
@@ -285,5 +287,199 @@ describe('showConfirmDialog', () => {
 
     await result!.promise;
     expect(document.querySelector('[data-plugin-dialog="confirm"]')).toBeNull();
+  });
+});
+
+describe('showApprovalDialog', () => {
+  const defaultOptions = {
+    title: 'Approve stage transition',
+    summary: 'Agent completed implementation. Review results and decide.',
+    actions: [
+      { value: 'reject', label: 'Reject', style: 'default' as const },
+      { value: 'approve', label: 'Approve', style: 'primary' as const },
+    ],
+  };
+
+  it('renders with title and summary', () => {
+    act(() => {
+      showApprovalDialog(defaultOptions);
+    });
+
+    expect(screen.getByTestId('plugin-approval-dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-approval-title').textContent).toBe('Approve stage transition');
+    expect(screen.getByTestId('plugin-approval-summary').textContent).toBe(
+      'Agent completed implementation. Review results and decide.',
+    );
+  });
+
+  it('renders all action buttons', () => {
+    act(() => {
+      showApprovalDialog(defaultOptions);
+    });
+
+    expect(screen.getByTestId('plugin-approval-action-reject')).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-approval-action-approve')).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-approval-action-reject').textContent).toBe('Reject');
+    expect(screen.getByTestId('plugin-approval-action-approve').textContent).toBe('Approve');
+  });
+
+  it('resolves with action value when clicked', async () => {
+    let result: { promise: Promise<string | null>; cleanup: () => void };
+
+    act(() => {
+      result = showApprovalDialog(defaultOptions);
+    });
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('plugin-approval-action-approve'));
+    });
+
+    const value = await result!.promise;
+    expect(value).toBe('approve');
+  });
+
+  it('resolves with null when overlay is clicked', async () => {
+    let result: { promise: Promise<string | null>; cleanup: () => void };
+
+    act(() => {
+      result = showApprovalDialog(defaultOptions);
+    });
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('plugin-dialog-overlay'));
+    });
+
+    const value = await result!.promise;
+    expect(value).toBeNull();
+  });
+
+  it('resolves with null when Escape is pressed', async () => {
+    let result: { promise: Promise<string | null>; cleanup: () => void };
+
+    act(() => {
+      result = showApprovalDialog(defaultOptions);
+    });
+
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
+
+    const value = await result!.promise;
+    expect(value).toBeNull();
+  });
+
+  it('resolves with primary action value when Enter is pressed', async () => {
+    let result: { promise: Promise<string | null>; cleanup: () => void };
+
+    act(() => {
+      result = showApprovalDialog(defaultOptions);
+    });
+
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Enter' });
+    });
+
+    const value = await result!.promise;
+    expect(value).toBe('approve');
+  });
+
+  it('falls back to first action for Enter when no primary style', async () => {
+    let result: { promise: Promise<string | null>; cleanup: () => void };
+
+    act(() => {
+      result = showApprovalDialog({
+        title: 'Choose',
+        summary: 'Pick one',
+        actions: [
+          { value: 'a', label: 'A' },
+          { value: 'b', label: 'B' },
+        ],
+      });
+    });
+
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Enter' });
+    });
+
+    const value = await result!.promise;
+    expect(value).toBe('a');
+  });
+
+  it('applies primary style class to primary actions', () => {
+    act(() => {
+      showApprovalDialog(defaultOptions);
+    });
+
+    const approveBtn = screen.getByTestId('plugin-approval-action-approve');
+    expect(approveBtn.className).toContain('bg-ctp-accent');
+  });
+
+  it('applies danger style class to danger actions', () => {
+    act(() => {
+      showApprovalDialog({
+        title: 'Confirm delete',
+        summary: 'This will remove the card.',
+        actions: [
+          { value: 'cancel', label: 'Cancel', style: 'default' },
+          { value: 'delete', label: 'Delete', style: 'danger' },
+        ],
+      });
+    });
+
+    const deleteBtn = screen.getByTestId('plugin-approval-action-delete');
+    expect(deleteBtn.className).toContain('bg-ctp-error');
+  });
+
+  it('cleanup resolves with null', async () => {
+    let result: { promise: Promise<string | null>; cleanup: () => void };
+
+    act(() => {
+      result = showApprovalDialog(defaultOptions);
+    });
+
+    act(() => {
+      result!.cleanup();
+    });
+
+    const value = await result!.promise;
+    expect(value).toBeNull();
+  });
+
+  it('removes container from DOM after resolving', async () => {
+    let result: { promise: Promise<string | null>; cleanup: () => void };
+
+    act(() => {
+      result = showApprovalDialog(defaultOptions);
+    });
+
+    expect(document.querySelector('[data-plugin-dialog="approval"]')).toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('plugin-approval-action-approve'));
+    });
+
+    await result!.promise;
+    expect(document.querySelector('[data-plugin-dialog="approval"]')).toBeNull();
+  });
+});
+
+describe('theme token validation', () => {
+  it('every color token used in PluginDialog.tsx is registered in the Tailwind theme', () => {
+    const componentSrc = readFileSync(resolve(__dirname, './PluginDialog.tsx'), 'utf-8');
+    const themeCss = readFileSync(resolve(__dirname, '../index.css'), 'utf-8');
+
+    // Extract all color tokens used as Tailwind color utilities (bg-, text-, border-, etc.)
+    const tokenMatches = componentSrc.matchAll(/(?:bg|text|border|placeholder:text|focus:border|hover:bg|hover:text)-([\w-]+)/g);
+    const usedTokens = [...new Set([...tokenMatches].map((m) => m[1]))];
+
+    // Filter to only theme color tokens (ctp-* and surface-*)
+    const colorTokens = usedTokens.filter((t) => t.startsWith('ctp-') || t.startsWith('surface-'));
+
+    expect(colorTokens.length).toBeGreaterThan(0);
+
+    for (const token of colorTokens) {
+      expect(themeCss, `${token} is used in PluginDialog.tsx but --color-${token} is not registered in index.css @theme`)
+        .toContain(`--color-${token}`);
+    }
   });
 });

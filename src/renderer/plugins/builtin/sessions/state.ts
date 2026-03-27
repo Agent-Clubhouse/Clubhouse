@@ -8,7 +8,7 @@
 export interface SelectedAgent {
   agentId: string;
   agentName: string;
-  kind: 'durable' | 'quick';
+  kind: 'durable' | 'quick' | 'companion';
   orchestrator?: string;
 }
 

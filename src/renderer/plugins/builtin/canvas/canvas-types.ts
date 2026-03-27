@@ -6,7 +6,7 @@ import type { CanvasWidgetMetadata } from '../../../../shared/plugin-types';
  * Browser, file, terminal, and git views are provided by their respective plugins
  * via the widget API (type: 'plugin').
  */
-export type CanvasViewType = 'agent' | 'anchor' | 'plugin';
+export type CanvasViewType = 'agent' | 'anchor' | 'plugin' | 'zone';
 
 export interface Position {
   x: number;
@@ -61,7 +61,15 @@ export interface PluginCanvasView extends CanvasViewBase {
   pluginId: string;
 }
 
-export type CanvasView = AgentCanvasView | AnchorCanvasView | PluginCanvasView;
+export interface ZoneCanvasView extends CanvasViewBase {
+  type: 'zone';
+  /** The theme applied to all widgets contained within this zone. */
+  themeId: string;
+  /** IDs of views currently contained in this zone (recomputed on spatial changes). */
+  containedViewIds: string[];
+}
+
+export type CanvasView = AgentCanvasView | AnchorCanvasView | PluginCanvasView | ZoneCanvasView;
 
 // ── Canvas instance (one per tab) ────────────────────────────────────
 
@@ -74,6 +82,8 @@ export interface CanvasInstance {
   zoomedViewId: string | null;
   /** Which view is currently selected (receives keyboard/scroll events). Ephemeral — not persisted. */
   selectedViewId: string | null;
+  /** Whether the minimap auto-hides after pan/zoom interactions. Persisted per canvas. */
+  minimapAutoHide: boolean;
 }
 
 /** Serialisable snapshot persisted to storage */
@@ -84,6 +94,7 @@ export interface CanvasInstanceData {
   viewport: Viewport;
   nextZIndex: number;
   zoomedViewId?: string | null;
+  minimapAutoHide?: boolean;
 }
 
 // ── Display name deduplication ────────────────────────────────────────
@@ -124,6 +135,13 @@ export const DEFAULT_ANCHOR_WIDTH = 240;
 export const DEFAULT_ANCHOR_HEIGHT = 50;
 /** Anchors have a fixed height — they cannot be resized vertically. */
 export const ANCHOR_HEIGHT = 50;
+export const DEFAULT_ZONE_WIDTH = 600;
+export const DEFAULT_ZONE_HEIGHT = 400;
+export const MIN_ZONE_WIDTH = 300;
+export const MIN_ZONE_HEIGHT = 200;
+export const ZONE_CARD_HEIGHT = 50;
+export const ZONE_CARD_WIDTH = 260;
+export const ZONE_PADDING = 40;
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 2.0;
 export const CANVAS_SIZE = 20000;

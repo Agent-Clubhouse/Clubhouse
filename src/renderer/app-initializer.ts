@@ -28,20 +28,24 @@ import { useOnboardingStore } from './stores/onboardingStore';
 import { initializePluginSystem } from './plugins/plugin-loader';
 import { rendererLog } from './plugins/renderer-logger';
 import { useToastStore } from './stores/toastStore';
+import { processResumeQueue } from './services/resume-queue';
+import type { RestartSessionState } from '../shared/types';
 
 // ─── Settings Loading ───────────────────────────────────────────────────────
 
-function loadAllSettings(): void {
-  useProjectStore.getState().loadProjects();
-  useNotificationStore.getState().loadSettings();
-  useThemeStore.getState().loadTheme();
-  useOrchestratorStore.getState().loadSettings();
-  useLoggingStore.getState().loadSettings();
-  useHeadlessStore.getState().loadSettings();
-  useBadgeSettingsStore.getState().loadSettings();
-  useSessionSettingsStore.getState().loadSettings();
-  useUpdateStore.getState().loadSettings();
-  initBadgeSideEffects();
+async function loadAllSettings(): Promise<void> {
+  // All store loads are independent — run them in parallel.
+  await Promise.all([
+    useProjectStore.getState().loadProjects(),
+    useNotificationStore.getState().loadSettings(),
+    useThemeStore.getState().loadTheme(),
+    useOrchestratorStore.getState().loadSettings(),
+    useLoggingStore.getState().loadSettings(),
+    useHeadlessStore.getState().loadSettings(),
+    useBadgeSettingsStore.getState().loadSettings(),
+    useSessionSettingsStore.getState().loadSettings(),
+    useUpdateStore.getState().loadSettings(),
+  ]);
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -50,14 +54,17 @@ function loadAllSettings(): void {
  * Initialize the application: load settings, start listeners, init plugins.
  * Returns a cleanup function that tears down listeners and timers.
  */
-export function initApp(): () => void {
+export async function initApp(): Promise<() => void> {
   const cleanups: (() => void)[] = [];
 
-  // 1. Load all settings BEFORE plugin system init (order matters)
-  loadAllSettings();
+  // 1. Load all settings first — stores must be populated before anything
+  //    that reads from them.
+  await loadAllSettings();
 
-  // 2. Initialize plugin system (must be after settings)
-  initializePluginSystem().catch((err) => {
+  // 2. Initialize plugin system (must be after settings are loaded)
+  try {
+    await initializePluginSystem();
+  } catch (err) {
     rendererLog('core:plugins', 'error', 'Failed to initialize plugin system', {
       meta: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
     });
@@ -65,26 +72,44 @@ export function initApp(): () => void {
       'Failed to initialize plugin system. Some features may be unavailable.',
       'error',
     );
-  });
+  }
 
-  // 3. Start IPC listeners for updates, annex, and plugin updates
+  // 3. Set up badge side effects AFTER settings are loaded, so subscriptions
+  //    see the correct initial state.
+  initBadgeSideEffects();
+
+  // 4. Start IPC listeners for updates, annex, and plugin updates
   cleanups.push(initUpdateListener());
   cleanups.push(initAnnexListener());
   cleanups.push(initPluginUpdateListener());
 
-  // 4. Check for What's New dialog after startup (delayed)
+  // 5. Check for What's New dialog after startup (delayed)
   const whatsNewTimer = setTimeout(() => {
     useUpdateStore.getState().checkWhatsNew();
   }, 1000);
   cleanups.push(() => clearTimeout(whatsNewTimer));
 
-  // 5. Show onboarding on first launch (delayed)
+  // 6. Show onboarding on first launch (delayed)
   if (!useOnboardingStore.getState().completed) {
     const onboardingTimer = setTimeout(() => {
       useOnboardingStore.getState().startOnboarding();
     }, 500);
     cleanups.push(() => clearTimeout(onboardingTimer));
   }
+
+  // 7. Check for pending session resumes after an update restart
+  window.clubhouse.app.getPendingResumes().then((state: unknown) => {
+    if (state && typeof state === 'object' && 'sessions' in state) {
+      const typed = state as RestartSessionState;
+      if (typed.sessions.length > 0) {
+        processResumeQueue(typed);
+      }
+    }
+  }).catch((err: unknown) => {
+    rendererLog('core:resume', 'error', 'Failed to check pending resumes', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
 
   return () => {
     for (const cleanup of cleanups) {

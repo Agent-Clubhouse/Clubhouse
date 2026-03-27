@@ -34,16 +34,16 @@ describe('orchestratorStore', () => {
 
   describe('loadSettings', () => {
     it('loads enabled list and orchestrators', async () => {
-      (window as any).clubhouse.app.getOrchestratorSettings.mockResolvedValue({ enabled: ['claude-code', 'opencode'] });
+      (window as any).clubhouse.app.getOrchestratorSettings.mockResolvedValue({ enabled: ['claude-code', 'codex-cli'] });
       (window as any).clubhouse.agent.getOrchestrators.mockResolvedValue([
         { id: 'claude-code', displayName: 'Claude Code' },
-        { id: 'opencode', displayName: 'OpenCode', badge: 'Beta' },
+        { id: 'codex-cli', displayName: 'Codex CLI', badge: 'Beta' },
       ]);
 
       await useOrchestratorStore.getState().loadSettings();
 
       const state = useOrchestratorStore.getState();
-      expect(state.enabled).toEqual(['claude-code', 'opencode']);
+      expect(state.enabled).toEqual(['claude-code', 'codex-cli']);
       expect(state.allOrchestrators).toHaveLength(2);
     });
 
@@ -80,9 +80,9 @@ describe('orchestratorStore', () => {
     it('enables an orchestrator', async () => {
       (window as any).clubhouse.app.saveOrchestratorSettings.mockResolvedValue(undefined);
 
-      await useOrchestratorStore.getState().setEnabled('opencode', true);
+      await useOrchestratorStore.getState().setEnabled('codex-cli', true);
 
-      expect(useOrchestratorStore.getState().enabled).toEqual(['claude-code', 'opencode']);
+      expect(useOrchestratorStore.getState().enabled).toEqual(['claude-code', 'codex-cli']);
     });
 
     it('does not duplicate already enabled orchestrator', async () => {
@@ -94,10 +94,10 @@ describe('orchestratorStore', () => {
     });
 
     it('disables an orchestrator', async () => {
-      useOrchestratorStore.setState({ enabled: ['claude-code', 'opencode'] });
+      useOrchestratorStore.setState({ enabled: ['claude-code', 'codex-cli'] });
       (window as any).clubhouse.app.saveOrchestratorSettings.mockResolvedValue(undefined);
 
-      await useOrchestratorStore.getState().setEnabled('opencode', false);
+      await useOrchestratorStore.getState().setEnabled('codex-cli', false);
 
       expect(useOrchestratorStore.getState().enabled).toEqual(['claude-code']);
     });
@@ -116,7 +116,7 @@ describe('orchestratorStore', () => {
       useOrchestratorStore.setState({ enabled: ['claude-code'] });
       (window as any).clubhouse.app.saveOrchestratorSettings.mockRejectedValue(new Error('save failed'));
 
-      await useOrchestratorStore.getState().setEnabled('opencode', true);
+      await useOrchestratorStore.getState().setEnabled('codex-cli', true);
 
       // Should revert to original
       expect(useOrchestratorStore.getState().enabled).toEqual(['claude-code']);
@@ -125,10 +125,10 @@ describe('orchestratorStore', () => {
     it('persists new enabled list', async () => {
       (window as any).clubhouse.app.saveOrchestratorSettings.mockResolvedValue(undefined);
 
-      await useOrchestratorStore.getState().setEnabled('opencode', true);
+      await useOrchestratorStore.getState().setEnabled('codex-cli', true);
 
       expect((window as any).clubhouse.app.saveOrchestratorSettings).toHaveBeenCalledWith({
-        enabled: ['claude-code', 'opencode'],
+        enabled: ['claude-code', 'codex-cli'],
       });
     });
   });
@@ -161,7 +161,7 @@ describe('orchestratorStore', () => {
       useOrchestratorStore.setState({
         allOrchestrators: [
           { id: 'claude-code', displayName: 'Claude Code' } as any,
-          { id: 'opencode', displayName: 'OpenCode' } as any,
+          { id: 'codex-cli', displayName: 'Codex CLI' } as any,
         ],
       });
 
@@ -174,7 +174,7 @@ describe('orchestratorStore', () => {
 
       const { availability } = useOrchestratorStore.getState();
       expect(availability['claude-code']).toEqual({ available: true });
-      expect(availability['opencode']).toEqual({ available: false, error: 'Not installed' });
+      expect(availability['codex-cli']).toEqual({ available: false, error: 'Not installed' });
     });
 
     it('handles check failure for individual orchestrator', async () => {
@@ -197,7 +197,7 @@ describe('orchestratorStore', () => {
         enabled: ['claude-code'],
         allOrchestrators: [
           { id: 'claude-code', displayName: 'Claude Code' } as any,
-          { id: 'opencode', displayName: 'OpenCode' } as any,
+          { id: 'codex-cli', displayName: 'Codex CLI' } as any,
         ],
       });
 

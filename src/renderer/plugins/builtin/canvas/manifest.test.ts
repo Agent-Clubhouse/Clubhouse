@@ -17,8 +17,8 @@ describe('canvas manifest', () => {
     expect(manifest.scope).toBe('dual');
   });
 
-  it('targets engine.api 0.8', () => {
-    expect(manifest.engine.api).toBe(0.8);
+  it('targets engine.api 0.9', () => {
+    expect(manifest.engine.api).toBe(0.9);
   });
 
   it('contributes tab.title and railItem.title', () => {
@@ -64,13 +64,6 @@ describe('canvas manifest', () => {
 
   it('contributes cross-project-canvas boolean setting with default true', () => {
     const setting = manifest.contributes!.settings!.find((s) => s.key === 'cross-project-canvas');
-    expect(setting).toBeDefined();
-    expect(setting!.type).toBe('boolean');
-    expect(setting!.default).toBe(true);
-  });
-
-  it('contributes showHiddenFiles boolean setting with default true', () => {
-    const setting = manifest.contributes!.settings!.find((s) => s.key === 'showHiddenFiles');
     expect(setting).toBeDefined();
     expect(setting!.type).toBe('boolean');
     expect(setting!.default).toBe(true);

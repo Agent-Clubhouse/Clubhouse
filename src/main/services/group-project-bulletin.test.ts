@@ -21,18 +21,22 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockImplementation(async (p: string, content: string) => {
     store.set(p, content);
   }),
+  rm: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
-import { getBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
+import { getBulletinBoard, destroyBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
+import * as fsp from 'fs/promises';
+import * as path from 'path';
 
 describe('BulletinBoard', () => {
   beforeEach(() => {
     store.clear();
     _resetAllBoardsForTesting();
+    vi.mocked(fsp.rm).mockClear();
   });
 
   it('posts a message and returns it', async () => {
@@ -136,5 +140,44 @@ describe('BulletinBoard', () => {
     const b1 = getBulletinBoard('gp_1');
     const b2 = getBulletinBoard('gp_2');
     expect(b1).not.toBe(b2);
+  });
+
+  // ── destroyBulletinBoard disk cleanup ─────────────────────────────
+
+  describe('destroyBulletinBoard', () => {
+    it('removes the in-memory board instance', async () => {
+      const b1 = getBulletinBoard('gp_destroy');
+      expect(b1).toBeDefined();
+
+      await destroyBulletinBoard('gp_destroy');
+
+      // Should get a fresh instance now (different object)
+      const b2 = getBulletinBoard('gp_destroy');
+      expect(b2).not.toBe(b1);
+    });
+
+    it('removes the project data directory from disk', async () => {
+      // Use path.join for cross-platform compatibility (Windows uses backslashes)
+      const expectedDir = path.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', 'gp_cleanup');
+      // Mark the directory as existing so access() succeeds
+      store.set(expectedDir, '');
+
+      getBulletinBoard('gp_cleanup');
+      await destroyBulletinBoard('gp_cleanup');
+
+      expect(fsp.rm).toHaveBeenCalledWith(
+        expectedDir,
+        { recursive: true, force: true },
+      );
+    });
+
+    it('does not throw when rm fails', async () => {
+      // Mark directory as existing so rm gets called
+      store.set('/tmp/test-clubhouse/.clubhouse-dev/group-projects/gp_rmfail', '');
+      vi.mocked(fsp.rm).mockRejectedValueOnce(new Error('EPERM'));
+
+      // Should not throw — error is caught and logged
+      await expect(destroyBulletinBoard('gp_rmfail')).resolves.toBeUndefined();
+    });
   });
 });

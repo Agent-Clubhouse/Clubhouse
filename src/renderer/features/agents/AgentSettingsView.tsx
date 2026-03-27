@@ -120,6 +120,22 @@ export function AgentSettingsView({ agent }: Props) {
     });
   };
 
+  const handleStructuredModeChange = async (enabled: boolean) => {
+    if (!projectPath) return;
+    setStructuredMode(enabled);
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { structuredMode: enabled });
+    useAgentStore.setState((s) => {
+      const existing = s.agents[agent.id];
+      if (!existing) return s;
+      return {
+        agents: {
+          ...s.agents,
+          [agent.id]: { ...existing, structuredMode: enabled || undefined },
+        },
+      };
+    });
+  };
+
   const handleOrchestratorChange = async (value: string) => {
     if (!projectPath) return;
     await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value });
@@ -167,6 +183,9 @@ export function AgentSettingsView({ agent }: Props) {
 
   // Free Agent Mode state (main agent)
   const [freeAgentMode, setFreeAgentMode] = useState(agent.freeAgentMode ?? false);
+
+  // Structured Mode state (main agent)
+  const [structuredMode, setStructuredMode] = useState(agent.structuredMode ?? false);
 
   // Quick Agent Defaults state
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
@@ -251,6 +270,7 @@ export function AgentSettingsView({ agent }: Props) {
         // Sync agent model and free agent mode from disk
         setAgentModel(config?.model || 'default');
         setFreeAgentMode(config?.freeAgentMode ?? false);
+        setStructuredMode(config?.structuredMode ?? false);
         setQadLoaded(true);
       } catch {
         setQadLoaded(true);
@@ -568,6 +588,38 @@ export function AgentSettingsView({ agent }: Props) {
                     <option key={opt.id} value={opt.id}>{opt.label}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Structured Mode */}
+              <div>
+                <label
+                  className={`flex items-center gap-2 ${
+                    !isRunning && (capabilities?.structuredMode ?? false)
+                      ? 'cursor-pointer'
+                      : 'cursor-not-allowed opacity-50'
+                  }`}
+                  title={
+                    !(capabilities?.structuredMode ?? false)
+                      ? 'Not supported by this orchestrator'
+                      : isRunning
+                      ? 'Stop agent to change this setting'
+                      : 'Run in structured mode with rich event streaming'
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={structuredMode}
+                    onChange={(e) => handleStructuredModeChange(e.target.checked)}
+                    disabled={isRunning || !(capabilities?.structuredMode ?? false)}
+                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-ctp-text">Structured Mode</span>
+                </label>
+                {structuredMode && (capabilities?.structuredMode ?? false) && (
+                  <p className="mt-1 text-[10px] text-ctp-subtext0 pl-6">
+                    This agent will run with rich event streaming instead of a PTY terminal.
+                  </p>
+                )}
               </div>
 
               {/* Free Agent Mode */}

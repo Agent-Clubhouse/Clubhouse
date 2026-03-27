@@ -14,7 +14,7 @@ import { useAgentStore } from '../stores/agentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
-import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, parseNamespacedId } from '../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 
 export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): AgentsAPI {
@@ -41,10 +41,46 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
           parentAgentId: a.parentAgentId,
           orchestrator: a.orchestrator,
           freeAgentMode: a.freeAgentMode,
+          pluginMetadata: a.pluginMetadata,
         }));
     },
 
-    async runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean }): Promise<string> {
+    async createDurable(options: {
+      projectId?: string;
+      name: string;
+      color: string;
+      model?: string;
+      useWorktree?: boolean;
+      orchestrator?: string;
+      freeAgentMode?: boolean;
+      mcpIds?: string[];
+    }): Promise<string> {
+      if (options.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
+        throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);
+      }
+
+      let projectId = ctx.projectId;
+      let projectPath = ctx.projectPath;
+
+      if (options.projectId) {
+        const project = useProjectStore.getState().projects.find((p) => p.id === options.projectId);
+        if (!project) throw new Error(`Project not found: ${options.projectId}`);
+        projectId = project.id;
+        projectPath = project.path;
+      }
+
+      if (!projectId || !projectPath) {
+        throw new Error('createDurable requires a project context');
+      }
+
+      const model = options.model && options.model !== 'default' ? options.model : undefined;
+      const config = await window.clubhouse.agent.createDurable(
+        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds,
+      );
+      return useAgentStore.getState().spawnDurableAgent(projectId, projectPath, config, false);
+    },
+
+    async runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean; metadata?: Record<string, string> }): Promise<string> {
       if (options?.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
         throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);
       }
@@ -70,6 +106,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         undefined, // parentAgentId
         options?.orchestrator,
         options?.freeAgentMode,
+        options?.metadata,
       );
     },
 
@@ -123,6 +160,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         exitCode: r.exitCode,
         completedAt: r.completedAt,
         parentAgentId: r.parentAgentId,
+        pluginMetadata: r.pluginMetadata,
       }));
     },
 
@@ -302,6 +340,17 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       } catch {
         return null;
       }
+    },
+
+    // v0.9 companion agent methods
+    async spawnCompanion(options?: { model?: string; systemPrompt?: string }) {
+      return window.clubhouse.agent.spawnCompanion(ctx.pluginId, options);
+    },
+    async getCompanionStatus() {
+      return window.clubhouse.agent.getCompanionStatus(ctx.pluginId);
+    },
+    async getCompanionWorkspace() {
+      return window.clubhouse.agent.getCompanionWorkspace(ctx.pluginId);
     },
   };
 }

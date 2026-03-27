@@ -37,7 +37,7 @@ function makeGroupProjectView(id: string, groupProjectId: string, x = 300, y = 0
   return {
     id,
     type: 'plugin',
-    pluginWidgetType: 'plugin:group-project:group-project-card',
+    pluginWidgetType: 'plugin:group-project:group-project',
     pluginId: 'group-project',
     position: { x, y },
     size: { width: 200, height: 200 },
@@ -315,5 +315,147 @@ describe('WireOverlay', () => {
 
     const group = container.querySelector('[data-testid^="wire-group-"]');
     expect(group?.getAttribute('data-bidir')).toBe('true');
+  });
+
+  it('dims wire when source agent is sleeping', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} sleepingAgentIds={new Set(['agent-1'])} />,
+    );
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-dimmed')).toBe('true');
+    const pathEl = container.querySelector('[data-testid="wire-path-agent-1--b1"]') as HTMLElement;
+    expect(pathEl?.style.opacity).toBe('0.35');
+  });
+
+  it('dims wire when target agent is sleeping', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeAgentView('a2', 'agent-2', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} sleepingAgentIds={new Set(['agent-2'])} />,
+    );
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-dimmed')).toBe('true');
+  });
+
+  it('does not dim wire when neither endpoint is sleeping', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} sleepingAgentIds={new Set(['agent-other'])} />,
+    );
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-dimmed')).toBeNull();
+    const pathEl = container.querySelector('[data-testid="wire-path-agent-1--b1"]') as HTMLElement;
+    expect(pathEl?.style.opacity).toBe('1');
+  });
+
+  it('renders wire (dimmed) when source agent is sleeping — wire definitions survive sleep', () => {
+    // This test verifies the core fix: wires remain visible when rendered
+    // from wireDefinitions even though MCP bindings may have been removed.
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'sleeping-agent', 0, 0),
+      makeAgentView('a2', 'awake-agent', 400, 0),
+    ];
+    // These bindings represent wireDefinitions — they persist even when
+    // the MCP binding system has removed the live binding for sleeping-agent.
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'sleeping-agent', targetId: 'awake-agent', targetKind: 'agent', label: 'Awake Agent' },
+    ];
+
+    const { container } = render(
+      <WireOverlay
+        views={views}
+        bindings={bindings}
+        sleepingAgentIds={new Set(['sleeping-agent'])}
+      />,
+    );
+
+    // Wire MUST be rendered (dimmed) — not absent
+    const pathEl = container.querySelector('[data-testid="wire-path-sleeping-agent--awake-agent"]');
+    expect(pathEl).toBeTruthy();
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-dimmed')).toBe('true');
+  });
+
+  it('renders wire to sleeping target — supports connecting to sleeping agents', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'awake-agent', 0, 0),
+      makeAgentView('a2', 'sleeping-target', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'awake-agent', targetId: 'sleeping-target', targetKind: 'agent', label: 'Sleeping Target' },
+    ];
+
+    const { container } = render(
+      <WireOverlay
+        views={views}
+        bindings={bindings}
+        sleepingAgentIds={new Set(['sleeping-target'])}
+      />,
+    );
+
+    // Wire should be rendered and dimmed
+    const pathEl = container.querySelector('[data-testid="wire-path-awake-agent--sleeping-target"]');
+    expect(pathEl).toBeTruthy();
+    expect((pathEl as HTMLElement)?.style.opacity).toBe('0.35');
+  });
+
+  it('does not set explicit zIndex on SVG container so DOM order determines stacking', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    const svg = container.querySelector('svg');
+    expect(svg).toBeTruthy();
+    // Should NOT have zIndex: 0 (or any explicit zIndex) — natural DOM stacking
+    expect(svg?.style.zIndex).toBe('');
+  });
+
+  it('does not dim wire when sleepingAgentIds is not provided', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-dimmed')).toBeNull();
   });
 });

@@ -54,13 +54,15 @@ function unregisterPackThemes(pluginId: string, themes: PluginThemeDeclaration[]
   }
 }
 
-/** Returns IDs of built-in plugins that should be auto-enabled per project. */
+/**
+ * Returns IDs of built-in plugins eligible for project-level activation.
+ * Includes ALL project/dual-scoped builtins — the app-first gate in
+ * handleProjectSwitch() controls actual activation via appEnabled.
+ */
 export function getBuiltinProjectPluginIds(experimentalFlags: ExperimentalFlags = {}): string[] {
-  const defaults = getDefaultEnabledIds(experimentalFlags);
   return getBuiltinPlugins(experimentalFlags)
     .filter(({ manifest }) =>
-      defaults.has(manifest.id) &&
-      (manifest.scope === 'project' || manifest.scope === 'dual'),
+      manifest.scope === 'project' || manifest.scope === 'dual',
     )
     .map(({ manifest }) => manifest.id);
 }
@@ -81,127 +83,181 @@ export async function initializePluginSystem(): Promise<void> {
 
   rendererLog('core:plugins', 'info', 'Initializing plugin system');
 
-  // Fetch experimental flags to gate conditional built-in plugins
-  let experimentalFlags: ExperimentalFlags = {};
   try {
-    experimentalFlags = await window.clubhouse.app.getExperimentalSettings();
-  } catch {
-    // Default to empty — no experimental plugins
-  }
-
-  // Register built-in plugins
-  const builtins = getBuiltinPlugins(experimentalFlags);
-  const defaults = getDefaultEnabledIds(experimentalFlags);
-  for (const { manifest, module: mod } of builtins) {
-    store.registerPlugin(manifest, 'builtin', '', 'registered');
-    // Built-in manifests are loaded by initializeTrustedManifests in the main
-    // process at startup — no IPC registration needed.
-    store.setPluginModule(manifest.id, mod);
-    // Only auto-enable default plugins at app level (app-level acts as availability gate for all scopes)
-    if (defaults.has(manifest.id)) {
-      store.enableApp(manifest.id);
+    // Fetch experimental flags to gate conditional built-in plugins
+    let experimentalFlags: ExperimentalFlags = {};
+    try {
+      experimentalFlags = await window.clubhouse.app.getExperimentalSettings();
+    } catch {
+      // Default to empty — no experimental plugins
     }
-  }
 
-  // Pre-register canvas widgets from all built-in plugin manifests so they
-  // appear in the context menu immediately — before project-scoped plugins
-  // have been activated via handleProjectSwitch().
-  for (const { manifest } of builtins) {
-    if (manifest.contributes?.canvasWidgets) {
-      for (const widgetDecl of manifest.contributes.canvasWidgets) {
-        preRegisterFromManifest(manifest.id, widgetDecl);
+    // Register built-in plugins
+    const builtins = getBuiltinPlugins(experimentalFlags);
+    const defaults = getDefaultEnabledIds(experimentalFlags);
+    for (const { manifest, module: mod } of builtins) {
+      store.registerPlugin(manifest, 'builtin', '', 'registered');
+      // Built-in manifests are loaded by initializeTrustedManifests in the main
+      // process at startup — no IPC registration needed.
+      store.setPluginModule(manifest.id, mod);
+      // Only auto-enable default plugins at app level (app-level acts as availability gate for all scopes)
+      if (defaults.has(manifest.id)) {
+        store.enableApp(manifest.id);
       }
     }
-  }
 
-  // Read persisted external-plugins-enabled flag
-  let externalEnabled = false;
-  try {
-    const persisted = await window.clubhouse.plugin.storageRead({
-      pluginId: '_system',
-      scope: 'global',
-      key: 'external-plugins-enabled',
-    });
-    externalEnabled = persisted === true;
-  } catch {
-    // Default to disabled
-  }
-  store.setExternalPluginsEnabled(externalEnabled);
+    // Read persisted external-plugins-enabled flag
+    let externalEnabled = false;
+    try {
+      const persisted = await window.clubhouse.plugin.storageRead({
+        pluginId: '_system',
+        scope: 'global',
+        key: 'external-plugins-enabled',
+      });
+      externalEnabled = persisted === true;
+    } catch {
+      // Default to disabled
+    }
+    store.setExternalPluginsEnabled(externalEnabled);
 
-  // Discover community plugins (only when external plugins are enabled)
-  if (externalEnabled) {
-    const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
-    for (const { manifest: rawManifest, pluginPath, fromMarketplace } of communityPlugins) {
-      const source = fromMarketplace ? 'marketplace' as const : 'community' as const;
-      const result = validateManifest(rawManifest);
-      if (result.valid && result.manifest) {
-        store.registerPlugin(result.manifest, source, pluginPath, 'registered');
-        // Notify main process to load trusted manifest from disk
-        window.clubhouse.plugin.refreshManifestFromDisk(result.manifest.id);
-      } else {
-        rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
-          meta: { pluginPath, errors: result.errors },
+    // Discover community plugins (only when external plugins are enabled)
+    if (externalEnabled) {
+      try {
+        const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
+        for (const { manifest: rawManifest, pluginPath, fromMarketplace } of communityPlugins) {
+          const source = fromMarketplace ? 'marketplace' as const : 'community' as const;
+          const result = validateManifest(rawManifest);
+          if (result.valid && result.manifest) {
+            store.registerPlugin(result.manifest, source, pluginPath, 'registered');
+            // Pre-register canvas widgets so they appear in the context menu before activation
+            if (result.manifest.contributes?.canvasWidgets) {
+              for (const widgetDecl of result.manifest.contributes.canvasWidgets) {
+                preRegisterFromManifest(result.manifest.id, widgetDecl);
+              }
+            }
+            // Notify main process to load trusted manifest from disk
+            window.clubhouse.plugin.refreshManifestFromDisk(result.manifest.id);
+            // Log deprecation warnings for plugins on old API versions
+            if (result.warnings.length > 0) {
+              rendererLog('core:plugins', 'warn', `Plugin "${result.manifest.name}" (${result.manifest.id}): ${result.warnings.join('; ')}`, {
+                meta: { pluginId: result.manifest.id, warnings: result.warnings },
+              });
+            }
+          } else {
+            rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
+              meta: { pluginPath, errors: result.errors },
+            });
+            // Register as incompatible so it appears in settings
+            const partialManifest: PluginManifest = {
+              id: (rawManifest as Record<string, unknown>)?.id as string || pluginPath.split('/').pop() || 'unknown',
+              name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
+              version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
+              engine: { api: 0 },
+              scope: 'project',
+            };
+            store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', result.errors.join('; '));
+          }
+        }
+      } catch (err) {
+        rendererLog('core:plugins', 'error', 'Community plugin discovery failed', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
         });
-        // Register as incompatible so it appears in settings
-        const partialManifest: PluginManifest = {
-          id: (rawManifest as Record<string, unknown>)?.id as string || pluginPath.split('/').pop() || 'unknown',
-          name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
-          version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
-          engine: { api: 0 },
-          scope: 'project',
-        };
-        store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', result.errors.join('; '));
       }
     }
-  }
 
-  // Load persisted enabled lists
-  // App-level config — merge with auto-enabled builtins so new builtins are always included
-  try {
-    const appConfig = await window.clubhouse.plugin.storageRead({
-      pluginId: '_system',
-      scope: 'global',
-      key: 'app-enabled',
-    }) as string[] | undefined;
-    if (Array.isArray(appConfig)) {
-      // Merge: persisted list + any auto-enabled builtins not already present
-      const currentAppEnabled = usePluginStore.getState().appEnabled;
-      const merged = [...new Set([...appConfig, ...currentAppEnabled])];
-      store.loadAppPluginConfig(merged);
+    // Load persisted enabled lists
+    // App-level config — merge with auto-enabled builtins so new builtins are always included
+    try {
+      const appConfig = await window.clubhouse.plugin.storageRead({
+        pluginId: '_system',
+        scope: 'global',
+        key: 'app-enabled',
+      }) as string[] | undefined;
+      if (Array.isArray(appConfig)) {
+        // Merge: persisted list + any auto-enabled builtins not already present
+        const currentAppEnabled = usePluginStore.getState().appEnabled;
+        const merged = [...new Set([...appConfig, ...currentAppEnabled])];
+        store.loadAppPluginConfig(merged);
+      }
+    } catch {
+      // No saved config — auto-enabled builtins remain
     }
-  } catch {
-    // No saved config — auto-enabled builtins remain
-  }
 
-  // Activate app-scoped and dual-scoped plugins that are in appEnabled.
-  // Re-read the store to get the CURRENT state — the `store` reference
-  // captured at the top of this function is stale after all the
-  // registerPlugin / loadAppPluginConfig calls above.
-  const currentState = usePluginStore.getState();
-  const appEnabled = currentState.appEnabled;
-
-  // Write startup marker *before* activation so a crash during init
-  // will trigger safe mode on the next launch.
-  await window.clubhouse.plugin.startupMarkerWrite(appEnabled);
-
-  for (const pluginId of appEnabled) {
-    const entry = currentState.plugins[pluginId];
-    if (entry && (entry.manifest.scope === 'app' || entry.manifest.scope === 'dual')) {
-      await activatePlugin(pluginId);
+    // Migration: canvas was previously auto-enabled in-memory via the
+    // experimental 'canvas' flag but never persisted to the app-enabled
+    // storage.  v0.38 removed the flag path, so existing users who had
+    // canvas enabled lost their enablement.  Only migrate canvas itself —
+    // sub-plugins (group-project, agent-queue) depend on MCP which is
+    // still experimental; users can enable them manually.
+    if (experimentalFlags && experimentalFlags.canvas) {
+      const migrationState = usePluginStore.getState();
+      if (!migrationState.appEnabled.includes('canvas')) {
+        migrationState.enableApp('canvas');
+        rendererLog('core:plugins', 'info', 'Migrated canvas from experimental flag to app-enabled');
+      }
+      // Persist the migrated state and clear the stale flag
+      try {
+        await window.clubhouse.plugin.storageWrite({
+          pluginId: '_system',
+          scope: 'global',
+          key: 'app-enabled',
+          value: usePluginStore.getState().appEnabled,
+        });
+      } catch { /* best effort */ }
+      try {
+        const cleaned = { ...experimentalFlags };
+        delete cleaned.canvas;
+        await window.clubhouse.app.saveExperimentalSettings(cleaned);
+      } catch { /* best effort */ }
     }
+
+    // Activate app-scoped and dual-scoped plugins that are in appEnabled.
+    // Re-read the store to get the CURRENT state — the `store` reference
+    // captured at the top of this function is stale after all the
+    // registerPlugin / loadAppPluginConfig calls above.
+    const currentState = usePluginStore.getState();
+    const appEnabled = currentState.appEnabled;
+
+    // Pre-register canvas widgets from enabled built-in plugin manifests so
+    // they appear in the context menu immediately — before project-scoped
+    // plugins have been activated via handleProjectSwitch().
+    // Only pre-register for plugins that are actually in appEnabled.
+    const appEnabledSet = new Set(appEnabled);
+    for (const { manifest } of builtins) {
+      if (appEnabledSet.has(manifest.id) && manifest.contributes?.canvasWidgets) {
+        for (const widgetDecl of manifest.contributes.canvasWidgets) {
+          preRegisterFromManifest(manifest.id, widgetDecl);
+        }
+      }
+    }
+
+    // Write startup marker *before* activation so a crash during init
+    // will trigger safe mode on the next launch.
+    await window.clubhouse.plugin.startupMarkerWrite(appEnabled);
+
+    for (const pluginId of appEnabled) {
+      const entry = currentState.plugins[pluginId];
+      if (entry && (entry.manifest.scope === 'app' || entry.manifest.scope === 'dual')) {
+        await activatePlugin(pluginId);
+      }
+    }
+
+    // Clear startup marker after successful init
+    await window.clubhouse.plugin.startupMarkerClear();
+
+    const state = usePluginStore.getState();
+    const pluginCount = Object.keys(state.plugins).length;
+    const activeCount = Object.values(state.plugins).filter((p) => p.status === 'activated').length;
+    rendererLog('core:plugins', 'info', 'Plugin system initialized', {
+      meta: { pluginCount, activeCount, appEnabled: state.appEnabled },
+    });
+  } catch (err) {
+    rendererLog('core:plugins', 'error', 'Plugin system initialization failed', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  } finally {
+    _pluginSystemReadyResolve();
   }
-
-  // Clear startup marker after successful init
-  await window.clubhouse.plugin.startupMarkerClear();
-
-  const state = usePluginStore.getState();
-  const pluginCount = Object.keys(state.plugins).length;
-  const activeCount = Object.values(state.plugins).filter((p) => p.status === 'activated').length;
-  rendererLog('core:plugins', 'info', 'Plugin system initialized', {
-    meta: { pluginCount, activeCount, appEnabled: state.appEnabled },
-  });
-
-  _pluginSystemReadyResolve();
 }
 
 export async function activatePlugin(

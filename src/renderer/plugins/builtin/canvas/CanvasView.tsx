@@ -6,7 +6,9 @@ import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
-import { getRegisteredWidgetType, isWidgetPending, onRegistryChange } from '../../canvas-widget-registry';
+import { getRegisteredWidgetType, generatePluginWidgetDisplayName, isWidgetPending, onRegistryChange, parsePluginWidgetType } from '../../canvas-widget-registry';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
+import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { LinkDropdown } from './LinkDropdown';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -58,13 +60,15 @@ interface CanvasViewComponentProps {
   isZoomed?: boolean;
   isSelected?: boolean;
   isMultiSelected?: boolean;
-  /** When true, hide this view because it's part of a multi-drag (non-primary). */
-  multiDragHidden?: boolean;
+  /** Offset to apply during external drag (multi-drag or zone drag). */
+  dragOffset?: { dx: number; dy: number };
   attention?: CanvasViewAttention | null;
   /** All views on the canvas (needed for LinkDropdown target list). */
   allViews?: CanvasView[];
   /** Whether MCP is enabled — controls visibility of Link/Wire buttons. */
   mcpEnabled?: boolean;
+  /** Zone theme ID override — used to propagate zone theme to terminal. */
+  zoneThemeId?: string;
   /** Callback to start wire drag from this agent view. */
   onStartWireDrag?: (view: AgentCanvasViewType) => void;
   onClose: () => void;
@@ -87,10 +91,11 @@ export function CanvasViewComponent({
   isZoomed,
   isSelected,
   isMultiSelected,
-  multiDragHidden,
+  dragOffset,
   attention,
   allViews,
   mcpEnabled,
+  zoneThemeId,
   onStartWireDrag,
   onClose,
   onFocus,
@@ -117,6 +122,12 @@ export function CanvasViewComponent({
     const disposable = onRegistryChange(() => setRegistryTick((n) => n + 1));
     return () => disposable.dispose();
   }, [view.type]);
+
+  // Security gate: track annex enablement for plugin widgets on remote projects
+  const canvasProjectId = api.context.projectId;
+  const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
+  const isCanvasRemote = canvasProjectId ? isRemoteProjectId(canvasProjectId) : false;
+
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
   const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 0, startH: 0, startX: 0, startY: 0, direction: 'se' as ResizeDirection });
 
@@ -129,6 +140,8 @@ export function CanvasViewComponent({
   const dragPosRef = useRef<Position | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const currentPos = resizeState?.position ?? dragPos ?? view.position;
   const currentSize = resizeState?.size ?? view.size;
@@ -322,18 +335,101 @@ export function CanvasViewComponent({
     };
   }, [resizeState, zoom, onResizeEnd]);
 
+  // ── Mouse coordinate compensation for CSS scale(zoom) ─────────
+  // The canvas workspace wraps all views in `transform: scale(zoom)`.
+  // Interactive children (xterm.js terminals, Monaco editors) compute
+  // cell/character positions from `clientX/Y` and cached cell dimensions
+  // that are in the *unscaled* coordinate space.  At zoom ≠ 1 the
+  // screen-space mouse offset divided by unscaled cell size yields the
+  // wrong row/col — e.g. at zoom 0.75, clicking row 10 maps to row 7,
+  // making the selection highlight appear "a few lines too high".
+  //
+  // Fix: intercept mouse events in the capture phase (before xterm/Monaco
+  // handlers) and divide the offset from the element edge by zoom so that
+  // the value reaching the library matches the unscaled cell grid.
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+
+    const adjustEvent = (e: MouseEvent) => {
+      const z = zoomRef.current;
+      if (z === 1) return;
+      const rect = el.getBoundingClientRect();
+      const adjustedX = rect.left + (e.clientX - rect.left) / z;
+      const adjustedY = rect.top + (e.clientY - rect.top) / z;
+      Object.defineProperty(e, 'clientX', { value: adjustedX, configurable: true });
+      Object.defineProperty(e, 'clientY', { value: adjustedY, configurable: true });
+    };
+
+    const events: string[] = ['mousedown', 'mouseup', 'mousemove', 'click', 'dblclick', 'contextmenu'];
+    for (const type of events) {
+      el.addEventListener(type, adjustEvent as EventListener, true);
+    }
+
+    return () => {
+      for (const type of events) {
+        el.removeEventListener(type, adjustEvent as EventListener, true);
+      }
+    };
+  }, []);
+
   // ── Content based on view type ─────────────────────────────────
 
   const handleUpdateMetadata = useCallback((updates: CanvasWidgetMetadata) => {
-    onUpdate({ metadata: { ...view.metadata, ...updates } });
-  }, [view.metadata, onUpdate]);
+    const mergedMetadata = { ...view.metadata, ...updates };
+
+    // Store last canvas position for restore on unpin
+    (mergedMetadata as any).__lastCanvasPosition = {
+      x: view.position.x,
+      y: view.position.y,
+      width: view.size.width,
+      height: view.size.height
+    };
+
+    const viewUpdates: Partial<CanvasView> = { metadata: mergedMetadata };
+
+    // Regenerate displayName from the plugin's callback so the title bar
+    // reflects metadata changes (e.g. naming a new group project).
+    if (view.type === 'plugin') {
+      const registered = getRegisteredWidgetType((view as PluginCanvasViewType).pluginWidgetType);
+      if (registered) {
+        viewUpdates.displayName = generatePluginWidgetDisplayName(registered, mergedMetadata);
+      }
+    }
+
+    onUpdate(viewUpdates);
+  }, [view.metadata, view.type, view.position, view.size, onUpdate]);
 
   const renderContent = () => {
     switch (view.type) {
       case 'agent':
-        return <AgentCanvasView view={view} api={api} onUpdate={onUpdate} />;
+        return <AgentCanvasView view={view} api={api} onUpdate={onUpdate} zoneThemeId={zoneThemeId} />;
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
+
+        // Security gate: block non-annex-enabled plugin widgets on remote projects.
+        // Only enforce once satellite snapshot has loaded (matches !== undefined).
+        if (isCanvasRemote && canvasProjectId) {
+          const parsed = parseNamespacedId(canvasProjectId);
+          if (parsed) {
+            const widgetParts = parsePluginWidgetType(pluginView.pluginWidgetType);
+            if (widgetParts) {
+              const matches = pluginMatchState[parsed.satelliteId];
+              if (matches !== undefined) {
+                const match = matches.find((p) => p.id === widgetParts.pluginId);
+                if (!match?.annexEnabled) {
+                  return (
+                    <AnnexUnsupportedPlaceholder
+                      widgetType={match?.name || widgetParts.pluginId}
+                      reason={`${match?.name || widgetParts.pluginId} has not declared Annex compatibility.`}
+                    />
+                  );
+                }
+              }
+            }
+          }
+        }
+
         const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
         if (!registered) {
           return (
@@ -345,16 +441,25 @@ export function CanvasViewComponent({
         }
         if (isWidgetPending(pluginView.pluginWidgetType)) {
           return (
-            <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs p-4 text-center" data-testid="widget-loading">
-              Loading {registered.declaration.label}…
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-ctp-overlay0 text-xs p-4 text-center" data-testid="widget-loading">
+              <span className="font-medium text-ctp-subtext0">{registered.declaration.label} is not enabled</span>
+              <span>Enable it in Settings &gt; Plugins</span>
             </div>
           );
         }
         const Component = registered.descriptor.component;
+        if (!Component) {
+          return (
+            <div className="flex items-center justify-center h-full text-ctp-overlay0 text-xs p-4 text-center">
+              {registered.declaration.label} is not available.
+              The providing plugin may be disabled.
+            </div>
+          );
+        }
         return (
           <Component
             widgetId={view.id}
-            api={api}
+            api={registered.pluginApi ?? api}
             metadata={view.metadata}
             onUpdateMetadata={handleUpdateMetadata}
             size={currentSize}
@@ -366,12 +471,15 @@ export function CanvasViewComponent({
 
   const { AgentAvatar } = api.widgets;
 
-  // ── Selection highlight ─────────────────────────────────────────
-  const selectionShadow = isSelected
-    ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
-    : isMultiSelected
+  // ── Selection & drag highlight ──────────────────────────────────
+  const isDragActive = dragPos !== null || !!dragOffset;
+  const selectionShadow = isDragActive
+    ? '0 12px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--ctp-blue, #89b4fa)'
+    : isSelected
       ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
-      : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
+      : isMultiSelected
+        ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
+        : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
 
   // ── Compact anchor strip ──────────────────────────────────────
   if (view.type === 'anchor') {
@@ -388,9 +496,10 @@ export function CanvasViewComponent({
           width: visualWidth,
           height: ANCHOR_HEIGHT,
           zIndex: view.zIndex,
-          transition: dragPos ? undefined : 'width 150ms ease',
+          transition: isDragActive ? 'box-shadow 0.15s ease' : 'width 150ms ease, box-shadow 0.15s ease',
           ...(!attention && { boxShadow: selectionShadow }),
-          ...(multiDragHidden && { opacity: 0, pointerEvents: 'none' as const }),
+          ...(isDragActive && { willChange: 'transform' as const }),
+          ...(dragOffset && { transform: `translate(${dragOffset.dx}px, ${dragOffset.dy}px)` }),
         }}
         onMouseDown={(e) => {
           e.stopPropagation();
@@ -475,7 +584,7 @@ export function CanvasViewComponent({
                 </svg>
               </button>
               <button
-                className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors"
                 onClick={(e) => { e.stopPropagation(); onClose(); }}
                 onMouseDown={(e) => e.stopPropagation()}
                 title="Remove anchor"
@@ -511,6 +620,12 @@ export function CanvasViewComponent({
     );
   }
 
+  // Hide canvas widget if it's pinned to the nav bar
+  const isPinned = !!(view.metadata as CanvasWidgetMetadata).__pinnedToControls;
+  if (isPinned) {
+    return null;
+  }
+
   return (
     <div
       className={`absolute flex flex-col bg-ctp-base border border-surface-2 rounded-lg ${attentionClass}`}
@@ -520,8 +635,10 @@ export function CanvasViewComponent({
         width: currentSize.width,
         height: currentSize.height,
         zIndex: view.zIndex,
+        transition: 'box-shadow 0.15s ease',
         ...(!attention && { boxShadow: selectionShadow }),
-        ...(multiDragHidden && { opacity: 0, pointerEvents: 'none' as const }),
+        ...(isDragActive && { willChange: 'transform' as const }),
+        ...(dragOffset && { transform: `translate(${dragOffset.dx}px, ${dragOffset.dy}px)` }),
       }}
       onMouseDown={(e) => {
         e.stopPropagation();
@@ -659,8 +776,33 @@ export function CanvasViewComponent({
               </svg>
             )}
           </button>
+          {/* Pin to controls bar button (plugin widgets with pinnableToControls: true) */}
+          {view.type === 'plugin' && (() => {
+            const pluginView = view as PluginCanvasViewType;
+            const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
+            if (!registered?.declaration.pinnableToControls) return null;
+            const isPinned = !!(view.metadata as CanvasWidgetMetadata).__pinnedToControls;
+            return (
+              <button
+                className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                  isPinned
+                    ? 'text-ctp-blue bg-surface-1'
+                    : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
+                }`}
+                onClick={(e) => { e.stopPropagation(); handleUpdateMetadata({ __pinnedToControls: !isPinned }); }}
+                title={isPinned ? 'Unpin from toolbar' : 'Pin to toolbar'}
+                data-testid="canvas-view-pin"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <circle cx="12" cy="5" r="3" />
+                  <rect x="11" y="8" width="2" height="8" />
+                  <polygon points="12 16 8 20 16 20" />
+                </svg>
+              </button>
+            );
+          })()}
           <button
-            className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+            className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors"
             onClick={(e) => { e.stopPropagation(); onClose(); }}
             title="Close view"
             data-testid="canvas-view-close"
@@ -684,6 +826,7 @@ export function CanvasViewComponent({
           content, so skip rendering here to prevent duplicate terminals from
           racing on PTY resize. */}
       <div
+        ref={contentRef}
         className="flex-1 min-h-0 overflow-hidden rounded-b-lg"
         onWheel={isSelected ? (e) => e.stopPropagation() : undefined}
       >

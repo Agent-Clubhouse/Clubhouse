@@ -15,7 +15,6 @@ import {
   connectWsPlain,
   waitForOpen,
   waitForMessage,
-  collectPtyData,
 } from './helpers';
 
 /** Connect with bearer token (tries wss, falls back to ws). */

@@ -58,7 +58,10 @@ export type PluginPermission =
   | 'workspace.cross-plugin'
   | 'workspace.shared'
   | 'workspace.cross-project'
-  | 'canvas';
+  | 'canvas'
+  | 'annex'
+  | 'companion'
+  | 'mcp.tools';
 
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
@@ -90,6 +93,9 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'workspace.shared',
   'workspace.cross-project',
   'canvas',
+  'annex',
+  'companion',
+  'mcp.tools',
 ] as const;
 
 // ── Permission risk levels ────────────────────────────────────────────
@@ -149,11 +155,18 @@ export const PERMISSION_RISK_LEVELS: Readonly<Record<PluginPermission, Permissio
   // elevated — canvas widget registration
   canvas: 'elevated',
 
+  // safe — annex remote-control opt-in
+  annex: 'safe',
+
   // elevated — workspace access
   workspace: 'elevated',
   'workspace.watch': 'elevated',
   'workspace.cross-plugin': 'elevated',
   'workspace.shared': 'elevated',
+
+  // elevated — companion agent and MCP tool contribution
+  companion: 'elevated',
+  'mcp.tools': 'elevated',
 
   // dangerous — bypasses security boundaries
   'agent-config.permissions': 'dangerous',
@@ -223,6 +236,9 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'workspace.shared': 'Allow other plugins with workspace.cross-plugin to read this plugin\'s workspace',
   'workspace.cross-project': 'Access workspace data scoped to other projects where the plugin is enabled',
   canvas: 'Register custom canvas widget types and query canvas widgets',
+  annex: 'Declares this plugin as compatible with Annex remote control',
+  companion: 'Own a singleton companion agent with a persistent workspace (v0.9+)',
+  'mcp.tools': 'Contribute custom tools to the Clubhouse MCP server (v0.9+)',
 };
 
 export interface PluginHelpTopic {
@@ -299,6 +315,8 @@ export interface PluginCanvasWidgetDeclaration {
   defaultSize?: { width: number; height: number };
   /** Keys this widget type exposes as queryable metadata (e.g. ['url', 'sessionId']). */
   metadataKeys?: string[];
+  /** When true, the widget can be pinned to the canvas controls bar (v0.9+). */
+  pinnableToControls?: boolean;
 }
 
 export interface PluginContributes {
@@ -332,8 +350,28 @@ export interface PluginContributes {
   canvasWidgets?: PluginCanvasWidgetDeclaration[];
 }
 
-/** Plugin kind: 'plugin' (default) has a main module; 'pack' is headless (no JS, manifest-only). */
-export type PluginKind = 'plugin' | 'pack';
+/** Plugin kind: 'plugin' (default) has a main module; 'pack' is headless (no JS, manifest-only); 'workspace' owns a companion agent and workspace (v0.9+). */
+export type PluginKind = 'plugin' | 'pack' | 'workspace';
+
+/** Companion agent configuration for workspace plugins (v0.9+). */
+export interface PluginCompanionConfig {
+  /** Whether this plugin owns a companion agent. */
+  enabled: boolean;
+  /** Default model for the companion agent. */
+  defaultModel?: string;
+  /** System prompt for the companion agent. */
+  systemPrompt?: string;
+}
+
+/** MCP tool definition contributed by a plugin (v0.9+). */
+export interface PluginMcpToolDefinition {
+  /** Tool name suffix (will be prefixed with plugin namespace). */
+  name: string;
+  /** Human-readable description shown to agents. */
+  description: string;
+  /** JSON Schema for tool arguments. */
+  inputSchema: Record<string, unknown>;
+}
 
 export interface PluginManifest {
   id: string;
@@ -342,7 +380,7 @@ export interface PluginManifest {
   description?: string;
   author?: string;
   engine: { api: number };
-  /** Plugin kind: 'plugin' (default) or 'pack' (headless, no main module). */
+  /** Plugin kind: 'plugin' (default), 'pack' (headless), or 'workspace' (companion agent, v0.9+). */
   kind?: PluginKind;
   scope: 'project' | 'app' | 'dual';
   main?: string;                     // path to main module relative to plugin dir
@@ -351,6 +389,10 @@ export interface PluginManifest {
   permissions?: PluginPermission[];         // required for v0.5+ plugins (optional for packs)
   externalRoots?: PluginExternalRoot[];     // requires 'files.external' permission
   allowedCommands?: string[];              // requires 'process' permission
+  /** Companion agent configuration (v0.9+, requires 'companion' permission). */
+  companion?: PluginCompanionConfig;
+  /** When true, this plugin requires MCP to be enabled and will be hidden from settings and canvas when MCP is off. */
+  requiresMcp?: boolean;
 }
 
 // ── Render mode for dual-scope plugins ───────────────────────────────
@@ -455,8 +497,8 @@ export interface PluginOrchestratorInfo {
 export interface AgentInfo {
   id: string;
   name: string;
-  kind: 'durable' | 'quick';
-  status: 'running' | 'sleeping' | 'creating' | 'error';
+  kind: 'durable' | 'quick' | 'companion';
+  status: 'running' | 'sleeping' | 'waking' | 'creating' | 'error';
   color: string;
   icon?: string;
   exitCode?: number;
@@ -468,6 +510,8 @@ export interface AgentInfo {
   parentAgentId?: string;
   orchestrator?: string;
   freeAgentMode?: boolean;
+  /** Plugin-supplied metadata attached at spawn time. @since 0.8 */
+  pluginMetadata?: Record<string, string>;
 }
 
 export interface PluginAgentDetailedStatus {
@@ -486,6 +530,8 @@ export interface CompletedQuickAgentInfo {
   exitCode: number;
   completedAt: number;
   parentAgentId?: string;
+  /** Plugin-supplied metadata carried from the spawning agent. @since 0.8 */
+  pluginMetadata?: Record<string, string>;
 }
 
 export interface ScopedStorage {
@@ -526,11 +572,37 @@ export interface GitAPI {
   diff(filePath: string, staged?: boolean): Promise<string>;
 }
 
+/** A single action button in an approval dialog. */
+export interface ApprovalDialogAction {
+  /** Value returned when this action is selected. */
+  value: string;
+  /** Button label shown in the dialog. */
+  label: string;
+  /** Visual style: 'primary' (accent), 'danger' (red), or 'default' (subtle). */
+  style?: 'primary' | 'danger' | 'default';
+}
+
+/** Options for showApprovalDialog. */
+export interface ApprovalDialogOptions {
+  /** Dialog title (short, e.g. "Approve stage transition"). */
+  title: string;
+  /** Summary or context body (supports plain text). */
+  summary: string;
+  /** Action buttons. At least one required. First 'primary' or first action gets Enter key. */
+  actions: ApprovalDialogAction[];
+}
+
 export interface UIAPI {
   showNotice(message: string): void;
   showError(message: string): void;
   showConfirm(message: string): Promise<boolean>;
   showInput(prompt: string, defaultValue?: string): Promise<string | null>;
+  /**
+   * Show a rich approval dialog with a title, summary, and multiple action buttons.
+   * Returns the `value` of the selected action, or `null` if dismissed (overlay click / Escape).
+   * @since 0.8
+   */
+  showApprovalDialog(options: ApprovalDialogOptions): Promise<string | null>;
   openExternalUrl(url: string): Promise<void>;
 }
 
@@ -574,7 +646,18 @@ export interface ModelOption {
 
 export interface AgentsAPI {
   list(): AgentInfo[];
-  runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean }): Promise<string>;
+  /** Create a new durable agent in a project and spawn it. Returns the new agent ID. */
+  createDurable(options: {
+    projectId?: string;
+    name: string;
+    color: string;
+    model?: string;
+    useWorktree?: boolean;
+    orchestrator?: string;
+    freeAgentMode?: boolean;
+    mcpIds?: string[];
+  }): Promise<string>;
+  runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean; metadata?: Record<string, string> }): Promise<string>;
   kill(agentId: string): Promise<void>;
   resume(agentId: string, options?: { mission?: string }): Promise<void>;
   listCompleted(projectId?: string): CompletedQuickAgentInfo[];
@@ -592,6 +675,12 @@ export interface AgentsAPI {
   readSessionTranscript(agentId: string, sessionId: string, offset: number, limit: number): Promise<import('./session-types').SessionTranscriptPage | null>;
   /** Get aggregated session summary (stats, files, tokens). */
   getSessionSummary(agentId: string, sessionId: string): Promise<import('./session-types').SessionSummary | null>;
+  /** Spawn or wake the plugin's companion agent. Returns the agent ID. Requires 'companion' permission. @since 0.9 */
+  spawnCompanion(options?: { model?: string; systemPrompt?: string }): Promise<string>;
+  /** Get the companion agent's current status. Requires 'companion' permission. @since 0.9 */
+  getCompanionStatus(): Promise<'sleeping' | 'waking' | 'active' | 'none'>;
+  /** Get the companion agent's workspace path. Requires 'companion' permission. @since 0.9 */
+  getCompanionWorkspace(): Promise<string>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -611,7 +700,7 @@ export interface NavigationAPI {
 }
 
 export interface WidgetsAPI {
-  AgentTerminal: React.ComponentType<{ agentId: string; focused?: boolean }>;
+  AgentTerminal: React.ComponentType<{ agentId: string; focused?: boolean; zoneThemeId?: string }>;
   SleepingAgent: React.ComponentType<{ agentId: string }>;
   AgentAvatar: React.ComponentType<{
     agentId: string;
@@ -653,6 +742,18 @@ export interface CanvasWidgetFilter {
   displayName?: string;
 }
 
+/** Props passed to a pinned widget component in the canvas controls bar (v0.9+). */
+export interface PinnedWidgetComponentProps {
+  /** The widget instance's internal ID. */
+  widgetId: string;
+  /** The PluginAPI for this plugin. */
+  api: PluginAPI;
+  /** Current metadata for this widget instance. */
+  metadata: CanvasWidgetMetadata;
+  /** Callback to update metadata (merges with existing). */
+  onUpdateMetadata: (updates: CanvasWidgetMetadata) => void;
+}
+
 /** Descriptor provided at runtime when a plugin registers a canvas widget type. */
 export interface CanvasWidgetDescriptor {
   /** Widget type ID — must match a declared canvasWidgets[].id in the plugin manifest. */
@@ -661,6 +762,8 @@ export interface CanvasWidgetDescriptor {
   component: React.ComponentType<CanvasWidgetComponentProps>;
   /** Optional callback to generate a display name from widget metadata. Defaults to the manifest label. */
   generateDisplayName?: (metadata: CanvasWidgetMetadata) => string;
+  /** Compact component rendered in the canvas controls bar when pinned (v0.9+). Required if pinnableToControls is true in the manifest. */
+  pinnedComponent?: React.ComponentType<PinnedWidgetComponentProps>;
 }
 
 /** Props passed to a plugin-provided canvas widget component. */
@@ -968,6 +1071,33 @@ export interface ThemeAPI {
   getColor(token: string): string | null;
 }
 
+// ── MCP Tool Contribution API (v0.9+) ─────────────────────────────────
+
+/** Result returned by a plugin MCP tool handler. */
+export interface PluginMcpToolResult {
+  content: Array<{ type: 'text'; text: string }>;
+  isError?: boolean;
+}
+
+export interface McpAPI {
+  /**
+   * Register tools that other agents can call via the Clubhouse MCP.
+   * Tools are namespaced per plugin: `plugin__<pluginId>__<toolName>`.
+   * Requires 'mcp.tools' permission. @since 0.9
+   */
+  contributeTools(tools: PluginMcpToolDefinition[]): Promise<void>;
+  /** Remove all tools contributed by this plugin. @since 0.9 */
+  removeTools(): Promise<void>;
+  /** List tools currently contributed by this plugin. @since 0.9 */
+  listContributedTools(): Promise<string[]>;
+  /**
+   * Register a handler for incoming tool calls.
+   * The handler receives the tool name (without namespace prefix) and arguments,
+   * and must return a result. @since 0.9
+   */
+  onToolCall(handler: (toolName: string, args: Record<string, unknown>) => Promise<PluginMcpToolResult>): Disposable;
+}
+
 // ── Composite PluginAPI ────────────────────────────────────────────────
 export interface PluginAPI {
   project: ProjectAPI;
@@ -994,6 +1124,8 @@ export interface PluginAPI {
   canvas: CanvasAPI;
   /** Window title management (v0.8+). */
   window: WindowAPI;
+  /** MCP tool contribution (v0.9+, requires 'mcp.tools' permission). */
+  mcp: McpAPI;
   context: PluginContextInfo;
 }
 

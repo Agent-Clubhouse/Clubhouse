@@ -103,7 +103,8 @@ out/
 # Internal agent/worktree config
 CLAUDE.md
 PLAN.md
-.claude/
+.claude/*
+!.claude/skills/
 
 # Claude Code hooks (local dev only)
 .github/hooks/
@@ -113,6 +114,7 @@ clubhouse/
 
 # Local scratch / research folders
 .clubhouse/plugin-data-local/
+.clubhouse/plugin-data/
 
 # Playwright
 test-results/

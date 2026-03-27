@@ -13,7 +13,16 @@ g.__testAttachClipboard = vi.fn().mockReturnValue(vi.fn());
 vi.mock('@xterm/xterm', () => {
   class Terminal {
     loadAddon = vi.fn();
-    open = vi.fn();
+    open = vi.fn().mockImplementation((container: HTMLElement) => {
+      // Create a mock .xterm-viewport element like real xterm does
+      const viewport = document.createElement('div');
+      viewport.classList.add('xterm-viewport');
+      // Default: large scrollback, at the bottom
+      Object.defineProperty(viewport, 'scrollHeight', { value: 200, configurable: true, writable: true });
+      Object.defineProperty(viewport, 'clientHeight', { value: 200, configurable: true, writable: true });
+      viewport.scrollTop = 0;
+      container.appendChild(viewport);
+    });
     write = vi.fn();
     focus = vi.fn();
     dispose = vi.fn();
@@ -43,6 +52,51 @@ vi.mock('../terminal/clipboard', () => ({
   attachClipboardHandlers: (...args: any[]) => (globalThis as any).__testAttachClipboard(...args),
 }));
 
+vi.mock('../../plugins/renderer-logger', () => ({
+  rendererLog: vi.fn(),
+}));
+
+g.__annexMockState = {
+  sendPtyInput: vi.fn(),
+  sendClipboardImage: vi.fn(),
+  requestPtyBuffer: vi.fn().mockResolvedValue(''),
+  sendPtyResize: vi.fn(),
+};
+
+vi.mock('../../stores/annexClientStore', () => {
+  const g = globalThis as any;
+  const useAnnexClientStore: any = (selector: any) => selector(g.__annexMockState);
+  useAnnexClientStore.getState = () => g.__annexMockState;
+  useAnnexClientStore.setState = vi.fn();
+  useAnnexClientStore.subscribe = vi.fn(() => vi.fn());
+  return {
+    useAnnexClientStore,
+    satellitePtyDataBus: { on: vi.fn(() => vi.fn()) },
+  };
+});
+
+vi.mock('../../themes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../themes')>();
+  return {
+    ...actual,
+    getTheme: (id: string) => {
+      if (id === 'catppuccin-latte') {
+        return { terminal: { background: '#eff1f5', foreground: '#4c4f69' } };
+      }
+      return actual.getTheme(id);
+    },
+  };
+});
+
+vi.mock('../../stores/remoteProjectStore', () => ({
+  isRemoteAgentId: (id: string) => id.startsWith('remote||'),
+  parseNamespacedId: (id: string) => {
+    if (!id.startsWith('remote||')) return null;
+    const parts = id.split('||');
+    return { satelliteId: parts[1], agentId: parts[2] };
+  },
+}));
+
 import { AgentTerminal } from './AgentTerminal';
 
 let mockOnDataCallback: ((id: string, data: string) => void) | null = null;
@@ -57,6 +111,12 @@ describe('AgentTerminal', () => {
     g.__testFitAddon = null;
     g.__testAttachClipboard.mockClear();
     g.__testAttachClipboard.mockReturnValue(vi.fn());
+    g.__annexMockState = {
+      sendPtyInput: vi.fn(),
+      sendClipboardImage: vi.fn(),
+      requestPtyBuffer: vi.fn().mockResolvedValue(''),
+      sendPtyResize: vi.fn(),
+    };
     mockOnDataCallback = null;
     mockOnExitCallback = null;
     mockRemoveDataListener.mockClear();
@@ -172,17 +232,39 @@ describe('AgentTerminal', () => {
       render(<AgentTerminal agentId="agent-1" />);
       term().write.mockClear();
 
-      // Send data via onData BEFORE buffer resolves — should be gated
+      // Send data via onData BEFORE buffer resolves — should be queued, not written yet
       act(() => { mockOnDataCallback!('agent-1', 'live data'); });
       expect(term().write).not.toHaveBeenCalledWith('live data');
 
-      // Now resolve the buffer
+      // Now resolve the buffer — queued data should be replayed after snapshot
       await act(async () => { resolveBuffer!('buffered output'); });
       expect(term().write).toHaveBeenCalledWith('buffered output');
+      expect(term().write).toHaveBeenCalledWith('live data');
 
       // Data arriving AFTER buffer replay should pass through
       act(() => { mockOnDataCallback!('agent-1', 'new data'); });
       expect(term().write).toHaveBeenCalledWith('new data');
+    });
+
+    it('queues multiple live data chunks during buffer fetch and replays in order', async () => {
+      let resolveBuffer: (val: string) => void;
+      (window.clubhouse.pty.getBuffer as any).mockReturnValue(
+        new Promise<string>((r) => { resolveBuffer = r; })
+      );
+
+      render(<AgentTerminal agentId="agent-1" />);
+      term().write.mockClear();
+
+      // Send multiple chunks before buffer resolves
+      act(() => { mockOnDataCallback!('agent-1', 'chunk1'); });
+      act(() => { mockOnDataCallback!('agent-1', 'chunk2'); });
+      act(() => { mockOnDataCallback!('agent-1', 'chunk3'); });
+      expect(term().write).not.toHaveBeenCalled();
+
+      // Resolve buffer — snapshot + all queued chunks should be written in order
+      await act(async () => { resolveBuffer!('snapshot'); });
+      const writeCalls = term().write.mock.calls.map((c: unknown[]) => c[0]);
+      expect(writeCalls).toEqual(['snapshot', 'chunk1', 'chunk2', 'chunk3']);
     });
 
     it('ignores PTY data for other agentIds', () => {
@@ -228,6 +310,57 @@ describe('AgentTerminal', () => {
         useThemeStore.setState({ theme: { terminal: newTheme } as any });
       });
       expect(term().options.theme).toEqual(newTheme);
+    });
+  });
+
+  describe('gradient transparency', () => {
+    it('uses transparent background when gradient is active', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+          gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+        } as any,
+        experimentalGradients: true,
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: 'transparent', foreground: '#fff' });
+    });
+
+    it('uses normal background when gradient is not active', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+          gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+        } as any,
+        experimentalGradients: false,
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+    });
+
+    it('uses normal background when no gradient background is defined', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+        } as any,
+        experimentalGradients: true,
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+    });
+
+    it('live-updates to transparent when gradient is toggled on', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      act(() => {
+        useThemeStore.setState({
+          theme: {
+            terminal: { background: '#000', foreground: '#fff' },
+            gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+          } as any,
+          experimentalGradients: true,
+        });
+      });
+      expect(term().options.theme).toEqual({ background: 'transparent', foreground: '#fff' });
     });
   });
 
@@ -294,6 +427,187 @@ describe('AgentTerminal', () => {
       const { container } = render(<AgentTerminal agentId="agent-1" />);
       const terminalDiv = container.querySelector('[data-testid="agent-terminal"]') as HTMLElement;
       expect(terminalDiv.style.padding).toBe('8px');
+    });
+  });
+
+  describe('remote file drop banner', () => {
+    it('shows banner when files are dropped on a remote agent terminal', async () => {
+      // Render first with real timers so requestAnimationFrame runs synchronously
+      // (via the stubGlobal in beforeEach)
+      await act(async () => {
+        render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      });
+
+      vi.useFakeTimers();
+
+      const wrapper = screen.getByTestId('agent-terminal').parentElement!;
+      const file = new File(['dummy'], 'test.txt', { type: 'text/plain' });
+      const files = Object.assign([file], { item: (i: number) => [file][i] });
+      const dataTransfer = { types: ['Files'], files, dropEffect: '' };
+
+      fireEvent.dragOver(wrapper, { dataTransfer });
+      fireEvent.drop(wrapper, { dataTransfer });
+
+      expect(screen.getByTestId('remote-banner')).toBeInTheDocument();
+      expect(screen.getByText('File drop is not supported on remote agents')).toBeInTheDocument();
+
+      // Banner should auto-dismiss after 3 seconds
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(screen.queryByTestId('remote-banner')).toBeNull();
+
+      vi.useRealTimers();
+    });
+
+    it('does not show banner for local agent file drop', async () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      // Flush the getBuffer() microtask so the terminal is ready
+      await act(async () => {});
+      expect(screen.queryByTestId('remote-banner')).toBeNull();
+    });
+  });
+
+  describe('scroll guardian and scroll-to-bottom button', () => {
+    function configureViewport(scrollTop: number, scrollHeight: number, clientHeight: number) {
+      const container = screen.getByTestId('agent-terminal');
+      const viewport = container.querySelector('.xterm-viewport') as HTMLDivElement;
+      expect(viewport).toBeTruthy();
+      Object.defineProperty(viewport, 'scrollHeight', { value: scrollHeight, configurable: true, writable: true });
+      Object.defineProperty(viewport, 'clientHeight', { value: clientHeight, configurable: true, writable: true });
+      viewport.scrollTop = scrollTop;
+      return viewport;
+    }
+
+    it('does not show scroll-to-bottom button when at bottom', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      // No viewport or at bottom — button should not show
+      expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
+    });
+
+    it('shows scroll-to-bottom button when scrolled up', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(100, 2000, 200);
+
+      // Fire scroll event to trigger state update
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.getByTestId('scroll-to-bottom')).toBeInTheDocument();
+    });
+
+    it('hides scroll-to-bottom button when user scrolls to bottom', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(100, 2000, 200);
+
+      // First, trigger scrolled-up state
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+      expect(screen.getByTestId('scroll-to-bottom')).toBeInTheDocument();
+
+      // Now scroll to bottom (scrollTop >= scrollHeight - clientHeight - 5)
+      viewport.scrollTop = 1800;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+      expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
+    });
+
+    it('clicking scroll-to-bottom scrolls viewport to bottom', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(100, 2000, 200);
+
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      const button = screen.getByTestId('scroll-to-bottom');
+      fireEvent.click(button);
+
+      // Should have set scrollTop to scrollHeight - clientHeight
+      expect(viewport.scrollTop).toBe(1800);
+    });
+
+    it('scroll guardian detects unexpected reset to 0 and restores position', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(500, 2000, 200);
+
+      // Establish a known scroll position
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Simulate unexpected reset to 0 (from xterm reflow)
+      viewport.scrollTop = 0;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // The scroll guardian should have restored to the previous position
+      // (runs in rAF which is synchronous in tests)
+      expect(viewport.scrollTop).toBe(500);
+    });
+
+    it('scroll guardian detects near-zero reset (not just exact 0)', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(500, 2000, 200);
+
+      // Establish a known scroll position
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Simulate near-zero reset (e.g. from rounding during xterm reflow)
+      viewport.scrollTop = 5;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Guard should still restore — NEAR_TOP_PX threshold is 10
+      expect(viewport.scrollTop).toBe(500);
+    });
+
+    it('scroll guardian does not fire when lastKnown is below jump threshold', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(20, 2000, 200);
+
+      // Establish a low scroll position (below JUMP_MIN_PX of 30)
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Reset to 0 — should NOT trigger restore because 20 < JUMP_MIN_PX
+      viewport.scrollTop = 0;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(viewport.scrollTop).toBe(0);
+    });
+
+    it('does not show scroll-to-bottom button during resume', () => {
+      useAgentStore.setState({
+        agents: {
+          'agent-1': {
+            id: 'agent-1', projectId: 'proj-1', name: 'test',
+            kind: 'durable', status: 'running', color: 'indigo',
+            resuming: true,
+          },
+        },
+        clearResuming: vi.fn(),
+      });
+
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(100, 2000, 200);
+
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Button hidden during resume even when scrolled up
+      expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
+      // But the resume overlay should be visible
+      expect(screen.getByTestId('resume-overlay')).toBeInTheDocument();
     });
   });
 
@@ -428,6 +742,39 @@ describe('AgentTerminal', () => {
       expect(window.clubhouse.pty.resize).toHaveBeenCalledWith('agent-1', 80, 24);
 
       vi.useRealTimers();
+    });
+  });
+
+  describe('zone theme override', () => {
+    it('uses zone theme terminal colors when zoneThemeId is provided', () => {
+      render(<AgentTerminal agentId="agent-1" zoneThemeId="catppuccin-latte" />);
+      expect(term().options.theme).toEqual({ background: '#eff1f5', foreground: '#4c4f69' });
+    });
+
+    it('falls back to global theme when zoneThemeId is unknown', () => {
+      render(<AgentTerminal agentId="agent-1" zoneThemeId="nonexistent-theme" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+    });
+
+    it('live-updates terminal colors when zoneThemeId changes', () => {
+      const { rerender } = render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+
+      rerender(<AgentTerminal agentId="agent-1" zoneThemeId="catppuccin-latte" />);
+      expect(term().options.theme).toEqual({ background: '#eff1f5', foreground: '#4c4f69' });
+    });
+
+    it('does not use transparent background for zone-themed terminal even with gradient', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+          gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+        } as any,
+        experimentalGradients: true,
+      });
+      render(<AgentTerminal agentId="agent-1" zoneThemeId="catppuccin-latte" />);
+      // Zone theme should use its own background, not transparent
+      expect(term().options.theme).toEqual({ background: '#eff1f5', foreground: '#4c4f69' });
     });
   });
 });

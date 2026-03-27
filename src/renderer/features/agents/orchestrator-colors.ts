@@ -41,7 +41,6 @@ export function getOrchestratorColor(id: string): { bg: string; text: string } {
 const ORCHESTRATOR_SHORT_NAMES: Record<string, string> = {
   'claude-code': 'CC',
   'copilot-cli': 'GHCP',
-  'opencode': 'OC',
 };
 
 export function getOrchestratorLabel(

@@ -92,6 +92,15 @@ describe('getBuiltinPlugins catch-all', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('only terminal, files, canvas, and group-project declare the annex permission', () => {
+    const plugins = getBuiltinPlugins({ sessions: true, review: true, canvas: true });
+    const annexPlugins = plugins
+      .filter((p) => p.manifest.permissions.includes('annex'))
+      .map((p) => p.manifest.id)
+      .sort();
+    expect(annexPlugins).toEqual(['canvas', 'files', 'group-project', 'terminal']);
+  });
+
   it('does not include the sessions plugin without experimental flag', () => {
     const plugins = getBuiltinPlugins();
     const ids = plugins.map((p) => p.manifest.id);
@@ -112,5 +121,27 @@ describe('getBuiltinPlugins catch-all', () => {
   it('auto-enables sessions plugin when experimental flag is set', () => {
     const defaultIds = getDefaultEnabledIds({ sessions: true });
     expect(defaultIds.has('sessions')).toBe(true);
+  });
+
+  it('does not include the review plugin without experimental flag', () => {
+    const plugins = getBuiltinPlugins();
+    const ids = plugins.map((p) => p.manifest.id);
+    expect(ids).not.toContain('review');
+  });
+
+  it('does not auto-enable the review plugin without experimental flag', () => {
+    const defaultIds = getDefaultEnabledIds();
+    expect(defaultIds.has('review')).toBe(false);
+  });
+
+  it('includes review plugin when experimental flag is set', () => {
+    const plugins = getBuiltinPlugins({ review: true });
+    const ids = plugins.map((p) => p.manifest.id);
+    expect(ids).toContain('review');
+  });
+
+  it('auto-enables review plugin when experimental flag is set', () => {
+    const defaultIds = getDefaultEnabledIds({ review: true });
+    expect(defaultIds.has('review')).toBe(true);
   });
 });

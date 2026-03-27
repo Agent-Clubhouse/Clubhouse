@@ -38,5 +38,28 @@ export function buildMenu(): void {
     { role: 'windowMenu' },
   ];
 
+  // Dev-only Debug menu — never appears in packaged builds.
+  // app.isPackaged is a built-in Electron property: false during
+  // electron-forge start, true in production .app/.exe bundles.
+  if (!app.isPackaged) {
+    template.push({
+      label: 'Debug',
+      submenu: [
+        {
+          label: 'Simulate Update Restart',
+          accelerator: 'CmdOrCtrl+Shift+U',
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow();
+            if (!win) return;
+            // Tell the renderer to open the Update Gate Modal in simulate mode.
+            // The renderer listens for this event and drives the flow using
+            // devSimulateUpdateRestart instead of confirmUpdateRestart.
+            win.webContents.send(IPC.APP.DEV_SIMULATE_UPDATE_RESTART);
+          },
+        },
+      ],
+    });
+  }
+
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }

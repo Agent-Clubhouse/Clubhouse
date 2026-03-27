@@ -280,8 +280,9 @@ export function AgentList() {
   const removeAgent = useAgentStore((s) => s.removeAgent);
 
   const sendAgentCreateDurable = useAnnexClientStore((s) => s.sendAgentCreateDurable);
+  const sendAgentReorder = useAnnexClientStore((s) => s.sendAgentReorder);
 
-  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) => {
+  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean) => {
     if (!activeProject) return;
     setShowDialog(false);
 
@@ -314,7 +315,7 @@ export function AgentList() {
 
     try {
       const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds
+        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode
       );
       if (tempId) removeAgent(tempId);
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
@@ -367,12 +368,24 @@ export function AgentList() {
     newOrder.splice(dropIndex, 0, moved);
 
     if (activeProject) {
-      reorderAgents(activeProject.path, newOrder.map((a) => a.id));
+      if (isRemote && activeProjectId) {
+        // Remote project: send reorder to satellite via annex client
+        const parsed = parseNamespacedId(activeProjectId);
+        if (parsed) {
+          const originalIds = newOrder.map((a) => {
+            const p = parseNamespacedId(a.id);
+            return p ? p.agentId : a.id;
+          });
+          sendAgentReorder(parsed.satelliteId, parsed.agentId, originalIds);
+        }
+      } else {
+        reorderAgents(activeProject.path, newOrder.map((a) => a.id));
+      }
     }
 
     setDragIndex(null);
     setDragOverIndex(null);
-  }, [dragIndex, durableAgents, activeProject, reorderAgents]);
+  }, [dragIndex, durableAgents, activeProject, isRemote, activeProjectId, reorderAgents, sendAgentReorder]);
 
   // Get the parent durable agent name for the mission input label
   const targetParentAgent = quickTargetParentId ? agents[quickTargetParentId] : null;

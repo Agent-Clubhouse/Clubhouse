@@ -1,8 +1,9 @@
 import { create, StoreApi, UseBoundStore } from 'zustand';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 import { generateHubName } from '../../../../shared/name-generator';
-import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, Position, Size, Viewport } from './canvas-types';
+import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, ZoneCanvasView, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
+import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import {
   createView as createViewOp,
   createPluginView as createPluginViewOp,
@@ -15,6 +16,7 @@ import {
   clampPosition,
   queryViews as queryViewsOp,
   generateCanvasId,
+  recomputeZones,
 } from './canvas-operations';
 
 // ── Store state ──────────────────────────────────────────────────────
@@ -29,8 +31,21 @@ export interface CanvasState {
   saveCanvas: (storage: ScopedStorage) => Promise<void>;
   hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string) => void;
 
+  // Wire persistence — wireDefinitions is the canvas-owned source of truth for
+  // wires, independent of the MCP binding runtime.  Wires survive agent sleep
+  // because definitions are not removed when the main process cleans up bindings.
+  wireDefinitions: McpBindingEntry[];
+  loadWires: (storage: ScopedStorage) => Promise<void>;
+  saveWires: (storage: ScopedStorage) => Promise<void>;
+  addWireDefinition: (entry: McpBindingEntry) => void;
+  removeWireDefinition: (agentId: string, targetId: string) => void;
+  updateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
+
   // Canvas tab management
   addCanvas: () => string;
+  insertCanvas: (canvas: CanvasInstance) => void;
+  /** Load existing canvases from storage (if not loaded), insert a new canvas, and persist immediately. */
+  loadAndInsertCanvas: (canvas: CanvasInstance, storage: ScopedStorage) => Promise<void>;
   removeCanvas: (canvasId: string) => void;
   renameCanvas: (canvasId: string, name: string) => void;
   setActiveCanvas: (canvasId: string) => void;
@@ -54,6 +69,10 @@ export interface CanvasState {
   updateViewMetadata: (viewId: string, metadataUpdates: CanvasWidgetMetadata) => void;
   queryViews: (filter?: CanvasWidgetFilter) => CanvasWidgetHandle[];
 
+  // Zone operations
+  removeZone: (zoneId: string, removeContents: boolean) => void;
+  updateZoneTheme: (zoneId: string, themeId: string) => void;
+
   // Viewport
   setViewport: (viewport: Viewport) => void;
 
@@ -70,18 +89,25 @@ export interface CanvasState {
   clearSelection: () => void;
   moveViews: (positions: Map<string, Position>) => void;
 
+  // Minimap auto-hide (per canvas, persisted)
+  minimapAutoHide: boolean;
+  setMinimapAutoHide: (value: boolean) => void;
+
   // Convenience selectors
   activeCanvas: () => CanvasInstance;
   views: CanvasView[];
   viewport: Viewport;
   zoomedViewId: string | null;
   selectedViewId: string | null;
+
+  // Note: minimapAutoHide is declared above with its setter
 }
 
 // ── Storage keys ─────────────────────────────────────────────────────
 
 const STORAGE_KEY_INSTANCES = 'canvas-instances';
 const STORAGE_KEY_ACTIVE = 'canvas-active-id';
+const STORAGE_KEY_WIRES = 'canvas-wires';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -94,6 +120,7 @@ function createCanvasInstance(): CanvasInstance {
     nextZIndex: 0,
     zoomedViewId: null,
     selectedViewId: null,
+    minimapAutoHide: true,
   };
 }
 
@@ -109,16 +136,18 @@ function updateActiveCanvas(state: CanvasState, updater: (canvas: CanvasInstance
     viewport: active.viewport,
     zoomedViewId: active.zoomedViewId,
     selectedViewId: active.selectedViewId,
+    minimapAutoHide: active.minimapAutoHide,
   };
 }
 
-function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport' | 'zoomedViewId' | 'selectedViewId'> {
+function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport' | 'zoomedViewId' | 'selectedViewId' | 'minimapAutoHide'> {
   const active = canvases.find((c) => c.id === activeCanvasId) ?? canvases[0];
   return {
     views: active.views,
     viewport: active.viewport,
     zoomedViewId: active.zoomedViewId,
     selectedViewId: active.selectedViewId,
+    minimapAutoHide: active.minimapAutoHide,
   };
 }
 
@@ -135,6 +164,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     zoomedViewId: null,
     selectedViewId: null,
     selectedViewIds: [],
+    wireDefinitions: [],
+    minimapAutoHide: true,
     loaded: false,
 
     activeCanvas: () => {
@@ -160,6 +191,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
                 ...v,
                 metadata: v.metadata ?? {},
                 displayName: v.displayName ?? v.title ?? v.type ?? '',
+                ...(v.type === 'zone' ? { containedViewIds: v.containedViewIds ?? [] } : {}),
               })) as CanvasView[];
             return {
               id: s.id,
@@ -169,6 +201,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
               nextZIndex: s.nextZIndex,
               zoomedViewId: s.zoomedViewId ?? null,
               selectedViewId: null,
+              minimapAutoHide: s.minimapAutoHide ?? true,
             };
           });
           const savedActive = await storage.read(STORAGE_KEY_ACTIVE) as string | null;
@@ -197,32 +230,151 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         views: c.views,
         viewport: c.viewport,
         nextZIndex: c.nextZIndex,
+        minimapAutoHide: c.minimapAutoHide,
       }));
       await storage.write(STORAGE_KEY_INSTANCES, data);
       await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
     },
 
+    loadWires: async (storage) => {
+      try {
+        const saved = await storage.read(STORAGE_KEY_WIRES) as McpBindingEntry[] | null;
+        if (!saved || !Array.isArray(saved) || saved.length === 0) return;
+
+        // Build a set of valid IDs from all canvas views for reconciliation.
+        // Bindings reference agentIds (durable_*/quick_*), groupProjectIds,
+        // or browser widget view IDs — collect them all.
+        const allViews = get().canvases.flatMap((c) => c.views);
+        const validIds = new Set<string>();
+        for (const v of allViews) {
+          validIds.add(v.id);
+          if (v.type === 'agent' && (v as AgentCanvasView).agentId) {
+            validIds.add((v as AgentCanvasView).agentId!);
+          }
+          const gpId = v.metadata?.groupProjectId as string | undefined;
+          if (gpId) validIds.add(gpId);
+        }
+        // Only reconcile if there are views to compare against — if the canvas
+        // is empty, agents may not have been added yet (fresh session).
+        const shouldReconcile = validIds.size > 0;
+
+        // Restore each binding, skipping stale ones whose source/target no longer exist.
+        // Wire definitions are stored in the canvas store so they survive agent
+        // sleep/wake cycles independently of the MCP binding runtime.
+        const restoredDefinitions: McpBindingEntry[] = [];
+        for (const entry of saved) {
+          if (!entry.agentId || !entry.targetId || !entry.label || !entry.targetKind) continue;
+          if (shouldReconcile && !validIds.has(entry.agentId) && !validIds.has(entry.targetId)) continue;
+          restoredDefinitions.push(entry);
+          try {
+            await window.clubhouse.mcpBinding.bind(entry.agentId, {
+              targetId: entry.targetId,
+              targetKind: entry.targetKind,
+              label: entry.label,
+              agentName: entry.agentName,
+              targetName: entry.targetName,
+              projectName: entry.projectName,
+            });
+            // Restore instructions if present
+            if (entry.instructions && Object.keys(entry.instructions).length > 0) {
+              await window.clubhouse.mcpBinding.setInstructions(entry.agentId, entry.targetId, entry.instructions);
+            }
+            // Restore disabled tools if present
+            if (entry.disabledTools && entry.disabledTools.length > 0) {
+              await window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, entry.disabledTools);
+            }
+          } catch {
+            // Binding restore failed (e.g. MCP not enabled or agent sleeping) —
+            // keep the wire definition so the wire remains visible and persisted
+          }
+        }
+        set({ wireDefinitions: restoredDefinitions });
+      } catch {
+        // Storage read failed — skip wire restore
+      }
+    },
+
+    saveWires: async (storage) => {
+      // Persist wire definitions — the canvas-owned source of truth.
+      // Unlike MCP bindings, wire definitions are not cleared when agents sleep.
+      const data = get().wireDefinitions.map((b) => ({
+        agentId: b.agentId,
+        targetId: b.targetId,
+        targetKind: b.targetKind,
+        label: b.label,
+        agentName: b.agentName,
+        targetName: b.targetName,
+        projectName: b.projectName,
+        ...(b.instructions ? { instructions: b.instructions } : {}),
+        ...(b.disabledTools && b.disabledTools.length > 0 ? { disabledTools: b.disabledTools } : {}),
+      }));
+      await storage.write(STORAGE_KEY_WIRES, data);
+    },
+
+    addWireDefinition: (entry) => {
+      set((state) => {
+        const exists = state.wireDefinitions.some(
+          (w) => w.agentId === entry.agentId && w.targetId === entry.targetId,
+        );
+        if (exists) return state;
+        return { wireDefinitions: [...state.wireDefinitions, entry] };
+      });
+    },
+
+    removeWireDefinition: (agentId, targetId) => {
+      set((state) => ({
+        wireDefinitions: state.wireDefinitions.filter(
+          (w) => !(w.agentId === agentId && w.targetId === targetId),
+        ),
+      }));
+    },
+
+    updateWireDefinition: (agentId, targetId, updates) => {
+      set((state) => ({
+        wireDefinitions: state.wireDefinitions.map((w) =>
+          w.agentId === agentId && w.targetId === targetId
+            ? { ...w, ...updates }
+            : w,
+        ),
+      }));
+    },
+
     hydrateFromRemote: (canvasData, activeId) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
+      const existingState = get();
+      const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
+
       const canvases: CanvasInstance[] = (canvasData as CanvasInstanceData[]).map((s): CanvasInstance => {
         const restoredViews = (s.views || []).map((v: any) => ({
           ...v,
           metadata: v.metadata ?? {},
           displayName: v.displayName ?? v.title ?? v.type ?? '',
         })) as CanvasView[];
+
+        // Preserve local viewport when merging (controller keeps its own
+        // pan/zoom position while receiving view updates from satellite).
+        // Selection and zoom are synced from the satellite.
+        const existing = existingCanvasMap.get(s.id);
         return {
           id: s.id,
           name: s.name,
           views: restoredViews,
-          viewport: clampViewport(s.viewport),
+          viewport: existing ? existing.viewport : clampViewport(s.viewport),
           nextZIndex: s.nextZIndex,
           zoomedViewId: s.zoomedViewId ?? null,
-          selectedViewId: null,
+          selectedViewId: (s as any).selectedViewId ?? existing?.selectedViewId ?? null,
+          minimapAutoHide: existing?.minimapAutoHide ?? s.minimapAutoHide ?? true,
         };
       });
-      const resolvedActive = (activeId && canvases.find((c) => c.id === activeId))
-        ? activeId
-        : canvases[0].id;
+
+      // Preserve the controller's active canvas tab if the user hasn't switched
+      // on the satellite. Only follow satellite active tab on first hydration.
+      const resolvedActive = existingState.loaded && existingState.canvases.length > 0
+        ? (canvases.find((c) => c.id === existingState.activeCanvasId)
+          ? existingState.activeCanvasId
+          : (activeId && canvases.find((c) => c.id === activeId) ? activeId : canvases[0].id))
+        : (activeId && canvases.find((c) => c.id === activeId) ? activeId : canvases[0].id);
+
       set({ canvases, activeCanvasId: resolvedActive, loaded: true, ...syncDerivedState(canvases, resolvedActive) });
     },
 
@@ -233,6 +385,23 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       const canvases = [...get().canvases, canvas];
       set({ canvases, activeCanvasId: canvas.id, ...syncDerivedState(canvases, canvas.id) });
       return canvas.id;
+    },
+
+    insertCanvas: (canvas) => {
+      const canvases = [...get().canvases, canvas];
+      set({ canvases, activeCanvasId: canvas.id, ...syncDerivedState(canvases, canvas.id) });
+    },
+
+    loadAndInsertCanvas: async (canvas, storage) => {
+      // Ensure existing canvases are loaded from disk first
+      if (!get().loaded) {
+        await get().loadCanvas(storage);
+      }
+      // Insert the new canvas
+      const canvases = [...get().canvases, canvas];
+      set({ canvases, activeCanvasId: canvas.id, loaded: true, ...syncDerivedState(canvases, canvas.id) });
+      // Persist immediately so the canvas survives re-mounts
+      await get().saveCanvas(storage);
     },
 
     removeCanvas: (canvasId) => {
@@ -267,8 +436,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const existingNames = canvas.views.map((v) => v.displayName);
         const view = createViewOp(type, position, canvas.nextZIndex, existingNames);
         newViewId = view.id;
+        const newViews = [...canvas.views, view];
         return {
-          views: [...canvas.views, view],
+          // When adding a zone, skip recomputeZones so existing agents aren't
+          // auto-contained. The zone starts empty; agents join when moved in.
+          views: type === 'zone' ? newViews : recomputeZones(newViews),
           nextZIndex: canvas.nextZIndex + 1,
         };
       }));
@@ -285,7 +457,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         );
         newViewId = view.id;
         return {
-          views: [...canvas.views, view],
+          views: recomputeZones([...canvas.views, view]),
           nextZIndex: canvas.nextZIndex + 1,
         };
       }));
@@ -294,20 +466,20 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     removeView: (viewId) => {
       set(updateActiveCanvas(get(), (canvas) => ({
-        views: removeViewOp(canvas.views, viewId),
+        views: recomputeZones(removeViewOp(canvas.views, viewId)),
         selectedViewId: canvas.selectedViewId === viewId ? null : canvas.selectedViewId,
       })));
     },
 
     moveView: (viewId, position) => {
       set(updateActiveCanvas(get(), (canvas) => ({
-        views: updateViewPosOp(canvas.views, viewId, position),
+        views: recomputeZones(updateViewPosOp(canvas.views, viewId, position)),
       })));
     },
 
     resizeView: (viewId, size) => {
       set(updateActiveCanvas(get(), (canvas) => ({
-        views: updateViewSizeOp(canvas.views, viewId, size),
+        views: recomputeZones(updateViewSizeOp(canvas.views, viewId, size)),
       })));
     },
 
@@ -350,11 +522,48 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       return queryViewsOp(views, filter);
     },
 
+    // ── Zone operations ─────────────────────────────────────────
+
+    removeZone: (zoneId, removeContents) => {
+      set(updateActiveCanvas(get(), (canvas) => {
+        const zone = canvas.views.find((v) => v.id === zoneId && v.type === 'zone') as ZoneCanvasView | undefined;
+        if (!zone) return { views: canvas.views };
+
+        let views = canvas.views.filter((v) => v.id !== zoneId);
+        if (removeContents) {
+          const contained = new Set(zone.containedViewIds);
+          views = views.filter((v) => !contained.has(v.id));
+        }
+        return {
+          views: recomputeZones(views),
+          selectedViewId: canvas.selectedViewId === zoneId ? null : canvas.selectedViewId,
+        };
+      }));
+    },
+
+    updateZoneTheme: (zoneId, themeId) => {
+      set(updateActiveCanvas(get(), (canvas) => ({
+        views: canvas.views.map((v) =>
+          v.id === zoneId && v.type === 'zone'
+            ? { ...v, themeId } as ZoneCanvasView
+            : v,
+        ),
+      })));
+    },
+
     // ── Viewport ─────────────────────────────────────────────────
 
     setViewport: (viewport) => {
       set(updateActiveCanvas(get(), () => ({
         viewport: clampViewport(viewport),
+      })));
+    },
+
+    // ── Minimap auto-hide ─────────────────────────────────────────
+
+    setMinimapAutoHide: (value) => {
+      set(updateActiveCanvas(get(), () => ({
+        minimapAutoHide: value,
       })));
     },
 
@@ -404,10 +613,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     moveViews: (positions) => {
       set(updateActiveCanvas(get(), (canvas) => ({
-        views: canvas.views.map((v) => {
+        views: recomputeZones(canvas.views.map((v) => {
           const newPos = positions.get(v.id);
           return newPos ? { ...v, position: clampPosition(newPos) } : v;
-        }),
+        })),
       })));
     },
   }));

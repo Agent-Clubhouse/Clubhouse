@@ -17,6 +17,8 @@ import { manifest as reviewManifest } from './review/manifest';
 import * as reviewModule from './review/main';
 import { manifest as groupProjectManifest } from './group-project/manifest';
 import * as groupProjectModule from './group-project/main';
+import { manifest as agentQueueManifest } from './agent-queue/manifest';
+import * as agentQueueModule from './agent-queue/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -25,13 +27,16 @@ export interface BuiltinPlugin {
 
 /** Experimental feature flags that gate conditional built-in plugins. */
 export interface ExperimentalFlags {
-  canvas?: boolean;
   sessions?: boolean;
+  review?: boolean;
   [key: string]: boolean | undefined;
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
-const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'browser', 'git', 'review'];
+const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'git'];
+
+/** Canvas sub-plugin IDs — hidden from the plugin list unless canvas is enabled. */
+export const CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'agent-queue']);
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
@@ -40,12 +45,14 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: filesManifest, module: filesModule },
     { manifest: browserManifest, module: browserModule },
     { manifest: gitManifest, module: gitModule },
-    { manifest: reviewManifest, module: reviewModule },
+    // Canvas is always loaded but not enabled by default
+    { manifest: canvasManifest, module: canvasModule },
+    { manifest: groupProjectManifest, module: groupProjectModule },
+    { manifest: agentQueueManifest, module: agentQueueModule },
   ];
 
-  if (experimentalFlags.canvas) {
-    plugins.push({ manifest: canvasManifest, module: canvasModule });
-    plugins.push({ manifest: groupProjectManifest, module: groupProjectModule });
+  if (experimentalFlags.review) {
+    plugins.push({ manifest: reviewManifest, module: reviewModule });
   }
 
   if (experimentalFlags.sessions) {
@@ -58,9 +65,8 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
 /** Returns the set of builtin plugin IDs that should be auto-enabled on first install. */
 export function getDefaultEnabledIds(experimentalFlags: ExperimentalFlags = {}): ReadonlySet<string> {
   const ids = [...BASE_DEFAULT_IDS];
-  if (experimentalFlags.canvas) {
-    ids.push('canvas');
-    ids.push('group-project');
+  if (experimentalFlags.review) {
+    ids.push('review');
   }
   if (experimentalFlags.sessions) {
     ids.push('sessions');

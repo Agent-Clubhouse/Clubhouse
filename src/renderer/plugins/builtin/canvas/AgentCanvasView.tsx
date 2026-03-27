@@ -1,11 +1,14 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canvas-types';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
+import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
 
 interface AgentCanvasViewProps {
   view: AgentCanvasViewType;
   api: PluginAPI;
   onUpdate: (updates: Partial<CanvasView>) => void;
+  /** Zone theme ID — propagated to the terminal for PTY background updates. */
+  zoneThemeId?: string;
 }
 
 function projectColor(name: string): string {
@@ -17,10 +20,11 @@ function projectColor(name: string): string {
   return `hsl(${hue}, 55%, 55%)`;
 }
 
-export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
+export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanvasViewProps) {
   const isAppMode = api.context.mode === 'app';
   const [agentTick, setAgentTick] = useState(0);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   useEffect(() => {
     const sub = api.agents.onAnyChange(() => setAgentTick((n) => n + 1));
@@ -78,6 +82,41 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
   const handleBackToProjects = useCallback(() => {
     setSelectedProjectId(null);
   }, []);
+
+  // Resolve the active project for agent creation
+  const activeProjectForCreate = useMemo(() => {
+    const pid = isAppMode ? selectedProjectId : api.context.projectId;
+    if (!pid) return null;
+    return projects.find((p) => p.id === pid) ?? null;
+  }, [isAppMode, selectedProjectId, api.context.projectId, projects]);
+
+  const handleCreateDurable = useCallback(async (
+    name: string, color: string, model: string, useWorktree: boolean,
+    orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[],
+  ) => {
+    const project = activeProjectForCreate;
+    if (!project) return;
+    setShowCreateDialog(false);
+    try {
+      const agentId = await api.agents.createDurable({
+        projectId: project.id,
+        name,
+        color,
+        model,
+        useWorktree,
+        orchestrator,
+        freeAgentMode,
+        mcpIds,
+      });
+      // Auto-assign the newly created agent to this canvas view
+      const newAgent = api.agents.list().find((a) => a.id === agentId);
+      if (newAgent) {
+        handlePickAgent(newAgent);
+      }
+    } catch (err) {
+      console.error('Failed to create durable agent:', err);
+    }
+  }, [activeProjectForCreate, api.agents, handlePickAgent]);
 
   // No agent assigned — show picker
   if (!view.agentId || !assignedAgent) {
@@ -159,14 +198,29 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
                   {agent.name || agent.id}
                 </span>
                 <span className={`text-[10px] ${
-                  agent.status === 'running' ? 'text-green-400' :
-                  agent.status === 'error' ? 'text-red-400' :
+                  agent.status === 'running' ? 'text-ctp-success' :
+                  agent.status === 'error' ? 'text-ctp-error' :
                   'text-ctp-overlay0'
                 }`}>{agent.status}</span>
               </button>
             ))
           )}
         </div>
+        <button
+          onClick={() => setShowCreateDialog(true)}
+          data-testid="canvas-create-agent"
+          className="w-full mt-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg
+            bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 transition-colors text-xs cursor-pointer"
+        >
+          + New Agent
+        </button>
+        {showCreateDialog && activeProjectForCreate && (
+          <AddAgentDialog
+            onClose={() => setShowCreateDialog(false)}
+            onCreate={handleCreateDurable}
+            projectPath={activeProjectForCreate.path}
+          />
+        )}
       </div>
     );
   }
@@ -179,6 +233,7 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
       <div className="relative flex flex-col h-full">
         {React.createElement(api.widgets.AgentTerminal, {
           agentId: view.agentId,
+          zoneThemeId,
         })}
       </div>
     );

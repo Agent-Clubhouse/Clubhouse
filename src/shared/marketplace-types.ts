@@ -112,7 +112,16 @@ export interface PluginUpdatesStatus {
 export const SUPPORTED_REGISTRY_VERSION = 1;
 
 /** Plugin API versions the host app can load. */
-export const SUPPORTED_PLUGIN_API_VERSIONS = [0.5, 0.6, 0.7, 0.8];
+export const SUPPORTED_PLUGIN_API_VERSIONS = [0.5, 0.6, 0.7, 0.8, 0.9];
+
+/**
+ * Deprecated API versions that still load but will be removed in a future release.
+ * Maps version number to a removal target version string.
+ */
+export const DEPRECATED_PLUGIN_API_VERSIONS: Record<number, string> = {
+  0.5: 'v0.39',
+  0.6: 'v0.39',
+};
 
 // ── Custom marketplace types ─────────────────────────────────────────
 

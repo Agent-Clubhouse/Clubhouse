@@ -85,7 +85,8 @@ describe('StreamJsonAdapter', () => {
     expect(args).toContain('stream-json');
     expect(args).toContain('--verbose');
     expect(args).toContain('--include-partial-messages');
-    expect(args).toContain('--dangerously-skip-permissions');
+    expect(args).toContain('--permission-mode');
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
     expect(opts.cwd).toBe('/tmp/project');
   });
 

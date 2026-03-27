@@ -65,6 +65,8 @@ describe('keyboardShortcutsStore', () => {
     const { shortcuts } = useKeyboardShortcutsStore.getState();
     expect(shortcuts['toggle-help']).toBeDefined();
     expect(shortcuts['toggle-help'].defaultBinding).toBe('Meta+Shift+/');
+    expect(shortcuts['toggle-assistant']).toBeDefined();
+    expect(shortcuts['toggle-assistant'].defaultBinding).toBe('Meta+Shift+.');
     expect(shortcuts['go-home']).toBeDefined();
     expect(shortcuts['go-home'].defaultBinding).toBe('Meta+Shift+H');
     expect(shortcuts['toggle-sidebar']).toBeDefined();

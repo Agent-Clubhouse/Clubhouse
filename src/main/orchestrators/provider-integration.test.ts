@@ -33,14 +33,13 @@ import * as fsp from 'fs/promises';
 import { ClaudeCodeProvider } from './claude-code-provider';
 import { CopilotCliProvider } from './copilot-cli-provider';
 import { CodexCliProvider } from './codex-cli-provider';
-import { OpenCodeProvider } from './opencode-provider';
 import { isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable } from './types';
 import { clearBinaryCache } from './shared';
 
 /** Check if path's basename matches a known binary name (with or without Windows extensions) */
 function isKnownBinary(p: string | Buffer | URL): boolean {
   const base = path.basename(String(p));
-  const names = ['claude', 'copilot', 'codex', 'opencode'];
+  const names = ['claude', 'copilot', 'codex'];
   const exts = ['', '.exe', '.cmd'];
   return names.some(n => exts.some(e => base === n + e));
 }
@@ -117,23 +116,6 @@ describe('Provider integration tests', () => {
       expect(args).toEqual([]);
     });
 
-    it('OpenCode: passes model flag when provided', async () => {
-      const provider = new OpenCodeProvider();
-      const { args } = await provider.buildSpawnCommand({
-        cwd: '/p',
-        model: 'anthropic/claude-sonnet-4-5',
-      });
-      expect(args).toContain('--model');
-      expect(args[args.indexOf('--model') + 1]).toBe('anthropic/claude-sonnet-4-5');
-    });
-
-    it('OpenCode: no args when no options', async () => {
-      const provider = new OpenCodeProvider();
-      const { args } = await provider.buildSpawnCommand({
-        cwd: '/p',
-      });
-      expect(args).toEqual([]);
-    });
   });
 
   describe('session resume flag generation', () => {
@@ -216,37 +198,6 @@ describe('Provider integration tests', () => {
       expect(args).toContain('-p');
     });
 
-    it('OpenCode: adds --continue when resume=true without sessionId', async () => {
-      const provider = new OpenCodeProvider();
-      const { args } = await provider.buildSpawnCommand({
-        cwd: '/p',
-        resume: true,
-      });
-      expect(args).toContain('--continue');
-    });
-
-    it('OpenCode: adds --session <id> when resume=true with sessionId', async () => {
-      const provider = new OpenCodeProvider();
-      const { args } = await provider.buildSpawnCommand({
-        cwd: '/p',
-        resume: true,
-        sessionId: 'ses_01ABC123',
-      });
-      expect(args).toContain('--session');
-      expect(args[args.indexOf('--session') + 1]).toBe('ses_01ABC123');
-      expect(args).not.toContain('--continue');
-    });
-
-    it('OpenCode: no resume flags when resume is false', async () => {
-      const provider = new OpenCodeProvider();
-      const { args } = await provider.buildSpawnCommand({
-        cwd: '/p',
-        resume: false,
-      });
-      expect(args).not.toContain('--continue');
-      expect(args).not.toContain('--session');
-    });
-
     it('CodexCli: adds --continue when resume=true', async () => {
       const provider = new CodexCliProvider();
       const { args } = await provider.buildSpawnCommand({
@@ -266,7 +217,7 @@ describe('Provider integration tests', () => {
     });
 
     it('all providers declare sessionResume capability', () => {
-      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider(), new OpenCodeProvider()];
+      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider()];
       for (const p of providers) {
         expect(p.getCapabilities().sessionResume).toBe(true);
       }
@@ -274,13 +225,25 @@ describe('Provider integration tests', () => {
   });
 
   describe('freeAgentMode flag generation', () => {
-    it('ClaudeCode: adds --dangerously-skip-permissions when freeAgentMode is true', async () => {
+    it('ClaudeCode: uses --permission-mode auto when freeAgentMode is true (default)', async () => {
       const provider = new ClaudeCodeProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
       });
+      expect(args).toContain('--permission-mode');
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
+    });
+
+    it('ClaudeCode: uses --dangerously-skip-permissions when permissionMode is skip-all', async () => {
+      const provider = new ClaudeCodeProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        freeAgentMode: true,
+        permissionMode: 'skip-all',
+      });
       expect(args).toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
     });
 
     it('ClaudeCode: no permission flag when freeAgentMode is false', async () => {
@@ -290,24 +253,27 @@ describe('Provider integration tests', () => {
         freeAgentMode: false,
       });
       expect(args).not.toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('--permission-mode');
     });
 
-    it('CopilotCli: adds --yolo when freeAgentMode is true', async () => {
+    it('CopilotCli: adds --yolo and --autopilot when freeAgentMode is true', async () => {
       const provider = new CopilotCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
       });
       expect(args).toContain('--yolo');
+      expect(args).toContain('--autopilot');
     });
 
-    it('CopilotCli: no --yolo when freeAgentMode is false', async () => {
+    it('CopilotCli: no --yolo or --autopilot when freeAgentMode is false', async () => {
       const provider = new CopilotCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: false,
       });
       expect(args).not.toContain('--yolo');
+      expect(args).not.toContain('--autopilot');
     });
 
     it('CodexCli: adds --full-auto when freeAgentMode is true', async () => {
@@ -328,17 +294,6 @@ describe('Provider integration tests', () => {
       expect(args).not.toContain('--full-auto');
     });
 
-    it('OpenCode: no permission-related flag regardless of freeAgentMode', async () => {
-      const provider = new OpenCodeProvider();
-      const { args } = await provider.buildSpawnCommand({
-        cwd: '/p',
-        freeAgentMode: true,
-      });
-      // OpenCode doesn't support permissions, so no flag should be added
-      expect(args).not.toContain('--dangerously-skip-permissions');
-      expect(args).not.toContain('--yolo');
-    });
-
     it('freeAgentMode flag coexists with other options', async () => {
       const provider = new ClaudeCodeProvider();
       const { args } = await provider.buildSpawnCommand({
@@ -347,7 +302,8 @@ describe('Provider integration tests', () => {
         model: 'sonnet',
         mission: 'Deploy',
       });
-      expect(args).toContain('--dangerously-skip-permissions');
+      expect(args).toContain('--permission-mode');
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
       expect(args).toContain('--model');
       expect(args).toContain('sonnet');
       expect(args[args.length - 1]).toBe('Deploy');
@@ -375,8 +331,9 @@ describe('Provider integration tests', () => {
       expect(args[args.indexOf('-p') + 1]).toBe('Fix the auth bug');
       expect(args).toContain('--output-format');
       expect(args[args.indexOf('--output-format') + 1]).toBe('stream-json');
-      // Permission is handled via --dangerously-skip-permissions flag
-      expect(args).toContain('--dangerously-skip-permissions');
+      // Permission is handled via --permission-mode auto by default
+      expect(args).toContain('--permission-mode');
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
       expect(result!.env).toBeUndefined();
       expect(args).toContain('--model');
       expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
@@ -388,15 +345,29 @@ describe('Provider integration tests', () => {
       expect(args.filter(a => a === '--allowedTools')).toHaveLength(2);
     });
 
-    it('ClaudeCode: always adds --dangerously-skip-permissions even without permissionMode', async () => {
+    it('ClaudeCode: defaults to --permission-mode auto for headless', async () => {
       const provider = new ClaudeCodeProvider();
       const result = await provider.buildHeadlessCommand({
         cwd: '/p',
         mission: 'test',
       });
       expect(result).not.toBeNull();
-      expect(result!.args).toContain('--dangerously-skip-permissions');
+      expect(result!.args).toContain('--permission-mode');
+      expect(result!.args[result!.args.indexOf('--permission-mode') + 1]).toBe('auto');
+      expect(result!.args).not.toContain('--dangerously-skip-permissions');
       expect(result!.env).toBeUndefined();
+    });
+
+    it('ClaudeCode: uses --dangerously-skip-permissions when permissionMode is skip-all', async () => {
+      const provider = new ClaudeCodeProvider();
+      const result = await provider.buildHeadlessCommand({
+        cwd: '/p',
+        mission: 'test',
+        permissionMode: 'skip-all',
+      });
+      expect(result).not.toBeNull();
+      expect(result!.args).toContain('--dangerously-skip-permissions');
+      expect(result!.args).not.toContain('--permission-mode');
     });
 
     it('ClaudeCode: returns null when no mission provided', async () => {
@@ -483,30 +454,6 @@ describe('Provider integration tests', () => {
       expect(result).toBeNull();
     });
 
-    it('OpenCode: generates headless command with run --format json and text outputKind', async () => {
-      const provider = new OpenCodeProvider();
-      const result = await provider.buildHeadlessCommand!({
-        cwd: '/p',
-        mission: 'Fix the bug',
-        model: 'anthropic/claude-sonnet-4-5',
-      });
-
-      expect(result).not.toBeNull();
-      expect(result!.outputKind).toBe('text');
-      const { args } = result!;
-      expect(args[0]).toBe('run');
-      expect(args[1]).toBe('Fix the bug');
-      expect(args).toContain('--format');
-      expect(args[args.indexOf('--format') + 1]).toBe('json');
-      expect(args).toContain('--model');
-      expect(args[args.indexOf('--model') + 1]).toBe('anthropic/claude-sonnet-4-5');
-    });
-
-    it('OpenCode: returns null when no mission', async () => {
-      const provider = new OpenCodeProvider();
-      const result = await provider.buildHeadlessCommand!({ cwd: '/p' });
-      expect(result).toBeNull();
-    });
   });
 
   describe('writeHooksConfig format', () => {
@@ -593,10 +540,19 @@ describe('Provider integration tests', () => {
       expect((provider as any).writeHooksConfig).toBeUndefined();
     });
 
-    it('OpenCode: does not implement HookCapable (no writeHooksConfig)', () => {
-      const provider = new OpenCodeProvider();
-      expect((provider as any).writeHooksConfig).toBeUndefined();
+    it('CodexCli: implements buildMcpArgs for CLI-arg MCP injection', () => {
+      const provider = new CodexCliProvider();
+      expect(typeof provider.buildMcpArgs).toBe('function');
+      const args = provider.buildMcpArgs({
+        command: 'node',
+        args: ['/bridge.js'],
+        env: { CLUBHOUSE_MCP_PORT: '12345' },
+      });
+      expect(args.length).toBeGreaterThan(0);
+      expect(args).toContain('-c');
+      expect(args.some(a => a.includes('mcp_servers.clubhouse'))).toBe(true);
     });
+
   });
 
   describe('getDefaultPermissions', () => {
@@ -649,24 +605,6 @@ describe('Provider integration tests', () => {
       expect(perms).toContain('shell(git:*)');
     });
 
-    it('OpenCode quick agents get lowercase tool permissions', () => {
-      const provider = new OpenCodeProvider();
-      const perms = provider.getDefaultPermissions('quick');
-      expect(perms).toContain('read');
-      expect(perms).toContain('edit');
-      expect(perms).toContain('glob');
-      expect(perms).toContain('grep');
-      expect(perms).toContain('bash(git:*)');
-    });
-
-    it('OpenCode durable agents get bash permissions', () => {
-      const provider = new OpenCodeProvider();
-      const perms = provider.getDefaultPermissions('durable');
-      expect(perms).toContain('bash(git:*)');
-      expect(perms).toContain('bash(npm:*)');
-      expect(perms).toContain('bash(npx:*)');
-      expect(perms).not.toContain('read');
-    });
   });
 
   describe('parseHookEvent normalization', () => {
@@ -717,11 +655,6 @@ describe('Provider integration tests', () => {
       expect((provider as any).parseHookEvent).toBeUndefined();
     });
 
-    it('OpenCode: does not implement HookCapable (no parseHookEvent)', () => {
-      const provider = new OpenCodeProvider();
-      expect((provider as any).parseHookEvent).toBeUndefined();
-    });
-
     it('hook-capable providers return null for unknown event', () => {
       const hookProviders = [new ClaudeCodeProvider(), new CopilotCliProvider()];
       for (const p of hookProviders) {
@@ -763,13 +696,6 @@ describe('Provider integration tests', () => {
       expect(provider.conventions.localSettingsFile).toBe('config.toml');
     });
 
-    it('OpenCode uses .opencode/ with opencode.json', () => {
-      const provider = new OpenCodeProvider();
-      expect(provider.conventions.configDir).toBe('.opencode');
-      expect(provider.conventions.localInstructionsFile).toBe('instructions.md');
-      expect(provider.conventions.mcpConfigFile).toBe('opencode.json');
-      expect(provider.conventions.localSettingsFile).toBe('opencode.json');
-    });
   });
 
   describe('getCapabilities', () => {
@@ -805,18 +731,9 @@ describe('Provider integration tests', () => {
       expect(caps.structuredMode).toBe(true);
     });
 
-    it('OpenCode: no hooks or permissions', () => {
-      const caps = new OpenCodeProvider().getCapabilities();
-      expect(caps.headless).toBe(true);
-      expect(caps.structuredOutput).toBe(false);
-      expect(caps.hooks).toBe(false);
-      expect(caps.sessionResume).toBe(true);
-      expect(caps.permissions).toBe(false);
-    });
-
     it('all providers return an object with all required keys', () => {
       const requiredKeys = ['headless', 'structuredOutput', 'hooks', 'sessionResume', 'permissions'];
-      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider(), new OpenCodeProvider()];
+      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider()];
       for (const p of providers) {
         const caps = p.getCapabilities();
         for (const key of requiredKeys) {
@@ -949,15 +866,8 @@ describe('Provider integration tests', () => {
       expect(keys).toHaveLength(2);
     });
 
-    it('OpenCode: returns OPENCODE_CONFIG_DIR', () => {
-      const provider = new OpenCodeProvider();
-      const keys = provider.getProfileEnvKeys();
-      expect(keys).toContain('OPENCODE_CONFIG_DIR');
-      expect(keys).toHaveLength(1);
-    });
-
     it('all providers return non-empty arrays', () => {
-      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider(), new OpenCodeProvider()];
+      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider()];
       for (const p of providers) {
         const keys = p.getProfileEnvKeys();
         expect(Array.isArray(keys)).toBe(true);
@@ -974,12 +884,6 @@ describe('Provider integration tests', () => {
       expect(ids).toContain('default');
       expect(ids).toContain('claude-sonnet-4.5');
       expect(ids).toContain('gpt-5');
-    });
-
-    it('OpenCode: falls back to default when binary not found', async () => {
-      const provider = new OpenCodeProvider();
-      const options = await provider.getModelOptions();
-      expect(options).toEqual([{ id: 'default', label: 'Default' }]);
     });
 
     it('CodexCli: falls back to static list with codex models when binary not found', async () => {
@@ -1126,11 +1030,6 @@ describe('Provider integration tests', () => {
       expect(result.available).toBe(true);
     });
 
-    it('OpenCode: accepts envOverride without error', async () => {
-      const provider = new OpenCodeProvider();
-      const result = await provider.checkAvailability({ OPENCODE_CONFIG_DIR: '/custom' });
-      expect(result.available).toBe(true);
-    });
   });
 
   describe('type guards for capability sub-interfaces', () => {
@@ -1139,30 +1038,26 @@ describe('Provider integration tests', () => {
       expect(isHookCapable(new CopilotCliProvider())).toBe(true);
     });
 
-    it('isHookCapable returns false for CodexCli and OpenCode', () => {
+    it('isHookCapable returns false for CodexCli', () => {
       expect(isHookCapable(new CodexCliProvider())).toBe(false);
-      expect(isHookCapable(new OpenCodeProvider())).toBe(false);
     });
 
     it('isHeadlessCapable returns true for all providers', () => {
       expect(isHeadlessCapable(new ClaudeCodeProvider())).toBe(true);
       expect(isHeadlessCapable(new CopilotCliProvider())).toBe(true);
       expect(isHeadlessCapable(new CodexCliProvider())).toBe(true);
-      expect(isHeadlessCapable(new OpenCodeProvider())).toBe(true);
     });
 
     it('isSessionCapable returns true only for ClaudeCode', () => {
       expect(isSessionCapable(new ClaudeCodeProvider())).toBe(true);
       expect(isSessionCapable(new CopilotCliProvider())).toBe(false);
       expect(isSessionCapable(new CodexCliProvider())).toBe(false);
-      expect(isSessionCapable(new OpenCodeProvider())).toBe(false);
     });
 
     it('isStructuredCapable returns true for ClaudeCode, CopilotCli, and CodexCli', () => {
       expect(isStructuredCapable(new ClaudeCodeProvider())).toBe(true);
       expect(isStructuredCapable(new CopilotCliProvider())).toBe(true);
       expect(isStructuredCapable(new CodexCliProvider())).toBe(true);
-      expect(isStructuredCapable(new OpenCodeProvider())).toBe(false);
     });
 
     it('type narrowing grants access to sub-interface methods', () => {

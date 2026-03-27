@@ -30,6 +30,15 @@ describe('SessionNamePromptDialog', () => {
     expect(screen.getByText('Name This Session')).toBeInTheDocument();
   });
 
+  it('renders into document.body via portal, not inside parent container', () => {
+    const { container } = renderDialog();
+    expect(screen.getByTestId('session-name-prompt-dialog')).toBeInTheDocument();
+    // Dialog should NOT be inside the render container (it's portaled to document.body)
+    expect(container.querySelector('[data-testid="session-name-prompt-dialog"]')).toBeNull();
+    // But it should be in document.body
+    expect(document.body.querySelector('[data-testid="session-name-prompt-dialog"]')).not.toBeNull();
+  });
+
   it('has a text input for the name', () => {
     renderDialog();
     expect(screen.getByTestId('session-name-input')).toBeInTheDocument();

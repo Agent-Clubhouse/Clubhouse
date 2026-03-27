@@ -136,6 +136,25 @@ describe('Canvas title bar — plugin widget type extraction', () => {
   });
 });
 
+// ── handleUpdateMetadata regenerates displayName for plugin views ──
+
+describe('Canvas view — handleUpdateMetadata updates displayName', () => {
+  const source = readFileSync(join(__dirname, 'CanvasView.tsx'), 'utf-8');
+
+  it('imports generatePluginWidgetDisplayName', () => {
+    expect(source).toContain('generatePluginWidgetDisplayName');
+  });
+
+  it('calls generatePluginWidgetDisplayName inside handleUpdateMetadata for plugin views', () => {
+    // handleUpdateMetadata should check view.type === 'plugin' and call
+    // generatePluginWidgetDisplayName to update displayName alongside metadata.
+    expect(source).toMatch(/handleUpdateMetadata/);
+    expect(source).toMatch(/generatePluginWidgetDisplayName\s*\(/);
+    // Ensure displayName is set from the result
+    expect(source).toContain('viewUpdates.displayName');
+  });
+});
+
 // ── Registry subscription for plugin views ────────────────────────
 
 describe('Canvas view — plugin widget registry subscription', () => {

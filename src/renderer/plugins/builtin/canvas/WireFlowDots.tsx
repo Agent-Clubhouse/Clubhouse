@@ -19,13 +19,15 @@ const AMBIENT_DOT_COUNT = 2;
 const AMBIENT_DOT_DURATION = 6; // slow traversal
 const AMBIENT_DOT_STAGGER = 3;
 const AMBIENT_OPACITY = '0;0.3;0.3;0';
+const AMBIENT_DOT_RADIUS = 2.5;
+const AMBIENT_GLOW_STD_DEV = 2;
 
-const ACTIVE_DOT_COUNT = 3;
-const ACTIVE_DOT_DURATION = 2; // fast traversal
-const ACTIVE_DOT_STAGGER = 0.7;
-const ACTIVE_OPACITY = '0;0.9;0.9;0';
-
-const DOT_RADIUS = 2.5;
+const ACTIVE_DOT_COUNT = 5;
+const ACTIVE_DOT_DURATION = 1.4; // fast burst traversal
+const ACTIVE_DOT_STAGGER = 0.3;
+const ACTIVE_OPACITY = '0;1;1;0';
+const ACTIVE_DOT_RADIUS = 3.5;
+const ACTIVE_GLOW_STD_DEV = 3.5;
 
 interface WireFlowDotsProps {
   wireKey: string;
@@ -45,6 +47,8 @@ export const WireFlowDots = React.memo(function WireFlowDots({
   const duration = isActive ? ACTIVE_DOT_DURATION : AMBIENT_DOT_DURATION;
   const stagger = isActive ? ACTIVE_DOT_STAGGER : AMBIENT_DOT_STAGGER;
   const opacityValues = isActive ? ACTIVE_OPACITY : AMBIENT_OPACITY;
+  const dotRadius = isActive ? ACTIVE_DOT_RADIUS : AMBIENT_DOT_RADIUS;
+  const glowStdDev = isActive ? ACTIVE_GLOW_STD_DEV : AMBIENT_GLOW_STD_DEV;
 
   const showForward = activity === 'ambient' || activity === 'active-forward' || activity === 'active-both';
   const showReverse = activity === 'active-reverse' || activity === 'active-both';
@@ -53,7 +57,7 @@ export const WireFlowDots = React.memo(function WireFlowDots({
     <>
       {/* Glow filter for dots */}
       <filter id={`wire-dot-glow-${wireKey}`}>
-        <feGaussianBlur stdDeviation="2" result="blur" />
+        <feGaussianBlur stdDeviation={glowStdDev} result="blur" />
         <feMerge>
           <feMergeNode in="blur" />
           <feMergeNode in="SourceGraphic" />
@@ -64,7 +68,7 @@ export const WireFlowDots = React.memo(function WireFlowDots({
       {showForward && Array.from({ length: dotCount }, (_, i) => (
         <circle
           key={`fwd-${i}`}
-          r={DOT_RADIUS}
+          r={dotRadius}
           fill="rgb(var(--ctp-accent, 137 180 250))"
           filter={`url(#wire-dot-glow-${wireKey})`}
           data-testid={`wire-dot-fwd-${wireKey}-${i}`}
@@ -91,7 +95,7 @@ export const WireFlowDots = React.memo(function WireFlowDots({
       {showReverse && Array.from({ length: dotCount }, (_, i) => (
         <circle
           key={`rev-${i}`}
-          r={DOT_RADIUS}
+          r={dotRadius}
           fill="rgb(var(--ctp-accent, 137 180 250))"
           filter={`url(#wire-dot-glow-${wireKey})`}
           data-testid={`wire-dot-rev-${wireKey}-${i}`}

@@ -3,6 +3,7 @@ import { ExplorerTab, SettingsSubPage } from '../../shared/types';
 import { rendererLog } from '../plugins/renderer-logger';
 
 const VIEW_PREFS_KEY = 'clubhouse_view_prefs';
+const ACTIVE_HOST_KEY = 'clubhouse_active_host';
 
 interface ViewPrefs {
   showHome: boolean;
@@ -37,12 +38,16 @@ interface UIState {
   helpTopicId: string | null;
   helpSearchQuery: string;
   projectExplorerTab: Record<string, ExplorerTab>;
+  /** Active host in the rail: null = local, satelliteId = remote host */
+  activeHostId: string | null;
+  setActiveHost: (id: string | null) => void;
   setExplorerTab: (tab: ExplorerTab, projectId?: string) => void;
   restoreProjectView: (projectId: string) => void;
   setSettingsSubPage: (page: SettingsSubPage) => void;
   setSettingsContext: (context: 'app' | string) => void;
   toggleSettings: () => void;
   toggleHelp: () => void;
+  toggleAssistant: () => void;
   setHelpSection: (id: string) => void;
   setHelpTopic: (id: string | null) => void;
   setHelpSearchQuery: (query: string) => void;
@@ -57,6 +62,14 @@ interface UIState {
 
 const initialPrefs = loadViewPrefs();
 
+function loadActiveHost(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_HOST_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
 export const useUIStore = create<UIState>((set, get) => ({
   explorerTab: 'agents',
   previousExplorerTab: null,
@@ -68,6 +81,18 @@ export const useUIStore = create<UIState>((set, get) => ({
   helpTopicId: null,
   helpSearchQuery: '',
   projectExplorerTab: {},
+  activeHostId: loadActiveHost(),
+
+  setActiveHost: (id) => {
+    set({ activeHostId: id });
+    try {
+      if (id) {
+        localStorage.setItem(ACTIVE_HOST_KEY, id);
+      } else {
+        localStorage.removeItem(ACTIVE_HOST_KEY);
+      }
+    } catch { /* ignore */ }
+  },
 
   setExplorerTab: (tab, projectId?) => {
     set({ explorerTab: tab });
@@ -97,6 +122,14 @@ export const useUIStore = create<UIState>((set, get) => ({
     const { explorerTab, previousExplorerTab } = get();
     if (explorerTab !== 'help') {
       set({ previousExplorerTab: explorerTab, explorerTab: 'help', helpSectionId: 'general', helpTopicId: null, helpSearchQuery: '' });
+    } else {
+      set({ explorerTab: previousExplorerTab || 'agents', previousExplorerTab: null });
+    }
+  },
+  toggleAssistant: () => {
+    const { explorerTab, previousExplorerTab } = get();
+    if (explorerTab !== 'assistant') {
+      set({ previousExplorerTab: explorerTab, explorerTab: 'assistant' });
     } else {
       set({ explorerTab: previousExplorerTab || 'agents', previousExplorerTab: null });
     }

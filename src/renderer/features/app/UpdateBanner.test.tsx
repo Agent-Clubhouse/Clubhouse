@@ -14,6 +14,9 @@ Object.defineProperty(globalThis, 'window', {
         checkForUpdates: vi.fn().mockResolvedValue({}),
         getUpdateStatus: vi.fn().mockResolvedValue({}),
         applyUpdate: vi.fn().mockResolvedValue(undefined),
+        getLiveAgentsForUpdate: vi.fn().mockResolvedValue([]),
+        confirmUpdateRestart: vi.fn().mockResolvedValue(undefined),
+        resolveWorkingAgent: vi.fn().mockResolvedValue(undefined),
         onUpdateStatusChanged: vi.fn().mockReturnValue(vi.fn()),
         getNotificationSettings: vi.fn().mockResolvedValue({}),
         saveNotificationSettings: vi.fn().mockResolvedValue(undefined),
@@ -230,7 +233,7 @@ describe('UpdateBanner', () => {
     expect(useUpdateStore.getState().dismissed).toBe(true);
   });
 
-  it('restart button calls applyUpdate when no agents running', () => {
+  it('restart button calls confirmUpdateRestart when no agents running', () => {
     useUpdateStore.setState({
       status: {
         state: 'ready',
@@ -248,158 +251,8 @@ describe('UpdateBanner', () => {
 
     fireEvent.click(screen.getByTestId('update-restart-btn'));
 
-    // With no running agents, should call applyUpdate directly
-    expect(vi.mocked(window.clubhouse.app.applyUpdate)).toHaveBeenCalled();
-  });
-
-  it('shows confirmation when agents are running', () => {
-    useUpdateStore.setState({
-      status: {
-        state: 'ready',
-        availableVersion: '0.26.0',
-        releaseNotes: null,
-        releaseMessage: null,
-        downloadProgress: 100,
-        error: null,
-        downloadPath: '/tmp/update.zip',
-        artifactUrl: null,
-      },
-    });
-    useAgentStore.setState({
-      agents: {
-        'agent-1': {
-          id: 'agent-1',
-          projectId: 'proj-1',
-          name: 'test-agent',
-          kind: 'durable',
-          status: 'running',
-          color: 'indigo',
-        },
-      },
-    });
-
-    render(<UpdateBanner />);
-
-    // First click should show confirmation
-    fireEvent.click(screen.getByTestId('update-restart-btn'));
-
-    expect(screen.getByTestId('update-confirm-message')).toBeInTheDocument();
-    expect(screen.getByText(/1 running agent/)).toBeInTheDocument();
-    expect(screen.getByTestId('update-confirm-restart')).toBeInTheDocument();
-  });
-
-  it('confirms and restarts on second click', () => {
-    useUpdateStore.setState({
-      status: {
-        state: 'ready',
-        availableVersion: '0.26.0',
-        releaseNotes: null,
-        releaseMessage: null,
-        downloadProgress: 100,
-        error: null,
-        downloadPath: '/tmp/update.zip',
-        artifactUrl: null,
-      },
-    });
-    useAgentStore.setState({
-      agents: {
-        'agent-1': {
-          id: 'agent-1',
-          projectId: 'proj-1',
-          name: 'test-agent',
-          kind: 'durable',
-          status: 'running',
-          color: 'indigo',
-        },
-      },
-    });
-
-    render(<UpdateBanner />);
-
-    // First click: show confirmation
-    fireEvent.click(screen.getByTestId('update-restart-btn'));
-    // Second click: confirm restart
-    fireEvent.click(screen.getByTestId('update-confirm-restart'));
-
-    expect(vi.mocked(window.clubhouse.app.applyUpdate)).toHaveBeenCalled();
-  });
-
-  it('cancel in confirmation returns to normal state', () => {
-    useUpdateStore.setState({
-      status: {
-        state: 'ready',
-        availableVersion: '0.26.0',
-        releaseNotes: null,
-        releaseMessage: null,
-        downloadProgress: 100,
-        error: null,
-        downloadPath: '/tmp/update.zip',
-        artifactUrl: null,
-      },
-    });
-    useAgentStore.setState({
-      agents: {
-        'agent-1': {
-          id: 'agent-1',
-          projectId: 'proj-1',
-          name: 'test-agent',
-          kind: 'durable',
-          status: 'running',
-          color: 'indigo',
-        },
-      },
-    });
-
-    render(<UpdateBanner />);
-
-    // Enter confirmation
-    fireEvent.click(screen.getByTestId('update-restart-btn'));
-    expect(screen.getByTestId('update-confirm-message')).toBeInTheDocument();
-
-    // Cancel
-    fireEvent.click(screen.getByText('Cancel'));
-
-    // Back to normal state
-    expect(screen.queryByTestId('update-confirm-message')).toBeNull();
-    expect(screen.getByTestId('update-restart-btn')).toBeInTheDocument();
-  });
-
-  it('shows plural agent count', () => {
-    useUpdateStore.setState({
-      status: {
-        state: 'ready',
-        availableVersion: '0.26.0',
-        releaseNotes: null,
-        releaseMessage: null,
-        downloadProgress: 100,
-        error: null,
-        downloadPath: '/tmp/update.zip',
-        artifactUrl: null,
-      },
-    });
-    useAgentStore.setState({
-      agents: {
-        'agent-1': {
-          id: 'agent-1', projectId: 'proj-1', name: 'agent-1',
-          kind: 'durable', status: 'running', color: 'indigo',
-        },
-        'agent-2': {
-          id: 'agent-2', projectId: 'proj-1', name: 'agent-2',
-          kind: 'quick', status: 'running', color: 'green',
-        },
-        'agent-3': {
-          id: 'agent-3', projectId: 'proj-1', name: 'agent-3',
-          kind: 'durable', status: 'sleeping', color: 'red',
-        },
-      },
-    });
-
-    render(<UpdateBanner />);
-
-    fireEvent.click(screen.getByTestId('update-restart-btn'));
-
-    // Should show 2 running agents (agent-3 is sleeping)
-    expect(screen.getByText(/2 running agents/)).toBeInTheDocument();
+    // With no running agents, should call confirmUpdateRestart directly
+    expect(vi.mocked(window.clubhouse.app.confirmUpdateRestart)).toHaveBeenCalledWith({ agentNames: {} });
   });
 
   // --- Manual download fallback tests ---

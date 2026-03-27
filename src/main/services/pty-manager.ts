@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as pty from 'node-pty';
 import { IPC } from '../../shared/ipc-channels';
@@ -54,21 +55,21 @@ const SENSITIVE_PREFIXES_WIN = [
  * Throws if the path is relative, does not exist, is not a directory,
  * or resolves to a sensitive system location.
  */
-export function validateSpawnCwd(cwd: string): string {
+export async function validateSpawnCwd(cwd: string): Promise<string> {
   if (!path.isAbsolute(cwd)) {
     throw new Error(`PTY cwd must be an absolute path, received: ${cwd}`);
   }
 
   let realCwd: string;
   try {
-    realCwd = fs.realpathSync(cwd);
+    realCwd = await fsp.realpath(cwd);
   } catch {
     throw new Error(`PTY cwd does not exist or is not accessible: ${cwd}`);
   }
 
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(realCwd);
+    stat = await fsp.stat(realCwd);
   } catch {
     throw new Error(`PTY cwd does not exist or is not accessible: ${cwd}`);
   }
@@ -187,6 +188,12 @@ export function getBuffer(agentId: string): string {
   return session ? getSessionBuffer(session) : '';
 }
 
+/** Get the last activity timestamp for an agent's PTY session, or null if no session exists. */
+export function getLastActivity(agentId: string): number | null {
+  const session = sessions.get(agentId);
+  return session ? session.lastActivity : null;
+}
+
 /**
  * Get the serialized terminal state for a PTY session.
  * Returns processed output (escape sequences applied) suitable for
@@ -214,8 +221,8 @@ function cleanupSession(agentId: string): void {
   sessions.delete(agentId);
 }
 
-export function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string) => void, commandPrefix?: string): void {
-  validateSpawnCwd(cwd);
+export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string) => void, commandPrefix?: string): Promise<void> {
+  await validateSpawnCwd(cwd);
 
   if (sessions.has(agentId)) {
     const existing = sessions.get(agentId)!;
@@ -311,8 +318,8 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
   });
 }
 
-export function spawnShell(id: string, projectPath: string): void {
-  validateSpawnCwd(projectPath);
+export async function spawnShell(id: string, projectPath: string): Promise<void> {
+  await validateSpawnCwd(projectPath);
 
   if (sessions.has(id)) {
     const existing = sessions.get(id)!;
@@ -397,13 +404,9 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
   const session = sessions.get(agentId);
   if (!session) return;
 
-  // Clear any existing escalation timers to prevent leaks on double-call.
-  // Without this, calling gracefulKill twice overwrites the timer references
-  // on the session object, leaking the first set of timers which then fire
-  // on stale session references and can destroy replacement sessions.
-  if (session.eofTimer) clearTimeout(session.eofTimer);
-  if (session.termTimer) clearTimeout(session.termTimer);
-  if (session.killTimer) clearTimeout(session.killTimer);
+  // If a graceful kill is already in progress, no-op to prevent timer
+  // overwrite races where concurrent calls orphan timer references.
+  if (session.killing) return;
 
   session.killing = true;
 

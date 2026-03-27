@@ -1,9 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
-import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { getTheme } from '../../themes';
-import { Toggle } from '../../components/Toggle';
 
 const VIEW_TOGGLES = [
   {
@@ -25,16 +23,17 @@ export function DisplaySettingsView() {
   const availableThemeIds = useThemeStore((s) => s.availableThemeIds);
   const showHome = useUIStore((s) => s.showHome);
   const setShowHome = useUIStore((s) => s.setShowHome);
-  const promptForName = useSessionSettingsStore((s) => s.promptForName);
-  const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
-  const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
   const toggleMap = {
     showHome: { value: showHome, set: setShowHome },
   };
 
+  const [gradientsEnabled, setGradientsEnabled] = useState(false);
+
   useEffect(() => {
-    loadSessionSettings();
-  }, [loadSessionSettings]);
+    window.clubhouse.app.getExperimentalSettings().then((s) => {
+      setGradientsEnabled(!!s.themeGradients);
+    });
+  }, []);
 
   return (
     <div className="h-full overflow-y-auto bg-ctp-base p-6">
@@ -68,20 +67,6 @@ export function DisplaySettingsView() {
           })}
         </div>
 
-        {/* Sessions */}
-        <div className="mb-6">
-          <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Sessions</h3>
-          <div className="flex items-center justify-between py-1.5">
-            <div>
-              <div className="text-sm text-ctp-text">Prompt for Session Name on Quit</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">
-                Ask to name a session when a durable agent stops (default for all projects)
-              </div>
-            </div>
-            <Toggle checked={promptForName} onChange={setPromptForName} />
-          </div>
-        </div>
-
         {/* Color theme */}
         <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Color Theme</h3>
         <div className="grid grid-cols-2 gap-3 max-w-lg">
@@ -89,6 +74,15 @@ export function DisplaySettingsView() {
             const theme = getTheme(id);
             if (!theme) return null;
             const selected = id === themeId;
+            const hasGradient = gradientsEnabled && theme.gradients?.background;
+            const cardStyle: React.CSSProperties = {
+              backgroundColor: theme.colors.base,
+              ...(hasGradient ? { backgroundImage: theme.gradients!.background } : {}),
+            };
+            const nameStyle: React.CSSProperties = {
+              color: theme.colors.text,
+              ...(gradientsEnabled && theme.fonts?.ui ? { fontFamily: theme.fonts.ui } : {}),
+            };
             return (
               <button
                 key={id}
@@ -98,7 +92,7 @@ export function DisplaySettingsView() {
                     ? 'border-ctp-accent ring-1 ring-ctp-accent'
                     : 'border-surface-1 hover:border-surface-2'
                 }`}
-                style={{ backgroundColor: theme.colors.base }}
+                style={cardStyle}
               >
                 {/* Color swatches */}
                 <div className="flex gap-1.5 mb-2">
@@ -126,7 +120,7 @@ export function DisplaySettingsView() {
                 {/* Theme name */}
                 <span
                   className="text-xs font-medium text-left"
-                  style={{ color: theme.colors.text }}
+                  style={nameStyle}
                 >
                   {theme.name}
                 </span>

@@ -48,22 +48,6 @@ export function AnnexSettingsView() {
           </div>
         </div>
 
-        {/* Enable Client toggle */}
-        <div className="flex items-center justify-between py-3 border-b border-surface-0">
-          <div>
-            <div className="text-sm text-ctp-text font-medium">Connect to satellites</div>
-            <div className="text-xs text-ctp-subtext0 mt-0.5">
-              Discover and control other Clubhouse instances on the network
-            </div>
-          </div>
-          <div data-testid="annex-client-toggle">
-            <Toggle
-              checked={settings.enableClient}
-              onChange={(v) => saveSettings({ ...settings, enableClient: v })}
-            />
-          </div>
-        </div>
-
         {settings.enableServer && (
           <>
             {/* Status */}

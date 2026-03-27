@@ -262,6 +262,92 @@ describe('config-pipeline', () => {
         'utf-8',
       );
     });
+
+    // ── TOML restore tests ─────────────────────────────────────
+
+    it('strips Clubhouse MCP from TOML config on restore (file existed)', async () => {
+      const originalToml = '[mcp_servers.user-server]\ncommand = "python"\n';
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(originalToml);
+
+      await snapshotFile('agent-1', '/project/.codex/config.toml');
+
+      // Current file has user server + injected clubhouse
+      const currentToml = [
+        '[mcp_servers.user-server]',
+        'command = "python"',
+        '',
+        '[mcp_servers.clubhouse]',
+        'command = "node"',
+        '',
+        '[mcp_servers.clubhouse.env]',
+        'CLUBHOUSE_MCP_PORT = "12345"',
+      ].join('\n');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentToml);
+
+      await restoreForAgent('agent-1');
+
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
+      expect(written).toContain('[mcp_servers.user-server]');
+      expect(written).not.toContain('[mcp_servers.clubhouse]');
+    });
+
+    it('deletes TOML config when file did not exist and only clubhouse remains', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
+
+      await snapshotFile('agent-1', '/project/.codex/config.toml');
+
+      vi.mocked(pathExists).mockResolvedValue(true);
+      const currentToml = '[mcp_servers.clubhouse]\ncommand = "node"\n';
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentToml);
+
+      await restoreForAgent('agent-1');
+
+      expect(fsp.unlink).toHaveBeenCalledWith(
+        path.resolve('/project/.codex/config.toml'),
+      );
+    });
+
+    it('preserves non-clubhouse content in TOML when file did not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
+
+      await snapshotFile('agent-1', '/project/.codex/config.toml');
+
+      vi.mocked(pathExists).mockResolvedValue(true);
+      const currentToml = [
+        '[mcp_servers.user-server]',
+        'command = "python"',
+        '',
+        '[mcp_servers.clubhouse]',
+        'command = "node"',
+      ].join('\n');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentToml);
+
+      await restoreForAgent('agent-1');
+
+      expect(fsp.unlink).not.toHaveBeenCalled();
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
+      expect(written).toContain('[mcp_servers.user-server]');
+      expect(written).not.toContain('[mcp_servers.clubhouse]');
+    });
+
+    it('falls back to original TOML when current file is unreadable', async () => {
+      const originalToml = '[mcp_servers.user-server]\ncommand = "python"\n';
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(originalToml);
+
+      await snapshotFile('agent-1', '/project/.codex/config.toml');
+
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('EACCES'));
+
+      await restoreForAgent('agent-1');
+
+      expect(fsp.writeFile).toHaveBeenCalledWith(
+        path.resolve('/project/.codex/config.toml'),
+        originalToml,
+        'utf-8',
+      );
+    });
   });
 
   describe('restoreAll', () => {
@@ -378,7 +464,7 @@ describe('config-pipeline', () => {
     it('returns null when provider does not support hooks', () => {
       const provider = {
         getCapabilities: () => ({ hooks: false } as any),
-        conventions: { configDir: '.opencode', localSettingsFile: 'opencode.json' },
+        conventions: { configDir: '.codex', localSettingsFile: 'config.toml' },
       } as any;
 
       expect(getHooksConfigPath(provider, '/project')).toBeNull();
@@ -420,6 +506,39 @@ describe('config-pipeline', () => {
         hooks: [{ type: 'command', command: 'curl http://127.0.0.1:8080/hook/some-agent' }],
       };
       expect(isClubhouseHookEntry(entry)).toBe(true);
+    });
+  });
+
+  describe('concurrent restore serialization', () => {
+    it('serializes concurrent restoreForAgent calls via mutex', async () => {
+      const callOrder: string[] = [];
+      const absPath = path.resolve('/project/.claude/settings.json');
+
+      // Make readFile return content so snapshot exists
+      vi.mocked(fsp.readFile).mockResolvedValue('{"hooks":{}}');
+      vi.mocked(pathExists).mockResolvedValue(true as any);
+
+      // Create a delayed writeFile that tracks call order
+      vi.mocked(fsp.writeFile).mockImplementation(async () => {
+        callOrder.push('write-start');
+        await new Promise((r) => setTimeout(r, 10));
+        callOrder.push('write-end');
+      });
+
+      // Two agents snapshot the same file
+      await snapshotFile('agent-a', '/project/.claude/settings.json');
+      await snapshotFile('agent-b', '/project/.claude/settings.json');
+
+      // Both agents exit concurrently — mutex should serialize
+      const p1 = restoreForAgent('agent-a');
+      const p2 = restoreForAgent('agent-b');
+      await Promise.all([p1, p2]);
+
+      // With mutex: agent-b's restore runs after agent-a completes.
+      // agent-a decrements refCount to 1 (no file write).
+      // agent-b decrements refCount to 0 and restores (one write).
+      // Without mutex, overlapping writes would interleave.
+      expect(callOrder.filter(c => c === 'write-start').length).toBeLessThanOrEqual(1);
     });
   });
 });

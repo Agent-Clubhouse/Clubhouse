@@ -111,16 +111,6 @@ const mockClaudeConventions: OrchestratorConventions = {
   localSettingsFile: 'settings.local.json',
 };
 
-const mockOpenCodeConventions: OrchestratorConventions = {
-  configDir: '.opencode',
-  localInstructionsFile: 'instructions.md',
-  legacyInstructionsFile: 'instructions.md',
-  mcpConfigFile: 'opencode.json',
-  skillsDir: 'skills',
-  agentTemplatesDir: 'agents',
-  localSettingsFile: 'opencode.json',
-};
-
 const mockProvider = {
   id: 'claude-code',
   displayName: 'Claude Code',
@@ -143,16 +133,6 @@ const mockProvider = {
   })),
 };
 
-const mockAltProvider = {
-  ...mockProvider,
-  id: 'opencode',
-  displayName: 'OpenCode',
-  shortName: 'OC',
-  getExitCommand: vi.fn(() => '/quit\r'),
-  conventions: mockOpenCodeConventions,
-  getProfileEnvKeys: vi.fn(() => ['OPENCODE_CONFIG_DIR']),
-};
-
 const mockCodexConventions: OrchestratorConventions = {
   configDir: '.codex',
   localInstructionsFile: 'AGENTS.md',
@@ -169,6 +149,7 @@ const mockCodexProvider = {
   id: 'codex-cli',
   displayName: 'Codex CLI',
   shortName: 'CX',
+  getExitCommand: vi.fn(() => '/quit\r'),
   conventions: mockCodexConventions,
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: false, hooks: false,
@@ -180,11 +161,10 @@ const mockCodexProvider = {
 vi.mock('../orchestrators', () => ({
   getProvider: vi.fn((id: string) => {
     if (id === 'claude-code') return mockProvider;
-    if (id === 'opencode') return mockAltProvider;
     if (id === 'codex-cli') return mockCodexProvider;
     return undefined;
   }),
-  getAllProviders: vi.fn(() => [mockProvider, mockAltProvider, mockCodexProvider]),
+  getAllProviders: vi.fn(() => [mockProvider, mockCodexProvider]),
   isHookCapable: vi.fn((p: any) => p.getCapabilities().hooks && typeof p.writeHooksConfig === 'function'),
   isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless && typeof p.buildHeadlessCommand === 'function'),
   isSessionCapable: vi.fn((p: any) => p.getCapabilities().sessionResume && typeof p.listSessions === 'function'),
@@ -234,16 +214,16 @@ describe('agent-system', () => {
 
   describe('resolveOrchestrator', () => {
     it('uses agent-level override when provided', async () => {
-      const provider = await resolveOrchestrator('/project', 'opencode');
-      expect(provider.id).toBe('opencode');
+      const provider = await resolveOrchestrator('/project', 'codex-cli');
+      expect(provider.id).toBe('codex-cli');
     });
 
     it('falls back to project-level setting', async () => {
       mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'opencode' })
+        JSON.stringify({ orchestrator: 'codex-cli' })
       );
       const provider = await resolveOrchestrator('/project');
-      expect(provider.id).toBe('opencode');
+      expect(provider.id).toBe('codex-cli');
     });
 
     it('falls back to default (claude-code)', async () => {
@@ -258,7 +238,7 @@ describe('agent-system', () => {
 
     it('agent override takes priority over project setting', async () => {
       mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'opencode' })
+        JSON.stringify({ orchestrator: 'codex-cli' })
       );
       const provider = await resolveOrchestrator('/project', 'claude-code');
       expect(provider.id).toBe('claude-code');
@@ -282,9 +262,9 @@ describe('agent-system', () => {
         projectPath: '/my/project',
         cwd: '/my/project',
         kind: 'durable',
-        orchestrator: 'opencode',
+        orchestrator: 'codex-cli',
       });
-      expect(getAgentOrchestrator('agent-1')).toBe('opencode');
+      expect(getAgentOrchestrator('agent-1')).toBe('codex-cli');
     });
 
     it('tracks resolved orchestrator even when not explicitly specified', async () => {
@@ -299,7 +279,7 @@ describe('agent-system', () => {
 
     it('tracks project-level orchestrator from settings.json', async () => {
       mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'opencode' })
+        JSON.stringify({ orchestrator: 'codex-cli' })
       );
       await spawnAgent({
         agentId: 'agent-1',
@@ -307,7 +287,7 @@ describe('agent-system', () => {
         cwd: '/my/project',
         kind: 'durable',
       });
-      expect(getAgentOrchestrator('agent-1')).toBe('opencode');
+      expect(getAgentOrchestrator('agent-1')).toBe('codex-cli');
     });
 
     it('writes hooks config with base URL (no agentId)', async () => {
@@ -557,31 +537,31 @@ describe('agent-system', () => {
         projectPath: '/project',
         cwd: '/project',
         kind: 'durable',
-        orchestrator: 'opencode',
+        orchestrator: 'codex-cli',
       });
       await killAgent('agent-orch', '/project');
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-orch', '/quit\r');
     });
 
     it('uses tracked orchestrator from spawn rather than caller-provided', async () => {
-      // Spawn with opencode orchestrator
+      // Spawn with codex-cli orchestrator
       await spawnAgent({
         agentId: 'agent-1',
         projectPath: '/project',
         cwd: '/project',
         kind: 'durable',
-        orchestrator: 'opencode',
+        orchestrator: 'codex-cli',
       });
 
-      // Kill without specifying orchestrator — should use the tracked one (opencode)
+      // Kill without specifying orchestrator — should use the tracked one (codex-cli)
       await killAgent('agent-1', '/project');
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
     });
 
     it('uses tracked project-level orchestrator when spawned from settings', async () => {
-      // Spawn with orchestrator resolved from project settings (opencode)
+      // Spawn with orchestrator resolved from project settings (codex-cli)
       mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'opencode' })
+        JSON.stringify({ orchestrator: 'codex-cli' })
       );
       await spawnAgent({
         agentId: 'agent-1',
@@ -590,7 +570,7 @@ describe('agent-system', () => {
         kind: 'durable',
       });
 
-      // Kill without specifying orchestrator — should use the tracked one (opencode)
+      // Kill without specifying orchestrator — should use the tracked one (codex-cli)
       await killAgent('agent-1', '/project');
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
     });
@@ -669,10 +649,10 @@ describe('agent-system', () => {
         projectPath: '/project',
         cwd: '/project',
         kind: 'durable',
-        orchestrator: 'opencode',
+        orchestrator: 'codex-cli',
       });
       expect(getAgentProjectPath('agent-1')).toBe('/project');
-      expect(getAgentOrchestrator('agent-1')).toBe('opencode');
+      expect(getAgentOrchestrator('agent-1')).toBe('codex-cli');
       expect(getAgentNonce('agent-1')).toBeDefined();
 
       untrackAgent('agent-1');
@@ -690,7 +670,7 @@ describe('agent-system', () => {
     });
 
     it('checks specific orchestrator', async () => {
-      const result = await checkAvailability(undefined, 'opencode');
+      const result = await checkAvailability(undefined, 'codex-cli');
       expect(result.available).toBe(true);
     });
 
@@ -702,17 +682,17 @@ describe('agent-system', () => {
 
     it('reads project-level orchestrator setting', async () => {
       mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'opencode' })
+        JSON.stringify({ orchestrator: 'codex-cli' })
       );
       await checkAvailability('/project');
-      expect(mockAltProvider.checkAvailability).toHaveBeenCalled();
+      expect(mockCodexProvider.checkAvailability).toHaveBeenCalled();
     });
   });
 
   describe('getAvailableOrchestrators', () => {
     it('returns all registered providers with capabilities and runtime metadata', () => {
       const result = getAvailableOrchestrators();
-      expect(result).toHaveLength(3);
+      expect(result).toHaveLength(2);
       expect(result[0]).toMatchObject({
         id: 'claude-code',
         displayName: 'Claude Code',
@@ -721,13 +701,6 @@ describe('agent-system', () => {
         conventions: mockClaudeConventions,
       });
       expect(result[1]).toMatchObject({
-        id: 'opencode',
-        displayName: 'OpenCode',
-        shortName: 'OC',
-        capabilities: expect.any(Object),
-        conventions: mockOpenCodeConventions,
-      });
-      expect(result[2]).toMatchObject({
         id: 'codex-cli',
         displayName: 'Codex CLI',
         shortName: 'CX',
@@ -738,7 +711,7 @@ describe('agent-system', () => {
 
     it('uses provider fixtures with the expected profile env keys', () => {
       expect(mockProvider.getProfileEnvKeys()).toEqual(['CLAUDE_CONFIG_DIR']);
-      expect(mockAltProvider.getProfileEnvKeys()).toEqual(['OPENCODE_CONFIG_DIR']);
+      expect(mockCodexProvider.getProfileEnvKeys()).toEqual(['OPENAI_API_KEY']);
     });
   });
 
@@ -786,12 +759,12 @@ describe('agent-system', () => {
         projectPath: '/project',
         cwd: '/project',
         kind: 'durable',
-        orchestrator: 'opencode',
+        orchestrator: 'codex-cli',
       });
 
       // Verify agent is tracked before exit
       expect(getAgentProjectPath('agent-1')).toBe('/project');
-      expect(getAgentOrchestrator('agent-1')).toBe('opencode');
+      expect(getAgentOrchestrator('agent-1')).toBe('codex-cli');
       expect(getAgentNonce('agent-1')).toBeDefined();
 
       // Simulate natural agent exit via PTY onExit callback
@@ -1224,12 +1197,48 @@ describe('agent-system', () => {
       expect(mockHeadlessSpawn).not.toHaveBeenCalled();
     });
 
-    it('does not spawn structured for durable agents', async () => {
+    it('does not spawn structured for durable agents without structuredMode flag', async () => {
       await spawnAgent({
         agentId: 'test-structured',
         projectPath: '/project',
         cwd: '/project',
         kind: 'durable',
+      });
+
+      expect(mockStartStructured).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('spawns structured for durable agents with structuredMode: true', async () => {
+      await spawnAgent({
+        agentId: 'test-durable-structured',
+        projectPath: '/project',
+        cwd: '/project/worktree',
+        kind: 'durable',
+        mission: 'build feature',
+        structuredMode: true,
+      });
+
+      expect(mockProvider.createStructuredAdapter).toHaveBeenCalled();
+      expect(mockStartStructured).toHaveBeenCalledWith(
+        'test-durable-structured',
+        mockAdapter,
+        expect.objectContaining({
+          mission: 'build feature',
+          cwd: '/project/worktree',
+        }),
+        expect.any(Function),
+      );
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+
+    it('does not spawn structured for durable agents with structuredMode: false', async () => {
+      await spawnAgent({
+        agentId: 'test-no-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        structuredMode: false,
       });
 
       expect(mockStartStructured).not.toHaveBeenCalled();

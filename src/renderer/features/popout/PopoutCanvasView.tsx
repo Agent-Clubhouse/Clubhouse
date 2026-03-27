@@ -18,6 +18,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { createWidgetsAPI } from '../../plugins/plugin-api-ui';
 import type { PluginAPI, AgentsAPI, ProjectsAPI, Disposable, AgentInfo, PluginAgentDetailedStatus } from '../../../shared/plugin-types';
 import type { CanvasMutation } from '../../../shared/types';
+import { useMcpBindingStore } from '../../stores/mcpBindingStore';
 
 interface PopoutCanvasViewProps {
   canvasId?: string;
@@ -77,6 +78,7 @@ function createPopoutApi(projectId?: string): PluginAPI {
       return { dispose: unsub };
     },
     // Stubs for methods not needed in pop-out
+    createDurable: () => Promise.reject(new Error('Not available in pop-out')),
     runQuick: () => Promise.reject(new Error('Not available in pop-out')),
     kill: () => Promise.reject(new Error('Not available in pop-out')),
     resume: () => Promise.reject(new Error('Not available in pop-out')),
@@ -88,6 +90,9 @@ function createPopoutApi(projectId?: string): PluginAPI {
     listSessions: () => Promise.resolve([]),
     readSessionTranscript: () => Promise.resolve(null),
     getSessionSummary: () => Promise.resolve(null),
+    spawnCompanion: () => Promise.reject(new Error('Not available in popout')),
+    getCompanionStatus: () => Promise.resolve('none' as const),
+    getCompanionWorkspace: () => Promise.reject(new Error('Not available in popout')),
   };
 
   const projects: ProjectsAPI = {
@@ -142,6 +147,10 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   const [zoomedViewId, setZoomedViewId] = useState<string | null>(null);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
   const [selectedViewIds, setSelectedViewIds] = useState<string[]>([]);
+  const [minimapAutoHide, setMinimapAutoHide] = useState(true);
+  // Popout uses live MCP bindings as wire definitions — persistence is handled
+  // by the main window's canvas store via the wireDefinitions system.
+  const popoutWireDefinitions = useMcpBindingStore((s) => s.bindings);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -289,6 +298,14 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
     setSelectedViewId(null);
   }, []);
 
+  const handleRemoveZone = useCallback((zoneId: string, removeContents: boolean) => {
+    sendMutation({ type: 'removeZone', zoneId, removeContents });
+  }, [sendMutation]);
+
+  const handleUpdateZoneTheme = useCallback((zoneId: string, themeId: string) => {
+    sendMutation({ type: 'updateZoneTheme', zoneId, themeId });
+  }, [sendMutation]);
+
   // ── Render ────────────────────────────────────────────────────────
 
   if (loading) {
@@ -315,6 +332,10 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         zoomedViewId={zoomedViewId}
         selectedViewId={selectedViewId}
         selectedViewIds={selectedViewIds}
+        wireDefinitions={popoutWireDefinitions}
+        onAddWireDefinition={() => {}}
+        onRemoveWireDefinition={() => {}}
+        onUpdateWireDefinition={() => {}}
         api={api}
         onViewportChange={handleViewportChange}
         onAddView={handleAddView}
@@ -330,6 +351,10 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         onToggleSelectView={handleToggleSelectView}
         onSetSelectedViewIds={setSelectedViewIds}
         onClearSelection={handleClearSelection}
+        onRemoveZone={handleRemoveZone}
+        onUpdateZoneTheme={handleUpdateZoneTheme}
+        minimapAutoHide={minimapAutoHide}
+        onMinimapAutoHideChange={setMinimapAutoHide}
       />
     </div>
   );

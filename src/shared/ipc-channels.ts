@@ -57,6 +57,10 @@ export const IPC = {
     CREATE_AGENT_TEMPLATE: 'agent:create-agent-template',
     SPAWN_AGENT: 'agent:spawn-agent',
     KILL_AGENT: 'agent:kill-agent',
+    AGENT_WAKING: 'agent:agent-waking',
+    SPAWN_COMPANION: 'agent:spawn-companion',
+    GET_COMPANION_STATUS: 'agent:get-companion-status',
+    GET_COMPANION_WORKSPACE: 'agent:get-companion-workspace',
     GET_MODEL_OPTIONS: 'agent:get-model-options',
     CHECK_ORCHESTRATOR: 'agent:check-orchestrator',
     GET_ORCHESTRATORS: 'agent:get-orchestrators',
@@ -102,6 +106,9 @@ export const IPC = {
     UPDATE_SESSION_NAME: 'agent:update-session-name',
     READ_SESSION_TRANSCRIPT: 'agent:read-session-transcript',
     GET_SESSION_SUMMARY: 'agent:get-session-summary',
+    // Backup & recovery
+    GET_BACKUP_INFO: 'agent:get-backup-info',
+    RESTORE_FROM_BACKUP: 'agent:restore-from-backup',
     // Structured mode channels
     STRUCTURED_EVENT: 'agent:structured-event',                // Main → Renderer
     START_STRUCTURED: 'agent:start-structured',                // Renderer → Main
@@ -162,9 +169,12 @@ export const IPC = {
     GET_ORCHESTRATOR_SETTINGS: 'app:get-orchestrator-settings',
     SAVE_ORCHESTRATOR_SETTINGS: 'app:save-orchestrator-settings',
     GET_VERSION: 'app:get-version',
+    IS_PREVIEW_ELIGIBLE: 'app:is-preview-eligible',
     GET_ARCH_INFO: 'app:get-arch-info',
     GET_HEADLESS_SETTINGS: 'app:get-headless-settings',
     SAVE_HEADLESS_SETTINGS: 'app:save-headless-settings',
+    GET_FREE_AGENT_SETTINGS: 'app:get-free-agent-settings',
+    SAVE_FREE_AGENT_SETTINGS: 'app:save-free-agent-settings',
     SET_DOCK_BADGE: 'app:set-dock-badge',
     GET_BADGE_SETTINGS: 'app:get-badge-settings',
     SAVE_BADGE_SETTINGS: 'app:save-badge-settings',
@@ -179,6 +189,7 @@ export const IPC = {
     GET_VERSION_HISTORY: 'app:get-version-history',
     GET_CLIPBOARD_SETTINGS: 'app:get-clipboard-settings',
     SAVE_CLIPBOARD_SETTINGS: 'app:save-clipboard-settings',
+    READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
     GET_CLUBHOUSE_MODE_SETTINGS: 'app:get-clubhouse-mode-settings',
     SAVE_CLUBHOUSE_MODE_SETTINGS: 'app:save-clubhouse-mode-settings',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
@@ -192,6 +203,15 @@ export const IPC = {
     RESTART: 'app:restart',
     GET_EXPERIMENTAL_SETTINGS: 'app:get-experimental-settings',
     SAVE_EXPERIMENTAL_SETTINGS: 'app:save-experimental-settings',
+    // Session resume on update
+    GET_PENDING_RESUMES: 'app:get-pending-resumes',
+    RESUME_MANUAL_AGENT: 'app:resume-manual-agent',
+    RESUME_STATUS_UPDATE: 'app:resume-status-update',
+    GET_LIVE_AGENTS_FOR_UPDATE: 'app:get-live-agents-for-update',
+    RESOLVE_WORKING_AGENT: 'app:resolve-working-agent',
+    CONFIRM_UPDATE_RESTART: 'app:confirm-update-restart',
+    /** Dev-only: simulate update restart to test session resume flow */
+    DEV_SIMULATE_UPDATE_RESTART: 'app:dev-simulate-update-restart',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',
@@ -322,6 +342,15 @@ export const IPC = {
     AGENT_CREATE_DURABLE: 'annex-client:agent-create-durable',
     AGENT_DELETE_DURABLE: 'annex-client:agent-delete-durable',
     AGENT_WORKTREE_STATUS: 'annex-client:agent-worktree-status',
+    AGENT_REORDER: 'annex-client:agent-reorder',
+    CANVAS_MUTATION: 'annex-client:canvas-mutation',
+    GP_GET: 'annex-client:gp-get',
+    GP_UPDATE: 'annex-client:gp-update',
+    GP_BULLETIN_DIGEST: 'annex-client:gp-bulletin-digest',
+    GP_BULLETIN_TOPIC: 'annex-client:gp-bulletin-topic',
+    GP_BULLETIN_ALL: 'annex-client:gp-bulletin-all',
+    GP_BULLETIN_POST: 'annex-client:gp-bulletin-post',
+    GP_SHOULDER_TAP: 'annex-client:gp-shoulder-tap',
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',
@@ -331,6 +360,7 @@ export const IPC = {
     DELETE: 'group-project:delete',
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
+    GET_ALL_MESSAGES: 'group-project:get-all-messages',
     CHANGED: 'group-project:changed',
     POST_BULLETIN_MESSAGE: 'group-project:post-bulletin-message',
     SEND_SHOULDER_TAP: 'group-project:send-shoulder-tap',
@@ -342,7 +372,42 @@ export const IPC = {
     BINDINGS_CHANGED: 'mcp-binding:bindings-changed',
     REGISTER_WEBVIEW: 'mcp-binding:register-webview',
     UNREGISTER_WEBVIEW: 'mcp-binding:unregister-webview',
+    SET_INSTRUCTIONS: 'mcp-binding:set-instructions',
+    SET_DISABLED_TOOLS: 'mcp-binding:set-disabled-tools',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
+  },
+  ASSISTANT: {
+    /** Spawn the assistant agent with explicit execution mode. */
+    SPAWN: 'assistant:spawn',
+    /** Create assistant MCP binding for the given agent ID. */
+    BIND: 'assistant:bind',
+    /** Remove assistant MCP binding. */
+    UNBIND: 'assistant:unbind',
+  },
+  CANVAS_CMD: {
+    /** Main→renderer push: request a canvas operation. */
+    REQUEST: 'canvas-cmd:request',
+    /** Renderer→main: result of a canvas operation. */
+    RESULT: 'canvas-cmd:result',
+  },
+  PLUGIN_MCP: {
+    CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
+    REMOVE_TOOLS: 'plugin-mcp:remove-tools',
+    LIST_TOOLS: 'plugin-mcp:list-tools',
+    /** Main→renderer push: delivers tool call to plugin handler. Not an ipcMain.handle channel. */
+    TOOL_CALL: 'plugin-mcp:tool-call',
+    TOOL_RESULT: 'plugin-mcp:tool-result',
+  },
+  AGENT_QUEUE: {
+    CREATE: 'agent-queue:create',
+    GET: 'agent-queue:get',
+    LIST: 'agent-queue:list',
+    UPDATE: 'agent-queue:update',
+    DELETE: 'agent-queue:delete',
+    LIST_TASKS: 'agent-queue:list-tasks',
+    GET_TASK: 'agent-queue:get-task',
+    CHANGED: 'agent-queue:changed',
+    TASK_CHANGED: 'agent-queue:task-changed',
   },
 } as const;

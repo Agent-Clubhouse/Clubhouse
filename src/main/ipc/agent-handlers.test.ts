@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('electron', () => ({
+  app: { getPath: vi.fn(() => '/tmp/clubhouse-test') },
   ipcMain: { handle: vi.fn() },
   dialog: {
     showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] })),
@@ -122,8 +123,8 @@ describe('agent-handlers', () => {
 
   it('CREATE_DURABLE delegates to agentConfig.createDurable', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined);
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined);
+    const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined);
     expect(result).toEqual({ id: 'agent-1', name: 'Test' });
   });
 
@@ -158,10 +159,12 @@ describe('agent-handlers', () => {
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { model: 'opus' });
   });
 
-  it('REORDER_DURABLE delegates to agentConfig.reorderDurable', async () => {
+  it('REORDER_DURABLE delegates to agentConfig.reorderDurable and broadcasts snapshot', async () => {
     const handler = handlers.get(IPC.AGENT.REORDER_DURABLE)!;
     await handler({}, '/project', ['a2', 'a1', 'a3']);
     expect(agentConfig.reorderDurable).toHaveBeenCalledWith('/project', ['a2', 'a1', 'a3']);
+    const { broadcastSnapshotRefresh } = await import('../services/annex-server');
+    expect(broadcastSnapshotRefresh).toHaveBeenCalled();
   });
 
   // --- Icons ---

@@ -4,7 +4,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as annexClient from '../services/annex-client';
-import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg } from './validation';
 
 export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.GET_SATELLITES, () => {
@@ -220,6 +220,86 @@ export function registerAnnexClientHandlers(): void {
     [stringArg(), stringArg(), stringArg()],
     async (_event, satelliteId, projectId, agentId) => {
       return annexClient.requestWorktreeStatus(satelliteId, projectId, agentId);
+    },
+  ));
+
+  // Proxy IPC: reorder durable agents on a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_REORDER, withValidatedArgs(
+    [stringArg(), stringArg(), arrayArg(stringArg())],
+    (_event, satelliteId, projectId, orderedIds) => {
+      return annexClient.sendToSatellite(satelliteId, {
+        type: 'agent:reorder',
+        payload: { projectId, orderedIds },
+      });
+    },
+  ));
+
+  // Proxy IPC: forward canvas mutation to a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.CANVAS_MUTATION, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg(), objectArg()],
+    (_event, satelliteId, projectId, canvasId, scope, mutation) => {
+      return annexClient.sendToSatellite(satelliteId, {
+        type: 'canvas:mutation',
+        payload: { projectId, canvasId, scope, mutation },
+      });
+    },
+  ));
+
+  // Group Project proxy: get a group project from a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_GET, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, satelliteId, groupProjectId) => {
+      return annexClient.requestGroupProjectGet(satelliteId, groupProjectId);
+    },
+  ));
+
+  // Group Project proxy: update a group project on a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_UPDATE, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg()],
+    async (_event, satelliteId, groupProjectId, fields) => {
+      return annexClient.requestGroupProjectUpdate(satelliteId, groupProjectId, fields as {
+        name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown>;
+      });
+    },
+  ));
+
+  // Group Project proxy: get bulletin digest from satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_BULLETIN_DIGEST, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, satelliteId, groupProjectId, since) => {
+      return annexClient.requestBulletinDigest(satelliteId, groupProjectId, since);
+    },
+  ));
+
+  // Group Project proxy: get topic messages from satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_BULLETIN_TOPIC, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
+    async (_event, satelliteId, groupProjectId, topic, since, limit) => {
+      return annexClient.requestBulletinTopicMessages(satelliteId, groupProjectId, topic, since, limit);
+    },
+  ));
+
+  // Group Project proxy: get all bulletin messages from satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_BULLETIN_ALL, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
+    async (_event, satelliteId, groupProjectId, since, limit) => {
+      return annexClient.requestBulletinAllMessages(satelliteId, groupProjectId, since, limit);
+    },
+  ));
+
+  // Group Project proxy: post bulletin message to satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_BULLETIN_POST, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg(), stringArg()],
+    async (_event, satelliteId, groupProjectId, sender, topic, body) => {
+      return annexClient.requestBulletinPostMessage(satelliteId, groupProjectId, sender, topic, body);
+    },
+  ));
+
+  // Group Project proxy: shoulder tap / broadcast on satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_SHOULDER_TAP, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true }), stringArg(), stringArg({ optional: true })],
+    async (_event, satelliteId, groupProjectId, targetAgentId, message, sender) => {
+      return annexClient.requestShoulderTap(satelliteId, groupProjectId, targetAgentId, message, sender);
     },
   ));
 }

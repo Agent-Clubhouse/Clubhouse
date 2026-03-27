@@ -5,7 +5,11 @@ import {
   onRegistryChange,
   type RegisteredCanvasWidget,
 } from '../../canvas-widget-registry';
+import { usePluginStore } from '../../plugin-store';
 import { MenuPortal } from './MenuPortal';
+import { useDismissibleLayer } from './useDismissibleLayer';
+import { sanitizeSvg } from '../../../utils/sanitize-svg';
+import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 
 /** A menu item can either be a built-in view type or a qualified plugin widget type string. */
 export type ContextMenuSelection =
@@ -22,15 +26,20 @@ interface CanvasContextMenuProps {
 // SVG icons for built-in items — 18×18 Lucide-style to match plugin widget icons
 const AGENT_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
 const ANCHOR_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>`;
+const ZONE_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
 
 /** Built-in view types that are not provided by plugins. */
 const BUILTIN_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }> = [
   { type: 'agent', label: 'Add Agent View', icon: AGENT_ICON },
   { type: 'anchor', label: 'Add Anchor', icon: ANCHOR_ICON },
+  { type: 'zone', label: 'Add Zone', icon: ZONE_ICON },
 ];
 
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
+  const plugins = usePluginStore((s) => s.plugins);
+  const appEnabled = usePluginStore((s) => s.appEnabled);
   const [pluginWidgets, setPluginWidgets] = useState<RegisteredCanvasWidget[]>(() => getRegisteredWidgetTypes());
 
   useEffect(() => {
@@ -40,23 +49,14 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
     return () => disposable.dispose();
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onDismiss();
-      }
-    };
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onDismiss();
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [onDismiss]);
+  const appEnabledSet = new Set(appEnabled);
+  const visibleWidgets = pluginWidgets.filter((w) => {
+    if (!appEnabledSet.has(w.pluginId)) return false;
+    const manifest = plugins[w.pluginId]?.manifest;
+    if (manifest?.requiresMcp && !mcpEnabled) return false;
+    return true;
+  });
+  useDismissibleLayer({ layerRef: menuRef, onDismiss });
 
   const handleBuiltinSelect = useCallback((type: CanvasViewType) => {
     onSelect({ kind: 'builtin', type });
@@ -84,29 +84,29 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
         {BUILTIN_ITEMS.map(({ type, label, icon }) => (
           <button
             key={type}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-ctp-surface1 transition-colors text-left"
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
             onClick={(e) => { e.stopPropagation(); handleBuiltinSelect(type); }}
             data-testid={`canvas-context-menu-${type}`}
           >
-            <span className="w-4 text-center text-ctp-overlay0" dangerouslySetInnerHTML={{ __html: icon }} />
+            <span className="w-4 text-center text-ctp-overlay0" dangerouslySetInnerHTML={{ __html: sanitizeSvg(icon) }} />
             {label}
           </button>
         ))}
 
         {/* Plugin-provided widgets */}
-        {pluginWidgets.length > 0 && (
+        {visibleWidgets.length > 0 && (
           <>
             <div className="border-t border-surface-0 my-1" />
-            {pluginWidgets.map((widget) => (
+            {visibleWidgets.map((widget) => (
               <button
                 key={widget.qualifiedType}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-ctp-surface1 transition-colors text-left"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
                 onClick={(e) => { e.stopPropagation(); handlePluginSelect(widget); }}
                 data-testid={`canvas-context-menu-${widget.qualifiedType}`}
               >
                 <span className="w-4 text-center text-ctp-overlay0">
                   {widget.declaration.icon
-                    ? <span dangerouslySetInnerHTML={{ __html: widget.declaration.icon }} />
+                    ? <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(widget.declaration.icon) }} />
                     : '+'}
                 </span>
                 Add {widget.declaration.label}
