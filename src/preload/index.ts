@@ -1235,6 +1235,18 @@ const api = {
     unbind: (agentId: string) =>
       ipcRenderer.invoke(IPC.ASSISTANT.UNBIND, agentId),
   },
+  canvas: {
+    /** Listen for canvas commands from the main process (assistant). */
+    onCommand: (callback: (request: { callId: string; command: string; args: Record<string, unknown> }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, request: any) => callback(request);
+      ipcRenderer.on(IPC.CANVAS_CMD.REQUEST, listener);
+      return () => { ipcRenderer.removeListener(IPC.CANVAS_CMD.REQUEST, listener); };
+    },
+    /** Send canvas command result back to main process. */
+    sendCommandResult: (callId: string, result: { success: boolean; data?: unknown; error?: string }) => {
+      ipcRenderer.send(IPC.CANVAS_CMD.RESULT, { callId, result });
+    },
+  },
 };
 
 export type ClubhouseAPI = typeof api;

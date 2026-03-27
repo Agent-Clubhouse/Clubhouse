@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('electron', () => ({
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn(), on: vi.fn() },
   app: { getPath: () => '/tmp/clubhouse-test' },
+  BrowserWindow: { getAllWindows: () => [] },
 }));
 
 vi.mock('../services/mcp-settings', () => ({
