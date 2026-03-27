@@ -42,8 +42,8 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     expect(nav!.className).toContain('min-h-0');
   });
 
-  it('shows Experimental nav item on beta builds', async () => {
-    window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('0.36.0-beta.2');
+  it('shows Experimental nav item when isPreviewEligible returns true', async () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
     const { unmount } = render(<AccessoryPanel />);
     await waitFor(() => {
       expect(screen.getByText('Experimental')).toBeInTheDocument();
@@ -51,44 +51,31 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     unmount();
   });
 
-  it('hides Experimental nav item on stable builds without preview channel', async () => {
-    window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('1.0.0');
+  it('hides Experimental nav item when isPreviewEligible returns false', async () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
     const { unmount } = render(<AccessoryPanel />);
-    // Wait for the version check to resolve
     await waitFor(() => {
-      expect(window.clubhouse.app.getVersion).toHaveBeenCalled();
+      expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalled();
     });
     expect(screen.queryByText('Experimental')).not.toBeInTheDocument();
     unmount();
   });
 
-  it('shows Experimental nav item on rc builds', async () => {
-    window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('0.37.0-rc.1');
-    const { unmount } = render(<AccessoryPanel />);
+  it('re-evaluates preview eligibility when previewChannel changes', async () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+    const { unmount, rerender } = render(<AccessoryPanel />);
     await waitFor(() => {
-      expect(screen.getByText('Experimental')).toBeInTheDocument();
+      expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalledTimes(1);
     });
-    unmount();
-  });
+    expect(screen.queryByText('Experimental')).not.toBeInTheDocument();
 
-  it('shows Experimental nav item on stable builds when preview channel is enabled', async () => {
+    // Simulate preview channel being enabled
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
     resetStores({ previewChannel: true });
-    window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('0.36.0');
-    const { unmount } = render(<AccessoryPanel />);
+    rerender(<AccessoryPanel />);
     await waitFor(() => {
       expect(screen.getByText('Experimental')).toBeInTheDocument();
     });
-    unmount();
-  });
-
-  it('hides Experimental nav item on stable builds when preview channel is disabled', async () => {
-    resetStores({ previewChannel: false });
-    window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('0.36.0');
-    const { unmount } = render(<AccessoryPanel />);
-    await waitFor(() => {
-      expect(window.clubhouse.app.getVersion).toHaveBeenCalled();
-    });
-    expect(screen.queryByText('Experimental')).not.toBeInTheDocument();
     unmount();
   });
 
