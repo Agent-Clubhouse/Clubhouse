@@ -38,6 +38,7 @@ interface MockClientInstance {
   start: ReturnType<typeof vi.fn>;
   request: ReturnType<typeof vi.fn>;
   respond: ReturnType<typeof vi.fn>;
+  notify: ReturnType<typeof vi.fn>;
   kill: ReturnType<typeof vi.fn>;
   getStderr: ReturnType<typeof vi.fn>;
   onNotification: (method: string, params: unknown) => void;
@@ -67,9 +68,15 @@ describe('AcpAdapter', () => {
 
   beforeEach(() => {
     mockClient = {
-      start: vi.fn(),
-      request: vi.fn().mockResolvedValue(undefined),
+      start: vi.fn().mockResolvedValue(undefined),
+      request: vi.fn().mockImplementation((method: string) => {
+        if (method === 'session/new') {
+          return Promise.resolve({ sessionId: 'test-session-id' });
+        }
+        return Promise.resolve(undefined);
+      }),
       respond: vi.fn(),
+      notify: vi.fn(),
       kill: vi.fn(),
       getStderr: vi.fn().mockReturnValue(''),
       onNotification: () => {},
@@ -90,14 +97,18 @@ describe('AcpAdapter', () => {
     } as unknown as ConstructorParameters<typeof MockAcpClient['mockImplementation']>[0]);
   });
 
-  it('starts AcpClient with correct options', () => {
+  it('starts AcpClient with correct options', async () => {
     const adapter = new AcpAdapter({
       binary: '/usr/bin/copilot',
       args: ['--acp', '--stdio'],
       toolVerbs: { shell: 'Running command' },
     });
 
-    adapter.start(defaultSessionOpts);
+    const stream = adapter.start(defaultSessionOpts);
+    // Let the async startup chain complete
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onExit(0, null);
+    await collectEvents(stream, 1);
 
     expect(MockAcpClient).toHaveBeenCalledTimes(1);
     const opts = MockAcpClient.mock.calls[0][0];
@@ -107,7 +118,7 @@ describe('AcpAdapter', () => {
     expect(mockClient.start).toHaveBeenCalled();
   });
 
-  it('removes CLAUDECODE and CLAUDE_CODE_ENTRYPOINT from env', () => {
+  it('removes CLAUDECODE and CLAUDE_CODE_ENTRYPOINT from env', async () => {
     const adapter = new AcpAdapter({
       binary: 'copilot',
       args: [],
@@ -115,6 +126,7 @@ describe('AcpAdapter', () => {
     });
 
     adapter.start(defaultSessionOpts);
+    await new Promise(r => setTimeout(r, 10));
 
     const opts = MockAcpClient.mock.calls[0][0];
     expect(opts.env).not.toHaveProperty('CLAUDECODE');
@@ -122,19 +134,50 @@ describe('AcpAdapter', () => {
     expect(opts.env).toHaveProperty('CUSTOM', 'val');
   });
 
-  it('sends session/start request on start', () => {
+  // ── ACP protocol flow tests ──────────────────────────────────────────────
+
+  it('calls session/new then session/prompt on start', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    adapter.start({
+    const stream = adapter.start({
       ...defaultSessionOpts,
       systemPrompt: 'Be helpful',
-      allowedTools: ['shell'],
     });
 
-    expect(mockClient.request).toHaveBeenCalledWith('session/start', {
-      mission: 'Fix the bug',
-      systemPrompt: 'Be helpful',
-      allowedTools: ['shell'],
-      disallowedTools: undefined,
+    // Let the async startup chain complete
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onExit(0, null);
+    await collectEvents(stream, 1);
+
+    // start() should have been called (init handshake)
+    expect(mockClient.start).toHaveBeenCalled();
+
+    // session/new should be called with cwd and mcpServers
+    expect(mockClient.request).toHaveBeenCalledWith('session/new', {
+      cwd: '/tmp/project',
+      mcpServers: [],
+    });
+
+    // session/prompt should be called with sessionId and prompt parts
+    expect(mockClient.request).toHaveBeenCalledWith('session/prompt', {
+      sessionId: 'test-session-id',
+      prompt: [
+        { type: 'text', text: 'Be helpful' },
+        { type: 'text', text: 'Fix the bug' },
+      ],
+    });
+  });
+
+  it('sends only mission in prompt when no systemPrompt', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onExit(0, null);
+    await collectEvents(stream, 1);
+
+    expect(mockClient.request).toHaveBeenCalledWith('session/prompt', {
+      sessionId: 'test-session-id',
+      prompt: [{ type: 'text', text: 'Fix the bug' }],
     });
   });
 
@@ -146,12 +189,47 @@ describe('AcpAdapter', () => {
     expect(opts.args).toEqual(['--acp', '--model', 'gpt-5']);
   });
 
+  it('passes --allow-tool args for allowedTools', () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: ['--acp'] });
+    adapter.start({
+      ...defaultSessionOpts,
+      allowedTools: ['shell', 'read'],
+    });
+
+    const opts = MockAcpClient.mock.calls[0][0];
+    expect(opts.args).toContain('--allow-tool');
+    expect(opts.args).toEqual(['--acp', '--allow-tool', 'shell', '--allow-tool', 'read']);
+  });
+
+  it('passes --deny-tool args for disallowedTools', () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: ['--acp'] });
+    adapter.start({
+      ...defaultSessionOpts,
+      disallowedTools: ['edit'],
+    });
+
+    const opts = MockAcpClient.mock.calls[0][0];
+    expect(opts.args).toEqual(['--acp', '--deny-tool', 'edit']);
+  });
+
+  it('passes --allow-all-tools for permissionMode skip-all', () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: ['--acp'] });
+    adapter.start({
+      ...defaultSessionOpts,
+      permissionMode: 'skip-all',
+    });
+
+    const opts = MockAcpClient.mock.calls[0][0];
+    expect(opts.args).toContain('--allow-all-tools');
+  });
+
   // ── Notification mapping tests ────────────────────────────────────────────
 
   it('maps agent_message_chunk → text_delta', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('agent_message_chunk', { text: 'Hello' });
     mockClient.onExit(0, null);
 
@@ -164,6 +242,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('agent_thought_chunk', { text: 'Thinking...' });
     mockClient.onExit(0, null);
 
@@ -180,6 +259,7 @@ describe('AcpAdapter', () => {
     });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('tool_call', {
       id: 't1',
       name: 'shell',
@@ -201,6 +281,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('tool_call', {
       id: 't2',
       name: 'edit',
@@ -219,6 +300,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('tool_result', {
       id: 't1',
       name: 'shell',
@@ -242,6 +324,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('tool_result', {
       id: 't1',
       name: 'shell',
@@ -260,6 +343,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('file_change', {
       path: 'src/index.ts',
       change_type: 'modify',
@@ -280,6 +364,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('command_execution', {
       id: 'c1',
       command: 'npm test',
@@ -304,6 +389,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('plan', {
       steps: [
         { description: 'Read files', status: 'completed' },
@@ -326,6 +412,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('usage', {
       input_tokens: 100,
       output_tokens: 50,
@@ -348,6 +435,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('error', {
       code: 'rate_limit',
       message: 'Too many requests',
@@ -367,6 +455,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('unknown_method', { data: 'whatever' });
     mockClient.onExit(0, null);
 
@@ -381,6 +470,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onServerRequest('rpc-5', 'session/request_permission', {
       id: 'perm-1',
       tool: 'shell',
@@ -404,6 +494,7 @@ describe('AcpAdapter', () => {
   it('respondToPermission sends approval back via JSON-RPC', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     adapter.start(defaultSessionOpts);
+    await new Promise(r => setTimeout(r, 10));
 
     // Trigger a permission request
     mockClient.onServerRequest('rpc-42', 'session/request_permission', {
@@ -421,6 +512,7 @@ describe('AcpAdapter', () => {
   it('respondToPermission throws for unknown request ID', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     adapter.start(defaultSessionOpts);
+    await new Promise(r => setTimeout(r, 10));
 
     await expect(
       adapter.respondToPermission('nonexistent', false),
@@ -429,14 +521,18 @@ describe('AcpAdapter', () => {
 
   // ── sendMessage ───────────────────────────────────────────────────────────
 
-  it('sendMessage sends session/send request', async () => {
+  it('sendMessage sends session/prompt request with sessionId', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     adapter.start(defaultSessionOpts);
 
+    // Wait for the async startup chain to complete (start → session/new → session/prompt)
+    await new Promise(r => setTimeout(r, 10));
+
     await adapter.sendMessage('continue with step 2');
 
-    expect(mockClient.request).toHaveBeenCalledWith('session/send', {
-      message: 'continue with step 2',
+    expect(mockClient.request).toHaveBeenCalledWith('session/prompt', {
+      sessionId: 'test-session-id',
+      prompt: [{ type: 'text', text: 'continue with step 2' }],
     });
   });
 
@@ -446,26 +542,40 @@ describe('AcpAdapter', () => {
     await expect(adapter.sendMessage('hello')).rejects.toThrow('not started');
   });
 
-  // ── cancel ────────────────────────────────────────────────────────────────
+  it('sendMessage throws if no session', async () => {
+    // Override request to return no sessionId
+    mockClient.request.mockImplementation((method: string) => {
+      if (method === 'session/new') {
+        return Promise.resolve({ sessionId: undefined });
+      }
+      return Promise.resolve(undefined);
+    });
 
-  it('cancel sends session/cancel then kills process', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     adapter.start(defaultSessionOpts);
+
+    // Wait for startup to fail
+    await new Promise(r => setTimeout(r, 10));
+
+    await expect(adapter.sendMessage('hello')).rejects.toThrow('No active session');
+  });
+
+  // ── cancel ────────────────────────────────────────────────────────────────
+
+  it('cancel kills process directly', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    adapter.start(defaultSessionOpts);
+    await new Promise(r => setTimeout(r, 10));
 
     await adapter.cancel();
 
-    expect(mockClient.request).toHaveBeenCalledWith('session/cancel', {});
     expect(mockClient.kill).toHaveBeenCalled();
   });
 
-  it('cancel does not throw if client already dead', async () => {
+  it('cancel does not throw if client is null', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    adapter.start(defaultSessionOpts);
-
-    mockClient.request.mockRejectedValueOnce(new Error('Process exited'));
 
     await expect(adapter.cancel()).resolves.toBeUndefined();
-    expect(mockClient.kill).toHaveBeenCalled();
   });
 
   // ── dispose ───────────────────────────────────────────────────────────────
@@ -492,6 +602,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 1);
@@ -503,11 +614,59 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onExit(1, null);
 
     const events = await collectEvents(stream, 1);
     expect(events[0].type).toBe('end');
     expect((events[0].data as { reason: string }).reason).toBe('error');
+  });
+
+  // ── Startup failure ───────────────────────────────────────────────────────
+
+  it('emits error event when startup fails', async () => {
+    mockClient.start.mockRejectedValue(new Error('Connection refused'));
+
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+
+    // Let the async error handler run before triggering exit
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onExit(1, null);
+
+    const events: StructuredEvent[] = [];
+    for await (const event of stream) {
+      events.push(event);
+    }
+
+    expect(events.some(e => e.type === 'error')).toBe(true);
+    const errorEvent = events.find(e => e.type === 'error')!;
+    expect((errorEvent.data as { code: string }).code).toBe('session_start_failed');
+  });
+
+  it('emits error event when session/new fails', async () => {
+    const { RpcError } = await import('./acp-client');
+    const rpcErr = new RpcError(-32601, 'Method not found');
+
+    mockClient.request.mockImplementation((method: string) => {
+      if (method === 'session/new') return Promise.reject(rpcErr);
+      return Promise.resolve(undefined);
+    });
+
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onExit(1, null);
+
+    const events: StructuredEvent[] = [];
+    for await (const event of stream) {
+      events.push(event);
+    }
+
+    expect(events.some(e => e.type === 'error')).toBe(true);
+    const errorEvent = events.find(e => e.type === 'error')!;
+    expect((errorEvent.data as { code: string }).code).toBe('session_start_failed');
   });
 
   // ── Tool verb resolution ──────────────────────────────────────────────────
@@ -520,6 +679,7 @@ describe('AcpAdapter', () => {
     });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('tool_call', {
       id: 't1',
       name: 'edit',
@@ -535,6 +695,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('tool_call', {
       id: 't1',
       name: 'custom_tool',
@@ -578,23 +739,18 @@ describe('AcpAdapter', () => {
     );
   });
 
-  it('logs session/start failure with error details', async () => {
+  it('logs startup failure with error details', async () => {
     const mockAppLog = vi.mocked(appLog);
     mockAppLog.mockClear();
 
     const { RpcError } = await import('./acp-client');
     const rpcErr = new RpcError(-32601, 'Method not found');
 
-    // Override request to reject for session/start
-    mockClient.request.mockImplementation((method: string) => {
-      if (method === 'session/start') return Promise.reject(rpcErr);
-      return Promise.resolve(undefined);
-    });
+    mockClient.start.mockRejectedValue(rpcErr);
 
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
-    // Let the async catch handler run before triggering exit
     await new Promise(r => setTimeout(r, 10));
     mockClient.onExit(1, null);
 
@@ -610,7 +766,7 @@ describe('AcpAdapter', () => {
     expect(mockAppLog).toHaveBeenCalledWith(
       'core:structured',
       'error',
-      'AcpAdapter session/start failed',
+      'AcpAdapter startup failed',
       expect.objectContaining({
         meta: expect.objectContaining({
           rpcCode: -32601,
@@ -626,6 +782,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
+    await new Promise(r => setTimeout(r, 10));
     mockClient.onNotification('unknown_future_method', { foo: 'bar' });
     mockClient.onExit(0, null);
 

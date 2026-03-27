@@ -46,6 +46,48 @@ function emitData(
   proc.stdout.emit('data', data);
 }
 
+/**
+ * Helper: auto-respond to the initialize handshake so start() resolves.
+ * Listens for the first stdin.write call (the initialize request) and
+ * immediately emits a success response + lets the initialized notification pass.
+ */
+function autoHandshake(proc: ReturnType<typeof createMockProcess>): void {
+  // Intercept the first write (which will be the initialize request) and reply
+  const originalWrite = proc.stdin.write;
+  let handshakeDone = false;
+  proc.stdin.write = vi.fn((...args: unknown[]) => {
+    const result = (originalWrite as (...a: unknown[]) => boolean)(...args);
+    if (!handshakeDone) {
+      const line = args[0] as string;
+      try {
+        const msg = JSON.parse(line.replace('\n', ''));
+        if (msg.method === 'initialize') {
+          handshakeDone = true;
+          // Schedule the response for the next microtask so the
+          // pending map is populated before we dispatch
+          queueMicrotask(() => {
+            emitData(
+              proc,
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: msg.id,
+                result: {
+                  protocolVersion: 1,
+                  agentCapabilities: {},
+                  agentInfo: { name: 'Test', version: '1.0.0' },
+                },
+              }) + '\n',
+            );
+          });
+        }
+      } catch {
+        // not JSON yet, ignore
+      }
+    }
+    return result;
+  });
+}
+
 describe('AcpClient', () => {
   let mockProc: ReturnType<typeof createMockProcess>;
 
@@ -54,14 +96,15 @@ describe('AcpClient', () => {
     mockSpawn.mockReturnValue(mockProc as unknown as ReturnType<typeof spawn>);
   });
 
-  it('spawns process with correct options', () => {
+  it('spawns process with correct options', async () => {
+    autoHandshake(mockProc);
     const client = new AcpClient({
       binary: '/usr/bin/copilot',
       args: ['--acp', '--stdio'],
       cwd: '/tmp/project',
       env: { PATH: '/usr/bin' },
     });
-    client.start();
+    await client.start();
 
     expect(mockSpawn).toHaveBeenCalledWith(
       '/usr/bin/copilot',
@@ -74,30 +117,68 @@ describe('AcpClient', () => {
     );
   });
 
-  it('sends JSON-RPC request and resolves on response', async () => {
-    const client = new AcpClient({ binary: 'copilot', args: [] });
-    client.start();
+  it('performs initialize handshake during start()', async () => {
+    autoHandshake(mockProc);
+    const client = new AcpClient({
+      binary: 'copilot',
+      args: [],
+      clientInfo: { name: 'test-client', version: '2.0.0' },
+    });
+    await client.start();
 
-    const promise = client.request('session/start', { model: 'gpt-4' });
-
-    // Verify the request was written to stdin
-    expect(mockProc.stdin.write).toHaveBeenCalledTimes(1);
-    const sent = JSON.parse(
+    // First write should be the initialize request
+    const firstWrite = JSON.parse(
       (mockProc.stdin.write.mock.calls[0][0] as string).replace('\n', ''),
     );
-    expect(sent).toMatchObject({
+    expect(firstWrite).toMatchObject({
       jsonrpc: '2.0',
-      id: 1,
-      method: 'session/start',
-      params: { model: 'gpt-4' },
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientInfo: { name: 'test-client', version: '2.0.0' },
+        capabilities: {},
+      },
     });
+
+    // Second write should be the initialized notification
+    const secondWrite = JSON.parse(
+      (mockProc.stdin.write.mock.calls[1][0] as string).replace('\n', ''),
+    );
+    expect(secondWrite).toMatchObject({
+      jsonrpc: '2.0',
+      method: 'initialized',
+    });
+    // Notifications should not have an id
+    expect(secondWrite.id).toBeUndefined();
+  });
+
+  it('uses default clientInfo when not provided', async () => {
+    autoHandshake(mockProc);
+    const client = new AcpClient({ binary: 'copilot', args: [] });
+    await client.start();
+
+    const firstWrite = JSON.parse(
+      (mockProc.stdin.write.mock.calls[0][0] as string).replace('\n', ''),
+    );
+    expect(firstWrite.params.clientInfo).toEqual({
+      name: 'clubhouse',
+      version: '1.0.0',
+    });
+  });
+
+  it('sends JSON-RPC request and resolves on response', async () => {
+    autoHandshake(mockProc);
+    const client = new AcpClient({ binary: 'copilot', args: [] });
+    await client.start();
+
+    const promise = client.request('session/new', { cwd: '/tmp' });
 
     // Simulate response from stdout
     emitData(
       mockProc,
       JSON.stringify({
         jsonrpc: '2.0',
-        id: 1,
+        id: 2, // id=1 was the initialize request
         result: { sessionId: 'abc' },
       }) + '\n',
     );
@@ -107,16 +188,17 @@ describe('AcpClient', () => {
   });
 
   it('rejects request on JSON-RPC error response', async () => {
+    autoHandshake(mockProc);
     const client = new AcpClient({ binary: 'copilot', args: [] });
-    client.start();
+    await client.start();
 
-    const promise = client.request('session/start', {});
+    const promise = client.request('session/new', {});
 
     emitData(
       mockProc,
       JSON.stringify({
         jsonrpc: '2.0',
-        id: 1,
+        id: 2,
         error: { code: -32600, message: 'Invalid request' },
       }) + '\n',
     );
@@ -124,14 +206,15 @@ describe('AcpClient', () => {
     await expect(promise).rejects.toThrow('RPC error -32600: Invalid request');
   });
 
-  it('forwards notifications to callback', () => {
+  it('forwards notifications to callback', async () => {
+    autoHandshake(mockProc);
     const onNotification = vi.fn();
     const client = new AcpClient({
       binary: 'copilot',
       args: [],
       onNotification,
     });
-    client.start();
+    await client.start();
 
     emitData(
       mockProc,
@@ -147,14 +230,15 @@ describe('AcpClient', () => {
     });
   });
 
-  it('forwards server-initiated requests to callback', () => {
+  it('forwards server-initiated requests to callback', async () => {
+    autoHandshake(mockProc);
     const onServerRequest = vi.fn();
     const client = new AcpClient({
       binary: 'copilot',
       args: [],
       onServerRequest,
     });
-    client.start();
+    await client.start();
 
     emitData(
       mockProc,
@@ -173,11 +257,12 @@ describe('AcpClient', () => {
     );
   });
 
-  it('sends JSON-RPC response for server requests', () => {
+  it('sends JSON-RPC response for server requests', async () => {
+    autoHandshake(mockProc);
     const client = new AcpClient({ binary: 'copilot', args: [] });
-    client.start();
+    await client.start();
 
-    // Reset the write mock after start
+    // Reset the write mock after start handshake
     mockProc.stdin.write.mockClear();
 
     client.respond('perm-1', { approved: true });
@@ -193,14 +278,35 @@ describe('AcpClient', () => {
     });
   });
 
-  it('handles chunked NDJSON across multiple data events', () => {
+  it('sends JSON-RPC notification without id', async () => {
+    autoHandshake(mockProc);
+    const client = new AcpClient({ binary: 'copilot', args: [] });
+    await client.start();
+
+    mockProc.stdin.write.mockClear();
+    client.notify('custom/event', { data: 'test' });
+
+    const sent = JSON.parse(
+      (mockProc.stdin.write.mock.calls[0][0] as string).replace('\n', ''),
+    );
+    expect(sent).toMatchObject({
+      jsonrpc: '2.0',
+      method: 'custom/event',
+      params: { data: 'test' },
+    });
+    expect(sent.id).toBeUndefined();
+  });
+
+  it('handles chunked NDJSON across multiple data events', async () => {
+    autoHandshake(mockProc);
     const onNotification = vi.fn();
     const client = new AcpClient({
       binary: 'copilot',
       args: [],
       onNotification,
     });
-    client.start();
+    await client.start();
+    onNotification.mockClear();
 
     // Send partial JSON across two chunks
     emitData(mockProc, '{"jsonrpc":"2.0","method":"agent_');
@@ -212,14 +318,16 @@ describe('AcpClient', () => {
     });
   });
 
-  it('handles multiple messages in a single chunk', () => {
+  it('handles multiple messages in a single chunk', async () => {
+    autoHandshake(mockProc);
     const onNotification = vi.fn();
     const client = new AcpClient({
       binary: 'copilot',
       args: [],
       onNotification,
     });
-    client.start();
+    await client.start();
+    onNotification.mockClear();
 
     emitData(
       mockProc,
@@ -233,8 +341,9 @@ describe('AcpClient', () => {
   });
 
   it('rejects all pending requests on process exit', async () => {
+    autoHandshake(mockProc);
     const client = new AcpClient({ binary: 'copilot', args: [] });
-    client.start();
+    await client.start();
 
     const p1 = client.request('method1', {});
     const p2 = client.request('method2', {});
@@ -245,45 +354,50 @@ describe('AcpClient', () => {
     await expect(p2).rejects.toThrow('Process exited');
   });
 
-  it('calls onExit when process exits', () => {
+  it('calls onExit when process exits', async () => {
+    autoHandshake(mockProc);
     const onExit = vi.fn();
     const client = new AcpClient({
       binary: 'copilot',
       args: [],
       onExit,
     });
-    client.start();
+    await client.start();
 
     mockProc.emit('exit', 0, null);
 
     expect(onExit).toHaveBeenCalledWith(0, null);
   });
 
-  it('kills the process', () => {
+  it('kills the process', async () => {
+    autoHandshake(mockProc);
     const client = new AcpClient({ binary: 'copilot', args: [] });
-    client.start();
+    await client.start();
 
     client.kill();
     expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
-  it('kill() is idempotent', () => {
+  it('kill() is idempotent', async () => {
+    autoHandshake(mockProc);
     const client = new AcpClient({ binary: 'copilot', args: [] });
-    client.start();
+    await client.start();
 
     client.kill();
     client.kill();
     expect(mockProc.kill).toHaveBeenCalledTimes(1);
   });
 
-  it('skips malformed JSON lines', () => {
+  it('skips malformed JSON lines', async () => {
+    autoHandshake(mockProc);
     const onNotification = vi.fn();
     const client = new AcpClient({
       binary: 'copilot',
       args: [],
       onNotification,
     });
-    client.start();
+    await client.start();
+    onNotification.mockClear();
 
     emitData(
       mockProc,
@@ -294,9 +408,10 @@ describe('AcpClient', () => {
     expect(onNotification).toHaveBeenCalledWith('ok', {});
   });
 
-  it('reports alive status correctly', () => {
+  it('reports alive status correctly', async () => {
+    autoHandshake(mockProc);
     const client = new AcpClient({ binary: 'copilot', args: [] });
-    client.start();
+    await client.start();
 
     expect(client.alive).toBe(true);
 
@@ -304,45 +419,42 @@ describe('AcpClient', () => {
     expect(client.alive).toBe(false);
   });
 
-  it('increments request IDs', async () => {
+  it('increments request IDs (continuing from init handshake)', async () => {
+    autoHandshake(mockProc);
     const client = new AcpClient({ binary: 'copilot', args: [] });
-    client.start();
+    await client.start();
 
+    // After start(), id=1 was used for initialize. Next requests get id=2, id=3.
     const p1 = client.request('method1', {});
     const p2 = client.request('method2', {});
 
     // Respond to both
     emitData(
       mockProc,
-      JSON.stringify({ jsonrpc: '2.0', id: 1, result: 'r1' }) +
+      JSON.stringify({ jsonrpc: '2.0', id: 2, result: 'r1' }) +
         '\n' +
-        JSON.stringify({ jsonrpc: '2.0', id: 2, result: 'r2' }) +
+        JSON.stringify({ jsonrpc: '2.0', id: 3, result: 'r2' }) +
         '\n',
     );
 
     expect(await p1).toBe('r1');
     expect(await p2).toBe('r2');
-
-    // First two write calls are the requests
-    const ids = mockProc.stdin.write.mock.calls.map(
-      (call) => JSON.parse((call[0] as string).replace('\n', '')).id,
-    );
-    expect(ids).toEqual([1, 2]);
   });
 
   // ── RpcError tests ────────────────────────────────────────────────────────
 
   it('rejects with RpcError preserving code and data', async () => {
+    autoHandshake(mockProc);
     const client = new AcpClient({ binary: 'copilot', args: [] });
-    client.start();
+    await client.start();
 
-    const promise = client.request('session/start', {});
+    const promise = client.request('session/new', {});
 
     emitData(
       mockProc,
       JSON.stringify({
         jsonrpc: '2.0',
-        id: 1,
+        id: 2,
         error: { code: -32601, message: 'Method not found', data: { detail: 'no such method' } },
       }) + '\n',
     );
@@ -358,16 +470,49 @@ describe('AcpClient', () => {
     }
   });
 
+  // ── start() failure tests ──────────────────────────────────────────────────
+
+  it('start() rejects if initialize handshake fails', async () => {
+    // Override the mock to reject initialize
+    const originalWrite = mockProc.stdin.write;
+    mockProc.stdin.write = vi.fn((...args: unknown[]) => {
+      const result = (originalWrite as (...a: unknown[]) => boolean)(...args);
+      const line = args[0] as string;
+      try {
+        const msg = JSON.parse(line.replace('\n', ''));
+        if (msg.method === 'initialize') {
+          queueMicrotask(() => {
+            emitData(
+              mockProc,
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: msg.id,
+                error: { code: -32603, message: 'Internal error' },
+              }) + '\n',
+            );
+          });
+        }
+      } catch {
+        // ignore
+      }
+      return result;
+    });
+
+    const client = new AcpClient({ binary: 'copilot', args: [] });
+    await expect(client.start()).rejects.toThrow('RPC error -32603');
+  });
+
   // ── onLog callback tests ──────────────────────────────────────────────────
 
-  it('calls onLog for spawn', () => {
+  it('calls onLog for spawn', async () => {
+    autoHandshake(mockProc);
     const onLog = vi.fn();
     const client = new AcpClient({
       binary: '/usr/bin/copilot',
       args: ['--acp'],
       onLog,
     });
-    client.start();
+    await client.start();
 
     expect(onLog).toHaveBeenCalledWith(
       'info',
@@ -379,26 +524,38 @@ describe('AcpClient', () => {
     );
   });
 
-  it('calls onLog for RPC requests', () => {
+  it('calls onLog for init handshake', async () => {
+    autoHandshake(mockProc);
     const onLog = vi.fn();
     const client = new AcpClient({ binary: 'copilot', args: [], onLog });
-    client.start();
+    await client.start();
 
-    client.request('session/start', { model: 'gpt-5' });
+    expect(onLog).toHaveBeenCalledWith('info', 'Starting ACP init handshake');
+    expect(onLog).toHaveBeenCalledWith('info', 'ACP init handshake complete');
+  });
+
+  it('calls onLog for RPC requests', async () => {
+    autoHandshake(mockProc);
+    const onLog = vi.fn();
+    const client = new AcpClient({ binary: 'copilot', args: [], onLog });
+    await client.start();
+
+    client.request('session/new', { cwd: '/tmp' });
 
     expect(onLog).toHaveBeenCalledWith(
       'info',
-      'RPC request → session/start',
+      'RPC request → session/new',
       expect.objectContaining({
-        method: 'session/start',
+        method: 'session/new',
       }),
     );
   });
 
   it('calls onLog for RPC errors', async () => {
+    autoHandshake(mockProc);
     const onLog = vi.fn();
     const client = new AcpClient({ binary: 'copilot', args: [], onLog });
-    client.start();
+    await client.start();
 
     const promise = client.request('bad/method', {});
 
@@ -406,7 +563,7 @@ describe('AcpClient', () => {
       mockProc,
       JSON.stringify({
         jsonrpc: '2.0',
-        id: 1,
+        id: 2,
         error: { code: -32601, message: 'Method not found' },
       }) + '\n',
     );
@@ -415,7 +572,7 @@ describe('AcpClient', () => {
 
     expect(onLog).toHaveBeenCalledWith(
       'error',
-      'RPC error ← id=1',
+      'RPC error ← id=2',
       expect.objectContaining({
         code: -32601,
         message: 'Method not found',
@@ -425,10 +582,11 @@ describe('AcpClient', () => {
 
   // ── stderr capture tests ──────────────────────────────────────────────────
 
-  it('captures stderr output and makes it accessible via getStderr', () => {
+  it('captures stderr output and makes it accessible via getStderr', async () => {
+    autoHandshake(mockProc);
     const onLog = vi.fn();
     const client = new AcpClient({ binary: 'copilot', args: [], onLog });
-    client.start();
+    await client.start();
 
     mockProc.stderr.emit('data', 'Warning: something\n');
     mockProc.stderr.emit('data', 'Error: broken\n');
@@ -442,12 +600,13 @@ describe('AcpClient', () => {
   });
 
   it('logs process exit with stderr and pending count', async () => {
+    autoHandshake(mockProc);
     const onLog = vi.fn();
     const client = new AcpClient({ binary: 'copilot', args: [], onLog });
-    client.start();
+    await client.start();
 
     mockProc.stderr.emit('data', 'fatal error\n');
-    const pendingRequest = client.request('session/start', {});
+    const pendingRequest = client.request('session/new', {});
 
     mockProc.emit('exit', 1, null);
 
@@ -465,10 +624,11 @@ describe('AcpClient', () => {
     );
   });
 
-  it('logs malformed JSON lines', () => {
+  it('logs malformed JSON lines', async () => {
+    autoHandshake(mockProc);
     const onLog = vi.fn();
     const client = new AcpClient({ binary: 'copilot', args: [], onLog });
-    client.start();
+    await client.start();
 
     emitData(mockProc, 'this is not json\n');
 
