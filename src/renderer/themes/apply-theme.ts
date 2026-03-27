@@ -68,6 +68,28 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
     cache[varName] = hex;
   }
 
+  // Set shadow CSS variables (theme-aware for light/dark)
+  const shadowMap: Record<string, Record<'dark' | 'light', string>> = {
+    '--shadow-depth': {
+      dark: '0 4px 24px rgba(0, 0, 0, 0.5)',
+      light: '0 4px 24px rgba(0, 0, 0, 0.1)',
+    },
+    '--shadow-elevation': {
+      dark: '0 12px 40px rgba(0, 0, 0, 0.6)',
+      light: '0 12px 40px rgba(0, 0, 0, 0.08)',
+    },
+    '--grid-dot-color': {
+      dark: 'rgba(255, 255, 255, 0.1)',
+      light: 'rgba(0, 0, 0, 0.08)',
+    },
+  };
+
+  for (const [varName, themeValues] of Object.entries(shadowMap)) {
+    const value = themeValues[theme.type];
+    s.setProperty(varName, value);
+    cache[varName] = value;
+  }
+
   // Font override (Terminal theme)
   if (theme.fontOverride) {
     el.classList.add('theme-mono');
