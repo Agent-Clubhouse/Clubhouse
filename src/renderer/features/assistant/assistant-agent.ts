@@ -74,8 +74,21 @@ function cleanupAll(): void {
 }
 
 function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+  return text
+    // CSI sequences: ESC [ ... letter (includes [?2004h bracketed paste, colors, cursor)
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[\?]?[0-9;]*[a-zA-Z~]/g, '')
+    // OSC sequences: ESC ] ... BEL or ESC ] ... ST
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    // Other escape sequences: ESC followed by single char
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b[^[\]]/g, '')
+    // Carriage returns (terminal line overwrites)
+    // eslint-disable-next-line no-control-regex
+    .replace(/\r/g, '')
+    // Strip "quote> " prompt artifacts from bracketed paste
+    .replace(/^quote> /gm, '');
 }
 
 // ── Structured Events ──────────────────────────────────────────────────────

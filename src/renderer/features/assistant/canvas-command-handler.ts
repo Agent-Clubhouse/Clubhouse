@@ -224,21 +224,31 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
  * Returns a cleanup function.
  */
 export function initCanvasCommandHandler(): (() => void) | undefined {
+  console.log('[assistant] Canvas command handler initializing');
   const cleanup = window.clubhouse.canvas?.onCommand?.((request: CanvasCommandRequest) => {
+    console.log('[assistant] Canvas command received:', request.command, request.callId);
     const handler = handlers[request.command];
     if (!handler) {
+      console.warn('[assistant] Unknown canvas command:', request.command);
       sendResult(request.callId, { success: false, error: `Unknown canvas command: ${request.command}` });
       return;
     }
     try {
       const result = handler(request.args);
+      console.log('[assistant] Canvas command result:', request.command, result.success);
       sendResult(request.callId, result);
     } catch (err) {
+      console.error('[assistant] Canvas command error:', request.command, err);
       sendResult(request.callId, {
         success: false,
         error: err instanceof Error ? err.message : String(err),
       });
     }
   });
+  if (cleanup) {
+    console.log('[assistant] Canvas command handler ready');
+  } else {
+    console.warn('[assistant] Canvas command handler: window.clubhouse.canvas.onCommand not available');
+  }
   return cleanup;
 }

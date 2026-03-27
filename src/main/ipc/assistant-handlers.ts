@@ -41,6 +41,14 @@ function getAssistantWorkspace(): string {
     fs.mkdirSync(workspace, { recursive: true });
     appLog(LOG_NS, 'info', 'Created assistant workspace', { meta: { path: workspace } });
   }
+  // Ensure .clubhouse/settings.json exists to suppress ENOENT warnings
+  // from readProjectAgentDefaults which expects this file in every "project"
+  const settingsDir = path.join(workspace, '.clubhouse');
+  const settingsFile = path.join(settingsDir, 'settings.json');
+  if (!fs.existsSync(settingsFile)) {
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(settingsFile, '{}', 'utf-8');
+  }
   return workspace;
 }
 
