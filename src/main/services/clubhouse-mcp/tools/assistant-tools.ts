@@ -1,11 +1,11 @@
 /**
- * Read-only MCP tools for the Clubhouse Assistant agent.
+ * MCP tools for the Clubhouse Assistant agent.
  *
- * These tools let the assistant understand the user's app state, filesystem,
- * and help content. They are registered as a new 'assistant' target kind and
- * scoped exclusively to the assistant agent via a binding.
+ * Read-only tools (Phase 3) let the assistant understand app state.
+ * Write tools (Phase 4) let the assistant configure projects, agents, and settings.
  *
- * All tools are read-only — write tools are added in Phase 4.
+ * All tools are registered as 'assistant' target kind and scoped exclusively
+ * to the assistant agent via a binding.
  */
 
 import * as fsp from 'fs/promises';
@@ -13,12 +13,13 @@ import * as path from 'path';
 import { app } from 'electron';
 import { registerToolTemplate } from '../tool-registry';
 import * as projectStore from '../../project-store';
-import { listDurable } from '../../agent-config';
-import { getAvailableOrchestrators, checkAvailability } from '../../agent-system';
+import { listDurable, createDurable, updateDurable, updateDurableConfig, deleteDurable } from '../../agent-config';
+import { getAvailableOrchestrators, checkAvailability, resolveOrchestrator } from '../../agent-system';
 import { appLog } from '../../log-service';
+import { AGENT_COLORS } from '../../../../shared/name-generator';
 
 /**
- * Register all read-only assistant MCP tools.
+ * Register all assistant MCP tools (read + write).
  * Call once at MCP system initialization.
  */
 export function registerAssistantTools(): void {
@@ -373,5 +374,447 @@ registerToolTemplate(
     }
   },
 );
+
+// ══════════════════════════════════════════════════════════════════════════
+// WRITE TOOLS (Phase 4)
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Project Write Tools ────────────────────────────────────────────────────
+
+registerToolTemplate(
+  'assistant',
+  'add_project',
+  {
+    description:
+      'Add a directory as a Clubhouse project. The directory should exist on disk. ' +
+      'After adding, the project appears in the sidebar and agents can be created for it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Absolute path to the project directory.',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  async (_targetId, _agentId, args) => {
+    const dirPath = (args.path as string).replace(/^~/, process.env.HOME || '/tmp');
+    try {
+      const stat = await fsp.stat(dirPath);
+      if (!stat.isDirectory()) {
+        return { content: [{ type: 'text', text: `Path is not a directory: ${dirPath}` }], isError: true };
+      }
+      const project = await projectStore.add(dirPath);
+      return {
+        content: [{ type: 'text', text: `Project "${project.name}" added successfully (id: ${project.id}, path: ${project.path}).` }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Failed to add project: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+registerToolTemplate(
+  'assistant',
+  'remove_project',
+  {
+    description:
+      'Remove a project from Clubhouse. This does NOT delete any files on disk — ' +
+      'it only removes the project from Clubhouse\'s tracking.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: {
+          type: 'string',
+          description: 'The project ID (from list_projects).',
+        },
+      },
+      required: ['project_id'],
+    },
+  },
+  async (_targetId, _agentId, args) => {
+    const projectId = args.project_id as string;
+    try {
+      await projectStore.remove(projectId);
+      return {
+        content: [{ type: 'text', text: `Project ${projectId} removed from Clubhouse.` }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Failed to remove project: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+registerToolTemplate(
+  'assistant',
+  'update_project',
+  {
+    description: 'Update a project\'s display name or color.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: {
+          type: 'string',
+          description: 'The project ID.',
+        },
+        display_name: {
+          type: 'string',
+          description: 'New display name for the project.',
+        },
+        color: {
+          type: 'string',
+          description: 'New color for the project.',
+        },
+      },
+      required: ['project_id'],
+    },
+  },
+  async (_targetId, _agentId, args) => {
+    const projectId = args.project_id as string;
+    const updates: Record<string, string> = {};
+    if (args.display_name) updates.displayName = args.display_name as string;
+    if (args.color) updates.color = args.color as string;
+    try {
+      await projectStore.update(projectId, updates);
+      return {
+        content: [{ type: 'text', text: `Project ${projectId} updated.` }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Failed to update project: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ── Agent Write Tools ──────────────────────────────────────────────────────
+
+registerToolTemplate(
+  'assistant',
+  'create_agent',
+  {
+    description:
+      'Create a new durable agent in a project. Has full parity with the Create Agent dialog. ' +
+      'Returns the created agent\'s ID and configuration.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_path: {
+          type: 'string',
+          description: 'The project directory path.',
+        },
+        name: {
+          type: 'string',
+          description: 'Agent name. Auto-generated if omitted.',
+        },
+        color: {
+          type: 'string',
+          description: `Agent color ID. Options: ${AGENT_COLORS.map(c => c.id).join(', ')}. Defaults to "${AGENT_COLORS[0]?.id || 'emerald'}".`,
+        },
+        model: {
+          type: 'string',
+          description: 'Model identifier (e.g. "claude-opus", "claude-sonnet"). Falls back to orchestrator default if omitted.',
+        },
+        orchestrator: {
+          type: 'string',
+          description: 'Orchestrator ID (e.g. "claude-code", "copilot-cli", "codex-cli"). Falls back to project/app default if omitted.',
+        },
+        use_worktree: {
+          type: 'boolean',
+          description: 'Whether to create an isolated git worktree. Defaults to true.',
+        },
+        free_agent_mode: {
+          type: 'boolean',
+          description: 'Whether to enable free agent mode (skip all permission prompts). Defaults to project default.',
+        },
+        mcp_ids: {
+          type: 'string',
+          description: 'Comma-separated list of MCP server IDs to attach to this agent.',
+        },
+      },
+      required: ['project_path'],
+    },
+  },
+  async (_targetId, _agentId, args) => {
+    const projectPath = args.project_path as string;
+    const name = (args.name as string) || `agent-${Date.now().toString(36).slice(-4)}`;
+    const color = (args.color as string) || AGENT_COLORS[0]?.id || 'emerald';
+    const model = args.model as string | undefined;
+    const useWorktree = args.use_worktree !== false; // default true
+    const orchestrator = args.orchestrator as string | undefined;
+    const freeAgentMode = args.free_agent_mode as boolean | undefined;
+    const mcpIds = args.mcp_ids ? (args.mcp_ids as string).split(',').map(s => s.trim()).filter(Boolean) : undefined;
+
+    try {
+      const agent = await createDurable(
+        projectPath,
+        name,
+        color,
+        model,
+        useWorktree,
+        orchestrator,
+        freeAgentMode,
+        mcpIds,
+      );
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            message: `Agent "${agent.name}" created successfully.`,
+            id: agent.id,
+            name: agent.name,
+            color: agent.color,
+            hasWorktree: !!agent.worktreePath,
+            worktreePath: agent.worktreePath,
+            model: agent.model,
+            orchestrator: agent.orchestrator,
+          }),
+        }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Failed to create agent: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+registerToolTemplate(
+  'assistant',
+  'update_agent',
+  {
+    description:
+      'Update a durable agent\'s configuration. Can change model, orchestrator, ' +
+      'free agent mode, clubhouse mode override, name, and color.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_path: {
+          type: 'string',
+          description: 'The project directory path.',
+        },
+        agent_id: {
+          type: 'string',
+          description: 'The agent ID.',
+        },
+        name: {
+          type: 'string',
+          description: 'New agent name.',
+        },
+        color: {
+          type: 'string',
+          description: 'New agent color.',
+        },
+        model: {
+          type: 'string',
+          description: 'New model identifier.',
+        },
+        orchestrator: {
+          type: 'string',
+          description: 'New orchestrator ID.',
+        },
+        free_agent_mode: {
+          type: 'boolean',
+          description: 'Enable or disable free agent mode.',
+        },
+        clubhouse_mode_override: {
+          type: 'boolean',
+          description: 'Override for Clubhouse mode behavior.',
+        },
+      },
+      required: ['project_path', 'agent_id'],
+    },
+  },
+  async (_targetId, _agentId, args) => {
+    const projectPath = args.project_path as string;
+    const agentId = args.agent_id as string;
+    try {
+      // Update basic fields (name, color) via updateDurable
+      const basicUpdates: Record<string, string | undefined> = {};
+      if (args.name !== undefined) basicUpdates.name = args.name as string;
+      if (args.color !== undefined) basicUpdates.color = args.color as string;
+      if (Object.keys(basicUpdates).length > 0) {
+        await updateDurable(projectPath, agentId, basicUpdates);
+      }
+
+      // Update config fields (model, orchestrator, freeAgentMode, etc.) via updateDurableConfig
+      const configUpdates: Record<string, unknown> = {};
+      if (args.model !== undefined) configUpdates.model = args.model as string;
+      if (args.orchestrator !== undefined) configUpdates.orchestrator = args.orchestrator as string;
+      if (args.free_agent_mode !== undefined) configUpdates.freeAgentMode = args.free_agent_mode as boolean;
+      if (args.clubhouse_mode_override !== undefined) configUpdates.clubhouseModeOverride = args.clubhouse_mode_override as boolean;
+      if (Object.keys(configUpdates).length > 0) {
+        await updateDurableConfig(projectPath, agentId, configUpdates as any);
+      }
+
+      return {
+        content: [{ type: 'text', text: `Agent ${agentId} updated successfully.` }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Failed to update agent: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+registerToolTemplate(
+  'assistant',
+  'delete_agent',
+  {
+    description:
+      'Delete a durable agent from a project. This removes the agent\'s configuration ' +
+      'and worktree (if any). This action cannot be undone.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_path: {
+          type: 'string',
+          description: 'The project directory path.',
+        },
+        agent_id: {
+          type: 'string',
+          description: 'The agent ID to delete.',
+        },
+      },
+      required: ['project_path', 'agent_id'],
+    },
+  },
+  async (_targetId, _agentId, args) => {
+    const projectPath = args.project_path as string;
+    const agentId = args.agent_id as string;
+    try {
+      await deleteDurable(projectPath, agentId);
+      return {
+        content: [{ type: 'text', text: `Agent ${agentId} deleted.` }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Failed to delete agent: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+registerToolTemplate(
+  'assistant',
+  'write_agent_instructions',
+  {
+    description:
+      'Write or update the CLAUDE.md (or equivalent) instructions file for an agent. ' +
+      'Uses the correct file path for the agent\'s orchestrator.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_path: {
+          type: 'string',
+          description: 'The project directory path (or agent worktree path).',
+        },
+        content: {
+          type: 'string',
+          description: 'The full markdown content to write as the agent\'s instructions.',
+        },
+        orchestrator: {
+          type: 'string',
+          description: 'Orchestrator ID to determine file path. Defaults to project default.',
+        },
+      },
+      required: ['project_path', 'content'],
+    },
+  },
+  async (_targetId, _agentId, args) => {
+    const projectPath = args.project_path as string;
+    const content = args.content as string;
+    const orchestratorId = args.orchestrator as string | undefined;
+    try {
+      const provider = await resolveOrchestrator(projectPath, orchestratorId);
+      await provider.writeInstructions(projectPath, content);
+      return {
+        content: [{ type: 'text', text: `Instructions written for ${provider.displayName} at ${projectPath}.` }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Failed to write instructions: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ── Settings Write Tool ────────────────────────────────────────────────────
+
+registerToolTemplate(
+  'assistant',
+  'update_settings',
+  {
+    description:
+      'Update a Clubhouse app setting. Reads the current settings, merges the update, and writes back.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description: 'The settings key to update (e.g. "theme", "soundEnabled").',
+        },
+        value: {
+          type: 'string',
+          description: 'The new value (as a JSON string for non-string values, e.g. "true", "42", or \'"dark"\').',
+        },
+      },
+      required: ['key', 'value'],
+    },
+  },
+  async (_targetId, _agentId, args) => {
+    const key = args.key as string;
+    const rawValue = args.value as string;
+    try {
+      const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+      let settings: Record<string, unknown> = {};
+      try {
+        const raw = await fsp.readFile(settingsPath, 'utf-8');
+        settings = JSON.parse(raw);
+      } catch {
+        // File doesn't exist or is invalid — start fresh
+      }
+
+      // Try to parse the value as JSON (for booleans, numbers, objects)
+      let value: unknown;
+      try {
+        value = JSON.parse(rawValue);
+      } catch {
+        value = rawValue; // Use as plain string
+      }
+
+      settings[key] = value;
+      await fsp.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+      return {
+        content: [{ type: 'text', text: `Setting "${key}" updated to ${JSON.stringify(value)}.` }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Failed to update settings: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ── Plugin Tools ───────────────────────────────────────────────────────────
+// NOTE: Plugin enable/disable lives in the renderer store (plugin-store.ts)
+// and has no main-process API. These tools will be added when renderer-side
+// IPC for plugin management is available. For now, the assistant can list
+// plugins (read-only) and instruct users to enable/disable via Settings.
 
 } // end registerAssistantTools
