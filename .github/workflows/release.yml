@@ -344,12 +344,15 @@ jobs:
       matrix:
         include:
           - arch: x64
+    outputs:
+      sha256_deb_x64: ${{ steps.hash.outputs.sha256_deb_x64 }}
+      size_deb_x64: ${{ steps.hash.outputs.size_deb_x64 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -362,6 +365,19 @@ jobs:
 
       - name: Build Linux packages
         run: npx electron-forge make --arch=${{ matrix.arch }}
+
+      - name: Compute artifact hashes
+        id: hash
+        run: |
+          ARCH="${{ matrix.arch }}"
+
+          DEB_PATH=$(find out/make -name "*.deb" -type f | head -1)
+          if [ -n "$DEB_PATH" ]; then
+            SHA256=$(shasum -a 256 "$DEB_PATH" | awk '{print $1}')
+            SIZE=$(stat --format=%s "$DEB_PATH")
+            echo "sha256_deb_${ARCH}=${SHA256}" >> "$GITHUB_OUTPUT"
+            echo "size_deb_${ARCH}=${SIZE}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Rename artifacts for upload
         run: |
@@ -382,7 +398,7 @@ jobs:
           fi
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-linux-${{ matrix.arch }}
           path: dist/
@@ -439,6 +455,9 @@ jobs:
             --arg url_win_arm64 "${BASE_URL}/Clubhouse-${VERSION}-win32-arm64-Setup.exe" \
             --arg sha256_win_arm64 "${{ needs.build-windows.outputs.sha256_win_arm64 }}" \
             --argjson size_win_arm64 ${{ needs.build-windows.outputs.size_win_arm64 }} \
+            --arg url_linux_x64 "${BASE_URL}/Clubhouse-${VERSION}-linux-x64.deb" \
+            --arg sha256_linux_x64 "${{ needs.build-linux.outputs.sha256_deb_x64 }}" \
+            --argjson size_linux_x64 ${{ needs.build-linux.outputs.size_deb_x64 }} \
             '{
               version: $version,
               releaseDate: $date,
@@ -465,6 +484,11 @@ jobs:
                   url: $url_win_arm64,
                   sha256: $sha256_win_arm64,
                   size: $size_win_arm64
+                },
+                "linux-x64": {
+                  url: $url_linux_x64,
+                  sha256: $sha256_linux_x64,
+                  size: $size_linux_x64
                 }
               }
             }' > "artifacts/${MANIFEST_NAME}"

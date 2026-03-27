@@ -765,7 +765,45 @@ export async function applyUpdate(): Promise<void> {
     }
   }
 
-  // Linux / fallback: just relaunch (manual install expected)
+  // Linux: attempt to install the .deb via pkexec, then relaunch.
+  // If pkexec is unavailable or the user cancels, fall back to opening
+  // the download in the file manager so they can install manually.
+  if (process.platform === 'linux' && downloadPath && await pathExists(downloadPath)) {
+    try {
+      const { execSync } = require('child_process');
+
+      if (downloadPath.endsWith('.deb')) {
+        appLog('update:apply', 'info', 'Linux: installing .deb via pkexec dpkg -i', {
+          meta: { downloadPath },
+        });
+        execSync(`pkexec dpkg -i "${downloadPath}"`, { timeout: 120_000 });
+        appLog('update:apply', 'info', 'Linux: .deb installed successfully, relaunching');
+        app.relaunch();
+        app.exit(0);
+        return;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appLog('update:apply', 'warn', `Linux: pkexec install failed, falling back to file manager: ${msg}`);
+    }
+
+    // Fallback: open the containing folder so the user can install manually
+    try {
+      const { shell } = require('electron');
+      shell.showItemInFolder(downloadPath);
+    } catch {
+      // Non-critical
+    }
+
+    setState('error', {
+      error: 'Automatic install cancelled — use "Download manually" to install the update',
+      availableVersion: savedVersion,
+      artifactUrl: savedArtifactUrl,
+    });
+    return;
+  }
+
+  // Fallback for other platforms: just relaunch
   app.relaunch();
   app.exit(0);
 }
@@ -859,7 +897,23 @@ export async function applyUpdateOnQuit(): Promise<void> {
       flushLogs();
     }
   }
-  // Linux: no-op — manual install expected
+  // Linux: attempt silent install on quit via pkexec.
+  // If it fails (no polkit agent, user cancels), the pending-update-info
+  // file remains on disk so the banner re-appears on next launch.
+  if (process.platform === 'linux' && downloadPath && await pathExists(downloadPath)) {
+    try {
+      if (downloadPath.endsWith('.deb')) {
+        const { execSync } = require('child_process');
+        appLog('update:apply-on-quit', 'info', 'Linux: installing .deb via pkexec dpkg -i', {
+          meta: { downloadPath },
+        });
+        execSync(`pkexec dpkg -i "${downloadPath}"`, { timeout: 120_000 });
+        appLog('update:apply-on-quit', 'info', 'Linux: .deb installed successfully');
+      }
+    } catch (err) {
+      appLog('update:apply-on-quit', 'warn', `Linux: pkexec install failed on quit: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
