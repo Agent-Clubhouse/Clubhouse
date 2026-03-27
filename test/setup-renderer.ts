@@ -401,6 +401,10 @@ vi.stubGlobal('clubhouse', {
     onBindingsChanged: () => noop,
     onToolActivity: () => noop,
   },
+  assistant: {
+    bind: asyncNoop,
+    unbind: asyncNoop,
+  },
   window: {
     createPopout: asyncNoop,
     closePopout: asyncNoop,

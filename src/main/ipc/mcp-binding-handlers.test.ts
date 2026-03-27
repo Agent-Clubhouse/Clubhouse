@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
+  app: { getPath: () => '/tmp/clubhouse-test' },
 }));
 
 vi.mock('../services/mcp-settings', () => ({

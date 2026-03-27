@@ -12,7 +12,7 @@ import { agentRegistry } from '../services/agent-registry';
 import { appLog } from '../services/log-service';
 import { withValidatedArgs, stringArg } from './validation';
 
-const ASSISTANT_TARGET_ID = 'clubhouse-assistant';
+const ASSISTANT_TARGET_ID = 'clubhouse_assistant';
 
 export function registerAssistantHandlers(): void {
   ipcMain.handle(IPC.ASSISTANT.BIND, withValidatedArgs(

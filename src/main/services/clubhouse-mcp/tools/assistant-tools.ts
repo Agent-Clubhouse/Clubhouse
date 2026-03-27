@@ -10,6 +10,7 @@
 
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { app } from 'electron';
 import { registerToolTemplate } from '../tool-registry';
 import * as projectStore from '../../project-store';
 import { listDurable } from '../../agent-config';
@@ -213,7 +214,7 @@ registerToolTemplate(
         name: a.name,
         color: a.color,
         model: a.model,
-        useWorktree: a.useWorktree,
+        hasWorktree: !!a.worktreePath,
         orchestrator: a.orchestrator,
       }));
       return {
@@ -358,9 +359,8 @@ registerToolTemplate(
   },
   async (_targetId, _agentId, _args) => {
     // Settings are managed via renderer stores. For the main process,
-    // we can read the settings file directly.
+    // read the settings file from the standard location.
     try {
-      const { app } = await import('electron');
       const settingsPath = path.join(app.getPath('userData'), 'settings.json');
       const raw = await fsp.readFile(settingsPath, 'utf-8');
       return {
