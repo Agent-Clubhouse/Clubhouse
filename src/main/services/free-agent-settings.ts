@@ -9,7 +9,7 @@ export interface FreeAgentSettings {
 }
 
 const store = createSettingsStore<FreeAgentSettings>('free-agent-settings.json', {
-  defaultMode: 'auto',
+  defaultMode: 'skip-all',
 });
 
 export const getSettings = store.get;

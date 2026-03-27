@@ -179,7 +179,7 @@ describe('ClaudeCodeProvider', () => {
       expect(args[args.length - 1]).toBe('Deploy it');
     });
 
-    it('uses --permission-mode auto when freeAgentMode is true (default)', async () => {
+    it('uses --permission-mode auto when freeAgentMode is true and permissionMode is not skip-all', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
