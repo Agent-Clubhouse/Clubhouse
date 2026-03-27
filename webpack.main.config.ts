@@ -18,6 +18,10 @@ export const mainConfig: Configuration = {
           from: path.resolve(__dirname, 'src/main/services/clubhouse-mcp/bridge/clubhouse-mcp-bridge.js'),
           to: 'bridge/clubhouse-mcp-bridge.js',
         },
+        {
+          from: path.resolve(__dirname, 'assets/icon.png'),
+          to: 'icon.png',
+        },
       ],
     }),
   ],

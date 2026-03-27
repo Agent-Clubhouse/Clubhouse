@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { app, BrowserWindow, dialog, powerMonitor } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
@@ -83,6 +84,8 @@ const createWindow = (): void => {
     minWidth: 900,
     minHeight: 600,
     show: false,
+    icon: path.resolve(__dirname, 'icon.png'),
+    autoHideMenuBar: true,
     // macOS: hide the native title bar but keep traffic lights
     // Windows: use titleBarOverlay to replace native title bar with themed controls
     ...(isWin
