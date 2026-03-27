@@ -144,10 +144,10 @@ describe('SatelliteDashboard', () => {
 
     render(<SatelliteDashboard activeHostId="sat-1" />);
 
-    // Stats: 2 projects, 1 running, 0 sleeping
-    expect(screen.getByText('Projects')).toBeTruthy();
-    expect(screen.getByText('Running')).toBeTruthy();
-    expect(screen.getByText('Sleeping')).toBeTruthy();
+    // Stats and project cards share some label text, so use getAllByText
+    expect(screen.getAllByText('Projects').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Sleeping').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows agent rows inside project cards', () => {

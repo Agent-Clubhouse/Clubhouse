@@ -260,10 +260,6 @@ export function App() {
   );
 
   if (isHome) {
-    const homeContent = activeHostId
-      ? <SatelliteDashboard activeHostId={activeHostId} />
-      : <Dashboard />;
-
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
@@ -281,7 +277,9 @@ export function App() {
           <PluginUpdateBanner />
         </div>
         <RailSection>
-          {homeContent}
+          {activeHostId
+            ? <SatelliteDashboard activeHostId={activeHostId} />
+            : <Dashboard />}
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
