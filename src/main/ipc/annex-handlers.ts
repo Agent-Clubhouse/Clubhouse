@@ -7,7 +7,6 @@ import * as annexClient from '../services/annex-client';
 import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
-import * as experimentalSettings from '../services/experimental-settings';
 import { isPreviewEligible } from '../services/preview-eligible';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -30,35 +29,31 @@ export function registerAnnexHandlers(): void {
   ipcMain.handle(IPC.ANNEX.SAVE_SETTINGS, withValidatedArgs(
     [objectArg<AnnexSettings>()],
     async (_event, settings) => {
-    const expSettings = experimentalSettings.getSettings();
     const previous = annexSettings.getSettings();
     await annexSettings.saveSettings(settings);
 
-    // Only start/stop if experimental flag is on
-    if (expSettings.annex) {
-      // Server toggle (independent of client)
-      if (settings.enableServer && !previous.enableServer) {
-        try {
-          annexServer.start();
-          appLog('core:annex', 'info', 'Annex server started via settings');
-        } catch (err) {
-          appLog('core:annex', 'error', 'Failed to start Annex server', {
-            meta: { error: err instanceof Error ? err.message : String(err) },
-          });
-        }
-      } else if (!settings.enableServer && previous.enableServer) {
-        annexServer.stop();
-        appLog('core:annex', 'info', 'Annex server stopped via settings');
+    // Server toggle (independent of client)
+    if (settings.enableServer && !previous.enableServer) {
+      try {
+        annexServer.start();
+        appLog('core:annex', 'info', 'Annex server started via settings');
+      } catch (err) {
+        appLog('core:annex', 'error', 'Failed to start Annex server', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
       }
+    } else if (!settings.enableServer && previous.enableServer) {
+      annexServer.stop();
+      appLog('core:annex', 'info', 'Annex server stopped via settings');
+    }
 
-      // Client toggle (independent of server)
-      if (settings.enableClient && !previous.enableClient) {
-        annexClient.startClient();
-        appLog('core:annex', 'info', 'Annex client started via settings');
-      } else if (!settings.enableClient && previous.enableClient) {
-        annexClient.stopClient();
-        appLog('core:annex', 'info', 'Annex client stopped via settings');
-      }
+    // Client toggle (independent of server)
+    if (settings.enableClient && !previous.enableClient) {
+      annexClient.startClient();
+      appLog('core:annex', 'info', 'Annex client started via settings');
+    } else if (!settings.enableClient && previous.enableClient) {
+      annexClient.stopClient();
+      appLog('core:annex', 'info', 'Annex client stopped via settings');
     }
 
     // Notify renderer of status change
@@ -151,13 +146,8 @@ export function registerAnnexHandlers(): void {
   });
 }
 
-/** Conditionally start Annex server if enableServer is on AND experimental flag is on AND build is preview-eligible. */
+/** Conditionally start Annex server if enableServer is on AND build is preview-eligible. */
 export function maybeStartAnnex(): void {
-  const expSettings = experimentalSettings.getSettings();
-  if (!expSettings.annex) {
-    return; // Annex feature not enabled in experimental settings
-  }
-
   if (!isPreviewEligible()) return;
 
   const settings = annexSettings.getSettings();
@@ -173,11 +163,8 @@ export function maybeStartAnnex(): void {
   }
 }
 
-/** Conditionally start the Annex Bonjour client if enableClient is on AND experimental flag is on AND build is preview-eligible. */
+/** Conditionally start the Annex Bonjour client if enableClient is on AND build is preview-eligible. */
 export function maybeStartAnnexClient(): void {
-  const expSettings = experimentalSettings.getSettings();
-  if (!expSettings.annex) return;
-
   if (!isPreviewEligible()) return;
 
   const settings = annexSettings.getSettings();

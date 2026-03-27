@@ -72,11 +72,11 @@ export function useCommandSource(): CommandItem[] {
   const appActiveCanvasId = useAppCanvasStore((s) => s.activeCanvasId);
   const canvasPluginEnabled = usePluginStore((s) => s.appEnabled.includes('canvas'));
 
-  // Check if Annex experimental flag is enabled
-  const [annexExperimentalEnabled, setAnnexExperimentalEnabled] = useState(false);
+  // Annex is a stable feature — commands always available
+  const [annexEnabled, setAnnexEnabled] = useState(false);
   useEffect(() => {
-    window.clubhouse.app.getExperimentalSettings().then((s) => {
-      setAnnexExperimentalEnabled(!!s.annex);
+    window.clubhouse.app.isPreviewEligible().then((eligible) => {
+      setAnnexEnabled(eligible);
     }).catch(() => {});
   }, []);
 
@@ -459,7 +459,7 @@ export function useCommandSource(): CommandItem[] {
     }
 
     // Annex actions (only when experimental flag is enabled)
-    if (annexExperimentalEnabled) {
+    if (annexEnabled) {
       items.push({
         id: 'action:toggle-annex-server',
         label: annexSettings.enableServer ? 'Disable Annex Server' : 'Enable Annex Server',
@@ -532,7 +532,7 @@ export function useCommandSource(): CommandItem[] {
     return items;
   }, [
     projects, agents, activeProjectId, pluginsMap, projectEnabled, shortcuts,
-    annexSettings, annexStatus, annexExperimentalEnabled, canvasPluginEnabled,
+    annexSettings, annexStatus, annexEnabled, canvasPluginEnabled,
     projectHubs, projectActiveHubId, appHubs, appActiveHubId,
     otherProjectHubs,
     projectCanvases, projectActiveCanvasId, appCanvases, appActiveCanvasId,

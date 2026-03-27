@@ -20,7 +20,6 @@ import { ClipboardSettings, ClubhouseModeSettings, ExperimentalSettings, SoundEv
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import * as annexServer from '../services/annex-server';
-import * as annexSettings from '../services/annex-settings';
 import * as experimentalSettings from '../services/experimental-settings';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
@@ -364,23 +363,7 @@ export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS, withValidatedArgs(
     [objectArg<ExperimentalSettings>()],
     async (_event, settings) => {
-      const previous = experimentalSettings.getSettings();
       await experimentalSettings.saveSettings(settings);
-
-      // When annex is first enabled, auto-enable server + client so the
-      // user doesn't have to flip a second toggle and restart again.
-      if (settings.annex && !previous.annex) {
-        const current = annexSettings.getSettings();
-        if (!current.enableServer || !current.enableClient) {
-          await annexSettings.saveSettings({
-            ...current,
-            enableServer: true,
-            enableClient: true,
-          });
-          logService.appLog('core:annex', 'info',
-            'Auto-enabled annex server and client after experimental flag was turned on');
-        }
-      }
     },
   ));
 

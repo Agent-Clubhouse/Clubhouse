@@ -98,18 +98,7 @@ export function App() {
     };
   }, []);
 
-  // ── Clear stale activeHostId if annex experimental flag is off ──────────
-  // This prevents non-experimental users from seeing broken satellite UI
-  // due to a leftover localStorage value from a previous session.
-  useEffect(() => {
-    if (!activeHostId) return;
-    window.clubhouse.app.getExperimentalSettings().then((s: Record<string, unknown>) => {
-      if (!s.annex) {
-        useUIStore.getState().setActiveHost(null);
-      }
-    }).catch(() => { /* ignore */ });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only on mount — avoids re-running when activeHostId changes
+  // Annex is now a stable feature — no need to clear stale activeHostId based on experimental flag
 
   // ── Reactive effects (depend on state already subscribed for routing) ───
 

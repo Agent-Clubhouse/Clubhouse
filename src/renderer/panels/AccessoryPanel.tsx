@@ -24,9 +24,10 @@ function SettingsCategoryNav() {
   useEffect(() => {
     window.clubhouse.app.isPreviewEligible().then((isPreview) => {
       setShowExperimental(isPreview);
+      // Annex is always available on preview-eligible builds
+      setShowAnnex(isPreview);
       if (isPreview) {
         window.clubhouse.app.getExperimentalSettings().then((s) => {
-          setShowAnnex(!!s.annex);
           setShowMcp(!!s.mcp);
         });
       }

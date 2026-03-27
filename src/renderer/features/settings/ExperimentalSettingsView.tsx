@@ -18,11 +18,6 @@ const EXPERIMENTAL_FEATURES: Array<{
     description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
   },
   {
-    id: 'annex',
-    label: 'Annex (Remote Control)',
-    description: 'Desktop-to-desktop remote control over LAN. Enables the Annex Server and Annex Control settings pages. Requires app restart.',
-  },
-  {
     id: 'sessions',
     label: 'Sessions',
     description: 'Browse and replay historical agent conversation sessions with timeline playback. Requires app restart.',
