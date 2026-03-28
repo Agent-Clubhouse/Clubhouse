@@ -95,16 +95,8 @@ export class StreamJsonAdapter implements StructuredAdapter {
       ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
       : args;
 
-    appLog('core:structured', 'info', 'StreamJsonAdapter starting session', {
-      meta: {
-        binary: spawnBinary,
-        args: spawnArgs,
-        cwd: sessionOpts.cwd,
-        model: sessionOpts.model,
-        hasMission: !!sessionOpts.mission,
-        permissionMode: sessionOpts.permissionMode,
-        commandPrefix: sessionOpts.commandPrefix || 'none',
-      },
+    appLog('core:structured', 'info', 'StreamJsonAdapter spawning', {
+      meta: { binary: spawnBinary, cwd: sessionOpts.cwd, model: sessionOpts.model },
     });
 
     const proc = cpSpawn(spawnBinary, spawnArgs, {
