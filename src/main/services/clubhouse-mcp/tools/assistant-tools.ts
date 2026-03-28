@@ -20,6 +20,8 @@ import { appLog } from '../../log-service';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { sendCanvasCommand } from '../canvas-command';
 import { computeLayout } from '../canvas-layout';
+import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
+import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
 
 /**
  * Register all assistant MCP tools (read + write).
@@ -308,12 +310,9 @@ registerToolTemplate(
 
 // ── Help Content Tools ─────────────────────────────────────────────────────
 
-// Help content is imported directly from the renderer help module. The markdown
-// files are bundled as asset/source by webpack, so they work in both processes.
-// The search function is a pure TS module with no renderer dependencies.
-
-import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
-import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
+// Help content and search are imported from the renderer help module at the top
+// of this file. The markdown files are bundled as asset/source by webpack, and
+// the search function is a pure TS module with no renderer dependencies.
 
 registerToolTemplate(
   'assistant',
