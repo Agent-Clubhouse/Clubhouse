@@ -19,8 +19,10 @@ export function registerProjectHandlers(): void {
     const project = await projectStore.add(dirPath);
     try {
       await ensureGitignore(dirPath);
-    } catch {
-      // Non-fatal
+    } catch (err) {
+      appLog('core:project', 'warn', 'ensureGitignore failed (non-fatal)', {
+        meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
+      });
     }
     return project;
   }));
@@ -48,7 +50,10 @@ export function registerProjectHandlers(): void {
     try {
       execSync('git init', { cwd: dirPath, encoding: 'utf-8' });
       return true;
-    } catch {
+    } catch (err) {
+      appLog('core:project', 'error', 'git init failed', {
+        meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
+      });
       return false;
     }
   }));
@@ -106,7 +111,7 @@ export function registerProjectHandlers(): void {
     try {
       await fsp.access(clubhouseDir);
     } catch {
-      return [];
+      return []; // Directory does not exist — expected path
     }
     try {
       const results: string[] = [];
@@ -124,7 +129,10 @@ export function registerProjectHandlers(): void {
       };
       await walk(clubhouseDir, '');
       return results;
-    } catch {
+    } catch (err) {
+      appLog('core:project', 'error', 'Failed to list .clubhouse files', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
       return [];
     }
   }));
@@ -134,7 +142,7 @@ export function registerProjectHandlers(): void {
     try {
       await fsp.access(clubhouseDir);
     } catch {
-      return true;
+      return true; // Directory does not exist — nothing to reset
     }
     try {
       appLog('core:project', 'warn', 'Resetting project .clubhouse directory', {
