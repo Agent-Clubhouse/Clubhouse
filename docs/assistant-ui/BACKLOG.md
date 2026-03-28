@@ -20,11 +20,10 @@ Priority order: top = highest impact.
 - **Headless mode indicator** — Badges, toasts, status bar for background activity.
 - **Structured view layout** — Wizards, config grids, comparisons.
 - **PTY sidebar visual spec** — Rich content sidebar for terminal mode.
+- **Consistency audit** — 2 minor issues found, 10 patterns documented.
 
 ## Up Next
 
 1. **More visual templates** — Before/after split, tree/hierarchy, annotated UI
 2. **Animated concept illustrations** — Canvas layout, agent connections,
    plugin architecture — visual teaching aids the assistant can embed
-3. **Consistency audit** — Review existing assistant-adjacent components
-   (ToolCard, MessageStream) for pattern alignment
