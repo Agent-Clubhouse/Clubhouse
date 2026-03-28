@@ -38,7 +38,7 @@ function humanToolName(raw: string): string {
  * Format error messages for humans.
  * Strip JSON wrappers, extract message fields, and truncate long traces.
  */
-function humanError(raw: string): string {
+export function humanError(raw: string): string {
   // Try to parse as JSON and extract a message field
   try {
     const parsed = JSON.parse(raw);
@@ -62,7 +62,7 @@ function humanError(raw: string): string {
 }
 
 /** Build a one-line result summary for creation tools. */
-function buildResultSummary(action: ActionCardData): string | null {
+export function buildResultSummary(action: ActionCardData): string | null {
   if (action.resultSummary) return action.resultSummary;
   if (action.status !== 'completed' || !action.output) return null;
 

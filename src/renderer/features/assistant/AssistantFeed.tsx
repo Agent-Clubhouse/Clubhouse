@@ -98,10 +98,10 @@ export function inferGroupLabel(actions: FeedItem[]): string {
   if (tools.includes('create_canvas')) {
     const cardCount = tools.filter(t => t === 'add_card').length;
     const wireCount = tools.filter(t => t === 'add_wire').length;
-    const parts = ['Creating canvas'];
-    if (cardCount) parts.push(`${cardCount} card${cardCount > 1 ? 's' : ''}`);
-    if (wireCount) parts.push(`${wireCount} wire${wireCount > 1 ? 's' : ''}`);
-    return parts.join(' with ');
+    const details: string[] = [];
+    if (cardCount) details.push(`${cardCount} card${cardCount > 1 ? 's' : ''}`);
+    if (wireCount) details.push(`${wireCount} wire${wireCount > 1 ? 's' : ''}`);
+    return details.length ? `Creating canvas with ${details.join(', ')}` : 'Creating canvas';
   }
   if (tools.includes('create_project')) {
     return `Setting up project (${actions.length} steps)`;
