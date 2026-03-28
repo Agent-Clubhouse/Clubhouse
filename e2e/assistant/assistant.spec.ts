@@ -22,6 +22,9 @@ import {
 let instance: AssistantInstance;
 let window: Page;
 
+// All 6 tests share one Electron instance for performance (launch is ~10s).
+// Tradeoff: if an early test fails, later tests that depend on agent state may
+// cascade. Each test resets the conversation to mitigate this.
 test.beforeAll(async () => {
   instance = await launchAssistantInstance();
   window = instance.window;
@@ -104,10 +107,10 @@ test('assistant launches in headless mode and responds', async () => {
 // ─── Test 4: Structured mode streaming ──────────────────────────────────────
 
 test('assistant launches in structured mode with streaming', async () => {
-  // Reset conversation first
+  // Reset conversation and wait for welcome state
   const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
   await resetBtn.click();
-  await window.waitForTimeout(1_000);
+  await expect(window.locator('[data-testid="assistant-feed-empty"]')).toBeVisible({ timeout: 10_000 });
 
   await switchMode(window, 'structured');
 
@@ -126,39 +129,50 @@ test('assistant launches in structured mode with streaming', async () => {
 
 // ─── Test 5: Tool execution shows action card ───────────────────────────────
 
-test('tool execution shows action card in feed', async () => {
-  // Reset conversation
+test('tool execution produces action card or project-related response', async () => {
+  // Reset conversation and wait for welcome state
   const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
   await resetBtn.click();
-  await window.waitForTimeout(1_000);
+  await expect(window.locator('[data-testid="assistant-feed-empty"]')).toBeVisible({ timeout: 10_000 });
 
   await switchMode(window, 'headless');
 
   // Ask something that should trigger a tool call
-  await sendAssistantMessage(window, 'List my projects using the available tools.');
+  await sendAssistantMessage(window, 'Use the list_projects tool to show my projects.');
 
-  // Wait for either an action card or a response (tool calls may or may not
-  // produce visible action cards depending on the orchestrator)
-  const actionCardOrResponse = window.locator(
+  // Wait for a response — either an action card (tool was called and rendered)
+  // or an assistant message (tool result was inlined into text)
+  const actionCard = window.locator('[data-testid="assistant-action-card"]');
+  const assistantMsg = window.locator('[data-testid="assistant-message"]');
+
+  // First, wait for any feed content to appear
+  const feedContent = window.locator(
     '[data-testid="assistant-action-card"], [data-testid="assistant-message"]',
   ).first();
-  await actionCardOrResponse.waitFor({ state: 'visible', timeout: 60_000 });
+  await feedContent.waitFor({ state: 'visible', timeout: 60_000 });
 
-  // At minimum, we should have gotten some kind of response
-  const feedHasContent = window.locator(
-    '[data-testid="assistant-feed"] [data-testid="assistant-message"], [data-testid="assistant-feed"] [data-testid="assistant-action-card"]',
-  );
-  const contentCount = await feedHasContent.count();
-  expect(contentCount).toBeGreaterThanOrEqual(1);
+  // Verify: either an action card appeared (tool was visibly called) OR
+  // the response text references projects/tools (tool was called but result
+  // was inlined). A pure hallucinated response with no project context fails.
+  const actionCardCount = await actionCard.count();
+  if (actionCardCount > 0) {
+    // Action card present — tool execution is visible. Pass.
+    expect(actionCardCount).toBeGreaterThan(0);
+  } else {
+    // No action card — verify the response content references projects
+    const responseText = (await assistantMsg.first().textContent()) || '';
+    const mentionsProjects = /project/i.test(responseText);
+    expect(mentionsProjects).toBe(true);
+  }
 });
 
 // ─── Test 6: Basic conversation with non-empty response ─────────────────────
 
 test('basic conversation returns meaningful response', async () => {
-  // Reset conversation
+  // Reset conversation and wait for welcome state
   const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
   await resetBtn.click();
-  await window.waitForTimeout(1_000);
+  await expect(window.locator('[data-testid="assistant-feed-empty"]')).toBeVisible({ timeout: 10_000 });
 
   await switchMode(window, 'headless');
 
