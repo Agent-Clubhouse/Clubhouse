@@ -27,6 +27,9 @@ vi.stubGlobal('window', {
       unbind: vi.fn().mockResolvedValue(undefined),
       sendFollowup: vi.fn().mockResolvedValue({ agentId: 'followup_1' }),
       onResult: vi.fn().mockReturnValue(() => {}),
+      saveHistory: vi.fn().mockResolvedValue(undefined),
+      loadHistory: vi.fn().mockResolvedValue([]),
+      reset: vi.fn().mockResolvedValue(undefined),
     },
     pty: {
       write: vi.fn(),
@@ -322,6 +325,12 @@ describe('buildGroups', () => {
 describe('approval flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Re-stub assistant methods that return promises — clearAllMocks wipes
+    // mock implementations, but assistant-agent.reset() calls saveHistory([]).catch()
+    // which crashes if saveHistory returns undefined instead of a Promise.
+    (window.clubhouse.assistant.saveHistory as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (window.clubhouse.assistant.loadHistory as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (window.clubhouse.assistant.reset as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     agent.reset();
   });
 
