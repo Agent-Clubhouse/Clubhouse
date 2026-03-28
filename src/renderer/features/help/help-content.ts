@@ -30,6 +30,11 @@ import personaSlopDetector from '../assistant/content/personas/slop-detector.md'
 import personaExecutorPrOnly from '../assistant/content/personas/executor-pr-only.md';
 import personaExecutorMerge from '../assistant/content/personas/executor-merge.md';
 import personaDocUpdater from '../assistant/content/personas/doc-updater.md';
+import cookbookLongRunningJob from '../assistant/content/cookbooks/long-running-job.md';
+import cookbookUiWork from '../assistant/content/cookbooks/ui-work.md';
+import cookbookGroupProject from '../assistant/content/cookbooks/group-project.md';
+import cookbookSquad from '../assistant/content/cookbooks/squad.md';
+import cookbookDragRace from '../assistant/content/cookbooks/drag-race.md';
 
 export interface HelpTopic {
   id: string;
@@ -117,6 +122,17 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'persona-executor-pr-only', title: 'Executor (PR Only)', content: personaExecutorPrOnly },
       { id: 'persona-executor-merge', title: 'Executor (Full Merge)', content: personaExecutorMerge },
       { id: 'persona-doc-updater', title: 'Documentation Updater', content: personaDocUpdater },
+    ],
+  },
+  {
+    id: 'cookbooks',
+    title: 'Cookbooks & Project Patterns',
+    topics: [
+      { id: 'cookbook-long-running-job', title: 'Long-Running Job', content: cookbookLongRunningJob },
+      { id: 'cookbook-ui-work', title: 'UI Work', content: cookbookUiWork },
+      { id: 'cookbook-group-project', title: 'Group Project (Multi-App)', content: cookbookGroupProject },
+      { id: 'cookbook-squad', title: 'Squad', content: cookbookSquad },
+      { id: 'cookbook-drag-race', title: 'Drag Race', content: cookbookDragRace },
     ],
   },
 ];
