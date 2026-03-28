@@ -113,12 +113,20 @@ export async function cleanupAssistantInstance(handle: AssistantInstance): Promi
 
 /**
  * Open the assistant panel by clicking the nav rail button.
+ * Idempotent — if the panel is already open, does nothing.
+ * This prevents the toggle from accidentally closing the panel
+ * when it's already visible (e.g., from a prior test or state).
  */
 export async function openAssistantPanel(window: Page): Promise<void> {
+  const assistantView = window.locator('[data-testid="assistant-view"]');
+
+  // If panel is already open, nothing to do
+  if (await assistantView.isVisible().catch(() => false)) return;
+
   const assistantBtn = window.locator('[data-testid="nav-assistant"]');
   await expect(assistantBtn).toBeVisible({ timeout: 10_000 });
   await assistantBtn.click();
-  await expect(window.locator('[data-testid="assistant-view"]')).toBeVisible({ timeout: 10_000 });
+  await expect(assistantView).toBeVisible({ timeout: 10_000 });
 }
 
 /**
