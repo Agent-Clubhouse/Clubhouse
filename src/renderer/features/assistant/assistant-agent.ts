@@ -121,15 +121,30 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
       setStatus('active');
       break;
     }
-    case 'tool_start':
-      pushItem({ type: 'action', action: { id: event.data.id, toolName: event.data.displayVerb || event.data.name, description: getPrimaryInput(event.data.input), status: 'running', input: event.data.input } });
+    case 'tool_start': {
+      const toolName = event.data.displayVerb || event.data.name;
+      const groupId = event.data.groupId || undefined;
+      const needsApproval = isMutatingTool(event.data.name);
+      pushItem({
+        type: 'action',
+        action: {
+          id: event.data.id,
+          toolName,
+          description: getPrimaryInput(event.data.input),
+          status: needsApproval ? 'pending_approval' : 'running',
+          input: event.data.input,
+          groupId,
+        },
+      });
       break;
+    }
     case 'tool_end': {
       const actionItem = pendingItems.find(i => i.type === 'action' && i.action?.id === event.data.id);
       if (actionItem?.action) {
         actionItem.action.status = event.data.status === 'error' ? 'error' : 'completed';
         actionItem.action.output = event.data.result;
         actionItem.action.durationMs = event.data.durationMs;
+        actionItem.action.resultSummary = event.data.resultSummary;
         if (event.data.status === 'error') actionItem.action.error = event.data.result;
         notifyFeedListeners();
       }
@@ -144,6 +159,19 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
       setStatus(event.data.reason === 'error' ? 'error' : 'active', event.data.reason === 'error' ? (event.data.summary || 'Session ended with error') : null);
       break;
   }
+}
+
+/** Tools that modify state and should require user approval before execution. */
+const MUTATING_TOOLS = new Set([
+  'create_project', 'create_canvas', 'create_agent',
+  'add_card', 'add_zone', 'add_wire', 'update_card',
+  'delete_project', 'delete_canvas', 'delete_agent',
+  'write_file', 'run_command',
+  'update_project', 'update_agent', 'update_canvas',
+]);
+
+function isMutatingTool(name: string): boolean {
+  return MUTATING_TOOLS.has(name);
 }
 
 function getPrimaryInput(input: Record<string, unknown>): string {
@@ -382,6 +410,30 @@ export function onOrchestratorChange(listener: OrchestratorListener): () => void
 export function onAgentIdChange(listener: AgentIdListener): () => void {
   agentIdListeners.add(listener);
   return () => agentIdListeners.delete(listener);
+}
+
+export function approveAction(actionId: string): void {
+  const item = pendingItems.find(i => i.type === 'action' && i.action?.id === actionId);
+  if (item?.action && item.action.status === 'pending_approval') {
+    item.action.status = 'running';
+    notifyFeedListeners();
+    // Notify the orchestrator that the tool execution is approved
+    if (state.agentId && state.mode === 'structured') {
+      window.clubhouse.agent.approveToolExecution?.(state.agentId, actionId).catch(() => {});
+    }
+  }
+}
+
+export function skipAction(actionId: string): void {
+  const item = pendingItems.find(i => i.type === 'action' && i.action?.id === actionId);
+  if (item?.action && item.action.status === 'pending_approval') {
+    item.action.status = 'skipped';
+    notifyFeedListeners();
+    // Notify the orchestrator to skip this tool execution
+    if (state.agentId && state.mode === 'structured') {
+      window.clubhouse.agent.skipToolExecution?.(state.agentId, actionId).catch(() => {});
+    }
+  }
 }
 
 export function reset(): void {
