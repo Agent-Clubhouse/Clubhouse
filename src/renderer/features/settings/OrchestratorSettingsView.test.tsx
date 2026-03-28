@@ -291,5 +291,48 @@ describe('OrchestratorSettingsView', () => {
       expect(screen.getByText('Orchestrators & Agents')).toBeInTheDocument();
       expect(screen.queryByText('Clubhouse Mode')).not.toBeInTheDocument();
     });
+
+    describe('project override dropdowns clickability', () => {
+      it('all override dropdowns are enabled when clubhouse mode is on', () => {
+        useClubhouseModeStore.setState({ enabled: true });
+        render(<OrchestratorSettingsView projectId="proj-1" />);
+
+        const selects = screen.getAllByRole('combobox');
+        for (const select of selects) {
+          expect(select).not.toBeDisabled();
+        }
+      });
+
+      it('DefaultRow label container has overflow-hidden to prevent hit box overlap', () => {
+        render(<OrchestratorSettingsView projectId="proj-1" />);
+        const label = screen.getByText('Quick Agent Mode');
+        const labelContainer = label.parentElement!;
+        expect(labelContainer.className).toContain('overflow-hidden');
+      });
+
+      it('DefaultRow select container has relative positioning for stacking context', () => {
+        render(<OrchestratorSettingsView projectId="proj-1" />);
+        // All project override selects should be in a relative container
+        const selects = screen.getAllByRole('combobox');
+        for (const select of selects) {
+          const container = select.parentElement!;
+          expect(container.className).toContain('relative');
+        }
+      });
+
+      it('Clubhouse Mode dropdown responds to change events when clubhouse is on', () => {
+        const setProjectOverride = vi.fn();
+        useClubhouseModeStore.setState({ enabled: true, setProjectOverride });
+
+        render(<OrchestratorSettingsView projectId="proj-1" />);
+        // Find the Clubhouse Mode dropdown — its label text is in the DefaultRow
+        const clubhouseLabel = screen.getByText('Clubhouse Mode');
+        const row = clubhouseLabel.closest('.flex.items-center.justify-between');
+        const select = row?.querySelector('select');
+        expect(select).toBeTruthy();
+        fireEvent.change(select!, { target: { value: 'on' } });
+        expect(setProjectOverride).toHaveBeenCalledWith('/home/user/my-app', true);
+      });
+    });
   });
 });
