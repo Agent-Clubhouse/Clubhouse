@@ -383,14 +383,14 @@ export function ProjectRail() {
   }, [collapsedWidth, railPinned, railWidth]);
 
   const exitSettingsAndNavigate = useCallback((action: () => void) => {
-    if (inSettings || inHelp) {
+    if (inSettings || inHelp || inAssistant) {
       setExplorerTab(previousExplorerTab || 'agents');
       useUIStore.setState({ previousExplorerTab: null });
     } else if (isAppPlugin) {
       setExplorerTab('agents');
     }
     action();
-  }, [inSettings, inHelp, isAppPlugin, previousExplorerTab, setExplorerTab]);
+  }, [inSettings, inHelp, inAssistant, isAppPlugin, previousExplorerTab, setExplorerTab]);
 
   const [contextMenu, setContextMenu] = useState<{ projectId: string; x: number; y: number } | null>(null);
 
