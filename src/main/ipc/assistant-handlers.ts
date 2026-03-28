@@ -102,6 +102,20 @@ export function registerAssistantHandlers(): void {
         throw new Error(msg);
       }
 
+      // Write system prompt to provider-specific instructions file so
+      // non-Claude-Code orchestrators (Copilot, Codex) have context.
+      const localInstructions = provider.conventions?.localInstructionsFile;
+      if (localInstructions && localInstructions !== 'CLAUDE.md') {
+        try {
+          const instrPath = path.join(workspace, localInstructions);
+          fs.mkdirSync(path.dirname(instrPath), { recursive: true });
+          fs.writeFileSync(instrPath, systemPrompt, 'utf-8');
+          appLog(LOG_NS, 'info', `Wrote ${localInstructions} to workspace`, { meta: { path: instrPath } });
+        } catch (err) {
+          appLog(LOG_NS, 'warn', `Failed to write ${localInstructions}`, { meta: { error: String(err) } });
+        }
+      }
+
       // Profile env
       const profileEnv = await resolveProfileEnv(workspace, provider.id);
 
@@ -304,12 +318,19 @@ async function spawnInteractive(
 
   // Parallel: hook server + MCP bridge + spawn command
   let mcpPort = 0;
+  // Don't pass mission to buildSpawnCommand for providers that use -p (Copilot,
+  // Codex) — -p enters one-shot prompt mode and exits, crashing the PTY session.
+  // Claude Code handles positional args correctly for interactive mode.
+  // The system prompt is never passed — it's in the instructions file.
+  const interactiveMission = provider.id === 'claude-code' ? mission : undefined;
   const [, , spawnCmd] = await Promise.all([
     waitHookServerReady().then(async (port) => {
       if (isHookCapable(provider)) {
         await provider.writeHooksConfig(workspace, `http://127.0.0.1:${port}/hook`);
         appLog(LOG_NS, 'info', 'Hook config written', { meta: { agentId, hookPort: port } });
       }
+    }).catch((err) => {
+      appLog(LOG_NS, 'warn', 'Hook server not available for interactive mode', { meta: { agentId, error: String(err) } });
     }),
     waitMcpBridgeReady().then(async (port) => {
       mcpPort = port;
@@ -318,11 +339,8 @@ async function spawnInteractive(
     }).catch((err) => {
       appLog(LOG_NS, 'warn', 'MCP bridge not available', { meta: { agentId, error: String(err) } });
     }),
-    // Don't pass systemPrompt to buildSpawnCommand for PTY mode — the full
-    // prompt is 30K+ chars which gets echoed as raw text in the terminal.
-    // The orchestrator reads CLAUDE.md from the workspace (already written).
     provider.buildSpawnCommand({
-      cwd: workspace, model, mission,
+      cwd: workspace, model, mission: interactiveMission,
       agentId, freeAgentMode: true, permissionMode,
     }),
   ]);
@@ -349,7 +367,7 @@ async function spawnInteractive(
   };
 
   await ptyManager.spawn(agentId, workspace, binary, args, spawnEnv, (exitAgentId, exitCode, buffer) => {
-    appLog(LOG_NS, 'info', 'Conversational headless exited', { meta: { agentId: exitAgentId, exitCode, bufferLength: buffer?.length || 0 } });
+    appLog(LOG_NS, 'info', 'Interactive PTY exited', { meta: { agentId: exitAgentId, exitCode, bufferLength: buffer?.length || 0 } });
     // DON'T unbind or untrack — conversation continues with follow-ups.
     // Cleanup happens on explicit reset only.
   });
@@ -364,15 +382,39 @@ async function spawnStructured(
     throw new Error(`${provider.displayName} does not support structured mode`);
   }
 
+  const nonce = randomUUID();
+  agentRegistry.setNonce(agentId, nonce);
   agentRegistry.setRuntime(agentId, 'structured');
+
+  // MCP injection for structured mode so assistant tools are available
+  let mcpPort = 0;
+  const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
+  const mcpJsonPath = path.join(workspace, mcpConfigFile);
+  configPipeline.snapshotFile(agentId, mcpJsonPath);
+
+  try {
+    mcpPort = await waitMcpBridgeReady();
+    await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, provider.conventions);
+    appLog(LOG_NS, 'info', 'MCP config injected (structured)', { meta: { agentId, mcpPort } });
+  } catch {
+    appLog(LOG_NS, 'warn', 'MCP bridge not available for structured', { meta: { agentId } });
+  }
+
   const adapter = provider.createStructuredAdapter();
   appLog(LOG_NS, 'info', 'Structured adapter created', { meta: { agentId, orchestrator: provider.id } });
 
   await structuredManager.startStructuredSession(agentId, adapter, {
     mission, systemPrompt, model, cwd: workspace,
-    env: profileEnv, freeAgentMode: true, permissionMode,
+    env: {
+      ...profileEnv,
+      CLUBHOUSE_AGENT_ID: agentId,
+      CLUBHOUSE_HOOK_NONCE: nonce,
+      ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
+    },
+    freeAgentMode: true, permissionMode,
   }, (exitAgentId) => {
     appLog(LOG_NS, 'info', 'Structured session ended', { meta: { agentId: exitAgentId } });
+    configPipeline.restoreForAgent(exitAgentId);
     bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
   });
@@ -444,8 +486,8 @@ async function spawnHeadless(
       // Notify renderer that the headless agent completed
       broadcastToAllWindows(IPC.ASSISTANT.RESULT, { agentId: exitAgentId, exitCode });
       configPipeline.restoreForAgent(exitAgentId);
-      bindingManager.unbindAgent(exitAgentId);
-      untrackAgent(exitAgentId);
+      // DON'T unbind or untrack — conversation continues with follow-ups.
+      // Cleanup happens on explicit reset only.
     },
   );
 }
