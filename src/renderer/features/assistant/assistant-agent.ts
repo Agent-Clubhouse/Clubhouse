@@ -84,6 +84,26 @@ function pushAssistantMessage(text: string): void {
   });
 }
 
+/**
+ * Remove the last "Processing..." placeholder message from the feed.
+ * Called before pushing the real response or an error message.
+ */
+function removePendingPlaceholder(): void {
+  for (let i = pendingItems.length - 1; i >= 0; i--) {
+    const item = pendingItems[i];
+    if (
+      item.type === 'message' &&
+      item.message?.role === 'assistant' &&
+      (item.message.content === '_Processing your request..._' ||
+       item.message.content === '_Processing your follow-up..._')
+    ) {
+      pendingItems.splice(i, 1);
+      notifyFeedListeners();
+      break;
+    }
+  }
+}
+
 function cleanupAll(): void {
   for (const fn of cleanupListeners) fn();
   cleanupListeners = [];
@@ -141,7 +161,12 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
       break;
     case 'end':
       state.pendingText = '';
-      setStatus(event.data.reason === 'error' ? 'error' : 'active', event.data.reason === 'error' ? (event.data.summary || 'Session ended with error') : null);
+      if (event.data.reason === 'error') {
+        setStatus('error', event.data.summary || 'Session ended with error');
+      } else {
+        persistHistory();
+        setStatus('active');
+      }
       break;
   }
 }
@@ -159,6 +184,14 @@ function handleHeadlessResult(result: { agentId: string; exitCode: number }): vo
   // Match against our tracked agent or a follow-up agent
   if (result.agentId !== state.agentId && !result.agentId.startsWith('assistant_followup_')) return;
 
+  // Surface non-zero exit codes as errors
+  if (result.exitCode !== 0) {
+    removePendingPlaceholder();
+    pushAssistantMessage(`_The assistant exited with an error (code ${result.exitCode}). Try sending your message again or reset the assistant._`);
+    setStatus('active');
+    return;
+  }
+
   readHeadlessResult(result.agentId);
 }
 
@@ -175,11 +208,15 @@ function handlePtyExit(agentId: string, _exitCode: number): void {
 // ── Headless Result Reader ─────────────────────────────────────────────────
 
 async function readHeadlessResult(agentId: string): Promise<void> {
+  // Remove the "Processing..." placeholder before showing the real response
+  removePendingPlaceholder();
+
   try {
     const transcript = await window.clubhouse.agent.readTranscript(agentId);
     if (transcript) {
       const lines = transcript.split('\n').filter((l: string) => l.trim());
       let responseText = '';
+      const errors: string[] = [];
       for (const line of lines) {
         try {
           const event = JSON.parse(line);
@@ -187,20 +224,30 @@ async function readHeadlessResult(agentId: string): Promise<void> {
             responseText = event.text || event.data?.text || responseText;
           } else if (event.type === 'result') {
             responseText = event.result || responseText;
+          } else if (event.type === 'error') {
+            errors.push(event.error || event.message || 'Unknown error');
           }
-        } catch { /* skip malformed lines */ }
+        } catch {
+          // Skip malformed JSONL lines — not an error condition
+        }
       }
       if (responseText) {
         pushAssistantMessage(responseText);
+      } else if (errors.length > 0) {
+        pushAssistantMessage(`**Error from assistant:**\n${errors.join('\n')}`);
       } else {
-        pushAssistantMessage('_The agent completed but produced no text response._');
+        pushAssistantMessage('_The agent completed but produced no text response. Try rephrasing your question._');
       }
     } else {
-      pushAssistantMessage('_No transcript available from the agent._');
+      pushAssistantMessage('_No transcript available from the agent. The orchestrator may have failed to start._');
     }
   } catch (err) {
     pushAssistantMessage(`_Failed to read agent response: ${err instanceof Error ? err.message : String(err)}_`);
   }
+
+  // Persist updated history after receiving response
+  persistHistory();
+
   // Conversational: stay active for follow-ups
   setStatus('active');
 }
@@ -237,6 +284,8 @@ export async function sendMessage(text: string): Promise<void> {
       } else if (state.mode === 'headless') {
         // Conversational follow-up via headless --continue
         pushAssistantMessage('_Processing your follow-up..._');
+        // Persist user message immediately so history survives crashes
+        persistHistory();
         const result = await window.clubhouse.assistant.sendFollowup({
           message: text,
           orchestrator: state.orchestrator || undefined,
@@ -247,7 +296,8 @@ export async function sendMessage(text: string): Promise<void> {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      pushAssistantMessage(`Failed to send message: ${msg}`);
+      removePendingPlaceholder();
+      pushAssistantMessage(`**Failed to send message:** ${msg}\n\nTry again or reset the assistant.`);
       setStatus('error', msg);
     }
     return;
@@ -333,7 +383,53 @@ function setupHeadless(): void {
   cleanupListeners.push(unsubResult);
 
   pushAssistantMessage('_Processing your request..._');
+  // Persist user's first message before we start waiting for response
+  persistHistory();
   setStatus('responding');
+}
+
+// ── History Persistence ───────────────────────────────────────────────────
+
+/** Debounce timer for history persistence to avoid excessive disk writes. */
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Persist current feed items to disk (debounced).
+ * Called after receiving responses and sending messages.
+ */
+function persistHistory(): void {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    const items = pendingItems.filter(
+      (item) =>
+        // Only persist real messages, not placeholders
+        !(item.type === 'message' &&
+          item.message?.role === 'assistant' &&
+          (item.message.content === '_Processing your request..._' ||
+           item.message.content === '_Processing your follow-up..._')),
+    );
+    window.clubhouse.assistant.saveHistory(items).catch(() => {});
+  }, 500);
+}
+
+/**
+ * Load previously saved chat history from disk.
+ * Called on assistant initialization to restore conversations.
+ */
+export async function loadHistory(): Promise<void> {
+  try {
+    const items = await window.clubhouse.assistant.loadHistory();
+    if (items && Array.isArray(items) && items.length > 0) {
+      pendingItems.length = 0;
+      for (const item of items) {
+        pendingItems.push(item);
+      }
+      notifyFeedListeners();
+    }
+  } catch {
+    // Silently ignore — fresh start if history can't be loaded
+  }
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -386,9 +482,16 @@ export function onAgentIdChange(listener: AgentIdListener): () => void {
 
 export function reset(): void {
   if (state.agentId) {
+    // Kill the running agent process
     window.clubhouse.agent.killAgent(state.agentId, '').catch(() => {});
+    // Clean up MCP bindings and agent registry in main process
+    window.clubhouse.assistant.reset(state.agentId).catch(() => {});
   }
   cleanupAll();
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
   const { mode, orchestrator } = state;
   state = { status: 'idle', mode, orchestrator, agentId: null, error: null, pendingText: '' };
   pendingItems.length = 0;
@@ -397,4 +500,6 @@ export function reset(): void {
   notifyFeedListeners();
   setAgentId(null);
   setStatus('idle');
+  // Clear persisted history on explicit reset
+  window.clubhouse.assistant.saveHistory([]).catch(() => {});
 }

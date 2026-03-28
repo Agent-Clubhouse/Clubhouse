@@ -196,7 +196,7 @@ export function registerAssistantHandlers(): void {
       const permissionMode = freeAgentSettings.getPermissionMode(workspace);
 
       const nonce = randomUUID();
-      // Re-register (previous spawn's exit handler untracked us)
+      // Register the follow-up agent (each follow-up gets its own agentId)
       agentRegistry.register(agentId, {
         projectPath: workspace,
         orchestrator: provider.id as OrchestratorId,
@@ -204,13 +204,13 @@ export function registerAssistantHandlers(): void {
       });
       agentRegistry.setNonce(agentId, nonce);
 
-      // Re-create MCP binding (previous exit handler unbinded us)
+      // Create MCP binding for this follow-up agent
       bindingManager.bind(agentId, {
         targetId: ASSISTANT_TARGET_ID,
         targetKind: 'assistant',
         label: 'Clubhouse Assistant',
       });
-      appLog(LOG_NS, 'info', 'Follow-up: re-registered agent and MCP binding', { meta: { agentId } });
+      appLog(LOG_NS, 'info', 'Follow-up: registered agent and MCP binding', { meta: { agentId } });
 
       // MCP injection
       let mcpPort = 0;
@@ -299,6 +299,50 @@ export function registerAssistantHandlers(): void {
       appLog(LOG_NS, 'info', 'MCP binding removed', { meta: { agentId } });
     },
   ));
+
+  // ── RESET ─────────────────────────────────────────────────────────────────
+  // Full cleanup of assistant resources. Called when user resets the assistant.
+  ipcMain.handle(IPC.ASSISTANT.RESET, withValidatedArgs(
+    [stringArg()],
+    (_event, agentId) => {
+      appLog(LOG_NS, 'info', 'Assistant reset requested', { meta: { agentId } });
+      configPipeline.restoreForAgent(agentId as string);
+      bindingManager.unbindAgent(agentId as string);
+      untrackAgent(agentId as string);
+    },
+  ));
+
+  // ── SAVE_HISTORY ──────────────────────────────────────────────────────────
+  // Persist chat history to the assistant workspace for session restoration.
+  ipcMain.handle(IPC.ASSISTANT.SAVE_HISTORY, withValidatedArgs(
+    [objectArg<{ items: any[] }>()],
+    async (_event, params) => {
+      const { items } = params as { items: any[] };
+      const workspace = getAssistantWorkspace();
+      const historyPath = path.join(workspace, 'chat-history.json');
+      try {
+        await fs.promises.writeFile(historyPath, JSON.stringify(items), 'utf-8');
+        appLog(LOG_NS, 'info', 'Chat history saved', { meta: { items: items.length } });
+      } catch (err) {
+        appLog(LOG_NS, 'warn', 'Failed to save chat history', { meta: { error: String(err) } });
+      }
+    },
+  ));
+
+  // ── LOAD_HISTORY ──────────────────────────────────────────────────────────
+  // Load chat history from the assistant workspace.
+  ipcMain.handle(IPC.ASSISTANT.LOAD_HISTORY, async () => {
+    const workspace = getAssistantWorkspace();
+    const historyPath = path.join(workspace, 'chat-history.json');
+    try {
+      const data = await fs.promises.readFile(historyPath, 'utf-8');
+      const items = JSON.parse(data);
+      appLog(LOG_NS, 'info', 'Chat history loaded', { meta: { items: items.length } });
+      return items;
+    } catch {
+      return null;
+    }
+  });
 }
 
 // ── Spawn Paths ──────────────────────────────────────────────────────────────
@@ -483,7 +527,9 @@ async function spawnHeadless(
     headlessResult.outputKind || 'stream-json',
     (exitAgentId, exitCode) => {
       appLog(LOG_NS, 'info', 'Headless exited', { meta: { agentId: exitAgentId, exitCode } });
-      // Notify renderer that the headless agent completed
+      // Notify renderer that the headless agent completed.
+      // DON'T unbind or untrack — conversation continues with follow-ups.
+      // Cleanup happens on explicit reset only (same as interactive mode).
       broadcastToAllWindows(IPC.ASSISTANT.RESULT, { agentId: exitAgentId, exitCode });
       configPipeline.restoreForAgent(exitAgentId);
       // DON'T unbind or untrack — conversation continues with follow-ups.
