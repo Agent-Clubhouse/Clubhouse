@@ -32,6 +32,7 @@ const ACTIVE_GLOW_STD_DEV = 3.5;
 interface WireFlowDotsProps {
   wireKey: string;
   activity: WireActivityState;
+  bidir?: boolean;
 }
 
 /**
@@ -57,6 +58,7 @@ export function WireFlowDotFilters(): React.ReactElement {
 export const WireFlowDots = React.memo(function WireFlowDots({
   wireKey,
   activity,
+  bidir,
 }: WireFlowDotsProps) {
   if (activity === 'idle') return null;
 
@@ -69,6 +71,7 @@ export const WireFlowDots = React.memo(function WireFlowDots({
   const opacityValues = isActive ? ACTIVE_OPACITY : AMBIENT_OPACITY;
   const dotRadius = isActive ? ACTIVE_DOT_RADIUS : AMBIENT_DOT_RADIUS;
   const filterId = isActive ? 'wire-dot-glow-active' : 'wire-dot-glow-ambient';
+  const dotColor = bidir ? 'rgb(var(--ctp-success, 166 227 161))' : 'rgb(var(--ctp-accent, 137 180 250))';
 
   const showForward = activity === 'ambient' || activity === 'active-forward' || activity === 'active-both';
   const showReverse = activity === 'active-reverse' || activity === 'active-both';
@@ -80,7 +83,7 @@ export const WireFlowDots = React.memo(function WireFlowDots({
         <circle
           key={`fwd-${i}`}
           r={dotRadius}
-          fill="rgb(var(--ctp-accent, 137 180 250))"
+          fill={dotColor}
           filter={`url(#${filterId})`}
           data-testid={`wire-dot-fwd-${wireKey}-${i}`}
         >
@@ -107,7 +110,7 @@ export const WireFlowDots = React.memo(function WireFlowDots({
         <circle
           key={`rev-${i}`}
           r={dotRadius}
-          fill="rgb(var(--ctp-accent, 137 180 250))"
+          fill={dotColor}
           filter={`url(#${filterId})`}
           data-testid={`wire-dot-rev-${wireKey}-${i}`}
         >

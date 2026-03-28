@@ -141,7 +141,8 @@ describe('WireOverlay', () => {
     );
 
     expect(container.querySelector('#wire-arrow-fwd')).toBeTruthy();
-    expect(container.querySelector('#wire-arrow-rev')).toBeTruthy();
+    expect(container.querySelector('#wire-arrow-fwd-bidir')).toBeTruthy();
+    expect(container.querySelector('#wire-arrow-rev-bidir')).toBeTruthy();
   });
 
   it('applies forward arrowhead to unidirectional wire', () => {
@@ -181,8 +182,8 @@ describe('WireOverlay', () => {
     expect(paths.length).toBe(1);
 
     const pathEl = paths[0];
-    expect(pathEl?.getAttribute('marker-end')).toBe('url(#wire-arrow-fwd)');
-    expect(pathEl?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev)');
+    expect(pathEl?.getAttribute('marker-end')).toBe('url(#wire-arrow-fwd-bidir)');
+    expect(pathEl?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev-bidir)');
   });
 
   it('uses viewPositions overrides for wire path computation', () => {
@@ -457,8 +458,8 @@ describe('WireOverlay', () => {
 
     const pathEl = container.querySelector('[data-testid="wire-path-agent-1--agent-2"]');
     expect(pathEl).toBeTruthy();
-    expect(pathEl?.getAttribute('marker-end')).toBe('url(#wire-arrow-fwd)');
-    expect(pathEl?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev)');
+    expect(pathEl?.getAttribute('marker-end')).toBe('url(#wire-arrow-fwd-bidir)');
+    expect(pathEl?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev-bidir)');
 
     const group = container.querySelector('[data-testid^="wire-group-"]');
     expect(group?.getAttribute('data-bidir')).toBe('true');
@@ -514,12 +515,14 @@ describe('WireOverlay', () => {
       <WireOverlay views={views} bindings={bindings} forceBidirectional />,
     );
     let pathEl = container.querySelector('[data-testid="wire-path-agent-1--agent-2"]');
-    expect(pathEl?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev)');
+    expect(pathEl?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev-bidir)');
 
     // Re-render with forceBidirectional off
     rerender(<WireOverlay views={views} bindings={bindings} forceBidirectional={false} />);
     pathEl = container.querySelector('[data-testid="wire-path-agent-1--agent-2"]');
     expect(pathEl?.getAttribute('marker-start')).toBeNull();
+    // Should revert to unidirectional accent-colored marker
+    expect(pathEl?.getAttribute('marker-end')).toBe('url(#wire-arrow-fwd)');
   });
 
   it('forceBidirectional works alongside existing bidir wires on the same canvas', () => {
@@ -547,14 +550,15 @@ describe('WireOverlay', () => {
     const paths = container.querySelectorAll('[data-testid^="wire-path-"]');
     expect(paths.length).toBe(3);
 
-    // Agent-1→Agent-2 forced bidir
+    // Agent-1→Agent-2 forced bidir (green markers)
     const wire12 = container.querySelector('[data-testid="wire-path-agent-1--agent-2"]');
-    expect(wire12?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev)');
+    expect(wire12?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev-bidir)');
+    expect(wire12?.getAttribute('marker-end')).toBe('url(#wire-arrow-fwd-bidir)');
 
-    // Agent-1↔Agent-3 already bidir (deduped to one wire)
+    // Agent-1↔Agent-3 already bidir (deduped to one wire, green markers)
     const wire13 = container.querySelector('[data-testid="wire-path-agent-1--agent-3"]')
       || container.querySelector('[data-testid="wire-path-agent-3--agent-1"]');
-    expect(wire13?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev)');
+    expect(wire13?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev-bidir)');
 
     // Agent-3→Browser stays unidirectional
     const wireBrowser = container.querySelector('[data-testid="wire-path-agent-3--b1"]');
