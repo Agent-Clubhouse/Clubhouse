@@ -7,6 +7,11 @@ Priority order: top = highest impact.
 - **Mascot character design** — 3 comps created (Beacon, Ori, Pip), awaiting
   direction feedback. Next: expression sheets for chosen direction.
 
+## Done
+
+- **Chat layout proposal** — Full spec in `chat-layout/proposal.md`. Covers
+  layout architecture, component breakdown, integration strategy, accessibility.
+
 ## Up Next
 
 1. **Mascot expression sheet** — All 8 emotional states (sleeping, idle,
@@ -15,8 +20,6 @@ Priority order: top = highest impact.
 2. **Mascot size variants** — 32px chat avatar and 18px icon optimized versions
 3. **Sleeping mascot integration** — Sleeping variant matching SleepingMascots.tsx
    pattern for the assistant orchestrator entry
-4. **Chat layout proposal** — Message bubbles, feed structure, input bar,
-   mascot avatar placement in ExplorerRail panel
 5. **Drill-in card designs** — Preview cards, snippet views, entity cards,
    diff views, step indicators
 6. **Animation keyframes** — CSS animation specs for each mascot state
