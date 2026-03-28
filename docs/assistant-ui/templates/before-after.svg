@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 220" width="480" height="220">
+  <!-- Template: Before/After — side-by-side comparison with animated transition -->
+  <!-- Example: Config change — "model: haiku" → "model: sonnet" -->
+  <style>
+    .ba-box {
+      fill: var(--ctp-surface0, #313244);
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 1.5;
+      rx: 8;
+    }
+    .ba-label {
+      font-family: monospace;
+      font-size: 11px;
+      fill: var(--ctp-text, #cdd6f4);
+      dominant-baseline: central;
+    }
+    .ba-sublabel {
+      font-family: monospace;
+      font-size: 9px;
+      fill: var(--ctp-subtext0, #a6adc8);
+      dominant-baseline: central;
+    }
+    .ba-title {
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: bold;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+    }
+    .ba-code {
+      font-family: 'SF Mono', 'Fira Code', Menlo, monospace;
+      font-size: 10px;
+      fill: var(--ctp-subtext1, #bac2de);
+    }
+    .ba-removed {
+      fill: rgba(243, 139, 168, 0.15);
+    }
+    .ba-added {
+      fill: rgba(166, 227, 161, 0.15);
+    }
+    .ba-removed-text {
+      fill: #f38ba8;
+    }
+    .ba-added-text {
+      fill: #a6e3a1;
+    }
+    .ba-badge {
+      font-family: monospace;
+      font-size: 9px;
+      font-weight: bold;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .ba-divider {
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 1;
+      stroke-dasharray: 4 3;
+    }
+    .ba-arrow {
+      fill: var(--ctp-accent, #89b4fa);
+    }
+
+    /* Animations */
+    .ba-left { opacity: 0; animation: baFadeIn 0.4s ease-out 0.2s forwards; }
+    .ba-right { opacity: 0; animation: baFadeIn 0.4s ease-out 0.6s forwards; }
+    .ba-center { opacity: 0; animation: baFadeIn 0.3s ease-out 0.4s forwards; }
+    .ba-highlight-old { opacity: 0; animation: baFadeIn 0.3s ease-out 0.8s forwards; }
+    .ba-highlight-new { opacity: 0; animation: baFadeIn 0.3s ease-out 1.0s forwards; }
+    .ba-arrow-anim {
+      opacity: 0;
+      animation: baFadeIn 0.3s ease-out 0.5s forwards, baArrowPulse 2s ease-in-out 1.2s infinite;
+    }
+
+    @keyframes baFadeIn { to { opacity: 1; } }
+    @keyframes baArrowPulse {
+      0%, 100% { transform: translateX(0); }
+      50% { transform: translateX(3px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ba-left, .ba-right, .ba-center,
+      .ba-highlight-old, .ba-highlight-new, .ba-arrow-anim {
+        animation: none !important;
+        opacity: 1 !important;
+      }
+    }
+  </style>
+
+  <!-- Background -->
+  <rect width="480" height="220" fill="var(--ctp-base, #1e1e2e)" rx="8"/>
+
+  <!-- Title -->
+  <text x="240" y="24" class="ba-title">Configuration Change</text>
+  <text x="240" y="40" class="ba-sublabel" text-anchor="middle" font-size="10">Upgrading model from Haiku to Sonnet</text>
+
+  <!-- Before panel -->
+  <g class="ba-left">
+    <!-- Badge -->
+    <rect x="48" y="52" width="50" height="18" rx="9" fill="#f38ba8" opacity="0.2"/>
+    <text x="73" y="62" class="ba-badge" fill="#f38ba8">BEFORE</text>
+
+    <!-- Code block -->
+    <rect x="20" y="78" width="210" height="120" class="ba-box"/>
+
+    <text x="32" y="96" class="ba-code">
+      <tspan>{</tspan>
+    </text>
+    <text x="32" y="112" class="ba-code">
+      <tspan>  "name": "my-agent",</tspan>
+    </text>
+
+    <!-- Highlighted removed line -->
+    <g class="ba-highlight-old">
+      <rect x="22" y="119" width="206" height="16" class="ba-removed" rx="2"/>
+      <text x="32" y="128" class="ba-code ba-removed-text">
+        <tspan>  "model": "haiku",</tspan>
+      </text>
+    </g>
+
+    <text x="32" y="144" class="ba-code">
+      <tspan>  "tools": ["read"]</tspan>
+    </text>
+    <text x="32" y="160" class="ba-code">
+      <tspan>}</tspan>
+    </text>
+
+    <!-- File label -->
+    <text x="20" y="210" class="ba-sublabel">agent-config.json</text>
+  </g>
+
+  <!-- Center divider + arrow -->
+  <g class="ba-center">
+    <line x1="240" y1="78" x2="240" y2="198" class="ba-divider"/>
+  </g>
+  <g class="ba-arrow-anim">
+    <polygon points="240,132 252,138 240,144" class="ba-arrow"/>
+  </g>
+
+  <!-- After panel -->
+  <g class="ba-right">
+    <!-- Badge -->
+    <rect x="383" y="52" width="50" height="18" rx="9" fill="#a6e3a1" opacity="0.2"/>
+    <text x="408" y="62" class="ba-badge" fill="#a6e3a1">AFTER</text>
+
+    <!-- Code block -->
+    <rect x="250" y="78" width="210" height="120" class="ba-box"/>
+
+    <text x="262" y="96" class="ba-code">
+      <tspan>{</tspan>
+    </text>
+    <text x="262" y="112" class="ba-code">
+      <tspan>  "name": "my-agent",</tspan>
+    </text>
+
+    <!-- Highlighted added line -->
+    <g class="ba-highlight-new">
+      <rect x="252" y="119" width="206" height="16" class="ba-added" rx="2"/>
+      <text x="262" y="128" class="ba-code ba-added-text">
+        <tspan>  "model": "sonnet",</tspan>
+      </text>
+    </g>
+
+    <text x="262" y="144" class="ba-code">
+      <tspan>  "tools": ["read"]</tspan>
+    </text>
+    <text x="262" y="160" class="ba-code">
+      <tspan>}</tspan>
+    </text>
+
+    <!-- File label -->
+    <text x="250" y="210" class="ba-sublabel">agent-config.json (updated)</text>
+  </g>
+</svg>

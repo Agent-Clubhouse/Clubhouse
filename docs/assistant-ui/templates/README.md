@@ -90,11 +90,25 @@ Every template must include:
 - Use `var(--ctp-base)` fill on a rounded rect (`rx="8"`)
 - Optional subtle dot grid pattern for depth (see flow-diagram example)
 
+### 3. Before/After (`before-after.svg`)
+**Pattern:** Side-by-side comparison with highlighted changes
+**Example:** "Configuration Change" — model upgrade from Haiku to Sonnet
+
+**Features:**
+- Left panel (BEFORE) with red-highlighted removed line
+- Right panel (AFTER) with green-highlighted added line
+- Dashed center divider with animated arrow
+- BEFORE/AFTER badges with semantic colors
+- Code block styling with monospace font
+- Staggered fade-in: left → divider → right → highlights
+
+**When to use:** Showing configuration changes, migration diffs, setting
+updates — any time you need to show what changed and why.
+
 ## Planned Templates
 
 | Template | Pattern | Priority |
 |----------|---------|----------|
-| Before/After split | Side-by-side comparison | High |
 | Tree/Hierarchy | Top-down branching | High |
 | Annotated UI wireframe | Screenshot + callouts | Medium |
 | Step sequence | Numbered card reveal | Medium |
