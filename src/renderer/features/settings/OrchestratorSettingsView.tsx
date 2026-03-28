@@ -248,11 +248,11 @@ const DROPDOWN_SELECT_CLASS = 'w-48 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle
 function DefaultRow({ label, description, children }: { label: string; description: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between py-2.5">
-      <div className="flex-1 min-w-0 mr-4">
-        <div className="text-sm text-ctp-text">{label}</div>
+      <div className="flex-1 min-w-0 mr-4 overflow-hidden">
+        <div className="text-sm text-ctp-text truncate">{label}</div>
         <div className="text-xs text-ctp-subtext0 mt-0.5">{description}</div>
       </div>
-      <div className="flex-shrink-0">
+      <div className="flex-shrink-0 relative">
         {children}
       </div>
     </div>
