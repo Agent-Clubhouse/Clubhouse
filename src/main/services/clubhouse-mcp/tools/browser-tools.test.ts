@@ -39,6 +39,7 @@ import {
   registerBrowserTools,
   registerWebview,
   unregisterWebview,
+  isSafeExpression,
   _resetForTesting as resetBrowserTools,
 } from './browser-tools';
 import { getScopedToolList, callTool, _resetForTesting as resetTools } from '../tool-registry';
@@ -455,14 +456,14 @@ describe('BrowserTools', () => {
       expect(result.isError).toBe(true);
     });
 
-    it('shows confirmation dialog before executing', async () => {
+    it('shows confirmation dialog before executing unsafe expressions', async () => {
       const mockDbg = getMockDebugger();
       mockDbg.sendCommand.mockImplementation(async (cmd: string) => {
         if (cmd === 'Runtime.evaluate') return { result: { value: 1 } };
         return {};
       });
 
-      await callTool('agent-1', 'browser__widget_1__evaluate', { expression: 'document.title' });
+      await callTool('agent-1', 'browser__widget_1__evaluate', { expression: 'fetch("/api/data")' });
 
       expect(dialog.showMessageBox).toHaveBeenCalledWith(
         null,
@@ -513,6 +514,76 @@ describe('BrowserTools', () => {
       const result = await callTool('agent-1', 'browser__widget_1__evaluate', { expression: 'void 0' });
       expect(result.isError).toBeFalsy();
       expect(result.content[0].text).toBe('null');
+    });
+
+    it('skips confirmation dialog for safe read-only expressions', async () => {
+      const mockDbg = getMockDebugger();
+      mockDbg.sendCommand.mockImplementation(async (cmd: string) => {
+        if (cmd === 'Runtime.evaluate') return { result: { value: 'Test Page' } };
+        return {};
+      });
+
+      vi.mocked(dialog.showMessageBox).mockClear();
+      const result = await callTool('agent-1', 'browser__widget_1__evaluate', { expression: 'document.title' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toBe('"Test Page"');
+      expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    });
+
+    it('still shows dialog for unsafe expressions even if they contain safe substrings', async () => {
+      const mockDbg = getMockDebugger();
+      mockDbg.sendCommand.mockImplementation(async (cmd: string) => {
+        if (cmd === 'Runtime.evaluate') return { result: { value: null } };
+        return {};
+      });
+
+      vi.mocked(dialog.showMessageBox).mockClear();
+      await callTool('agent-1', 'browser__widget_1__evaluate', { expression: 'document.title = "hacked"' });
+      expect(dialog.showMessageBox).toHaveBeenCalled();
+    });
+  });
+
+  describe('isSafeExpression', () => {
+    it('allows simple document property reads', () => {
+      expect(isSafeExpression('document.title')).toBe(true);
+      expect(isSafeExpression('document.URL')).toBe(true);
+      expect(isSafeExpression('document.referrer')).toBe(true);
+      expect(isSafeExpression('document.readyState')).toBe(true);
+    });
+
+    it('allows window.location property reads', () => {
+      expect(isSafeExpression('window.location.href')).toBe(true);
+      expect(isSafeExpression('window.location.hostname')).toBe(true);
+      expect(isSafeExpression('location.pathname')).toBe(true);
+    });
+
+    it('allows document.body text reads', () => {
+      expect(isSafeExpression('document.body.innerText')).toBe(true);
+      expect(isSafeExpression('document.body.textContent')).toBe(true);
+    });
+
+    it('allows querySelector property reads', () => {
+      expect(isSafeExpression("document.querySelector('#main').innerText")).toBe(true);
+      expect(isSafeExpression('document.querySelectorAll("div").length')).toBe(true);
+    });
+
+    it('rejects assignment expressions', () => {
+      expect(isSafeExpression('document.title = "hacked"')).toBe(false);
+    });
+
+    it('rejects function calls', () => {
+      expect(isSafeExpression('fetch("/api/data")')).toBe(false);
+      expect(isSafeExpression('eval("alert(1)")')).toBe(false);
+    });
+
+    it('rejects multi-statement expressions', () => {
+      expect(isSafeExpression('document.title; fetch("evil.com")')).toBe(false);
+    });
+
+    it('rejects arbitrary code', () => {
+      expect(isSafeExpression('new XMLHttpRequest()')).toBe(false);
+      expect(isSafeExpression('document.cookie')).toBe(false);
+      expect(isSafeExpression('localStorage.getItem("token")')).toBe(false);
     });
   });
 
