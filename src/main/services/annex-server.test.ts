@@ -1869,4 +1869,35 @@ describe('annex-server', () => {
       expect(source).toContain("type: 'theme:changed'");
     });
   });
+
+  // --- SEC-11: Session token expiry ---
+  describe('session token expiry', () => {
+    it('rejects expired tokens', async () => {
+      const { _testing } = await import('./annex-server');
+      const { sessionTokens, isValidToken, TOKEN_TTL_MS } = _testing;
+
+      // Add a token that's expired
+      sessionTokens.set('expired-token', { issuedAt: Date.now() - TOKEN_TTL_MS - 1000 });
+      expect(isValidToken('expired-token')).toBe(false);
+      // Token should be evicted from the map
+      expect(sessionTokens.has('expired-token')).toBe(false);
+    });
+
+    it('accepts valid (non-expired) tokens', async () => {
+      const { _testing } = await import('./annex-server');
+      const { sessionTokens, isValidToken } = _testing;
+
+      sessionTokens.set('valid-token', { issuedAt: Date.now() });
+      expect(isValidToken('valid-token')).toBe(true);
+      expect(sessionTokens.has('valid-token')).toBe(true);
+      // Cleanup
+      sessionTokens.delete('valid-token');
+    });
+
+    it('rejects undefined/missing tokens', async () => {
+      const { _testing } = await import('./annex-server');
+      expect(_testing.isValidToken(undefined as any)).toBe(false);
+      expect(_testing.isValidToken('nonexistent')).toBe(false);
+    });
+  });
 });

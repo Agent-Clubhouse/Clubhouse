@@ -2403,7 +2403,16 @@ export function start(): void {
     });
   });
 
-  staleEvictionInterval = setInterval(() => { eventReplay.evictStale(); }, 60_000);
+  staleEvictionInterval = setInterval(() => {
+    eventReplay.evictStale();
+    // Evict expired session tokens (SEC-11)
+    const now = Date.now();
+    for (const [token, entry] of sessionTokens) {
+      if (now - entry.issuedAt > TOKEN_TTL_MS) {
+        sessionTokens.delete(token);
+      }
+    }
+  }, 60_000);
 
   // Start both servers
   let mainReady = false;
@@ -2872,3 +2881,10 @@ export function disconnectPeer(fingerprint: string): void {
 export function getWsAuthType(ws: WebSocket): WsAuthType {
   return wsAuthTypes.get(ws) || 'bearer';
 }
+
+/** @internal Exposed for testing only. */
+export const _testing = {
+  get sessionTokens() { return sessionTokens; },
+  isValidToken,
+  TOKEN_TTL_MS,
+};
