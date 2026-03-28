@@ -27,6 +27,9 @@ vi.stubGlobal('window', {
       unbind: vi.fn().mockResolvedValue(undefined),
       sendFollowup: vi.fn().mockResolvedValue({ agentId: 'followup_1' }),
       onResult: vi.fn().mockReturnValue(() => {}),
+      reset: vi.fn().mockResolvedValue(undefined),
+      saveHistory: vi.fn().mockResolvedValue(undefined),
+      loadHistory: vi.fn().mockResolvedValue(null),
     },
     pty: {
       write: vi.fn(),
@@ -322,6 +325,11 @@ describe('buildGroups', () => {
 describe('approval flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Restore mock implementations that clearAllMocks strips
+    (window as any).clubhouse.assistant.saveHistory.mockResolvedValue(undefined);
+    (window as any).clubhouse.assistant.loadHistory.mockResolvedValue(null);
+    (window as any).clubhouse.assistant.reset.mockResolvedValue(undefined);
+    (window as any).clubhouse.agent.killAgent.mockResolvedValue(undefined);
     agent.reset();
   });
 
