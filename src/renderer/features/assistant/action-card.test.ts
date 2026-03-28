@@ -1,42 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ActionCardData, ActionCardStatus, FeedItem } from './types';
 
-// ── Mock window.clubhouse for assistant-agent import ──────────────────────
-
-const mockAssistantSpawn = vi.fn().mockResolvedValue({ success: true });
-const mockApproveToolExecution = vi.fn().mockResolvedValue(undefined);
-const mockSkipToolExecution = vi.fn().mockResolvedValue(undefined);
-
-vi.stubGlobal('window', {
-  clubhouse: {
-    platform: 'darwin',
-    agent: {
-      spawnAgent: vi.fn().mockResolvedValue(undefined),
-      sendStructuredMessage: vi.fn().mockResolvedValue(undefined),
-      killAgent: vi.fn().mockResolvedValue(undefined),
-      checkOrchestrator: vi.fn().mockResolvedValue({ available: true }),
-      onStructuredEvent: vi.fn().mockReturnValue(() => {}),
-      readTranscript: vi.fn().mockResolvedValue(null),
-      getOrchestrators: vi.fn().mockResolvedValue([]),
-      approveToolExecution: mockApproveToolExecution,
-      skipToolExecution: mockSkipToolExecution,
-    },
-    assistant: {
-      spawn: mockAssistantSpawn,
-      bind: vi.fn().mockResolvedValue(undefined),
-      unbind: vi.fn().mockResolvedValue(undefined),
-      sendFollowup: vi.fn().mockResolvedValue({ agentId: 'followup_1' }),
-      onResult: vi.fn().mockReturnValue(() => {}),
-    },
-    pty: {
-      write: vi.fn(),
-      onData: vi.fn().mockReturnValue(() => {}),
-      onExit: vi.fn().mockReturnValue(() => {}),
-    },
-  },
-});
-
-vi.stubGlobal('process', { env: { HOME: '/tmp/test-home' } });
+// The global test setup (setup-renderer.ts) provides window.clubhouse with all
+// required mocks including assistant.saveHistory, assistant.loadHistory, etc.
+// We only need to ensure crypto.randomUUID is available for agent ID generation.
 if (!globalThis.crypto?.randomUUID) {
   vi.stubGlobal('crypto', { ...globalThis.crypto, randomUUID: () => '12345678-1234-1234-1234-123456789012' });
 }
