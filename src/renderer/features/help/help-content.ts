@@ -23,6 +23,13 @@ import settingsNotifications from './content/settings-notifications.md';
 import settingsLogging from './content/settings-logging.md';
 import troubleshootingCommon from './content/troubleshooting-common.md';
 import troubleshootingSafeMode from './content/troubleshooting-safe-mode.md';
+import personaProjectManager from '../assistant/content/personas/project-manager.md';
+import personaQa from '../assistant/content/personas/qa.md';
+import personaUiLead from '../assistant/content/personas/ui-lead.md';
+import personaSlopDetector from '../assistant/content/personas/slop-detector.md';
+import personaExecutorPrOnly from '../assistant/content/personas/executor-pr-only.md';
+import personaExecutorMerge from '../assistant/content/personas/executor-merge.md';
+import personaDocUpdater from '../assistant/content/personas/doc-updater.md';
 
 export interface HelpTopic {
   id: string;
@@ -97,6 +104,19 @@ export const HELP_SECTIONS: HelpSection[] = [
     topics: [
       { id: 'troubleshooting-common', title: 'Common Issues', content: troubleshootingCommon },
       { id: 'troubleshooting-safe-mode', title: 'Safe Mode & Recovery', content: troubleshootingSafeMode },
+    ],
+  },
+  {
+    id: 'personas',
+    title: 'Agent Personas & Team Roles',
+    topics: [
+      { id: 'persona-project-manager', title: 'Project Manager / Coordinator', content: personaProjectManager },
+      { id: 'persona-qa', title: 'QA / Quality Control', content: personaQa },
+      { id: 'persona-ui-lead', title: 'UI / Design Lead', content: personaUiLead },
+      { id: 'persona-slop-detector', title: 'Slop Detector', content: personaSlopDetector },
+      { id: 'persona-executor-pr-only', title: 'Executor (PR Only)', content: personaExecutorPrOnly },
+      { id: 'persona-executor-merge', title: 'Executor (Full Merge)', content: personaExecutorMerge },
+      { id: 'persona-doc-updater', title: 'Documentation Updater', content: personaDocUpdater },
     ],
   },
 ];
