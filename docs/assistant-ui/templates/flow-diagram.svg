@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 200" width="480" height="200">
+  <!-- Template: Flow Diagram — "How Agents Work" example -->
+  <!-- Shows: User → Task → Agent → Results with animated draw-on -->
+  <style>
+    .flow-box {
+      fill: var(--ctp-surface0, #313244);
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 1.5;
+      rx: 8;
+    }
+    .flow-box-active {
+      fill: var(--ctp-surface0, #313244);
+      stroke: var(--ctp-accent, #89b4fa);
+      stroke-width: 2;
+      rx: 8;
+    }
+    .flow-label {
+      font-family: monospace;
+      font-size: 12px;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .flow-sublabel {
+      font-family: monospace;
+      font-size: 9px;
+      fill: var(--ctp-subtext0, #a6adc8);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .flow-arrow {
+      stroke: var(--ctp-accent, #89b4fa);
+      stroke-width: 1.5;
+      fill: none;
+      stroke-linecap: round;
+      stroke-dasharray: 60;
+      stroke-dashoffset: 60;
+    }
+    .flow-arrowhead {
+      fill: var(--ctp-accent, #89b4fa);
+    }
+    .flow-icon {
+      fill: var(--ctp-accent, #89b4fa);
+      opacity: 0.7;
+    }
+
+    /* Animated draw-on for arrows */
+    .arrow-1 { animation: drawOn 0.6s ease-out 0.3s forwards; }
+    .arrow-2 { animation: drawOn 0.6s ease-out 0.9s forwards; }
+    .arrow-3 { animation: drawOn 0.6s ease-out 1.5s forwards; }
+
+    /* Fade-in for boxes */
+    .box-1 { opacity: 0; animation: fadeIn 0.3s ease-out 0s forwards; }
+    .box-2 { opacity: 0; animation: fadeIn 0.3s ease-out 0.6s forwards; }
+    .box-3 { opacity: 0; animation: fadeIn 0.3s ease-out 1.2s forwards; }
+    .box-4 { opacity: 0; animation: fadeIn 0.3s ease-out 1.8s forwards; }
+
+    /* Arrowhead fade-in synced with arrow completion */
+    .head-1 { opacity: 0; animation: fadeIn 0.2s ease-out 0.9s forwards; }
+    .head-2 { opacity: 0; animation: fadeIn 0.2s ease-out 1.5s forwards; }
+    .head-3 { opacity: 0; animation: fadeIn 0.2s ease-out 2.1s forwards; }
+
+    /* Pulse on final box */
+    .result-pulse {
+      opacity: 0;
+      animation: fadeIn 0.3s ease-out 1.8s forwards, pulse 2s ease-in-out 2.2s infinite;
+    }
+
+    @keyframes drawOn {
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes fadeIn {
+      to { opacity: 1; }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.15; }
+      50% { opacity: 0.3; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .flow-arrow, .box-1, .box-2, .box-3, .box-4,
+      .head-1, .head-2, .head-3, .result-pulse {
+        animation: none !important;
+        opacity: 1 !important;
+        stroke-dashoffset: 0 !important;
+      }
+      .result-pulse { opacity: 0.2 !important; }
+    }
+  </style>
+
+  <!-- Background subtle grid (optional depth) -->
+  <defs>
+    <pattern id="flowGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <rect width="20" height="20" fill="none"/>
+      <circle cx="10" cy="10" r="0.5" fill="var(--ctp-surface0, #313244)" opacity="0.3"/>
+    </pattern>
+  </defs>
+  <rect width="480" height="200" fill="var(--ctp-base, #1e1e2e)" rx="8"/>
+  <rect width="480" height="200" fill="url(#flowGrid)" rx="8"/>
+
+  <!-- Box 1: User -->
+  <g class="box-1">
+    <rect x="20" y="65" width="90" height="70" class="flow-box"/>
+    <!-- User icon -->
+    <circle cx="65" cy="88" r="10" class="flow-icon"/>
+    <circle cx="65" cy="84" r="4" fill="var(--ctp-base, #1e1e2e)"/>
+    <path d="M57 94 Q65 90 73 94" fill="var(--ctp-base, #1e1e2e)"/>
+    <text x="65" y="118" class="flow-label">User</text>
+    <text x="65" y="130" class="flow-sublabel">Asks a question</text>
+  </g>
+
+  <!-- Arrow 1: User → Task -->
+  <line x1="112" y1="100" x2="148" y2="100" class="flow-arrow arrow-1"/>
+  <polygon points="148,95 158,100 148,105" class="flow-arrowhead head-1"/>
+
+  <!-- Box 2: Task -->
+  <g class="box-2">
+    <rect x="160" y="65" width="90" height="70" class="flow-box"/>
+    <!-- Task icon (clipboard) -->
+    <rect x="55" y="78" width="16" height="20" rx="2" class="flow-icon" transform="translate(150 0)"/>
+    <rect x="58" y="75" width="10" height="6" rx="1" class="flow-icon" transform="translate(150 0)"/>
+    <line x1="210" y1="88" x2="220" y2="88" stroke="var(--ctp-base, #1e1e2e)" stroke-width="1.5"/>
+    <line x1="210" y1="92" x2="218" y2="92" stroke="var(--ctp-base, #1e1e2e)" stroke-width="1.5"/>
+    <text x="205" y="118" class="flow-label">Task</text>
+    <text x="205" y="130" class="flow-sublabel">Parsed &amp; planned</text>
+  </g>
+
+  <!-- Arrow 2: Task → Agent -->
+  <line x1="252" y1="100" x2="288" y2="100" class="flow-arrow arrow-2"/>
+  <polygon points="288,95 298,100 288,105" class="flow-arrowhead head-2"/>
+
+  <!-- Box 3: Agent -->
+  <g class="box-3">
+    <rect x="300" y="65" width="90" height="70" class="flow-box-active"/>
+    <!-- Agent icon (robot head - mini Pip!) -->
+    <ellipse cx="345" cy="87" rx="11" ry="10" class="flow-icon"/>
+    <circle cx="341" cy="86" r="2.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <circle cx="349" cy="86" r="2.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <rect x="344" y="75" width="2" height="4" rx="1" class="flow-icon"/>
+    <circle cx="345" cy="74" r="1.5" class="flow-icon"/>
+    <text x="345" y="118" class="flow-label">Agent</text>
+    <text x="345" y="130" class="flow-sublabel">Executes tools</text>
+  </g>
+
+  <!-- Arrow 3: Agent → Results -->
+  <line x1="392" y1="100" x2="428" y2="100" class="flow-arrow arrow-3"/>
+  <polygon points="428,95 438,100 428,105" class="flow-arrowhead head-3"/>
+
+  <!-- Box 4: Results -->
+  <g class="box-4">
+    <rect x="440" y="75" width="0" height="50" rx="25" fill="var(--ctp-accent, #89b4fa)" class="result-pulse"/>
+    <rect x="370" y="65" width="90" height="70" class="flow-box" transform="translate(70 0)"/>
+    <!-- Checkmark icon -->
+    <circle cx="485" cy="88" r="10" class="flow-icon"/>
+    <path d="M480 88 L483 92 L491 83" fill="none" stroke="var(--ctp-base, #1e1e2e)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="485" y="118" class="flow-label">Results</text>
+    <text x="485" y="130" class="flow-sublabel">Shown to user</text>
+  </g>
+
+  <!-- Title -->
+  <text x="240" y="30" class="flow-label" font-size="14" font-weight="bold">How Agents Work</text>
+  <text x="240" y="48" class="flow-sublabel" font-size="10">You ask → Agent plans → Agent executes → You see results</text>
+</svg>

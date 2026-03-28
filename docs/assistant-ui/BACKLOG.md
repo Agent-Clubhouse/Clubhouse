@@ -4,7 +4,7 @@ Priority order: top = highest impact.
 
 ## In Progress
 
-- **Visual explanation templates** — First prototype template (flow diagram)
+- **More visual templates** — Before/after split, tree/hierarchy
 
 ## Done
 
@@ -14,6 +14,7 @@ Priority order: top = highest impact.
 - **Chat layout proposal** — Full spec in `chat-layout/proposal.md`.
 - **Rich content rendering spec** — Mode-specific rendering, ContentFrame, SVG conventions.
 - **Drill-in card designs** — 6 card types, interaction patterns, consent/undo system.
+- **Visual explanation templates** — Flow diagram + architecture block prototypes + guide.
 
 ## Up Next
 2. **Visual explanation templates** — Reusable patterns for "here's how this

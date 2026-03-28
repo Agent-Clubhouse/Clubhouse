@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 280" width="480" height="280">
+  <!-- Template: Architecture Block — "Canvas Layout" example -->
+  <!-- Shows: Hub ←→ Spokes with Annex connection -->
+  <style>
+    .arch-box {
+      stroke-width: 1.5;
+      rx: 8;
+    }
+    .arch-label {
+      font-family: monospace;
+      font-size: 11px;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .arch-sublabel {
+      font-family: monospace;
+      font-size: 9px;
+      fill: var(--ctp-subtext0, #a6adc8);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .arch-title {
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: bold;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+    }
+    .arch-connector {
+      stroke-width: 1.5;
+      fill: none;
+      stroke-linecap: round;
+      stroke-dasharray: 80;
+      stroke-dashoffset: 80;
+    }
+    .arch-connector-dashed {
+      stroke-width: 1.5;
+      fill: none;
+      stroke-linecap: round;
+      stroke-dasharray: 4 3;
+    }
+
+    /* Hub — accent blue */
+    .hub { fill: var(--ctp-surface0, #313244); stroke: var(--ctp-accent, #89b4fa); }
+    .hub-glow { fill: var(--ctp-accent, #89b4fa); opacity: 0; }
+
+    /* Spokes — green */
+    .spoke { fill: var(--ctp-surface0, #313244); stroke: #a6e3a1; }
+
+    /* Annex — amber */
+    .annex { fill: var(--ctp-surface0, #313244); stroke: #f5a623; stroke-dasharray: 5 3; }
+
+    /* Animations */
+    .fade-1 { opacity: 0; animation: archFade 0.4s ease-out 0.2s forwards; }
+    .fade-2 { opacity: 0; animation: archFade 0.4s ease-out 0.6s forwards; }
+    .fade-3 { opacity: 0; animation: archFade 0.4s ease-out 0.8s forwards; }
+    .fade-4 { opacity: 0; animation: archFade 0.4s ease-out 1.0s forwards; }
+    .fade-5 { opacity: 0; animation: archFade 0.4s ease-out 1.4s forwards; }
+
+    .conn-1 { animation: archDraw 0.5s ease-out 0.8s forwards; }
+    .conn-2 { animation: archDraw 0.5s ease-out 1.0s forwards; }
+    .conn-3 { animation: archDraw 0.5s ease-out 1.2s forwards; }
+    .conn-4 { animation: archDraw 0.5s ease-out 1.6s forwards; }
+
+    .hub-pulse {
+      animation: archFade 0.4s ease-out 0.2s forwards, archPulse 3s ease-in-out 1s infinite;
+    }
+
+    @keyframes archFade { to { opacity: 1; } }
+    @keyframes archDraw { to { stroke-dashoffset: 0; } }
+    @keyframes archPulse {
+      0%, 100% { opacity: 0.08; }
+      50% { opacity: 0.2; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .fade-1, .fade-2, .fade-3, .fade-4, .fade-5,
+      .conn-1, .conn-2, .conn-3, .conn-4, .hub-pulse {
+        animation: none !important;
+        opacity: 1 !important;
+        stroke-dashoffset: 0 !important;
+      }
+      .hub-pulse { opacity: 0.12 !important; }
+    }
+  </style>
+
+  <!-- Background -->
+  <rect width="480" height="280" fill="var(--ctp-base, #1e1e2e)" rx="8"/>
+
+  <!-- Title -->
+  <text x="240" y="28" class="arch-title">Canvas Layout</text>
+  <text x="240" y="44" class="arch-sublabel" font-size="10">Hub orchestrates spokes · Annex connects remote instances</text>
+
+  <!-- Hub glow -->
+  <ellipse cx="200" cy="150" rx="55" ry="45" class="hub-glow hub-pulse"/>
+
+  <!-- Hub box -->
+  <g class="fade-1">
+    <rect x="150" y="110" width="100" height="80" class="arch-box hub"/>
+    <!-- Hub icon: small grid -->
+    <rect x="180" y="128" width="8" height="8" rx="1" fill="var(--ctp-accent, #89b4fa)" opacity="0.6"/>
+    <rect x="191" y="128" width="8" height="8" rx="1" fill="var(--ctp-accent, #89b4fa)" opacity="0.4"/>
+    <rect x="180" y="139" width="8" height="8" rx="1" fill="var(--ctp-accent, #89b4fa)" opacity="0.4"/>
+    <rect x="191" y="139" width="8" height="8" rx="1" fill="var(--ctp-accent, #89b4fa)" opacity="0.3"/>
+    <text x="200" y="165" class="arch-label">Hub Canvas</text>
+    <text x="200" y="178" class="arch-sublabel">Main workspace</text>
+  </g>
+
+  <!-- Connector: Hub → Spoke 1 (top-right) -->
+  <line x1="250" y1="130" x2="320" y2="90" stroke="#a6e3a1" class="arch-connector conn-1"/>
+  <circle cx="320" cy="90" r="3" fill="#a6e3a1" class="fade-2"/>
+
+  <!-- Spoke 1 -->
+  <g class="fade-2">
+    <rect x="325" y="65" width="90" height="55" class="arch-box spoke"/>
+    <text x="370" y="88" class="arch-label">Spoke A</text>
+    <text x="370" y="102" class="arch-sublabel">Components</text>
+  </g>
+
+  <!-- Connector: Hub → Spoke 2 (right) -->
+  <line x1="250" y1="150" x2="320" y2="160" stroke="#a6e3a1" class="arch-connector conn-2"/>
+  <circle cx="320" cy="160" r="3" fill="#a6e3a1" class="fade-3"/>
+
+  <!-- Spoke 2 -->
+  <g class="fade-3">
+    <rect x="325" y="135" width="90" height="55" class="arch-box spoke"/>
+    <text x="370" y="158" class="arch-label">Spoke B</text>
+    <text x="370" y="172" class="arch-sublabel">Utilities</text>
+  </g>
+
+  <!-- Connector: Hub → Spoke 3 (bottom-right) -->
+  <line x1="250" y1="170" x2="320" y2="230" stroke="#a6e3a1" class="arch-connector conn-3"/>
+  <circle cx="320" cy="230" r="3" fill="#a6e3a1" class="fade-4"/>
+
+  <!-- Spoke 3 -->
+  <g class="fade-4">
+    <rect x="325" y="205" width="90" height="55" class="arch-box spoke"/>
+    <text x="370" y="228" class="arch-label">Spoke C</text>
+    <text x="370" y="242" class="arch-sublabel">Tests</text>
+  </g>
+
+  <!-- Connector: Hub ← Annex (left, dashed) -->
+  <line x1="150" y1="150" x2="85" y2="150" stroke="#f5a623" class="arch-connector conn-4"/>
+  <circle cx="85" cy="150" r="3" fill="#f5a623" class="fade-5"/>
+
+  <!-- Annex box -->
+  <g class="fade-5">
+    <rect x="15" y="120" width="70" height="60" class="arch-box annex"/>
+    <text x="50" y="148" class="arch-label" font-size="10">Annex</text>
+    <text x="50" y="162" class="arch-sublabel" font-size="8">Remote</text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(20, 258)">
+    <line x1="0" y1="0" x2="20" y2="0" stroke="var(--ctp-accent, #89b4fa)" stroke-width="1.5"/>
+    <text x="25" y="1" class="arch-sublabel" text-anchor="start" font-size="8">Hub</text>
+
+    <line x1="60" y1="0" x2="80" y2="0" stroke="#a6e3a1" stroke-width="1.5"/>
+    <text x="85" y="1" class="arch-sublabel" text-anchor="start" font-size="8">Spoke</text>
+
+    <line x1="120" y1="0" x2="140" y2="0" stroke="#f5a623" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <text x="145" y="1" class="arch-sublabel" text-anchor="start" font-size="8">Annex (remote)</text>
+  </g>
+</svg>
