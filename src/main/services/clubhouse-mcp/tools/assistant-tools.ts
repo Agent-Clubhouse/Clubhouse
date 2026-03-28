@@ -20,6 +20,8 @@ import { appLog } from '../../log-service';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { sendCanvasCommand } from '../canvas-command';
 import { computeLayout } from '../canvas-layout';
+import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
+import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
 
 /**
  * Register all assistant MCP tools (read + write).
@@ -308,25 +310,24 @@ registerToolTemplate(
 
 // ── Help Content Tools ─────────────────────────────────────────────────────
 
-// Help content is compiled into the main process bundle via raw imports.
-// We use dynamic requires here since help content lives in the renderer bundle.
-// Instead, the assistant's system prompt already contains all help content.
-// These tools provide search capability for targeted lookups.
+// Help content and search are imported from the renderer help module at the top
+// of this file. The markdown files are bundled as asset/source by webpack, and
+// the search function is a pure TS module with no renderer dependencies.
 
 registerToolTemplate(
   'assistant',
   'search_help',
   {
     description:
-      'Search Clubhouse help content by keyword. Returns matching topics with snippets. ' +
-      'Use this when the user asks about a specific feature and you need more detail ' +
-      'than what is in your system prompt.',
+      'Search Clubhouse help content by keyword. Returns matching topics with full content. ' +
+      'Use this to retrieve detailed information about any Clubhouse feature. ' +
+      'Your system prompt lists available topics — call this tool to get the full article.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'The search query.',
+          description: 'The search query (e.g. "canvas", "durable agents", "keyboard shortcuts").',
         },
       },
       required: ['query'],
@@ -334,18 +335,34 @@ registerToolTemplate(
   },
   async (_targetId, _agentId, args) => {
     const query = args.query as string;
-    // Help search runs in the renderer. For the main process, we return a hint
-    // that the system prompt already contains the help content.
+    const results = searchHelpTopics(HELP_SECTIONS, query);
+
+    if (results.length === 0) {
+      return {
+        content: [{
+          type: 'text',
+          text: `No help topics matched "${query}". Available sections: ${HELP_SECTIONS.map((s) => s.title).join(', ')}.`,
+        }],
+      };
+    }
+
+    // Return top 3 results with full content for the best match, snippets for the rest
+    const topResults = results.slice(0, 3);
+    const output = topResults
+      .map((r, i) => {
+        const header = `## ${r.sectionTitle}: ${r.topic.title} (score: ${r.score})`;
+        if (i === 0) {
+          // Full content for the best match
+          return `${header}\n\n${r.topic.content}`;
+        }
+        // Snippet + title for subsequent matches
+        const snippet = r.snippet ? `\n\n> ${r.snippet}` : '';
+        return `${header}${snippet}\n\n_Use search_help("${r.topic.title.toLowerCase()}") for full content._`;
+      })
+      .join('\n\n---\n\n');
+
     return {
-      content: [{
-        type: 'text',
-        text: `Your system prompt contains all Clubhouse help documentation. ` +
-          `Search your instructions for "${query}" to find relevant information. ` +
-          `The help content covers: Getting Started, Dashboard, Command Palette, ` +
-          `Hub & Workspaces, Navigation, Keyboard Shortcuts, Projects, Git Integration, ` +
-          `Agents (Durable, Quick, Clubhouse Mode), Orchestrators, Plugins, Settings, ` +
-          `and Troubleshooting.`,
-      }],
+      content: [{ type: 'text', text: output }],
     };
   },
 );

@@ -195,10 +195,32 @@ describe('assistant-tools', () => {
 
   // ── Help tools ───────────────────────────────────────────────────────
 
-  it('search_help returns hint about system prompt', async () => {
-    const result = await callAssistantTool('search_help', { query: 'canvas' });
+  it('search_help returns real search results with relevant content', async () => {
+    const result = await callAssistantTool('search_help', { query: 'keyboard' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0].text).toContain('system prompt');
+    const text = result.content[0].text;
+    // Should return actual help content for a known topic ("Keyboard Shortcuts")
+    expect(text).toContain('Keyboard');
+    // Best match should include score indicator and section:topic header
+    expect(text).toContain('score:');
+    expect(text).toMatch(/##\s+.+:/);
+  });
+
+  it('search_help returns results for agent queries', async () => {
+    const result = await callAssistantTool('search_help', { query: 'durable' });
+    expect(result.isError).toBeFalsy();
+    const text = result.content[0].text;
+    // Should match "Durable Agents" topic
+    expect(text).toContain('Durable');
+    expect(text.length).toBeGreaterThan(100);
+  });
+
+  it('search_help returns no-match message for unknown queries', async () => {
+    const result = await callAssistantTool('search_help', { query: 'xyznonexistent123' });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain('No help topics matched');
+    // Should list available sections to guide the user
+    expect(result.content[0].text).toContain('Available sections');
   });
 
   // ── Settings tool ────────────────────────────────────────────────────
