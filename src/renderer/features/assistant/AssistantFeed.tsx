@@ -136,6 +136,9 @@ export function AssistantFeed({ items, status, onSendPrompt, onApproveAction, on
     }
   }, [items]);
 
+  // Must call useMemo before any early return to maintain hook ordering
+  const grouped = useMemo(() => buildGroups(items), [items]);
+
   if (items.length === 0) {
     return (
       <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center px-4" data-testid="assistant-feed-empty">
@@ -185,8 +188,6 @@ export function AssistantFeed({ items, status, onSendPrompt, onApproveAction, on
       </div>
     );
   }
-
-  const grouped = useMemo(() => buildGroups(items), [items]);
 
   return (
     <div
