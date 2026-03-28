@@ -194,7 +194,7 @@ export function importBlueprint(
       title: bv.title || bv.type,
       displayName,
       zIndex: index,
-      metadata: { ...bv.metadata } || {},
+      metadata: { ...(bv.metadata || {}) },
     };
 
     switch (bv.type) {
