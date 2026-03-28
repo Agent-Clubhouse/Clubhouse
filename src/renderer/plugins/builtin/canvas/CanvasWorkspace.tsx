@@ -1126,6 +1126,7 @@ export function CanvasWorkspace({
           onAddWireDefinition={onAddWireDefinition}
           onRemoveWireDefinition={onRemoveWireDefinition}
           onUpdateWireDefinition={onUpdateWireDefinition}
+          forceBidirectional={bidirectionalWires}
         />
       )}
 
