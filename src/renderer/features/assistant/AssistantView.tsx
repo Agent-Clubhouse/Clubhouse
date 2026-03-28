@@ -34,6 +34,8 @@ export function AssistantView() {
   const handleSend = useCallback((content: string) => { assistantAgent.sendMessage(content); }, []);
   const handleModeChange = useCallback((m: AssistantMode) => { assistantAgent.setMode(m); }, []);
   const handleOrchestratorChange = useCallback((id: string | null) => { assistantAgent.setOrchestrator(id); }, []);
+  const handleApproveAction = useCallback((actionId: string) => { assistantAgent.approveAction(actionId); }, []);
+  const handleSkipAction = useCallback((actionId: string) => { assistantAgent.skipAction(actionId); }, []);
 
   const isDisabled = status === 'starting' || status === 'responding';
 
@@ -56,7 +58,13 @@ export function AssistantView() {
         </div>
       ) : (
         <>
-          <AssistantFeed items={feedItems} status={status} onSendPrompt={handleSend} />
+          <AssistantFeed
+            items={feedItems}
+            status={status}
+            onSendPrompt={handleSend}
+            onApproveAction={handleApproveAction}
+            onSkipAction={handleSkipAction}
+          />
           <AssistantInput onSend={handleSend} disabled={isDisabled} status={status} />
         </>
       )}
