@@ -1,0 +1,234 @@
+# PTY Sidebar Visual Spec
+
+PTY (interactive terminal) mode can't render rich HTML inline — it's a raw
+terminal. But the Clubhouse app surrounds the terminal with UI chrome, so we
+can push visual content to a **sidebar panel** beside the terminal.
+
+---
+
+## Layout
+
+```
+┌──────────────────────────────────────────────────┐
+│                   TitleBar                         │
+├──────┬──────────────────────┬────────────────────┤
+│      │                      │                     │
+│      │   Terminal / PTY     │   Rich Sidebar      │
+│      │                      │                     │
+│ Rail │   $ assistant        │   ┌─────────────┐   │
+│      │   > How do agents    │   │ [Animated    │   │
+│  🤖  │     work?            │   │  SVG here]   │   │
+│      │                      │   │              │   │
+│      │   Agents in Club-    │   └─────────────┘   │
+│      │   house work by...   │                     │
+│      │   (See sidebar →)    │   ┌─────────────┐   │
+│      │                      │   │ [Code block] │   │
+│      │   >                  │   └─────────────┘   │
+│      │                      │                     │
+└──────┴──────────────────────┴────────────────────┘
+```
+
+### Integration Point
+
+The sidebar uses the **AccessoryPanel** slot that already exists in the layout:
+
+```
+ProjectPanelLayout:  ExplorerRail | AccessoryPanel | MainContent
+```
+
+When the assistant is running in PTY mode and emits rich content:
+1. Terminal renders in `MainContent` (full agent view)
+2. Rich content pushes to `AccessoryPanel` slot
+3. If AccessoryPanel already has content (e.g., agent list), rich content
+   overlays it with a tab or replaces it temporarily
+
+### Sidebar Width
+
+- Default: 320px (matches `accessoryWidth` default)
+- Min: 240px (still readable for code blocks)
+- Max: 480px (resizable via existing `resizeAccessory` from PanelStore)
+- Collapsible: Click collapse button or drag divider to zero
+
+---
+
+## Sidebar Components
+
+### Sidebar Header
+
+```
+┌─ Assistant Visuals ──────────── [pin] [✕] ──┐
+```
+
+- Title: "Assistant Visuals" — `text-xs font-semibold text-ctp-subtext1`
+- Pin button: Keeps sidebar open even when terminal activity stops
+- Close button: Hides sidebar, content still accessible via "(See sidebar →)"
+- Height: 32px
+- Style: `border-b border-surface-0 bg-ctp-mantle px-3 py-1.5`
+
+### Content Stack
+
+Rich content blocks stack vertically, newest at top:
+
+```
+┌─ Sidebar ────────────────────────────────────┐
+│                                               │
+│ ┌─ How Agents Work ────────────────────────┐ │
+│ │ [Animated flow diagram SVG]              │ │
+│ │                                          │ │
+│ │ [▶ Replay]                     [📋] [✕] │ │
+│ └──────────────────────────────────────────┘ │
+│                                               │
+│ ┌─ agent-config.ts ───────────── [📋] [✕] ┐ │
+│ │ export const agentConfig = {             │ │
+│ │   name: 'my-agent',                     │ │
+│ │   model: 'sonnet',                      │ │
+│ │ };                                       │ │
+│ └──────────────────────────────────────────┘ │
+│                                               │
+│ ┌─ Project: my-app ────────────────── [✕] ─┐ │
+│ │ 📦 my-app                                │ │
+│ │ /Users/me/projects/my-app                │ │
+│ │ 3 agents · 2 canvases                    │ │
+│ └──────────────────────────────────────────┘ │
+│                                               │
+└───────────────────────────────────────────────┘
+```
+
+Each block uses the same **ContentFrame** component from the rich content spec:
+- Header with title + action buttons (copy, dismiss)
+- Body with the actual content
+- `border border-surface-0 rounded-lg bg-ctp-mantle overflow-hidden`
+- `margin-bottom: 8px` between blocks
+
+### Empty State
+
+When sidebar opens but no rich content yet:
+
+```
+┌─ Sidebar ────────────────────────────────────┐
+│                                               │
+│                                               │
+│           [Pip idle, 48px]                    │
+│                                               │
+│       Visual content will appear              │
+│       here as the assistant works             │
+│                                               │
+│                                               │
+└───────────────────────────────────────────────┘
+```
+
+- Centered vertically and horizontally
+- Pip mascot at 48px (idle expression)
+- Text: `text-xs text-ctp-subtext0 text-center`
+
+---
+
+## Terminal ↔ Sidebar Linking
+
+### Trigger Mechanism
+
+When the assistant produces rich content in PTY mode, the terminal output
+includes a text marker:
+
+```
+(See sidebar for diagram →)
+(Code preview in sidebar →)
+(Visual guide in sidebar →)
+```
+
+This marker is:
+- Styled differently in terminal: `text-ctp-accent` if terminal supports color
+- A clickable link in the terminal that focuses the sidebar
+- Automatically generated by the assistant's PTY adapter when rich content
+  is available
+
+### Auto-Open Behavior
+
+- **First rich content**: Sidebar auto-opens (if not already open)
+- **Subsequent content**: Sidebar stays open, new content prepends to stack
+- **User closed sidebar**: Don't auto-reopen. Show terminal marker only.
+  Badge on sidebar collapse button indicates new content available.
+- **Pin mode**: When pinned, sidebar stays open until explicitly closed
+
+### Content Sync
+
+Each terminal marker is linked to a specific sidebar content block:
+- Clicking marker scrolls sidebar to that block
+- New content in sidebar briefly highlights with `bg-ctp-accent/10` fade (1s)
+- When terminal scrolls past a marker, corresponding sidebar block gets
+  a subtle dimming (not current context)
+
+---
+
+## Supported Content Types
+
+All content types from the rich content rendering spec work in the sidebar,
+with these adaptations for the narrower width:
+
+| Content Type | Sidebar Adaptation |
+|--------------|--------------------|
+| Animated SVG | Scale to fit 240-480px width, maintain aspect ratio |
+| Code snippet | Full-width, horizontal scroll for long lines |
+| Entity card | Single column stack (no grid) |
+| Diff view | Unified only (no side-by-side — too narrow) |
+| Annotated diagram | Scale down, callout text may wrap |
+| Walkthrough | Steps stack vertically, one visible at a time |
+
+### SVG Scaling
+
+```css
+.sidebar-svg-container {
+  width: 100%;
+  max-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-svg-container svg {
+  max-width: 100%;
+  max-height: 240px;
+  height: auto;
+}
+```
+
+---
+
+## Action Cards in PTY
+
+When the assistant needs user approval in PTY mode, it can't rely on
+inline card buttons. Instead:
+
+**Terminal prompt:**
+```
+I'd like to create project.json with these settings.
+(Preview in sidebar →)
+
+Approve? [y/n]:
+```
+
+**Sidebar shows:**
+The full preview card with details (same as inline action card body),
+but without the approve/skip buttons (those are in the terminal prompt).
+
+This keeps the approval flow in the terminal (where the user is typing)
+while the visual preview lives in the sidebar (where it has room).
+
+---
+
+## Keyboard Navigation
+
+- **Ctrl+B**: Toggle sidebar visibility
+- **Tab** (when sidebar focused): Navigate between content blocks
+- **Escape**: Return focus to terminal
+- **Ctrl+Shift+C**: Copy focused sidebar content block
+- Focus indicator: `ring-2 ring-ctp-accent ring-offset-2 ring-offset-ctp-base`
+
+---
+
+## Responsive
+
+- **Screen < 900px**: Sidebar overlays terminal (z-40) instead of side-by-side
+- **Screen ≥ 900px**: Side-by-side layout, terminal + sidebar both visible
+- Overlay mode: Full-width sidebar with semi-transparent backdrop on terminal
+- Swipe/click backdrop to dismiss in overlay mode
