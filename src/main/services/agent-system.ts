@@ -143,12 +143,19 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
     const useStructured = (spawnMode === 'structured' && params.kind === 'quick') || params.structuredMode;
     const hasMission = !!params.mission && params.mission.trim() !== '';
-    if (useStructured && !hasMission) {
+    // For durable agents in structured mode without a mission, use a default open-ended prompt.
+    // This allows the structured UI to launch and accept messages interactively.
+    const structuredMission = hasMission ? params.mission! :
+      (useStructured && params.kind === 'durable'
+        ? 'You are ready for interactive work. Wait for instructions from the user.'
+        : '');
+    const canLaunchStructured = useStructured && (hasMission || params.kind === 'durable');
+    if (useStructured && !canLaunchStructured) {
       appLog('core:agent', 'warn', 'Structured mode requested but mission is empty — falling back to PTY', {
         meta: { agentId: params.agentId, kind: params.kind },
       });
     }
-    if (useStructured && hasMission && isStructuredCapable(provider)) {
+    if (canLaunchStructured && isStructuredCapable(provider)) {
       appLog('core:agent', 'info', `Spawning ${params.kind} agent in structured mode`, {
         meta: {
           agentId: params.agentId,
@@ -164,7 +171,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       agentRegistry.setRuntime(params.agentId, 'structured');
       const adapter = provider.createStructuredAdapter();
       await structuredManager.startStructuredSession(params.agentId, adapter, {
-        mission: params.mission!,
+        mission: structuredMission,
         systemPrompt: params.systemPrompt,
         model: params.model,
         cwd: params.cwd,

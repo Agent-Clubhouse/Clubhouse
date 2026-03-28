@@ -874,14 +874,16 @@ registerToolTemplate('assistant', 'add_card', {
   if (args.width !== undefined || args.height !== undefined) {
     cmdArgs.size = { w: args.width || 300, h: args.height || 200 };
   }
-  let result = await sendCanvasCommand('add_view', cmdArgs);
-  // Retry once if canvas not found — handles race between create_canvas and add_card
-  if (!result.success && result.error?.includes('Canvas not found')) {
-    await new Promise(r => setTimeout(r, 500));
+  // Retry with backoff if canvas not found — handles race after create_canvas
+  let result: Awaited<ReturnType<typeof sendCanvasCommand>> | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
     result = await sendCanvasCommand('add_view', cmdArgs);
+    if (result.success || !result.error?.includes('Canvas not found')) break;
+    appLog('core:assistant', 'warn', `add_card retry ${attempt + 1}/3 — canvas not found yet`, { meta: { canvas_id: args.canvas_id } });
+    await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
   }
-  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to add card' }], isError: true };
-  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  if (!result!.success) return { content: [{ type: 'text', text: result!.error || 'Failed to add card' }], isError: true };
+  return { content: [{ type: 'text', text: JSON.stringify(result!.data) }] };
 });
 
 registerToolTemplate('assistant', 'move_card', {

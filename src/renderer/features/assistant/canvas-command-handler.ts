@@ -69,11 +69,23 @@ async function persistCanvas(projectId?: string): Promise<void> {
 
 const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views']);
 
-/** Execute a command on a specific canvas, temporarily switching active canvas if needed. */
+/** Execute a command on a specific canvas, switching active canvas if needed. */
 function withCanvas<T>(canvasId: string, fn: (store: CanvasState) => T, projectId?: string): T | { error: string } {
   const store = getStore(projectId);
-  const canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
-  if (!canvas) return { error: `Canvas not found: ${canvasId}` };
+
+  // First try finding by ID
+  let canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+
+  // If not found, the canvas may have been just created — re-read state
+  if (!canvas) {
+    const freshStore = getStore(projectId);
+    canvas = freshStore.canvases.find((c: CanvasInstance) => c.id === canvasId);
+    if (!canvas) {
+      const allIds = freshStore.canvases.map((c: CanvasInstance) => c.id);
+      console.error('[assistant] Canvas not found after re-read:', canvasId, 'available:', allIds);
+      return { error: `Canvas not found: ${canvasId}. Available: ${allIds.join(', ')}` };
+    }
+  }
 
   const prevActive = store.activeCanvasId;
   if (prevActive !== canvasId) store.setActiveCanvas(canvasId);

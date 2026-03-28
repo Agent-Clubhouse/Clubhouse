@@ -182,12 +182,21 @@ export function registerAssistantHandlers(): void {
       const permissionMode = freeAgentSettings.getPermissionMode(workspace);
 
       const nonce = randomUUID();
+      // Re-register (previous spawn's exit handler untracked us)
       agentRegistry.register(agentId, {
         projectPath: workspace,
         orchestrator: provider.id as OrchestratorId,
         runtime: 'headless',
       });
       agentRegistry.setNonce(agentId, nonce);
+
+      // Re-create MCP binding (previous exit handler unbinded us)
+      bindingManager.bind(agentId, {
+        targetId: ASSISTANT_TARGET_ID,
+        targetKind: 'assistant',
+        label: 'Clubhouse Assistant',
+      });
+      appLog(LOG_NS, 'info', 'Follow-up: re-registered agent and MCP binding', { meta: { agentId } });
 
       // MCP injection
       let mcpPort = 0;
@@ -243,9 +252,8 @@ export function registerAssistantHandlers(): void {
           appLog(LOG_NS, 'info', 'Follow-up headless exited', { meta: { agentId: exitAgentId, exitCode } });
           // Notify renderer that the follow-up completed
           broadcastToAllWindows(IPC.ASSISTANT.RESULT, { agentId: exitAgentId, exitCode });
-          configPipeline.restoreForAgent(exitAgentId);
-          bindingManager.unbindAgent(exitAgentId);
-          untrackAgent(exitAgentId);
+          // DON'T unbind or untrack — we want to keep the MCP binding alive
+          // for future follow-ups. Cleanup happens on explicit reset only.
         },
       );
 
@@ -341,10 +349,9 @@ async function spawnInteractive(
   };
 
   await ptyManager.spawn(agentId, workspace, binary, args, spawnEnv, (exitAgentId, exitCode, buffer) => {
-    appLog(LOG_NS, 'info', 'PTY exited', { meta: { agentId: exitAgentId, exitCode, bufferLength: buffer?.length || 0 } });
-    configPipeline.restoreForAgent(exitAgentId);
-    bindingManager.unbindAgent(exitAgentId);
-    untrackAgent(exitAgentId);
+    appLog(LOG_NS, 'info', 'Conversational headless exited', { meta: { agentId: exitAgentId, exitCode, bufferLength: buffer?.length || 0 } });
+    // DON'T unbind or untrack — conversation continues with follow-ups.
+    // Cleanup happens on explicit reset only.
   });
 }
 
