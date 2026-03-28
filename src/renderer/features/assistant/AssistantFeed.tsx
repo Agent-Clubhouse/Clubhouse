@@ -39,7 +39,11 @@ export function AssistantFeed({ items, status, onSendPrompt }: Props) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !isNearBottomRef.current) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    if (typeof el.scrollTo === 'function') {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [items]);
 
   if (items.length === 0) {
