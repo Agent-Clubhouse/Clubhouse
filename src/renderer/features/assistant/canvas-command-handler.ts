@@ -8,6 +8,8 @@
 import { useAppCanvasStore, getProjectCanvasStore } from '../../plugins/builtin/canvas/main';
 import type { CanvasViewType, Position, Size, CanvasView, CanvasInstance } from '../../plugins/builtin/canvas/canvas-types';
 import type { CanvasState } from '../../plugins/builtin/canvas/canvas-store';
+import { exportBlueprint, importBlueprint, validateBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
+import type { CanvasBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
 import { createScopedStorage } from '../../plugins/plugin-api-storage';
 import type { ScopedStorage } from '../../../shared/plugin-types';
 
@@ -67,7 +69,7 @@ async function persistCanvas(projectId?: string): Promise<void> {
   }
 }
 
-const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views']);
+const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views', 'import_blueprint']);
 
 /** Execute a command on a specific canvas, switching active canvas if needed. */
 function withCanvas<T>(canvasId: string, fn: (store: CanvasState) => T, projectId?: string): T | { error: string } {
@@ -304,6 +306,44 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
     }
 
     return { success: true, data: { sourceAgentId, targetId, targetKind, bindingCreated } };
+  },
+
+  export_blueprint(args) {
+    const canvasId = args.canvas_id as string;
+    const pid = args.project_id as string | undefined;
+    const canvas = findCanvas(canvasId, pid);
+    if (!canvas) return { success: false, error: `Canvas not found: ${canvasId}` };
+
+    const blueprint = exportBlueprint(canvas);
+    return { success: true, data: blueprint };
+  },
+
+  import_blueprint(args) {
+    const pid = args.project_id as string | undefined;
+    const blueprint = args.blueprint as CanvasBlueprint;
+
+    const validationError = validateBlueprint(blueprint);
+    if (validationError) {
+      return { success: false, error: validationError };
+    }
+
+    try {
+      const name = args.name as string | undefined;
+      const canvas = importBlueprint(blueprint, { name });
+      const store = getStore(pid);
+      store.insertCanvas(canvas);
+      return {
+        success: true,
+        data: {
+          canvas_id: canvas.id,
+          name: canvas.name,
+          view_count: canvas.views.length,
+          view_ids: canvas.views.map((v) => v.id),
+        },
+      };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
