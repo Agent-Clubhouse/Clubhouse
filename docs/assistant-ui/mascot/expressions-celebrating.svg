@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <!-- Pip: CELEBRATING — arms up, sparkle eyes, bounce, pink accent -->
+  <defs>
+    <linearGradient id="pipCelebBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b4d0fa"/>
+      <stop offset="100%" stop-color="#89b4fa"/>
+    </linearGradient>
+    <radialGradient id="pipCelebCore" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#fce7f3"/>
+      <stop offset="60%" stop-color="#f472b6"/>
+      <stop offset="100%" stop-color="#db2777" stop-opacity="0.7"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ground shadow — smaller (bouncing up) -->
+  <ellipse cx="50" cy="94" rx="14" ry="2.5" fill="#181825" opacity="0.3"/>
+
+  <!-- Legs — lifted, bouncing -->
+  <rect x="39" y="77" width="7" height="8" rx="3" fill="#6a9fe0"/>
+  <rect x="54" y="77" width="7" height="8" rx="3" fill="#6a9fe0"/>
+
+  <!-- Body — slightly higher (bouncing) -->
+  <rect x="33" y="52" width="34" height="28" rx="12" fill="url(#pipCelebBody)"/>
+  <rect x="37" y="54" width="10" height="3" rx="1.5" fill="#c8dffc" opacity="0.5"/>
+
+  <!-- Core — pink celebration glow -->
+  <circle cx="50" cy="65" r="6" fill="url(#pipCelebCore)"/>
+  <circle cx="50" cy="65" r="3" fill="#fce7f3" opacity="0.9"/>
+
+  <!-- Arms — raised up! -->
+  <ellipse cx="24" cy="46" rx="5" ry="3.5" fill="#89b4fa" transform="rotate(-30 24 46)"/>
+  <circle cx="20" cy="43" r="3" fill="#a4c8fc"/>
+  <ellipse cx="76" cy="46" rx="5" ry="3.5" fill="#89b4fa" transform="rotate(30 76 46)"/>
+  <circle cx="80" cy="43" r="3" fill="#a4c8fc"/>
+
+  <!-- Head — bounced up -->
+  <ellipse cx="50" cy="33" rx="22" ry="22" fill="url(#pipCelebBody)"/>
+  <ellipse cx="43" cy="19" rx="10" ry="5" fill="#c8dffc" opacity="0.35"/>
+
+  <!-- Antenna — pink celebration -->
+  <rect x="49" y="9" width="2" height="5" rx="1" fill="#6a9fe0"/>
+  <circle cx="50" cy="7" r="2.5" fill="#f472b6"/>
+  <circle cx="50" cy="7" r="1.2" fill="#fce7f3" opacity="0.9"/>
+
+  <!-- Eyes — sparkle/star eyes -->
+  <g transform="translate(41 32)">
+    <!-- Star shape -->
+    <polygon points="0,-5 1.5,-1.5 5,0 1.5,1.5 0,5 -1.5,1.5 -5,0 -1.5,-1.5" fill="#fde68a"/>
+    <circle cx="0" cy="0" r="1.5" fill="#1e1e2e"/>
+  </g>
+  <g transform="translate(59 32)">
+    <polygon points="0,-5 1.5,-1.5 5,0 1.5,1.5 0,5 -1.5,1.5 -5,0 -1.5,-1.5" fill="#fde68a"/>
+    <circle cx="0" cy="0" r="1.5" fill="#1e1e2e"/>
+  </g>
+
+  <!-- Mouth — big happy open smile -->
+  <path d="M43 41 Q50 48 57 41" fill="#1e1e2e" stroke="#1e1e2e" stroke-width="1" stroke-linecap="round"/>
+  <path d="M44 42 Q50 46 56 42" fill="#313244"/>
+
+  <!-- Blush — strong -->
+  <circle cx="34" cy="39" r="4" fill="#f472b6" opacity="0.2"/>
+  <circle cx="66" cy="39" r="4" fill="#f472b6" opacity="0.2"/>
+
+  <!-- Confetti sparkles -->
+  <circle cx="20" cy="15" r="1.5" fill="#f5a623" opacity="0.8"/>
+  <circle cx="78" cy="12" r="1.5" fill="#f472b6" opacity="0.8"/>
+  <circle cx="30" cy="6" r="1" fill="#22c55e" opacity="0.7"/>
+  <circle cx="70" cy="4" r="1" fill="#89b4fa" opacity="0.7"/>
+  <rect x="14" y="20" width="3" height="1.5" rx="0.75" fill="#f5a623" opacity="0.6" transform="rotate(30 15.5 20.75)"/>
+  <rect x="82" y="18" width="3" height="1.5" rx="0.75" fill="#f472b6" opacity="0.6" transform="rotate(-20 83.5 18.75)"/>
+  <rect x="25" y="10" width="2.5" height="1.2" rx="0.6" fill="#89b4fa" opacity="0.5" transform="rotate(45 26.25 10.6)"/>
+  <rect x="72" y="8" width="2.5" height="1.2" rx="0.6" fill="#22c55e" opacity="0.5" transform="rotate(-35 73.25 8.6)"/>
+</svg>

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <!-- Pip: ERROR/SORRY — droopy posture, sweat drop, dim red-tinted core -->
+  <defs>
+    <linearGradient id="pipErrorBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a8b8d8"/>
+      <stop offset="100%" stop-color="#7f8aaa"/>
+    </linearGradient>
+    <radialGradient id="pipErrorCore" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#fecaca"/>
+      <stop offset="60%" stop-color="#f87171"/>
+      <stop offset="100%" stop-color="#dc2626" stop-opacity="0.5"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ground shadow -->
+  <ellipse cx="50" cy="92" rx="18" ry="3.5" fill="#181825" opacity="0.4"/>
+
+  <!-- Legs — heavy, slumped -->
+  <rect x="39" y="81" width="7" height="8" rx="3" fill="#6b7a9a"/>
+  <rect x="54" y="81" width="7" height="8" rx="3" fill="#6b7a9a"/>
+
+  <!-- Body — slightly lower, heavier -->
+  <rect x="33" y="57" width="34" height="28" rx="12" fill="url(#pipErrorBody)"/>
+  <rect x="37" y="59" width="10" height="3" rx="1.5" fill="#b0bcd4" opacity="0.3"/>
+
+  <!-- Core — red/dim error state -->
+  <circle cx="50" cy="70" r="6" fill="url(#pipErrorCore)"/>
+  <circle cx="50" cy="70" r="3" fill="#fecaca" opacity="0.6"/>
+
+  <!-- Arms — drooped down -->
+  <ellipse cx="27" cy="70" rx="5" ry="3.5" fill="#7f8aaa"/>
+  <ellipse cx="73" cy="70" rx="5" ry="3.5" fill="#7f8aaa"/>
+  <circle cx="23" cy="70" r="3" fill="#96a2be"/>
+  <circle cx="77" cy="70" r="3" fill="#96a2be"/>
+
+  <!-- Head — drooped, tilted down -->
+  <g transform="rotate(-4 50 38)">
+    <ellipse cx="50" cy="38" rx="22" ry="22" fill="url(#pipErrorBody)"/>
+    <ellipse cx="43" cy="24" rx="10" ry="5" fill="#b0bcd4" opacity="0.2"/>
+
+    <!-- Antenna — dim -->
+    <rect x="49" y="14" width="2" height="5" rx="1" fill="#6b7a9a"/>
+    <circle cx="50" cy="12" r="2.5" fill="#7f8aaa"/>
+    <circle cx="50" cy="12" r="1.2" fill="#96a2be" opacity="0.4"/>
+
+    <!-- Eyes — sad, droopy -->
+    <circle cx="41" cy="37" r="5" fill="#1e1e2e"/>
+    <circle cx="42" cy="36.5" r="2" fill="#cdd6f4"/>
+    <circle cx="41" cy="38" r="0.8" fill="#f87171" opacity="0.3"/>
+    <circle cx="59" cy="37" r="5" fill="#1e1e2e"/>
+    <circle cx="60" cy="36.5" r="2" fill="#cdd6f4"/>
+    <circle cx="59" cy="38" r="0.8" fill="#f87171" opacity="0.3"/>
+
+    <!-- Eyebrows — worried, angled down toward center -->
+    <path d="M36 31 Q41 33 46 32" fill="none" stroke="#6b7a9a" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M54 32 Q59 33 64 31" fill="none" stroke="#6b7a9a" stroke-width="1.2" stroke-linecap="round"/>
+
+    <!-- Mouth — small frown -->
+    <path d="M45 47 Q50 44 55 47" fill="none" stroke="#1e1e2e" stroke-width="1.5" stroke-linecap="round"/>
+
+    <!-- Blush — muted -->
+    <circle cx="34" cy="43" r="3.5" fill="#f472b6" opacity="0.06"/>
+    <circle cx="66" cy="43" r="3.5" fill="#f472b6" opacity="0.06"/>
+  </g>
+
+  <!-- Sweat drop -->
+  <path d="M70 22 Q71 18 72 22 Q72 24 71 25 Q70 24 70 22Z" fill="#89b4fa" opacity="0.6"/>
+</svg>

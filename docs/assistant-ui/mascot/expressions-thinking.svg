@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <!-- Pip: THINKING — eyes half-closed, dots above, head bob, amber accent -->
+  <defs>
+    <linearGradient id="pipThinkBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b4d0fa"/>
+      <stop offset="100%" stop-color="#89b4fa"/>
+    </linearGradient>
+    <radialGradient id="pipThinkCore" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="60%" stop-color="#f5a623"/>
+      <stop offset="100%" stop-color="#d4891a" stop-opacity="0.8"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ground shadow -->
+  <ellipse cx="50" cy="92" rx="18" ry="3.5" fill="#181825" opacity="0.4"/>
+
+  <!-- Legs -->
+  <rect x="39" y="80" width="7" height="8" rx="3" fill="#6a9fe0"/>
+  <rect x="54" y="80" width="7" height="8" rx="3" fill="#6a9fe0"/>
+
+  <!-- Body -->
+  <rect x="33" y="55" width="34" height="28" rx="12" fill="url(#pipThinkBody)"/>
+  <rect x="37" y="57" width="10" height="3" rx="1.5" fill="#c8dffc" opacity="0.5"/>
+
+  <!-- Core — brighter, active processing -->
+  <circle cx="50" cy="68" r="6" fill="url(#pipThinkCore)"/>
+  <circle cx="50" cy="68" r="3" fill="#fef3c7" opacity="0.9"/>
+
+  <!-- Arms — one raised to chin (thinking pose) -->
+  <ellipse cx="27" cy="64" rx="5" ry="3.5" fill="#89b4fa"/>
+  <circle cx="23" cy="64" r="3" fill="#a4c8fc"/>
+  <!-- Right arm raised toward face -->
+  <ellipse cx="70" cy="52" rx="5" ry="3.5" fill="#89b4fa" transform="rotate(-40 70 52)"/>
+  <circle cx="67" cy="48" r="3" fill="#a4c8fc"/>
+
+  <!-- Head — slight tilt -->
+  <g transform="rotate(3 50 36)">
+    <ellipse cx="50" cy="36" rx="22" ry="22" fill="url(#pipThinkBody)"/>
+    <ellipse cx="43" cy="22" rx="10" ry="5" fill="#c8dffc" opacity="0.35"/>
+
+    <!-- Antenna — amber glow while thinking -->
+    <rect x="49" y="12" width="2" height="5" rx="1" fill="#6a9fe0"/>
+    <circle cx="50" cy="10" r="2.5" fill="#f5a623"/>
+    <circle cx="50" cy="10" r="1.2" fill="#fde68a" opacity="0.9"/>
+
+    <!-- Eyes — half-closed, contemplative -->
+    <ellipse cx="41" cy="36" rx="5.5" ry="4" fill="#1e1e2e"/>
+    <circle cx="42" cy="35" r="2" fill="#cdd6f4"/>
+    <ellipse cx="59" cy="36" rx="5.5" ry="4" fill="#1e1e2e"/>
+    <circle cx="60" cy="35" r="2" fill="#cdd6f4"/>
+    <!-- Half-lid overlay -->
+    <ellipse cx="41" cy="34" rx="6" ry="3" fill="url(#pipThinkBody)"/>
+    <ellipse cx="59" cy="34" rx="6" ry="3" fill="url(#pipThinkBody)"/>
+
+    <!-- Mouth — neutral, slight purse -->
+    <path d="M47 44 Q50 45 53 44" fill="none" stroke="#1e1e2e" stroke-width="1.2" stroke-linecap="round"/>
+
+    <!-- Blush -->
+    <circle cx="34" cy="41" r="3.5" fill="#f472b6" opacity="0.12"/>
+    <circle cx="66" cy="41" r="3.5" fill="#f472b6" opacity="0.12"/>
+  </g>
+
+  <!-- Thinking dots — above head, staggered -->
+  <circle cx="62" cy="10" r="2.5" fill="#f5a623" opacity="0.9"/>
+  <circle cx="70" cy="6" r="2" fill="#f5a623" opacity="0.6"/>
+  <circle cx="76" cy="3" r="1.5" fill="#f5a623" opacity="0.4"/>
+</svg>

@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <!-- Pip: PERMISSION NEEDED — hand raised, alert, orange pulse ring -->
+  <defs>
+    <linearGradient id="pipPermBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b4d0fa"/>
+      <stop offset="100%" stop-color="#89b4fa"/>
+    </linearGradient>
+    <radialGradient id="pipPermCore" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#fed7aa"/>
+      <stop offset="60%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#c2410c" stop-opacity="0.6"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ground shadow -->
+  <ellipse cx="50" cy="92" rx="18" ry="3.5" fill="#181825" opacity="0.4"/>
+
+  <!-- Pulse ring (orange, would animate scale 1→1.5 with opacity fade) -->
+  <circle cx="50" cy="50" r="35" fill="none" stroke="#f97316" stroke-width="1.5" opacity="0.25"/>
+  <circle cx="50" cy="50" r="42" fill="none" stroke="#f97316" stroke-width="1" opacity="0.12"/>
+
+  <!-- Legs -->
+  <rect x="39" y="80" width="7" height="8" rx="3" fill="#6a9fe0"/>
+  <rect x="54" y="80" width="7" height="8" rx="3" fill="#6a9fe0"/>
+
+  <!-- Body -->
+  <rect x="33" y="55" width="34" height="28" rx="12" fill="url(#pipPermBody)"/>
+  <rect x="37" y="57" width="10" height="3" rx="1.5" fill="#c8dffc" opacity="0.5"/>
+
+  <!-- Core — orange alert glow -->
+  <circle cx="50" cy="68" r="6" fill="url(#pipPermCore)"/>
+  <circle cx="50" cy="68" r="3" fill="#fed7aa" opacity="0.9"/>
+
+  <!-- Left arm — at side -->
+  <ellipse cx="27" cy="64" rx="5" ry="3.5" fill="#89b4fa"/>
+  <circle cx="23" cy="64" r="3" fill="#a4c8fc"/>
+
+  <!-- Right arm — raised up (hand raised gesture) -->
+  <ellipse cx="74" cy="42" rx="5" ry="3.5" fill="#89b4fa" transform="rotate(60 74 42)"/>
+  <circle cx="77" cy="38" r="3.5" fill="#a4c8fc"/>
+  <!-- Palm open detail -->
+  <rect x="75.5" y="35" width="3" height="2" rx="1" fill="#c8dffc" opacity="0.6"/>
+
+  <!-- Head -->
+  <ellipse cx="50" cy="36" rx="22" ry="22" fill="url(#pipPermBody)"/>
+  <ellipse cx="43" cy="22" rx="10" ry="5" fill="#c8dffc" opacity="0.35"/>
+
+  <!-- Antenna — orange alert -->
+  <rect x="49" y="12" width="2" height="5" rx="1" fill="#6a9fe0"/>
+  <circle cx="50" cy="10" r="2.5" fill="#f97316"/>
+  <circle cx="50" cy="10" r="1.2" fill="#fed7aa" opacity="0.9"/>
+
+  <!-- Eyes — alert, looking at user -->
+  <circle cx="41" cy="35" r="5.5" fill="#1e1e2e"/>
+  <circle cx="42.5" cy="34" r="2.2" fill="#cdd6f4"/>
+  <circle cx="40.5" cy="35.5" r="1" fill="#f97316" opacity="0.4"/>
+  <circle cx="59" cy="35" r="5.5" fill="#1e1e2e"/>
+  <circle cx="60.5" cy="34" r="2.2" fill="#cdd6f4"/>
+  <circle cx="58.5" cy="35.5" r="1" fill="#f97316" opacity="0.4"/>
+
+  <!-- Eyebrows — slightly raised, alert not worried -->
+  <path d="M35 28 Q41 26 47 28" fill="none" stroke="#6a9fe0" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+  <path d="M53 28 Q59 26 65 28" fill="none" stroke="#6a9fe0" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Mouth — neutral, attentive -->
+  <path d="M46 44 Q50 45.5 54 44" fill="none" stroke="#1e1e2e" stroke-width="1.2" stroke-linecap="round"/>
+
+  <!-- Blush -->
+  <circle cx="34" cy="41" r="3.5" fill="#f472b6" opacity="0.12"/>
+  <circle cx="66" cy="41" r="3.5" fill="#f472b6" opacity="0.12"/>
+
+  <!-- Exclamation hint near raised hand -->
+  <text x="82" y="30" font-family="monospace" font-size="10" font-weight="bold" fill="#f97316" opacity="0.7">!</text>
+</svg>

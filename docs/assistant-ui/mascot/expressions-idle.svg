@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <!-- Pip: IDLE/READY — soft open eyes, gentle smile, steady core glow -->
+  <defs>
+    <linearGradient id="pipIdleBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b4d0fa"/>
+      <stop offset="100%" stop-color="#89b4fa"/>
+    </linearGradient>
+    <radialGradient id="pipIdleCore" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="60%" stop-color="#f5a623"/>
+      <stop offset="100%" stop-color="#d4891a" stop-opacity="0.6"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ground shadow -->
+  <ellipse cx="50" cy="92" rx="18" ry="3.5" fill="#181825" opacity="0.4"/>
+
+  <!-- Legs -->
+  <rect x="39" y="80" width="7" height="8" rx="3" fill="#6a9fe0"/>
+  <rect x="54" y="80" width="7" height="8" rx="3" fill="#6a9fe0"/>
+
+  <!-- Body -->
+  <rect x="33" y="55" width="34" height="28" rx="12" fill="url(#pipIdleBody)"/>
+  <rect x="37" y="57" width="10" height="3" rx="1.5" fill="#c8dffc" opacity="0.5"/>
+
+  <!-- Core — steady warm glow -->
+  <circle cx="50" cy="68" r="6" fill="url(#pipIdleCore)"/>
+  <circle cx="50" cy="68" r="3" fill="#fef3c7" opacity="0.8"/>
+
+  <!-- Arms — relaxed at sides -->
+  <ellipse cx="27" cy="64" rx="5" ry="3.5" fill="#89b4fa"/>
+  <ellipse cx="73" cy="64" rx="5" ry="3.5" fill="#89b4fa"/>
+  <circle cx="23" cy="64" r="3" fill="#a4c8fc"/>
+  <circle cx="77" cy="64" r="3" fill="#a4c8fc"/>
+
+  <!-- Head -->
+  <ellipse cx="50" cy="36" rx="22" ry="22" fill="url(#pipIdleBody)"/>
+  <ellipse cx="43" cy="22" rx="10" ry="5" fill="#c8dffc" opacity="0.35"/>
+
+  <!-- Antenna -->
+  <rect x="49" y="12" width="2" height="5" rx="1" fill="#6a9fe0"/>
+  <circle cx="50" cy="10" r="2.5" fill="#89b4fa"/>
+  <circle cx="50" cy="10" r="1.2" fill="#cdd6f4" opacity="0.7"/>
+
+  <!-- Eyes — soft open, friendly (same as comp-c) -->
+  <circle cx="41" cy="35" r="5.5" fill="#1e1e2e"/>
+  <circle cx="42.5" cy="33.5" r="2.2" fill="#cdd6f4"/>
+  <circle cx="40" cy="36" r="1" fill="#89b4fa" opacity="0.4"/>
+  <circle cx="59" cy="35" r="5.5" fill="#1e1e2e"/>
+  <circle cx="60.5" cy="33.5" r="2.2" fill="#cdd6f4"/>
+  <circle cx="58" cy="36" r="1" fill="#89b4fa" opacity="0.4"/>
+
+  <!-- Mouth — gentle smile -->
+  <path d="M45 44 Q50 47.5 55 44" fill="none" stroke="#1e1e2e" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Blush -->
+  <circle cx="34" cy="41" r="3.5" fill="#f472b6" opacity="0.12"/>
+  <circle cx="66" cy="41" r="3.5" fill="#f472b6" opacity="0.12"/>
+</svg>

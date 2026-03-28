@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
+  <!-- Pip: LISTENING — eyes wide, leaning forward, bright antenna, eager -->
+  <defs>
+    <linearGradient id="pipListenBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b4d0fa"/>
+      <stop offset="100%" stop-color="#89b4fa"/>
+    </linearGradient>
+    <radialGradient id="pipListenCore" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="60%" stop-color="#f5a623"/>
+      <stop offset="100%" stop-color="#d4891a" stop-opacity="0.6"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ground shadow — shifted slightly forward -->
+  <ellipse cx="51" cy="92" rx="18" ry="3.5" fill="#181825" opacity="0.4"/>
+
+  <!-- Legs — weight forward -->
+  <rect x="40" y="80" width="7" height="8" rx="3" fill="#6a9fe0"/>
+  <rect x="55" y="79" width="7" height="9" rx="3" fill="#6a9fe0"/>
+
+  <!-- Body — slight lean forward -->
+  <g transform="rotate(2 50 70)">
+    <rect x="33" y="55" width="34" height="28" rx="12" fill="url(#pipListenBody)"/>
+    <rect x="37" y="57" width="10" height="3" rx="1.5" fill="#c8dffc" opacity="0.5"/>
+
+    <!-- Core — warm -->
+    <circle cx="50" cy="68" r="6" fill="url(#pipListenCore)"/>
+    <circle cx="50" cy="68" r="3" fill="#fef3c7" opacity="0.8"/>
+  </g>
+
+  <!-- Arms — slightly forward, attentive -->
+  <ellipse cx="26" cy="62" rx="5" ry="3.5" fill="#89b4fa" transform="rotate(-10 26 62)"/>
+  <ellipse cx="74" cy="62" rx="5" ry="3.5" fill="#89b4fa" transform="rotate(10 74 62)"/>
+  <circle cx="22" cy="61" r="3" fill="#a4c8fc"/>
+  <circle cx="78" cy="61" r="3" fill="#a4c8fc"/>
+
+  <!-- Head — leaning forward slightly -->
+  <g transform="rotate(2 50 36)">
+    <ellipse cx="50" cy="36" rx="22" ry="22" fill="url(#pipListenBody)"/>
+    <ellipse cx="43" cy="22" rx="10" ry="5" fill="#c8dffc" opacity="0.35"/>
+
+    <!-- Antenna — perked up, brighter -->
+    <rect x="49" y="11" width="2" height="5" rx="1" fill="#6a9fe0"/>
+    <circle cx="50" cy="9" r="3" fill="#89b4fa"/>
+    <circle cx="50" cy="9" r="1.5" fill="#cdd6f4" opacity="0.9"/>
+
+    <!-- Eyes — wide, alert, pupils slightly larger -->
+    <circle cx="41" cy="34" r="6" fill="#1e1e2e"/>
+    <circle cx="42.5" cy="32.5" r="2.5" fill="#cdd6f4"/>
+    <circle cx="40" cy="35" r="1.2" fill="#89b4fa" opacity="0.5"/>
+    <circle cx="59" cy="34" r="6" fill="#1e1e2e"/>
+    <circle cx="60.5" cy="32.5" r="2.5" fill="#cdd6f4"/>
+    <circle cx="58" cy="35" r="1.2" fill="#89b4fa" opacity="0.5"/>
+
+    <!-- Eyebrows — slightly raised -->
+    <path d="M35 27 Q41 25 47 27" fill="none" stroke="#6a9fe0" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+    <path d="M53 27 Q59 25 65 27" fill="none" stroke="#6a9fe0" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+
+    <!-- Mouth — small eager smile -->
+    <path d="M45 43 Q50 46 55 43" fill="none" stroke="#1e1e2e" stroke-width="1.5" stroke-linecap="round"/>
+
+    <!-- Blush — warmer -->
+    <circle cx="34" cy="40" r="3.5" fill="#f472b6" opacity="0.15"/>
+    <circle cx="66" cy="40" r="3.5" fill="#f472b6" opacity="0.15"/>
+  </g>
+</svg>
