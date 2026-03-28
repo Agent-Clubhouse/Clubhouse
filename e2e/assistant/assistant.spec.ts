@@ -28,13 +28,16 @@ import {
 
 let instance: AssistantInstance;
 let window: Page;
+const pageErrors: Error[] = [];
 
-// All 6 tests share one Electron instance for performance (launch is ~10s).
+// All tests share one Electron instance for performance (launch is ~10s).
 // Tradeoff: if an early test fails, later tests that depend on agent state may
 // cascade. Each test resets the conversation to mitigate this.
 test.beforeAll(async () => {
   instance = await launchAssistantInstance();
   window = instance.window;
+  // Capture uncaught errors (React crashes, render failures, etc.)
+  window.on('pageerror', (error) => pageErrors.push(error));
 });
 
 test.afterAll(async () => {
@@ -43,8 +46,14 @@ test.afterAll(async () => {
 
 // ─── Test 1: Panel opens from nav rail ───────────────────────────────────────
 
-test('assistant panel opens when clicking nav rail icon', async () => {
+test('assistant panel opens without render errors', async () => {
+  // Clear any errors from app startup
+  pageErrors.length = 0;
+
   await openAssistantPanel(window);
+
+  // Verify no uncaught errors (catches React crashes like hook violations)
+  expect(pageErrors).toHaveLength(0);
 
   // Verify the assistant view is rendered
   const assistantView = window.locator('[data-testid="assistant-view"]');
@@ -65,6 +74,33 @@ test('assistant panel opens when clicking nav rail icon', async () => {
   // Verify input bar is present
   const input = window.locator('[data-testid="assistant-input"]');
   await expect(input).toBeVisible({ timeout: 5_000 });
+});
+
+// ─── Test: Render crash smoke test ──────────────────────────────────────────
+
+test('assistant panel renders without crashes after brief interaction', async () => {
+  // Clear errors from prior tests
+  pageErrors.length = 0;
+
+  await openAssistantPanel(window);
+
+  // Wait for UI to settle — gives React time to render all hooks
+  await window.waitForTimeout(2_000);
+
+  // Verify zero uncaught errors (would catch hook ordering violations,
+  // undefined property access, or any other render crash)
+  expect(pageErrors).toHaveLength(0);
+
+  // Verify the feed container rendered (not a blank/white screen)
+  const feedOrEmpty = window.locator(
+    '[data-testid="assistant-feed"], [data-testid="assistant-feed-empty"]',
+  ).first();
+  await expect(feedOrEmpty).toBeVisible({ timeout: 5_000 });
+
+  // Verify the input bar is functional (not crashed mid-render)
+  const input = window.locator('[data-testid="assistant-message-input"]');
+  await expect(input).toBeVisible({ timeout: 5_000 });
+  await expect(input).toBeEnabled({ timeout: 5_000 });
 });
 
 // ─── Test 2: Mode toggle switching ───────────────────────────────────────────
