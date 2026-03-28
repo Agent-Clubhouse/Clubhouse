@@ -215,6 +215,13 @@ export class StreamJsonAdapter implements StructuredAdapter {
    *   - result (session complete)
    */
   private mapEvent(event: StreamJsonEvent): StructuredEvent[] {
+    // Claude Code CLI wraps streaming events in a `stream_event` envelope
+    // when using --include-partial-messages. Unwrap to get the inner event.
+    if (event.type === 'stream_event' && (event as any).event) {
+      const inner = (event as any).event as StreamJsonEvent;
+      return this.mapEvent(inner);
+    }
+
     switch (event.type) {
       case 'content_block_start':
         return this.handleBlockStart(event);
