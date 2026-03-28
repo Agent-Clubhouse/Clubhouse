@@ -361,9 +361,10 @@ export function initAnnexClientListener(): () => void {
         satellitePtyExitBus.emit(satelliteId, agentId, p.exitCode ?? -1);
       }
     } else if (type === 'canvas:state') {
-      const p = payload as { projectId?: string; state?: unknown };
-      if (p.projectId && p.state) {
-        const nsProjId = `remote||${satelliteId}||${p.projectId}`;
+      const p = payload as { projectId?: string | null; state?: unknown; scope?: string };
+      if (p.state && (p.projectId || p.scope === 'global')) {
+        const isAppLevel = !p.projectId || p.scope === 'global';
+        const nsProjId = isAppLevel ? '' : `remote||${satelliteId}||${p.projectId}`;
         const cs = p.state as {
           canvasId: string; views: unknown[]; viewport: unknown;
           nextZIndex: number; zoomedViewId: string | null;
@@ -396,6 +397,9 @@ export function initAnnexClientListener(): () => void {
             if (meta.projectId && typeof meta.projectId === 'string' && !meta.projectId.startsWith('remote||')) {
               meta.projectId = `remote||${satelliteId}||${meta.projectId}`;
             }
+            if (meta.groupProjectId && typeof meta.groupProjectId === 'string' && !meta.groupProjectId.startsWith('remote||')) {
+              meta.groupProjectId = `remote||${satelliteId}||${meta.groupProjectId}`;
+            }
             patched.metadata = meta;
           }
           return patched;
@@ -414,7 +418,19 @@ export function initAnnexClientListener(): () => void {
           return patched;
         });
 
-        const existing = useRemoteProjectStore.getState().remoteCanvasState[nsProjId];
+        // Helper to route canvas data to the correct store based on scope
+        const commitCanvasData = (data: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }) => {
+          if (isAppLevel) {
+            useRemoteProjectStore.getState().updateRemoteAppCanvasState(satelliteId, data);
+          } else {
+            useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, data);
+          }
+        };
+
+        const existingStore = isAppLevel
+          ? useRemoteProjectStore.getState().remoteAppCanvasState[satelliteId]
+          : useRemoteProjectStore.getState().remoteCanvasState[nsProjId];
+        const existing = existingStore as { canvases: any[]; activeCanvasId: string; wireDefinitions?: unknown[] } | undefined;
 
         if (cs.allCanvasTabs) {
           // Full tab metadata available — build complete canvas list.
@@ -435,7 +451,7 @@ export function initAnnexClientListener(): () => void {
             const prev = existing?.canvases?.find((c: any) => c.id === tab.id);
             return prev || { id: tab.id, name: tab.name, views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null, selectedViewId: null };
           });
-          useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
+          commitCanvasData({
             canvases,
             activeCanvasId: cs.activeCanvasId || cs.canvasId,
             wireDefinitions: namespacedWires,
@@ -455,14 +471,14 @@ export function initAnnexClientListener(): () => void {
           } else {
             canvases.push(updated);
           }
-          useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
+          commitCanvasData({
             canvases,
             activeCanvasId: existing.activeCanvasId,
             wireDefinitions: namespacedWires ?? existing.wireDefinitions,
           });
         } else {
-          // First canvas state for this project
-          useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
+          // First canvas state for this project/app
+          commitCanvasData({
             canvases: [{
               id: cs.canvasId, name: cs.name, views: namespacedViews,
               viewport: cs.viewport, nextZIndex: cs.nextZIndex,

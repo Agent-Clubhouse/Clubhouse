@@ -2832,6 +2832,11 @@ export function broadcastCanvasStateToClients(projectId: string, state: unknown)
   broadcastWs({ type: 'canvas:state', payload: { projectId, state } });
 }
 
+/** Broadcast app-level (global scope) canvas state to all connected controller clients. */
+export function broadcastAppCanvasStateToClients(state: unknown): void {
+  broadcastWs({ type: 'canvas:state', payload: { projectId: null, state, scope: 'global' } });
+}
+
 /** Broadcast session pause/resume to all connected WS clients. */
 export function notifySessionPause(paused: boolean): void {
   sessionPaused = paused;
