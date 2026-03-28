@@ -2,24 +2,29 @@ import { useRef, useEffect, useCallback } from 'react';
 import { AssistantMessage } from './AssistantMessage';
 import { AssistantActionCard } from './AssistantActionCard';
 import type { FeedItem } from './types';
+import type { AssistantStatus } from './assistant-agent';
 
 const SUGGESTED_PROMPTS = [
-  'Find my projects and add them to Clubhouse',
-  'Create a multi-agent canvas for debugging',
-  'Help me write agent instructions',
-  'What orchestrators are available?',
+  { label: 'Set up a project', prompt: 'Help me set up a new project in Clubhouse' },
+  { label: 'Configure agents', prompt: 'Help me configure agents for my project' },
+  { label: 'Build a canvas', prompt: 'Create a multi-agent canvas for debugging' },
+  { label: 'Learn the basics', prompt: 'What is Clubhouse and what can it do?' },
+  { label: 'Write agent instructions', prompt: 'Help me write agent instructions' },
+  { label: 'What orchestrators are available?', prompt: 'What orchestrators are available?' },
 ];
 
 interface Props {
   items: FeedItem[];
+  status: AssistantStatus;
   onSendPrompt: (prompt: string) => void;
 }
 
 /**
  * Scrollable message feed with auto-scroll behavior.
- * Shows welcome state with suggested prompts when empty.
+ * Shows welcome state with suggestion chips when empty.
+ * Centered content with max-width for readability.
  */
-export function AssistantFeed({ items, onSendPrompt }: Props) {
+export function AssistantFeed({ items, status, onSendPrompt }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
 
@@ -34,23 +39,23 @@ export function AssistantFeed({ items, onSendPrompt }: Props) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !isNearBottomRef.current) return;
-    el.scrollTop = el.scrollHeight;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [items]);
 
   if (items.length === 0) {
     return (
-      <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center" data-testid="assistant-feed-empty">
-        <div className="max-w-sm px-4 text-center">
-          {/* Robot icon */}
-          <div className="flex justify-center mb-4">
-            <div className="w-12 h-12 rounded-full bg-ctp-accent/10 flex items-center justify-center">
+      <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center px-4" data-testid="assistant-feed-empty">
+        <div className="max-w-md text-center">
+          {/* Mascot placeholder */}
+          <div className="flex justify-center mb-5">
+            <div className="w-20 h-20 rounded-full bg-ctp-accent/10 flex items-center justify-center">
               <svg
-                width="24"
-                height="24"
+                width="40"
+                height="40"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2"
+                strokeWidth="1.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 className="text-ctp-accent"
@@ -63,22 +68,22 @@ export function AssistantFeed({ items, onSendPrompt }: Props) {
               </svg>
             </div>
           </div>
-          <p className="text-sm text-ctp-text mb-1 font-medium">
+          <p className="text-base text-ctp-text mb-1 font-semibold">
             Hi! I&apos;m the Clubhouse Assistant.
           </p>
-          <p className="text-xs text-ctp-subtext0 mb-4">
-            I can set up projects, create and configure agents, build canvases
-            with wired-up workflows, write agent instructions, and more.
+          <p className="text-sm text-ctp-subtext0 mb-6 leading-relaxed">
+            I can set up projects, configure agents, build canvases,
+            write agent instructions, and more.
           </p>
           <div className="flex flex-wrap gap-2 justify-center" data-testid="suggested-prompts">
-            {SUGGESTED_PROMPTS.map((prompt) => (
+            {SUGGESTED_PROMPTS.map(({ label, prompt }) => (
               <button
-                key={prompt}
+                key={label}
                 onClick={() => onSendPrompt(prompt)}
-                className="px-3 py-1.5 text-xs rounded-full border border-surface-0 text-ctp-subtext0 hover:text-ctp-text hover:border-ctp-accent/40 hover:bg-surface-0 transition-colors cursor-pointer"
+                className="px-3 py-2 text-xs rounded-lg border border-surface-0 text-ctp-subtext0 hover:text-ctp-text hover:border-ctp-accent/40 hover:bg-ctp-accent/5 transition-colors cursor-pointer"
                 data-testid="suggested-prompt"
               >
-                {prompt}
+                {label}
               </button>
             ))}
           </div>
@@ -90,19 +95,33 @@ export function AssistantFeed({ items, onSendPrompt }: Props) {
   return (
     <div
       ref={scrollRef}
-      className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3"
+      className="flex-1 min-h-0 overflow-y-auto px-4 py-4"
       onScroll={handleScroll}
       data-testid="assistant-feed"
     >
-      {items.map((item) => {
-        if (item.type === 'message' && item.message) {
-          return <AssistantMessage key={item.message.id} message={item.message} />;
-        }
-        if (item.type === 'action' && item.action) {
-          return <AssistantActionCard key={item.action.id} action={item.action} />;
-        }
-        return null;
-      })}
+      <div className="max-w-[600px] mx-auto space-y-3">
+        {items.map((item) => {
+          if (item.type === 'message' && item.message) {
+            return <AssistantMessage key={item.message.id} message={item.message} />;
+          }
+          if (item.type === 'action' && item.action) {
+            return <AssistantActionCard key={item.action.id} action={item.action} />;
+          }
+          return null;
+        })}
+        {/* Loading indicator when assistant is thinking */}
+        {status === 'responding' && (
+          <div className="flex justify-start" data-testid="assistant-typing">
+            <div className="px-3 py-2 rounded-lg bg-ctp-mantle">
+              <div className="flex gap-1 items-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-ctp-subtext0 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-ctp-subtext0 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-ctp-subtext0 animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
