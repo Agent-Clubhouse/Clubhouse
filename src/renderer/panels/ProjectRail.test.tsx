@@ -698,3 +698,100 @@ describe('ProjectRail annex-gated plugins', () => {
     expect(screen.getByTestId('nav-settings')).toBeInTheDocument();
   });
 });
+
+describe('ProjectRail exitSettingsAndNavigate', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(_cb: () => void) {}
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    resetStores();
+  });
+
+  it('clicking the active project while in assistant mode restores the previous tab', () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+      activeProjectId: 'p1',
+      gitStatus: { p1: true },
+    });
+    useUIStore.setState({
+      explorerTab: 'assistant',
+      previousExplorerTab: 'agents',
+      showHome: true,
+    });
+
+    render(<ProjectRail />);
+
+    fireEvent.click(screen.getByTestId('project-p1'));
+
+    expect(useUIStore.getState().explorerTab).toBe('agents');
+    expect(useUIStore.getState().previousExplorerTab).toBeNull();
+    expect(useProjectStore.getState().activeProjectId).toBe('p1');
+  });
+
+  it('clicking a different project while in assistant mode exits assistant and switches project', () => {
+    useProjectStore.setState({
+      projects: [
+        makeProject({ id: 'p1', name: 'Alpha' }),
+        makeProject({ id: 'p2', name: 'Beta' }),
+      ],
+      activeProjectId: 'p1',
+      gitStatus: { p1: true, p2: true },
+    });
+    useUIStore.setState({
+      explorerTab: 'assistant',
+      previousExplorerTab: 'agents',
+      showHome: true,
+    });
+
+    render(<ProjectRail />);
+
+    fireEvent.click(screen.getByTestId('project-p2'));
+
+    expect(useUIStore.getState().explorerTab).toBe('agents');
+    expect(useProjectStore.getState().activeProjectId).toBe('p2');
+  });
+
+  it('clicking the active project while in settings mode restores the previous tab', () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+      activeProjectId: 'p1',
+      gitStatus: { p1: true },
+    });
+    useUIStore.setState({
+      explorerTab: 'settings',
+      previousExplorerTab: 'agents',
+      showHome: true,
+    });
+
+    render(<ProjectRail />);
+
+    fireEvent.click(screen.getByTestId('project-p1'));
+
+    expect(useUIStore.getState().explorerTab).toBe('agents');
+    expect(useUIStore.getState().previousExplorerTab).toBeNull();
+    expect(useProjectStore.getState().activeProjectId).toBe('p1');
+  });
+
+  it('clicking the active project while in help mode restores the previous tab', () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+      activeProjectId: 'p1',
+      gitStatus: { p1: true },
+    });
+    useUIStore.setState({
+      explorerTab: 'help',
+      previousExplorerTab: 'agents',
+      showHome: true,
+    });
+
+    render(<ProjectRail />);
+
+    fireEvent.click(screen.getByTestId('project-p1'));
+
+    expect(useUIStore.getState().explorerTab).toBe('agents');
+    expect(useUIStore.getState().previousExplorerTab).toBeNull();
+    expect(useProjectStore.getState().activeProjectId).toBe('p1');
+  });
+});
