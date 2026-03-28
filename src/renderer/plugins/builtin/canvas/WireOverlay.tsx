@@ -182,8 +182,12 @@ export const WireOverlay = React.memo(function WireOverlay({
       const bidir = (forceBidirectional && binding.targetKind === 'agent')
         || isBidirectional(binding, bindings);
 
-      // For bidirectional pairs, only render the first direction we encounter
+      // For bidirectional pairs, render only one wire per pair.
+      // When both directions exist as real bindings, prefer the one
+      // where agentId < targetId for deterministic rendering order.
       if (bidir) {
+        const realBidir = isBidirectional(binding, bindings);
+        if (realBidir && binding.agentId > binding.targetId) continue;
         const pairKey = [binding.agentId, binding.targetId].sort().join('--');
         if (rendered.has(pairKey)) continue;
         rendered.add(pairKey);
