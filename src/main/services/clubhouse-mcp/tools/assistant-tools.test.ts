@@ -195,10 +195,17 @@ describe('assistant-tools', () => {
 
   // ── Help tools ───────────────────────────────────────────────────────
 
-  it('search_help returns hint about system prompt', async () => {
+  it('search_help returns real search results', async () => {
     const result = await callAssistantTool('search_help', { query: 'canvas' });
     expect(result.isError).toBeFalsy();
-    expect(result.content[0].text).toContain('system prompt');
+    // Should return actual help content, not a hint to search the prompt
+    expect(result.content[0].text).toBeTruthy();
+  });
+
+  it('search_help returns no-match message for unknown queries', async () => {
+    const result = await callAssistantTool('search_help', { query: 'xyznonexistent123' });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain('No help topics matched');
   });
 
   // ── Settings tool ────────────────────────────────────────────────────
