@@ -565,6 +565,31 @@ describe('WireOverlay', () => {
     expect(wireBrowser?.getAttribute('marker-start')).toBeNull();
   });
 
+  it('uses dashed stroke for unidirectional wires and solid for bidirectional', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeAgentView('a2', 'agent-2', 400, 0),
+      makePluginView('b1', 400, 400),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' },
+      { agentId: 'agent-2', targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1' },
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    // Bidirectional wire should be solid (no dasharray)
+    const bidirPath = container.querySelector('[data-testid^="wire-path-agent-1--agent-2"], [data-testid^="wire-path-agent-2--agent-1"]');
+    expect(bidirPath?.getAttribute('stroke-dasharray')).toBeNull();
+
+    // Unidirectional wire should be dashed
+    const uniPath = container.querySelector('[data-testid="wire-path-agent-1--b1"]');
+    expect(uniPath?.getAttribute('stroke-dasharray')).toBe('8 4');
+  });
+
   it('does not dim wire when sleepingAgentIds is not provided', () => {
     const views: CanvasView[] = [
       makeAgentView('a1', 'agent-1', 0, 0),

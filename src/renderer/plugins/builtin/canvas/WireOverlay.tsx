@@ -141,13 +141,14 @@ const WireGroup = React.memo(function WireGroup({
         onClick={(e) => onWireClick?.(binding, e)}
         data-testid={`wire-hitbox-${wireKey}`}
       />
-      {/* Visible styled wire */}
+      {/* Visible styled wire — solid for bidir, dashed for unidirectional */}
       <path
         d={path}
         fill="none"
         stroke={wireColor}
         strokeWidth={isActive ? 2.5 : 2}
         strokeLinecap="round"
+        strokeDasharray={bidir ? undefined : '8 4'}
         markerEnd={fwdMarker}
         markerStart={bidir ? revMarker : undefined}
         style={{
