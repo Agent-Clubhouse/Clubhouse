@@ -5,6 +5,7 @@ Priority order: top = highest impact.
 ## In Progress
 
 - **More visual templates** — Before/after split, tree/hierarchy
+- **PR reviews** — Monitoring Missions 5 & 6 for design compliance
 
 ## Done
 
@@ -15,20 +16,17 @@ Priority order: top = highest impact.
 - **Rich content rendering spec** — Mode-specific rendering, ContentFrame, SVG conventions.
 - **Drill-in card designs** — 6 card types, interaction patterns, consent/undo system.
 - **Visual explanation templates** — Flow diagram + architecture block prototypes + guide.
+- **Sleeping mascot component** — TSX reference impl ready for SleepingMascots.tsx integration.
+- **Animation keyframes** — Full CSS spec for all 8 mascot states + UI animations.
 
 ## Up Next
-2. **Visual explanation templates** — Reusable patterns for "here's how this
-   works" content (annotated diagrams, concept animations, walkthrough GIFs)
-3. **Animated concept illustrations** — Canvas layout, agent connections,
+
+1. **Animated concept illustrations** — Canvas layout, agent connections,
    plugin architecture — visual teaching aids the assistant can embed
-4. **Sleeping mascot integration** — Sleeping variant matching SleepingMascots.tsx
-   pattern for the assistant orchestrator entry
-5. **Animation keyframes** — CSS animation specs for each mascot state
-   transition, respecting prefers-reduced-motion
-6. **Structured view layout** — Interactive card layouts for wizard/config flows
-7. **Headless mode indicator** — Background activity badge, toast notification
+2. **Structured view layout** — Interactive card layouts for wizard/config flows
+3. **Headless mode indicator** — Background activity badge, toast notification
    designs with mascot micro-expressions
-8. **PTY sidebar visual spec** — How rich content renders in terminal mode
+4. **PTY sidebar visual spec** — How rich content renders in terminal mode
    via a pushed sidebar panel
-9. **Consistency audit** — Review existing assistant-adjacent components
+5. **Consistency audit** — Review existing assistant-adjacent components
    (ToolCard, MessageStream) for pattern alignment
