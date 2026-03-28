@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18">
+  <!-- Pip 18px icon: Silhouette only for ProjectRail and inline use -->
+  <!-- Dome head + dot antenna, filled shape, stroke-based for currentColor -->
+
+  <!-- Antenna dot -->
+  <circle cx="9" cy="2" r="1.2" fill="currentColor"/>
+
+  <!-- Antenna stalk -->
+  <rect x="8.2" y="2.8" width="1.6" height="2.2" rx="0.8" fill="currentColor"/>
+
+  <!-- Head dome -->
+  <ellipse cx="9" cy="10.5" rx="7.5" ry="7" fill="currentColor"/>
+
+  <!-- Eyes (cutout — lighter) -->
+  <circle cx="6.5" cy="10" r="1.8" fill="#1e1e2e"/>
+  <circle cx="7" cy="9.4" r="0.7" fill="#cdd6f4"/>
+  <circle cx="11.5" cy="10" r="1.8" fill="#1e1e2e"/>
+  <circle cx="12" cy="9.4" r="0.7" fill="#cdd6f4"/>
+
+  <!-- Mouth -->
+  <path d="M7.5 13.5 Q9 15 10.5 13.5" fill="none" stroke="#1e1e2e" stroke-width="1" stroke-linecap="round"/>
+</svg>
