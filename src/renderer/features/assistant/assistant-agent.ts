@@ -418,8 +418,9 @@ export function approveAction(actionId: string): void {
     item.action.status = 'running';
     notifyFeedListeners();
     // Notify the orchestrator that the tool execution is approved
+    // The IPC method may not exist yet — guarded by optional chaining on the untyped cast
     if (state.agentId && state.mode === 'structured') {
-      window.clubhouse.agent.approveToolExecution?.(state.agentId, actionId).catch(() => {});
+      (window.clubhouse.agent as any).approveToolExecution?.(state.agentId, actionId)?.catch?.(() => {});
     }
   }
 }
@@ -430,8 +431,9 @@ export function skipAction(actionId: string): void {
     item.action.status = 'skipped';
     notifyFeedListeners();
     // Notify the orchestrator to skip this tool execution
+    // The IPC method may not exist yet — guarded by optional chaining on the untyped cast
     if (state.agentId && state.mode === 'structured') {
-      window.clubhouse.agent.skipToolExecution?.(state.agentId, actionId).catch(() => {});
+      (window.clubhouse.agent as any).skipToolExecution?.(state.agentId, actionId)?.catch?.(() => {});
     }
   }
 }
