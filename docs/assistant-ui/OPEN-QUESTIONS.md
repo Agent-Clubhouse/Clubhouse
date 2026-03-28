@@ -19,13 +19,11 @@ This gives drill-in cards and previews the space they need. See
 
 **Posted:** 2026-03-28 (updated)
 
-### 3. Conversation persistence
-**Context:** Should assistant conversations persist across sessions (requiring
-a conversation list/switcher) or start fresh each time?
-
-**Blocking:** Chat feed state management design
-
-**Posted:** 2026-03-28
+### ~~3. Conversation persistence~~ RESOLVED
+**Decision:** Single persistent thread for v1 (coordinator decision 2026-03-28).
+**Implementation:** perky-moth (Mission 2) added SAVE_HISTORY / LOAD_HISTORY
+IPC handlers persisting to `~/.clubhouse/assistant/chat-history.json`.
+History cleared on explicit reset.
 
 ### 4. Split-view for previews
 **Context:** When the assistant offers "show me" previews, should they open
