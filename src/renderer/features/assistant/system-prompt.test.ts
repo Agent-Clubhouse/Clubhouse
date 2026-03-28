@@ -34,6 +34,7 @@ describe('buildAssistantInstructions', () => {
     expect(result).toContain('Plugins');
     expect(result).toContain('Settings');
     expect(result).toContain('Troubleshooting');
+    expect(result).toContain('Agent Personas');
   });
 
   it('does not contain full help content dump', () => {
