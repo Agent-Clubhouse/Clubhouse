@@ -23,6 +23,11 @@ import settingsNotifications from './content/settings-notifications.md';
 import settingsLogging from './content/settings-logging.md';
 import troubleshootingCommon from './content/troubleshooting-common.md';
 import troubleshootingSafeMode from './content/troubleshooting-safe-mode.md';
+import cookbookLongRunningJob from './content/cookbook-long-running-job.md';
+import cookbookUiWork from './content/cookbook-ui-work.md';
+import cookbookGroupProject from './content/cookbook-group-project.md';
+import cookbookSquad from './content/cookbook-squad.md';
+import cookbookDragRace from './content/cookbook-drag-race.md';
 
 export interface HelpTopic {
   id: string;
@@ -89,6 +94,17 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'settings-notifications', title: 'Notifications & Badges', content: settingsNotifications },
       // Annex help topics are gated behind the experimental flag (visible only when opted in)
       { id: 'settings-logging', title: 'Logging & Diagnostics', content: settingsLogging },
+    ],
+  },
+  {
+    id: 'cookbooks',
+    title: 'Project Cookbooks',
+    topics: [
+      { id: 'cookbook-long-running-job', title: 'Long-Running Job', content: cookbookLongRunningJob },
+      { id: 'cookbook-ui-work', title: 'UI Work', content: cookbookUiWork },
+      { id: 'cookbook-group-project', title: 'Group Project', content: cookbookGroupProject },
+      { id: 'cookbook-squad', title: 'Squad', content: cookbookSquad },
+      { id: 'cookbook-drag-race', title: 'Drag Race', content: cookbookDragRace },
     ],
   },
   {
