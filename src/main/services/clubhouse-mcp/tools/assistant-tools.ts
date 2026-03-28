@@ -217,6 +217,7 @@ registerToolTemplate(
         id: a.id,
         name: a.name,
         color: a.color,
+        icon: a.icon || null,
         model: a.model,
         hasWorktree: !!a.worktreePath,
         orchestrator: a.orchestrator,
@@ -576,6 +577,7 @@ registerToolTemplate(
             id: agent.id,
             name: agent.name,
             color: agent.color,
+            icon: agent.icon || null,
             hasWorktree: !!agent.worktreePath,
             worktreePath: agent.worktreePath,
             model: agent.model,
@@ -598,7 +600,8 @@ registerToolTemplate(
   {
     description:
       'Update a durable agent\'s configuration. Can change model, orchestrator, ' +
-      'free agent mode, clubhouse mode override, name, and color.',
+      'free agent mode, clubhouse mode override, name, color, and icon. ' +
+      'IMPORTANT: Do NOT clear an agent\'s icon unless the user explicitly asks — custom icons are user-set.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -617,6 +620,10 @@ registerToolTemplate(
         color: {
           type: 'string',
           description: 'New agent color.',
+        },
+        icon: {
+          type: 'string',
+          description: 'Agent icon filename. Set to "" to remove a custom icon. Omit to leave unchanged.',
         },
         model: {
           type: 'string',
@@ -642,12 +649,16 @@ registerToolTemplate(
     const projectPath = args.project_path as string;
     const agentId = args.agent_id as string;
     try {
-      // Update basic fields (name, color) via updateDurable
-      const basicUpdates: Record<string, string | undefined> = {};
+      // Update basic fields (name, color, icon) via updateDurable
+      const basicUpdates: Record<string, string | null | undefined> = {};
       if (args.name !== undefined) basicUpdates.name = args.name as string;
       if (args.color !== undefined) basicUpdates.color = args.color as string;
+      if (args.icon !== undefined) {
+        // Explicit icon update: empty string means remove
+        basicUpdates.icon = (args.icon as string) === '' ? null : (args.icon as string);
+      }
       if (Object.keys(basicUpdates).length > 0) {
-        await updateDurable(projectPath, agentId, basicUpdates);
+        await updateDurable(projectPath, agentId, basicUpdates as any);
       }
 
       // Update config fields (model, orchestrator, freeAgentMode, etc.) via updateDurableConfig
