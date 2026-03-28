@@ -85,4 +85,10 @@ export function registerMarketplaceHandlers(): void {
       return customMarketplaceService.toggleCustomMarketplace(req);
     },
   ));
+
+  ipcMain.handle(IPC.MARKETPLACE.FETCH_CUSTOM_REGISTRIES, async () => {
+    const customs = await customMarketplaceService.listCustomMarketplaces();
+    const result = await marketplaceService.fetchAllRegistries(customs);
+    return result.custom;
+  });
 }
