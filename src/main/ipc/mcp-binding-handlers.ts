@@ -149,4 +149,5 @@ export function onMcpSettingsChanged(): void {
 /** For testing only: reset the registration guard so handlers can be re-registered. */
 export function _resetHandlersForTesting(): void {
   handlersRegistered = false;
+  bridgeStarted = false;
 }
