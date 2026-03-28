@@ -4,10 +4,17 @@
  * Tests cover panel opening, mode toggling, headless conversations,
  * structured mode streaming, tool execution, and basic Q&A.
  *
+ * Tests 1-2 (panel open, mode toggle) are UI-only and run everywhere.
+ * Tests 3-6 require a live orchestrator (claude-code, etc.) and are
+ * skipped in CI where no orchestrator credentials are available.
+ * Run locally with: npx playwright test e2e/assistant/
+ *
  * Each test suite uses an isolated CLUBHOUSE_USER_DATA directory.
  */
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+
+const hasOrchestrator = !process.env.CI;
 import {
   AssistantInstance,
   launchAssistantInstance,
@@ -88,6 +95,7 @@ test('mode toggle switches between all three modes', async () => {
 // ─── Test 3: Headless mode launch and response ──────────────────────────────
 
 test('assistant launches in headless mode and responds', async () => {
+  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await openAssistantPanel(window);
   await switchMode(window, 'headless');
 
@@ -107,6 +115,7 @@ test('assistant launches in headless mode and responds', async () => {
 // ─── Test 4: Structured mode streaming ──────────────────────────────────────
 
 test('assistant launches in structured mode with streaming', async () => {
+  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   // Reset conversation and wait for welcome state
   const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
   await resetBtn.click();
@@ -130,6 +139,7 @@ test('assistant launches in structured mode with streaming', async () => {
 // ─── Test 5: Tool execution shows action card ───────────────────────────────
 
 test('tool execution produces action card or project-related response', async () => {
+  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   // Reset conversation and wait for welcome state
   const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
   await resetBtn.click();
@@ -169,6 +179,7 @@ test('tool execution produces action card or project-related response', async ()
 // ─── Test 6: Basic conversation with non-empty response ─────────────────────
 
 test('basic conversation returns meaningful response', async () => {
+  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   // Reset conversation and wait for welcome state
   const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
   await resetBtn.click();
