@@ -215,6 +215,12 @@ export class StreamJsonAdapter implements StructuredAdapter {
    *   - result (session complete)
    */
   private mapEvent(event: StreamJsonEvent): StructuredEvent[] {
+    // Unwrap stream_event wrapper — claude --output-format stream-json wraps
+    // streaming events as { type: "stream_event", event: { type: "content_block_delta", ... } }
+    if (event.type === 'stream_event' && event.event) {
+      return this.mapEvent(event.event as StreamJsonEvent);
+    }
+
     switch (event.type) {
       case 'content_block_start':
         return this.handleBlockStart(event);
