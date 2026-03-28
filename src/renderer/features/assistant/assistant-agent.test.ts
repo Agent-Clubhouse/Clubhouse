@@ -21,6 +21,9 @@ const mockOnResult = vi.fn().mockReturnValue(() => {});
 const mockPtyWrite = vi.fn();
 const mockPtyOnData = vi.fn().mockReturnValue(() => {});
 const mockPtyOnExit = vi.fn().mockReturnValue(() => {});
+const mockAssistantReset = vi.fn().mockResolvedValue(undefined);
+const mockSaveHistory = vi.fn().mockResolvedValue(undefined);
+const mockLoadHistory = vi.fn().mockResolvedValue(null);
 
 vi.stubGlobal('window', {
   clubhouse: {
@@ -40,6 +43,9 @@ vi.stubGlobal('window', {
       unbind: vi.fn().mockResolvedValue(undefined),
       sendFollowup: mockSendFollowup,
       onResult: mockOnResult,
+      reset: mockAssistantReset,
+      saveHistory: mockSaveHistory,
+      loadHistory: mockLoadHistory,
     },
     pty: { write: mockPtyWrite, onData: mockPtyOnData, onExit: mockPtyOnExit },
   },
@@ -53,7 +59,23 @@ if (!globalThis.crypto?.randomUUID) {
 import * as agent from './assistant-agent';
 
 describe('assistant-agent', () => {
-  beforeEach(() => { vi.clearAllMocks(); agent.reset(); });
+  beforeEach(() => {
+    // Reset call counts but preserve mock implementations (mockResolvedValue, etc.)
+    vi.clearAllMocks();
+    // Restore mock implementations that clearAllMocks may have stripped
+    mockSaveHistory.mockResolvedValue(undefined);
+    mockLoadHistory.mockResolvedValue(null);
+    mockAssistantReset.mockResolvedValue(undefined);
+    mockKillAgent.mockResolvedValue(undefined);
+    mockCheckOrchestrator.mockResolvedValue({ available: true });
+    mockAssistantSpawn.mockResolvedValue({ success: true });
+    mockSendFollowup.mockResolvedValue({ agentId: 'assistant_followup_123' });
+    mockOnResult.mockReturnValue(() => {});
+    mockOnStructuredEvent.mockReturnValue(() => {});
+    mockPtyOnExit.mockReturnValue(() => {});
+    mockPtyOnData.mockReturnValue(() => {});
+    agent.reset();
+  });
 
   it('starts idle with interactive mode', () => {
     expect(agent.getStatus()).toBe('idle');
@@ -155,5 +177,138 @@ describe('assistant-agent', () => {
       expect(l).toHaveBeenCalled();
     }
     u();
+  });
+
+  describe('headless follow-ups', () => {
+    it('sends follow-up via assistant.sendFollowup and updates agentId', async () => {
+      agent.setMode('headless');
+      await agent.sendMessage('Hello');
+      // Simulate agent reaching active state after first response
+      // We need to manually trigger the headless result to get to 'active'
+      const resultCb = mockOnResult.mock.calls[0]?.[0];
+      if (resultCb) {
+        mockReadTranscript.mockResolvedValueOnce('{"type":"result","result":"Hi there"}\n');
+        resultCb({ agentId: agent.getAgentId(), exitCode: 0 });
+        await vi.waitFor(() => expect(agent.getStatus()).toBe('active'));
+
+        // Now send follow-up
+        await agent.sendMessage('How are you?');
+        expect(mockSendFollowup).toHaveBeenCalledWith(
+          expect.objectContaining({ message: 'How are you?' }),
+        );
+      }
+    });
+  });
+
+  describe('error handling', () => {
+    it('surfaces non-zero exit code as error message', async () => {
+      agent.setMode('headless');
+      await agent.sendMessage('Hello');
+      const resultCb = mockOnResult.mock.calls[0]?.[0];
+      if (resultCb) {
+        resultCb({ agentId: agent.getAgentId(), exitCode: 1 });
+        await vi.waitFor(() => {
+          const items = agent.getFeedItems();
+          const errorMsg = items.find(i =>
+            i.message?.role === 'assistant' && i.message.content.includes('exited with an error'),
+          );
+          expect(errorMsg).toBeDefined();
+        });
+      }
+    });
+
+    it('surfaces error events from transcript', async () => {
+      agent.setMode('headless');
+      await agent.sendMessage('Hello');
+      const resultCb = mockOnResult.mock.calls[0]?.[0];
+      if (resultCb) {
+        mockReadTranscript.mockResolvedValueOnce('{"type":"error","error":"Rate limit exceeded"}\n');
+        resultCb({ agentId: agent.getAgentId(), exitCode: 0 });
+        await vi.waitFor(() => {
+          const items = agent.getFeedItems();
+          const errorMsg = items.find(i =>
+            i.message?.role === 'assistant' && i.message.content.includes('Rate limit exceeded'),
+          );
+          expect(errorMsg).toBeDefined();
+        });
+      }
+    });
+
+    it('removes placeholder message after receiving response', async () => {
+      agent.setMode('headless');
+      await agent.sendMessage('Hello');
+      const resultCb = mockOnResult.mock.calls[0]?.[0];
+      if (resultCb) {
+        // Before response, there should be a placeholder
+        const beforeItems = agent.getFeedItems();
+        const placeholder = beforeItems.find(i =>
+          i.message?.content === '_Processing your request..._',
+        );
+        expect(placeholder).toBeDefined();
+
+        // After response, placeholder should be gone
+        mockReadTranscript.mockResolvedValueOnce('{"type":"result","result":"Response text"}\n');
+        resultCb({ agentId: agent.getAgentId(), exitCode: 0 });
+        await vi.waitFor(() => {
+          const afterItems = agent.getFeedItems();
+          const remaining = afterItems.find(i =>
+            i.message?.content === '_Processing your request..._',
+          );
+          expect(remaining).toBeUndefined();
+        });
+      }
+    });
+  });
+
+  describe('history persistence', () => {
+    it('calls saveHistory after receiving headless response', async () => {
+      vi.useFakeTimers();
+      agent.setMode('headless');
+      await agent.sendMessage('Hello');
+      const resultCb = mockOnResult.mock.calls[0]?.[0];
+      if (resultCb) {
+        mockReadTranscript.mockResolvedValueOnce('{"type":"result","result":"Hi"}\n');
+        resultCb({ agentId: agent.getAgentId(), exitCode: 0 });
+        // Wait for transcript read
+        await vi.waitFor(() => {
+          const items = agent.getFeedItems();
+          return items.some(i => i.message?.content === 'Hi');
+        });
+        // Advance past debounce timer
+        vi.advanceTimersByTime(600);
+        expect(mockSaveHistory).toHaveBeenCalled();
+      }
+      vi.useRealTimers();
+    });
+
+    it('clears history on reset', () => {
+      agent.reset();
+      expect(mockSaveHistory).toHaveBeenCalledWith([]);
+    });
+
+    it('loadHistory restores feed items', async () => {
+      const savedItems = [
+        { type: 'message', message: { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1000 } },
+        { type: 'message', message: { id: 'msg-2', role: 'assistant', content: 'Hi!', timestamp: 2000 } },
+      ];
+      mockLoadHistory.mockResolvedValueOnce(savedItems);
+      await agent.loadHistory();
+      const items = agent.getFeedItems();
+      expect(items).toHaveLength(2);
+      expect(items[0].message?.content).toBe('Hello');
+      expect(items[1].message?.content).toBe('Hi!');
+    });
+  });
+
+  describe('reset cleanup', () => {
+    it('calls assistant.reset IPC to clean up main process resources', async () => {
+      agent.setMode('headless');
+      await agent.sendMessage('Hello');
+      const agentId = agent.getAgentId();
+      agent.reset();
+      if (agentId) {
+        expect(mockAssistantReset).toHaveBeenCalledWith(agentId);
+      }
+    });
   });
 });
