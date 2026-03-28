@@ -128,6 +128,7 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
         });
         notifyFeedListeners();
       }
+      setStatus('responding');
       break;
     }
     case 'text_done': {
@@ -156,6 +157,16 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
           groupId,
         },
       });
+      setStatus('responding');
+      break;
+    }
+    case 'tool_output': {
+      // Streaming tool output — update the matching action card's output
+      const outputItem = pendingItems.find(i => i.type === 'action' && i.action?.id === event.data.id);
+      if (outputItem?.action) {
+        outputItem.action.output = (outputItem.action.output || '') + event.data.output;
+        notifyFeedListeners();
+      }
       break;
     }
     case 'tool_end': {
@@ -170,10 +181,32 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
       }
       break;
     }
-    case 'error':
+    case 'file_diff':
+      pushItem({ type: 'action', action: { id: generateId(), toolName: `${event.data.changeType} file`, description: event.data.path, status: 'completed', output: event.data.diff } });
+      break;
+    case 'command_output':
+      pushItem({ type: 'action', action: { id: event.data.id, toolName: 'shell', description: event.data.command, status: event.data.status === 'failed' ? 'error' : event.data.status === 'completed' ? 'completed' : 'running', output: event.data.output } });
+      break;
+    case 'permission_request':
+      pushItem({ type: 'action', action: { id: event.data.id, toolName: event.data.toolName, description: event.data.description, status: 'pending', input: event.data.toolInput } });
+      break;
+    case 'thinking':
+      // Thinking tokens are informational — don't surface in the chat feed
+      break;
+    case 'plan_update':
+      // Plan updates could be surfaced later; skip for now
+      break;
+    case 'usage':
+      // Token usage is informational — tracked but not surfaced in chat
+      break;
+    case 'error': {
+      // Only surface non-stderr errors as visible errors in the chat
+      const code = event.data.code;
+      if (code === 'stderr') break; // CLI diagnostic output, not a real error
       pushAssistantMessage(`Error: ${event.data.message}`);
       setStatus('error', event.data.message);
       break;
+    }
     case 'end':
       state.pendingText = '';
       if (event.data.reason === 'error') {
@@ -308,7 +341,13 @@ export async function sendMessage(text: string): Promise<void> {
     setStatus('responding');
     try {
       if (state.mode === 'structured') {
-        await window.clubhouse.agent.sendStructuredMessage(state.agentId, text);
+        try {
+          await window.clubhouse.agent.sendStructuredMessage(state.agentId, text);
+        } catch {
+          // Adapter doesn't support multi-turn (e.g. StreamJsonAdapter in single-turn mode).
+          // Start a fresh structured session for the follow-up message.
+          await startAgent(text);
+        }
       } else if (state.mode === 'headless') {
         // Conversational follow-up via headless --continue
         pushAssistantMessage('_Processing your follow-up..._');

@@ -430,7 +430,7 @@ async function spawnStructured(
   agentRegistry.setNonce(agentId, nonce);
   agentRegistry.setRuntime(agentId, 'structured');
 
-  // MCP injection for structured mode so assistant tools are available
+  // MCP injection — same as headless/interactive so assistant tools are visible
   let mcpPort = 0;
   const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
   const mcpJsonPath = path.join(workspace, mcpConfigFile);
@@ -447,20 +447,22 @@ async function spawnStructured(
   const adapter = provider.createStructuredAdapter();
   appLog(LOG_NS, 'info', 'Structured adapter created', { meta: { agentId, orchestrator: provider.id } });
 
+  // Build env with Clubhouse-specific variables
+  const structuredEnv: Record<string, string> = {
+    ...profileEnv,
+    CLUBHOUSE_AGENT_ID: agentId,
+    CLUBHOUSE_HOOK_NONCE: nonce,
+    ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
+  };
+
   await structuredManager.startStructuredSession(agentId, adapter, {
     mission, systemPrompt, model, cwd: workspace,
-    env: {
-      ...profileEnv,
-      CLUBHOUSE_AGENT_ID: agentId,
-      CLUBHOUSE_HOOK_NONCE: nonce,
-      ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
-    },
-    freeAgentMode: true, permissionMode,
+    env: structuredEnv, freeAgentMode: true, permissionMode,
   }, (exitAgentId) => {
     appLog(LOG_NS, 'info', 'Structured session ended', { meta: { agentId: exitAgentId } });
     configPipeline.restoreForAgent(exitAgentId);
-    bindingManager.unbindAgent(exitAgentId);
-    untrackAgent(exitAgentId);
+    // Don't unbind/untrack immediately — allow follow-ups via new sessions.
+    // Cleanup happens on explicit reset only, same as headless conversational mode.
   });
 
   appLog(LOG_NS, 'info', 'Structured session started', { meta: { agentId } });
