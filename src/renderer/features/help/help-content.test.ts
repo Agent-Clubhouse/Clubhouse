@@ -2,18 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { HELP_SECTIONS } from './help-content';
 
 describe('help-content', () => {
-  it('has 7 sections', () => {
-    expect(HELP_SECTIONS).toHaveLength(7);
+  it('has 8 sections', () => {
+    expect(HELP_SECTIONS).toHaveLength(8);
   });
 
   it('has the expected section IDs in order', () => {
     const ids = HELP_SECTIONS.map((s) => s.id);
-    expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas']);
+    expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas', 'cookbooks']);
   });
 
-  it('has 32 total topics', () => {
+  it('has 37 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(32);
+    expect(total).toBe(37);
   });
 
   it('each section has at least 1 topic', () => {
