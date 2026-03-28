@@ -105,11 +105,25 @@ Every template must include:
 **When to use:** Showing configuration changes, migration diffs, setting
 updates — any time you need to show what changed and why.
 
+### 4. Tree/Hierarchy (`tree-hierarchy.svg`)
+**Pattern:** Top-down branching structure with cascading reveal
+**Example:** "Project Structure" — Project → Agents + Canvases + Plugins → leaves
+
+**Features:**
+- Root node with accent border (project)
+- Three branches to category nodes (agents, canvases, plugins)
+- Leaf nodes with metadata (model, type, count)
+- Legend box with descriptions per category
+- Top-down cascade animation (root → connectors → branches → leaves)
+- Color-coded categories (green agents, blue canvases, amber plugins)
+
+**When to use:** Explaining project structure, plugin ecosystems, agent
+hierarchies, file organization — any parent-child relationship tree.
+
 ## Planned Templates
 
 | Template | Pattern | Priority |
 |----------|---------|----------|
-| Tree/Hierarchy | Top-down branching | High |
 | Annotated UI wireframe | Screenshot + callouts | Medium |
 | Step sequence | Numbered card reveal | Medium |
 | Comparison grid | Feature table with checks | Low |

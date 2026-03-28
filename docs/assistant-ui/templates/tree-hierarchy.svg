@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 280" width="400" height="280">
+  <!-- Template: Tree/Hierarchy — top-down branching structure -->
+  <!-- Example: "Project Structure" — Project → Agents + Canvases + Plugins -->
+  <style>
+    .tree-box {
+      fill: var(--ctp-surface0, #313244);
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 1.5;
+      rx: 6;
+    }
+    .tree-root {
+      fill: var(--ctp-surface0, #313244);
+      stroke: var(--ctp-accent, #89b4fa);
+      stroke-width: 2;
+      rx: 8;
+    }
+    .tree-label {
+      font-family: monospace;
+      font-size: 11px;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .tree-sublabel {
+      font-family: monospace;
+      font-size: 8px;
+      fill: var(--ctp-subtext0, #a6adc8);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .tree-title {
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: bold;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+    }
+    .tree-connector {
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 1.5;
+      fill: none;
+      stroke-linecap: round;
+      stroke-dasharray: 60;
+      stroke-dashoffset: 60;
+    }
+    .tree-icon {
+      font-family: monospace;
+      font-size: 12px;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    /* Animations — top-down cascade */
+    .tree-l0 { opacity: 0; animation: treeFade 0.3s ease-out 0.2s forwards; }
+    .tree-c1 { animation: treeDraw 0.4s ease-out 0.5s forwards; }
+    .tree-c2 { animation: treeDraw 0.4s ease-out 0.6s forwards; }
+    .tree-c3 { animation: treeDraw 0.4s ease-out 0.7s forwards; }
+    .tree-l1 { opacity: 0; animation: treeFade 0.3s ease-out 0.8s forwards; }
+    .tree-l1b { opacity: 0; animation: treeFade 0.3s ease-out 0.9s forwards; }
+    .tree-l1c { opacity: 0; animation: treeFade 0.3s ease-out 1.0s forwards; }
+    .tree-c4 { animation: treeDraw 0.3s ease-out 1.1s forwards; }
+    .tree-c5 { animation: treeDraw 0.3s ease-out 1.2s forwards; }
+    .tree-c6 { animation: treeDraw 0.3s ease-out 1.1s forwards; }
+    .tree-c7 { animation: treeDraw 0.3s ease-out 1.2s forwards; }
+    .tree-c8 { animation: treeDraw 0.3s ease-out 1.1s forwards; }
+    .tree-l2 { opacity: 0; animation: treeFade 0.3s ease-out 1.3s forwards; }
+
+    @keyframes treeFade { to { opacity: 1; } }
+    @keyframes treeDraw { to { stroke-dashoffset: 0; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .tree-l0, .tree-l1, .tree-l1b, .tree-l1c, .tree-l2,
+      .tree-c1, .tree-c2, .tree-c3, .tree-c4, .tree-c5,
+      .tree-c6, .tree-c7, .tree-c8 {
+        animation: none !important;
+        opacity: 1 !important;
+        stroke-dashoffset: 0 !important;
+      }
+    }
+  </style>
+
+  <!-- Background -->
+  <rect width="400" height="280" fill="var(--ctp-base, #1e1e2e)" rx="8"/>
+
+  <!-- Title -->
+  <text x="200" y="22" class="tree-title">Project Structure</text>
+
+  <!-- Level 0: Root (Project) -->
+  <g class="tree-l0">
+    <rect x="150" y="38" width="100" height="40" class="tree-root"/>
+    <text x="200" y="53" class="tree-icon" fill="var(--ctp-accent, #89b4fa)">📦</text>
+    <text x="200" y="68" class="tree-label">my-project</text>
+  </g>
+
+  <!-- Connectors: Root → Level 1 -->
+  <!-- Root → Agents -->
+  <path d="M175 78 L175 90 L80 90 L80 108" class="tree-connector tree-c1"/>
+  <!-- Root → Canvases -->
+  <path d="M200 78 L200 108" class="tree-connector tree-c2"/>
+  <!-- Root → Plugins -->
+  <path d="M225 78 L225 90 L320 90 L320 108" class="tree-connector tree-c3"/>
+
+  <!-- Level 1: Agents -->
+  <g class="tree-l1">
+    <rect x="30" y="108" width="100" height="40" class="tree-box"/>
+    <text x="80" y="123" class="tree-icon" fill="#a6e3a1">🤖</text>
+    <text x="80" y="138" class="tree-label">Agents (3)</text>
+  </g>
+
+  <!-- Level 1: Canvases -->
+  <g class="tree-l1b">
+    <rect x="150" y="108" width="100" height="40" class="tree-box"/>
+    <text x="200" y="123" class="tree-icon" fill="var(--ctp-accent, #89b4fa)">🎨</text>
+    <text x="200" y="138" class="tree-label">Canvases (2)</text>
+  </g>
+
+  <!-- Level 1: Plugins -->
+  <g class="tree-l1c">
+    <rect x="270" y="108" width="100" height="40" class="tree-box"/>
+    <text x="320" y="123" class="tree-icon" fill="#f5a623">🔌</text>
+    <text x="320" y="138" class="tree-label">Plugins (5)</text>
+  </g>
+
+  <!-- Connectors: Agents → Level 2 -->
+  <path d="M60 148 L60 168" class="tree-connector tree-c4"/>
+  <path d="M100 148 L100 168" class="tree-connector tree-c5"/>
+
+  <!-- Connectors: Canvases → Level 2 -->
+  <path d="M180 148 L180 168" class="tree-connector tree-c6"/>
+  <path d="M220 148 L220 168" class="tree-connector tree-c7"/>
+
+  <!-- Connectors: Plugins → Level 2 -->
+  <path d="M320 148 L320 168" class="tree-connector tree-c8"/>
+
+  <!-- Level 2: Agent leaves -->
+  <g class="tree-l2">
+    <!-- Agent 1 -->
+    <rect x="30" y="168" width="60" height="36" class="tree-box"/>
+    <text x="60" y="181" class="tree-label" font-size="9">default</text>
+    <text x="60" y="194" class="tree-sublabel">Sonnet</text>
+
+    <!-- Agent 2 -->
+    <rect x="70" y="168" width="60" height="36" class="tree-box" transform="translate(30 0)"/>
+    <text x="130" y="181" class="tree-label" font-size="9">test</text>
+    <text x="130" y="194" class="tree-sublabel">Haiku</text>
+
+    <!-- Canvas 1 -->
+    <rect x="150" y="168" width="60" height="36" class="tree-box"/>
+    <text x="180" y="181" class="tree-label" font-size="9">main</text>
+    <text x="180" y="194" class="tree-sublabel">Hub</text>
+
+    <!-- Canvas 2 -->
+    <rect x="220" y="168" width="60" height="36" class="tree-box" transform="translate(-10 0)"/>
+    <text x="240" y="181" class="tree-label" font-size="9">debug</text>
+    <text x="240" y="194" class="tree-sublabel">Spoke</text>
+
+    <!-- Plugin summary -->
+    <rect x="290" y="168" width="60" height="36" class="tree-box"/>
+    <text x="320" y="181" class="tree-label" font-size="9">git, lint</text>
+    <text x="320" y="194" class="tree-sublabel">+3 more</text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(20, 222)">
+    <rect x="0" y="-4" width="360" height="48" rx="6" fill="var(--ctp-surface0, #313244)" opacity="0.3"/>
+    <text x="10" y="10" class="tree-sublabel" text-anchor="start">
+      <tspan fill="#a6e3a1">🤖 Agents</tspan>
+      <tspan dx="8">execute tasks using orchestrators</tspan>
+    </text>
+    <text x="10" y="24" class="tree-sublabel" text-anchor="start">
+      <tspan fill="var(--ctp-accent, #89b4fa)">🎨 Canvases</tspan>
+      <tspan dx="4">organize work into visual layouts</tspan>
+    </text>
+    <text x="10" y="38" class="tree-sublabel" text-anchor="start">
+      <tspan fill="#f5a623">🔌 Plugins</tspan>
+      <tspan dx="8">extend functionality (git, lint, etc.)</tspan>
+    </text>
+  </g>
+</svg>
