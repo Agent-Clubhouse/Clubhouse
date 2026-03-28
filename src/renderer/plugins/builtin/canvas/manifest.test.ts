@@ -69,6 +69,13 @@ describe('canvas manifest', () => {
     expect(setting!.default).toBe(true);
   });
 
+  it('contributes bidirectional-wires boolean setting with default false', () => {
+    const setting = manifest.contributes!.settings!.find((s) => s.key === 'bidirectional-wires');
+    expect(setting).toBeDefined();
+    expect(setting!.type).toBe('boolean');
+    expect(setting!.default).toBe(false);
+  });
+
   it('uses declarative settings panel', () => {
     expect(manifest.settingsPanel).toBe('declarative');
   });

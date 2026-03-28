@@ -442,6 +442,64 @@ describe('WireOverlay', () => {
     expect(svg?.style.zIndex).toBe('');
   });
 
+  it('forceBidirectional renders unidirectional agent wire as bidirectional', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeAgentView('a2', 'agent-2', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} forceBidirectional />,
+    );
+
+    const pathEl = container.querySelector('[data-testid="wire-path-agent-1--agent-2"]');
+    expect(pathEl).toBeTruthy();
+    expect(pathEl?.getAttribute('marker-end')).toBe('url(#wire-arrow-fwd)');
+    expect(pathEl?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev)');
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-bidir')).toBe('true');
+  });
+
+  it('forceBidirectional does not affect non-agent wires', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} forceBidirectional />,
+    );
+
+    const pathEl = container.querySelector('[data-testid="wire-path-agent-1--b1"]');
+    expect(pathEl?.getAttribute('marker-start')).toBeNull();
+  });
+
+  it('forceBidirectional deduplicates already-bidirectional agent wires', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeAgentView('a2', 'agent-2', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' },
+      { agentId: 'agent-2', targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} forceBidirectional />,
+    );
+
+    // Should still only render one wire path even with both directions and forceBidirectional
+    const paths = container.querySelectorAll('[data-testid^="wire-path-"]');
+    expect(paths.length).toBe(1);
+  });
+
   it('does not dim wire when sleepingAgentIds is not provided', () => {
     const views: CanvasView[] = [
       makeAgentView('a1', 'agent-1', 0, 0),

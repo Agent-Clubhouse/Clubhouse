@@ -75,6 +75,8 @@ interface CanvasWorkspaceProps {
   onUpdateZoneTheme: (zoneId: string, themeId: string) => void;
   minimapAutoHide: boolean;
   onMinimapAutoHideChange: (value: boolean) => void;
+  /** When true, render all agent-to-agent wires as bidirectional. */
+  bidirectionalWires?: boolean;
 }
 
 export function CanvasWorkspace({
@@ -106,6 +108,7 @@ export function CanvasWorkspace({
   onUpdateZoneTheme,
   minimapAutoHide,
   onMinimapAutoHideChange,
+  bidirectionalWires,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -784,6 +787,7 @@ export function CanvasWorkspace({
               viewPositions={wireViewPositions}
               sleepingAgentIds={sleepingAgentIds}
               onWireClick={handleWireClick}
+              forceBidirectional={bidirectionalWires}
             />
           </div>
         )}
