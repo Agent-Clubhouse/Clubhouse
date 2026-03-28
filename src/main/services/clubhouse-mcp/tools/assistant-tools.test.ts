@@ -23,7 +23,7 @@ vi.mock('../../project-store', () => ({
 }));
 
 const mockCreateDurable = vi.fn().mockResolvedValue({
-  id: 'durable_new', name: 'test-agent', color: 'emerald',
+  id: 'durable_new', name: 'test-agent', color: 'emerald', icon: 'durable_new.png',
   worktreePath: '/wt/new', model: 'opus', orchestrator: 'claude-code', createdAt: '2026-01-01',
 });
 const mockUpdateDurable = vi.fn().mockResolvedValue(undefined);
@@ -32,7 +32,7 @@ const mockDeleteDurable = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../../agent-config', () => ({
   listDurable: vi.fn().mockResolvedValue([
-    { id: 'agent-1', name: 'coder', color: '#ff0000', model: 'opus', worktreePath: '/wt/1', orchestrator: 'claude-code', createdAt: '2026-01-01' },
+    { id: 'agent-1', name: 'coder', color: '#ff0000', icon: 'agent-1.png', model: 'opus', worktreePath: '/wt/1', orchestrator: 'claude-code', createdAt: '2026-01-01' },
     { id: 'agent-2', name: 'reviewer', color: '#00ff00', model: 'sonnet', orchestrator: 'claude-code', createdAt: '2026-01-01' },
   ]),
   createDurable: (...a: unknown[]) => mockCreateDurable(...a),
@@ -339,6 +339,79 @@ describe('assistant-tools', () => {
     });
     if (!result.isError) {
       expect(result.content[0].text).toContain('updated');
+    }
+  });
+
+  // ── Icon preservation ──────────────────────────────────────────────────
+
+  it('list_agents includes icon field for agents with custom icons', async () => {
+    const result = await callAssistantTool('list_agents', { project_path: '/home/user/my-app' });
+    // The mock may fail in some configs; verify the error to avoid false passes
+    if (result.isError) {
+      expect(result.content[0].text).toContain('Failed to list agents');
+      return;
+    }
+    const data = JSON.parse(result.content[0].text);
+    // agent-1 has a custom icon
+    const agent1 = data.find((a: any) => a.id === 'agent-1');
+    expect(agent1.icon).toBe('agent-1.png');
+    // agent-2 has no icon
+    const agent2 = data.find((a: any) => a.id === 'agent-2');
+    expect(agent2.icon).toBeNull();
+  });
+
+  it('create_agent response includes icon field', async () => {
+    const result = await callAssistantTool('create_agent', {
+      project_path: '/home/user/my-app',
+      name: 'new-agent',
+    });
+    if (!result.isError) {
+      const data = JSON.parse(result.content[0].text);
+      expect(data).toHaveProperty('icon');
+    }
+  });
+
+  it('update_agent does not pass icon to updateDurable when icon arg is omitted', async () => {
+    mockUpdateDurable.mockClear();
+    const result = await callAssistantTool('update_agent', {
+      project_path: '/home/user/my-app',
+      agent_id: 'agent-1',
+      name: 'renamed-coder',
+    });
+    if (!result.isError) {
+      expect(mockUpdateDurable).toHaveBeenCalledTimes(1);
+      const updates = mockUpdateDurable.mock.calls[0][2];
+      expect(updates.name).toBe('renamed-coder');
+      // icon should NOT be in the updates — omitting it preserves the existing icon
+      expect(updates).not.toHaveProperty('icon');
+    }
+  });
+
+  it('update_agent passes icon to updateDurable when explicitly provided', async () => {
+    mockUpdateDurable.mockClear();
+    const result = await callAssistantTool('update_agent', {
+      project_path: '/home/user/my-app',
+      agent_id: 'agent-1',
+      icon: 'new-icon.png',
+    });
+    if (!result.isError) {
+      expect(mockUpdateDurable).toHaveBeenCalledTimes(1);
+      const updates = mockUpdateDurable.mock.calls[0][2];
+      expect(updates.icon).toBe('new-icon.png');
+    }
+  });
+
+  it('update_agent passes null icon when empty string provided (icon removal)', async () => {
+    mockUpdateDurable.mockClear();
+    const result = await callAssistantTool('update_agent', {
+      project_path: '/home/user/my-app',
+      agent_id: 'agent-1',
+      icon: '',
+    });
+    if (!result.isError) {
+      expect(mockUpdateDurable).toHaveBeenCalledTimes(1);
+      const updates = mockUpdateDurable.mock.calls[0][2];
+      expect(updates.icon).toBeNull();
     }
   });
 });

@@ -23,13 +23,20 @@ You have MCP tools for configuring Clubhouse. Here's when and how to use each.
 
 | Tool | Use when |
 |------|----------|
-| `list_agents` | Before creating or modifying agents. Needs `project_path` from `list_projects`. |
+| `list_agents` | Before creating or modifying agents. Needs `project_path` from `list_projects`. Returns icon info. |
 | `create_agent` | User wants a new durable agent. Full params: name, color, model, orchestrator, use_worktree, free_agent_mode, mcp_ids. |
-| `update_agent` | Changing agent config (model, orchestrator, free_agent_mode, name, color). |
+| `update_agent` | Changing agent config (model, orchestrator, free_agent_mode, name, color, icon). |
 | `delete_agent` | User confirms they want to remove an agent. Always confirm first. |
 | `write_agent_instructions` | Writing or updating CLAUDE.md. Takes project_path and full markdown content. |
 | `get_model_options` | Show available models when user is choosing for an agent. |
 | `get_orchestrators` | Show available orchestrators and their status. |
+
+### IMPORTANT: Preserve custom agent icons
+
+Agents may have custom icons set by the user (shown as a non-null `icon` field in `list_agents`).
+- NEVER clear or overwrite an agent's icon unless the user explicitly asks to change it.
+- When building canvases, only use `add_card` to reference agents — do NOT update or recreate them.
+- If you need to update agent properties (name, color, model), omit the `icon` field to leave it unchanged.
 
 ## Canvas tools
 
@@ -82,6 +89,7 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 3. NEVER use anchors for coordination — use direct agent-to-agent wires
 4. Use zones only for visual grouping, not for functionality
 5. When connecting agents, wire them directly to each other (agent-to-agent)
+6. NEVER modify existing agents (update_agent, delete_agent) when building a canvas — only reference them via add_card
 
 **Agent reconfiguration:**
 `list_agents` → `update_agent` → `write_agent_instructions`
