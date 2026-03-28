@@ -42,6 +42,8 @@ interface WireOverlayProps {
   /** Agent IDs whose status is sleeping or error — wires to/from them render dimmed. */
   sleepingAgentIds?: Set<string>;
   onWireClick?: (binding: McpBindingEntry, event: React.MouseEvent) => void;
+  /** When true, all agent-to-agent wires render as bidirectional regardless of binding direction. */
+  forceBidirectional?: boolean;
 }
 
 /**
@@ -153,6 +155,7 @@ export const WireOverlay = React.memo(function WireOverlay({
   viewPositions,
   sleepingAgentIds,
   onWireClick,
+  forceBidirectional,
 }: WireOverlayProps) {
   const viewMap = useMemo(() => {
     const m = new Map<string, CanvasView>();
@@ -175,7 +178,9 @@ export const WireOverlay = React.memo(function WireOverlay({
     }> = [];
 
     for (const binding of bindings) {
-      const bidir = isBidirectional(binding, bindings);
+      // Force all agent-to-agent wires bidirectional when the setting is on
+      const bidir = (forceBidirectional && binding.targetKind === 'agent')
+        || isBidirectional(binding, bindings);
 
       // For bidirectional pairs, only render the first direction we encounter
       if (bidir) {
@@ -208,7 +213,7 @@ export const WireOverlay = React.memo(function WireOverlay({
     }
 
     return result;
-  }, [bindings, viewMap, viewPositions]);
+  }, [bindings, viewMap, viewPositions, forceBidirectional]);
 
   // Build wire specs for physics hook
   const wireSpecs = useMemo(

@@ -12,6 +12,7 @@ import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { usePluginStore } from '../../plugin-store';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -128,6 +129,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const wireDefinitions = store((s) => s.wireDefinitions);
   const minimapAutoHide = store((s) => s.minimapAutoHide);
   const bindings = useMcpBindingStore((s) => s.bindings);
+  const settingsKey = `${isAppMode ? 'app' : api.context.projectId}:canvas`;
+  const bidirectionalWires = usePluginStore(
+    (s) => (s.pluginSettings[settingsKey]?.['bidirectional-wires'] as boolean) ?? false,
+  );
 
   // Dynamic title: show active canvas tab name
   const activeCanvasName = canvases.find((c) => c.id === activeCanvasId)?.name;
@@ -498,6 +503,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onUpdateZoneTheme: handleUpdateZoneTheme,
             minimapAutoHide,
             onMinimapAutoHideChange: (value: boolean) => store.getState().setMinimapAutoHide(value),
+            bidirectionalWires,
           }),
         ),
   );
