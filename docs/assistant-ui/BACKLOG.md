@@ -4,20 +4,18 @@ Priority order: top = highest impact.
 
 ## In Progress
 
-- **Mascot size variants** — 32px chat avatar and 18px icon optimized versions
-- **Rich content rendering spec** — How animated SVGs, GIFs, diagrams appear
-  in chat feed vs PTY sidebar. Mode-specific visual strategies.
+- **Visual explanation templates** — First prototype template (flow diagram)
 
 ## Done
 
 - **Mascot character design** — Pip selected (Comp C). 3 comps + rationale.
 - **Mascot expression sheet** — All 8 emotional states + animation specs + guide.
+- **Mascot size variants** — 32px avatar, 18px icon.
 - **Chat layout proposal** — Full spec in `chat-layout/proposal.md`.
+- **Rich content rendering spec** — Mode-specific rendering, ContentFrame, SVG conventions.
+- **Drill-in card designs** — 6 card types, interaction patterns, consent/undo system.
 
 ## Up Next
-
-1. **Drill-in card designs** — Preview cards, snippet views, entity cards,
-   diff views, step indicators. Includes inline rich content expansion.
 2. **Visual explanation templates** — Reusable patterns for "here's how this
    works" content (annotated diagrams, concept animations, walkthrough GIFs)
 3. **Animated concept illustrations** — Canvas layout, agent connections,
