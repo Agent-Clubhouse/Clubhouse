@@ -15,11 +15,11 @@ describe('renderMarkdownSafe', () => {
     expect(result).toContain('src="x"');
   });
 
-  it('strips SVG onload handlers', () => {
+  it('strips SVG onload handlers but preserves SVG element', () => {
     const result = renderMarkdownSafe('<svg onload=alert(1)>');
     expect(result).not.toContain('onload');
-    // svg is not in allowed tags, so it should be stripped entirely
-    expect(result).not.toContain('<svg');
+    // svg is allowed for inline rich content, but event handlers are stripped
+    expect(result).toContain('<svg');
   });
 
   it('strips nested injection payloads', () => {
