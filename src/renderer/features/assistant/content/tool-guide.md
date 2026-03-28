@@ -73,7 +73,7 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 | `get_settings` | User asks about current configuration. |
 | `update_settings` | User wants to change a setting. Value is JSON-encoded. |
 | `get_app_state` | Quick overview of what's configured. |
-| `search_help` | You need to look up a specific feature detail. |
+| `search_help` | Look up detailed help content on any Clubhouse feature. Always use this before answering feature questions. |
 
 ## Common tool sequences
 

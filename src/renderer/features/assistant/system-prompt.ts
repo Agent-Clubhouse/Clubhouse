@@ -5,19 +5,21 @@ import { HELP_SECTIONS } from '../help/help-content';
 
 /**
  * Build the full CLAUDE.md content for the assistant agent.
- * Concatenates: identity + tool guide + help reference + workflow recipes.
+ * Concatenates: identity + tool guide + help topic index + workflow recipes.
  *
  * Content order matters — identity and tool guide come first so the agent
  * understands its role and capabilities before the reference material.
+ *
+ * Help content is NOT inlined — the assistant uses `search_help` to retrieve
+ * specific topics on demand, keeping the prompt compact (~10-12KB).
  */
 export function buildAssistantInstructions(): string {
-  const helpContent = HELP_SECTIONS
-    .map((section) =>
-      section.topics
-        .map((topic) => `## ${section.title}: ${topic.title}\n\n${topic.content}`)
-        .join('\n\n---\n\n'),
-    )
-    .join('\n\n---\n\n');
+  const topicIndex = HELP_SECTIONS
+    .map((section) => {
+      const topics = section.topics.map((t) => t.title).join(', ');
+      return `- **${section.title}**: ${topics}`;
+    })
+    .join('\n');
 
   return [
     identity,
@@ -28,11 +30,11 @@ export function buildAssistantInstructions(): string {
     '',
     '---',
     '',
-    '# Clubhouse Help Reference',
+    '# Available Help Topics',
     '',
-    'Use this reference to answer questions about Clubhouse features.',
+    'Use `search_help` to retrieve detailed content on any of these topics.',
     '',
-    helpContent,
+    topicIndex,
     '',
     '---',
     '',
