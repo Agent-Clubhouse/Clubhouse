@@ -52,9 +52,12 @@ interface PluginCardProps {
   installed: boolean;
   installing: boolean;
   onInstall: () => void;
+  betaPlugin?: MarketplacePluginWithSource;
+  installingBeta?: boolean;
+  onInstallBeta?: () => void;
 }
 
-function PluginCard({ plugin, featured, installed, installing, onInstall }: PluginCardProps) {
+function PluginCard({ plugin, featured, installed, installing, onInstall, betaPlugin, installingBeta, onInstallBeta }: PluginCardProps) {
   const release = plugin.releases[plugin.latest];
   if (!release) return null;
 
@@ -163,6 +166,44 @@ function PluginCard({ plugin, featured, installed, installing, onInstall }: Plug
           ))}
         </div>
       )}
+      {betaPlugin && (() => {
+        const betaRelease = betaPlugin.releases[betaPlugin.latest];
+        const betaCompatible = betaRelease ? SUPPORTED_API_VERSIONS.includes(betaRelease.api) : false;
+        return (
+          <div className="mt-3 pt-3 border-t border-surface-0 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-mauve/20 text-ctp-mauve font-medium">
+                Beta available: v{betaPlugin.latest}
+              </span>
+              {betaPlugin.marketplaceName && (
+                <span className="text-[10px] text-ctp-subtext0">from {betaPlugin.marketplaceName}</span>
+              )}
+              {betaRelease && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">
+                  API {betaRelease.api}
+                </span>
+              )}
+              {!betaCompatible && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Incompatible</span>
+              )}
+            </div>
+            <button
+              onClick={onInstallBeta}
+              disabled={installingBeta || !betaCompatible}
+              className={`
+                px-3 py-1.5 rounded text-xs font-medium transition-colors cursor-pointer shrink-0
+                ${!betaCompatible
+                  ? 'bg-surface-1 text-ctp-subtext0 cursor-not-allowed opacity-50'
+                  : installingBeta
+                    ? 'bg-ctp-mauve/50 text-white cursor-wait'
+                    : 'bg-ctp-mauve/80 text-white hover:bg-ctp-mauve'}
+              `}
+            >
+              {installingBeta ? 'Installing...' : 'Install Beta'}
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -179,6 +220,10 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
   const [installingIds, setInstallingIds] = useState<Set<string>>(new Set());
   const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
   const [registryVersionWarning, setRegistryVersionWarning] = useState(false);
+  const [betaPlugins, setBetaPlugins] = useState<Map<string, MarketplacePluginWithSource>>(new Map());
+  const [installingBetaIds, setInstallingBetaIds] = useState<Set<string>>(new Set());
+  const [betaInstallErrors, setBetaInstallErrors] = useState<Record<string, string>>({});
+  const [showRestartPrompt, setShowRestartPrompt] = useState(false);
 
   const plugins = usePluginStore((s) => s.plugins);
   const installedPluginIds = useMemo(() => Object.keys(plugins), [plugins]);
@@ -204,6 +249,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
           const officialIds = new Set(result.registry.plugins.map((p: MarketplacePlugin) => p.id));
           const allCustomPlugins: MarketplacePluginWithSource[] = [];
           const errors: Record<string, string> = {};
+          const betaMap = new Map<string, MarketplacePluginWithSource>();
 
           const customResults = await window.clubhouse.marketplace.fetchCustomRegistries();
           for (const entry of customResults) {
@@ -211,7 +257,14 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
               errors[entry.marketplace.id] = entry.error;
             } else {
               for (const plugin of entry.registry.plugins) {
-                if (!officialIds.has(plugin.id)) {
+                if (officialIds.has(plugin.id)) {
+                  // Beta version of an official plugin — annotate the existing card
+                  betaMap.set(plugin.id, {
+                    ...plugin,
+                    marketplaceId: entry.marketplace.id,
+                    marketplaceName: entry.marketplace.name,
+                  });
+                } else {
                   officialIds.add(plugin.id);
                   allCustomPlugins.push({
                     ...plugin,
@@ -226,6 +279,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
           if (!cancelled) {
             setCustomPlugins(allCustomPlugins);
             setCustomErrors(errors);
+            setBetaPlugins(betaMap);
           }
         } catch {
           // Custom marketplaces are non-critical
@@ -328,6 +382,44 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const handleInstallBeta = async (betaPlugin: MarketplacePluginWithSource) => {
+    const release = betaPlugin.releases[betaPlugin.latest];
+    if (!release) return;
+
+    setInstallingBetaIds((prev) => new Set(prev).add(betaPlugin.id));
+    setBetaInstallErrors((prev) => {
+      const next = { ...prev };
+      delete next[betaPlugin.id];
+      return next;
+    });
+
+    try {
+      const result = await window.clubhouse.marketplace.installPlugin({
+        pluginId: betaPlugin.id,
+        version: betaPlugin.latest,
+        assetUrl: release.asset,
+        sha256: release.sha256,
+      });
+
+      if (!result.success) {
+        setBetaInstallErrors((prev) => ({ ...prev, [betaPlugin.id]: result.error || 'Install failed' }));
+      } else {
+        setShowRestartPrompt(true);
+      }
+    } catch (err: unknown) {
+      setBetaInstallErrors((prev) => ({
+        ...prev,
+        [betaPlugin.id]: err instanceof Error ? err.message : 'Install failed',
+      }));
+    } finally {
+      setInstallingBetaIds((prev) => {
+        const next = new Set(prev);
+        next.delete(betaPlugin.id);
+        return next;
+      });
+    }
+  };
+
   const tabs: { key: FilterTab; label: string }[] = [
     { key: 'all', label: 'All' },
     { key: 'featured', label: 'Featured' },
@@ -378,6 +470,18 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
                   <p key={id}>Failed to load "{mkt?.name || id}": {err}</p>
                 );
               })}
+            </div>
+          )}
+
+          {showRestartPrompt && (
+            <div className="mb-3 p-2 rounded bg-ctp-accent/10 border border-ctp-accent/30 text-xs text-ctp-text flex items-center justify-between gap-2">
+              <span>Beta installed. Restart required to load the new version.</span>
+              <button
+                onClick={() => window.clubhouse.app.restart()}
+                className="px-2 py-1 rounded bg-ctp-accent text-white text-xs hover:bg-ctp-accent/90 cursor-pointer shrink-0"
+              >
+                Restart now
+              </button>
             </div>
           )}
 
@@ -446,9 +550,18 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
                     installed={installedPluginIds.includes(plugin.id)}
                     installing={installingIds.has(plugin.id)}
                     onInstall={() => handleInstall(plugin)}
+                    betaPlugin={betaPlugins.get(plugin.id)}
+                    installingBeta={installingBetaIds.has(plugin.id)}
+                    onInstallBeta={() => {
+                      const beta = betaPlugins.get(plugin.id);
+                      if (beta) handleInstallBeta(beta);
+                    }}
                   />
                   {installErrors[plugin.id] && (
                     <p className="text-xs text-red-400 mt-1 px-1">{installErrors[plugin.id]}</p>
+                  )}
+                  {betaInstallErrors[plugin.id] && (
+                    <p className="text-xs text-red-400 mt-1 px-1">{betaInstallErrors[plugin.id]}</p>
                   )}
                 </div>
               ))}
