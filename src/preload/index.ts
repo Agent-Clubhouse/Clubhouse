@@ -1271,6 +1271,15 @@ const api = {
       ipcRenderer.on(IPC.ASSISTANT.RESULT, listener);
       return () => { ipcRenderer.removeListener(IPC.ASSISTANT.RESULT, listener); };
     },
+    /** Clean up all assistant resources (MCP binding, agent registry, config). */
+    reset: (agentId: string) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.RESET, agentId),
+    /** Save chat history to disk for session persistence. */
+    saveHistory: (items: any[]) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.SAVE_HISTORY, { items }),
+    /** Load chat history from disk. */
+    loadHistory: () =>
+      ipcRenderer.invoke(IPC.ASSISTANT.LOAD_HISTORY) as Promise<any[] | null>,
   },
   canvas: {
     /** Listen for canvas commands from the main process (assistant). */
