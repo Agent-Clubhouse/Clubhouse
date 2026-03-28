@@ -8,6 +8,7 @@ import { getProvider, isSessionCapable } from '../orchestrators';
 import { pathExists } from './fs-utils';
 import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo, FreeAgentPermissionMode } from '../../shared/types';
 import * as freeAgentSettings from './free-agent-settings';
+import { isAssistantAgent } from '../../shared/assistant-utils';
 
 const SCHEMA_VERSION = 1;
 const STALENESS_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -26,6 +27,8 @@ export async function captureSessionState(
 
   for (const [agentId, reg] of all) {
     if (reg.runtime !== 'pty') continue;
+    // Assistant agents are ephemeral — don't persist or resume them
+    if (isAssistantAgent(agentId)) continue;
 
     const provider = getProvider(reg.orchestrator);
     if (!provider) continue;
@@ -105,9 +108,10 @@ export async function loadPendingResume(): Promise<RestartSessionState | null> {
     return null;
   }
 
-  // Filter out sessions with missing project directories
+  // Filter out assistant agents and sessions with missing project directories
   const validSessions: RestartSessionEntry[] = [];
   for (const session of state.sessions) {
+    if (isAssistantAgent(session.agentId)) continue;
     const dirExists = await pathExists(session.worktreePath || session.projectPath);
     if (dirExists) {
       validSessions.push(session);

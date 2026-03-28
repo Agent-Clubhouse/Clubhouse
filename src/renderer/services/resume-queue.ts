@@ -2,6 +2,7 @@ import { useAgentStore } from '../stores/agentStore';
 import { useProjectStore } from '../stores/projectStore';
 import type { Agent } from '../../shared/types';
 import type { RestartSessionEntry, RestartSessionState } from '../../shared/types';
+import { isAssistantAgent } from '../../shared/assistant-utils';
 import type { ResumeStatus } from '../features/app/ResumeBanner';
 
 /**
@@ -11,16 +12,19 @@ import type { ResumeStatus } from '../features/app/ResumeBanner';
 export async function processResumeQueue(state: RestartSessionState): Promise<void> {
   const store = useAgentStore.getState();
 
+  // Filter out assistant agents — they are ephemeral and should not be resumed
+  const sessions = state.sessions.filter((e) => !isAssistantAgent(e.agentId));
+
   // Group by projectPath for sequential processing
   const byProject = new Map<string, RestartSessionEntry[]>();
-  for (const entry of state.sessions) {
+  for (const entry of sessions) {
     const key = entry.projectPath;
     if (!byProject.has(key)) byProject.set(key, []);
     byProject.get(key)!.push(entry);
   }
 
   // Set initial statuses
-  for (const entry of state.sessions) {
+  for (const entry of sessions) {
     const status: ResumeStatus = entry.resumeStrategy === 'manual' ? 'manual' : 'pending';
     store.setResumeStatus(entry.agentId, status);
   }
