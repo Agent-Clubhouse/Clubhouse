@@ -90,6 +90,11 @@ export class StreamJsonAdapter implements StructuredAdapter {
       // Permission handling already applied above via permissionMode
     }
 
+    // Append extra CLI args (e.g. MCP server config flags from the spawn path)
+    if (sessionOpts.extraArgs) {
+      args.push(...sessionOpts.extraArgs);
+    }
+
     const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
     const spawnArgs = sessionOpts.commandPrefix
       ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
