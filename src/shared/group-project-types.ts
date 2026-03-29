@@ -28,4 +28,11 @@ export interface TopicDigest {
   messageCount: number;
   newMessageCount: number;   // since the `since` param
   latestTimestamp: string;
+  isProtected?: boolean;
+}
+
+/** Per-project retention configuration for the bulletin board. */
+export interface BulletinRetentionConfig {
+  maxPerTopic: number;
+  maxTotal: number;
 }
