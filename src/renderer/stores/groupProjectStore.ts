@@ -4,6 +4,7 @@ import type { GroupProject } from '../../shared/group-project-types';
 interface GroupProjectStoreState {
   projects: GroupProject[];
   loaded: boolean;
+  loadError: string | null;
   loadProjects: () => Promise<void>;
   create: (name: string) => Promise<GroupProject>;
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
@@ -15,13 +16,16 @@ interface GroupProjectStoreState {
 export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   projects: [],
   loaded: false,
+  loadError: null,
 
   loadProjects: async () => {
     try {
       const projects = await window.clubhouse.groupProject.list() as GroupProject[];
-      set({ projects: projects || [], loaded: true });
-    } catch {
-      set({ loaded: true });
+      set({ projects: projects || [], loaded: true, loadError: null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[group-project] loadProjects failed:', message);
+      set({ loaded: true, loadError: message });
     }
   },
 

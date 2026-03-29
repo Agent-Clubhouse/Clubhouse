@@ -86,8 +86,8 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
     try {
       const satellites = await window.clubhouse.annexClient.getSatellites();
       set({ satellites });
-    } catch {
-      // Keep empty
+    } catch (err) {
+      console.warn('[annex-client] loadSatellites failed:', err);
     }
   },
 
@@ -95,8 +95,8 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
     try {
       const discoveredServices = await window.clubhouse.annexClient.getDiscovered();
       set({ discoveredServices });
-    } catch {
-      // Keep empty
+    } catch (err) {
+      console.warn('[annex-client] loadDiscovered failed:', err);
     }
   },
 
@@ -207,7 +207,8 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   requestPtyBuffer: async (satelliteId, agentId) => {
     try {
       return await window.clubhouse.annexClient.ptyGetBuffer(satelliteId, agentId);
-    } catch {
+    } catch (err) {
+      console.warn('[annex-client] requestPtyBuffer failed:', satelliteId, agentId, err);
       return '';
     }
   },
