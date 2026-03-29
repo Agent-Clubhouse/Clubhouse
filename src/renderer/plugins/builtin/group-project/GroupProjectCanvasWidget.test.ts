@@ -449,6 +449,40 @@ describe('GroupProjectCanvasWidget — annex client proxy', () => {
   });
 });
 
+// ── Annex client event forwarding ───────────────────────────────────
+
+describe('GroupProjectCanvasWidget — annex client event forwarding', () => {
+  const clientSource = readFileSync(join(__dirname, '../../../../main/services/annex-client.ts'), 'utf-8');
+
+  it('annex-client explicitly handles agent:woken event (not just default case)', () => {
+    // agent:woken must be in the explicit case list so it is forwarded to the
+    // renderer and the agent status updates from sleeping to running.
+    expect(clientSource).toMatch(/case\s+'agent:woken':/);
+  });
+
+  it('annex-client explicitly handles agent:spawned event', () => {
+    expect(clientSource).toMatch(/case\s+'agent:spawned':/);
+  });
+
+  it('annex-client explicitly handles agent:completed event', () => {
+    expect(clientSource).toMatch(/case\s+'agent:completed':/);
+  });
+});
+
+// ── Plugin manifest registry includes group-project ────────────────
+
+describe('GroupProjectCanvasWidget — manifest registry', () => {
+  const registrySource = readFileSync(join(__dirname, '../../../../main/services/plugin-manifest-registry.ts'), 'utf-8');
+
+  it('plugin-manifest-registry imports group-project manifest', () => {
+    expect(registrySource).toContain("from '../../renderer/plugins/builtin/group-project/manifest'");
+  });
+
+  it('group-project is in builtinManifestById map', () => {
+    expect(registrySource).toContain('groupProjectManifest.id, groupProjectManifest');
+  });
+});
+
 // ── Snapshot richness ───────────────────────────────────────────────
 
 describe('GroupProjectCanvasWidget — snapshot data richness', () => {

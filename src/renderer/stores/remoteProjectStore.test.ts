@@ -505,6 +505,280 @@ describe('remoteProjectStore', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Canvas view namespacing in snapshot
+  // -------------------------------------------------------------------------
+
+  describe('snapshot canvas state view namespacing', () => {
+    it('namespaces agentId in canvas views from snapshot', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        canvasState: {
+          'proj-1': {
+            canvases: [{
+              id: 'c1',
+              name: 'Main Canvas',
+              views: [
+                { id: 'v1', type: 'agent', agentId: 'agent-1', projectId: 'proj-1' },
+                { id: 'v2', type: 'agent', agentId: 'agent-2', projectId: 'proj-1' },
+              ],
+              viewport: { panX: 0, panY: 0, zoom: 1 },
+              nextZIndex: 2,
+              zoomedViewId: null,
+            }],
+            activeCanvasId: 'c1',
+          },
+        },
+      }));
+
+      const canvasState = useRemoteProjectStore.getState().remoteCanvasState['remote||sat-1||proj-1'];
+      expect(canvasState).toBeDefined();
+      const views = (canvasState.canvases[0] as any).views;
+      expect(views[0].agentId).toBe('remote||sat-1||agent-1');
+      expect(views[0].projectId).toBe('remote||sat-1||proj-1');
+      expect(views[1].agentId).toBe('remote||sat-1||agent-2');
+    });
+
+    it('namespaces metadata.agentId and metadata.projectId in canvas views', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        canvasState: {
+          'proj-1': {
+            canvases: [{
+              id: 'c1',
+              name: 'Canvas',
+              views: [{
+                id: 'v1',
+                type: 'agent',
+                agentId: 'agent-1',
+                metadata: {
+                  agentId: 'agent-1',
+                  projectId: 'proj-1',
+                  agentName: 'mega-camel',
+                },
+              }],
+              viewport: { panX: 0, panY: 0, zoom: 1 },
+              nextZIndex: 1,
+              zoomedViewId: null,
+            }],
+            activeCanvasId: 'c1',
+          },
+        },
+      }));
+
+      const canvasState = useRemoteProjectStore.getState().remoteCanvasState['remote||sat-1||proj-1'];
+      const view = (canvasState.canvases[0] as any).views[0];
+      expect(view.metadata.agentId).toBe('remote||sat-1||agent-1');
+      expect(view.metadata.projectId).toBe('remote||sat-1||proj-1');
+      expect(view.metadata.agentName).toBe('mega-camel'); // non-ID fields unchanged
+    });
+
+    it('namespaces metadata.groupProjectId in canvas views', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        canvasState: {
+          'proj-1': {
+            canvases: [{
+              id: 'c1',
+              name: 'Canvas',
+              views: [{
+                id: 'v1',
+                type: 'plugin',
+                metadata: { groupProjectId: 'gp-1', name: 'My Group Project' },
+              }],
+              viewport: { panX: 0, panY: 0, zoom: 1 },
+              nextZIndex: 1,
+              zoomedViewId: null,
+            }],
+            activeCanvasId: 'c1',
+          },
+        },
+      }));
+
+      const canvasState = useRemoteProjectStore.getState().remoteCanvasState['remote||sat-1||proj-1'];
+      const view = (canvasState.canvases[0] as any).views[0];
+      expect(view.metadata.groupProjectId).toBe('remote||sat-1||gp-1');
+      expect(view.metadata.name).toBe('My Group Project'); // non-ID fields unchanged
+    });
+
+    it('does not double-namespace already-namespaced IDs', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        canvasState: {
+          'proj-1': {
+            canvases: [{
+              id: 'c1',
+              name: 'Canvas',
+              views: [{
+                id: 'v1',
+                type: 'agent',
+                agentId: 'remote||sat-1||agent-1',
+                projectId: 'remote||sat-1||proj-1',
+                metadata: { agentId: 'remote||sat-1||agent-1' },
+              }],
+              viewport: { panX: 0, panY: 0, zoom: 1 },
+              nextZIndex: 1,
+              zoomedViewId: null,
+            }],
+            activeCanvasId: 'c1',
+          },
+        },
+      }));
+
+      const canvasState = useRemoteProjectStore.getState().remoteCanvasState['remote||sat-1||proj-1'];
+      const view = (canvasState.canvases[0] as any).views[0];
+      expect(view.agentId).toBe('remote||sat-1||agent-1');
+      expect(view.projectId).toBe('remote||sat-1||proj-1');
+      expect(view.metadata.agentId).toBe('remote||sat-1||agent-1');
+    });
+
+    it('handles views without agentId or metadata gracefully', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        canvasState: {
+          'proj-1': {
+            canvases: [{
+              id: 'c1',
+              name: 'Canvas',
+              views: [
+                { id: 'v1', type: 'plugin' }, // no agentId, no metadata
+                { id: 'v2', type: 'agent', agentId: 'agent-1' }, // no metadata
+              ],
+              viewport: { panX: 0, panY: 0, zoom: 1 },
+              nextZIndex: 1,
+              zoomedViewId: null,
+            }],
+            activeCanvasId: 'c1',
+          },
+        },
+      }));
+
+      const canvasState = useRemoteProjectStore.getState().remoteCanvasState['remote||sat-1||proj-1'];
+      const views = (canvasState.canvases[0] as any).views;
+      expect(views[0].type).toBe('plugin');
+      expect(views[0].agentId).toBeUndefined();
+      expect(views[1].agentId).toBe('remote||sat-1||agent-1');
+    });
+
+    it('namespaces views across multiple canvases in snapshot', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        canvasState: {
+          'proj-1': {
+            canvases: [
+              {
+                id: 'c1', name: 'Canvas 1',
+                views: [{ id: 'v1', type: 'agent', agentId: 'agent-1' }],
+                viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1, zoomedViewId: null,
+              },
+              {
+                id: 'c2', name: 'Canvas 2',
+                views: [{ id: 'v2', type: 'agent', agentId: 'agent-2' }],
+                viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1, zoomedViewId: null,
+              },
+            ],
+            activeCanvasId: 'c1',
+          },
+        },
+      }));
+
+      const canvasState = useRemoteProjectStore.getState().remoteCanvasState['remote||sat-1||proj-1'];
+      const c1Views = (canvasState.canvases[0] as any).views;
+      const c2Views = (canvasState.canvases[1] as any).views;
+      expect(c1Views[0].agentId).toBe('remote||sat-1||agent-1');
+      expect(c2Views[0].agentId).toBe('remote||sat-1||agent-2');
+    });
+  });
+
+  describe('snapshot appCanvasState view namespacing', () => {
+    it('namespaces agentId in app-level canvas views from snapshot', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        appCanvasState: {
+          canvases: [{
+            id: 'ac1',
+            name: 'App Canvas',
+            views: [
+              { id: 'v1', type: 'agent', agentId: 'agent-1', projectId: 'proj-1' },
+            ],
+            viewport: { panX: 0, panY: 0, zoom: 1 },
+            nextZIndex: 1,
+            zoomedViewId: null,
+          }],
+          activeCanvasId: 'ac1',
+        },
+      }));
+
+      const appState = useRemoteProjectStore.getState().remoteAppCanvasState['sat-1'];
+      expect(appState).toBeDefined();
+      const views = (appState.canvases[0] as any).views;
+      expect(views[0].agentId).toBe('remote||sat-1||agent-1');
+      expect(views[0].projectId).toBe('remote||sat-1||proj-1');
+    });
+
+    it('namespaces metadata.groupProjectId in app-level canvas views', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        appCanvasState: {
+          canvases: [{
+            id: 'ac1',
+            name: 'App Canvas',
+            views: [{
+              id: 'v1',
+              type: 'plugin',
+              metadata: { groupProjectId: 'gp-1' },
+            }],
+            viewport: { panX: 0, panY: 0, zoom: 1 },
+            nextZIndex: 1,
+            zoomedViewId: null,
+          }],
+          activeCanvasId: 'ac1',
+        },
+      }));
+
+      const appState = useRemoteProjectStore.getState().remoteAppCanvasState['sat-1'];
+      const view = (appState.canvases[0] as any).views[0];
+      expect(view.metadata.groupProjectId).toBe('remote||sat-1||gp-1');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Group project members from snapshot
+  // -------------------------------------------------------------------------
+
+  describe('group project members from snapshot', () => {
+    it('stores members keyed by satelliteId::gpId', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        groupProjectMembers: {
+          'gp-1': [
+            { agentId: 'agent-1', agentName: 'mega-camel', status: 'connected' },
+            { agentId: 'agent-2', agentName: 'swift-fox', status: 'sleeping' },
+          ],
+        },
+      }));
+
+      const members = useRemoteProjectStore.getState().remoteGroupProjectMembers;
+      expect(members['sat-1::gp-1']).toHaveLength(2);
+      expect(members['sat-1::gp-1'][0].agentId).toBe('agent-1');
+      expect(members['sat-1::gp-1'][0].status).toBe('connected');
+      expect(members['sat-1::gp-1'][1].status).toBe('sleeping');
+    });
+
+    it('cleans up members on removeSatellite', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        groupProjectMembers: {
+          'gp-1': [{ agentId: 'agent-1', agentName: 'mega-camel', status: 'connected' }],
+        },
+      }));
+
+      useRemoteProjectStore.getState().removeSatellite('sat-1');
+      const members = useRemoteProjectStore.getState().remoteGroupProjectMembers;
+      expect(members['sat-1::gp-1']).toBeUndefined();
+    });
+  });
+
   describe('upsertRemoteAgent', () => {
     it('uses canonical || namespace format for projectId', () => {
       const store = useRemoteProjectStore.getState();

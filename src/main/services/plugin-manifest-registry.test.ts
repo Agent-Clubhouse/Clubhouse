@@ -152,6 +152,15 @@ describe('plugin-manifest-registry', () => {
     expect(getManifest('git')).toBeDefined();
     expect(getManifest('canvas')).toBeDefined();
     expect(getManifest('sessions')).toBeDefined();
+    expect(getManifest('group-project')).toBeDefined();
+  });
+
+  it('group-project manifest declares annex permission for canvas-over-annex support', async () => {
+    await initializeTrustedManifests();
+
+    const manifest = getManifest('group-project');
+    expect(manifest).toBeDefined();
+    expect(manifest!.permissions).toContain('annex');
   });
 
   it('loads validated community manifests from disk when external plugins are enabled', async () => {
