@@ -291,17 +291,20 @@ describe('SEC-06: MCP binding IPC authorization', () => {
 
 describe('SET_DISABLED_TOOLS', () => {
   it('sets disabled tools on binding', () => {
+    mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
     const handler = getHandler(IPC.MCP_BINDING.SET_DISABLED_TOOLS);
     handler(fakeEvent, 'agent-1', 'target-1', ['tool-a', 'tool-b']);
     expect(bindingManager.setDisabledTools).toHaveBeenCalledWith('agent-1', 'target-1', ['tool-a', 'tool-b']);
   });
 
   it('rejects non-array disabledTools', () => {
+    mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
     const handler = getHandler(IPC.MCP_BINDING.SET_DISABLED_TOOLS);
     expect(() => handler(fakeEvent, 'agent-1', 'target-1', 'not-an-array')).toThrow();
   });
 
   it('rejects non-string items in array', () => {
+    mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
     const handler = getHandler(IPC.MCP_BINDING.SET_DISABLED_TOOLS);
     expect(() => handler(fakeEvent, 'agent-1', 'target-1', [123])).toThrow();
   });
