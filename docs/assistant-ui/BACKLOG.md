@@ -4,7 +4,7 @@ Priority order: top = highest impact.
 
 ## In Progress
 
-- **PR reviews** — Monitoring Missions 5 & 6 for design compliance
+- **PR design review** — Reviewing recent assistant implementation for consistency
 
 ## Done
 
@@ -14,16 +14,20 @@ Priority order: top = highest impact.
 - **Chat layout proposal** — Full spec in `chat-layout/proposal.md`.
 - **Rich content rendering spec** — Mode-specific rendering, ContentFrame, SVG conventions.
 - **Drill-in card designs** — 6 card types, interaction patterns, consent/undo system.
-- **Visual explanation templates** — Flow diagram + architecture block prototypes + guide.
+- **Visual explanation templates** — Flow diagram, architecture block, before/after, tree/hierarchy + guide.
 - **Sleeping mascot component** — TSX reference impl ready for SleepingMascots.tsx integration.
 - **Animation keyframes** — Full CSS spec for all 8 mascot states + UI animations.
 - **Headless mode indicator** — Badges, toasts, status bar for background activity.
 - **Structured view layout** — Wizards, config grids, comparisons.
 - **PTY sidebar visual spec** — Rich content sidebar for terminal mode.
 - **Consistency audit** — 2 minor issues found, 10 patterns documented.
+- **PR reviews** — Phase 1 & 2 mission design compliance reviews.
+- **Step-sequence template** — Numbered card reveal for wizard/scaffolding flows.
+- **Annotated UI wireframe template** — Screenshot + callouts for UI explanations.
 
 ## Up Next
 
-1. **More visual templates** — Before/after split, tree/hierarchy, annotated UI
-2. **Animated concept illustrations** — Canvas layout, agent connections,
+1. **Animated concept illustrations** — Canvas layout, agent connections,
    plugin architecture — visual teaching aids the assistant can embed
+2. **Comparison grid template** — Feature table with checks (low priority)
+3. **Timeline template** — Horizontal event sequence (low priority)

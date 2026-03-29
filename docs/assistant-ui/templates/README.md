@@ -120,12 +120,43 @@ updates — any time you need to show what changed and why.
 **When to use:** Explaining project structure, plugin ecosystems, agent
 hierarchies, file organization — any parent-child relationship tree.
 
+### 5. Step Sequence (`step-sequence.svg`)
+**Pattern:** Numbered cards with progress track showing multi-step wizard flow
+**Example:** "Set Up a Canvas" — Create → Add Cards → Connect → Layout
+
+**Features:**
+- Horizontal progress track with fill animation (green for completed)
+- Numbered badge circles: green checkmark (done), blue number (active), gray (pending)
+- Three card states: completed (green border), active (blue border + glow pulse), pending (dimmed)
+- Active step shows Approve/Skip action buttons (consent pattern)
+- Staggered left-to-right cascade reveal
+- Bottom legend explaining the three states
+- Timing labels per step for user expectation setting
+
+**When to use:** Any multi-step scaffolding flow — canvas setup, project creation,
+agent configuration, plugin installation. The assistant's primary interaction pattern
+for Builder persona flows.
+
+### 6. Annotated UI Wireframe (`annotated-wireframe.svg`)
+**Pattern:** Wireframe mock with numbered callout bubbles pointing to key areas
+**Example:** "Assistant Chat Panel" — header, feed, action card, chips, input bar
+
+**Features:**
+- Centered wireframe mock using actual UI proportions (header, feed, input)
+- Numbered blue callout circles (1-5) with dashed leader lines
+- Each callout has a label + brief description
+- Wireframe uses placeholder shapes (rounded rects, circles) not real text
+- Shows key interaction elements: avatar, messages, action card, suggestion chips
+- Callouts pop in sequentially after wireframe fades in
+
+**When to use:** Explaining what UI elements do, onboarding walkthroughs, pointing out
+where to find settings, showing users "click here" guidance. The assistant's primary
+pattern for "let me show you where that is" responses.
+
 ## Planned Templates
 
 | Template | Pattern | Priority |
 |----------|---------|----------|
-| Annotated UI wireframe | Screenshot + callouts | Medium |
-| Step sequence | Numbered card reveal | Medium |
 | Comparison grid | Feature table with checks | Low |
 | Timeline | Horizontal event sequence | Low |
 

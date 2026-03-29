@@ -25,11 +25,7 @@ This gives drill-in cards and previews the space they need. See
 IPC handlers persisting to `~/.clubhouse/assistant/chat-history.json`.
 History cleared on explicit reset.
 
-### 4. Split-view for previews
-**Context:** When the assistant offers "show me" previews, should they open
-in a side-by-side layout (assistant left, preview in AccessoryPanel slot) or
-expand inline within the feed?
-
-**Blocking:** Drill-in card interaction design
-
-**Posted:** 2026-03-28
+### ~~4. Split-view for previews~~ RESOLVED
+**Decision:** Inline for v1 (coordinator decision 2026-03-28).
+Rich content (entity previews, canvas visualizations, code snippets) renders
+inline in the chat feed. Split-view deferred — revisit if inline feels cramped.

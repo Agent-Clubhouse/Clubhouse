@@ -1,0 +1,236 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 260" width="480" height="260">
+  <!-- Template: Step Sequence — numbered card reveal for multi-step wizards -->
+  <!-- Example: "Set Up a Canvas" — Create → Add Cards → Connect → Layout -->
+  <style>
+    .step-card {
+      fill: var(--ctp-surface0, #313244);
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 1.5;
+      rx: 8;
+    }
+    .step-card-active {
+      fill: var(--ctp-surface0, #313244);
+      stroke: var(--ctp-accent, #89b4fa);
+      stroke-width: 2;
+      rx: 8;
+    }
+    .step-card-done {
+      fill: var(--ctp-surface0, #313244);
+      stroke: #a6e3a1;
+      stroke-width: 1.5;
+      rx: 8;
+    }
+    .step-badge {
+      font-family: monospace;
+      font-size: 11px;
+      font-weight: bold;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .step-title {
+      font-family: monospace;
+      font-size: 11px;
+      font-weight: bold;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+    }
+    .step-desc {
+      font-family: monospace;
+      font-size: 8px;
+      fill: var(--ctp-subtext0, #a6adc8);
+      text-anchor: middle;
+    }
+    .step-status {
+      font-family: monospace;
+      font-size: 8px;
+      font-weight: bold;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .step-heading {
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: bold;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+    }
+    .step-subheading {
+      font-family: monospace;
+      font-size: 10px;
+      fill: var(--ctp-subtext0, #a6adc8);
+      text-anchor: middle;
+    }
+    .step-track {
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 2;
+      stroke-linecap: round;
+    }
+    .step-track-fill {
+      stroke: #a6e3a1;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-dasharray: 300;
+      stroke-dashoffset: 300;
+    }
+    .step-action {
+      font-family: monospace;
+      font-size: 8px;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .step-action-bg {
+      rx: 4;
+      cursor: pointer;
+    }
+
+    /* Animations — left-to-right cascade */
+    .step-s1 { opacity: 0; animation: stepFade 0.3s ease-out 0.2s forwards; }
+    .step-s2 { opacity: 0; animation: stepFade 0.3s ease-out 0.5s forwards; }
+    .step-s3 { opacity: 0; animation: stepFade 0.3s ease-out 0.8s forwards; }
+    .step-s4 { opacity: 0; animation: stepFade 0.3s ease-out 1.1s forwards; }
+    .step-track-anim { animation: stepDraw 1.2s ease-out 0.3s forwards; }
+    .step-active-pulse {
+      opacity: 0;
+      animation: stepFade 0.3s ease-out 0.8s forwards, stepPulse 2.5s ease-in-out 1.4s infinite;
+    }
+    .step-check1 { opacity: 0; animation: stepPop 0.3s ease-out 0.4s forwards; }
+    .step-check2 { opacity: 0; animation: stepPop 0.3s ease-out 0.7s forwards; }
+
+    @keyframes stepFade { to { opacity: 1; } }
+    @keyframes stepDraw { to { stroke-dashoffset: 100; } }
+    @keyframes stepPulse {
+      0%, 100% { opacity: 0.08; }
+      50% { opacity: 0.2; }
+    }
+    @keyframes stepPop {
+      0% { opacity: 0; transform: scale(0.5); }
+      60% { transform: scale(1.15); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .step-s1, .step-s2, .step-s3, .step-s4,
+      .step-track-anim, .step-active-pulse,
+      .step-check1, .step-check2 {
+        animation: none !important;
+        opacity: 1 !important;
+        stroke-dashoffset: 0 !important;
+      }
+      .step-active-pulse { opacity: 0.12 !important; }
+    }
+  </style>
+
+  <!-- Background -->
+  <rect width="480" height="260" fill="var(--ctp-base, #1e1e2e)" rx="8"/>
+
+  <!-- Heading -->
+  <text x="240" y="24" class="step-heading">Set Up a Canvas</text>
+  <text x="240" y="40" class="step-subheading">Step 3 of 4 — connecting agents</text>
+
+  <!-- Progress track (background) -->
+  <line x1="80" y1="68" x2="400" y2="68" class="step-track"/>
+
+  <!-- Progress track (filled — through step 2) -->
+  <line x1="80" y1="68" x2="400" y2="68" class="step-track-fill step-track-anim"/>
+
+  <!-- Step 1: Create (completed) -->
+  <g class="step-s1">
+    <!-- Card -->
+    <rect x="18" y="82" width="100" height="120" class="step-card-done"/>
+
+    <!-- Badge circle -->
+    <circle cx="68" cy="68" r="12" fill="#a6e3a1"/>
+    <!-- Checkmark -->
+    <g class="step-check1">
+      <path d="M62 68 L66 72 L74 64" fill="none" stroke="var(--ctp-base, #1e1e2e)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- Card content -->
+    <text x="68" y="108" class="step-title">Create</text>
+    <text x="68" y="122" class="step-desc">Create a new</text>
+    <text x="68" y="132" class="step-desc">canvas workspace</text>
+
+    <!-- Status -->
+    <rect x="30" y="150" width="76" height="18" rx="9" fill="#a6e3a1" opacity="0.15"/>
+    <text x="68" y="160" class="step-status" fill="#a6e3a1">Done</text>
+
+    <!-- Timing -->
+    <text x="68" y="190" class="step-desc">0.3s</text>
+  </g>
+
+  <!-- Step 2: Add Cards (completed) -->
+  <g class="step-s2">
+    <rect x="130" y="82" width="100" height="120" class="step-card-done"/>
+
+    <circle cx="180" cy="68" r="12" fill="#a6e3a1"/>
+    <g class="step-check2">
+      <path d="M174 68 L178 72 L186 64" fill="none" stroke="var(--ctp-base, #1e1e2e)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <text x="180" y="108" class="step-title">Add Cards</text>
+    <text x="180" y="122" class="step-desc">Place agent and</text>
+    <text x="180" y="132" class="step-desc">zone cards</text>
+
+    <rect x="142" y="150" width="76" height="18" rx="9" fill="#a6e3a1" opacity="0.15"/>
+    <text x="180" y="160" class="step-status" fill="#a6e3a1">Done</text>
+
+    <text x="180" y="190" class="step-desc">1.2s</text>
+  </g>
+
+  <!-- Step 3: Connect (active) -->
+  <g class="step-s3">
+    <!-- Active glow -->
+    <rect x="238" y="78" width="108" height="128" rx="12" fill="var(--ctp-accent, #89b4fa)" class="step-active-pulse"/>
+
+    <rect x="242" y="82" width="100" height="120" class="step-card-active"/>
+
+    <!-- Active badge -->
+    <circle cx="292" cy="68" r="12" fill="var(--ctp-accent, #89b4fa)"/>
+    <text x="292" y="68" class="step-badge" fill="var(--ctp-base, #1e1e2e)">3</text>
+
+    <text x="292" y="108" class="step-title">Connect</text>
+    <text x="292" y="122" class="step-desc">Wire agents to</text>
+    <text x="292" y="132" class="step-desc">zones and hubs</text>
+
+    <!-- Action buttons -->
+    <rect x="247" y="150" width="42" height="18" rx="4" fill="var(--ctp-accent, #89b4fa)" opacity="0.2"/>
+    <text x="268" y="160" class="step-action" fill="var(--ctp-accent, #89b4fa)">Approve</text>
+
+    <rect x="295" y="150" width="42" height="18" rx="4" fill="var(--ctp-surface1, #45475a)" opacity="0.4"/>
+    <text x="316" y="160" class="step-action" fill="var(--ctp-subtext0, #a6adc8)">Skip</text>
+
+    <text x="292" y="190" class="step-desc" fill="var(--ctp-accent, #89b4fa)">In progress...</text>
+  </g>
+
+  <!-- Step 4: Layout (pending) -->
+  <g class="step-s4">
+    <rect x="354" y="82" width="100" height="120" class="step-card" opacity="0.5"/>
+
+    <!-- Dimmed badge -->
+    <circle cx="404" cy="68" r="12" fill="var(--ctp-surface1, #45475a)"/>
+    <text x="404" y="68" class="step-badge" fill="var(--ctp-subtext0, #a6adc8)">4</text>
+
+    <text x="404" y="108" class="step-title" fill="var(--ctp-subtext0, #a6adc8)">Layout</text>
+    <text x="404" y="122" class="step-desc">Auto-arrange in</text>
+    <text x="404" y="132" class="step-desc">hub-spoke pattern</text>
+
+    <rect x="366" y="150" width="76" height="18" rx="9" fill="var(--ctp-surface1, #45475a)" opacity="0.2"/>
+    <text x="404" y="160" class="step-status" fill="var(--ctp-subtext0, #a6adc8)">Pending</text>
+
+    <text x="404" y="190" class="step-desc">~0.5s</text>
+  </g>
+
+  <!-- Bottom legend -->
+  <g transform="translate(20, 216)">
+    <rect x="0" y="-4" width="440" height="40" rx="6" fill="var(--ctp-surface0, #313244)" opacity="0.3"/>
+    <circle cx="16" cy="12" r="6" fill="#a6e3a1"/>
+    <path d="M13 12 L15 14 L19 10" fill="none" stroke="var(--ctp-base, #1e1e2e)" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="28" y="12" class="step-desc" text-anchor="start" dominant-baseline="central">Completed</text>
+    <circle cx="100" cy="12" r="6" fill="var(--ctp-accent, #89b4fa)"/>
+    <text x="100" y="12" class="step-badge" font-size="8" fill="var(--ctp-base, #1e1e2e)">N</text>
+    <text x="112" y="12" class="step-desc" text-anchor="start" dominant-baseline="central">Active — waiting for your input</text>
+    <circle cx="280" cy="12" r="6" fill="var(--ctp-surface1, #45475a)"/>
+    <text x="280" y="12" class="step-badge" font-size="8" fill="var(--ctp-subtext0, #a6adc8)">N</text>
+    <text x="292" y="12" class="step-desc" text-anchor="start" dominant-baseline="central">Pending — up next</text>
+  </g>
+</svg>

@@ -1,0 +1,234 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" width="480" height="320">
+  <!-- Template: Annotated UI Wireframe — UI mock with numbered callouts -->
+  <!-- Example: "Assistant Chat Panel" — showing key areas of the chat interface -->
+  <style>
+    .aw-frame {
+      fill: var(--ctp-mantle, #181825);
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 1.5;
+      rx: 6;
+    }
+    .aw-surface {
+      fill: var(--ctp-surface0, #313244);
+      rx: 4;
+    }
+    .aw-accent-line {
+      stroke: var(--ctp-accent, #89b4fa);
+      stroke-width: 1.5;
+    }
+    .aw-text {
+      font-family: monospace;
+      font-size: 9px;
+      fill: var(--ctp-subtext0, #a6adc8);
+    }
+    .aw-text-bright {
+      font-family: monospace;
+      font-size: 9px;
+      fill: var(--ctp-text, #cdd6f4);
+    }
+    .aw-heading {
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: bold;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+    }
+    .aw-subheading {
+      font-family: monospace;
+      font-size: 10px;
+      fill: var(--ctp-subtext0, #a6adc8);
+      text-anchor: middle;
+    }
+
+    /* Callout styling */
+    .aw-callout-num {
+      font-family: monospace;
+      font-size: 10px;
+      font-weight: bold;
+      fill: var(--ctp-base, #1e1e2e);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .aw-callout-bg {
+      fill: var(--ctp-accent, #89b4fa);
+    }
+    .aw-callout-line {
+      stroke: var(--ctp-accent, #89b4fa);
+      stroke-width: 1;
+      stroke-dasharray: 3 2;
+    }
+    .aw-callout-label {
+      font-family: monospace;
+      font-size: 9px;
+      fill: var(--ctp-accent, #89b4fa);
+    }
+    .aw-callout-desc {
+      font-family: monospace;
+      font-size: 8px;
+      fill: var(--ctp-subtext0, #a6adc8);
+    }
+
+    /* Wireframe placeholder elements */
+    .aw-placeholder {
+      fill: var(--ctp-surface1, #45475a);
+      opacity: 0.4;
+      rx: 3;
+    }
+    .aw-avatar {
+      fill: var(--ctp-accent, #89b4fa);
+      opacity: 0.6;
+    }
+    .aw-msg-bot {
+      fill: var(--ctp-surface0, #313244);
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 1;
+      rx: 6;
+    }
+    .aw-msg-user {
+      fill: var(--ctp-accent, #89b4fa);
+      opacity: 0.15;
+      rx: 6;
+    }
+    .aw-input-bg {
+      fill: var(--ctp-surface0, #313244);
+      stroke: var(--ctp-surface1, #45475a);
+      stroke-width: 1;
+      rx: 6;
+    }
+    .aw-btn {
+      fill: var(--ctp-accent, #89b4fa);
+      rx: 4;
+    }
+
+    /* Animations — callouts pop in sequentially */
+    .aw-wire { opacity: 0; animation: awFade 0.3s ease-out 0.1s forwards; }
+    .aw-c1 { opacity: 0; animation: awPop 0.3s ease-out 0.4s forwards; }
+    .aw-c2 { opacity: 0; animation: awPop 0.3s ease-out 0.7s forwards; }
+    .aw-c3 { opacity: 0; animation: awPop 0.3s ease-out 1.0s forwards; }
+    .aw-c4 { opacity: 0; animation: awPop 0.3s ease-out 1.3s forwards; }
+    .aw-c5 { opacity: 0; animation: awPop 0.3s ease-out 1.6s forwards; }
+
+    @keyframes awFade { to { opacity: 1; } }
+    @keyframes awPop {
+      0% { opacity: 0; transform: scale(0.7); }
+      70% { transform: scale(1.08); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .aw-wire, .aw-c1, .aw-c2, .aw-c3, .aw-c4, .aw-c5 {
+        animation: none !important;
+        opacity: 1 !important;
+      }
+    }
+  </style>
+
+  <!-- Background -->
+  <rect width="480" height="320" fill="var(--ctp-base, #1e1e2e)" rx="8"/>
+
+  <!-- Heading -->
+  <text x="240" y="22" class="aw-heading">Assistant Chat Panel</text>
+  <text x="240" y="36" class="aw-subheading">Key interaction areas of the headless chat view</text>
+
+  <!-- ======= WIREFRAME MOCK (center) ======= -->
+  <g class="aw-wire" transform="translate(140, 48)">
+    <!-- Panel frame -->
+    <rect x="0" y="0" width="200" height="250" class="aw-frame"/>
+
+    <!-- Header bar -->
+    <rect x="1" y="1" width="198" height="30" fill="var(--ctp-surface0, #313244)" rx="6"/>
+    <!-- Pip avatar in header -->
+    <circle cx="18" cy="16" r="8" class="aw-avatar"/>
+    <!-- Title text placeholder -->
+    <rect x="32" y="10" width="60" height="5" class="aw-placeholder" rx="2"/>
+    <rect x="32" y="19" width="40" height="4" class="aw-placeholder" rx="2" opacity="0.25"/>
+    <!-- Mode indicator -->
+    <rect x="160" y="8" width="30" height="14" rx="7" fill="var(--ctp-accent, #89b4fa)" opacity="0.15"/>
+    <text x="175" y="17" class="aw-text" text-anchor="middle" font-size="7" fill="var(--ctp-accent, #89b4fa)">Chat</text>
+
+    <!-- Chat feed area -->
+    <!-- Bot message 1 -->
+    <circle cx="14" cy="48" r="6" class="aw-avatar" opacity="0.4"/>
+    <rect x="24" y="40" width="120" height="28" class="aw-msg-bot"/>
+    <rect x="30" y="47" width="80" height="4" class="aw-placeholder" rx="2"/>
+    <rect x="30" y="55" width="60" height="4" class="aw-placeholder" rx="2"/>
+
+    <!-- User message -->
+    <rect x="60" y="78" width="130" height="22" class="aw-msg-user"/>
+    <rect x="70" y="86" width="70" height="4" class="aw-placeholder" rx="2" opacity="0.5"/>
+
+    <!-- Bot message 2 with action card -->
+    <circle cx="14" cy="116" r="6" class="aw-avatar" opacity="0.4"/>
+    <rect x="24" y="108" width="140" height="20" class="aw-msg-bot"/>
+    <rect x="30" y="115" width="90" height="4" class="aw-placeholder" rx="2"/>
+
+    <!-- Action card -->
+    <rect x="24" y="132" width="140" height="50" rx="6" fill="var(--ctp-surface0, #313244)" stroke="var(--ctp-accent, #89b4fa)" stroke-width="1" stroke-dasharray="3 2"/>
+    <rect x="32" y="140" width="50" height="4" class="aw-placeholder" rx="2"/>
+    <rect x="32" y="148" width="100" height="4" class="aw-placeholder" rx="2" opacity="0.3"/>
+    <!-- Approve/Skip buttons -->
+    <rect x="32" y="160" width="40" height="14" rx="4" fill="var(--ctp-accent, #89b4fa)" opacity="0.3"/>
+    <text x="52" y="168" class="aw-text" text-anchor="middle" font-size="7" fill="var(--ctp-accent, #89b4fa)">Approve</text>
+    <rect x="78" y="160" width="30" height="14" rx="4" fill="var(--ctp-surface1, #45475a)" opacity="0.3"/>
+    <text x="93" y="168" class="aw-text" text-anchor="middle" font-size="7">Skip</text>
+
+    <!-- Suggestion chips -->
+    <rect x="8" y="196" width="64" height="16" rx="8" fill="var(--ctp-surface0, #313244)" stroke="var(--ctp-surface1, #45475a)" stroke-width="0.75"/>
+    <text x="40" y="205" class="aw-text" text-anchor="middle" font-size="7">What can I do?</text>
+    <rect x="78" y="196" width="54" height="16" rx="8" fill="var(--ctp-surface0, #313244)" stroke="var(--ctp-surface1, #45475a)" stroke-width="0.75"/>
+    <text x="105" y="205" class="aw-text" text-anchor="middle" font-size="7">New project</text>
+
+    <!-- Input bar -->
+    <rect x="6" y="220" width="188" height="24" class="aw-input-bg"/>
+    <rect x="14" y="228" width="80" height="4" class="aw-placeholder" rx="2" opacity="0.25"/>
+    <rect x="166" y="225" width="22" height="16" class="aw-btn" opacity="0.6" rx="4"/>
+    <text x="177" y="234" class="aw-text" text-anchor="middle" font-size="8" fill="var(--ctp-base, #1e1e2e)">-></text>
+  </g>
+
+  <!-- ======= CALLOUTS ======= -->
+
+  <!-- Callout 1: Header / Avatar -->
+  <g class="aw-c1">
+    <line x1="158" y1="64" x2="128" y2="56" class="aw-callout-line"/>
+    <circle cx="120" cy="52" r="8" class="aw-callout-bg"/>
+    <text x="120" y="52" class="aw-callout-num">1</text>
+    <text x="20" y="48" class="aw-callout-label">Header</text>
+    <text x="20" y="58" class="aw-callout-desc">Pip avatar + status + mode</text>
+  </g>
+
+  <!-- Callout 2: Chat feed -->
+  <g class="aw-c2">
+    <line x1="340" y1="110" x2="370" y2="100" class="aw-callout-line"/>
+    <circle cx="378" cy="96" r="8" class="aw-callout-bg"/>
+    <text x="378" y="96" class="aw-callout-num">2</text>
+    <text x="392" y="92" class="aw-callout-label">Chat Feed</text>
+    <text x="392" y="102" class="aw-callout-desc">Messages with avatars</text>
+  </g>
+
+  <!-- Callout 3: Action card -->
+  <g class="aw-c3">
+    <line x1="340" y1="200" x2="370" y2="195" class="aw-callout-line"/>
+    <circle cx="378" cy="191" r="8" class="aw-callout-bg"/>
+    <text x="378" y="191" class="aw-callout-num">3</text>
+    <text x="392" y="187" class="aw-callout-label">Action Card</text>
+    <text x="392" y="197" class="aw-callout-desc">Approve/Skip consent</text>
+  </g>
+
+  <!-- Callout 4: Suggestion chips -->
+  <g class="aw-c4">
+    <line x1="158" y1="252" x2="128" y2="258" class="aw-callout-line"/>
+    <circle cx="120" cy="262" r="8" class="aw-callout-bg"/>
+    <text x="120" y="262" class="aw-callout-num">4</text>
+    <text x="20" y="258" class="aw-callout-label">Quick Actions</text>
+    <text x="20" y="268" class="aw-callout-desc">Contextual suggestions</text>
+  </g>
+
+  <!-- Callout 5: Input bar -->
+  <g class="aw-c5">
+    <line x1="340" y1="280" x2="370" y2="282" class="aw-callout-line"/>
+    <circle cx="378" cy="285" r="8" class="aw-callout-bg"/>
+    <text x="378" y="285" class="aw-callout-num">5</text>
+    <text x="392" y="281" class="aw-callout-label">Input Bar</text>
+    <text x="392" y="291" class="aw-callout-desc">Text + send button</text>
+  </g>
+</svg>
