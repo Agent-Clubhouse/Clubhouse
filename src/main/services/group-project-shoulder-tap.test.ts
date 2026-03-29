@@ -29,10 +29,15 @@ vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
+vi.mock('../orchestrators', () => ({
+  getProvider: vi.fn(() => undefined), // Falls back to default timing
+}));
+
 const mockPtyWrite = vi.fn();
+const mockGetBuffer = vi.fn(() => '');
 vi.mock('./pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
-  getBuffer: vi.fn(() => ''),
+  getBuffer: (...args: unknown[]) => mockGetBuffer(...args),
 }));
 
 const mockStructuredSend = vi.fn().mockResolvedValue(undefined);
@@ -52,6 +57,7 @@ describe('executeShoulderTap', () => {
   beforeEach(() => {
     store.clear();
     mockPtyWrite.mockClear();
+    mockGetBuffer.mockClear();
     mockStructuredSend.mockClear();
     bindingManager._resetForTesting();
     _resetAllBoardsForTesting();
@@ -94,19 +100,23 @@ describe('executeShoulderTap', () => {
     expect(result.taskId).toMatch(/^tap_/);
     expect(result.messageId).toMatch(/^msg_/);
 
-    // PTY write should use bracketed paste
+    // PTY write should use chunked bracketed paste (separate writes for markers)
     expect(mockPtyWrite).toHaveBeenCalled();
-    const firstCall = mockPtyWrite.mock.calls[0];
-    expect(firstCall[0]).toBe('agent-1');
-    expect(firstCall[1]).toContain('\x1b[200~');
-    expect(firstCall[1]).toContain('Group Project notification');
-    expect(firstCall[1]).toContain('Please check the config file');
-    expect(firstCall[1]).toContain('RESPONSE INSTRUCTIONS');
-    expect(firstCall[1]).toContain('\x1b[201~');
-
-    // Should also send \r for submit
-    await new Promise(r => setTimeout(r, 150));
-    expect(mockPtyWrite).toHaveBeenCalledWith('agent-1', '\r');
+    const allWrites = mockPtyWrite.mock.calls.map((c: unknown[]) => c[1] as string);
+    // Start marker sent separately
+    expect(allWrites[0]).toBe('\x1b[200~');
+    // Body contains the message content
+    const bodyWrites = allWrites.filter(
+      (w: string) => w !== '\x1b[200~' && w !== '\x1b[201~' && w !== '\r',
+    );
+    const fullBody = bodyWrites.join('');
+    expect(fullBody).toContain('Group Project notification');
+    expect(fullBody).toContain('Please check the config file');
+    expect(fullBody).toContain('RESPONSE INSTRUCTIONS');
+    // End marker sent separately
+    expect(allWrites).toContain('\x1b[201~');
+    // Submit Enter was sent
+    expect(allWrites).toContain('\r');
 
     // Cleanup
     agentRegistry.untrack('agent-1');

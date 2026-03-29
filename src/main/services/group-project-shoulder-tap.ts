@@ -13,7 +13,19 @@ import { getBulletinBoard } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { buildToolName } from './clubhouse-mcp/tool-registry';
+import { writeChunkedBracketedPaste, submitAfterPaste } from './clubhouse-mcp/tools/agent-tools';
+import { getProvider } from '../orchestrators';
+import type { PasteSubmitTiming } from '../orchestrators';
 import { appLog } from './log-service';
+
+/** Default paste submit timing used when no provider is available. */
+const DEFAULT_TIMING: PasteSubmitTiming = {
+  initialDelayMs: 350,
+  retryDelayMs: 300,
+  finalCheckDelayMs: 250,
+  chunkSize: 512,
+  chunkDelayMs: 30,
+};
 
 export interface ShoulderTapParams {
   projectId: string;
@@ -103,14 +115,19 @@ export async function executeShoulderTap(params: ShoulderTapParams): Promise<Sho
 
     try {
       if (reg.runtime === 'pty') {
-        // Bracketed paste + delayed submit (same pattern as agent-tools.ts send_message)
-        ptyManager.write(binding.agentId, `\x1b[200~${taggedMessage}\x1b[201~`);
-        await new Promise<void>((resolve) => {
-          setTimeout(() => {
-            ptyManager.write(binding.agentId, '\r');
-            resolve();
-          }, 100);
-        });
+        // Use chunked bracketed paste with provider-specific timing
+        const provider = getProvider(reg.orchestrator);
+        const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming() ?? DEFAULT_TIMING;
+
+        await writeChunkedBracketedPaste(
+          binding.agentId,
+          taggedMessage,
+          timing.chunkSize,
+          timing.chunkDelayMs,
+        );
+
+        await submitAfterPaste(binding.agentId, timing);
+
         delivered.push({ agentId: binding.agentId, agentName, status: 'delivered' });
       } else if (reg.runtime === 'structured') {
         await structuredManager.sendMessage(binding.agentId, taggedMessage);
