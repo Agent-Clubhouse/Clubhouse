@@ -206,6 +206,8 @@ export interface DurableAgentConfig {
   mcpIds?: string[];
   /** Per-agent override for the Clubhouse MCP bridge feature. */
   mcpOverride?: boolean;
+  /** Persona template ID applied at creation. Used to re-inject instructions on materialization. */
+  persona?: string;
 }
 
 /** Maps an orchestrator ID to its wrapper subcommand */

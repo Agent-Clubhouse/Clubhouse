@@ -442,6 +442,69 @@ describe('materialization-service', () => {
       expect(tomlContent).toContain('[mcp_servers.test]');
       expect(tomlContent).toContain('command = "node"');
     });
+    it('appends persona instructions after project defaults', async () => {
+      const agentWithPersona = { ...testAgent, persona: 'qa' };
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: {
+          instructions: 'Agent @@AgentName at @@Path',
+        },
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
+
+      expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      // Should contain both project defaults (with wildcards resolved) and persona content
+      expect(written).toContain('Agent bold-falcon at .clubhouse/agents/bold-falcon/');
+      expect(written).toContain('Quality Assurance');
+    });
+
+    it('writes only persona instructions when no project defaults exist', async () => {
+      const agentWithPersona = { ...testAgent, persona: 'project-manager' };
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
+
+      expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written).toContain('Project Manager');
+      expect(written).toContain('delegator');
+    });
+
+    it('skips persona injection for unknown persona ID', async () => {
+      const agentWithBadPersona = { ...testAgent, persona: 'nonexistent' };
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: {
+          instructions: 'Agent @@AgentName',
+        },
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: agentWithBadPersona, provider: mockProvider });
+
+      // Should still write project defaults, just without persona content
+      expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written).toContain('Agent bold-falcon');
+      expect(written).not.toContain('Quality Assurance');
+    });
+
+    it('does not write persona instructions when agent has no persona', async () => {
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+
+      expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
+    });
   });
 
   describe('previewMaterialization', () => {
@@ -484,6 +547,26 @@ describe('materialization-service', () => {
       expect(preview.instructions).toBe('');
       expect(preview.permissions).toEqual({});
       expect(preview.mcpJson).toBeNull();
+    });
+
+    it('includes persona instructions in preview', async () => {
+      const agentWithPersona = { ...testAgent, persona: 'slop-detector' };
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: {
+          instructions: 'Agent @@AgentName',
+        },
+      }));
+
+      const preview = await previewMaterialization({
+        projectPath: '/project',
+        agent: agentWithPersona,
+        provider: mockProvider,
+      });
+
+      expect(preview.instructions).toContain('Agent bold-falcon');
+      expect(preview.instructions).toContain('Slop Detector');
     });
   });
 

@@ -298,6 +298,8 @@ describe('assistant-tools', () => {
         'claude-code',
         true,
         ['server1', 'server2'],
+        undefined, // structuredMode
+        undefined, // persona
       );
       const data = JSON.parse(result.content[0].text);
       expect(data.id).toBe('durable_new');
@@ -317,6 +319,78 @@ describe('assistant-tools', () => {
       expect(typeof call[2]).toBe('string');     // color (default)
       expect(call[4]).toBe(true);                // useWorktree default
     }
+  });
+
+  it('create_agent with valid persona passes persona to createDurable', async () => {
+    const result = await callAssistantTool('create_agent', {
+      project_path: '/home/user/my-app',
+      name: 'qa-agent',
+      persona: 'qa',
+    });
+
+    if (!result.isError) {
+      const call = mockCreateDurable.mock.calls[mockCreateDurable.mock.calls.length - 1];
+      expect(call[9]).toBe('qa'); // persona parameter (index 9)
+      const data = JSON.parse(result.content[0].text);
+      expect(data.persona).toBeNull(); // mock doesn't return persona field
+    }
+  });
+
+  it('create_agent with invalid persona returns error', async () => {
+    const result = await callAssistantTool('create_agent', {
+      project_path: '/home/user/my-app',
+      name: 'bad-agent',
+      persona: 'nonexistent-persona',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Unknown persona');
+    expect(result.content[0].text).toContain('nonexistent-persona');
+    expect(mockCreateDurable).not.toHaveBeenCalled();
+  });
+
+  it('create_agent with persona injects instructions into worktree', async () => {
+    const mockWriteInstructions = vi.fn().mockResolvedValue(undefined);
+    const mockReadInstructions = vi.fn().mockResolvedValue('Existing instructions');
+    mockResolveOrchestrator.mockResolvedValue({
+      id: 'claude-code',
+      displayName: 'Claude Code',
+      writeInstructions: mockWriteInstructions,
+      readInstructions: mockReadInstructions,
+    });
+
+    mockCreateDurable.mockResolvedValue({
+      id: 'durable_qa', name: 'qa-agent', color: 'emerald',
+      worktreePath: '/wt/qa', model: 'opus', orchestrator: 'claude-code',
+      createdAt: '2026-01-01', persona: 'qa',
+    });
+
+    await callAssistantTool('create_agent', {
+      project_path: '/home/user/my-app',
+      name: 'qa-agent',
+      persona: 'qa',
+    });
+
+    // Should read existing instructions then write combined content
+    expect(mockReadInstructions).toHaveBeenCalledWith('/wt/qa');
+    expect(mockWriteInstructions).toHaveBeenCalledWith(
+      '/wt/qa',
+      expect.stringContaining('Existing instructions'),
+    );
+    expect(mockWriteInstructions).toHaveBeenCalledWith(
+      '/wt/qa',
+      expect.stringContaining('Quality Assurance'),
+    );
+
+    // Reset mock
+    mockCreateDurable.mockResolvedValue({
+      id: 'durable_new', name: 'test-agent', color: 'emerald', icon: 'durable_new.png',
+      worktreePath: '/wt/new', model: 'opus', orchestrator: 'claude-code', createdAt: '2026-01-01',
+    });
+    mockResolveOrchestrator.mockResolvedValue({
+      id: 'claude-code', displayName: 'Claude Code',
+      writeInstructions: vi.fn().mockResolvedValue(undefined),
+    });
   });
 
   it('delete_agent requires project_path and agent_id', async () => {
