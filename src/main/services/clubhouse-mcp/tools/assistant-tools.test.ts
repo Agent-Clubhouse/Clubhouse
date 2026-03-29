@@ -58,6 +58,12 @@ vi.mock('../../log-service', () => ({
   appLog: vi.fn(),
 }));
 
+const mockSendCanvasCommand = vi.fn().mockResolvedValue({ success: true, data: { view_id: 'view_1' } });
+
+vi.mock('../canvas-command', () => ({
+  sendCanvasCommand: (...a: unknown[]) => mockSendCanvasCommand(...a),
+}));
+
 import { registerAssistantTools } from './assistant-tools';
 import { _resetForTesting, callTool, getScopedToolList } from '../tool-registry';
 import { bindingManager } from '..';
@@ -435,5 +441,80 @@ describe('assistant-tools', () => {
       const updates = mockUpdateDurable.mock.calls[0][2];
       expect(updates.icon).toBeNull();
     }
+  });
+
+  // ── Canvas auto-stagger tests ─────────────────────────────────────────
+
+  describe('add_card auto-stagger positioning', () => {
+    beforeEach(() => {
+      mockSendCanvasCommand.mockResolvedValue({ success: true, data: { view_id: 'view_1' } });
+    });
+
+    it('first card defaults to position (100, 100)', async () => {
+      await callAssistantTool('add_card', { canvas_id: 'c1', type: 'agent' });
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('add_view', expect.objectContaining({
+        position: { x: 100, y: 100 },
+      }));
+    });
+
+    it('second card on same canvas staggers to (440, 100)', async () => {
+      await callAssistantTool('add_card', { canvas_id: 'c2', type: 'agent' });
+      await callAssistantTool('add_card', { canvas_id: 'c2', type: 'agent' });
+      const calls = mockSendCanvasCommand.mock.calls.filter(c => c[0] === 'add_view' && c[1].canvas_id === 'c2');
+      expect(calls[1][1].position).toEqual({ x: 440, y: 100 });
+    });
+
+    it('fifth card wraps to row 2 at (100, 360)', async () => {
+      for (let i = 0; i < 5; i++) {
+        await callAssistantTool('add_card', { canvas_id: 'c3', type: 'agent' });
+      }
+      const calls = mockSendCanvasCommand.mock.calls.filter(c => c[0] === 'add_view' && c[1].canvas_id === 'c3');
+      expect(calls[4][1].position).toEqual({ x: 100, y: 360 });
+    });
+
+    it('explicit position_x/position_y overrides auto-stagger', async () => {
+      await callAssistantTool('add_card', { canvas_id: 'c4', type: 'agent', position_x: 500, position_y: 600 });
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('add_view', expect.objectContaining({
+        position: { x: 500, y: 600 },
+      }));
+    });
+
+    it('explicit position_x=0 is preserved (not treated as falsy)', async () => {
+      await callAssistantTool('add_card', { canvas_id: 'c4b', type: 'agent', position_x: 0, position_y: 0 });
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('add_view', expect.objectContaining({
+        position: { x: 0, y: 0 },
+      }));
+    });
+
+    it('two different canvases stagger independently', async () => {
+      await callAssistantTool('add_card', { canvas_id: 'cA', type: 'agent' });
+      await callAssistantTool('add_card', { canvas_id: 'cB', type: 'agent' });
+      await callAssistantTool('add_card', { canvas_id: 'cA', type: 'agent' });
+
+      const callsA = mockSendCanvasCommand.mock.calls.filter(c => c[0] === 'add_view' && c[1].canvas_id === 'cA');
+      const callsB = mockSendCanvasCommand.mock.calls.filter(c => c[0] === 'add_view' && c[1].canvas_id === 'cB');
+
+      expect(callsA[0][1].position).toEqual({ x: 100, y: 100 }); // cA first
+      expect(callsA[1][1].position).toEqual({ x: 440, y: 100 }); // cA second
+      expect(callsB[0][1].position).toEqual({ x: 100, y: 100 }); // cB first (independent)
+    });
+
+    it('layout_canvas resets the auto-stagger counter', async () => {
+      // Add 3 cards
+      await callAssistantTool('add_card', { canvas_id: 'c5', type: 'agent' });
+      await callAssistantTool('add_card', { canvas_id: 'c5', type: 'agent' });
+      await callAssistantTool('add_card', { canvas_id: 'c5', type: 'agent' });
+
+      // Call layout_canvas — should reset counter
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: [{ id: 'v1', size: { width: 300, height: 200 } }] });
+      await callAssistantTool('layout_canvas', { canvas_id: 'c5', pattern: 'grid' });
+
+      // Next add_card should start from position 0 again
+      mockSendCanvasCommand.mockResolvedValue({ success: true, data: { view_id: 'view_new' } });
+      await callAssistantTool('add_card', { canvas_id: 'c5', type: 'agent' });
+
+      const addCalls = mockSendCanvasCommand.mock.calls.filter(c => c[0] === 'add_view' && c[1].canvas_id === 'c5');
+      expect(addCalls[addCalls.length - 1][1].position).toEqual({ x: 100, y: 100 });
+    });
   });
 });
