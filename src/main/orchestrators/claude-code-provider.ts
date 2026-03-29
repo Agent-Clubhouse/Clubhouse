@@ -19,6 +19,7 @@ import { BaseProvider } from './base-provider';
 import { StreamJsonAdapter } from './adapters/stream-json-adapter';
 import { homePath } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { appLog } from '../services/log-service';
 
 const TOOL_VERBS: Record<string, string> = {
   Bash: 'Running command',
@@ -192,7 +193,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     try {
       existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
     } catch {
-      // No existing file
+      // No existing file — expected on first run
     }
 
     // Merge per-event key: preserve user hooks, replace stale Clubhouse entries
@@ -352,12 +353,16 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
               startedAt: stat.birthtime.toISOString(),
               lastActiveAt: stat.mtime.toISOString(),
             });
-          } catch {
-            // Skip unreadable files
+          } catch (err) {
+            appLog('core:orchestrator', 'warn', 'Failed to stat session file', {
+              meta: { file: entry.name, error: err instanceof Error ? err.message : String(err) },
+            });
           }
         }
-      } catch {
-        // Skip unreadable directories
+      } catch (err) {
+        appLog('core:orchestrator', 'warn', 'Failed to read session directory', {
+          meta: { dir, error: err instanceof Error ? err.message : String(err) },
+        });
       }
     }
 
@@ -406,8 +411,10 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
           if (jsonlFile) {
             jsonlPath = path.join(dirPath, jsonlFile);
           }
-        } catch {
-          // Skip unreadable
+        } catch (err) {
+          appLog('core:orchestrator', 'warn', 'Failed to read session directory entries', {
+            meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
+          });
         }
       }
     }
@@ -424,11 +431,14 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
         try {
           events.push(JSON.parse(trimmed));
         } catch {
-          // Skip malformed lines
+          // Skip malformed JSONL lines — expected in truncated sessions
         }
       }
       return events.length > 0 ? events : null;
-    } catch {
+    } catch (err) {
+      appLog('core:orchestrator', 'warn', 'Failed to read session transcript', {
+        meta: { jsonlPath, error: err instanceof Error ? err.message : String(err) },
+      });
       return null;
     }
   }

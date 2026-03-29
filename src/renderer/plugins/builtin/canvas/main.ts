@@ -133,6 +133,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const bidirectionalWires = usePluginStore(
     (s) => (s.pluginSettings[settingsKey]?.['bidirectional-wires'] as boolean) ?? false,
   );
+  const createBidirectionalWires = usePluginStore(
+    (s) => (s.pluginSettings[settingsKey]?.['create-bidirectional-wires'] as boolean) ?? true,
+  );
 
   // Dynamic title: show active canvas tab name
   const activeCanvasName = canvases.find((c) => c.id === activeCanvasId)?.name;
@@ -504,6 +507,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             minimapAutoHide,
             onMinimapAutoHideChange: (value: boolean) => store.getState().setMinimapAutoHide(value),
             bidirectionalWires,
+            createBidirectionalWires,
           }),
         ),
   );

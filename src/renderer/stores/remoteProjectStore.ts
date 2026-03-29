@@ -129,6 +129,9 @@ interface RemoteProjectStoreState {
   /** Update canvas state for a remote project. */
   updateRemoteCanvasState: (namespacedProjectId: string, state: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }) => void;
 
+  /** Update app-level (global scope) canvas state for a satellite. */
+  updateRemoteAppCanvasState: (satelliteId: string, state: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }) => void;
+
   /** Update a remote group project (create/update/delete). */
   updateRemoteGroupProject: (satelliteId: string, action: string, project: unknown) => void;
 
@@ -510,6 +513,15 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       remoteCanvasState: {
         ...state.remoteCanvasState,
         [nsProjId]: canvasData,
+      },
+    }));
+  },
+
+  updateRemoteAppCanvasState: (satelliteId, canvasData) => {
+    set((state) => ({
+      remoteAppCanvasState: {
+        ...state.remoteAppCanvasState,
+        [satelliteId]: canvasData,
       },
     }));
   },

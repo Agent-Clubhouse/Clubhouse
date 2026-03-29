@@ -298,6 +298,14 @@ describe('plugin-discovery', () => {
       );
     });
 
+    it('rejects pluginId containing path separators', async () => {
+      await expect(uninstallPlugin('../../etc')).rejects.toThrow('Invalid plugin ID');
+      await expect(uninstallPlugin('foo/bar')).rejects.toThrow('Invalid plugin ID');
+      await expect(uninstallPlugin('foo\\bar')).rejects.toThrow('Invalid plugin ID');
+      expect(fsp.rm).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
     it('does not fail if data directory cleanup throws', async () => {
       vi.mocked(fsp.lstat).mockResolvedValue({
         isSymbolicLink: () => false,
@@ -480,6 +488,12 @@ describe('plugin-discovery', () => {
       );
     });
 
+    it('rejects pluginId containing path separators', async () => {
+      await expect(cleanupProjectPluginInjections('../../etc', PROJECT_PATH)).rejects.toThrow('Invalid plugin ID');
+      await expect(cleanupProjectPluginInjections('foo/bar', PROJECT_PATH)).rejects.toThrow('Invalid plugin ID');
+      expect(fsp.rm).not.toHaveBeenCalled();
+    });
+
     it('does not write defaults when nothing changed', async () => {
       vi.mocked(agentSettings.listSourceSkills).mockResolvedValue([]);
       vi.mocked(agentSettings.listSourceAgentTemplates).mockResolvedValue([]);
@@ -639,17 +653,17 @@ describe('plugin-discovery', () => {
       expect(registerTrustedManifest).not.toHaveBeenCalled();
     });
 
-    it('returns null for path traversal attempts', async () => {
-      // Simulate a pluginId that resolves outside the plugins directory
-      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => {
-        const s = String(p);
-        if (s.includes('plugins') && !s.includes('..')) return s;
-        return '/etc/evil';
-      });
+    it('rejects path traversal attempts', async () => {
+      // pluginId with path traversal is now rejected at input validation
+      await expect(refreshManifestFromDisk('../../../etc/passwd')).rejects.toThrow('Invalid plugin ID');
+      expect(registerTrustedManifest).not.toHaveBeenCalled();
+    });
 
-      const result = await refreshManifestFromDisk('../../../etc/passwd');
-
-      expect(result).toBeNull();
+    it('rejects pluginId containing path separators', async () => {
+      await expect(refreshManifestFromDisk('../../etc')).rejects.toThrow('Invalid plugin ID');
+      await expect(refreshManifestFromDisk('foo/bar')).rejects.toThrow('Invalid plugin ID');
+      await expect(refreshManifestFromDisk('foo\\bar')).rejects.toThrow('Invalid plugin ID');
+      await expect(refreshManifestFromDisk('foo\0bar')).rejects.toThrow('Invalid plugin ID');
       expect(registerTrustedManifest).not.toHaveBeenCalled();
     });
 
