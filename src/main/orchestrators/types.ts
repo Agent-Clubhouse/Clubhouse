@@ -138,7 +138,7 @@ export interface SessionCapable {
 
 /** Providers that support structured mode via an adapter */
 export interface StructuredCapable {
-  createStructuredAdapter(): StructuredAdapter;
+  createStructuredAdapter(opts?: { resume?: boolean }): StructuredAdapter;
 }
 
 // ── Type Guards ─────────────────────────────────────────────────────────────

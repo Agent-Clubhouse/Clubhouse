@@ -345,8 +345,8 @@ export async function sendMessage(text: string): Promise<void> {
           await window.clubhouse.agent.sendStructuredMessage(state.agentId, text);
         } catch {
           // Adapter doesn't support multi-turn (e.g. StreamJsonAdapter in single-turn mode).
-          // Start a fresh structured session for the follow-up message.
-          await startAgent(text);
+          // Use structured follow-up path with --continue to preserve conversation context.
+          await structuredFollowup(text);
         }
       } else if (state.mode === 'headless') {
         // Conversational follow-up via headless --continue
@@ -393,6 +393,12 @@ async function startAgent(firstMessage: string): Promise<void> {
     const agentId = `assistant_${Date.now()}_${suffix}`;
     setAgentId(agentId);
 
+    // For structured mode, register the event listener BEFORE spawning
+    // so we don't miss any early events from the adapter.
+    if (state.mode === 'structured') {
+      setupStructuredListener(agentId);
+    }
+
     const systemPrompt = buildAssistantInstructions();
 
     // Use dedicated assistant spawn IPC — handles MCP binding, workspace, execution mode
@@ -407,7 +413,12 @@ async function startAgent(firstMessage: string): Promise<void> {
     if (state.mode === 'interactive') {
       await setupInteractive();
     } else if (state.mode === 'structured') {
-      await setupStructured(agentId);
+      // Listener already registered above — just set status and drain queue
+      setStatus('responding');
+      while (messageQueue.length > 0) {
+        const queued = messageQueue.shift()!;
+        await window.clubhouse.agent.sendStructuredMessage(agentId, queued);
+      }
     } else {
       setupHeadless();
     }
@@ -431,17 +442,17 @@ async function setupInteractive(): Promise<void> {
   setStatus('active');
 }
 
-async function setupStructured(agentId: string): Promise<void> {
-  // Listen for structured events
+/**
+ * Register the structured event listener for the given agent.
+ * Must be called BEFORE spawning so no early events are missed.
+ */
+function setupStructuredListener(_agentId: string): void {
+  // Remove any previous structured listener to prevent accumulation
+  // across follow-up sessions (each follow-up calls startAgent again).
+  cleanupAll();
+
   const unsub = window.clubhouse.agent.onStructuredEvent(handleStructuredEvent);
   cleanupListeners.push(unsub);
-
-  setStatus('responding');
-
-  while (messageQueue.length > 0) {
-    const queued = messageQueue.shift()!;
-    await window.clubhouse.agent.sendStructuredMessage(agentId, queued);
-  }
 }
 
 function setupHeadless(): void {
@@ -453,6 +464,36 @@ function setupHeadless(): void {
   // Persist user's first message before we start waiting for response
   persistHistory();
   setStatus('responding');
+}
+
+/**
+ * Send a follow-up message in structured mode.
+ * Spawns a new structured session with --continue to preserve conversation context.
+ * The new session resumes from the previous session in the same workspace.
+ */
+async function structuredFollowup(message: string): Promise<void> {
+  const newAgentId = `assistant_followup_${Date.now()}_${globalThis.crypto.randomUUID().slice(0, 8)}`;
+  setAgentId(newAgentId);
+
+  // Re-register listener for the new agentId (before spawn to avoid race)
+  setupStructuredListener(newAgentId);
+
+  setStatus('responding');
+
+  try {
+    const result = await window.clubhouse.assistant.sendStructuredFollowup({
+      message,
+      orchestrator: state.orchestrator || undefined,
+    });
+    if (result?.agentId) {
+      setAgentId(result.agentId);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    removePendingPlaceholder();
+    pushAssistantMessage(`**Failed to send follow-up:** ${msg}\n\nTry again or reset the assistant.`);
+    setStatus('error', msg);
+  }
 }
 
 // ── History Persistence ───────────────────────────────────────────────────

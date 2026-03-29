@@ -236,7 +236,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
 
   // ── StructuredCapable ───────────────────────────────────────────────────
 
-  createStructuredAdapter(): StructuredAdapter {
+  createStructuredAdapter(_opts?: { resume?: boolean }): StructuredAdapter {
     return new CodexAppServerAdapter({
       binary: this.findBinary(),
       toolVerbs: TOOL_VERBS,

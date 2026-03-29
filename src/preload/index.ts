@@ -1270,6 +1270,9 @@ const api = {
     /** Send a follow-up message to a conversational headless session. */
     sendFollowup: (params: { message: string; orchestrator?: string; model?: string }) =>
       ipcRenderer.invoke(IPC.ASSISTANT.SEND_FOLLOWUP, params),
+    /** Send a follow-up message to a structured session (spawns new --continue session). */
+    sendStructuredFollowup: (params: { message: string; orchestrator?: string; model?: string }) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP, params),
     /** Listen for headless agent completion events. */
     onResult: (callback: (result: { agentId: string; exitCode: number }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, result: any) => callback(result);

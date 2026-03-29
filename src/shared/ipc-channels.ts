@@ -388,6 +388,8 @@ export const IPC = {
     UNBIND: 'assistant:unbind',
     /** Send a follow-up message to a conversational headless session. */
     SEND_FOLLOWUP: 'assistant:send-followup',
+    /** Send a follow-up message to a structured session (spawns new --continue session). */
+    SEND_STRUCTURED_FOLLOWUP: 'assistant:send-structured-followup',
     /** Main → renderer: headless agent completed (agentId, exitCode). */
     RESULT: 'assistant:result',
     /** Clean up all assistant resources (MCP binding, agent registry, config). */

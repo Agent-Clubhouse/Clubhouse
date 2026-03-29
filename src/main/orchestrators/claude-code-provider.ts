@@ -272,10 +272,14 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
   // ── StructuredCapable ───────────────────────────────────────────────────
 
-  createStructuredAdapter(): StructuredAdapter {
+  createStructuredAdapter(opts?: { resume?: boolean }): StructuredAdapter {
+    const baseArgs: string[] = [];
+    if (opts?.resume) {
+      baseArgs.push('--continue');
+    }
     return new StreamJsonAdapter({
       binary: this.findBinary(),
-      baseArgs: ['--no-session-persistence'],
+      baseArgs,
       toolVerbs: TOOL_VERBS,
     });
   }

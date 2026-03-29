@@ -275,6 +275,83 @@ export function registerAssistantHandlers(): void {
     },
   ));
 
+  // ── SEND_STRUCTURED_FOLLOWUP ────────────────────────────────────────────
+  // Spawns a new structured session with --continue to resume the previous
+  // conversation in the assistant workspace. Returns { agentId } so the
+  // renderer can track events from the follow-up session.
+  ipcMain.handle(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP, withValidatedArgs(
+    [objectArg<AssistantFollowupParams>()],
+    async (_event, params) => {
+      const { message, model } = params as AssistantFollowupParams;
+      const orchestratorId = (params as AssistantFollowupParams).orchestrator;
+
+      const agentId = `assistant_followup_${Date.now()}_${randomUUID().slice(0, 8)}`;
+      const workspace = getAssistantWorkspace();
+
+      appLog(LOG_NS, 'info', 'Structured follow-up requested', {
+        meta: { agentId, orchestrator: orchestratorId || 'default', messageLength: message.length },
+      });
+
+      // Resolve orchestrator
+      const provider = await resolveOrchestrator(workspace, orchestratorId as OrchestratorId | undefined);
+      if (!isStructuredCapable(provider)) {
+        throw new Error(`${provider.displayName} does not support structured mode`);
+      }
+
+      const profileEnv = await resolveProfileEnv(workspace, provider.id);
+      const permissionMode = freeAgentSettings.getPermissionMode(workspace);
+
+      const nonce = randomUUID();
+      agentRegistry.register(agentId, {
+        projectPath: workspace,
+        orchestrator: provider.id as OrchestratorId,
+        runtime: 'structured',
+      });
+      agentRegistry.setNonce(agentId, nonce);
+
+      // Create MCP binding for the follow-up
+      bindingManager.bind(agentId, {
+        targetId: ASSISTANT_TARGET_ID,
+        targetKind: 'assistant',
+        label: 'Clubhouse Assistant',
+      });
+
+      // MCP injection
+      let mcpPort = 0;
+      const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
+      const mcpJsonPath = path.join(workspace, mcpConfigFile);
+      configPipeline.snapshotFile(agentId, mcpJsonPath);
+
+      try {
+        mcpPort = await waitMcpBridgeReady();
+        await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, provider.conventions);
+      } catch {
+        appLog(LOG_NS, 'warn', 'MCP bridge not available for structured follow-up', { meta: { agentId } });
+      }
+
+      // Create adapter with resume flag → adds --continue to args
+      const adapter = provider.createStructuredAdapter({ resume: true });
+
+      const structuredEnv: Record<string, string> = {
+        ...profileEnv,
+        CLUBHOUSE_AGENT_ID: agentId,
+        CLUBHOUSE_HOOK_NONCE: nonce,
+        ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
+      };
+
+      await structuredManager.startStructuredSession(agentId, adapter, {
+        mission: message, model, cwd: workspace,
+        env: structuredEnv, freeAgentMode: true, permissionMode,
+      }, (exitAgentId) => {
+        appLog(LOG_NS, 'info', 'Structured follow-up session ended', { meta: { agentId: exitAgentId } });
+        configPipeline.restoreForAgent(exitAgentId);
+      });
+
+      appLog(LOG_NS, 'info', 'Structured follow-up session started', { meta: { agentId } });
+      return { agentId };
+    },
+  ));
+
   // ── BIND (standalone, for manual binding if needed) ──────────────────────
   ipcMain.handle(IPC.ASSISTANT.BIND, withValidatedArgs(
     [stringArg()],

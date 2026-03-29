@@ -187,7 +187,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
   // ── StructuredCapable ───────────────────────────────────────────────────
 
-  createStructuredAdapter(): StructuredAdapter {
+  createStructuredAdapter(_opts?: { resume?: boolean }): StructuredAdapter {
     return new AcpAdapter({
       binary: this.findBinary(),
       args: ['--acp', '--stdio'],
