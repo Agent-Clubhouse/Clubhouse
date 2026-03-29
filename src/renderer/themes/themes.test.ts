@@ -82,7 +82,7 @@ describe('theme registry', () => {
       'warning', 'error', 'info', 'success',
     ];
 
-    for (const id of ['catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark'] as ThemeId[]) {
+    for (const id of ['catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark', 'cyberpunk'] as ThemeId[]) {
       it(`${id} has all required color keys`, () => {
         const colors = THEMES[id].colors;
         for (const key of requiredColorKeys) {
