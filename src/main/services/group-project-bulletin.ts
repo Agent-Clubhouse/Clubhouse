@@ -1,6 +1,7 @@
 /**
  * BulletinBoard — per-project message board with topic-based organization.
- * Supports posting, digest, topic reading, and automatic pruning.
+ * Supports posting, digest, topic reading, automatic pruning, topic protection,
+ * configurable retention limits, and message/topic deletion.
  */
 
 import * as fsp from 'fs/promises';
@@ -9,12 +10,12 @@ import { app } from 'electron';
 import type { BulletinMessage, TopicDigest } from '../../shared/group-project-types';
 import { appLog } from './log-service';
 
-/** Max message body size in bytes. */
+/** Default max message body size in bytes. */
 const MAX_BODY_BYTES = 100 * 1024;
-/** Max messages per topic before pruning. */
-const MAX_PER_TOPIC = 500;
-/** Max messages per board before global pruning. */
-const MAX_TOTAL = 2500;
+/** Default max messages per topic before pruning. */
+const DEFAULT_MAX_PER_TOPIC = 500;
+/** Default max messages per board before global pruning. */
+const DEFAULT_MAX_TOTAL = 2500;
 
 const FLUSH_DELAY_MS = 500;
 
@@ -42,18 +43,30 @@ async function pathExists(p: string): Promise<boolean> {
 
 interface BulletinData {
   topics: Record<string, BulletinMessage[]>;
+  protectedTopics?: string[];
 }
 
 class BulletinBoard {
   private projectId: string;
   private topics = new Map<string, BulletinMessage[]>();
+  private protectedTopics = new Set<string>();
   private loaded = false;
   private dirty = false;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingFlush: Promise<void> | null = null;
 
+  /** Configurable limits — set via setLimits(), default to module constants. */
+  private maxPerTopic = DEFAULT_MAX_PER_TOPIC;
+  private maxTotal = DEFAULT_MAX_TOTAL;
+
   constructor(projectId: string) {
     this.projectId = projectId;
+  }
+
+  /** Override the per-topic and total message limits for this board. */
+  setLimits(maxPerTopic: number, maxTotal: number): void {
+    this.maxPerTopic = maxPerTopic;
+    this.maxTotal = maxTotal;
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -64,6 +77,11 @@ class BulletinBoard {
         const data: BulletinData = JSON.parse(await fsp.readFile(bp, 'utf-8'));
         for (const [topic, messages] of Object.entries(data.topics || {})) {
           this.topics.set(topic, messages);
+        }
+        if (Array.isArray(data.protectedTopics)) {
+          for (const t of data.protectedTopics) {
+            this.protectedTopics.add(t);
+          }
         }
       } catch (err) {
         appLog('core:group-project', 'error', 'Failed to parse bulletin board', {
@@ -90,6 +108,9 @@ class BulletinBoard {
     const data: BulletinData = { topics: {} };
     for (const [topic, messages] of this.topics) {
       data.topics[topic] = messages;
+    }
+    if (this.protectedTopics.size > 0) {
+      data.protectedTopics = [...this.protectedTopics];
     }
 
     const flushPromise = (async () => {
@@ -131,9 +152,9 @@ class BulletinBoard {
     }
     topicMessages.push(message);
 
-    // Prune per-topic
-    if (topicMessages.length > MAX_PER_TOPIC) {
-      topicMessages.splice(0, topicMessages.length - MAX_PER_TOPIC);
+    // Prune per-topic (skip protected topics)
+    if (!this.protectedTopics.has(topic) && topicMessages.length > this.maxPerTopic) {
+      topicMessages.splice(0, topicMessages.length - this.maxPerTopic);
     }
 
     // Prune globally
@@ -160,6 +181,7 @@ class BulletinBoard {
         messageCount: messages.length,
         newMessageCount: newMessages.length,
         latestTimestamp: messages[messages.length - 1].timestamp,
+        isProtected: this.protectedTopics.has(topic),
       });
     }
 
@@ -205,18 +227,19 @@ class BulletinBoard {
     for (const messages of this.topics.values()) {
       total += messages.length;
     }
-    if (total <= MAX_TOTAL) return;
+    if (total <= this.maxTotal) return;
 
-    // Collect all messages, sort oldest first, remove until under limit
+    // Collect all messages from NON-protected topics, sort oldest first, remove until under limit
     const all: Array<{ topic: string; index: number; timestamp: number }> = [];
     for (const [topic, messages] of this.topics) {
+      if (this.protectedTopics.has(topic)) continue;
       for (let i = 0; i < messages.length; i++) {
         all.push({ topic, index: i, timestamp: new Date(messages[i].timestamp).getTime() });
       }
     }
     all.sort((a, b) => a.timestamp - b.timestamp);
 
-    const toRemove = total - MAX_TOTAL;
+    const toRemove = total - this.maxTotal;
     const removals = new Map<string, Set<number>>();
     for (let i = 0; i < toRemove && i < all.length; i++) {
       const entry = all[i];
@@ -239,14 +262,76 @@ class BulletinBoard {
     }
   }
 
+  // ── Topic protection ────────────────────────────────────────────────────
+
+  /** Mark a topic as protected (skip pruning) or unprotected. */
+  setTopicProtected(topic: string, isProtected: boolean): void {
+    if (isProtected) {
+      this.protectedTopics.add(topic);
+    } else {
+      this.protectedTopics.delete(topic);
+    }
+    this.dirty = true;
+    this.scheduleFlush();
+  }
+
+  /** Check whether a topic is protected. */
+  isTopicProtected(topic: string): boolean {
+    return this.protectedTopics.has(topic);
+  }
+
+  /** Return all protected topic names. */
+  getProtectedTopics(): string[] {
+    return [...this.protectedTopics];
+  }
+
+  // ── Delete operations ───────────────────────────────────────────────────
+
+  /** Delete a single message by ID within a topic. Returns true if found. */
+  async deleteMessage(topic: string, messageId: string): Promise<boolean> {
+    await this.ensureLoaded();
+    const messages = this.topics.get(topic);
+    if (!messages) return false;
+
+    const idx = messages.findIndex(m => m.id === messageId);
+    if (idx === -1) return false;
+
+    messages.splice(idx, 1);
+    if (messages.length === 0) {
+      this.topics.delete(topic);
+      this.protectedTopics.delete(topic);
+    }
+
+    this.dirty = true;
+    this.scheduleFlush();
+    return true;
+  }
+
+  /** Delete an entire topic and all its messages. Returns true if the topic existed. */
+  async deleteTopic(topic: string): Promise<boolean> {
+    await this.ensureLoaded();
+    const existed = this.topics.has(topic);
+    if (!existed) return false;
+
+    this.topics.delete(topic);
+    this.protectedTopics.delete(topic);
+
+    this.dirty = true;
+    this.scheduleFlush();
+    return true;
+  }
+
   /** For testing: reset state. */
   _resetForTesting(): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
     this.pendingFlush = null;
     this.topics.clear();
+    this.protectedTopics.clear();
     this.loaded = false;
     this.dirty = false;
+    this.maxPerTopic = DEFAULT_MAX_PER_TOPIC;
+    this.maxTotal = DEFAULT_MAX_TOTAL;
   }
 }
 
