@@ -170,7 +170,7 @@ export function useGroupProjectContext(
   // --- Delete operations ---
   const deleteMessage = useCallback(async (gpId: string, topic: string, messageId: string): Promise<boolean> => {
     if (isRemote && satelliteId) {
-      const result = await window.clubhouse.annexClient.gpDeleteMessage(satelliteId, gpId, topic, messageId);
+      const result = await window.clubhouse.annexClient.gpDeleteMessage(satelliteId, gpId, topic, messageId) as unknown;
       return (result as { deleted: boolean })?.deleted ?? false;
     }
     return window.clubhouse.groupProject.deleteMessage(gpId, topic, messageId);
@@ -178,7 +178,7 @@ export function useGroupProjectContext(
 
   const deleteTopic = useCallback(async (gpId: string, topic: string): Promise<boolean> => {
     if (isRemote && satelliteId) {
-      const result = await window.clubhouse.annexClient.gpDeleteTopic(satelliteId, gpId, topic);
+      const result = await window.clubhouse.annexClient.gpDeleteTopic(satelliteId, gpId, topic) as unknown;
       return (result as { deleted: boolean })?.deleted ?? false;
     }
     return window.clubhouse.groupProject.deleteTopic(gpId, topic);

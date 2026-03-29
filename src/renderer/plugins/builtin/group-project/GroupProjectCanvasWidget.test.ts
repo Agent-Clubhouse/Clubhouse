@@ -91,28 +91,27 @@ describe('GroupProjectCanvasWidget — main.ts generateDisplayName', () => {
   });
 });
 
-// ── PTY injection (via context hook) ────────────────────────────────
+// ── PTY injection (via context hook — IPC route) ───────────────────
 
 describe('GroupProjectCanvasWidget — PTY injection via context', () => {
   const hookSource = readFileSync(join(__dirname, 'useGroupProjectContext.ts'), 'utf-8');
 
-  it('imports ptyWrite from project-proxy in the context hook', () => {
-    expect(hookSource).toContain("from '../../../services/project-proxy'");
-    expect(hookSource).toContain('ptyWrite');
+  it('does not import ptyWrite — injection routes through main process IPC', () => {
+    expect(hookSource).not.toContain('ptyWrite');
+    expect(hookSource).not.toContain("from '../../../services/project-proxy'");
   });
 
-  it('uses bracketed paste for multiline messages', () => {
-    expect(hookSource).toContain('\\x1b[200~');
-    expect(hookSource).toContain('\\x1b[201~');
+  it('delegates bracketed paste to main process (no inline escape codes)', () => {
+    expect(hookSource).not.toContain('\\x1b[200~');
+    expect(hookSource).not.toContain('\\x1b[201~');
   });
 
-  it('sends Enter after injection with a delay', () => {
-    expect(hookSource).toMatch(/setTimeout\s*\(/);
-    expect(hookSource).toContain("'\\r'");
+  it('uses groupProject.injectMessage IPC for local injection', () => {
+    expect(hookSource).toContain('window.clubhouse.groupProject.injectMessage(agentId, message)');
   });
 
-  it('routes remote PTY input through annexClient', () => {
-    expect(hookSource).toContain('annexClient.ptyInput(satelliteId, agentId');
+  it('routes remote injection through annexClient.gpInjectMessage', () => {
+    expect(hookSource).toContain('annexClient.gpInjectMessage(satelliteId, agentId, message)');
   });
 });
 
@@ -125,8 +124,7 @@ describe('GroupProjectCanvasWidget — broadcast modal', () => {
   });
 
   it('calls injectMessage for each target member in broadcast', () => {
-    // ShoulderTapModal handleSend should iterate targets and call injectMessage
-    expect(source).toMatch(/for\s*\(const\s+member\s+of\s+targets\)/);
+    // ShoulderTapModal handleSend should call injectMessage for targets (async via Promise.all)
     expect(source).toContain('injectMessage(member.agentId');
   });
 });
@@ -361,8 +359,8 @@ describe('GroupProjectCanvasWidget — Annex remote support', () => {
     expect(hookSource).toContain('annexClient.gpBulletinAll');
   });
 
-  it('context hook routes PTY input through annexClient for remote', () => {
-    expect(hookSource).toContain('annexClient.ptyInput(satelliteId, agentId');
+  it('context hook routes injection through annexClient.gpInjectMessage for remote', () => {
+    expect(hookSource).toContain('annexClient.gpInjectMessage(satelliteId, agentId, message)');
   });
 
   it('context hook falls back to local API for non-remote', () => {

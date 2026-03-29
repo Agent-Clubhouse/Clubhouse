@@ -7,7 +7,6 @@
  */
 
 import { agentRegistry } from './agent-registry';
-import * as ptyManager from './pty-manager';
 import * as structuredManager from './structured-manager';
 import { getBulletinBoard } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
