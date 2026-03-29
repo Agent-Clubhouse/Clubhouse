@@ -442,8 +442,8 @@ export function CanvasViewComponent({
         if (isWidgetPending(pluginView.pluginWidgetType)) {
           return (
             <div className="flex flex-col items-center justify-center h-full gap-2 text-ctp-overlay0 text-xs p-4 text-center" data-testid="widget-loading">
-              <span className="font-medium text-ctp-subtext0">{registered.declaration.label} is not enabled</span>
-              <span>Enable it in Settings &gt; Plugins</span>
+              <span className="font-medium text-ctp-subtext0">{registered.declaration.label}</span>
+              <span>Loading…</span>
             </div>
           );
         }
@@ -474,12 +474,12 @@ export function CanvasViewComponent({
   // ── Selection & drag highlight ──────────────────────────────────
   const isDragActive = dragPos !== null || !!dragOffset;
   const selectionShadow = isDragActive
-    ? '0 12px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--ctp-blue, #89b4fa)'
+    ? `var(--shadow-elevation), 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--ctp-blue, #89b4fa)`
     : isSelected
-      ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
+      ? `var(--shadow-depth), 0 0 0 2px var(--ctp-blue, #89b4fa)`
       : isMultiSelected
-        ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
-        : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
+        ? `var(--shadow-depth), 0 0 0 2px var(--ctp-blue, #89b4fa)`
+        : `var(--shadow-depth), 0 0 0 1px var(--ctp-surface2)`;
 
   // ── Compact anchor strip ──────────────────────────────────────
   if (view.type === 'anchor') {
