@@ -80,6 +80,20 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 | `get_app_state` | Quick overview of what's configured. |
 | `search_help` | Look up detailed help content on any Clubhouse feature. Always use this before answering feature questions. |
 
+### Settings keys reference
+
+`update_settings` writes to the app's `settings.json` (key-value store). Known keys:
+
+| Key | Type | Valid values | Description |
+|-----|------|-------------|-------------|
+| `theme` | string | `"catppuccin-mocha"`, `"catppuccin-latte"`, `"solarized-dark"`, `"terminal"`, `"nord"`, `"dracula"`, `"tokyo-night"`, `"gruvbox-dark"`, `"cyberpunk"`, or `"plugin:<id>"` for plugin themes | App color theme |
+| `soundEnabled` | boolean | `true`, `false` | Enable/disable notification sounds |
+| `clipboardCompat` | boolean | `true`, `false` | Clipboard compatibility mode |
+| `editorCommand` | string | `"code"`, `"cursor"`, `"zed"`, etc. | External editor launch command |
+| `editorName` | string | `"VS Code"`, `"Cursor"`, `"Zed"`, etc. | Display name for the external editor |
+
+**Note:** `update_settings` accepts any key, but changing unrecognized keys has no effect on the UI. For domain-specific settings (notifications, logging, MCP, security, annex), guide users to Settings in the app instead — those use separate config files managed by the renderer.
+
 ## Common tool sequences
 
 **New project setup:**
