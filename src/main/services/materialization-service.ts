@@ -261,7 +261,7 @@ export async function materializeAgent(params: {
   if (!worktreePath) return;
 
   const defaults = await readProjectAgentDefaults(projectPath);
-  if (!defaults.instructions && !defaults.permissions && !defaults.mcpJson) {
+  if (!defaults.instructions && !defaults.permissions && !defaults.mcpJson && !agent.persona) {
     // Also check source skills/templates
     const sourceSkills = await listSourceSkills(projectPath);
     const sourceTemplates = await listSourceAgentTemplates(projectPath);
