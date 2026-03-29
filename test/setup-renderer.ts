@@ -416,6 +416,7 @@ vi.stubGlobal('clubhouse', {
     bind: asyncNoop,
     unbind: asyncNoop,
     sendFollowup: asyncNoop,
+    sendStructuredFollowup: asyncNoop,
     onResult: () => noop,
     reset: asyncNoop,
     saveHistory: asyncNoop,
