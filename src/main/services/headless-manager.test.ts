@@ -59,6 +59,12 @@ vi.mock('./annex-event-bus', () => ({
   emitPtyExit: (...args: unknown[]) => mockEmitPtyExit(...args),
 }));
 
+// Mock pty-manager for validateSpawnCwd
+const mockValidateSpawnCwd = vi.fn(async () => '/resolved/path');
+vi.mock('./pty-manager', () => ({
+  validateSpawnCwd: (...args: unknown[]) => mockValidateSpawnCwd(...args),
+}));
+
 // Create a mock child process
 function createMockProcess() {
   const proc = new EventEmitter() as EventEmitter & {
@@ -1701,6 +1707,41 @@ describe('headless-manager _internal helpers', () => {
       // No parser means no listeners attached — nothing to emit
       expect(session.parser).toBeNull();
       expect(mockWriteStream.write).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── BUG-04: CWD Validation ──────────────────────────────────────────
+
+  describe('spawnHeadless CWD validation', () => {
+    it('calls validateSpawnCwd before spawning', async () => {
+      await spawnHeadless('cwd-test', '/valid/path', '/usr/bin/agent', []);
+      expect(mockValidateSpawnCwd).toHaveBeenCalledWith('/valid/path');
+      // Spawn should proceed after validation passes
+      expect(mockCpSpawn).toHaveBeenCalled();
+    });
+
+    it('rejects relative paths', async () => {
+      mockValidateSpawnCwd.mockRejectedValueOnce(new Error('PTY cwd must be an absolute path, received: relative/path'));
+      await expect(
+        spawnHeadless('cwd-rel', 'relative/path', '/usr/bin/agent', []),
+      ).rejects.toThrow('must be an absolute path');
+      expect(mockCpSpawn).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-existent directories', async () => {
+      mockValidateSpawnCwd.mockRejectedValueOnce(new Error('PTY cwd does not exist or is not accessible: /nonexistent'));
+      await expect(
+        spawnHeadless('cwd-noent', '/nonexistent', '/usr/bin/agent', []),
+      ).rejects.toThrow('does not exist');
+      expect(mockCpSpawn).not.toHaveBeenCalled();
+    });
+
+    it('rejects sensitive system directories', async () => {
+      mockValidateSpawnCwd.mockRejectedValueOnce(new Error('PTY cwd points to a restricted system directory: /etc'));
+      await expect(
+        spawnHeadless('cwd-etc', '/etc', '/usr/bin/agent', []),
+      ).rejects.toThrow('restricted system directory');
+      expect(mockCpSpawn).not.toHaveBeenCalled();
     });
   });
 });

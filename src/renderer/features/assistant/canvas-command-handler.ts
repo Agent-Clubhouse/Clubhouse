@@ -49,10 +49,18 @@ function getStorage(projectId?: string): ScopedStorage {
 
 function findCanvas(canvasId: string, projectId?: string): CanvasInstance | undefined {
   const store = getStore(projectId);
-  const canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+  let canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+  // Fall back to app store if not found in project store
+  if (!canvas && projectId) {
+    const appStore = useAppCanvasStore.getState();
+    canvas = appStore.canvases.find((c: CanvasInstance) => c.id === canvasId);
+  }
   if (!canvas) {
-    const allIds = store.canvases.map((c: CanvasInstance) => c.id);
-    console.warn('[assistant] Canvas not found:', canvasId, 'available:', allIds, 'pid:', normPid(projectId) || 'app');
+    const allIds = [
+      ...store.canvases.map((c: CanvasInstance) => c.id),
+      ...(projectId ? useAppCanvasStore.getState().canvases.map((c: CanvasInstance) => c.id) : []),
+    ];
+    console.warn('[assistant] Canvas not found:', canvasId, 'available:', [...new Set(allIds)], 'pid:', normPid(projectId) || 'app');
   }
   return canvas;
 }
@@ -71,21 +79,48 @@ async function persistCanvas(projectId?: string): Promise<void> {
 
 const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views', 'import_blueprint']);
 
-/** Execute a command on a specific canvas, switching active canvas if needed. */
+/**
+ * Execute a command on a specific canvas, switching active canvas if needed.
+ *
+ * Canvas lookup searches the project store first (if projectId given), then
+ * falls back to the app store. This handles the common case where create_canvas
+ * is called without a project_id (app-level) but add_card passes project_id
+ * for agent binding — the canvas lives in the app store, not the project store.
+ */
 function withCanvas<T>(canvasId: string, fn: (store: CanvasState) => T, projectId?: string): T | { error: string } {
-  const store = getStore(projectId);
-
-  // First try finding by ID
+  // Try the requested store first
+  let store = getStore(projectId);
   let canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
 
-  // If not found, the canvas may have been just created — re-read state
+  // If not found and we were looking in a project store, fall back to app store
+  if (!canvas && projectId) {
+    const appStore = useAppCanvasStore.getState();
+    const appCanvas = appStore.canvases.find((c: CanvasInstance) => c.id === canvasId);
+    if (appCanvas) {
+      console.log('[assistant] Canvas found in app store (not project store), using app store for:', canvasId);
+      store = appStore;
+      canvas = appCanvas;
+    }
+  }
+
+  // If still not found, re-read both stores (handles just-created canvases)
   if (!canvas) {
-    const freshStore = getStore(projectId);
-    canvas = freshStore.canvases.find((c: CanvasInstance) => c.id === canvasId);
+    store = getStore(projectId);
+    canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+    if (!canvas && projectId) {
+      const appStore = useAppCanvasStore.getState();
+      canvas = appStore.canvases.find((c: CanvasInstance) => c.id === canvasId);
+      if (canvas) {
+        store = appStore;
+      }
+    }
     if (!canvas) {
-      const allIds = freshStore.canvases.map((c: CanvasInstance) => c.id);
-      console.error('[assistant] Canvas not found after re-read:', canvasId, 'available:', allIds);
-      return { error: `Canvas not found: ${canvasId}. Available: ${allIds.join(', ')}` };
+      const allIds = [
+        ...store.canvases.map((c: CanvasInstance) => c.id),
+        ...(projectId ? useAppCanvasStore.getState().canvases.map((c: CanvasInstance) => c.id) : []),
+      ];
+      console.error('[assistant] Canvas not found in any store:', canvasId, 'available:', allIds);
+      return { error: `Canvas not found: ${canvasId}. Available: ${[...new Set(allIds)].join(', ')}` };
     }
   }
 

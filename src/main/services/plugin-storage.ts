@@ -40,6 +40,9 @@ export function getGlobalPluginDataDir(): string {
 }
 
 function getStorageDir(pluginId: string, scope: 'project' | 'project-local' | 'global', projectPath?: string): string {
+  if (pluginId.includes('/') || pluginId.includes('\\') || pluginId.includes('..') || pluginId.includes('\0')) {
+    throw new Error(`Invalid plugin ID: ${pluginId}`);
+  }
   if (scope === 'project' && projectPath) {
     return path.join(projectPath, '.clubhouse', 'plugin-data', pluginId);
   }
@@ -53,7 +56,7 @@ async function ensureDir(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true });
 }
 
-function assertSafePath(base: string, target: string): void {
+async function assertSafePath(base: string, target: string): Promise<void> {
   const resolvedBase = path.resolve(base);
   const resolved = path.resolve(base, target);
   if (resolved !== resolvedBase && !resolved.startsWith(resolvedBase + path.sep)) {
@@ -62,6 +65,20 @@ function assertSafePath(base: string, target: string): void {
     });
     throw new Error(`Path traversal detected: ${target}`);
   }
+  // Follow symlinks to verify the canonical path stays within bounds
+  try {
+    const realBase = await fs.realpath(resolvedBase);
+    const realTarget = await fs.realpath(resolved);
+    if (realTarget !== realBase && !realTarget.startsWith(realBase + path.sep)) {
+      appLog('core:plugin-storage', 'error', 'Symlink path traversal attempt blocked', {
+        meta: { base, target, resolved, realTarget },
+      });
+      throw new Error(`Path traversal detected: ${target}`);
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.startsWith('Path traversal')) throw err;
+    // Path doesn't exist yet — the logical check above is sufficient
+  }
 }
 
 // ── Key-Value Storage ──────────────────────────────────────────────────
@@ -69,7 +86,7 @@ function assertSafePath(base: string, target: string): void {
 export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   const file = path.join(dir, `${req.key}.json`);
-  assertSafePath(dir, `${req.key}.json`);
+  await assertSafePath(dir, `${req.key}.json`);
   try {
     const raw = await fs.readFile(file, 'utf-8');
     return JSON.parse(raw);
@@ -83,7 +100,7 @@ export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
     await ensurePluginDataLocalGitignored(req.projectPath);
   }
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
-  assertSafePath(dir, `${req.key}.json`);
+  await assertSafePath(dir, `${req.key}.json`);
   await ensureDir(dir);
   const file = path.join(dir, `${req.key}.json`);
   await fs.writeFile(file, JSON.stringify(req.value), 'utf-8');
@@ -92,7 +109,7 @@ export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
 export async function deleteKey(req: PluginStorageDeleteRequest): Promise<void> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   const file = path.join(dir, `${req.key}.json`);
-  assertSafePath(dir, `${req.key}.json`);
+  await assertSafePath(dir, `${req.key}.json`);
   try {
     await fs.unlink(file);
   } catch {
@@ -116,14 +133,14 @@ export async function listKeys(req: PluginStorageListRequest): Promise<string[]>
 
 export async function readPluginFile(req: PluginFileRequest): Promise<string> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
-  assertSafePath(base, req.relativePath);
+  await assertSafePath(base, req.relativePath);
   const filePath = path.join(base, req.relativePath);
   return fs.readFile(filePath, 'utf-8');
 }
 
 export async function writePluginFile(req: PluginFileRequest & { content: string }): Promise<void> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
-  assertSafePath(base, req.relativePath);
+  await assertSafePath(base, req.relativePath);
   const filePath = path.join(base, req.relativePath);
   await ensureDir(path.dirname(filePath));
   await fs.writeFile(filePath, req.content, 'utf-8');
@@ -131,7 +148,7 @@ export async function writePluginFile(req: PluginFileRequest & { content: string
 
 export async function deletePluginFile(req: PluginFileRequest): Promise<void> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
-  assertSafePath(base, req.relativePath);
+  await assertSafePath(base, req.relativePath);
   const filePath = path.join(base, req.relativePath);
   try {
     await fs.unlink(filePath);
@@ -142,7 +159,7 @@ export async function deletePluginFile(req: PluginFileRequest): Promise<void> {
 
 export async function pluginFileExists(req: PluginFileRequest): Promise<boolean> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
-  assertSafePath(base, req.relativePath);
+  await assertSafePath(base, req.relativePath);
   const filePath = path.join(base, req.relativePath);
   try {
     await fs.access(filePath);
@@ -154,7 +171,7 @@ export async function pluginFileExists(req: PluginFileRequest): Promise<boolean>
 
 export async function listPluginDir(req: PluginFileRequest): Promise<Array<{ name: string; isDirectory: boolean }>> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
-  assertSafePath(base, req.relativePath);
+  await assertSafePath(base, req.relativePath);
   const dirPath = path.join(base, req.relativePath);
   try {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -166,7 +183,7 @@ export async function listPluginDir(req: PluginFileRequest): Promise<Array<{ nam
 
 export async function mkdirPlugin(pluginId: string, scope: 'project' | 'global', relativePath: string, projectPath?: string): Promise<void> {
   const base = getStorageDir(pluginId, scope, projectPath);
-  assertSafePath(base, relativePath);
+  await assertSafePath(base, relativePath);
   const dirPath = path.join(base, relativePath);
   await ensureDir(dirPath);
 }

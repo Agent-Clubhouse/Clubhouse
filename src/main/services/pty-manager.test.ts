@@ -1188,6 +1188,42 @@ describe('pty-manager', () => {
       expect(isRunning('agent_guard_exit')).toBe(true);
     });
 
+    it('stale onData from replaced session is ignored via generation counter (same mock process)', async () => {
+      // Both spawns use the same mockProcess object, proving generation counter
+      // works even when process identity is the same
+      await spawn('agent_gen_data', '/test', '/usr/local/bin/claude', []);
+      const firstOnData = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+
+      // Replace with new session (same mock process, different generation)
+      await spawn('agent_gen_data', '/test', '/usr/local/bin/claude', []);
+      resize('agent_gen_data', 120, 30);
+      const secondOnData = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+
+      // Old handler fires — should be ignored because generation doesn't match
+      firstOnData('stale data');
+      expect(getBuffer('agent_gen_data')).toBe('');
+
+      // New handler fires — should work
+      secondOnData('fresh data');
+      expect(getBuffer('agent_gen_data')).toBe('fresh data');
+    });
+
+    it('stale onExit from replaced session is ignored via generation counter', async () => {
+      const exitCallback1 = vi.fn();
+      const exitCallback2 = vi.fn();
+
+      await spawn('agent_gen_exit', '/test', '/usr/local/bin/claude', [], undefined, exitCallback1);
+      const firstOnExit = mockProcess.onExit.mock.calls[mockProcess.onExit.mock.calls.length - 1][0];
+
+      await spawn('agent_gen_exit', '/test', '/usr/local/bin/claude', [], undefined, exitCallback2);
+
+      // Old onExit fires — should not trigger cleanup or callback
+      firstOnExit({ exitCode: 1 });
+      expect(isRunning('agent_gen_exit')).toBe(true);
+      expect(exitCallback1).not.toHaveBeenCalled();
+      expect(exitCallback2).not.toHaveBeenCalled();
+    });
+
     it('onExit invokes the onExit callback with buffer content', async () => {
       const exitCallback = vi.fn();
       await spawn('agent_exit_cb', '/test', '/usr/local/bin/claude', [], undefined, exitCallback);

@@ -700,7 +700,8 @@ export type BuiltinThemeId =
   | 'nord'
   | 'dracula'
   | 'tokyo-night'
-  | 'gruvbox-dark';
+  | 'gruvbox-dark'
+  | 'cyberpunk';
 
 /** Theme IDs — builtin themes plus any plugin-contributed themes. */
 export type ThemeId = BuiltinThemeId | (string & {});
