@@ -44,11 +44,16 @@ vi.mock('../orchestrators', () => ({
   isSessionCapable: vi.fn().mockReturnValue(true),
 }));
 
+vi.mock('./agent-config', () => ({
+  getDurableConfig: vi.fn().mockResolvedValue(null),
+}));
+
 import { captureSessionState, loadPendingResume, clearPendingResume, getLiveAgentsForUpdate } from './restart-session-service';
 import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
 import { getProvider, isSessionCapable } from '../orchestrators';
 import { pathExists } from './fs-utils';
+import { getDurableConfig } from './agent-config';
 
 describe('restart-session-service', () => {
   const statePath = '/tmp/test-userdata/restart-session-state.json';
@@ -98,6 +103,92 @@ describe('restart-session-service', () => {
       expect(state.sessions[0].agentId).toBe('darling-gazelle');
       expect(state.sessions[0].sessionId).toBe('session-abc');
       expect(state.sessions[0].resumeStrategy).toBe('auto');
+    });
+
+    it('captures freeAgentMode from durable config', async () => {
+      agentRegistry.register('free-agent-test', {
+        projectPath: '/projects/club',
+        orchestrator: 'claude-code' as const,
+        runtime: 'pty',
+      });
+
+      const provider = {
+        id: 'claude-code',
+        capabilities: { sessionResume: true },
+        extractSessionId: vi.fn().mockReturnValue(null),
+      };
+      vi.mocked(getProvider).mockReturnValue(provider as never);
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      vi.mocked(getDurableConfig).mockResolvedValue({
+        id: 'free-agent-test',
+        name: 'Free Agent',
+        color: 'red',
+        createdAt: new Date().toISOString(),
+        freeAgentMode: true,
+      } as never);
+
+      const agentNames = new Map([['free-agent-test', 'Free Agent']]);
+      await captureSessionState(agentNames);
+
+      const raw = await fsp.readFile(statePath, 'utf-8');
+      const state = JSON.parse(raw);
+
+      expect(state.sessions[0].freeAgentMode).toBe(true);
+    });
+
+    it('omits freeAgentMode when durable config is unavailable', async () => {
+      agentRegistry.register('no-config-agent', {
+        projectPath: '/projects/club',
+        orchestrator: 'claude-code' as const,
+        runtime: 'pty',
+      });
+
+      const provider = {
+        id: 'claude-code',
+        capabilities: { sessionResume: true },
+        extractSessionId: vi.fn().mockReturnValue(null),
+      };
+      vi.mocked(getProvider).mockReturnValue(provider as never);
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      vi.mocked(getDurableConfig).mockRejectedValue(new Error('ENOENT'));
+
+      const agentNames = new Map([['no-config-agent', 'No Config']]);
+      await captureSessionState(agentNames);
+
+      const raw = await fsp.readFile(statePath, 'utf-8');
+      const state = JSON.parse(raw);
+
+      expect(state.sessions[0].freeAgentMode).toBeUndefined();
+    });
+
+    it('captures freeAgentMode as undefined when config has no freeAgentMode', async () => {
+      agentRegistry.register('normal-agent', {
+        projectPath: '/projects/club',
+        orchestrator: 'claude-code' as const,
+        runtime: 'pty',
+      });
+
+      const provider = {
+        id: 'claude-code',
+        capabilities: { sessionResume: true },
+        extractSessionId: vi.fn().mockReturnValue(null),
+      };
+      vi.mocked(getProvider).mockReturnValue(provider as never);
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      vi.mocked(getDurableConfig).mockResolvedValue({
+        id: 'normal-agent',
+        name: 'Normal Agent',
+        color: 'blue',
+        createdAt: new Date().toISOString(),
+      } as never);
+
+      const agentNames = new Map([['normal-agent', 'Normal Agent']]);
+      await captureSessionState(agentNames);
+
+      const raw = await fsp.readFile(statePath, 'utf-8');
+      const state = JSON.parse(raw);
+
+      expect(state.sessions[0].freeAgentMode).toBeUndefined();
     });
 
     it('sets manual strategy when orchestrator lacks session capability', async () => {

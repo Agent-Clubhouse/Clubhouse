@@ -15,6 +15,7 @@ vi.mock('../stores/agentStore', () => {
         agents: mockAgents,
         setResumeStatus: mockSetResumeStatus,
         clearResumingAgents: vi.fn(),
+        loadAgentIcon: mockLoadAgentIcon,
       }),
       setState: (...args: unknown[]) => mockSetState(...args),
       subscribe: vi.fn().mockReturnValue(vi.fn()),
@@ -32,12 +33,15 @@ vi.mock('../stores/projectStore', () => ({
 
 // Mock window.clubhouse
 const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
+const mockGetDurableConfig = vi.fn().mockResolvedValue(null);
+const mockLoadAgentIcon = vi.fn().mockResolvedValue(undefined);
 const mockPtyKill = vi.fn();
 Object.defineProperty(globalThis, 'window', {
   value: {
     clubhouse: {
       agent: {
         spawnAgent: mockSpawnAgent,
+        getDurableConfig: mockGetDurableConfig,
       },
       pty: {
         kill: mockPtyKill,
@@ -340,6 +344,336 @@ describe('resume-queue', () => {
       const statuses = mockSetResumeStatus.mock.calls.map(([, status]) => status);
       expect(statuses).not.toContain('timed_out');
       expect(statuses).toContain('resumed');
+    });
+  });
+
+  describe('agent settings restoration from durable config', () => {
+    const durableConfig = {
+      id: 'settings-agent',
+      name: 'Settings Agent',
+      color: 'purple',
+      icon: 'settings-agent-12345.png',
+      branch: 'feature/fix-bug',
+      worktreePath: '/projects/worktree',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      model: 'claude-opus-4',
+      freeAgentMode: true,
+      structuredMode: true,
+      mcpIds: ['mcp-1', 'mcp-2'],
+      orchestrator: 'claude-code',
+    };
+
+    beforeEach(() => {
+      mockGetDurableConfig.mockResolvedValue(durableConfig);
+    });
+
+    it('restores color from durable config instead of hardcoding gray', async () => {
+      const entry = makeEntry({ agentId: 'settings-agent', resumeStrategy: 'auto' });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      expect(mockGetDurableConfig).toHaveBeenCalledWith('/projects/test', 'settings-agent');
+
+      // Verify the Agent object written to the store has the correct color
+      const setStateCalls = mockSetState.mock.calls;
+      const agentSetCall = setStateCalls.find((call) => {
+        if (typeof call[0] === 'function') {
+          const result = call[0]({ agents: {}, agentSpawnedAt: {} });
+          return result?.agents?.['settings-agent']?.color === 'purple';
+        }
+        return false;
+      });
+      expect(agentSetCall).toBeDefined();
+    });
+
+    it('restores icon from durable config and calls loadAgentIcon', async () => {
+      const entry = makeEntry({ agentId: 'settings-agent', resumeStrategy: 'auto' });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      // Verify Agent has icon set
+      const setStateCalls = mockSetState.mock.calls;
+      const agentSetCall = setStateCalls.find((call) => {
+        if (typeof call[0] === 'function') {
+          const result = call[0]({ agents: {}, agentSpawnedAt: {} });
+          return result?.agents?.['settings-agent']?.icon === 'settings-agent-12345.png';
+        }
+        return false;
+      });
+      expect(agentSetCall).toBeDefined();
+
+      // loadAgentIcon must be called to populate the icon cache
+      expect(mockLoadAgentIcon).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'settings-agent', icon: 'settings-agent-12345.png' }),
+      );
+    });
+
+    it('does not call loadAgentIcon when config has no icon', async () => {
+      mockGetDurableConfig.mockResolvedValue({ ...durableConfig, icon: undefined });
+      const entry = makeEntry({ agentId: 'settings-agent', resumeStrategy: 'auto' });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      expect(mockLoadAgentIcon).not.toHaveBeenCalled();
+    });
+
+    it('restores freeAgentMode from durable config', async () => {
+      const entry = makeEntry({ agentId: 'settings-agent', resumeStrategy: 'auto' });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      // Verify Agent store has freeAgentMode
+      const setStateCalls = mockSetState.mock.calls;
+      const agentSetCall = setStateCalls.find((call) => {
+        if (typeof call[0] === 'function') {
+          const result = call[0]({ agents: {}, agentSpawnedAt: {} });
+          return result?.agents?.['settings-agent']?.freeAgentMode === true;
+        }
+        return false;
+      });
+      expect(agentSetCall).toBeDefined();
+
+      // Also verify freeAgentMode is passed to spawnAgent
+      expect(mockSpawnAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ freeAgentMode: true }),
+      );
+    });
+
+    it('prefers entry.freeAgentMode over durable config', async () => {
+      // Entry says freeAgentMode is false, config says true — entry wins
+      const entry = makeEntry({
+        agentId: 'settings-agent',
+        resumeStrategy: 'auto',
+        freeAgentMode: false,
+      } as Partial<RestartSessionEntry>);
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      expect(mockSpawnAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ freeAgentMode: false }),
+      );
+    });
+
+    it('restores structuredMode from durable config', async () => {
+      const entry = makeEntry({ agentId: 'settings-agent', resumeStrategy: 'auto' });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      // Verify Agent store has structuredMode
+      const setStateCalls = mockSetState.mock.calls;
+      const agentSetCall = setStateCalls.find((call) => {
+        if (typeof call[0] === 'function') {
+          const result = call[0]({ agents: {}, agentSpawnedAt: {} });
+          return result?.agents?.['settings-agent']?.structuredMode === true;
+        }
+        return false;
+      });
+      expect(agentSetCall).toBeDefined();
+
+      // structuredMode passed to spawnAgent
+      expect(mockSpawnAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ structuredMode: true }),
+      );
+    });
+
+    it('restores mcpIds and branch from durable config', async () => {
+      const entry = makeEntry({ agentId: 'settings-agent', resumeStrategy: 'auto' });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      const setStateCalls = mockSetState.mock.calls;
+      const agentSetCall = setStateCalls.find((call) => {
+        if (typeof call[0] === 'function') {
+          const result = call[0]({ agents: {}, agentSpawnedAt: {} });
+          const agent = result?.agents?.['settings-agent'];
+          return agent?.mcpIds?.includes('mcp-1') && agent?.branch === 'feature/fix-bug';
+        }
+        return false;
+      });
+      expect(agentSetCall).toBeDefined();
+    });
+
+    it('restores model from durable config when entry has no model', async () => {
+      const entry = makeEntry({
+        agentId: 'settings-agent',
+        resumeStrategy: 'auto',
+        model: undefined,
+      });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      expect(mockSpawnAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'claude-opus-4' }),
+      );
+    });
+
+    it('prefers entry model over durable config model', async () => {
+      const entry = makeEntry({
+        agentId: 'settings-agent',
+        resumeStrategy: 'auto',
+        model: 'claude-sonnet-4',
+      });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      expect(mockSpawnAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'claude-sonnet-4' }),
+      );
+    });
+
+    it('falls back to gray color when getDurableConfig returns null', async () => {
+      mockGetDurableConfig.mockResolvedValue(null);
+      const entry = makeEntry({ agentId: 'settings-agent', resumeStrategy: 'auto' });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      const setStateCalls = mockSetState.mock.calls;
+      const agentSetCall = setStateCalls.find((call) => {
+        if (typeof call[0] === 'function') {
+          const result = call[0]({ agents: {}, agentSpawnedAt: {} });
+          return result?.agents?.['settings-agent']?.color === 'gray';
+        }
+        return false;
+      });
+      expect(agentSetCall).toBeDefined();
+    });
+
+    it('falls back gracefully when getDurableConfig throws', async () => {
+      mockGetDurableConfig.mockRejectedValue(new Error('config file missing'));
+      const entry = makeEntry({ agentId: 'settings-agent', resumeStrategy: 'auto' });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      // Should still succeed — just use defaults
+      expect(mockSetResumeStatus).toHaveBeenCalledWith('settings-agent', 'resumed');
+
+      // Color falls back to gray
+      const setStateCalls = mockSetState.mock.calls;
+      const agentSetCall = setStateCalls.find((call) => {
+        if (typeof call[0] === 'function') {
+          const result = call[0]({ agents: {}, agentSpawnedAt: {} });
+          return result?.agents?.['settings-agent']?.color === 'gray';
+        }
+        return false;
+      });
+      expect(agentSetCall).toBeDefined();
+    });
+
+    it('does not fetch durable config for non-durable agents', async () => {
+      const entry = makeEntry({
+        agentId: 'quick-agent',
+        kind: 'quick',
+        resumeStrategy: 'auto',
+      });
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['quick-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      expect(mockGetDurableConfig).not.toHaveBeenCalled();
+    });
+
+    it('passes freeAgentMode and structuredMode to spawnAgent in fallback retry', async () => {
+      const entry = makeEntry({
+        agentId: 'fallback-settings-agent',
+        sessionId: 'session-xyz',
+        resumeStrategy: 'auto',
+      });
+
+      mockGetDurableConfig.mockResolvedValue(durableConfig);
+
+      // First call fails, second succeeds
+      mockSpawnAgent
+        .mockRejectedValueOnce(new Error('session not found'))
+        .mockResolvedValueOnce(undefined);
+
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['fallback-settings-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      // Second (fallback) call should still include freeAgentMode and structuredMode
+      expect(mockSpawnAgent).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          freeAgentMode: true,
+          structuredMode: true,
+          sessionId: undefined,
+        }),
+      );
     });
   });
 });
