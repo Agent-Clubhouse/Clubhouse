@@ -64,6 +64,26 @@ Agents may have custom icons set by the user (shown as a non-null `icon` field i
 
 Cards are auto-staggered when you omit position — no need to calculate coordinates manually.
 
+### Zone containment
+
+Zones are visual containers that group cards. Containment is **spatial** — a card is inside a zone when >50% of its area overlaps the zone bounds.
+
+**To place a card in a zone:**
+- Use `add_card` with `zone_id` set to the zone's view ID — auto-positions within the zone
+- Or use `move_card` with `zone_id` to move an existing card into a zone
+- Manual positioning: place the card within the zone's x/y/width/height bounds
+
+**Zone dimensions:** Zones auto-resize to fit their contents (minimum 600x400). The zone title bar is 32px tall — card content area starts below it.
+
+**layout_canvas is zone-aware:** Cards inside zones stay grouped within their zone. Zones and non-zone cards are arranged in the outer layout pattern.
+
+### Parameter names
+
+Tool parameters use these exact names:
+- `connect_cards`: `source_view_id`, `target_view_id` (also accepts `from_card_id`, `to_card_id`)
+- `move_card`: `x`, `y` (also accepts `position_x`, `position_y`)
+- `add_card`: `width`, `height` must be **numbers** (not strings)
+
 ### IMPORTANT: Do NOT use anchors for coordination
 
 Anchors are just text labels. For coordination between agents, use **group project** wires:
@@ -106,10 +126,11 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 1. ALWAYS provide `agent_id` and `project_id` when adding agent cards
 2. ALWAYS call `layout_canvas` after adding ALL cards — this auto-arranges them properly
 3. NEVER use anchors for coordination — use direct agent-to-agent wires
-4. Use zones only for visual grouping, not for functionality
+4. Use zones for visual grouping — add the zone first, then add cards with `zone_id` to place them inside
 5. When connecting agents, wire them directly to each other (agent-to-agent)
 6. NEVER modify existing agents (update_agent, delete_agent) when building a canvas — only reference them via add_card
 7. You don't need to specify positions — cards are auto-staggered. Just add cards, then call layout_canvas.
+8. Pass `width` and `height` as **numbers**, not strings (e.g., `300` not `"300"`)
 
 **Agent reconfiguration:**
 `list_agents` → `update_agent` → `write_agent_instructions`
