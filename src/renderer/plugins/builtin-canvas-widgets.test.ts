@@ -55,6 +55,7 @@ describe('built-in plugin canvas widget declarations', () => {
     browser: ['webview'],
     'group-project': ['group-project'],
     'agent-queue': ['agent-queue'],
+    'sticky-note': ['note'],
   };
 
   const allPlugins = getBuiltinPlugins();
