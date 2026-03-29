@@ -220,7 +220,7 @@ function ProjectCard({
     for (const member of members) {
       const orchestrator = agents[member.agentId]?.orchestrator;
       const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
-      injectMessage(member.agentId, msg);
+      void injectMessage(member.agentId, msg);
     }
   }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, members, project, injectMessage]);
 
@@ -311,13 +311,15 @@ function ExpandedProjectView({
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage } = ctx;
+  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage, deleteMessage, deleteTopic, setTopicProtection } = ctx;
 
   const [selectedTopic, setSelectedTopic] = useState<string>(ALL_TOPICS_KEY);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
   const [messages, setMessages] = useState<BulletinMessage[]>([]);
   const [showTapModal, setShowTapModal] = useState(false);
+  const [showRetentionSettings, setShowRetentionSettings] = useState(false);
+  const [confirmDeleteTopic, setConfirmDeleteTopic] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loaded) loadProjects();
@@ -415,9 +417,31 @@ function ExpandedProjectView({
     for (const member of members) {
       const orchestrator = agents[member.agentId]?.orchestrator;
       const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
-      injectMessage(member.agentId, msg);
+      void injectMessage(member.agentId, msg);
     }
   }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, members, project, injectMessage]);
+
+  const handleDeleteMessage = useCallback(async (topic: string, messageId: string) => {
+    await deleteMessage(groupProjectId, topic, messageId);
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    if (selectedMessageId === messageId) setSelectedMessageId(null);
+  }, [groupProjectId, deleteMessage, selectedMessageId]);
+
+  const handleDeleteTopic = useCallback(async (topic: string) => {
+    await deleteTopic(groupProjectId, topic);
+    setTopics((prev) => prev.filter((t) => t.topic !== topic));
+    if (selectedTopic === topic) {
+      setSelectedTopic(ALL_TOPICS_KEY);
+      setSelectedMessageId(null);
+      setMessages([]);
+    }
+    setConfirmDeleteTopic(null);
+  }, [groupProjectId, deleteTopic, selectedTopic]);
+
+  const handleToggleProtection = useCallback(async (topic: string, currentlyProtected: boolean) => {
+    await setTopicProtection(groupProjectId, topic, !currentlyProtected);
+    setTopics((prev) => prev.map((t) => t.topic === topic ? { ...t, isProtected: !currentlyProtected } : t));
+  }, [groupProjectId, setTopicProtection]);
 
   return (
     <div className="flex flex-col h-full text-ctp-text">
@@ -430,7 +454,14 @@ function ExpandedProjectView({
         onShowTapModal={() => setShowTapModal(true)}
         pollingEnabled={pollingEnabled}
         onTogglePolling={handleTogglePolling}
+        onToggleRetention={() => setShowRetentionSettings((v) => !v)}
+        showRetentionSettings={showRetentionSettings}
       />
+
+      {/* Retention Settings (collapsible) */}
+      {showRetentionSettings && (
+        <RetentionSettings groupProjectId={groupProjectId} />
+      )}
 
       {/* Inline Description & Instructions Editor */}
       <div className="flex gap-3 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/50">
@@ -495,23 +526,56 @@ function ExpandedProjectView({
             </div>
           </button>
           {topics.map((t) => (
-            <button
+            <div
               key={t.topic}
-              onClick={() => handleTopicClick(t.topic)}
-              className={`w-full text-left px-3 py-2 text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
+              className={`group relative text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
                 selectedTopic === t.topic
                   ? 'bg-surface-0 text-ctp-blue border-l-2 border-l-ctp-blue'
                   : 'text-ctp-subtext1'
               }`}
             >
-              <div className="font-medium truncate">{t.topic}</div>
-              <div className="text-[10px] text-ctp-overlay0 mt-0.5">
-                {t.messageCount} msg{t.messageCount !== 1 ? 's' : ''}
-                {t.newMessageCount > 0 && (
-                  <span className="ml-1 text-ctp-green">+{t.newMessageCount}</span>
+              <button
+                onClick={() => handleTopicClick(t.topic)}
+                className="w-full text-left px-3 py-2"
+              >
+                <div className="font-medium truncate flex items-center gap-1">
+                  {t.isProtected && <ShieldIcon size={10} />}
+                  {t.topic}
+                </div>
+                <div className="text-[10px] text-ctp-overlay0 mt-0.5">
+                  {t.messageCount} msg{t.messageCount !== 1 ? 's' : ''}
+                  {t.newMessageCount > 0 && (
+                    <span className="ml-1 text-ctp-green">+{t.newMessageCount}</span>
+                  )}
+                </div>
+              </button>
+              {/* Topic actions (show on hover) */}
+              <div className="absolute top-1 right-1 hidden group-hover:flex items-center gap-0.5">
+                <button
+                  onClick={(e) => { e.stopPropagation(); void handleToggleProtection(t.topic, !!t.isProtected); }}
+                  className={`p-0.5 rounded transition-colors ${t.isProtected ? 'text-ctp-yellow' : 'text-ctp-overlay0 hover:text-ctp-yellow'}`}
+                  title={t.isProtected ? 'Remove protection' : 'Protect topic (never prune)'}
+                >
+                  <ShieldIcon size={10} />
+                </button>
+                {confirmDeleteTopic === t.topic ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); void handleDeleteTopic(t.topic); }}
+                    className="px-1 py-0.5 text-[9px] bg-ctp-red text-white rounded"
+                  >
+                    Confirm
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteTopic(t.topic); }}
+                    className="p-0.5 text-ctp-overlay0 hover:text-ctp-red rounded transition-colors"
+                    title="Delete topic"
+                  >
+                    <TrashIcon size={10} />
+                  </button>
                 )}
               </div>
-            </button>
+            </div>
           ))}
           {topics.length === 0 && (
             <div className="p-3 text-xs text-ctp-overlay0 italic">No topics yet</div>
@@ -526,26 +590,37 @@ function ExpandedProjectView({
             </div>
           ) : (
             sortedMessages.map((m) => (
-              <button
+              <div
                 key={m.id}
-                onClick={() => setSelectedMessageId(m.id)}
-                className={`w-full text-left px-3 py-2 border-b border-surface-0 hover:bg-surface-0 transition-colors ${
+                className={`group relative border-b border-surface-0 hover:bg-surface-0 transition-colors ${
                   selectedMessageId === m.id ? 'bg-surface-0' : ''
                 }`}
               >
-                <div className="flex items-center gap-1.5 text-xs">
-                  <span className="bg-ctp-blue/15 text-ctp-blue rounded px-1 py-0.5 text-[10px] font-medium truncate max-w-[80px]">
-                    {senderShort(m.sender)}
-                  </span>
-                  <span className="ml-auto text-[10px] text-ctp-overlay0 flex-shrink-0">
-                    {formatTime(m.timestamp)}
-                  </span>
-                </div>
-                <div
-                  className="text-xs text-ctp-subtext0 truncate mt-0.5 prose prose-xs prose-invert max-w-none [&>*]:inline [&>*]:m-0"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(m.body.slice(0, 80)) }}
-                />
-              </button>
+                <button
+                  onClick={() => setSelectedMessageId(m.id)}
+                  className="w-full text-left px-3 py-2"
+                >
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="bg-ctp-blue/15 text-ctp-blue rounded px-1 py-0.5 text-[10px] font-medium truncate max-w-[80px]">
+                      {senderShort(m.sender)}
+                    </span>
+                    <span className="ml-auto text-[10px] text-ctp-overlay0 flex-shrink-0">
+                      {formatTime(m.timestamp)}
+                    </span>
+                  </div>
+                  <div
+                    className="text-xs text-ctp-subtext0 truncate mt-0.5 prose prose-xs prose-invert max-w-none [&>*]:inline [&>*]:m-0"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(m.body.slice(0, 80)) }}
+                  />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); void handleDeleteMessage(m.topic, m.id); }}
+                  className="absolute top-1 right-1 hidden group-hover:block p-0.5 text-ctp-overlay0 hover:text-ctp-red rounded transition-colors"
+                  title="Delete message"
+                >
+                  <TrashIcon size={10} />
+                </button>
+              </div>
             ))
           )}
         </div>
@@ -566,6 +641,13 @@ function ExpandedProjectView({
                     in <span className="text-ctp-subtext1">{selectedMessage.topic}</span>
                   </span>
                 )}
+                <button
+                  onClick={() => void handleDeleteMessage(selectedMessage.topic, selectedMessage.id)}
+                  className="ml-auto p-1 text-ctp-overlay0 hover:text-ctp-red rounded transition-colors"
+                  title="Delete message"
+                >
+                  <TrashIcon size={12} />
+                </button>
               </div>
               <div
                 className="border-t border-surface-1 pt-2 mt-2 prose prose-xs prose-invert max-w-none break-words"
@@ -609,6 +691,8 @@ function ExpandedHeader({
   onShowTapModal,
   pollingEnabled,
   onTogglePolling,
+  onToggleRetention,
+  showRetentionSettings,
 }: {
   displayName: string;
   groupProjectId: string;
@@ -617,6 +701,8 @@ function ExpandedHeader({
   onShowTapModal: () => void;
   pollingEnabled: boolean;
   onTogglePolling: () => void;
+  onToggleRetention: () => void;
+  showRetentionSettings: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -665,6 +751,14 @@ function ExpandedHeader({
         </button>
       )}
       <div className="flex-1" />
+      {/* Retention settings */}
+      <button
+        onClick={onToggleRetention}
+        className={`p-1 transition-colors flex-shrink-0 ${showRetentionSettings ? 'text-ctp-blue' : 'text-ctp-overlay1 hover:text-ctp-blue'}`}
+        title="Retention settings"
+      >
+        <GearIcon size={14} />
+      </button>
       {/* Megaphone broadcast */}
       <button
         onClick={onShowTapModal}
@@ -701,14 +795,14 @@ function ShoulderTapModal({
   members: GroupProjectMember[];
   projectInstructions: string;
   onClose: () => void;
-  injectMessage: (agentId: string, message: string) => void;
+  injectMessage: (agentId: string, message: string) => Promise<void>;
 }) {
   const [target, setTarget] = useState<string>('all');
   const [message, setMessage] = useState('');
   const [includeInstructions, setIncludeInstructions] = useState(false);
   const [sending, setSending] = useState(false);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const msg = message.trim();
     if (!msg && !includeInstructions) return;
     if (sending) return;
@@ -725,9 +819,7 @@ function ShoulderTapModal({
       ? members
       : members.filter((m) => m.agentId === target);
 
-    for (const member of targets) {
-      injectMessage(member.agentId, fullMessage);
-    }
+    await Promise.all(targets.map((member) => injectMessage(member.agentId, fullMessage)));
 
     setSending(false);
     onClose();
@@ -811,6 +903,67 @@ function ShoulderTapModal({
   );
 }
 
+/* ---------- Retention Settings ---------- */
+
+function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
+  const [maxPerTopic, setMaxPerTopic] = useState(500);
+  const [maxTotal, setMaxTotal] = useState(2500);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    window.clubhouse.groupProject.getRetentionConfig(groupProjectId).then((config) => {
+      setMaxPerTopic(config.maxPerTopic);
+      setMaxTotal(config.maxTotal);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, [groupProjectId]);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await window.clubhouse.groupProject.saveRetentionConfig(groupProjectId, maxPerTopic, maxTotal);
+    } finally {
+      setSaving(false);
+    }
+  }, [groupProjectId, maxPerTopic, maxTotal]);
+
+  if (!loaded) return null;
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/30">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0">Retention</span>
+      <label className="flex items-center gap-1.5 text-xs text-ctp-subtext1">
+        Per topic:
+        <input
+          type="number"
+          min={1}
+          value={maxPerTopic}
+          onChange={(e) => setMaxPerTopic(Math.max(1, parseInt(e.target.value) || 1))}
+          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+        />
+      </label>
+      <label className="flex items-center gap-1.5 text-xs text-ctp-subtext1">
+        Total:
+        <input
+          type="number"
+          min={1}
+          value={maxTotal}
+          onChange={(e) => setMaxTotal(Math.max(1, parseInt(e.target.value) || 1))}
+          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+        />
+      </label>
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="px-2 py-0.5 text-[10px] font-medium bg-ctp-blue text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
+      >
+        {saving ? 'Saving...' : 'Save'}
+      </button>
+    </div>
+  );
+}
+
 /* ---------- Icons ---------- */
 
 function RobotIcon({ size = 14 }: { size?: number }) {
@@ -847,6 +1000,32 @@ function PollingIcon({ size = 14, active = false }: { size?: number; active?: bo
       ) : (
         <line x1="2" y1="12" x2="22" y2="12" />
       )}
+    </svg>
+  );
+}
+
+function ShieldIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function TrashIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}
+
+function GearIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }

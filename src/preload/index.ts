@@ -959,6 +959,14 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_POST, satelliteId, groupProjectId, sender, topic, body),
     gpShoulderTap: (satelliteId: string, groupProjectId: string, targetAgentId: string | null, message: string, sender?: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_SHOULDER_TAP, satelliteId, groupProjectId, targetAgentId, message, sender),
+    gpDeleteMessage: (satelliteId: string, groupProjectId: string, topic: string, messageId: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_DELETE_MESSAGE, satelliteId, groupProjectId, topic, messageId),
+    gpDeleteTopic: (satelliteId: string, groupProjectId: string, topic: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_DELETE_TOPIC, satelliteId, groupProjectId, topic),
+    gpSetTopicProtection: (satelliteId: string, groupProjectId: string, topic: string, isProtected: boolean): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_SET_TOPIC_PROTECTION, satelliteId, groupProjectId, topic, isProtected),
+    gpInjectMessage: (satelliteId: string, agentId: string, message: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_INJECT_MESSAGE, satelliteId, agentId, message),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>
@@ -1207,6 +1215,18 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE, projectId, topic, body),
     sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP, projectId, targetAgentId, message),
+    deleteMessage: (projectId: string, topic: string, messageId: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE_MESSAGE, projectId, topic, messageId),
+    deleteTopic: (projectId: string, topic: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE_TOPIC, projectId, topic),
+    setTopicProtection: (projectId: string, topic: string, isProtected: boolean): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_TOPIC_PROTECTION, projectId, topic, isProtected),
+    getRetentionConfig: (projectId: string): Promise<{ maxPerTopic: number; maxTotal: number }> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_RETENTION_CONFIG, projectId),
+    saveRetentionConfig: (projectId: string, maxPerTopic: number, maxTotal: number): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG, projectId, maxPerTopic, maxTotal),
+    injectMessage: (agentId: string, message: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.INJECT_MESSAGE, agentId, message),
     onChanged: (callback: (projects: unknown[]) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, projects: unknown[]) => callback(projects);
       ipcRenderer.on(IPC.GROUP_PROJECT.CHANGED, listener);

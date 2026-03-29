@@ -341,19 +341,19 @@ describe('AgentTools', () => {
 
     it('performs post-send buffer checks for delivery heuristic', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
-      // Simulate buffer NOT growing after first \r, then growing after second
+      // Simulate buffer NOT growing after first \r — same length triggers retry
       let callCount = 0;
       mockPtyGetBuffer.mockImplementation(() => {
         callCount++;
-        // Calls 1-2 (before + after first \r): same length → triggers retry
-        // Call 3 (after second \r): longer
+        // Call 1 (before submit): 'short' (length 5)
+        // Call 2 (after first \r): still 'short' (length 5) → triggers retry \r
         return callCount <= 2 ? 'short' : 'short + agent processed message output';
       });
 
       const result = await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 'buf1' });
       expect(result.isError).toBeFalsy();
-      // getBuffer: once before submit, once after 1st \r, once after 2nd \r
-      expect(mockPtyGetBuffer).toHaveBeenCalledTimes(3);
+      // submitAfterPaste checks buffer: once before submit, once after 1st \r
+      expect(mockPtyGetBuffer).toHaveBeenCalledTimes(2);
     });
 
     it('includes sender name without project when project not set', async () => {

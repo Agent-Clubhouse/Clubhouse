@@ -353,6 +353,10 @@ export const IPC = {
     GP_BULLETIN_ALL: 'annex-client:gp-bulletin-all',
     GP_BULLETIN_POST: 'annex-client:gp-bulletin-post',
     GP_SHOULDER_TAP: 'annex-client:gp-shoulder-tap',
+    GP_DELETE_MESSAGE: 'annex-client:gp-delete-message',
+    GP_DELETE_TOPIC: 'annex-client:gp-delete-topic',
+    GP_SET_TOPIC_PROTECTION: 'annex-client:gp-set-topic-protection',
+    GP_INJECT_MESSAGE: 'annex-client:gp-inject-message',
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',
@@ -366,6 +370,12 @@ export const IPC = {
     CHANGED: 'group-project:changed',
     POST_BULLETIN_MESSAGE: 'group-project:post-bulletin-message',
     SEND_SHOULDER_TAP: 'group-project:send-shoulder-tap',
+    DELETE_MESSAGE: 'group-project:delete-message',
+    DELETE_TOPIC: 'group-project:delete-topic',
+    SET_TOPIC_PROTECTION: 'group-project:set-topic-protection',
+    GET_RETENTION_CONFIG: 'group-project:get-retention-config',
+    SAVE_RETENTION_CONFIG: 'group-project:save-retention-config',
+    INJECT_MESSAGE: 'group-project:inject-message',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',

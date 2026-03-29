@@ -22,7 +22,7 @@ import type { PasteSubmitTiming } from '../../../orchestrators';
 // ── Chunked bracketed paste ─────────────────────────────────────────────────
 
 /** Sleep helper for async delays. */
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -64,6 +64,32 @@ export async function writeChunkedBracketedPaste(
   await sleep(chunkDelayMs);
 
   ptyManager.write(agentId, '\x1b[201~');
+}
+
+/**
+ * Submit content that was just pasted into an agent's PTY.
+ *
+ * Sends `\r` (Enter) with provider-specific delays and buffer health checks.
+ * If the first Enter doesn't trigger processing (buffer doesn't grow), a
+ * second Enter is sent as a retry — some CLIs show a paste preview that
+ * requires Enter to accept before another Enter actually submits.
+ */
+export async function submitAfterPaste(
+  agentId: string,
+  timing: PasteSubmitTiming,
+): Promise<void> {
+  const bufferBefore = ptyManager.getBuffer(agentId)?.length ?? 0;
+
+  await sleep(timing.initialDelayMs);
+  ptyManager.write(agentId, '\r');
+
+  await sleep(timing.retryDelayMs);
+  const bufferAfterFirst = ptyManager.getBuffer(agentId)?.length ?? 0;
+  if (bufferAfterFirst > bufferBefore) return; // First Enter worked
+
+  // Second Enter — submit the message
+  ptyManager.write(agentId, '\r');
+  await sleep(timing.finalCheckDelayMs);
 }
 
 // ── File-backed message helpers ─────────────────────────────────────────────
@@ -206,64 +232,11 @@ export function registerAgentTools(): void {
           }
 
           if (forceSubmit) {
-
             appLog('core:mcp', 'info', 'send_message: using paste submit timing', {
               meta: { targetAgent: targetId, taskId, orchestrator: reg.orchestrator, timing },
             });
 
-            // Snapshot the buffer length before the submit keystroke so we can
-            // heuristically check whether the receiving agent processed the input.
-            const bufferBefore = ptyManager.getBuffer(targetId)?.length ?? 0;
-
-            // Many CLIs show a paste preview that requires Enter to accept
-            // the pasted content, then a *second* Enter to actually submit.
-            // We send \r twice with delays:
-            //   1st \r (initialDelayMs): exits the paste preview / accepts pasted text
-            //   2nd \r (retryDelayMs later): submits the message to the AI
-            // The second \r is only sent if the buffer hasn't grown (meaning
-            // the first Enter didn't trigger processing). If it did grow, the
-            // message was already submitted and the retry is skipped.
-            await new Promise<void>((resolve) => {
-              setTimeout(() => {
-                ptyManager.write(targetId, '\r');
-
-                appLog('core:mcp', 'info', 'send_message: first Enter sent (accept paste)', {
-                  meta: { targetAgent: targetId, taskId },
-                });
-
-                // Check if the first \r triggered processing; if not, send
-                // a second \r to submit.
-                setTimeout(() => {
-                  const bufferAfterFirst = ptyManager.getBuffer(targetId)?.length ?? 0;
-                  const firstEnterWorked = bufferAfterFirst > bufferBefore;
-
-                  if (firstEnterWorked) {
-                    appLog('core:mcp', 'info', 'send_message: first Enter triggered processing, skipping retry', {
-                      meta: { targetAgent: targetId, taskId, bufferBefore, bufferAfterFirst },
-                    });
-                    resolve();
-                    return;
-                  }
-
-                  // Second Enter — submit the message
-                  ptyManager.write(targetId, '\r');
-
-                  appLog('core:mcp', 'info', 'send_message: second Enter sent (submit)', {
-                    meta: { targetAgent: targetId, taskId, bufferBefore, bufferAfterFirst },
-                  });
-
-                  // Final buffer check
-                  setTimeout(() => {
-                    const bufferAfterSecond = ptyManager.getBuffer(targetId)?.length ?? 0;
-                    const secondEnterWorked = bufferAfterSecond > bufferBefore;
-                    appLog('core:mcp', 'info', 'send_message: post-submit buffer check', {
-                      meta: { targetAgent: targetId, taskId, bufferBefore, bufferAfterSecond, secondEnterWorked },
-                    });
-                    resolve();
-                  }, timing.finalCheckDelayMs);
-                }, timing.retryDelayMs);
-              }, timing.initialDelayMs);
-            });
+            await submitAfterPaste(targetId, timing);
           }
         } else if (reg.runtime === 'structured') {
           await structuredManager.sendMessage(targetId, taggedMessage);
