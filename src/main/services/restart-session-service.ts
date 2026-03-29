@@ -8,6 +8,7 @@ import { getProvider, isSessionCapable } from '../orchestrators';
 import { pathExists } from './fs-utils';
 import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo, FreeAgentPermissionMode } from '../../shared/types';
 import * as freeAgentSettings from './free-agent-settings';
+import { getDurableConfig } from './agent-config';
 import { isAssistantAgent } from '../../shared/assistant-utils';
 
 const SCHEMA_VERSION = 1;
@@ -46,6 +47,16 @@ export async function captureSessionState(
     // Prefer per-agent meta (future-proofing), fall back to project-level setting.
     const permissionMode = meta?.permissionMode ?? freeAgentSettings.getPermissionMode(reg.projectPath);
 
+    // Capture freeAgentMode from the durable config so it can be restored
+    // during resume without relying solely on the main-process fallback.
+    let freeAgentMode: boolean | undefined;
+    try {
+      const config = await getDurableConfig(reg.projectPath, agentId);
+      freeAgentMode = config?.freeAgentMode;
+    } catch {
+      // Config unavailable — omit freeAgentMode from the entry
+    }
+
     sessions.push({
       agentId,
       agentName: agentNames.get(agentId) || agentId,
@@ -58,6 +69,7 @@ export async function captureSessionState(
       mission: meta?.mission,
       model: meta?.model,
       permissionMode,
+      freeAgentMode,
     });
   }
 
