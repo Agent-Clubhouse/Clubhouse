@@ -1030,6 +1030,8 @@ export interface RestartSessionEntry {
   mission?: string;
   model?: string;
   permissionMode?: FreeAgentPermissionMode;
+  /** Whether the agent was running in free-agent (dangerously skip permissions) mode */
+  freeAgentMode?: boolean;
 }
 
 export interface RestartSessionState {
