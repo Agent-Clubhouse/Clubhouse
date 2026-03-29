@@ -9,6 +9,7 @@ import { manifest as browserManifest } from '../../renderer/plugins/builtin/brow
 import { manifest as gitManifest } from '../../renderer/plugins/builtin/git/manifest';
 import { manifest as canvasManifest } from '../../renderer/plugins/builtin/canvas/manifest';
 import { manifest as sessionsManifest } from '../../renderer/plugins/builtin/sessions/manifest';
+import { manifest as groupProjectManifest } from '../../renderer/plugins/builtin/group-project/manifest';
 import { appLog } from './log-service';
 import { discoverCommunityPlugins } from './plugin-discovery';
 import { getGlobalPluginDataDir } from './plugin-storage';
@@ -43,6 +44,7 @@ const builtinManifestById = new Map<string, PluginManifest>([
   [gitManifest.id, gitManifest],
   [canvasManifest.id, canvasManifest],
   [sessionsManifest.id, sessionsManifest],
+  [groupProjectManifest.id, groupProjectManifest],
 ]);
 
 let manifestsEnabled = true;

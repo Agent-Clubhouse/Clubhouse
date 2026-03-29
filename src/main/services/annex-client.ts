@@ -441,6 +441,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
     case 'hook:event':
     case 'structured:event':
     case 'agent:spawned':
+    case 'agent:woken':
     case 'agent:completed':
     case 'permission:request':
     case 'permission:response':

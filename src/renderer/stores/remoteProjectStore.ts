@@ -206,6 +206,49 @@ function computePluginMatchState(remotePlugins: SnapshotPluginSummary[]): Plugin
   });
 }
 
+/**
+ * Re-namespace agentId/projectId/metadata fields inside canvas views
+ * so they match the namespaced IDs used in remoteAgents. This mirrors
+ * the logic in the canvas:state event handler in annexClientStore.
+ */
+function namespaceCanvasViews(satelliteId: string, views: unknown[]): unknown[] {
+  return (views as Record<string, unknown>[]).map((v) => {
+    const patched = { ...v };
+    if (typeof patched.agentId === 'string' && !patched.agentId.startsWith('remote||')) {
+      patched.agentId = namespacedAgentId(satelliteId, patched.agentId);
+    }
+    if (typeof patched.projectId === 'string' && !patched.projectId.startsWith('remote||')) {
+      patched.projectId = namespacedProjectId(satelliteId, patched.projectId);
+    }
+    if (patched.metadata && typeof patched.metadata === 'object') {
+      const meta = { ...(patched.metadata as Record<string, unknown>) };
+      if (typeof meta.agentId === 'string' && !meta.agentId.startsWith('remote||')) {
+        meta.agentId = namespacedAgentId(satelliteId, meta.agentId);
+      }
+      if (typeof meta.projectId === 'string' && !meta.projectId.startsWith('remote||')) {
+        meta.projectId = namespacedProjectId(satelliteId, meta.projectId);
+      }
+      if (typeof meta.groupProjectId === 'string' && !meta.groupProjectId.startsWith('remote||')) {
+        meta.groupProjectId = `remote||${satelliteId}||${meta.groupProjectId}`;
+      }
+      patched.metadata = meta;
+    }
+    return patched;
+  });
+}
+
+/** Namespace views inside an entire canvas state object (canvases + views). */
+function namespaceCanvasData(
+  satelliteId: string,
+  data: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] },
+): { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] } {
+  const canvases = (data.canvases as Array<{ views?: unknown[] } & Record<string, unknown>>).map((canvas) => {
+    if (!canvas.views || !Array.isArray(canvas.views)) return canvas;
+    return { ...canvas, views: namespaceCanvasViews(satelliteId, canvas.views) };
+  });
+  return { ...data, canvases };
+}
+
 export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) => ({
   satelliteProjects: {},
   remoteAgents: {},
@@ -264,11 +307,24 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       }
     }
 
-    // Namespace canvas state by project ID
+    // Namespace canvas state by project ID, including agentId/projectId
+    // fields within each canvas view so they match the namespaced IDs
+    // used in remoteAgents.
     const newCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }> = {};
     if (snapshot.canvasState) {
       for (const [projId, cs] of Object.entries(snapshot.canvasState)) {
-        newCanvasState[namespacedProjectId(satelliteId, projId)] = cs;
+        const typed = cs as { canvases: Array<{ views?: unknown[] } & Record<string, unknown>>; activeCanvasId: string };
+        const namespacedCanvases = typed.canvases.map((canvas) => {
+          if (!canvas.views || !Array.isArray(canvas.views)) return canvas;
+          return {
+            ...canvas,
+            views: namespaceCanvasViews(satelliteId, canvas.views),
+          };
+        });
+        newCanvasState[namespacedProjectId(satelliteId, projId)] = {
+          ...typed,
+          canvases: namespacedCanvases,
+        };
       }
     }
 
@@ -341,7 +397,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
           ...newCanvasState,
         },
         remoteAppCanvasState: snapshot.appCanvasState
-          ? { ...state.remoteAppCanvasState, [satelliteId]: snapshot.appCanvasState }
+          ? { ...state.remoteAppCanvasState, [satelliteId]: namespaceCanvasData(satelliteId, snapshot.appCanvasState) }
           : state.remoteAppCanvasState,
         remoteGroupProjects: snapshot.groupProjects
           ? { ...state.remoteGroupProjects, [satelliteId]: snapshot.groupProjects }
