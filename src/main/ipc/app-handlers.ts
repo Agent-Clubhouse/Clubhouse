@@ -27,10 +27,22 @@ import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureS
 import * as ptyManager from '../services/pty-manager';
 import * as agentSystem from '../services/agent-system';
 
+/** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
+const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
+
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, withValidatedArgs(
     [stringArg()],
     (_event, url) => {
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        throw new Error(`Invalid URL: ${url}`);
+      }
+      if (!OPEN_EXTERNAL_ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
+        throw new Error(`Blocked protocol "${parsed.protocol}" — only ${OPEN_EXTERNAL_ALLOWED_PROTOCOLS.join(', ')} are allowed`);
+      }
       return shell.openExternal(url);
     },
   ));

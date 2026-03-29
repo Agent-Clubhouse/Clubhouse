@@ -130,6 +130,7 @@ function makeService(overrides: Record<string, any> = {}) {
   return {
     host: 'satellite.local',
     port: 9000,
+    addresses: ['192.168.1.50'],
     txt: { pairingPort: '9001' },
     referer: { address: '192.168.1.50' },
     ...overrides,
@@ -249,7 +250,7 @@ describe('annex-client', () => {
         alias: 'Remote Mac',
         icon: 'laptop',
         color: 'blue',
-        host: 'satellite.local',
+        host: '192.168.1.50',
         publicKey: 'remote-pub-key',
       });
 
@@ -291,13 +292,13 @@ describe('annex-client', () => {
 
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
-      expect(annexClient.getDiscoveredServices()[0].host).toBe('satellite.local');
+      expect(annexClient.getDiscoveredServices()[0].host).toBe('192.168.1.50');
 
-      // Same fingerprint, different host
-      await bonjourFindCallback!(makeService({ host: 'new-host.local', port: 9999 }));
+      // Same fingerprint, different host/address
+      await bonjourFindCallback!(makeService({ host: 'new-host.local', port: 9999, addresses: ['10.0.0.5'] }));
       const discovered = annexClient.getDiscoveredServices();
       expect(discovered).toHaveLength(1);
-      expect(discovered[0].host).toBe('new-host.local');
+      expect(discovered[0].host).toBe('10.0.0.5');
       expect(discovered[0].mainPort).toBe(9999);
     });
   });

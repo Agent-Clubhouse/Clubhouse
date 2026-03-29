@@ -78,6 +78,8 @@ export function useWiring(
   onZoneWire?: ZoneWireCallback,
   /** Callback to persist a wire definition in the canvas store. */
   onAddWireDefinition?: (entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => void,
+  /** When true (default), agent-to-agent wires auto-create the reverse direction. */
+  createBidirectional = true,
 ) {
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null);
   const bind = useMcpBindingStore((s) => s.bind);
@@ -177,8 +179,8 @@ export function useWiring(
           bind(agentSource.agentId!, fwdTarget);
           onAddWireDefRef.current?.({ agentId: agentSource.agentId!, ...fwdTarget });
 
-          // Agent-to-agent wires default to bidirectional
-          if (kind === 'agent') {
+          // Agent-to-agent wires: optionally create reverse direction
+          if (kind === 'agent' && createBidirectional) {
             const revTarget = {
               targetId: agentSource.agentId!,
               targetKind: 'agent' as const,
@@ -210,7 +212,7 @@ export function useWiring(
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [wireDrag, containerRef, bind]);
+  }, [wireDrag, containerRef, bind, createBidirectional]);
 
   return {
     wireDrag,

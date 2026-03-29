@@ -25,9 +25,11 @@ interface WireConfigPopoverProps {
   onRemoveWireDefinition?: (agentId: string, targetId: string) => void;
   /** Update a wire definition in the canvas store (e.g. instructions). */
   onUpdateWireDefinition?: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
+  /** When true, the project setting forces all agent wires bidirectional. */
+  forceBidirectional?: boolean;
 }
 
-export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition, onRemoveWireDefinition, onUpdateWireDefinition }: WireConfigPopoverProps) {
+export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition, onRemoveWireDefinition, onUpdateWireDefinition, forceBidirectional }: WireConfigPopoverProps) {
   const unbind = useMcpBindingStore((s) => s.unbind);
   const bind = useMcpBindingStore((s) => s.bind);
   const setInstructions = useMcpBindingStore((s) => s.setInstructions);
@@ -164,8 +166,17 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
                 <polyline points="17 7 22 12 17 17" />
                 <line x1="2" y1="12" x2="22" y2="12" />
               </svg>
-              <span className="flex-1 text-xs text-ctp-subtext0">Bidirectional</span>
-              <Toggle checked={bidirectional} onChange={handleBidirectionalToggle} />
+              <span className="flex-1 text-xs text-ctp-subtext0">
+                Bidirectional
+                {forceBidirectional && !bidirectional && (
+                  <span className="ml-1 text-[10px] text-ctp-subtext1">(project setting)</span>
+                )}
+              </span>
+              <Toggle
+                checked={bidirectional || (forceBidirectional ?? false)}
+                onChange={handleBidirectionalToggle}
+                disabled={!!(forceBidirectional && !bidirectional)}
+              />
             </div>
           )}
 

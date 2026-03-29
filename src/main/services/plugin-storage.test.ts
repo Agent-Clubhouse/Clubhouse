@@ -10,6 +10,7 @@ vi.mock('fs/promises', () => ({
   access: vi.fn(),
   readdir: vi.fn(),
   rm: vi.fn(),
+  realpath: vi.fn(),
 }));
 
 import * as fsp from 'fs/promises';
@@ -32,6 +33,8 @@ const GLOBAL_BASE = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 
 describe('plugin-storage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: realpath returns identity (no symlinks). Tests override for symlink scenarios.
+    vi.mocked(fsp.realpath).mockImplementation(async (p: any) => String(p));
   });
 
   // ── Key-Value Storage ───────────────────────────────────────────────
@@ -256,6 +259,56 @@ describe('plugin-storage', () => {
     });
   });
 
+  // ── Symlink escape detection (SEC-10) ──────────────────────────────────
+
+  describe('assertSafePath symlink detection', () => {
+    it('rejects symlink that escapes storage directory', async () => {
+      // Simulate: base/innocent is a symlink to /etc
+      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.includes('innocent')) return '/etc/passwd';
+        return s;
+      });
+
+      await expect(
+        readPluginFile({ pluginId: 'p', scope: 'global', relativePath: 'innocent' }),
+      ).rejects.toThrow('Path traversal');
+    });
+
+    it('allows paths where symlink resolves within storage', async () => {
+      const base = path.join(GLOBAL_BASE, 'p');
+      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => {
+        const s = String(p);
+        // Symlink resolves to a different name but still inside the base
+        if (s.endsWith('link.txt')) return path.join(base, 'actual.txt');
+        return s;
+      });
+      vi.mocked(fsp.readFile).mockResolvedValue('content');
+
+      const result = await readPluginFile({ pluginId: 'p', scope: 'global', relativePath: 'link.txt' });
+      expect(result).toBe('content');
+    });
+
+    it('allows non-existent paths (no symlink to follow)', async () => {
+      vi.mocked(fsp.realpath).mockRejectedValue(
+        Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
+      );
+      vi.mocked(fsp.readFile).mockResolvedValue('data');
+
+      const result = await readPluginFile({ pluginId: 'p', scope: 'global', relativePath: 'new-file.txt' });
+      expect(result).toBe('data');
+    });
+
+    it('rejects pluginId with path traversal characters', async () => {
+      await expect(
+        readKey({ pluginId: '../../etc', scope: 'global', key: 'passwd' }),
+      ).rejects.toThrow('Invalid plugin ID');
+      await expect(
+        readKey({ pluginId: 'foo/bar', scope: 'global', key: 'k' }),
+      ).rejects.toThrow('Invalid plugin ID');
+    });
+  });
+
   // ── project-local scope ──────────────────────────────────────────────
 
   describe('project-local scope', () => {
@@ -329,6 +382,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');
       const freshStorage = await import('./plugin-storage');
@@ -357,6 +411,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');
       const freshStorage = await import('./plugin-storage');
@@ -384,6 +439,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');
       const freshStorage = await import('./plugin-storage');
@@ -409,6 +465,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');
       const freshStorage = await import('./plugin-storage');
@@ -436,6 +493,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');
       const freshStorage = await import('./plugin-storage');

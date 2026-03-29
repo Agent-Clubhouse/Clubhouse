@@ -657,6 +657,11 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_THEME),
     saveTheme: (settings: { themeId: string }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_THEME, settings),
+    onThemeChanged: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC.APP.THEME_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.THEME_CHANGED, listener); };
+    },
     updateTitleBarOverlay: (colors: { color: string; symbolColor: string }) =>
       ipcRenderer.invoke(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, colors),
     getOrchestratorSettings: () =>
@@ -1271,6 +1276,15 @@ const api = {
       ipcRenderer.on(IPC.ASSISTANT.RESULT, listener);
       return () => { ipcRenderer.removeListener(IPC.ASSISTANT.RESULT, listener); };
     },
+    /** Clean up all assistant resources (MCP binding, agent registry, config). */
+    reset: (agentId: string) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.RESET, agentId),
+    /** Save chat history to disk for session persistence. */
+    saveHistory: (items: any[]) =>
+      ipcRenderer.invoke(IPC.ASSISTANT.SAVE_HISTORY, { items }),
+    /** Load chat history from disk. */
+    loadHistory: () =>
+      ipcRenderer.invoke(IPC.ASSISTANT.LOAD_HISTORY) as Promise<any[] | null>,
   },
   canvas: {
     /** Listen for canvas commands from the main process (assistant). */

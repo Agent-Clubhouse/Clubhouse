@@ -165,6 +165,7 @@ export const IPC = {
     NOTIFICATION_CLICKED: 'app:notification-clicked',
     GET_THEME: 'app:get-theme',
     SAVE_THEME: 'app:save-theme',
+    THEME_CHANGED: 'app:theme-changed',
     UPDATE_TITLE_BAR_OVERLAY: 'app:update-title-bar-overlay',
     GET_ORCHESTRATOR_SETTINGS: 'app:get-orchestrator-settings',
     SAVE_ORCHESTRATOR_SETTINGS: 'app:save-orchestrator-settings',
@@ -389,6 +390,12 @@ export const IPC = {
     SEND_FOLLOWUP: 'assistant:send-followup',
     /** Main → renderer: headless agent completed (agentId, exitCode). */
     RESULT: 'assistant:result',
+    /** Clean up all assistant resources (MCP binding, agent registry, config). */
+    RESET: 'assistant:reset',
+    /** Save chat history to disk. */
+    SAVE_HISTORY: 'assistant:save-history',
+    /** Load chat history from disk. */
+    LOAD_HISTORY: 'assistant:load-history',
   },
   CANVAS_CMD: {
     /** Main→renderer push: request a canvas operation. */

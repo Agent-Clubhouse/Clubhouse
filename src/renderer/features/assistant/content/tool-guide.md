@@ -23,13 +23,20 @@ You have MCP tools for configuring Clubhouse. Here's when and how to use each.
 
 | Tool | Use when |
 |------|----------|
-| `list_agents` | Before creating or modifying agents. Needs `project_path` from `list_projects`. |
+| `list_agents` | Before creating or modifying agents. Needs `project_path` from `list_projects`. Returns icon info. |
 | `create_agent` | User wants a new durable agent. Full params: name, color, model, orchestrator, use_worktree, free_agent_mode, mcp_ids. |
-| `update_agent` | Changing agent config (model, orchestrator, free_agent_mode, name, color). |
+| `update_agent` | Changing agent config (model, orchestrator, free_agent_mode, name, color, icon). |
 | `delete_agent` | User confirms they want to remove an agent. Always confirm first. |
 | `write_agent_instructions` | Writing or updating CLAUDE.md. Takes project_path and full markdown content. |
 | `get_model_options` | Show available models when user is choosing for an agent. |
 | `get_orchestrators` | Show available orchestrators and their status. |
+
+### IMPORTANT: Preserve custom agent icons
+
+Agents may have custom icons set by the user (shown as a non-null `icon` field in `list_agents`).
+- NEVER clear or overwrite an agent's icon unless the user explicitly asks to change it.
+- When building canvases, only use `add_card` to reference agents — do NOT update or recreate them.
+- If you need to update agent properties (name, color, model), omit the `icon` field to leave it unchanged.
 
 ## Canvas tools
 
@@ -47,10 +54,35 @@ You have MCP tools for configuring Clubhouse. Here's when and how to use each.
 
 ### Card types and dimensions
 
-- **Agent cards** (300x200): Represent durable agents. ALWAYS set agent_id + project_id.
-- **Zone cards** (600x400 recommended): Visual containers that group other cards. Use for team grouping.
-- **Anchor cards** (200x100): Text-only labels. CANNOT be wired. CANNOT coordinate. Just decorative text.
-- Default card spacing: 340px+ horizontal, 240px+ vertical.
+| Card type | Default size | Use for |
+|-----------|-------------|---------|
+| **Agent** | 300x200 | Durable agents. ALWAYS set agent_id + project_id. |
+| **Zone** | 600x400 | Visual containers that group other cards. |
+| **Anchor** | 200x100 | Text-only labels. CANNOT be wired or used for coordination. |
+
+**Spacing:** 340px+ horizontal, 260px+ vertical between cards.
+
+Cards are auto-staggered when you omit position — no need to calculate coordinates manually.
+
+### Zone containment
+
+Zones are visual containers that group cards. Containment is **spatial** — a card is inside a zone when >50% of its area overlaps the zone bounds.
+
+**To place a card in a zone:**
+- Use `add_card` with `zone_id` set to the zone's view ID — auto-positions within the zone
+- Or use `move_card` with `zone_id` to move an existing card into a zone
+- Manual positioning: place the card within the zone's x/y/width/height bounds
+
+**Zone dimensions:** Zones auto-resize to fit their contents (minimum 600x400). The zone title bar is 32px tall — card content area starts below it.
+
+**layout_canvas is zone-aware:** Cards inside zones stay grouped within their zone. Zones and non-zone cards are arranged in the outer layout pattern.
+
+### Parameter names
+
+Tool parameters use these exact names:
+- `connect_cards`: `source_view_id`, `target_view_id` (also accepts `from_card_id`, `to_card_id`)
+- `move_card`: `x`, `y` (also accepts `position_x`, `position_y`)
+- `add_card`: `width`, `height` must be **numbers** (not strings)
 
 ### IMPORTANT: Do NOT use anchors for coordination
 
@@ -66,7 +98,21 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 | `get_settings` | User asks about current configuration. |
 | `update_settings` | User wants to change a setting. Value is JSON-encoded. |
 | `get_app_state` | Quick overview of what's configured. |
-| `search_help` | You need to look up a specific feature detail. |
+| `search_help` | Look up detailed help content on any Clubhouse feature. Always use this before answering feature questions. |
+
+### Settings keys reference
+
+`update_settings` writes to the app's `settings.json` (key-value store). Known keys:
+
+| Key | Type | Valid values | Description |
+|-----|------|-------------|-------------|
+| `theme` | string | `"catppuccin-mocha"`, `"catppuccin-latte"`, `"solarized-dark"`, `"terminal"`, `"nord"`, `"dracula"`, `"tokyo-night"`, `"gruvbox-dark"`, `"cyberpunk"`, or `"plugin:<id>"` for plugin themes | App color theme |
+| `soundEnabled` | boolean | `true`, `false` | Enable/disable notification sounds |
+| `clipboardCompat` | boolean | `true`, `false` | Clipboard compatibility mode |
+| `editorCommand` | string | `"code"`, `"cursor"`, `"zed"`, etc. | External editor launch command |
+| `editorName` | string | `"VS Code"`, `"Cursor"`, `"Zed"`, etc. | Display name for the external editor |
+
+**Note:** `update_settings` accepts any key, but changing unrecognized keys has no effect on the UI. For domain-specific settings (notifications, logging, MCP, security, annex), guide users to Settings in the app instead — those use separate config files managed by the renderer.
 
 ## Common tool sequences
 
@@ -78,10 +124,13 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 
 **Rules for canvas building:**
 1. ALWAYS provide `agent_id` and `project_id` when adding agent cards
-2. ALWAYS use `layout_canvas` after adding all cards — never manually position
+2. ALWAYS call `layout_canvas` after adding ALL cards — this auto-arranges them properly
 3. NEVER use anchors for coordination — use direct agent-to-agent wires
-4. Use zones only for visual grouping, not for functionality
+4. Use zones for visual grouping — add the zone first, then add cards with `zone_id` to place them inside
 5. When connecting agents, wire them directly to each other (agent-to-agent)
+6. NEVER modify existing agents (update_agent, delete_agent) when building a canvas — only reference them via add_card
+7. You don't need to specify positions — cards are auto-staggered. Just add cards, then call layout_canvas.
+8. Pass `width` and `height` as **numbers**, not strings (e.g., `300` not `"300"`)
 
 **Agent reconfiguration:**
 `list_agents` → `update_agent` → `write_agent_instructions`

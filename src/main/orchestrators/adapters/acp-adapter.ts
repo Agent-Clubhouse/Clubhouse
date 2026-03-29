@@ -69,18 +69,8 @@ export class AcpAdapter implements StructuredAdapter {
       ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
       : args;
 
-    appLog('core:structured', 'info', 'AcpAdapter starting session', {
-      meta: {
-        binary: spawnBinary,
-        args: spawnArgs,
-        cwd: sessionOpts.cwd,
-        model: sessionOpts.model,
-        hasMission: !!sessionOpts.mission,
-        hasSystemPrompt: !!sessionOpts.systemPrompt,
-        allowedTools: sessionOpts.allowedTools,
-        permissionMode: sessionOpts.permissionMode,
-        commandPrefix: sessionOpts.commandPrefix || 'none',
-      },
+    appLog('core:structured', 'info', 'AcpAdapter spawning', {
+      meta: { binary: spawnBinary, cwd: sessionOpts.cwd, model: sessionOpts.model },
     });
 
     this.client = new AcpClient({
@@ -302,9 +292,7 @@ export class AcpAdapter implements StructuredAdapter {
         });
 
       default:
-        appLog('core:structured:acp', 'info', `Unmapped ACP notification: ${method}`, {
-          meta: { method, paramsKeys: Object.keys(p) },
-        });
+        appLog('core:structured:acp', 'debug', `Unmapped ACP notification: ${method}`);
         return null;
     }
   }

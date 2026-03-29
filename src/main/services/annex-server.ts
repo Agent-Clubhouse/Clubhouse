@@ -2005,6 +2005,11 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         } catch (err) {
           ws.send(JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));
         }
+      }).catch((err) => {
+        appLog('core:annex', 'error', 'pty:spawn-shell lookup failed', {
+          meta: { projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2020,6 +2025,11 @@ function handleWsMessage(ws: WebSocket, data: string): void {
           return;
         }
         handleSpawnQuickAgentWs(ws, project, payload);
+      }).catch((err) => {
+        appLog('core:annex', 'error', 'agent:spawn lookup failed', {
+          meta: { projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2087,6 +2097,11 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         }).catch(() => {
           ws.send(JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
         });
+      }).catch((err) => {
+        appLog('core:annex', 'error', 'agent:reorder lookup failed', {
+          meta: { projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2403,7 +2418,16 @@ export function start(): void {
     });
   });
 
-  staleEvictionInterval = setInterval(() => { eventReplay.evictStale(); }, 60_000);
+  staleEvictionInterval = setInterval(() => {
+    eventReplay.evictStale();
+    // Evict expired session tokens (SEC-11)
+    const now = Date.now();
+    for (const [token, entry] of sessionTokens) {
+      if (now - entry.issuedAt > TOKEN_TTL_MS) {
+        sessionTokens.delete(token);
+      }
+    }
+  }, 60_000);
 
   // Start both servers
   let mainReady = false;
@@ -2832,6 +2856,11 @@ export function broadcastCanvasStateToClients(projectId: string, state: unknown)
   broadcastWs({ type: 'canvas:state', payload: { projectId, state } });
 }
 
+/** Broadcast app-level (global scope) canvas state to all connected controller clients. */
+export function broadcastAppCanvasStateToClients(state: unknown): void {
+  broadcastWs({ type: 'canvas:state', payload: { projectId: null, state, scope: 'global' } });
+}
+
 /** Broadcast session pause/resume to all connected WS clients. */
 export function notifySessionPause(paused: boolean): void {
   sessionPaused = paused;
@@ -2872,3 +2901,10 @@ export function disconnectPeer(fingerprint: string): void {
 export function getWsAuthType(ws: WebSocket): WsAuthType {
   return wsAuthTypes.get(ws) || 'bearer';
 }
+
+/** @internal Exposed for testing only. */
+export const _testing = {
+  get sessionTokens() { return sessionTokens; },
+  isValidToken,
+  TOKEN_TTL_MS,
+};

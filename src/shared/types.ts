@@ -206,6 +206,8 @@ export interface DurableAgentConfig {
   mcpIds?: string[];
   /** Per-agent override for the Clubhouse MCP bridge feature. */
   mcpOverride?: boolean;
+  /** Persona template ID applied at creation. Used to re-inject instructions on materialization. */
+  persona?: string;
 }
 
 /** Maps an orchestrator ID to its wrapper subcommand */
@@ -700,7 +702,8 @@ export type BuiltinThemeId =
   | 'nord'
   | 'dracula'
   | 'tokyo-night'
-  | 'gruvbox-dark';
+  | 'gruvbox-dark'
+  | 'cyberpunk';
 
 /** Theme IDs — builtin themes plus any plugin-contributed themes. */
 export type ThemeId = BuiltinThemeId | (string & {});
@@ -1029,6 +1032,8 @@ export interface RestartSessionEntry {
   mission?: string;
   model?: string;
   permissionMode?: FreeAgentPermissionMode;
+  /** Whether the agent was running in free-agent (dangerously skip permissions) mode */
+  freeAgentMode?: boolean;
 }
 
 export interface RestartSessionState {

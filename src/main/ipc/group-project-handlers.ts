@@ -23,6 +23,11 @@ function broadcastChanged(): void {
 
 let handlersRegistered = false;
 
+/** For testing only: reset the registration guard so handlers can be re-registered. */
+export function _resetHandlersForTesting(): void {
+  handlersRegistered = false;
+}
+
 export function registerGroupProjectHandlers(): void {
   if (handlersRegistered) return;
   if (!isMcpEnabledForAny()) return;

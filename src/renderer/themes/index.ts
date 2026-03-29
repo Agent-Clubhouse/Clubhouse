@@ -7,6 +7,7 @@ import { nord } from './nord';
 import { dracula } from './dracula';
 import { tokyoNight } from './tokyo-night';
 import { gruvboxDark } from './gruvbox-dark';
+import { cyberpunk } from './cyberpunk';
 
 /** Built-in themes — static, never mutated. */
 export const BUILTIN_THEMES: Record<BuiltinThemeId, ThemeDefinition> = {
@@ -18,6 +19,7 @@ export const BUILTIN_THEMES: Record<BuiltinThemeId, ThemeDefinition> = {
   'dracula': dracula,
   'tokyo-night': tokyoNight,
   'gruvbox-dark': gruvboxDark,
+  'cyberpunk': cyberpunk,
 };
 
 /** Dynamic theme registry — includes builtins plus plugin-contributed themes. */

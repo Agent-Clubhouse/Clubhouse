@@ -11,11 +11,19 @@ const ALLOWED_TAGS = [
   'br', 'hr',
   'div', 'span',
   'input', // for GFM task list checkboxes
+  // SVG elements for inline rich content
+  'svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon',
+  'g', 'text', 'tspan', 'defs', 'use', 'clipPath',
 ];
 
 const ALLOWED_ATTR = [
   'href', 'src', 'alt', 'title', 'class',
   'type', 'checked', 'disabled', // for GFM task list checkboxes
+  // SVG attributes for inline rich content
+  'viewBox', 'width', 'height', 'fill', 'stroke', 'stroke-width',
+  'stroke-linecap', 'stroke-linejoin', 'd', 'cx', 'cy', 'r', 'rx', 'ry',
+  'x', 'x1', 'x2', 'y', 'y1', 'y2', 'points', 'transform', 'opacity',
+  'xmlns', 'clip-path', 'id',
 ];
 
 /**

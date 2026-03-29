@@ -75,6 +75,10 @@ interface CanvasWorkspaceProps {
   onUpdateZoneTheme: (zoneId: string, themeId: string) => void;
   minimapAutoHide: boolean;
   onMinimapAutoHideChange: (value: boolean) => void;
+  /** When true, render all agent-to-agent wires as bidirectional. */
+  bidirectionalWires?: boolean;
+  /** When true, auto-create reverse direction for agent-to-agent wires. */
+  createBidirectionalWires?: boolean;
 }
 
 export function CanvasWorkspace({
@@ -106,6 +110,8 @@ export function CanvasWorkspace({
   onUpdateZoneTheme,
   minimapAutoHide,
   onMinimapAutoHideChange,
+  bidirectionalWires,
+  createBidirectionalWires,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -169,7 +175,7 @@ export function CanvasWorkspace({
     onAddWireDefinition(entry as McpBindingEntry);
   }, [onAddWireDefinition]);
 
-  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef, handleZoneWire, handleAddWireDef);
+  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef, handleZoneWire, handleAddWireDef, createBidirectionalWires);
   const [wirePopover, setWirePopover] = useState<{ binding: McpBindingEntry; x: number; y: number } | null>(null);
 
   // ── Zone state ──────────────────────────────────────────────────
@@ -765,15 +771,28 @@ export function CanvasWorkspace({
         {/* Layer 2: MCP wire overlay — rendered from wireDefinitions merged
             with live MCP bindings.  wireDefinitions ensure individually-created
             wires survive agent sleep; live bindings cover zone-expanded wires
-            and any other dynamically-created bindings. */}
+            and any other dynamically-created bindings.
+            Wrapped with z-index above zone backgrounds so wires inside a zone
+            remain visible and clickable. */}
         {mcpEnabled && (
-          <WireOverlay
-            views={views}
-            bindings={mergedWireBindings}
-            viewPositions={wireViewPositions}
-            sleepingAgentIds={sleepingAgentIds}
-            onWireClick={handleWireClick}
-          />
+          <div
+            data-testid="wire-layer"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              zIndex: zones.reduce((max, z) => Math.max(max, z.zIndex), -1) + 1,
+            }}
+          >
+            <WireOverlay
+              views={views}
+              bindings={mergedWireBindings}
+              viewPositions={wireViewPositions}
+              sleepingAgentIds={sleepingAgentIds}
+              onWireClick={handleWireClick}
+              forceBidirectional={bidirectionalWires}
+            />
+          </div>
         )}
 
         {/* Layer 3: Non-zone views (with zone theme scoping) */}
@@ -1110,6 +1129,7 @@ export function CanvasWorkspace({
           onAddWireDefinition={onAddWireDefinition}
           onRemoveWireDefinition={onRemoveWireDefinition}
           onUpdateWireDefinition={onUpdateWireDefinition}
+          forceBidirectional={bidirectionalWires}
         />
       )}
 

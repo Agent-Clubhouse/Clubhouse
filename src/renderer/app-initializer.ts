@@ -89,6 +89,11 @@ export async function initApp(): Promise<() => void> {
   cleanups.push(initAnnexListener());
   cleanups.push(initPluginUpdateListener());
 
+  // 4b. Re-apply theme when the main process changes it (e.g. via assistant update_settings)
+  cleanups.push(window.clubhouse.app.onThemeChanged(() => {
+    useThemeStore.getState().loadTheme();
+  }));
+
   // 5. Check for What's New dialog after startup (delayed)
   const whatsNewTimer = setTimeout(() => {
     useUpdateStore.getState().checkWhatsNew();

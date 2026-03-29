@@ -307,7 +307,10 @@ interface RemoteIdentity {
 
 async function identifyService(service: RemoteService): Promise<RemoteIdentity | null> {
   const txt = service.txt || {};
-  const host = service.host || service.referer?.address;
+  // Prefer resolved IP addresses over hostname — on Linux os.hostname() returns a
+  // bare name (e.g. "desk") that macOS cannot resolve, while .local hostnames from
+  // macOS work fine.  The addresses array and referer.address are always IPs.
+  const host = service.addresses?.[0] || service.referer?.address || service.host;
   if (!host) return null;
 
   // V2 services have a pairingPort in TXT
@@ -558,7 +561,7 @@ function startDiscovery(): void {
 
       const { fingerprint } = identity;
       const txt = service.txt || {};
-      const host = service.host || service.referer?.address || '';
+      const host = service.addresses?.[0] || service.referer?.address || service.host || '';
       const mainPort = service.port || 0;
       const pairingPort = txt.pairingPort ? parseInt(txt.pairingPort, 10) : service.port || 0;
 

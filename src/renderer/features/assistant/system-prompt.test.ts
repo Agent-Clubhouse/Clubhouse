@@ -25,26 +25,37 @@ describe('buildAssistantInstructions', () => {
     expect(result).toContain('layout_canvas');
   });
 
-  it('contains help content from all sections', () => {
+  it('contains help topic index (not full content)', () => {
+    expect(result).toContain('Available Help Topics');
+    expect(result).toContain('search_help');
     expect(result).toContain('General');
     expect(result).toContain('Projects');
-    expect(result).toContain('Getting Started');
+    expect(result).toContain('Agents & Orchestrators');
+    expect(result).toContain('Plugins');
+    expect(result).toContain('Settings');
+    expect(result).toContain('Troubleshooting');
+    expect(result).toContain('Agent Personas');
   });
 
-  it('contains expanded workflow recipes', () => {
+  it('does not contain full help content dump', () => {
+    // The prompt should NOT contain the full help article bodies —
+    // those are retrieved on demand via search_help
+    expect(result).not.toContain('Clubhouse Help Reference');
+  });
+
+  it('contains workflow recipes', () => {
     expect(result).toContain('Workflow Recipes');
     expect(result).toContain('First project onboarding');
-    expect(result).toContain('Multi-service debugging');
+    expect(result).toContain('Canvas-based team coordination');
     expect(result).toContain('Agent instruction writing guide');
-    expect(result).toContain('Single to multi-agent migration');
-    expect(result).toContain('Quick agent workflows');
-    expect(result).toContain('Plugin discovery');
+    expect(result).toContain('Monorepo setup');
+    expect(result).toContain('Multi-agent debugging');
   });
 
-  it('has content in the right order: identity, tools, help, recipes', () => {
+  it('has content in the right order: identity, tools, help index, recipes', () => {
     const identityIdx = result.indexOf('Clubhouse Assistant');
     const toolGuideIdx = result.indexOf('Tool Usage Guide');
-    const helpIdx = result.indexOf('Clubhouse Help Reference');
+    const helpIdx = result.indexOf('Available Help Topics');
     const recipesIdx = result.indexOf('Workflow Recipes');
 
     expect(identityIdx).toBeLessThan(toolGuideIdx);
@@ -52,11 +63,11 @@ describe('buildAssistantInstructions', () => {
     expect(helpIdx).toBeLessThan(recipesIdx);
   });
 
-  it('stays under 100K characters', () => {
-    expect(result.length).toBeLessThan(100_000);
+  it('stays under 15KB (target 10-12KB without full help dump)', () => {
+    expect(result.length).toBeLessThan(15_000);
   });
 
-  it('is substantial enough to be useful (> 10K chars)', () => {
-    expect(result.length).toBeGreaterThan(10_000);
+  it('is substantial enough to be useful (> 5K chars)', () => {
+    expect(result.length).toBeGreaterThan(5_000);
   });
 });

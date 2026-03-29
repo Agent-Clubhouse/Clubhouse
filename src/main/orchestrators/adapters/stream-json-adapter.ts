@@ -90,21 +90,18 @@ export class StreamJsonAdapter implements StructuredAdapter {
       // Permission handling already applied above via permissionMode
     }
 
+    // Append extra CLI args (e.g. MCP server config flags from the spawn path)
+    if (sessionOpts.extraArgs) {
+      args.push(...sessionOpts.extraArgs);
+    }
+
     const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
     const spawnArgs = sessionOpts.commandPrefix
       ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
       : args;
 
-    appLog('core:structured', 'info', 'StreamJsonAdapter starting session', {
-      meta: {
-        binary: spawnBinary,
-        args: spawnArgs,
-        cwd: sessionOpts.cwd,
-        model: sessionOpts.model,
-        hasMission: !!sessionOpts.mission,
-        permissionMode: sessionOpts.permissionMode,
-        commandPrefix: sessionOpts.commandPrefix || 'none',
-      },
+    appLog('core:structured', 'info', 'StreamJsonAdapter spawning', {
+      meta: { binary: spawnBinary, cwd: sessionOpts.cwd, model: sessionOpts.model },
     });
 
     const proc = cpSpawn(spawnBinary, spawnArgs, {
@@ -132,15 +129,12 @@ export class StreamJsonAdapter implements StructuredAdapter {
       parser.feed(chunk.toString());
     });
 
+    // Accumulate stderr for logging; only emit as error on non-zero exit.
+    // CLI tools write diagnostic info (progress, warnings) to stderr which
+    // is not an error condition and should not flood the UI.
+    let stderrBuffer = '';
     proc.stderr?.on('data', (chunk: Buffer) => {
-      // Log stderr as error events
-      const msg = chunk.toString().trim();
-      if (msg) {
-        queue.push(this.makeEvent('error', {
-          code: 'stderr',
-          message: msg,
-        }));
-      }
+      stderrBuffer += chunk.toString();
     });
 
     let exited = false;
@@ -149,10 +143,18 @@ export class StreamJsonAdapter implements StructuredAdapter {
       exited = true;
 
       appLog('core:structured', code === 0 ? 'info' : 'error', 'StreamJsonAdapter process exited', {
-        meta: { code },
+        meta: { code, stderr: stderrBuffer.length > 0 ? stderrBuffer.slice(-500) : undefined },
       });
 
       parser.flush();
+
+      // Surface stderr as an error event only on non-zero exit
+      if (code !== 0 && stderrBuffer.trim()) {
+        queue.push(this.makeEvent('error', {
+          code: 'stderr',
+          message: stderrBuffer.trim().slice(-1000),
+        }));
+      }
 
       queue.push(this.makeEvent('end', {
         reason: code === 0 ? 'complete' : 'error',
@@ -218,6 +220,12 @@ export class StreamJsonAdapter implements StructuredAdapter {
    *   - result (session complete)
    */
   private mapEvent(event: StreamJsonEvent): StructuredEvent[] {
+    // Unwrap stream_event wrapper — claude --output-format stream-json wraps
+    // streaming events as { type: "stream_event", event: { type: "content_block_delta", ... } }
+    if (event.type === 'stream_event' && event.event) {
+      return this.mapEvent(event.event as StreamJsonEvent);
+    }
+
     switch (event.type) {
       case 'content_block_start':
         return this.handleBlockStart(event);

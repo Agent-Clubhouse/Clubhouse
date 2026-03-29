@@ -8,6 +8,8 @@
 import { useAppCanvasStore, getProjectCanvasStore } from '../../plugins/builtin/canvas/main';
 import type { CanvasViewType, Position, Size, CanvasView, CanvasInstance } from '../../plugins/builtin/canvas/canvas-types';
 import type { CanvasState } from '../../plugins/builtin/canvas/canvas-store';
+import { exportBlueprint, importBlueprint, validateBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
+import type { CanvasBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
 import { createScopedStorage } from '../../plugins/plugin-api-storage';
 import type { ScopedStorage } from '../../../shared/plugin-types';
 
@@ -47,10 +49,18 @@ function getStorage(projectId?: string): ScopedStorage {
 
 function findCanvas(canvasId: string, projectId?: string): CanvasInstance | undefined {
   const store = getStore(projectId);
-  const canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+  let canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+  // Fall back to app store if not found in project store
+  if (!canvas && projectId) {
+    const appStore = useAppCanvasStore.getState();
+    canvas = appStore.canvases.find((c: CanvasInstance) => c.id === canvasId);
+  }
   if (!canvas) {
-    const allIds = store.canvases.map((c: CanvasInstance) => c.id);
-    console.warn('[assistant] Canvas not found:', canvasId, 'available:', allIds, 'pid:', normPid(projectId) || 'app');
+    const allIds = [
+      ...store.canvases.map((c: CanvasInstance) => c.id),
+      ...(projectId ? useAppCanvasStore.getState().canvases.map((c: CanvasInstance) => c.id) : []),
+    ];
+    console.warn('[assistant] Canvas not found:', canvasId, 'available:', [...new Set(allIds)], 'pid:', normPid(projectId) || 'app');
   }
   return canvas;
 }
@@ -67,13 +77,52 @@ async function persistCanvas(projectId?: string): Promise<void> {
   }
 }
 
-const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views']);
+const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views', 'import_blueprint']);
 
-/** Execute a command on a specific canvas, temporarily switching active canvas if needed. */
+/**
+ * Execute a command on a specific canvas, switching active canvas if needed.
+ *
+ * Canvas lookup searches the project store first (if projectId given), then
+ * falls back to the app store. This handles the common case where create_canvas
+ * is called without a project_id (app-level) but add_card passes project_id
+ * for agent binding — the canvas lives in the app store, not the project store.
+ */
 function withCanvas<T>(canvasId: string, fn: (store: CanvasState) => T, projectId?: string): T | { error: string } {
-  const store = getStore(projectId);
-  const canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
-  if (!canvas) return { error: `Canvas not found: ${canvasId}` };
+  // Try the requested store first
+  let store = getStore(projectId);
+  let canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+
+  // If not found and we were looking in a project store, fall back to app store
+  if (!canvas && projectId) {
+    const appStore = useAppCanvasStore.getState();
+    const appCanvas = appStore.canvases.find((c: CanvasInstance) => c.id === canvasId);
+    if (appCanvas) {
+      console.log('[assistant] Canvas found in app store (not project store), using app store for:', canvasId);
+      store = appStore;
+      canvas = appCanvas;
+    }
+  }
+
+  // If still not found, re-read both stores (handles just-created canvases)
+  if (!canvas) {
+    store = getStore(projectId);
+    canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+    if (!canvas && projectId) {
+      const appStore = useAppCanvasStore.getState();
+      canvas = appStore.canvases.find((c: CanvasInstance) => c.id === canvasId);
+      if (canvas) {
+        store = appStore;
+      }
+    }
+    if (!canvas) {
+      const allIds = [
+        ...store.canvases.map((c: CanvasInstance) => c.id),
+        ...(projectId ? useAppCanvasStore.getState().canvases.map((c: CanvasInstance) => c.id) : []),
+      ];
+      console.error('[assistant] Canvas not found in any store:', canvasId, 'available:', allIds);
+      return { error: `Canvas not found: ${canvasId}. Available: ${[...new Set(allIds)].join(', ')}` };
+    }
+  }
 
   const prevActive = store.activeCanvasId;
   if (prevActive !== canvasId) store.setActiveCanvas(canvasId);
@@ -291,7 +340,77 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
       console.warn('[assistant] MCP binding failed (agent may be sleeping):', sourceAgentId, err);
     }
 
-    return { success: true, data: { sourceAgentId, targetId, targetKind, bindingCreated } };
+    // Bidirectional: default true for agent-to-agent, false otherwise
+    const isAgentToAgent = targetKind === 'agent';
+    const bidirectional = args.bidirectional !== undefined
+      ? Boolean(args.bidirectional)
+      : isAgentToAgent;
+
+    let reverseBindingCreated = false;
+    if (bidirectional && isAgentToAgent) {
+      // Create reverse wire: target → source
+      store.addWireDefinition({
+        agentId: targetId,
+        targetId: sourceAgentId,
+        targetKind: 'agent' as any,
+        label: wireSrcName,
+        agentName: wireTgtName,
+        targetName: wireSrcName,
+      });
+
+      try {
+        window.clubhouse.mcpBinding.bind(targetId, {
+          targetId: sourceAgentId,
+          targetKind: 'agent',
+          label: wireSrcName,
+          agentName: wireTgtName,
+          targetName: wireSrcName,
+        });
+        reverseBindingCreated = true;
+      } catch (err) {
+        console.warn('[assistant] Reverse MCP binding failed (agent may be sleeping):', targetId, err);
+      }
+    }
+
+    return { success: true, data: { sourceAgentId, targetId, targetKind, bindingCreated, bidirectional, reverseBindingCreated } };
+  },
+
+  export_blueprint(args) {
+    const canvasId = args.canvas_id as string;
+    const pid = args.project_id as string | undefined;
+    const canvas = findCanvas(canvasId, pid);
+    if (!canvas) return { success: false, error: `Canvas not found: ${canvasId}` };
+
+    const blueprint = exportBlueprint(canvas);
+    return { success: true, data: blueprint };
+  },
+
+  import_blueprint(args) {
+    const pid = args.project_id as string | undefined;
+    const blueprint = args.blueprint as CanvasBlueprint;
+
+    const validationError = validateBlueprint(blueprint);
+    if (validationError) {
+      return { success: false, error: validationError };
+    }
+
+    try {
+      const name = args.name as string | undefined;
+      const canvas = importBlueprint(blueprint, { name });
+      const store = getStore(pid);
+      store.insertCanvas(canvas);
+      return {
+        success: true,
+        data: {
+          canvas_id: canvas.id,
+          name: canvas.name,
+          view_count: canvas.views.length,
+          view_ids: canvas.views.map((v) => v.id),
+        },
+      };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 

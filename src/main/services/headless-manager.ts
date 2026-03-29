@@ -13,6 +13,7 @@ import * as annexEventBus from './annex-event-bus';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
+import { validateSpawnCwd } from './pty-manager';
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
 let maxTranscriptBytes = 10 * 1024 * 1024; // 10 MB
@@ -488,6 +489,8 @@ export async function spawnHeadless(
   onExit?: (agentId: string, exitCode: number) => void,
   commandPrefix?: string,
 ): Promise<void> {
+  await validateSpawnCwd(cwd);
+
   // Clean up any existing session
   if (sessions.has(agentId)) {
     kill(agentId);

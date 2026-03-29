@@ -34,6 +34,20 @@ export const manifest: PluginManifest = {
         description: 'Show the cross-project canvas in the sidebar rail for managing views across all projects.',
         default: true,
       },
+      {
+        key: 'bidirectional-wires',
+        type: 'boolean',
+        label: 'Bidirectional Wires',
+        description: 'Render all agent-to-agent wires as bidirectional by default, even when only one direction is bound.',
+        default: false,
+      },
+      {
+        key: 'create-bidirectional-wires',
+        type: 'boolean',
+        label: 'Create Bidirectional Wires',
+        description: 'When wiring two agents, automatically create the reverse direction as well.',
+        default: true,
+      },
     ],
     help: {
       topics: [

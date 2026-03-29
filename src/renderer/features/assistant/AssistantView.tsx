@@ -5,7 +5,7 @@ import { AssistantInput } from './AssistantInput';
 import { AgentTerminal } from '../agents/AgentTerminal';
 import * as assistantAgent from './assistant-agent';
 import type { FeedItem } from './types';
-import type { AssistantMode } from './assistant-agent';
+import type { AssistantMode, AssistantStatus } from './assistant-agent';
 
 /**
  * Top-level container for the Clubhouse Assistant.
@@ -17,7 +17,7 @@ import type { AssistantMode } from './assistant-agent';
  */
 export function AssistantView() {
   const [feedItems, setFeedItems] = useState<FeedItem[]>(() => assistantAgent.getFeedItems());
-  const [status, setStatus] = useState(() => assistantAgent.getStatus());
+  const [status, setStatus] = useState<AssistantStatus>(() => assistantAgent.getStatus());
   const [mode, setMode] = useState<AssistantMode>(() => assistantAgent.getMode());
   const [orchestrator, setOrchestrator] = useState<string | null>(() => assistantAgent.getOrchestrator());
   const [agentId, setAgentId] = useState<string | null>(() => assistantAgent.getAgentId());
@@ -34,6 +34,8 @@ export function AssistantView() {
   const handleSend = useCallback((content: string) => { assistantAgent.sendMessage(content); }, []);
   const handleModeChange = useCallback((m: AssistantMode) => { assistantAgent.setMode(m); }, []);
   const handleOrchestratorChange = useCallback((id: string | null) => { assistantAgent.setOrchestrator(id); }, []);
+  const handleApproveAction = useCallback((actionId: string) => { assistantAgent.approveAction(actionId); }, []);
+  const handleSkipAction = useCallback((actionId: string) => { assistantAgent.skipAction(actionId); }, []);
 
   const isDisabled = status === 'starting' || status === 'responding';
 
@@ -41,13 +43,14 @@ export function AssistantView() {
   const showTerminal = mode === 'interactive' && agentId && (status === 'active' || status === 'responding');
 
   return (
-    <div className="h-full min-h-0 flex flex-col" data-testid="assistant-view">
+    <div className="h-full min-h-0 flex flex-col bg-ctp-base" data-testid="assistant-view">
       <AssistantHeader
         onReset={assistantAgent.reset}
         mode={mode}
         onModeChange={handleModeChange}
         orchestrator={orchestrator}
         onOrchestratorChange={handleOrchestratorChange}
+        status={status}
       />
       {showTerminal ? (
         <div className="flex-1 min-h-0">
@@ -55,8 +58,14 @@ export function AssistantView() {
         </div>
       ) : (
         <>
-          <AssistantFeed items={feedItems} onSendPrompt={handleSend} />
-          <AssistantInput onSend={handleSend} disabled={isDisabled} />
+          <AssistantFeed
+            items={feedItems}
+            status={status}
+            onSendPrompt={handleSend}
+            onApproveAction={handleApproveAction}
+            onSkipAction={handleSkipAction}
+          />
+          <AssistantInput onSend={handleSend} disabled={isDisabled} status={status} />
         </>
       )}
     </div>

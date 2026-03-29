@@ -2,18 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { HELP_SECTIONS } from './help-content';
 
 describe('help-content', () => {
-  it('has 6 sections', () => {
-    expect(HELP_SECTIONS).toHaveLength(6);
+  it('has 8 sections', () => {
+    expect(HELP_SECTIONS).toHaveLength(8);
   });
 
   it('has the expected section IDs in order', () => {
     const ids = HELP_SECTIONS.map((s) => s.id);
-    expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting']);
+    expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas', 'cookbooks']);
   });
 
-  it('has 25 total topics', () => {
+  it('has 37 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(25);
+    expect(total).toBe(37);
   });
 
   it('each section has at least 1 topic', () => {
@@ -63,5 +63,19 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('agents-clubhouse-mode');
     expect(allTopicIds).toContain('settings-sound');
     expect(allTopicIds).toContain('orchestrators');
+  });
+
+  it('Agent Personas section has 7 topics', () => {
+    const personas = HELP_SECTIONS.find((s) => s.id === 'personas');
+    expect(personas?.topics).toHaveLength(7);
+  });
+
+  it('includes all persona topics', () => {
+    const allTopicIds = HELP_SECTIONS.flatMap((s) => s.topics.map((t) => t.id));
+    expect(allTopicIds).toContain('persona-project-manager');
+    expect(allTopicIds).toContain('persona-qa');
+    expect(allTopicIds).toContain('persona-slop-detector');
+    expect(allTopicIds).toContain('persona-executor-merge');
+    expect(allTopicIds).toContain('persona-doc-updater');
   });
 });

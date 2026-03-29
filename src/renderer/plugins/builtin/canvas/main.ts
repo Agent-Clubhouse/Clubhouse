@@ -12,6 +12,7 @@ import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { usePluginStore } from '../../plugin-store';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -125,9 +126,17 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const selectedViewId = store((s) => s.selectedViewId);
   const selectedViewIds = store((s) => s.selectedViewIds);
   const loaded = store((s) => s.loaded);
+  const wiresLoaded = store((s) => s.wiresLoaded);
   const wireDefinitions = store((s) => s.wireDefinitions);
   const minimapAutoHide = store((s) => s.minimapAutoHide);
   const bindings = useMcpBindingStore((s) => s.bindings);
+  const settingsKey = `${isAppMode ? 'app' : api.context.projectId}:canvas`;
+  const bidirectionalWires = usePluginStore(
+    (s) => (s.pluginSettings[settingsKey]?.['bidirectional-wires'] as boolean) ?? false,
+  );
+  const createBidirectionalWires = usePluginStore(
+    (s) => (s.pluginSettings[settingsKey]?.['create-bidirectional-wires'] as boolean) ?? true,
+  );
 
   // Dynamic title: show active canvas tab name
   const activeCanvasName = canvases.find((c) => c.id === activeCanvasId)?.name;
@@ -163,9 +172,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       }
     }
     // Await loadCanvas before loadWires so that wire reconciliation has
-    // access to the loaded canvas views.  Without this, the auto-save
-    // triggered by `loaded: true` can overwrite persisted wire data with
-    // an incomplete bindings list before loadWires finishes restoring.
+    // access to the loaded canvas views.
     (async () => {
       await store.getState().loadCanvas(storage);
       await store.getState().loadWires(storage);
@@ -215,22 +222,39 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, storage, isRemote, isRemoteApp]);
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !wiresLoaded) return;
     scheduleSave();
-  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, minimapAutoHide, loaded, scheduleSave]);
+  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, minimapAutoHide, loaded, wiresLoaded, scheduleSave]);
 
   // ── Agent wake reconciliation ────────────────────────────────────
   // When an agent wakes up (bindings appear in MCP store that match wire
   // definitions), we don't need to do anything — the binding already exists.
   // But when a previously-sleeping agent's bindings were cleaned up by the
   // main process, we recreate them from wire definitions so wires reconnect.
+  // Uses exponential backoff per wire to avoid spamming failed bind attempts.
+  const wireBackoffRef = useRef<Map<string, number>>(new Map());
+  const wireBackoffTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   useEffect(() => {
     if (!loaded || wireDefinitions.length === 0) return;
     const liveKeys = new Set(bindings.map((b) => `${b.agentId}\0${b.targetId}`));
+    const backoff = wireBackoffRef.current;
+    const timers = wireBackoffTimerRef.current;
+
     for (const def of wireDefinitions) {
-      if (!liveKeys.has(`${def.agentId}\0${def.targetId}`)) {
-        // Wire definition exists but no live binding — try to restore it.
-        // This fires when an agent wakes and its bindings need re-creation.
+      const key = `${def.agentId}\0${def.targetId}`;
+      if (liveKeys.has(key)) {
+        // Binding exists — clear any backoff state
+        backoff.delete(key);
+        const timer = timers.get(key);
+        if (timer) { clearTimeout(timer); timers.delete(key); }
+        continue;
+      }
+      // Already has a pending retry timer — skip
+      if (timers.has(key)) continue;
+
+      const delay = backoff.get(key) || 0;
+      const attempt = () => {
+        timers.delete(key);
         window.clubhouse.mcpBinding.bind(def.agentId, {
           targetId: def.targetId,
           targetKind: def.targetKind,
@@ -238,9 +262,25 @@ export function MainPanel({ api }: { api: PluginAPI }) {
           agentName: def.agentName,
           targetName: def.targetName,
           projectName: def.projectName,
-        }).catch(() => { /* Agent may still be sleeping — that's fine */ });
+        }).catch(() => {
+          // Exponential backoff: 1s → 2s → 4s → 8s → ... cap at 60s
+          const next = Math.min((delay || 1000) * 2, 60_000);
+          backoff.set(key, next);
+        });
+      };
+
+      if (delay === 0) {
+        attempt();
+        backoff.set(key, 1000);
+      } else {
+        timers.set(key, setTimeout(attempt, delay));
       }
     }
+
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
   }, [loaded, wireDefinitions, bindings]);
 
   // Broadcast canvas state changes to pop-out windows and annex clients
@@ -498,6 +538,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onUpdateZoneTheme: handleUpdateZoneTheme,
             minimapAutoHide,
             onMinimapAutoHideChange: (value: boolean) => store.getState().setMinimapAutoHide(value),
+            bidirectionalWires,
+            createBidirectionalWires,
           }),
         ),
   );

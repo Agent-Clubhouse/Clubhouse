@@ -1,7 +1,8 @@
 import { useAgentStore } from '../stores/agentStore';
 import { useProjectStore } from '../stores/projectStore';
-import type { Agent } from '../../shared/types';
+import type { Agent, DurableAgentConfig } from '../../shared/types';
 import type { RestartSessionEntry, RestartSessionState } from '../../shared/types';
+import { isAssistantAgent } from '../../shared/assistant-utils';
 import type { ResumeStatus } from '../features/app/ResumeBanner';
 
 /**
@@ -11,16 +12,19 @@ import type { ResumeStatus } from '../features/app/ResumeBanner';
 export async function processResumeQueue(state: RestartSessionState): Promise<void> {
   const store = useAgentStore.getState();
 
+  // Filter out assistant agents — they are ephemeral and should not be resumed
+  const sessions = state.sessions.filter((e) => !isAssistantAgent(e.agentId));
+
   // Group by projectPath for sequential processing
   const byProject = new Map<string, RestartSessionEntry[]>();
-  for (const entry of state.sessions) {
+  for (const entry of sessions) {
     const key = entry.projectPath;
     if (!byProject.has(key)) byProject.set(key, []);
     byProject.get(key)!.push(entry);
   }
 
   // Set initial statuses
-  for (const entry of state.sessions) {
+  for (const entry of sessions) {
     const status: ResumeStatus = entry.resumeStrategy === 'manual' ? 'manual' : 'pending';
     store.setResumeStatus(entry.agentId, status);
   }
@@ -57,6 +61,22 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
     const cwd = entry.worktreePath || entry.projectPath;
     const projectId = resolveProjectId(entry.projectPath);
 
+    // Fetch the durable config so we can restore settings that aren't
+    // captured in RestartSessionEntry (color, icon, freeAgentMode, etc.).
+    // This mirrors how spawnDurableAgent reads the full config in
+    // agentLifecycleSlice before constructing the Agent object.
+    let durableConfig: DurableAgentConfig | null = null;
+    if (entry.kind === 'durable') {
+      try {
+        durableConfig = await window.clubhouse.agent.getDurableConfig(
+          entry.projectPath,
+          entry.agentId,
+        );
+      } catch {
+        // Config unavailable — fall back to entry-only values
+      }
+    }
+
     // Add the agent to the renderer store BEFORE calling spawnAgent.
     // This mirrors how spawnDurableAgent works in agentLifecycleSlice —
     // the store entry must exist so the PTY data listener and exit
@@ -67,18 +87,29 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       name: entry.agentName,
       kind: entry.kind,
       status: 'running',
-      color: 'gray',
+      color: durableConfig?.color || 'gray',
+      icon: durableConfig?.icon,
       resuming: true,
       orchestrator: entry.orchestrator,
-      model: entry.model,
+      model: entry.model || durableConfig?.model,
       mission: entry.mission,
       worktreePath: entry.worktreePath,
+      branch: durableConfig?.branch,
+      freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode ?? undefined,
+      structuredMode: durableConfig?.structuredMode || undefined,
+      mcpIds: durableConfig?.mcpIds,
     };
 
     useAgentStore.setState((s) => ({
       agents: { ...s.agents, [entry.agentId]: agent },
       agentSpawnedAt: { ...s.agentSpawnedAt, [entry.agentId]: Date.now() },
     }));
+
+    // Load the agent's profile icon into the icon cache so the UI
+    // renders it immediately (mirrors loadDurableAgents in agentCrudSlice).
+    if (agent.icon) {
+      useAgentStore.getState().loadAgentIcon(agent);
+    }
 
     await window.clubhouse.agent.spawnAgent({
       agentId: entry.agentId,
@@ -88,9 +119,11 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       resume: true,
       sessionId: entry.sessionId || undefined,
       orchestrator: entry.orchestrator,
-      model: entry.model,
+      model: entry.model || durableConfig?.model,
       mission: entry.mission,
       permissionMode: entry.permissionMode,
+      freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode,
+      structuredMode: durableConfig?.structuredMode,
     });
 
     // Clear the resuming spinner overlay and mark resume complete
@@ -107,6 +140,16 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
         // Kill existing process before retrying to prevent orphaned agents
         window.clubhouse.pty.kill(entry.agentId);
         const cwd = entry.worktreePath || entry.projectPath;
+        // Re-read durableConfig in fallback scope (original may not be accessible)
+        let fallbackConfig: DurableAgentConfig | null = null;
+        if (entry.kind === 'durable') {
+          try {
+            fallbackConfig = await window.clubhouse.agent.getDurableConfig(
+              entry.projectPath,
+              entry.agentId,
+            );
+          } catch { /* config unavailable */ }
+        }
         await window.clubhouse.agent.spawnAgent({
           agentId: entry.agentId,
           projectPath: entry.projectPath,
@@ -115,9 +158,11 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
           resume: true,
           sessionId: undefined, // --continue instead of --resume <id>
           orchestrator: entry.orchestrator,
-          model: entry.model,
+          model: entry.model || fallbackConfig?.model,
           mission: entry.mission,
           permissionMode: entry.permissionMode,
+          freeAgentMode: entry.freeAgentMode ?? fallbackConfig?.freeAgentMode,
+          structuredMode: fallbackConfig?.structuredMode,
         });
         useAgentStore.setState((s) => {
           const agent = s.agents[entry.agentId];

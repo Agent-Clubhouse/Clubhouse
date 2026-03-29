@@ -58,4 +58,68 @@ describe('sanitizeSvg', () => {
     const result = sanitizeSvg(malicious);
     expect(result).not.toContain('javascript:');
   });
+
+  // --- SEC-09 regression tests: allowlist enforcement ---
+
+  it('strips foreignObject elements (HTML injection vector)', () => {
+    const malicious = '<svg><foreignObject><body xmlns="http://www.w3.org/1999/xhtml"><div onclick="alert(1)">click</div></body></foreignObject></svg>';
+    const result = sanitizeSvg(malicious);
+    expect(result).not.toContain('foreignObject');
+    expect(result).not.toContain('<body');
+    expect(result).not.toContain('<div');
+    expect(result).not.toContain('onclick');
+  });
+
+  it('strips image elements (external resource loading)', () => {
+    const malicious = '<svg><image href="https://evil.com/track.png" width="100" height="100"/></svg>';
+    const result = sanitizeSvg(malicious);
+    expect(result).not.toContain('<image');
+    expect(result).not.toContain('evil.com');
+  });
+
+  it('strips anchor elements', () => {
+    const malicious = '<svg><a href="https://evil.com"><circle cx="12" cy="12" r="10"/></a></svg>';
+    const result = sanitizeSvg(malicious);
+    expect(result).not.toContain('<a');
+    expect(result).not.toContain('evil.com');
+  });
+
+  it('strips animate elements (potential CSS/behavior injection)', () => {
+    const malicious = '<svg><rect width="10" height="10"><animate attributeName="width" from="10" to="100" dur="1s"/></rect></svg>';
+    const result = sanitizeSvg(malicious);
+    expect(result).not.toContain('<animate');
+  });
+
+  it('strips animateTransform elements', () => {
+    const malicious = '<svg><rect width="10" height="10"><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="1s"/></rect></svg>';
+    const result = sanitizeSvg(malicious);
+    expect(result).not.toContain('animateTransform');
+  });
+
+  it('strips data: attributes', () => {
+    const malicious = '<svg data-payload="malicious"><circle cx="12" cy="12" r="10"/></svg>';
+    const result = sanitizeSvg(malicious);
+    expect(result).not.toContain('data-payload');
+  });
+
+  it('preserves gradient elements', () => {
+    const svg = '<svg><defs><linearGradient id="g1"><stop offset="0%" stop-color="red"/><stop offset="100%" stop-color="blue"/></linearGradient></defs><rect fill="url(#g1)" width="10" height="10"/></svg>';
+    const result = sanitizeSvg(svg);
+    expect(result).toContain('linearGradient');
+    expect(result).toContain('stop');
+    expect(result).toContain('stop-color');
+  });
+
+  it('preserves text elements', () => {
+    const svg = '<svg><text x="10" y="20" font-size="14" font-family="sans-serif">Hello</text></svg>';
+    const result = sanitizeSvg(svg);
+    expect(result).toContain('<text');
+    expect(result).toContain('Hello');
+  });
+
+  it('strips set elements (SMIL animation)', () => {
+    const malicious = '<svg><rect width="10" height="10"><set attributeName="fill" to="red"/></rect></svg>';
+    const result = sanitizeSvg(malicious);
+    expect(result).not.toContain('<set');
+  });
 });

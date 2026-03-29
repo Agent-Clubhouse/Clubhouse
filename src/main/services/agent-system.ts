@@ -60,7 +60,8 @@ export function isStructuredAgent(agentId: string): boolean {
   return structuredManager.isStructuredSession(agentId);
 }
 
-export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
+export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
+  let params = inParams;
   const provider = await resolveOrchestrator(params.projectPath, params.orchestrator);
 
   // Resolve profile env early so it can be passed to checkAvailability.
@@ -136,6 +137,21 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     // but honour an explicit override (e.g. from session resume)
     const permissionMode = params.permissionMode ?? freeAgentSettings.getPermissionMode(params.projectPath);
 
+    // For durable agents, fall back to stored config for flags that callers may
+    // not pass (e.g. session resume after app update only carries a subset of
+    // fields).  This ensures freeAgentMode, structuredMode, and model are
+    // honoured even when the resume path doesn't explicitly provide them.
+    if (params.kind === 'durable') {
+      try {
+        const durableConfig = await getDurableConfig(params.projectPath, params.agentId);
+        if (durableConfig) {
+          if (params.freeAgentMode === undefined) params = { ...params, freeAgentMode: durableConfig.freeAgentMode };
+          if (params.structuredMode === undefined && durableConfig.structuredMode) params = { ...params, structuredMode: durableConfig.structuredMode };
+          if (params.model === undefined && durableConfig.model) params = { ...params, model: durableConfig.model };
+        }
+      } catch { /* config not available — use caller-provided values */ }
+    }
+
     // Try structured path when enabled and provider supports it
     // Quick agents use structured mode based on project spawn mode setting.
     // Durable agents opt in via per-agent structuredMode config flag.
@@ -143,12 +159,19 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
     const useStructured = (spawnMode === 'structured' && params.kind === 'quick') || params.structuredMode;
     const hasMission = !!params.mission && params.mission.trim() !== '';
-    if (useStructured && !hasMission) {
+    // For durable agents in structured mode without a mission, use a default open-ended prompt.
+    // This allows the structured UI to launch and accept messages interactively.
+    const structuredMission = hasMission ? params.mission! :
+      (useStructured && params.kind === 'durable'
+        ? 'You are ready for interactive work. Wait for instructions from the user.'
+        : '');
+    const canLaunchStructured = useStructured && (hasMission || params.kind === 'durable');
+    if (useStructured && !canLaunchStructured) {
       appLog('core:agent', 'warn', 'Structured mode requested but mission is empty — falling back to PTY', {
         meta: { agentId: params.agentId, kind: params.kind },
       });
     }
-    if (useStructured && hasMission && isStructuredCapable(provider)) {
+    if (canLaunchStructured && isStructuredCapable(provider)) {
       appLog('core:agent', 'info', `Spawning ${params.kind} agent in structured mode`, {
         meta: {
           agentId: params.agentId,
@@ -164,7 +187,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       agentRegistry.setRuntime(params.agentId, 'structured');
       const adapter = provider.createStructuredAdapter();
       await structuredManager.startStructuredSession(params.agentId, adapter, {
-        mission: params.mission!,
+        mission: structuredMission,
         systemPrompt: params.systemPrompt,
         model: params.model,
         cwd: params.cwd,

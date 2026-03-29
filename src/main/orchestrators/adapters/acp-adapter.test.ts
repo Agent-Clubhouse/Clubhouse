@@ -726,16 +726,14 @@ describe('AcpAdapter', () => {
     expect(mockAppLog).toHaveBeenCalledWith(
       'core:structured',
       'info',
-      'AcpAdapter starting session',
-      expect.objectContaining({
-        meta: expect.objectContaining({
+      'AcpAdapter spawning',
+      {
+        meta: {
           binary: '/usr/bin/copilot',
           cwd: '/tmp/project',
           model: 'gpt-5',
-          hasMission: true,
-          hasSystemPrompt: true,
-        }),
-      }),
+        },
+      },
     );
   });
 
@@ -775,7 +773,7 @@ describe('AcpAdapter', () => {
     );
   });
 
-  it('logs unmapped notification methods', async () => {
+  it('logs unmapped notification methods at debug level', async () => {
     const mockAppLog = vi.mocked(appLog);
     mockAppLog.mockClear();
 
@@ -790,14 +788,8 @@ describe('AcpAdapter', () => {
 
     expect(mockAppLog).toHaveBeenCalledWith(
       'core:structured:acp',
-      'info',
+      'debug',
       'Unmapped ACP notification: unknown_future_method',
-      expect.objectContaining({
-        meta: expect.objectContaining({
-          method: 'unknown_future_method',
-          paramsKeys: ['foo'],
-        }),
-      }),
     );
   });
 

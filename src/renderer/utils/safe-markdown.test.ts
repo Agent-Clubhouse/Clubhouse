@@ -15,11 +15,11 @@ describe('renderMarkdownSafe', () => {
     expect(result).toContain('src="x"');
   });
 
-  it('strips SVG onload handlers', () => {
+  it('strips SVG onload handlers but preserves SVG element', () => {
     const result = renderMarkdownSafe('<svg onload=alert(1)>');
     expect(result).not.toContain('onload');
-    // svg is not in allowed tags, so it should be stripped entirely
-    expect(result).not.toContain('<svg');
+    // svg is allowed for inline rich content, but event handlers are stripped
+    expect(result).toContain('<svg');
   });
 
   it('strips nested injection payloads', () => {
@@ -97,5 +97,57 @@ describe('renderMarkdownSafe', () => {
     expect(result).not.toContain('onerror');
     expect(result).not.toContain('require');
     expect(result).not.toContain('document.cookie');
+  });
+
+  // SVG security tests — expanded allowlist requires thorough coverage
+  describe('SVG security', () => {
+    it('strips script tags nested inside SVG', () => {
+      const result = renderMarkdownSafe('<svg><script>alert(1)</script></svg>');
+      expect(result).toContain('<svg');
+      expect(result).not.toContain('<script');
+      expect(result).not.toContain('alert(1)');
+    });
+
+    it('strips foreignObject from SVG', () => {
+      const result = renderMarkdownSafe(
+        '<svg><foreignObject><body><script>alert(1)</script></body></foreignObject></svg>',
+      );
+      expect(result).toContain('<svg');
+      expect(result).not.toContain('foreignObject');
+      expect(result).not.toContain('<script');
+    });
+
+    it('strips onerror handler from SVG elements', () => {
+      const result = renderMarkdownSafe('<svg><rect onerror="alert(1)" /></svg>');
+      expect(result).toContain('<svg');
+      expect(result).not.toContain('onerror');
+    });
+
+    it('strips onmouseover handler from SVG elements', () => {
+      const result = renderMarkdownSafe('<svg onmouseover="alert(1)"><circle cx="10" cy="10" r="5" /></svg>');
+      expect(result).toContain('<svg');
+      expect(result).toContain('<circle');
+      expect(result).not.toContain('onmouseover');
+    });
+
+    it('strips xlink:href with javascript protocol', () => {
+      const result = renderMarkdownSafe(
+        '<svg><a xlink:href="javascript:alert(1)"><text>click</text></a></svg>',
+      );
+      expect(result).not.toContain('javascript:');
+    });
+
+    it('preserves clean SVG with allowed attributes', () => {
+      const result = renderMarkdownSafe(
+        '<svg viewBox="0 0 100 100" width="100" height="100"><circle cx="50" cy="50" r="40" fill="blue" stroke="black" stroke-width="2" /><path d="M10 10 L90 90" /></svg>',
+      );
+      expect(result).toContain('<svg');
+      expect(result).toContain('viewBox="0 0 100 100"');
+      expect(result).toContain('<circle');
+      expect(result).toContain('cx="50"');
+      expect(result).toContain('fill="blue"');
+      expect(result).toContain('<path');
+      expect(result).toContain('d="M10 10 L90 90"');
+    });
   });
 });

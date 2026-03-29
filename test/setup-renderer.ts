@@ -263,6 +263,7 @@ vi.stubGlobal('clubhouse', {
 
     getTheme: async () => ({ themeId: 'catppuccin-mocha' }),
     saveTheme: asyncNoop,
+    onThemeChanged: vi.fn(() => noop),
     updateTitleBarOverlay: asyncNoop,
     getOrchestratorSettings: async () => ({ enabled: ['claude-code'] }),
     saveOrchestratorSettings: asyncNoop,
@@ -416,6 +417,9 @@ vi.stubGlobal('clubhouse', {
     unbind: asyncNoop,
     sendFollowup: asyncNoop,
     onResult: () => noop,
+    reset: asyncNoop,
+    saveHistory: asyncNoop,
+    loadHistory: asyncNoop,
   },
   canvas: {
     onCommand: () => noop,
