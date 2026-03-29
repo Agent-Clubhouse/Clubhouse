@@ -21,11 +21,11 @@ describe('browser plugin manifest', () => {
     expect(manifest.engine.api).toBe(0.8);
   });
 
-  it('declares required permissions including canvas', () => {
+  it('declares required permissions including canvas and projects', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['commands', 'storage', 'canvas', 'widgets']),
+      expect.arrayContaining(['commands', 'storage', 'canvas', 'widgets', 'projects']),
     );
-    expect(manifest.permissions).toHaveLength(4);
+    expect(manifest.permissions).toHaveLength(5);
   });
 
   it('does not declare annex permission', () => {
