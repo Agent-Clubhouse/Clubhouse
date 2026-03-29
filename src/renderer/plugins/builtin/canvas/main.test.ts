@@ -162,8 +162,8 @@ describe('canvas main', () => {
 
     // Auto-save effect should react to wireDefinitions, not bindings
     const autoSaveEffect = source.slice(
-      source.indexOf('wireDefinitions, minimapAutoHide, loaded, scheduleSave'),
-      source.indexOf('wireDefinitions, minimapAutoHide, loaded, scheduleSave') + 100,
+      source.indexOf('wireDefinitions, minimapAutoHide, loaded, wiresLoaded, scheduleSave'),
+      source.indexOf('wireDefinitions, minimapAutoHide, loaded, wiresLoaded, scheduleSave') + 120,
     );
     expect(autoSaveEffect).toBeTruthy();
   });

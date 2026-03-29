@@ -25,6 +25,10 @@ export interface CanvasState {
   canvases: CanvasInstance[];
   activeCanvasId: string;
   loaded: boolean;
+  /** True once wireDefinitions have been restored from storage.  The auto-save
+   *  effect must not fire until this is set, otherwise a debounced save can
+   *  overwrite persisted wires with the initial empty array. */
+  wiresLoaded: boolean;
 
   // Lifecycle
   loadCanvas: (storage: ScopedStorage) => Promise<void>;
@@ -167,6 +171,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     wireDefinitions: [],
     minimapAutoHide: true,
     loaded: false,
+    wiresLoaded: false,
 
     activeCanvas: () => {
       const state = get();
@@ -239,7 +244,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     loadWires: async (storage) => {
       try {
         const saved = await storage.read(STORAGE_KEY_WIRES) as McpBindingEntry[] | null;
-        if (!saved || !Array.isArray(saved) || saved.length === 0) return;
+        if (!saved || !Array.isArray(saved) || saved.length === 0) {
+          set({ wiresLoaded: true });
+          return;
+        }
 
         // Build a set of valid IDs from all canvas views for reconciliation.
         // Bindings reference agentIds (durable_*/quick_*), groupProjectIds,
@@ -288,9 +296,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
             // keep the wire definition so the wire remains visible and persisted
           }
         }
-        set({ wireDefinitions: restoredDefinitions });
+        set({ wireDefinitions: restoredDefinitions, wiresLoaded: true });
       } catch {
-        // Storage read failed — skip wire restore
+        // Storage read failed — skip wire restore, but mark as loaded so
+        // auto-save is not permanently blocked.
+        set({ wiresLoaded: true });
       }
     },
 
@@ -381,7 +391,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         ? { wireDefinitions: remoteWireDefinitions as McpBindingEntry[] }
         : {};
 
-      set({ canvases, activeCanvasId: resolvedActive, loaded: true, ...wireUpdate, ...syncDerivedState(canvases, resolvedActive) });
+      set({ canvases, activeCanvasId: resolvedActive, loaded: true, wiresLoaded: true, ...wireUpdate, ...syncDerivedState(canvases, resolvedActive) });
     },
 
     // ── Canvas tab management ────────────────────────────────────

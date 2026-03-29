@@ -126,6 +126,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const selectedViewId = store((s) => s.selectedViewId);
   const selectedViewIds = store((s) => s.selectedViewIds);
   const loaded = store((s) => s.loaded);
+  const wiresLoaded = store((s) => s.wiresLoaded);
   const wireDefinitions = store((s) => s.wireDefinitions);
   const minimapAutoHide = store((s) => s.minimapAutoHide);
   const bindings = useMcpBindingStore((s) => s.bindings);
@@ -171,9 +172,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       }
     }
     // Await loadCanvas before loadWires so that wire reconciliation has
-    // access to the loaded canvas views.  Without this, the auto-save
-    // triggered by `loaded: true` can overwrite persisted wire data with
-    // an incomplete bindings list before loadWires finishes restoring.
+    // access to the loaded canvas views.
     (async () => {
       await store.getState().loadCanvas(storage);
       await store.getState().loadWires(storage);
@@ -223,9 +222,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, storage, isRemote, isRemoteApp]);
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !wiresLoaded) return;
     scheduleSave();
-  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, minimapAutoHide, loaded, scheduleSave]);
+  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, minimapAutoHide, loaded, wiresLoaded, scheduleSave]);
 
   // ── Agent wake reconciliation ────────────────────────────────────
   // When an agent wakes up (bindings appear in MCP store that match wire
