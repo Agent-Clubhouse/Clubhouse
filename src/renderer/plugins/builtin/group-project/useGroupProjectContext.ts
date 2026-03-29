@@ -85,7 +85,12 @@ export function useGroupProjectContext(
     if (!groupProjectId) return null;
     if (isRemote && satelliteId) {
       const satProjects = remoteGroupProjects[satelliteId] as GroupProject[] | undefined;
-      return satProjects?.find((p) => p.id === groupProjectId) ?? null;
+      // The groupProjectId may be namespaced (remote||satId||originalId) from canvas metadata.
+      // Strip the prefix to compare against the satellite's original IDs.
+      const bareId = groupProjectId.startsWith('remote||')
+        ? groupProjectId.split('||').pop()!
+        : groupProjectId;
+      return satProjects?.find((p) => p.id === bareId || p.id === groupProjectId) ?? null;
     }
     return localProjects.find((p) => p.id === groupProjectId) ?? null;
   }, [groupProjectId, isRemote, satelliteId, remoteGroupProjects, localProjects]);
@@ -94,7 +99,11 @@ export function useGroupProjectContext(
   const members = useMemo<GroupProjectMember[]>(() => {
     if (!groupProjectId) return [];
     if (isRemote && satelliteId) {
-      const key = `${satelliteId}::${groupProjectId}`;
+      // Strip namespace prefix if present (same as project resolution above)
+      const bareId = groupProjectId.startsWith('remote||')
+        ? groupProjectId.split('||').pop()!
+        : groupProjectId;
+      const key = `${satelliteId}::${bareId}`;
       return dedupeMembers(remoteMembers[key] || []);
     }
     return dedupeMembers(

@@ -1,15 +1,13 @@
 /**
  * E2E tests for the Clubhouse Assistant feature.
  *
- * Tests cover panel opening, mode toggling, headless conversations,
- * structured mode streaming, tool execution, and basic Q&A.
+ * Tests 1-9 are UI-only and run everywhere (including CI without orchestrator).
+ * Tests 10-15 require a live orchestrator and are skipped in CI.
  *
- * Tests 1-2 (panel open, mode toggle) are UI-only and run everywhere.
- * Tests 3-6 require a live orchestrator (claude-code, etc.) and are
- * skipped in CI where no orchestrator credentials are available.
- * Run locally with: npx playwright test e2e/assistant/
+ * Each test resets the assistant to ensure independence — no cascade failures.
+ * All tests share one Electron instance for performance (~10s launch).
  *
- * Each test suite uses an isolated CLUBHOUSE_USER_DATA directory.
+ * Run locally: npx playwright test e2e/assistant/assistant.spec.ts
  */
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -20,9 +18,11 @@ import {
   launchAssistantInstance,
   cleanupAssistantInstance,
   openAssistantPanel,
+  closeAssistantPanel,
+  resetAssistant,
   sendAssistantMessage,
   waitForAssistantResponse,
-  waitForActionCard,
+  waitForFeedContent,
   switchMode,
 } from './helpers';
 
@@ -30,13 +30,9 @@ let instance: AssistantInstance;
 let window: Page;
 const pageErrors: Error[] = [];
 
-// All tests share one Electron instance for performance (launch is ~10s).
-// Tradeoff: if an early test fails, later tests that depend on agent state may
-// cascade. Each test resets the conversation to mitigate this.
 test.beforeAll(async () => {
   instance = await launchAssistantInstance();
   window = instance.window;
-  // Capture uncaught errors (React crashes, render failures, etc.)
   window.on('pageerror', (error) => pageErrors.push(error));
 });
 
@@ -44,191 +40,293 @@ test.afterAll(async () => {
   await cleanupAssistantInstance(instance);
 });
 
-// ─── Test 1: Panel opens from nav rail ───────────────────────────────────────
-
-test('assistant panel opens without render errors', async () => {
-  // Clear any errors from app startup
+// Clear errors before each test for independence
+test.beforeEach(() => {
   pageErrors.length = 0;
-
-  await openAssistantPanel(window);
-
-  // Verify no uncaught errors (catches React crashes like hook violations)
-  expect(pageErrors).toHaveLength(0);
-
-  // Verify the assistant view is rendered
-  const assistantView = window.locator('[data-testid="assistant-view"]');
-  await expect(assistantView).toBeVisible({ timeout: 5_000 });
-
-  // Verify welcome state with suggested prompts
-  const emptyFeed = window.locator('[data-testid="assistant-feed-empty"]');
-  await expect(emptyFeed).toBeVisible({ timeout: 5_000 });
-
-  const suggestedPrompts = window.locator('[data-testid="suggested-prompt"]');
-  const count = await suggestedPrompts.count();
-  expect(count).toBeGreaterThanOrEqual(1);
-
-  // Verify header elements are present
-  const modeToggle = window.locator('[data-testid="mode-toggle"]');
-  await expect(modeToggle).toBeVisible({ timeout: 5_000 });
-
-  // Verify input bar is present
-  const input = window.locator('[data-testid="assistant-input"]');
-  await expect(input).toBeVisible({ timeout: 5_000 });
 });
 
-// ─── Test: Render crash smoke test ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// CI-SAFE TESTS — No orchestrator needed (tests 1-9)
+// ═══════════════════════════════════════════════════════════════════════════
 
-test('assistant panel renders without crashes after brief interaction', async () => {
-  // Clear errors from prior tests
-  pageErrors.length = 0;
+// ─── 1: Panel opens without render errors ─────────────────────────────────
 
+test('panel opens without render errors', async () => {
   await openAssistantPanel(window);
 
-  // Wait for UI to settle — gives React time to render all hooks
-  await window.waitForTimeout(2_000);
-
-  // Verify zero uncaught errors (would catch hook ordering violations,
-  // undefined property access, or any other render crash)
   expect(pageErrors).toHaveLength(0);
 
-  // Verify the feed container rendered (not a blank/white screen)
+  const assistantView = window.locator('[data-testid="assistant-view"]');
+  await expect(assistantView).toBeVisible({ timeout: 5_000 });
+});
+
+// ─── 2: Render crash smoke test ───────────────────────────────────────────
+
+test('panel renders without crashes after settling', async () => {
+  await openAssistantPanel(window);
+  await window.waitForTimeout(2_000);
+
+  expect(pageErrors).toHaveLength(0);
+
   const feedOrEmpty = window.locator(
     '[data-testid="assistant-feed"], [data-testid="assistant-feed-empty"]',
   ).first();
   await expect(feedOrEmpty).toBeVisible({ timeout: 5_000 });
 
-  // Verify the input bar is functional (not crashed mid-render)
   const input = window.locator('[data-testid="assistant-message-input"]');
   await expect(input).toBeVisible({ timeout: 5_000 });
   await expect(input).toBeEnabled({ timeout: 5_000 });
 });
 
-// ─── Test 2: Mode toggle switching ───────────────────────────────────────────
+// ─── 3: Welcome state shows suggestion chips ──────────────────────────────
+
+test('welcome state shows suggestion chips', async () => {
+  await resetAssistant(window);
+
+  const emptyFeed = window.locator('[data-testid="assistant-feed-empty"]');
+  await expect(emptyFeed).toBeVisible({ timeout: 5_000 });
+
+  const chips = window.locator('[data-testid="suggested-prompt"]');
+  const count = await chips.count();
+  expect(count).toBeGreaterThanOrEqual(4);
+});
+
+// ─── 4: Header shows status and controls ──────────────────────────────────
+
+test('header shows status line and controls', async () => {
+  await openAssistantPanel(window);
+
+  const header = window.locator('[data-testid="assistant-header"]');
+  await expect(header).toBeVisible({ timeout: 5_000 });
+
+  const status = window.locator('[data-testid="assistant-status"]');
+  await expect(status).toBeVisible({ timeout: 5_000 });
+
+  const modeToggle = window.locator('[data-testid="mode-toggle"]');
+  await expect(modeToggle).toBeVisible({ timeout: 5_000 });
+
+  const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
+  await expect(resetBtn).toBeVisible({ timeout: 5_000 });
+});
+
+// ─── 5: Mode toggle switches between all three modes ─────────────────────
 
 test('mode toggle switches between all three modes', async () => {
   await openAssistantPanel(window);
 
-  // Default should be headless (Chat)
-  const headlessBtn = window.locator('[data-testid="mode-headless"]');
-  await expect(headlessBtn).toBeVisible({ timeout: 5_000 });
-
-  // Switch to structured mode
+  // Switch to structured
   await switchMode(window, 'structured');
   const structuredBtn = window.locator('[data-testid="mode-structured"]');
-  // The active mode button should have the accent background class
   await expect(structuredBtn).toHaveClass(/bg-ctp-accent/, { timeout: 5_000 });
 
-  // Switch to interactive mode
+  // Switch to interactive
   await switchMode(window, 'interactive');
   const interactiveBtn = window.locator('[data-testid="mode-interactive"]');
   await expect(interactiveBtn).toHaveClass(/bg-ctp-accent/, { timeout: 5_000 });
 
   // Switch back to headless
   await switchMode(window, 'headless');
+  const headlessBtn = window.locator('[data-testid="mode-headless"]');
   await expect(headlessBtn).toHaveClass(/bg-ctp-accent/, { timeout: 5_000 });
 });
 
-// ─── Test 3: Headless mode launch and response ──────────────────────────────
+// ─── 6: Panel toggle open/close cycle ─────────────────────────────────────
 
-test('assistant launches in headless mode and responds', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
+test('panel toggles open and closed correctly', async () => {
+  // Ensure closed first
+  await closeAssistantPanel(window);
+
+  const assistantView = window.locator('[data-testid="assistant-view"]');
+  await expect(assistantView).not.toBeVisible({ timeout: 5_000 });
+
+  // Open
   await openAssistantPanel(window);
+  await expect(assistantView).toBeVisible({ timeout: 5_000 });
+
+  // Close
+  await closeAssistantPanel(window);
+  await expect(assistantView).not.toBeVisible({ timeout: 5_000 });
+
+  // Re-open (idempotent check)
+  await openAssistantPanel(window);
+  await expect(assistantView).toBeVisible({ timeout: 5_000 });
+});
+
+// ─── 7: Reset clears conversation and shows welcome ───────────────────────
+
+test('reset button clears conversation and shows welcome state', async () => {
+  await openAssistantPanel(window);
+
+  const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
+  await resetBtn.click();
+
+  const emptyFeed = window.locator('[data-testid="assistant-feed-empty"]');
+  await expect(emptyFeed).toBeVisible({ timeout: 10_000 });
+
+  const chips = window.locator('[data-testid="suggested-prompt"]');
+  const count = await chips.count();
+  expect(count).toBeGreaterThanOrEqual(1);
+});
+
+// ─── 8: Input bar is functional ───────────────────────────────────────────
+
+test('input bar accepts text and has send button', async () => {
+  await openAssistantPanel(window);
+
+  const input = window.locator('[data-testid="assistant-message-input"]');
+  await expect(input).toBeVisible({ timeout: 5_000 });
+  await expect(input).toBeEnabled({ timeout: 5_000 });
+
+  // Type something
+  await input.fill('test message');
+  await expect(input).toHaveValue('test message');
+
+  // Send button should be visible
+  const sendBtn = window.locator('[data-testid="assistant-send-button"]');
+  await expect(sendBtn).toBeVisible({ timeout: 5_000 });
+
+  // Clear the input to avoid side effects
+  await input.fill('');
+});
+
+// ─── 9: Suggestion chip populates input ───────────────────────────────────
+
+test('clicking suggestion chip sends message', async () => {
+  await resetAssistant(window);
+
+  const chip = window.locator('[data-testid="suggested-prompt"]').first();
+  await expect(chip).toBeVisible({ timeout: 5_000 });
+
+  // Click the chip — it should send the message
+  await chip.click();
+
+  // User message should appear in feed (chip text becomes user message)
+  const userMsg = window.locator('[data-testid="user-message"]').first();
+  await expect(userMsg).toBeVisible({ timeout: 10_000 });
+
+  // No render errors from the interaction
+  expect(pageErrors).toHaveLength(0);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ORCHESTRATOR TESTS — Require live orchestrator (tests 10-15)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── 10: Headless mode launch and response ────────────────────────────────
+
+test('headless mode: sends message and gets response', async () => {
+  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
+  await resetAssistant(window);
   await switchMode(window, 'headless');
 
-  // Send a simple message
   await sendAssistantMessage(window, 'What is Clubhouse?');
 
-  // Verify user message appears in feed
   const userMsg = window.locator('[data-testid="user-message"]').first();
   await expect(userMsg).toBeVisible({ timeout: 5_000 });
   await expect(userMsg).toContainText('What is Clubhouse?');
 
-  // Wait for assistant response (allow up to 60s for orchestrator cold-start)
   const response = await waitForAssistantResponse(window, 60_000);
   expect(response.length).toBeGreaterThan(0);
 });
 
-// ─── Test 4: Structured mode streaming ──────────────────────────────────────
+// ─── 11: Structured mode streaming ────────────────────────────────────────
 
-test('assistant launches in structured mode with streaming', async () => {
+test('structured mode: sends message and gets streaming response', async () => {
   test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
-  // Reset conversation and wait for welcome state
-  const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
-  await resetBtn.click();
-  await expect(window.locator('[data-testid="assistant-feed-empty"]')).toBeVisible({ timeout: 10_000 });
-
+  await resetAssistant(window);
   await switchMode(window, 'structured');
 
-  // Send a message
   await sendAssistantMessage(window, 'Say hello in one sentence.');
 
-  // Verify user message appears
   const userMsg = window.locator('[data-testid="user-message"]').last();
   await expect(userMsg).toBeVisible({ timeout: 5_000 });
 
-  // Wait for streaming response — the assistant-message element should appear
-  // as tokens stream in
   const response = await waitForAssistantResponse(window, 60_000);
   expect(response.length).toBeGreaterThan(0);
 });
 
-// ─── Test 5: Tool execution shows action card ───────────────────────────────
+// ─── 12: Tool execution shows action card ─────────────────────────────────
 
-test('tool execution produces action card or project-related response', async () => {
+test('headless mode: tool call produces action card or project response', async () => {
   test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
-  // Reset conversation and wait for welcome state
-  const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
-  await resetBtn.click();
-  await expect(window.locator('[data-testid="assistant-feed-empty"]')).toBeVisible({ timeout: 10_000 });
-
+  await resetAssistant(window);
   await switchMode(window, 'headless');
 
-  // Ask something that should trigger a tool call
   await sendAssistantMessage(window, 'Use the list_projects tool to show my projects.');
 
-  // Wait for a response — either an action card (tool was called and rendered)
-  // or an assistant message (tool result was inlined into text)
-  const actionCard = window.locator('[data-testid="assistant-action-card"]');
-  const assistantMsg = window.locator('[data-testid="assistant-message"]');
+  await waitForFeedContent(window, 60_000);
 
-  // First, wait for any feed content to appear
-  const feedContent = window.locator(
-    '[data-testid="assistant-action-card"], [data-testid="assistant-message"]',
-  ).first();
-  await feedContent.waitFor({ state: 'visible', timeout: 60_000 });
+  const actionCards = window.locator('[data-testid="assistant-action-card"]');
+  const assistantMsgs = window.locator('[data-testid="assistant-message"]');
+  const actionCardCount = await actionCards.count();
 
-  // Verify: either an action card appeared (tool was visibly called) OR
-  // the response text references projects/tools (tool was called but result
-  // was inlined). A pure hallucinated response with no project context fails.
-  const actionCardCount = await actionCard.count();
   if (actionCardCount > 0) {
-    // Action card present — tool execution is visible. Pass.
     expect(actionCardCount).toBeGreaterThan(0);
   } else {
-    // No action card — verify the response content references projects
-    const responseText = (await assistantMsg.first().textContent()) || '';
-    const mentionsProjects = /project/i.test(responseText);
-    expect(mentionsProjects).toBe(true);
+    const responseText = (await assistantMsgs.first().textContent()) || '';
+    expect(/project/i.test(responseText)).toBe(true);
   }
 });
 
-// ─── Test 6: Basic conversation with non-empty response ─────────────────────
+// ─── 13: Meaningful conversation response ─────────────────────────────────
 
-test('basic conversation returns meaningful response', async () => {
+test('headless mode: returns meaningful response to open question', async () => {
   test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
-  // Reset conversation and wait for welcome state
-  const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
-  await resetBtn.click();
-  await expect(window.locator('[data-testid="assistant-feed-empty"]')).toBeVisible({ timeout: 10_000 });
-
+  await resetAssistant(window);
   await switchMode(window, 'headless');
 
-  // Ask a question the assistant should be able to answer
   await sendAssistantMessage(window, 'What can you help me with?');
 
-  // Wait for response
   const response = await waitForAssistantResponse(window, 60_000);
-
-  // Response should be meaningful (not just a few characters)
   expect(response.length).toBeGreaterThan(10);
+});
+
+// ─── 14: Search help integration ──────────────────────────────────────────
+
+test('headless mode: assistant uses search_help for feature questions', async () => {
+  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
+  await resetAssistant(window);
+  await switchMode(window, 'headless');
+
+  await sendAssistantMessage(window, 'What is a canvas and how do I create one?');
+
+  await waitForFeedContent(window, 60_000);
+
+  // Should get either an action card (search_help tool) or a response about canvases
+  const assistantMsgs = window.locator('[data-testid="assistant-message"]');
+  const actionCards = window.locator('[data-testid="assistant-action-card"]');
+
+  const msgCount = await assistantMsgs.count();
+  const cardCount = await actionCards.count();
+  expect(msgCount + cardCount).toBeGreaterThan(0);
+
+  if (msgCount > 0) {
+    const responseText = (await assistantMsgs.first().textContent()) || '';
+    expect(/canvas/i.test(responseText)).toBe(true);
+  }
+});
+
+// ─── 15: Multi-turn conversation ──────────────────────────────────────────
+
+test('headless mode: multi-turn conversation retains context', async () => {
+  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
+  await resetAssistant(window);
+  await switchMode(window, 'headless');
+
+  // First message
+  await sendAssistantMessage(window, 'My name is TestUser.');
+  await waitForAssistantResponse(window, 60_000);
+
+  // Follow-up that requires context
+  await sendAssistantMessage(window, 'What is my name?');
+
+  // Wait for the second response
+  const allMsgs = window.locator('[data-testid="assistant-message"]');
+  // Should have at least 2 assistant messages now
+  await expect(allMsgs.nth(1)).toBeVisible({ timeout: 60_000 });
+
+  const secondResponse = (await allMsgs.nth(1).textContent()) || '';
+  expect(secondResponse.length).toBeGreaterThan(0);
+  // The response should reference "TestUser" if context is retained
+  expect(/testuser/i.test(secondResponse)).toBe(true);
 });

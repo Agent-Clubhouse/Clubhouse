@@ -41,6 +41,13 @@ export const manifest: PluginManifest = {
         description: 'Render all agent-to-agent wires as bidirectional by default, even when only one direction is bound.',
         default: false,
       },
+      {
+        key: 'create-bidirectional-wires',
+        type: 'boolean',
+        label: 'Create Bidirectional Wires',
+        description: 'When wiring two agents, automatically create the reverse direction as well.',
+        default: true,
+      },
     ],
     help: {
       topics: [

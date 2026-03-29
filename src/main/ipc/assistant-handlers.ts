@@ -455,9 +455,17 @@ async function spawnStructured(
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
 
+  // Build MCP CLI args for providers that need them (ensures MCP tools are
+  // available even when the CLI doesn't read project-level .mcp.json)
+  let extraArgs: string[] | undefined;
+  if (mcpPort > 0 && provider.buildMcpArgs) {
+    const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
+    extraArgs = provider.buildMcpArgs(serverDef);
+  }
+
   await structuredManager.startStructuredSession(agentId, adapter, {
     mission, systemPrompt, model, cwd: workspace,
-    env: structuredEnv, freeAgentMode: true, permissionMode,
+    env: structuredEnv, freeAgentMode: true, permissionMode, extraArgs,
   }, (exitAgentId) => {
     appLog(LOG_NS, 'info', 'Structured session ended', { meta: { agentId: exitAgentId } });
     configPipeline.restoreForAgent(exitAgentId);

@@ -77,6 +77,8 @@ interface CanvasWorkspaceProps {
   onMinimapAutoHideChange: (value: boolean) => void;
   /** When true, render all agent-to-agent wires as bidirectional. */
   bidirectionalWires?: boolean;
+  /** When true, auto-create reverse direction for agent-to-agent wires. */
+  createBidirectionalWires?: boolean;
 }
 
 export function CanvasWorkspace({
@@ -109,6 +111,7 @@ export function CanvasWorkspace({
   minimapAutoHide,
   onMinimapAutoHideChange,
   bidirectionalWires,
+  createBidirectionalWires,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -172,7 +175,7 @@ export function CanvasWorkspace({
     onAddWireDefinition(entry as McpBindingEntry);
   }, [onAddWireDefinition]);
 
-  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef, handleZoneWire, handleAddWireDef);
+  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef, handleZoneWire, handleAddWireDef, createBidirectionalWires);
   const [wirePopover, setWirePopover] = useState<{ binding: McpBindingEntry; x: number; y: number } | null>(null);
 
   // ── Zone state ──────────────────────────────────────────────────

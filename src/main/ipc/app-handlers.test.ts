@@ -213,10 +213,42 @@ describe('app-handlers', () => {
 
   // --- Core ---
 
-  it('OPEN_EXTERNAL_URL delegates to shell.openExternal', async () => {
+  it('OPEN_EXTERNAL_URL delegates to shell.openExternal for https', async () => {
     const handler = handleHandlers.get(IPC.APP.OPEN_EXTERNAL_URL)!;
     await handler({}, 'https://example.com');
     expect(shell.openExternal).toHaveBeenCalledWith('https://example.com');
+  });
+
+  it('OPEN_EXTERNAL_URL allows http URLs', async () => {
+    const handler = handleHandlers.get(IPC.APP.OPEN_EXTERNAL_URL)!;
+    await handler({}, 'http://localhost:3000');
+    expect(shell.openExternal).toHaveBeenCalledWith('http://localhost:3000');
+  });
+
+  it('OPEN_EXTERNAL_URL allows mailto URLs', async () => {
+    const handler = handleHandlers.get(IPC.APP.OPEN_EXTERNAL_URL)!;
+    await handler({}, 'mailto:user@example.com');
+    expect(shell.openExternal).toHaveBeenCalledWith('mailto:user@example.com');
+  });
+
+  it('OPEN_EXTERNAL_URL rejects file: protocol', () => {
+    const handler = handleHandlers.get(IPC.APP.OPEN_EXTERNAL_URL)!;
+    expect(() => handler({}, 'file:///etc/passwd')).toThrow('Blocked protocol');
+  });
+
+  it('OPEN_EXTERNAL_URL rejects javascript: protocol', () => {
+    const handler = handleHandlers.get(IPC.APP.OPEN_EXTERNAL_URL)!;
+    expect(() => handler({}, 'javascript:alert(1)')).toThrow('Blocked protocol');
+  });
+
+  it('OPEN_EXTERNAL_URL rejects data: protocol', () => {
+    const handler = handleHandlers.get(IPC.APP.OPEN_EXTERNAL_URL)!;
+    expect(() => handler({}, 'data:text/html,<script>alert(1)</script>')).toThrow('Blocked protocol');
+  });
+
+  it('OPEN_EXTERNAL_URL rejects invalid URLs', () => {
+    const handler = handleHandlers.get(IPC.APP.OPEN_EXTERNAL_URL)!;
+    expect(() => handler({}, 'not-a-url')).toThrow('Invalid URL');
   });
 
   it('GET_VERSION returns app version', async () => {

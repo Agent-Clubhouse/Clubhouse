@@ -9,6 +9,35 @@ import { bindingManager } from '../binding-manager';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 
+/**
+ * Read-only expressions that are safe to auto-allow without user confirmation.
+ * Only simple property accesses and side-effect-free DOM queries qualify.
+ */
+const SAFE_EXPRESSION_PATTERNS: RegExp[] = [
+  // Simple property reads from well-known objects
+  /^document\.(title|URL|referrer|readyState|characterSet|contentType|domain|lastModified)$/,
+  /^document\.body\.(innerText|textContent|innerHTML|outerHTML)$/,
+  /^document\.documentElement\.(innerText|textContent|innerHTML|outerHTML)$/,
+  /^window\.location\.(href|hostname|pathname|protocol|search|hash|origin|port|host)$/,
+  /^(window\.)?location\.(href|hostname|pathname|protocol|search|hash|origin|port|host)$/,
+  /^document\.head\.innerHTML$/,
+  // querySelector/querySelectorAll with a string argument (read-only DOM query)
+  /^document\.querySelector(All)?\('[^']*'\)\.(innerText|textContent|innerHTML|outerHTML|value|checked|src|href|id|className|tagName|getAttribute\('[^']*'\))$/,
+  /^document\.querySelector(All)?\("[^"]*"\)\.(innerText|textContent|innerHTML|outerHTML|value|checked|src|href|id|className|tagName|getAttribute\("[^"]*"\))$/,
+  // Simple querySelectorAll length
+  /^document\.querySelectorAll\('[^']*'\)\.length$/,
+  /^document\.querySelectorAll\("[^"]*"\)\.length$/,
+  // getElementById
+  /^document\.getElementById\('[^']*'\)\.(innerText|textContent|innerHTML|value|checked|src|href|id|className)$/,
+  /^document\.getElementById\("[^"]*"\)\.(innerText|textContent|innerHTML|value|checked|src|href|id|className)$/,
+];
+
+/** Check if an expression is read-only and safe to auto-allow. */
+export function isSafeExpression(expression: string): boolean {
+  const trimmed = expression.trim();
+  return SAFE_EXPRESSION_PATTERNS.some(pattern => pattern.test(trimmed));
+}
+
 /** Map of widgetId → webContentsId for registered browser webviews. */
 const webviewRegistry = new Map<string, number>();
 
@@ -313,10 +342,11 @@ export function registerBrowserTools(): void {
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
 
-    // SEC-04: Require user confirmation before executing arbitrary JS
-    const truncated = expression.length > 500 ? expression.slice(0, 500) + '…' : expression;
-    const parentWindow = BrowserWindow.getAllWindows()[0] ?? null;
-    const { response } = await dialog.showMessageBox(parentWindow, {
+    // SEC-03: Read-only expressions skip the confirmation dialog
+    if (!isSafeExpression(expression)) {
+      const truncated = expression.length > 500 ? expression.slice(0, 500) + '…' : expression;
+      const parentWindow = BrowserWindow.getAllWindows()[0] ?? null;
+      const { response } = await dialog.showMessageBox(parentWindow, {
       type: 'warning',
       title: 'Agent JavaScript Execution',
       message: `Agent "${agentId}" wants to evaluate JavaScript in browser widget "${targetId}".`,
@@ -326,11 +356,12 @@ export function registerBrowserTools(): void {
       cancelId: 0,
     });
 
-    if (response !== 1) {
-      appLog('core:mcp', 'warn', 'User denied browser evaluate', {
-        meta: { agentId, targetId, expression: truncated },
-      });
-      return errorResult('User denied JavaScript execution');
+      if (response !== 1) {
+        appLog('core:mcp', 'warn', 'User denied browser evaluate', {
+          meta: { agentId, targetId, expression: truncated },
+        });
+        return errorResult('User denied JavaScript execution');
+      }
     }
 
     try {

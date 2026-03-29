@@ -23,11 +23,18 @@ import settingsNotifications from './content/settings-notifications.md';
 import settingsLogging from './content/settings-logging.md';
 import troubleshootingCommon from './content/troubleshooting-common.md';
 import troubleshootingSafeMode from './content/troubleshooting-safe-mode.md';
-import cookbookLongRunningJob from './content/cookbook-long-running-job.md';
-import cookbookUiWork from './content/cookbook-ui-work.md';
-import cookbookGroupProject from './content/cookbook-group-project.md';
-import cookbookSquad from './content/cookbook-squad.md';
-import cookbookDragRace from './content/cookbook-drag-race.md';
+import personaProjectManager from '../assistant/content/personas/project-manager.md';
+import personaQa from '../assistant/content/personas/qa.md';
+import personaUiLead from '../assistant/content/personas/ui-lead.md';
+import personaSlopDetector from '../assistant/content/personas/slop-detector.md';
+import personaExecutorPrOnly from '../assistant/content/personas/executor-pr-only.md';
+import personaExecutorMerge from '../assistant/content/personas/executor-merge.md';
+import personaDocUpdater from '../assistant/content/personas/doc-updater.md';
+import cookbookLongRunningJob from '../assistant/content/cookbooks/long-running-job.md';
+import cookbookUiWork from '../assistant/content/cookbooks/ui-work.md';
+import cookbookGroupProject from '../assistant/content/cookbooks/group-project.md';
+import cookbookSquad from '../assistant/content/cookbooks/squad.md';
+import cookbookDragRace from '../assistant/content/cookbooks/drag-race.md';
 
 export interface HelpTopic {
   id: string;
@@ -97,22 +104,35 @@ export const HELP_SECTIONS: HelpSection[] = [
     ],
   },
   {
-    id: 'cookbooks',
-    title: 'Project Cookbooks',
-    topics: [
-      { id: 'cookbook-long-running-job', title: 'Long-Running Job', content: cookbookLongRunningJob },
-      { id: 'cookbook-ui-work', title: 'UI Work', content: cookbookUiWork },
-      { id: 'cookbook-group-project', title: 'Group Project', content: cookbookGroupProject },
-      { id: 'cookbook-squad', title: 'Squad', content: cookbookSquad },
-      { id: 'cookbook-drag-race', title: 'Drag Race', content: cookbookDragRace },
-    ],
-  },
-  {
     id: 'troubleshooting',
     title: 'Troubleshooting',
     topics: [
       { id: 'troubleshooting-common', title: 'Common Issues', content: troubleshootingCommon },
       { id: 'troubleshooting-safe-mode', title: 'Safe Mode & Recovery', content: troubleshootingSafeMode },
+    ],
+  },
+  {
+    id: 'personas',
+    title: 'Agent Personas & Team Roles',
+    topics: [
+      { id: 'persona-project-manager', title: 'Project Manager / Coordinator', content: personaProjectManager },
+      { id: 'persona-qa', title: 'QA / Quality Control', content: personaQa },
+      { id: 'persona-ui-lead', title: 'UI / Design Lead', content: personaUiLead },
+      { id: 'persona-slop-detector', title: 'Slop Detector', content: personaSlopDetector },
+      { id: 'persona-executor-pr-only', title: 'Executor (PR Only)', content: personaExecutorPrOnly },
+      { id: 'persona-executor-merge', title: 'Executor (Full Merge)', content: personaExecutorMerge },
+      { id: 'persona-doc-updater', title: 'Documentation Updater', content: personaDocUpdater },
+    ],
+  },
+  {
+    id: 'cookbooks',
+    title: 'Cookbooks & Project Patterns',
+    topics: [
+      { id: 'cookbook-long-running-job', title: 'Long-Running Job', content: cookbookLongRunningJob },
+      { id: 'cookbook-ui-work', title: 'UI Work', content: cookbookUiWork },
+      { id: 'cookbook-group-project', title: 'Group Project (Multi-App)', content: cookbookGroupProject },
+      { id: 'cookbook-squad', title: 'Squad', content: cookbookSquad },
+      { id: 'cookbook-drag-race', title: 'Drag Race', content: cookbookDragRace },
     ],
   },
 ];

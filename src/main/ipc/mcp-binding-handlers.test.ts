@@ -3,7 +3,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   app: { getPath: () => '/tmp/clubhouse-test' },
-  BrowserWindow: { getAllWindows: () => [] },
+  BrowserWindow: {
+    getAllWindows: () => [],
+    fromWebContents: vi.fn(),
+  },
 }));
 
 vi.mock('../services/mcp-settings', () => ({
@@ -15,6 +18,7 @@ vi.mock('../services/clubhouse-mcp', () => ({
     bind: vi.fn(),
     unbind: vi.fn(),
     setInstructions: vi.fn(),
+    setDisabledTools: vi.fn(),
     getAllBindings: vi.fn(() => []),
     onChange: vi.fn(),
   },
@@ -39,6 +43,14 @@ vi.mock('../services/clubhouse-mcp/tools/agent-queue-tools', () => ({
   registerAgentQueueTools: vi.fn(),
 }));
 
+vi.mock('../services/clubhouse-mcp/tools/assistant-tools', () => ({
+  registerAssistantTools: vi.fn(),
+}));
+
+vi.mock('../services/clubhouse-mcp/canvas-command', () => ({
+  registerCanvasCommandHandler: vi.fn(),
+}));
+
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -51,7 +63,7 @@ vi.mock('../services/agent-registry', () => ({
   agentRegistry: { get: vi.fn() },
 }));
 
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { bindingManager } from '../services/clubhouse-mcp';
 import { agentRegistry } from '../services/agent-registry';
 import { registerMcpBindingHandlers, _resetHandlersForTesting } from './mcp-binding-handlers';
@@ -60,6 +72,7 @@ type HandlerFn = (...args: unknown[]) => unknown;
 const handlers = new Map<string, HandlerFn>();
 
 const mockGet = vi.mocked(agentRegistry.get);
+const mockFromWebContents = vi.mocked(BrowserWindow.fromWebContents);
 
 beforeEach(() => {
   handlers.clear();
@@ -70,9 +83,13 @@ beforeEach(() => {
   _resetHandlersForTesting();
   registerMcpBindingHandlers();
   mockGet.mockReset();
+  mockFromWebContents.mockReset();
+  // Default: sender is a valid app window
+  mockFromWebContents.mockReturnValue({} as any);
   vi.mocked(bindingManager.bind).mockClear();
   vi.mocked(bindingManager.unbind).mockClear();
   vi.mocked(bindingManager.setInstructions).mockClear();
+  vi.mocked(bindingManager.setDisabledTools).mockClear();
 });
 
 function getHandler(channel: string): HandlerFn {
@@ -85,7 +102,7 @@ function getHandler(channel: string): HandlerFn {
 
 const fakeEvent = { sender: { id: 1 } } as any;
 
-describe('SEC-05: MCP binding IPC authorization', () => {
+describe('SEC-06: MCP binding IPC authorization', () => {
   describe('BIND', () => {
     it('rejects bind for unregistered agent', () => {
       mockGet.mockReturnValue(undefined);
@@ -101,6 +118,15 @@ describe('SEC-05: MCP binding IPC authorization', () => {
       const target = { targetId: 'w1', targetKind: 'browser', label: 'Widget' };
       expect(() => handler(fakeEvent, 'agent-1', target)).not.toThrow();
       expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', target);
+    });
+
+    it('rejects bind from non-app-window sender (webview)', () => {
+      mockFromWebContents.mockReturnValue(null as any);
+      mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
+      const handler = getHandler('mcp-binding:bind');
+      const target = { targetId: 'w1', targetKind: 'browser', label: 'Widget' };
+      expect(() => handler(fakeEvent, 'agent-1', target)).toThrow('unauthorized caller');
+      expect(bindingManager.bind).not.toHaveBeenCalled();
     });
   });
 
@@ -118,6 +144,14 @@ describe('SEC-05: MCP binding IPC authorization', () => {
       expect(() => handler(fakeEvent, 'agent-2', 'target-1')).not.toThrow();
       expect(bindingManager.unbind).toHaveBeenCalledWith('agent-2', 'target-1');
     });
+
+    it('rejects unbind from non-app-window sender', () => {
+      mockFromWebContents.mockReturnValue(null as any);
+      mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
+      const handler = getHandler('mcp-binding:unbind');
+      expect(() => handler(fakeEvent, 'agent-2', 'target-1')).toThrow('unauthorized caller');
+      expect(bindingManager.unbind).not.toHaveBeenCalled();
+    });
   });
 
   describe('SET_INSTRUCTIONS', () => {
@@ -133,6 +167,38 @@ describe('SEC-05: MCP binding IPC authorization', () => {
       const handler = getHandler('mcp-binding:set-instructions');
       expect(() => handler(fakeEvent, 'agent-3', 'target-1', { key: 'val' })).not.toThrow();
       expect(bindingManager.setInstructions).toHaveBeenCalledWith('agent-3', 'target-1', { key: 'val' });
+    });
+
+    it('rejects setInstructions from non-app-window sender', () => {
+      mockFromWebContents.mockReturnValue(null as any);
+      mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
+      const handler = getHandler('mcp-binding:set-instructions');
+      expect(() => handler(fakeEvent, 'agent-3', 'target-1', { key: 'val' })).toThrow('unauthorized caller');
+      expect(bindingManager.setInstructions).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('SET_DISABLED_TOOLS', () => {
+    it('rejects setDisabledTools for unregistered agent', () => {
+      mockGet.mockReturnValue(undefined);
+      const handler = getHandler('mcp-binding:set-disabled-tools');
+      expect(() => handler(fakeEvent, 'unknown-agent', 'target-1', ['tool-a'])).toThrow('Agent not registered');
+      expect(bindingManager.setDisabledTools).not.toHaveBeenCalled();
+    });
+
+    it('allows setDisabledTools for registered agent', () => {
+      mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
+      const handler = getHandler('mcp-binding:set-disabled-tools');
+      expect(() => handler(fakeEvent, 'agent-4', 'target-1', ['tool-a'])).not.toThrow();
+      expect(bindingManager.setDisabledTools).toHaveBeenCalledWith('agent-4', 'target-1', ['tool-a']);
+    });
+
+    it('rejects setDisabledTools from non-app-window sender', () => {
+      mockFromWebContents.mockReturnValue(null as any);
+      mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
+      const handler = getHandler('mcp-binding:set-disabled-tools');
+      expect(() => handler(fakeEvent, 'agent-4', 'target-1', ['tool-a'])).toThrow('unauthorized caller');
+      expect(bindingManager.setDisabledTools).not.toHaveBeenCalled();
     });
   });
 });
