@@ -165,6 +165,7 @@ export const IPC = {
     NOTIFICATION_CLICKED: 'app:notification-clicked',
     GET_THEME: 'app:get-theme',
     SAVE_THEME: 'app:save-theme',
+    THEME_CHANGED: 'app:theme-changed',
     UPDATE_TITLE_BAR_OVERLAY: 'app:update-title-bar-overlay',
     GET_ORCHESTRATOR_SETTINGS: 'app:get-orchestrator-settings',
     SAVE_ORCHESTRATOR_SETTINGS: 'app:save-orchestrator-settings',

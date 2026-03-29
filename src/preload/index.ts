@@ -657,6 +657,11 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_THEME),
     saveTheme: (settings: { themeId: string }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_THEME, settings),
+    onThemeChanged: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC.APP.THEME_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.THEME_CHANGED, listener); };
+    },
     updateTitleBarOverlay: (colors: { color: string; symbolColor: string }) =>
       ipcRenderer.invoke(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, colors),
     getOrchestratorSettings: () =>

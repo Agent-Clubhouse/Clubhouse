@@ -168,6 +168,10 @@ describe('initApp', () => {
     expect(initPluginUpdateListener).toHaveBeenCalled();
   });
 
+  it('should subscribe to theme changes from main process', () => {
+    expect(window.clubhouse.app.onThemeChanged).toHaveBeenCalled();
+  });
+
   it('should check What\'s New after 1s delay', () => {
     expect(mockCheckWhatsNew).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1000);

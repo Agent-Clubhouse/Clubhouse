@@ -11,18 +11,21 @@
 
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { registerToolTemplate } from '../tool-registry';
 import * as projectStore from '../../project-store';
 import { listDurable, createDurable, updateDurable, updateDurableConfig, deleteDurable } from '../../agent-config';
 import { getAvailableOrchestrators, checkAvailability, resolveOrchestrator } from '../../agent-system';
 import { appLog } from '../../log-service';
+import * as themeService from '../../theme-service';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { sendCanvasCommand } from '../canvas-command';
 import { computeLayout } from '../canvas-layout';
 import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
 import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
 import { getPersonaTemplate, getPersonaIds } from '../../../../renderer/features/assistant/content/personas';
+import { IPC } from '../../../../shared/ipc-channels';
+import { BUILTIN_THEMES } from '../../../../renderer/themes';
 
 /**
  * Register all assistant MCP tools (read + write).
@@ -394,6 +397,37 @@ registerToolTemplate(
         content: [{ type: 'text', text: '{}' }],
       };
     }
+  },
+);
+
+registerToolTemplate(
+  'assistant',
+  'list_themes',
+  {
+    description:
+      'List all available themes with their IDs, names, and types (dark/light). ' +
+      'Use the theme ID with update_settings(key: "theme", value: "<id>") to change the theme.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  async () => {
+    const currentSettings = themeService.getSettings() || { themeId: 'catppuccin-mocha' };
+    const themes = Object.values(BUILTIN_THEMES).map((t) => ({
+      id: t.id,
+      name: t.name,
+      type: t.type,
+    }));
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          currentTheme: currentSettings.themeId,
+          availableThemes: themes,
+        }, null, 2),
+      }],
+    };
   },
 );
 
@@ -859,6 +893,27 @@ registerToolTemplate(
     const key = args.key as string;
     const rawValue = args.value as string;
     try {
+      // Try to parse the value as JSON (for booleans, numbers, objects)
+      let value: unknown;
+      try {
+        value = JSON.parse(rawValue);
+      } catch {
+        value = rawValue; // Use as plain string
+      }
+
+      // Theme changes use the dedicated theme service and notify the renderer
+      if (key === 'theme' || key === 'themeId') {
+        const themeId = String(value);
+        await themeService.saveSettings({ themeId } as any);
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send(IPC.APP.THEME_CHANGED);
+        }
+        return {
+          content: [{ type: 'text', text: `Theme updated to "${themeId}". Applied immediately.` }],
+        };
+      }
+
+      // All other settings go to the general settings file
       const settingsPath = path.join(app.getPath('userData'), 'settings.json');
       let settings: Record<string, unknown> = {};
       try {
@@ -866,14 +921,6 @@ registerToolTemplate(
         settings = JSON.parse(raw);
       } catch {
         // File doesn't exist or is invalid — start fresh
-      }
-
-      // Try to parse the value as JSON (for booleans, numbers, objects)
-      let value: unknown;
-      try {
-        value = JSON.parse(rawValue);
-      } catch {
-        value = rawValue; // Use as plain string
       }
 
       settings[key] = value;

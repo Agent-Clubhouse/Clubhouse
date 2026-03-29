@@ -64,6 +64,15 @@ vi.mock('../canvas-command', () => ({
   sendCanvasCommand: (...a: unknown[]) => mockSendCanvasCommand(...a),
 }));
 
+const { mockThemeGetSettings, mockThemeSave } = vi.hoisted(() => ({
+  mockThemeGetSettings: vi.fn().mockReturnValue({ themeId: 'catppuccin-mocha' }),
+  mockThemeSave: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('../../theme-service', () => ({
+  getSettings: (...a: unknown[]) => mockThemeGetSettings(...a),
+  saveSettings: (...a: unknown[]) => mockThemeSave(...a),
+}));
+
 import { registerAssistantTools } from './assistant-tools';
 import { _resetForTesting, callTool, getScopedToolList } from '../tool-registry';
 import { bindingManager } from '..';
@@ -110,6 +119,7 @@ describe('assistant-tools', () => {
     expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__get_orchestrators`);
     expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__search_help`);
     expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__get_settings`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__list_themes`);
     // Write tools
     expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__add_project`);
     expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__remove_project`);
@@ -434,13 +444,55 @@ describe('assistant-tools', () => {
     }
   });
 
-  it('update_settings writes to settings file', async () => {
+  it('update_settings writes non-theme keys to settings file', async () => {
     const result = await callAssistantTool('update_settings', {
-      key: 'theme',
-      value: '"dark"',
+      key: 'soundEnabled',
+      value: 'true',
     });
     if (!result.isError) {
       expect(result.content[0].text).toContain('updated');
+    }
+  });
+
+  it('update_settings with theme key uses themeService and notifies renderer', async () => {
+    mockThemeSave.mockClear();
+    const result = await callAssistantTool('update_settings', {
+      key: 'theme',
+      value: '"nord"',
+    });
+    expect(result.isError).toBeFalsy();
+    expect(mockThemeSave).toHaveBeenCalledWith({ themeId: 'nord' });
+    expect(result.content[0].text).toContain('Theme updated to "nord"');
+    expect(result.content[0].text).toContain('Applied immediately');
+  });
+
+  it('update_settings with themeId key also uses themeService', async () => {
+    mockThemeSave.mockClear();
+    const result = await callAssistantTool('update_settings', {
+      key: 'themeId',
+      value: '"dracula"',
+    });
+    expect(result.isError).toBeFalsy();
+    expect(mockThemeSave).toHaveBeenCalledWith({ themeId: 'dracula' });
+  });
+
+  it('list_themes returns available themes with current theme', async () => {
+    const result = await callAssistantTool('list_themes');
+    expect(result.isError).toBeFalsy();
+    const data = JSON.parse(result.content[0].text);
+    expect(data.currentTheme).toBe('catppuccin-mocha');
+    expect(data.availableThemes).toBeInstanceOf(Array);
+    expect(data.availableThemes.length).toBeGreaterThanOrEqual(9);
+    const ids = data.availableThemes.map((t: any) => t.id);
+    expect(ids).toContain('catppuccin-mocha');
+    expect(ids).toContain('cyberpunk');
+    expect(ids).toContain('nord');
+    // Each theme has id, name, type
+    for (const theme of data.availableThemes) {
+      expect(theme).toHaveProperty('id');
+      expect(theme).toHaveProperty('name');
+      expect(theme).toHaveProperty('type');
+      expect(['dark', 'light']).toContain(theme.type);
     }
   });
 

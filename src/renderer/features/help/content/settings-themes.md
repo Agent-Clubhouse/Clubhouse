@@ -18,6 +18,7 @@ Customize how Clubhouse looks: themes, terminal colors, and display preferences.
 | **Dracula** | Dark, vivid purples and pinks |
 | **Tokyo Night** | Dark, cool blue tones |
 | **Gruvbox Dark** | Dark, warm retro earth tones |
+| **Cyberpunk** | Dark, neon-soaked futuristic |
 
 ## Terminal Colors
 
