@@ -19,6 +19,8 @@ import { manifest as groupProjectManifest } from './group-project/manifest';
 import * as groupProjectModule from './group-project/main';
 import { manifest as agentQueueManifest } from './agent-queue/manifest';
 import * as agentQueueModule from './agent-queue/main';
+import { manifest as stickyNoteManifest } from './sticky-note/manifest';
+import * as stickyNoteModule from './sticky-note/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -49,6 +51,7 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: canvasManifest, module: canvasModule },
     { manifest: groupProjectManifest, module: groupProjectModule },
     { manifest: agentQueueManifest, module: agentQueueModule },
+    { manifest: stickyNoteManifest, module: stickyNoteModule },
   ];
 
   if (experimentalFlags.review) {
