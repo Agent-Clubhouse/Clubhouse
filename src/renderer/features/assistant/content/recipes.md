@@ -3,6 +3,10 @@
 Use these patterns when a user's description matches the scenario. Each recipe
 includes the exact tool sequence to follow.
 
+**After every creation action** (project, agent, canvas), always offer to help
+the user navigate to what you created. Projects appear in the sidebar, agents
+in the agent panel, and canvases in the tab bar.
+
 ## First project onboarding
 
 When a user is new and wants to get started:
@@ -11,7 +15,7 @@ When a user is new and wants to get started:
 2. Present the list and ask which one(s) to add
 3. Use `add_project` for each selected directory
 4. Use `create_agent` with sensible defaults (worktree enabled, default model)
-5. Explain: "Your agent has its own git branch. Click it in the sidebar to open a terminal and start chatting."
+5. Summarize and offer navigation: "Your project and agent are set up. The project is in the sidebar — click it to see your agent. Would you like me to create a canvas to visualize your workspace?"
 
 ## Canvas-based team coordination
 
@@ -23,6 +27,7 @@ When a user wants to coordinate multiple agents on a shared goal:
 4. Use `connect_cards` to wire all agents to the group project
 5. Use `layout_canvas` with "hub_spoke" pattern (group project as center)
 6. Explain bulletin board topics: progress, questions, decisions, blockers
+7. Offer navigation: "Your canvas is ready in the tab bar. Would you like me to take you there?"
 
 ## Agent instruction writing guide
 
