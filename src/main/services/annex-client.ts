@@ -1016,6 +1016,70 @@ export function requestShoulderTap(
   );
 }
 
+/**
+ * Delete a specific message from a satellite's group project bulletin board.
+ */
+export function requestDeleteMessage(
+  fingerprint: string,
+  groupProjectId: string,
+  topic: string,
+  messageId: string,
+): Promise<unknown> {
+  return satelliteHttpsRequest(
+    fingerprint,
+    'DELETE',
+    `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}/messages/${encodeURIComponent(messageId)}`,
+  );
+}
+
+/**
+ * Delete an entire topic from a satellite's group project bulletin board.
+ */
+export function requestDeleteTopic(
+  fingerprint: string,
+  groupProjectId: string,
+  topic: string,
+): Promise<unknown> {
+  return satelliteHttpsRequest(
+    fingerprint,
+    'DELETE',
+    `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}`,
+  );
+}
+
+/**
+ * Set topic protection on a satellite's group project bulletin board.
+ */
+export function requestSetTopicProtection(
+  fingerprint: string,
+  groupProjectId: string,
+  topic: string,
+  isProtected: boolean,
+): Promise<unknown> {
+  return satelliteHttpsRequest(
+    fingerprint,
+    'PATCH',
+    `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}/protection`,
+    { isProtected },
+  );
+}
+
+/**
+ * Inject a message into an agent's PTY on a satellite (with proper chunked paste).
+ */
+export function requestInjectMessage(
+  fingerprint: string,
+  agentId: string,
+  message: string,
+): Promise<unknown> {
+  return satelliteHttpsRequest(
+    fingerprint,
+    'POST',
+    '/api/v1/inject-message',
+    { agentId, message },
+  );
+}
+
 export function getDiscoveredServices(): DiscoveredService[] {
   return Array.from(discoveredServices.values());
 }
@@ -1026,7 +1090,7 @@ export function getDiscoveredServices(): DiscoveredService[] {
 
 function satelliteHttpsRequest(
   fingerprint: string,
-  method: 'GET' | 'POST' | 'PATCH',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   urlPath: string,
   body?: Record<string, unknown>,
 ): Promise<unknown> {

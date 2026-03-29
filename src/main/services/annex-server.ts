@@ -24,11 +24,13 @@ import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } fr
 import { groupProjectRegistry } from './group-project-registry';
 import { getBulletinBoard } from './group-project-bulletin';
 import { executeShoulderTap } from './group-project-shoulder-tap';
+import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import * as fileService from './file-service';
 import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
-import { isSessionCapable } from '../orchestrators';
+import { isSessionCapable, getProvider } from '../orchestrators';
+import { writeChunkedBracketedPaste, submitAfterPaste } from './clubhouse-mcp/tools/agent-tools';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, listSessions, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -1824,6 +1826,98 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         sendJson(res, 200, result);
       } catch (err) {
         sendJson(res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
+      }
+    });
+    return;
+  }
+
+  // DELETE /api/v1/group-projects/:id/bulletin/topics/:topic/messages/:msgId (destructive — requires mTLS)
+  const gpDeleteMsgMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/messages\/([^/]+)$/);
+  if (method === 'DELETE' && gpDeleteMsgMatch) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpDeleteMsgMatch[1]);
+    const topic = decodeURIComponent(gpDeleteMsgMatch[2]);
+    const msgId = decodeURIComponent(gpDeleteMsgMatch[3]);
+    try {
+      const board = getBulletinBoard(gpId);
+      const deleted = await board.deleteMessage(topic, msgId);
+      sendJson(res, 200, { deleted });
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
+    }
+    return;
+  }
+
+  // DELETE /api/v1/group-projects/:id/bulletin/topics/:topic (destructive — requires mTLS)
+  const gpDeleteTopicMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)$/);
+  if (method === 'DELETE' && gpDeleteTopicMatch) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpDeleteTopicMatch[1]);
+    const topic = decodeURIComponent(gpDeleteTopicMatch[2]);
+    try {
+      const board = getBulletinBoard(gpId);
+      const deleted = await board.deleteTopic(topic);
+      sendJson(res, 200, { deleted });
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
+    }
+    return;
+  }
+
+  // PATCH /api/v1/group-projects/:id/bulletin/topics/:topic/protection (destructive — requires mTLS)
+  const gpProtectionMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/protection$/);
+  if (method === 'PATCH' && gpProtectionMatch) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpProtectionMatch[1]);
+    const topic = decodeURIComponent(gpProtectionMatch[2]);
+    readJsonBody(req, res, async (body) => {
+      const isProtected = body.isProtected as boolean;
+      if (typeof isProtected !== 'boolean') {
+        sendJson(res, 400, { error: 'isProtected (boolean) is required' });
+        return;
+      }
+      const board = getBulletinBoard(gpId);
+      board.setTopicProtected(topic, isProtected);
+      sendJson(res, 200, { ok: true });
+    });
+    return;
+  }
+
+  // POST /api/v1/inject-message (destructive — requires mTLS)
+  const gpInjectMatch = url.match(/^\/api\/v1\/inject-message$/);
+  if (method === 'POST' && gpInjectMatch) {
+    if (requireMtls()) return;
+    readJsonBody(req, res, async (body) => {
+      const agentId = body.agentId as string;
+      const message = body.message as string;
+      if (!agentId || !message) {
+        sendJson(res, 400, { error: 'agentId and message are required' });
+        return;
+      }
+      const reg = agentRegistry.get(agentId);
+      if (!reg) {
+        sendJson(res, 404, { error: 'agent_not_found' });
+        return;
+      }
+      try {
+        if (reg.runtime === 'pty') {
+          const isMultiLine = message.includes('\n');
+          if (isMultiLine) {
+            const provider = getProvider(reg.orchestrator);
+            const timing = provider?.getPasteSubmitTiming()
+              ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
+            await writeChunkedBracketedPaste(agentId, message, timing.chunkSize, timing.chunkDelayMs);
+            await submitAfterPaste(agentId, timing);
+          } else {
+            ptyManager.write(agentId, message);
+            ptyManager.write(agentId, '\r');
+          }
+        } else if (reg.runtime === 'structured') {
+          await structuredManager.sendMessage(agentId, message);
+        }
+        sendJson(res, 200, { ok: true });
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'inject_failed' });
       }
     });
     return;

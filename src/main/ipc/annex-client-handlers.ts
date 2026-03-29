@@ -4,7 +4,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as annexClient from '../services/annex-client';
-import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg } from './validation';
 
 export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.GET_SATELLITES, () => {
@@ -300,6 +300,38 @@ export function registerAnnexClientHandlers(): void {
     [stringArg(), stringArg(), stringArg({ optional: true }), stringArg(), stringArg({ optional: true })],
     async (_event, satelliteId, groupProjectId, targetAgentId, message, sender) => {
       return annexClient.requestShoulderTap(satelliteId, groupProjectId, targetAgentId, message, sender);
+    },
+  ));
+
+  // Group Project proxy: delete bulletin message on satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_DELETE_MESSAGE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg()],
+    async (_event, satelliteId, groupProjectId, topic, messageId) => {
+      return annexClient.requestDeleteMessage(satelliteId, groupProjectId, topic, messageId);
+    },
+  ));
+
+  // Group Project proxy: delete bulletin topic on satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_DELETE_TOPIC, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    async (_event, satelliteId, groupProjectId, topic) => {
+      return annexClient.requestDeleteTopic(satelliteId, groupProjectId, topic);
+    },
+  ));
+
+  // Group Project proxy: set topic protection on satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_SET_TOPIC_PROTECTION, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), booleanArg()],
+    async (_event, satelliteId, groupProjectId, topic, isProtected) => {
+      return annexClient.requestSetTopicProtection(satelliteId, groupProjectId, topic, isProtected);
+    },
+  ));
+
+  // Group Project proxy: inject message into agent on satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_INJECT_MESSAGE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    async (_event, satelliteId, agentId, message) => {
+      return annexClient.requestInjectMessage(satelliteId, agentId, message);
     },
   ));
 }
