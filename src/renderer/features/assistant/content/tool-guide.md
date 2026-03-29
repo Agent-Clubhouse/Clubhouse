@@ -54,10 +54,15 @@ Agents may have custom icons set by the user (shown as a non-null `icon` field i
 
 ### Card types and dimensions
 
-- **Agent cards** (300x200): Represent durable agents. ALWAYS set agent_id + project_id.
-- **Zone cards** (600x400 recommended): Visual containers that group other cards. Use for team grouping.
-- **Anchor cards** (200x100): Text-only labels. CANNOT be wired. CANNOT coordinate. Just decorative text.
-- Default card spacing: 340px+ horizontal, 240px+ vertical.
+| Card type | Default size | Use for |
+|-----------|-------------|---------|
+| **Agent** | 300x200 | Durable agents. ALWAYS set agent_id + project_id. |
+| **Zone** | 600x400 | Visual containers that group other cards. |
+| **Anchor** | 200x100 | Text-only labels. CANNOT be wired or used for coordination. |
+
+**Spacing:** 340px+ horizontal, 260px+ vertical between cards.
+
+Cards are auto-staggered when you omit position — no need to calculate coordinates manually.
 
 ### IMPORTANT: Do NOT use anchors for coordination
 
@@ -85,11 +90,12 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 
 **Rules for canvas building:**
 1. ALWAYS provide `agent_id` and `project_id` when adding agent cards
-2. ALWAYS use `layout_canvas` after adding all cards — never manually position
+2. ALWAYS call `layout_canvas` after adding ALL cards — this auto-arranges them properly
 3. NEVER use anchors for coordination — use direct agent-to-agent wires
 4. Use zones only for visual grouping, not for functionality
 5. When connecting agents, wire them directly to each other (agent-to-agent)
 6. NEVER modify existing agents (update_agent, delete_agent) when building a canvas — only reference them via add_card
+7. You don't need to specify positions — cards are auto-staggered. Just add cards, then call layout_canvas.
 
 **Agent reconfiguration:**
 `list_agents` → `update_agent` → `write_agent_instructions`

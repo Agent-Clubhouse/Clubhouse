@@ -227,6 +227,8 @@ export interface StructuredSessionOpts {
   permissionMode?: 'auto' | 'skip-all';
   /** Shell command prefix prepended before the CLI binary */
   commandPrefix?: string;
+  /** Extra CLI args appended after generated args (e.g. MCP server config flags). */
+  extraArgs?: string[];
 }
 
 export interface StructuredAdapter {

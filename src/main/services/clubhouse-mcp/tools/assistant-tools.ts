@@ -869,12 +869,14 @@ registerToolTemplate('assistant', 'list_canvases', {
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
 });
 
+// Track card count per canvas for auto-staggering default positions
+const canvasCardCounters = new Map<string, number>();
+
 registerToolTemplate('assistant', 'add_card', {
   description:
     'Add a card to a canvas. Types: "agent" (for durable agents), "zone" (visual grouping container), "anchor" (text-only label). ' +
     'For agent cards, ALWAYS provide agent_id and project_id to bind a real agent. ' +
-    'IMPORTANT: Default card size is 300x200px. Space cards at least 340px apart horizontally. ' +
-    'Prefer using layout_canvas after adding cards instead of manual positioning. ' +
+    'Cards are auto-staggered when no position is specified. ALWAYS call layout_canvas after adding all cards. ' +
     'Anchors are just labels — they CANNOT be wired or used for coordination. Use group project cards for coordination.',
   inputSchema: {
     type: 'object',
@@ -884,20 +886,28 @@ registerToolTemplate('assistant', 'add_card', {
       display_name: { type: 'string', description: 'Display name for the card.' },
       agent_id: { type: 'string', description: 'For agent cards: the durable agent ID (from list_agents) to bind to this card.' },
       project_id: { type: 'string', description: 'For agent cards: the project ID the agent belongs to (from list_projects).' },
-      position_x: { type: 'number', description: 'X position (default 100).' },
-      position_y: { type: 'number', description: 'Y position (default 100).' },
+      position_x: { type: 'number', description: 'X position. Auto-staggered if omitted.' },
+      position_y: { type: 'number', description: 'Y position. Auto-staggered if omitted.' },
       width: { type: 'number', description: 'Width in pixels (default 300).' },
       height: { type: 'number', description: 'Height in pixels (default 200).' },
     },
     required: ['canvas_id', 'type'],
   },
 }, async (_t, _a, args) => {
+  const canvasId = args.canvas_id as string;
   const cmdArgs: Record<string, unknown> = {
-    canvas_id: args.canvas_id, type: args.type, display_name: args.display_name,
+    canvas_id: canvasId, type: args.type, display_name: args.display_name,
     agent_id: args.agent_id, project_id: args.project_id,
   };
   if (args.position_x !== undefined || args.position_y !== undefined) {
     cmdArgs.position = { x: args.position_x || 100, y: args.position_y || 100 };
+  } else {
+    // Auto-stagger: each card offset 340px horizontally, wrap to next row after 4
+    const idx = canvasCardCounters.get(canvasId) || 0;
+    const col = idx % 4;
+    const row = Math.floor(idx / 4);
+    cmdArgs.position = { x: 100 + col * 340, y: 100 + row * 260 };
+    canvasCardCounters.set(canvasId, idx + 1);
   }
   if (args.width !== undefined || args.height !== undefined) {
     cmdArgs.size = { w: args.width || 300, h: args.height || 200 };
