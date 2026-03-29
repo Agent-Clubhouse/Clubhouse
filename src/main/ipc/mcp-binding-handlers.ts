@@ -2,7 +2,7 @@
  * IPC handlers for MCP binding management.
  */
 
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
@@ -22,6 +22,18 @@ function assertAgentRegistered(agentId: string): void {
   if (!agentRegistry.get(agentId)) {
     appLog('core:mcp', 'warn', 'Rejected MCP binding request — agent not registered', { meta: { agentId } });
     throw new Error(`Agent not registered: ${agentId}`);
+  }
+}
+
+/**
+ * Verify the IPC caller is an application window, not a webview or detached WebContents.
+ * Prevents webview-hosted content (e.g. browser plugin pages) from calling binding APIs.
+ */
+function assertCallerIsAppWindow(event: Electron.IpcMainInvokeEvent): void {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) {
+    appLog('core:mcp', 'warn', 'Rejected MCP binding request — caller is not an application window');
+    throw new Error('MCP binding operation rejected — unauthorized caller');
   }
 }
 
@@ -60,7 +72,8 @@ export function registerMcpBindingHandlers(): void {
 
   ipcMain.handle(IPC.MCP_BINDING.BIND, withValidatedArgs(
     [stringArg(), objectArg<{ targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }>()],
-    (_event, agentId, target) => {
+    (event, agentId, target) => {
+      assertCallerIsAppWindow(event);
       assertAgentRegistered(agentId as string);
       bindingManager.bind(agentId as string, target as { targetId: string; targetKind: 'browser' | 'agent' | 'terminal'; label: string; agentName?: string; targetName?: string; projectName?: string });
       appLog('core:mcp', 'info', 'Binding created', {
@@ -77,7 +90,8 @@ export function registerMcpBindingHandlers(): void {
 
   ipcMain.handle(IPC.MCP_BINDING.UNBIND, withValidatedArgs(
     [stringArg(), stringArg()],
-    (_event, agentId, targetId) => {
+    (event, agentId, targetId) => {
+      assertCallerIsAppWindow(event);
       assertAgentRegistered(agentId as string);
       bindingManager.unbind(agentId as string, targetId as string);
       appLog('core:mcp', 'info', 'Binding removed', { meta: { agentId, targetId } });
@@ -86,7 +100,8 @@ export function registerMcpBindingHandlers(): void {
 
   ipcMain.handle(IPC.MCP_BINDING.SET_INSTRUCTIONS, withValidatedArgs(
     [stringArg(), stringArg(), objectArg<Record<string, string>>()],
-    (_event, agentId, targetId, instructions) => {
+    (event, agentId, targetId, instructions) => {
+      assertCallerIsAppWindow(event);
       assertAgentRegistered(agentId as string);
       bindingManager.setInstructions(agentId as string, targetId as string, instructions as Record<string, string>);
       appLog('core:mcp', 'info', 'Binding instructions updated', { meta: { agentId, targetId } });
@@ -95,7 +110,9 @@ export function registerMcpBindingHandlers(): void {
 
   ipcMain.handle(IPC.MCP_BINDING.SET_DISABLED_TOOLS, withValidatedArgs(
     [stringArg(), stringArg(), arrayArg(stringArg())],
-    (_event, agentId, targetId, disabledTools) => {
+    (event, agentId, targetId, disabledTools) => {
+      assertCallerIsAppWindow(event);
+      assertAgentRegistered(agentId as string);
       bindingManager.setDisabledTools(agentId as string, targetId as string, disabledTools as string[]);
       appLog('core:mcp', 'info', 'Binding disabled tools updated', { meta: { agentId, targetId, disabledTools } });
     },

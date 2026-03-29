@@ -90,6 +90,11 @@ export class StreamJsonAdapter implements StructuredAdapter {
       // Permission handling already applied above via permissionMode
     }
 
+    // Append extra CLI args (e.g. MCP server config flags from the spawn path)
+    if (sessionOpts.extraArgs) {
+      args.push(...sessionOpts.extraArgs);
+    }
+
     const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
     const spawnArgs = sessionOpts.commandPrefix
       ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
@@ -215,11 +220,10 @@ export class StreamJsonAdapter implements StructuredAdapter {
    *   - result (session complete)
    */
   private mapEvent(event: StreamJsonEvent): StructuredEvent[] {
-    // Claude Code CLI wraps streaming events in a `stream_event` envelope
-    // when using --include-partial-messages. Unwrap to get the inner event.
-    if (event.type === 'stream_event' && (event as any).event) {
-      const inner = (event as any).event as StreamJsonEvent;
-      return this.mapEvent(inner);
+    // Unwrap stream_event wrapper — claude --output-format stream-json wraps
+    // streaming events as { type: "stream_event", event: { type: "content_block_delta", ... } }
+    if (event.type === 'stream_event' && event.event) {
+      return this.mapEvent(event.event as StreamJsonEvent);
     }
 
     switch (event.type) {

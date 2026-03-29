@@ -7,6 +7,12 @@ import * as agentSettings from './agent-settings-service';
 import { registerTrustedManifest } from './plugin-manifest-registry';
 import { pathExists } from './fs-utils';
 
+function assertSafePluginId(pluginId: string): void {
+  if (pluginId.includes('/') || pluginId.includes('\\') || pluginId.includes('..') || pluginId.includes('\0')) {
+    throw new Error(`Invalid plugin ID: ${pluginId}`);
+  }
+}
+
 function getCommunityPluginsDir(): string {
   return path.join(app.getPath('home'), '.clubhouse', 'plugins');
 }
@@ -72,6 +78,7 @@ export async function discoverCommunityPlugins(): Promise<DiscoveredPlugin[]> {
  * Returns the refreshed manifest, or null if the plugin was not found on disk.
  */
 export async function refreshManifestFromDisk(pluginId: string): Promise<PluginManifest | null> {
+  assertSafePluginId(pluginId);
   const pluginsDir = getCommunityPluginsDir();
   const pluginDir = path.join(pluginsDir, pluginId);
   const manifestPath = path.join(pluginDir, 'manifest.json');
@@ -97,6 +104,7 @@ export async function refreshManifestFromDisk(pluginId: string): Promise<PluginM
 }
 
 export async function uninstallPlugin(pluginId: string): Promise<void> {
+  assertSafePluginId(pluginId);
   const pluginDir = path.join(getCommunityPluginsDir(), pluginId);
 
   let stat: Awaited<ReturnType<typeof fsp.lstat>>;
@@ -188,6 +196,7 @@ export async function listProjectPluginInjections(pluginId: string, projectPath:
  * - Deletes the `_agentconfig:{pluginId}` storage directory in the project
  */
 export async function cleanupProjectPluginInjections(pluginId: string, projectPath: string): Promise<void> {
+  assertSafePluginId(pluginId);
   const prefix = `plugin-${pluginId}-`;
   const tag = `/* plugin:${pluginId} */`;
 

@@ -689,6 +689,37 @@ describe('StreamJsonAdapter', () => {
     expect(types).toContain('end');
   });
 
+  // ── stream_event wrapper ─────────────────────────────────────────────────
+
+  it('unwraps stream_event wrapper to extract nested events', async () => {
+    const adapter = new StreamJsonAdapter({ binary: 'claude' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    // Simulate the wrapper format: { type: "stream_event", event: { type: "content_block_start", ... } }
+    feedLine(mockProc, {
+      type: 'stream_event',
+      event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    });
+    feedLine(mockProc, {
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hello' } },
+    });
+    feedLine(mockProc, {
+      type: 'stream_event',
+      event: { type: 'content_block_stop', index: 0 },
+    });
+    mockProc.emit('close', 0);
+
+    const events = await collectEvents(stream, 10);
+    const types = events.map((e) => e.type);
+    expect(types).toContain('text_delta');
+    expect(types).toContain('text_done');
+    expect(types).toContain('end');
+
+    const textDelta = events.find((e) => e.type === 'text_delta');
+    expect(textDelta?.data).toEqual({ text: 'Hello' });
+  });
+
   // ── Unknown events ────────────────────────────────────────────────────────
 
   it('ignores unknown event types', async () => {

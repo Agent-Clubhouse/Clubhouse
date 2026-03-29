@@ -401,11 +401,16 @@ export function registerWindowHandlers(): void {
   ipcMain.on(IPC.WINDOW.CANVAS_STATE_CHANGED, (_event, state: any) => {
     if (state && state.canvasId) cachedCanvasState.set(state.canvasId, state);
     broadcastToPopouts(IPC.WINDOW.CANVAS_STATE_CHANGED, state);
-    // Forward to annex controller clients if projectId is present
-    if (state && state.projectId) {
+    // Forward to annex controller clients
+    if (state) {
       try {
         const annexServer = require('../services/annex-server');
-        annexServer.broadcastCanvasStateToClients(state.projectId, state);
+        if (state.projectId) {
+          annexServer.broadcastCanvasStateToClients(state.projectId, state);
+        } else {
+          // App-level (global scope) canvas — broadcast without projectId
+          annexServer.broadcastAppCanvasStateToClients(state);
+        }
       } catch {
         // Annex not available — ignore
       }

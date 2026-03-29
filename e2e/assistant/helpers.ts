@@ -113,12 +113,44 @@ export async function cleanupAssistantInstance(handle: AssistantInstance): Promi
 
 /**
  * Open the assistant panel by clicking the nav rail button.
+ * Idempotent — if the panel is already open, does nothing.
+ * This prevents the toggle from accidentally closing the panel
+ * when it's already visible (e.g., from a prior test or state).
  */
 export async function openAssistantPanel(window: Page): Promise<void> {
+  const assistantView = window.locator('[data-testid="assistant-view"]');
+
+  // If panel is already open, nothing to do
+  if (await assistantView.isVisible().catch(() => false)) return;
+
   const assistantBtn = window.locator('[data-testid="nav-assistant"]');
   await expect(assistantBtn).toBeVisible({ timeout: 10_000 });
   await assistantBtn.click();
-  await expect(window.locator('[data-testid="assistant-view"]')).toBeVisible({ timeout: 10_000 });
+  await expect(assistantView).toBeVisible({ timeout: 10_000 });
+}
+
+/**
+ * Close the assistant panel if it's open.
+ */
+export async function closeAssistantPanel(window: Page): Promise<void> {
+  const assistantView = window.locator('[data-testid="assistant-view"]');
+
+  if (!(await assistantView.isVisible().catch(() => false))) return;
+
+  const assistantBtn = window.locator('[data-testid="nav-assistant"]');
+  await assistantBtn.click();
+  await expect(assistantView).not.toBeVisible({ timeout: 10_000 });
+}
+
+/**
+ * Reset the assistant conversation and wait for welcome state.
+ * Call this at the start of each test for independence.
+ */
+export async function resetAssistant(window: Page): Promise<void> {
+  await openAssistantPanel(window);
+  const resetBtn = window.locator('[data-testid="assistant-reset-button"]');
+  await resetBtn.click();
+  await expect(window.locator('[data-testid="assistant-feed-empty"]')).toBeVisible({ timeout: 10_000 });
 }
 
 /**
@@ -158,4 +190,14 @@ export async function switchMode(window: Page, mode: 'interactive' | 'headless' 
   const modeBtn = window.locator(`[data-testid="mode-${mode}"]`);
   await expect(modeBtn).toBeVisible({ timeout: 5_000 });
   await modeBtn.click();
+}
+
+/**
+ * Wait for any feed content (action card or assistant message) to appear.
+ */
+export async function waitForFeedContent(window: Page, timeout = 60_000): Promise<void> {
+  const feedContent = window.locator(
+    '[data-testid="assistant-action-card"], [data-testid="assistant-message"]',
+  ).first();
+  await feedContent.waitFor({ state: 'visible', timeout });
 }
