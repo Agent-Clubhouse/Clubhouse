@@ -1,7 +1,9 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { BrowserCanvasWidget } from './BrowserCanvasWidget';
-import { createMockAPI } from '../../testing';
+import { createMockAPI, createMockContext } from '../../testing';
+import { createPluginAPI } from '../../plugin-api-factory';
+import { manifest } from './manifest';
 
 // ── Mock mcpBindingStore ────────────────────────────────────────────────
 
@@ -184,5 +186,29 @@ describe('BrowserCanvasWidget', () => {
       render(<BrowserCanvasWidget {...defaultProps} metadata={{}} />);
       expect(screen.getByText('Enter a URL above to browse')).toBeInTheDocument();
     });
+  });
+});
+
+// ── Integration: projects permission enforcement ────────────────────────────
+// Validates that the manifest fix (adding 'projects' to permissions) is
+// reflected at the API factory level — not just the manifest shape.
+
+describe('browser plugin projects permission integration', () => {
+  it('api.projects.list() is callable when manifest declares projects permission', () => {
+    const ctx = createMockContext({ pluginId: 'browser', scope: 'project', projectId: 'proj-1', projectPath: '/proj' });
+    const api = createPluginAPI(ctx, 'project', manifest);
+    // Should return a value (empty array from store) — not throw a permission-denied error
+    expect(() => api.projects.list()).not.toThrow();
+    expect(Array.isArray(api.projects.list())).toBe(true);
+  });
+
+  it('api.projects.list() throws permission-denied when manifest omits projects permission', () => {
+    const restrictedManifest = {
+      ...manifest,
+      permissions: manifest.permissions!.filter((p) => p !== 'projects'),
+    };
+    const ctx = createMockContext({ pluginId: 'browser', scope: 'project', projectId: 'proj-1', projectPath: '/proj' });
+    const api = createPluginAPI(ctx, 'project', restrictedManifest);
+    expect(() => api.projects.list()).toThrow(/requires 'projects' permission/);
   });
 });
