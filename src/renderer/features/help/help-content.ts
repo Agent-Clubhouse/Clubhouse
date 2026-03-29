@@ -34,7 +34,7 @@ import cookbookLongRunningJob from '../assistant/content/cookbooks/long-running-
 import cookbookUiWork from '../assistant/content/cookbooks/ui-work.md';
 import cookbookGroupProject from '../assistant/content/cookbooks/group-project.md';
 import cookbookSquad from '../assistant/content/cookbooks/squad.md';
-import cookbookDragRace from '../assistant/content/cookbooks/drag-race.md';
+import cookbookBakeOff from '../assistant/content/cookbooks/bake-off.md';
 
 export interface HelpTopic {
   id: string;
@@ -132,7 +132,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'cookbook-ui-work', title: 'UI Work', content: cookbookUiWork },
       { id: 'cookbook-group-project', title: 'Group Project (Multi-App)', content: cookbookGroupProject },
       { id: 'cookbook-squad', title: 'Squad', content: cookbookSquad },
-      { id: 'cookbook-drag-race', title: 'Drag Race', content: cookbookDragRace },
+      { id: 'cookbook-bake-off', title: 'Bake-Off (A|B Testing)', content: cookbookBakeOff },
     ],
   },
 ];

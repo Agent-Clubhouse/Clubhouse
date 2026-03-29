@@ -1,7 +1,7 @@
-# Cookbook: Drag Race
+# Cookbook: Bake-Off
 
 ## When to use
-Competitive exploration of two approaches to the same problem — architectural spikes, A/B implementation comparisons, competing design directions. Two teams race independently, then judges evaluate. Useful when the best approach is unclear and you want to see both before committing.
+A|B testing of two competing approaches to the same problem — architectural spikes, implementation comparisons, competing design directions. Two teams work independently, then judges evaluate. Useful when the best approach is unclear and you want to see both before committing.
 
 ## Team
 - **1 Central Coordinator** — defines the challenge, sets rules, declares winner (project-manager persona)
@@ -42,7 +42,7 @@ Layout: `grid` — central coordinator and judges on top row, two team zones sid
 ## MCP Tool Sequence
 
 ```
-1. create_canvas({ name: "<race-name> Drag Race" })
+1. create_canvas({ name: "<race-name> Bake-Off" })
 2. add_card({ canvas_id, type: "agent", display_name: "Central Coordinator" })
 3. add_card({ canvas_id, type: "agent", display_name: "Judge" })
 4. add_card({ canvas_id, type: "zone", display_name: "Team Alpha" })
