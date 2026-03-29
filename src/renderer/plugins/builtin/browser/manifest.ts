@@ -12,7 +12,7 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.8 },
   scope: 'dual',
-  permissions: ['commands', 'storage', 'canvas', 'widgets'],
+  permissions: ['commands', 'storage', 'canvas', 'widgets', 'projects'],
   contributes: {
     tab: { label: 'Browser', title: 'Browser', icon: BROWSER_ICON, layout: 'sidebar-content' },
     canvasWidgets: [
