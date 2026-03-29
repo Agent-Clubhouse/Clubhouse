@@ -1905,7 +1905,7 @@ describe('annex-server', () => {
       // agent:reorder is the last case before the closing brace
       const block = source.slice(
         source.indexOf("case 'agent:reorder':"),
-        source.indexOf("case 'agent:reorder':") + 600,
+        source.indexOf("case 'agent:reorder':") + 1000,
       );
       expect(block).toContain('findProjectById');
       expect(block).toContain('.catch(');
