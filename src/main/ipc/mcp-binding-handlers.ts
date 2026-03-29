@@ -74,7 +74,13 @@ export function registerMcpBindingHandlers(): void {
     [stringArg(), objectArg<{ targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }>()],
     (event, agentId, target) => {
       assertCallerIsAppWindow(event);
-      assertAgentRegistered(agentId as string);
+      // Allow binding for sleeping (unregistered) durable agents — the binding
+      // will be stored and used when the agent wakes up and connects to the MCP
+      // bridge. This is essential for canvas wire creation: the assistant creates
+      // agents + wires before agents are started.
+      if (!agentRegistry.get(agentId as string)) {
+        appLog('core:mcp', 'debug', 'Creating binding for sleeping agent', { meta: { agentId } });
+      }
       bindingManager.bind(agentId as string, target as { targetId: string; targetKind: 'browser' | 'agent' | 'terminal'; label: string; agentName?: string; targetName?: string; projectName?: string });
       appLog('core:mcp', 'info', 'Binding created', {
         meta: {
@@ -92,7 +98,8 @@ export function registerMcpBindingHandlers(): void {
     [stringArg(), stringArg()],
     (event, agentId, targetId) => {
       assertCallerIsAppWindow(event);
-      assertAgentRegistered(agentId as string);
+      // Allow unbinding for sleeping/exited agents to support cleanup of stale
+      // wire definitions without requiring the agent to be running.
       bindingManager.unbind(agentId as string, targetId as string);
       appLog('core:mcp', 'info', 'Binding removed', { meta: { agentId, targetId } });
     },

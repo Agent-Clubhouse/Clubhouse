@@ -171,12 +171,12 @@ describe('GET_BINDINGS', () => {
 
 describe('SEC-06: MCP binding IPC authorization', () => {
   describe('BIND', () => {
-    it('rejects bind for unregistered agent', () => {
+    it('allows bind for sleeping (unregistered) agent', () => {
       mockGet.mockReturnValue(undefined);
       const handler = getHandler(IPC.MCP_BINDING.BIND);
       const target = { targetId: 'w1', targetKind: 'browser', label: 'Widget' };
-      expect(() => handler(fakeEvent, 'unknown-agent', target)).toThrow('Agent not registered');
-      expect(bindingManager.bind).not.toHaveBeenCalled();
+      expect(() => handler(fakeEvent, 'sleeping-agent', target)).not.toThrow();
+      expect(bindingManager.bind).toHaveBeenCalledWith('sleeping-agent', target);
     });
 
     it('allows bind for registered agent', () => {
@@ -209,11 +209,11 @@ describe('SEC-06: MCP binding IPC authorization', () => {
   });
 
   describe('UNBIND', () => {
-    it('rejects unbind for unregistered agent', () => {
+    it('allows unbind for sleeping (unregistered) agent', () => {
       mockGet.mockReturnValue(undefined);
       const handler = getHandler(IPC.MCP_BINDING.UNBIND);
-      expect(() => handler(fakeEvent, 'unknown-agent', 'target-1')).toThrow('Agent not registered');
-      expect(bindingManager.unbind).not.toHaveBeenCalled();
+      expect(() => handler(fakeEvent, 'sleeping-agent', 'target-1')).not.toThrow();
+      expect(bindingManager.unbind).toHaveBeenCalledWith('sleeping-agent', 'target-1');
     });
 
     it('allows unbind for registered agent', () => {
