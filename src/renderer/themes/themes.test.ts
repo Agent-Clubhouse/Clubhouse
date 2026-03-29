@@ -28,9 +28,9 @@ function contrastRatio(hex1: string, hex2: string): number {
 }
 
 describe('theme registry', () => {
-  it('exports all 8 themes', () => {
-    expect(THEME_IDS).toHaveLength(8);
-    expect(Object.keys(THEMES)).toHaveLength(8);
+  it('exports all 9 themes', () => {
+    expect(THEME_IDS).toHaveLength(9);
+    expect(Object.keys(THEMES)).toHaveLength(9);
   });
 
   it('contains all expected theme IDs', () => {
@@ -66,9 +66,10 @@ describe('theme registry', () => {
     expect(THEMES['terminal'].fontOverride).toBeDefined();
   });
 
-  it('non-terminal themes do not have fontOverride', () => {
+  it('non-terminal, non-cyberpunk themes do not have fontOverride', () => {
+    const themesWithFontOverride = new Set(['terminal', 'cyberpunk']);
     for (const id of THEME_IDS) {
-      if (id !== 'terminal') {
+      if (!themesWithFontOverride.has(id)) {
         expect(THEMES[id].fontOverride).toBeUndefined();
       }
     }
