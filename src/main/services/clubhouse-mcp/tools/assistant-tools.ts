@@ -22,6 +22,7 @@ import { sendCanvasCommand } from '../canvas-command';
 import { computeLayout } from '../canvas-layout';
 import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
 import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
+import { getPersonaTemplate, getPersonaIds } from '../../../../renderer/features/assistant/content/personas';
 
 /**
  * Register all assistant MCP tools (read + write).
@@ -561,6 +562,12 @@ registerToolTemplate(
           type: 'string',
           description: 'Comma-separated list of MCP server IDs to attach to this agent.',
         },
+        persona: {
+          type: 'string',
+          description:
+            `Persona template ID. Auto-injects role-specific instructions into the agent's CLAUDE.md. ` +
+            `Options: ${getPersonaIds().join(', ')}.`,
+        },
       },
       required: ['project_path'],
     },
@@ -574,6 +581,18 @@ registerToolTemplate(
     const orchestrator = args.orchestrator as string | undefined;
     const freeAgentMode = args.free_agent_mode as boolean | undefined;
     const mcpIds = args.mcp_ids ? (args.mcp_ids as string).split(',').map(s => s.trim()).filter(Boolean) : undefined;
+    const personaId = args.persona as string | undefined;
+
+    // Validate persona ID if provided
+    if (personaId && !getPersonaTemplate(personaId)) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Unknown persona "${personaId}". Valid options: ${getPersonaIds().join(', ')}.`,
+        }],
+        isError: true,
+      };
+    }
 
     try {
       const agent = await createDurable(
@@ -585,7 +604,35 @@ registerToolTemplate(
         orchestrator,
         freeAgentMode,
         mcpIds,
+        undefined, // structuredMode
+        personaId,
       );
+
+      // Inject persona-specific instructions into the agent's worktree
+      if (personaId && agent.worktreePath) {
+        try {
+          const persona = getPersonaTemplate(personaId);
+          if (persona) {
+            const provider = await resolveOrchestrator(projectPath, orchestrator);
+            // Read existing instructions (from applyAgentDefaults) and append persona content
+            let existing = '';
+            try {
+              existing = await provider.readInstructions(agent.worktreePath);
+            } catch {
+              // No existing instructions — start fresh
+            }
+            const combined = existing
+              ? `${existing}\n\n${persona.content}`
+              : persona.content;
+            await provider.writeInstructions(agent.worktreePath, combined);
+          }
+        } catch (err) {
+          appLog('assistant', 'warn', 'Failed to inject persona instructions', {
+            meta: { agentName: name, persona: personaId, error: err instanceof Error ? err.message : String(err) },
+          });
+        }
+      }
+
       return {
         content: [{
           type: 'text',
@@ -599,6 +646,7 @@ registerToolTemplate(
             worktreePath: agent.worktreePath,
             model: agent.model,
             orchestrator: agent.orchestrator,
+            persona: agent.persona || null,
           }),
         }],
       };
