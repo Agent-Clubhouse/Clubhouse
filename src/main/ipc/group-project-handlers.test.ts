@@ -24,6 +24,10 @@ const mockBoard = {
   postMessage: vi.fn(async (_sender: string, topic: string, body: string) => ({
     id: 'msg-1', sender: 'user', topic, body, timestamp: new Date().toISOString(),
   })),
+  deleteMessage: vi.fn(async () => true),
+  deleteTopic: vi.fn(async () => true),
+  setTopicProtected: vi.fn(),
+  setLimits: vi.fn(),
 };
 
 vi.mock('../services/group-project-bulletin', () => ({
@@ -33,6 +37,33 @@ vi.mock('../services/group-project-bulletin', () => ({
 
 vi.mock('../services/clubhouse-mcp/tools/group-project-tools', () => ({
   registerGroupProjectTools: vi.fn(),
+}));
+
+vi.mock('../services/agent-registry', () => ({
+  agentRegistry: {
+    get: vi.fn(() => ({ orchestrator: 'claude-code', runtime: 'pty' })),
+  },
+}));
+
+const mockPtyWrite = vi.fn();
+vi.mock('../services/pty-manager', () => ({
+  write: (...args: unknown[]) => mockPtyWrite(...args),
+  getBuffer: vi.fn(() => ''),
+}));
+
+vi.mock('../services/structured-manager', () => ({
+  sendMessage: vi.fn(async () => undefined),
+}));
+
+const mockWriteChunkedBracketedPaste = vi.fn(async () => undefined);
+const mockSubmitAfterPaste = vi.fn(async () => undefined);
+vi.mock('../services/clubhouse-mcp/tools/agent-tools', () => ({
+  writeChunkedBracketedPaste: (...args: unknown[]) => mockWriteChunkedBracketedPaste(...args),
+  submitAfterPaste: (...args: unknown[]) => mockSubmitAfterPaste(...args),
+}));
+
+vi.mock('../orchestrators', () => ({
+  getProvider: vi.fn(() => undefined),
 }));
 
 vi.mock('../services/group-project-lifecycle', () => ({
@@ -107,6 +138,12 @@ describe('group-project-handlers', () => {
       IPC.GROUP_PROJECT.GET_ALL_MESSAGES,
       IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE,
       IPC.GROUP_PROJECT.SEND_SHOULDER_TAP,
+      IPC.GROUP_PROJECT.DELETE_MESSAGE,
+      IPC.GROUP_PROJECT.DELETE_TOPIC,
+      IPC.GROUP_PROJECT.SET_TOPIC_PROTECTION,
+      IPC.GROUP_PROJECT.GET_RETENTION_CONFIG,
+      IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG,
+      IPC.GROUP_PROJECT.INJECT_MESSAGE,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel), `Missing handler for ${channel}`).toBe(true);
@@ -361,6 +398,115 @@ describe('group-project-handlers', () => {
     it('rejects missing message', () => {
       const handler = getHandler(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP);
       expect(() => handler(fakeEvent, 'gp-1', 'agent-2')).toThrow();
+    });
+  });
+
+  // ── Delete Message ────────────────────────────────────────────────────
+
+  describe('DELETE_MESSAGE', () => {
+    it('calls board.deleteMessage and returns result', async () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.DELETE_MESSAGE);
+      const result = await handler(fakeEvent, 'gp-1', 'progress', 'msg-42');
+      expect(getBulletinBoard).toHaveBeenCalledWith('gp-1');
+      expect(mockBoard.deleteMessage).toHaveBeenCalledWith('progress', 'msg-42');
+      expect(result).toBe(true);
+    });
+
+    it('rejects missing messageId', () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.DELETE_MESSAGE);
+      expect(() => handler(fakeEvent, 'gp-1', 'progress')).toThrow();
+    });
+  });
+
+  // ── Delete Topic ──────────────────────────────────────────────────────
+
+  describe('DELETE_TOPIC', () => {
+    it('calls board.deleteTopic and returns result', async () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.DELETE_TOPIC);
+      const result = await handler(fakeEvent, 'gp-1', 'old-topic');
+      expect(mockBoard.deleteTopic).toHaveBeenCalledWith('old-topic');
+      expect(result).toBe(true);
+    });
+
+    it('rejects missing topic', () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.DELETE_TOPIC);
+      expect(() => handler(fakeEvent, 'gp-1')).toThrow();
+    });
+  });
+
+  // ── Topic Protection ──────────────────────────────────────────────────
+
+  describe('SET_TOPIC_PROTECTION', () => {
+    it('sets topic protection and returns true', async () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.SET_TOPIC_PROTECTION);
+      const result = await handler(fakeEvent, 'gp-1', 'important', true);
+      expect(mockBoard.setTopicProtected).toHaveBeenCalledWith('important', true);
+      expect(result).toBe(true);
+    });
+
+    it('rejects missing boolean argument', () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.SET_TOPIC_PROTECTION);
+      expect(() => handler(fakeEvent, 'gp-1', 'topic')).toThrow();
+    });
+  });
+
+  // ── Retention Config ──────────────────────────────────────────────────
+
+  describe('GET_RETENTION_CONFIG', () => {
+    it('returns defaults when metadata is empty', async () => {
+      vi.mocked(groupProjectRegistry.get).mockResolvedValue({ id: 'gp-1', name: 'Test', metadata: {} } as any);
+      const handler = getHandler(IPC.GROUP_PROJECT.GET_RETENTION_CONFIG);
+      const result = await handler(fakeEvent, 'gp-1');
+      expect(result).toEqual({ maxPerTopic: 500, maxTotal: 2500 });
+    });
+
+    it('returns overrides from metadata', async () => {
+      vi.mocked(groupProjectRegistry.get).mockResolvedValue({
+        id: 'gp-1', name: 'Test', metadata: { maxPerTopic: 2000, maxTotal: 10000 },
+      } as any);
+      const handler = getHandler(IPC.GROUP_PROJECT.GET_RETENTION_CONFIG);
+      const result = await handler(fakeEvent, 'gp-1');
+      expect(result).toEqual({ maxPerTopic: 2000, maxTotal: 10000 });
+    });
+  });
+
+  describe('SAVE_RETENTION_CONFIG', () => {
+    it('updates registry metadata and calls board.setLimits', async () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG);
+      const result = await handler(fakeEvent, 'gp-1', 2000, 10000);
+      expect(groupProjectRegistry.update).toHaveBeenCalledWith('gp-1', {
+        metadata: { maxPerTopic: 2000, maxTotal: 10000 },
+      });
+      expect(mockBoard.setLimits).toHaveBeenCalledWith(2000, 10000);
+      expect(result).toBe(true);
+    });
+
+    it('rejects non-integer values', () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG);
+      expect(() => handler(fakeEvent, 'gp-1', 'bad', 100)).toThrow();
+    });
+  });
+
+  // ── Inject Message ────────────────────────────────────────────────────
+
+  describe('INJECT_MESSAGE', () => {
+    it('uses chunked paste for multi-line PTY messages', async () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.INJECT_MESSAGE);
+      await handler(fakeEvent, 'agent-1', 'line1\nline2');
+      expect(mockWriteChunkedBracketedPaste).toHaveBeenCalledWith('agent-1', 'line1\nline2', expect.any(Number), expect.any(Number));
+      expect(mockSubmitAfterPaste).toHaveBeenCalled();
+    });
+
+    it('uses simple write for single-line PTY messages', async () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.INJECT_MESSAGE);
+      await handler(fakeEvent, 'agent-1', 'hello');
+      expect(mockPtyWrite).toHaveBeenCalledWith('agent-1', 'hello');
+      expect(mockPtyWrite).toHaveBeenCalledWith('agent-1', '\r');
+    });
+
+    it('rejects missing message', () => {
+      const handler = getHandler(IPC.GROUP_PROJECT.INJECT_MESSAGE);
+      expect(() => handler(fakeEvent, 'agent-1')).toThrow();
     });
   });
 });

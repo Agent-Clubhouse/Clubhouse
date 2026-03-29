@@ -13,7 +13,13 @@ import * as annexEventBus from '../services/annex-event-bus';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, objectArg, numberArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
+import { agentRegistry } from '../services/agent-registry';
+import * as ptyManager from '../services/pty-manager';
+import * as structuredManager from '../services/structured-manager';
+import { writeChunkedBracketedPaste, submitAfterPaste } from '../services/clubhouse-mcp/tools/agent-tools';
+import { getProvider } from '../orchestrators';
+import type { PasteSubmitTiming } from '../orchestrators';
 
 function broadcastChanged(): void {
   groupProjectRegistry.list().then((projects) => {
@@ -142,6 +148,84 @@ export function registerGroupProjectHandlers(): void {
         targetAgentId: (targetAgentId as string) || null,
         message: message as string,
       });
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.DELETE_MESSAGE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    async (_event, projectId, topic, messageId) => {
+      const board = getBulletinBoard(projectId as string);
+      return board.deleteMessage(topic as string, messageId as string);
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.DELETE_TOPIC, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectId, topic) => {
+      const board = getBulletinBoard(projectId as string);
+      return board.deleteTopic(topic as string);
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.SET_TOPIC_PROTECTION, withValidatedArgs(
+    [stringArg(), stringArg(), booleanArg()],
+    async (_event, projectId, topic, isProtected) => {
+      const board = getBulletinBoard(projectId as string);
+      board.setTopicProtected(topic as string, isProtected as boolean);
+      return true;
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.GET_RETENTION_CONFIG, withValidatedArgs(
+    [stringArg()],
+    async (_event, projectId) => {
+      const project = await groupProjectRegistry.get(projectId as string);
+      return {
+        maxPerTopic: (project?.metadata?.maxPerTopic as number) ?? 500,
+        maxTotal: (project?.metadata?.maxTotal as number) ?? 2500,
+      };
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG, withValidatedArgs(
+    [stringArg(), numberArg({ integer: true, min: 1 }), numberArg({ integer: true, min: 1 })],
+    async (_event, projectId, maxPerTopic, maxTotal) => {
+      await groupProjectRegistry.update(projectId as string, {
+        metadata: { maxPerTopic: maxPerTopic as number, maxTotal: maxTotal as number },
+      });
+      const board = getBulletinBoard(projectId as string);
+      board.setLimits(maxPerTopic as number, maxTotal as number);
+      broadcastChanged();
+      return true;
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.INJECT_MESSAGE, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, agentId, message) => {
+      const reg = agentRegistry.get(agentId as string);
+      if (!reg) throw new Error(`Agent ${agentId} is not registered`);
+
+      if (reg.runtime === 'pty') {
+        const isMultiLine = (message as string).includes('\n');
+        if (isMultiLine) {
+          const provider = getProvider(reg.orchestrator);
+          const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming()
+            ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
+
+          await writeChunkedBracketedPaste(agentId as string, message as string, timing.chunkSize, timing.chunkDelayMs);
+          await submitAfterPaste(agentId as string, timing);
+        } else {
+          ptyManager.write(agentId as string, message as string);
+          ptyManager.write(agentId as string, '\r');
+        }
+      } else if (reg.runtime === 'structured') {
+        await structuredManager.sendMessage(agentId as string, message as string);
+      } else {
+        throw new Error(`Agent runtime "${reg.runtime}" does not support input`);
+      }
+
+      return true;
     },
   ));
 }
