@@ -869,7 +869,10 @@ registerToolTemplate('assistant', 'list_canvases', {
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
 });
 
-// Track card count per canvas for auto-staggering default positions
+// Track card count per canvas for auto-staggering default positions.
+// Note: counter only increments — does not account for card removal. This is
+// acceptable because layout_canvas (which should always be called after adding
+// cards) resets the counter and re-arranges all cards.
 const canvasCardCounters = new Map<string, number>();
 
 registerToolTemplate('assistant', 'add_card', {
@@ -900,7 +903,7 @@ registerToolTemplate('assistant', 'add_card', {
     agent_id: args.agent_id, project_id: args.project_id,
   };
   if (args.position_x !== undefined || args.position_y !== undefined) {
-    cmdArgs.position = { x: args.position_x || 100, y: args.position_y || 100 };
+    cmdArgs.position = { x: args.position_x ?? 100, y: args.position_y ?? 100 };
   } else {
     // Auto-stagger: each card offset 340px horizontally, wrap to next row after 4
     const idx = canvasCardCounters.get(canvasId) || 0;
@@ -910,7 +913,7 @@ registerToolTemplate('assistant', 'add_card', {
     canvasCardCounters.set(canvasId, idx + 1);
   }
   if (args.width !== undefined || args.height !== undefined) {
-    cmdArgs.size = { w: args.width || 300, h: args.height || 200 };
+    cmdArgs.size = { w: args.width ?? 300, h: args.height ?? 200 };
   }
   // Retry with backoff if canvas not found — handles race after create_canvas
   let result: Awaited<ReturnType<typeof sendCanvasCommand>> | null = null;
@@ -1025,6 +1028,9 @@ registerToolTemplate('assistant', 'layout_canvas', {
 }, async (_t, _a, args) => {
   const canvasId = args.canvas_id as string;
   const pattern = args.pattern as 'horizontal' | 'vertical' | 'grid' | 'hub_spoke';
+
+  // Reset auto-stagger counter — layout_canvas re-arranges all cards
+  canvasCardCounters.delete(canvasId);
 
   const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId });
   if (!queryResult.success) return { content: [{ type: 'text', text: queryResult.error || 'Failed to query views' }], isError: true };
