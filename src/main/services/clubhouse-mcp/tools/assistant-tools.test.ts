@@ -517,4 +517,229 @@ describe('assistant-tools', () => {
       expect(addCalls[addCalls.length - 1][1].position).toEqual({ x: 100, y: 100 });
     });
   });
+
+  // ── Canvas tool parameter aliases and zone positioning ──────────────
+
+  describe('connect_cards parameter aliases', () => {
+    it('accepts source_view_id and target_view_id', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { id: 'wire-1' } });
+      const result = await callAssistantTool('connect_cards', {
+        canvas_id: 'canvas-1',
+        source_view_id: 'view-a',
+        target_view_id: 'view-b',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('connect_views', expect.objectContaining({
+        source_view_id: 'view-a',
+        target_view_id: 'view-b',
+      }));
+    });
+
+    it('accepts from_card_id and to_card_id as aliases', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { id: 'wire-2' } });
+      const result = await callAssistantTool('connect_cards', {
+        canvas_id: 'canvas-1',
+        from_card_id: 'view-a',
+        to_card_id: 'view-b',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('connect_views', expect.objectContaining({
+        source_view_id: 'view-a',
+        target_view_id: 'view-b',
+      }));
+    });
+  });
+
+  describe('move_card parameter aliases', () => {
+    it('accepts x and y parameters', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: {} });
+      const result = await callAssistantTool('move_card', {
+        canvas_id: 'canvas-1',
+        view_id: 'view-a',
+        x: 200,
+        y: 300,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('move_view', expect.objectContaining({
+        position: { x: 200, y: 300 },
+      }));
+    });
+
+    it('accepts position_x and position_y as aliases', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: {} });
+      const result = await callAssistantTool('move_card', {
+        canvas_id: 'canvas-1',
+        view_id: 'view-a',
+        position_x: 400,
+        position_y: 500,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('move_view', expect.objectContaining({
+        position: { x: 400, y: 500 },
+      }));
+    });
+
+    it('prefers x/y over position_x/position_y when both provided', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: {} });
+      const result = await callAssistantTool('move_card', {
+        canvas_id: 'canvas-1',
+        view_id: 'view-a',
+        x: 200,
+        y: 300,
+        position_x: 999,
+        position_y: 999,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('move_view', expect.objectContaining({
+        position: { x: 200, y: 300 },
+      }));
+    });
+
+    it('returns error when neither x/y nor zone_id provided', async () => {
+      const result = await callAssistantTool('move_card', {
+        canvas_id: 'canvas-1',
+        view_id: 'view-a',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('required');
+    });
+
+    it('auto-positions inside zone when zone_id provided', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: [
+          { id: 'zone-1', type: 'zone', position: { x: 100, y: 100 }, size: { width: 600, height: 400 } },
+          { id: 'view-a', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
+        ] })
+        .mockResolvedValueOnce({ success: true, data: {} });
+      const result = await callAssistantTool('move_card', {
+        canvas_id: 'canvas-1',
+        view_id: 'view-a',
+        zone_id: 'zone-1',
+      });
+      expect(result.isError).toBeFalsy();
+      const moveCall = mockSendCanvasCommand.mock.calls[1];
+      expect(moveCall[0]).toBe('move_view');
+      // Position should be within zone bounds
+      expect(moveCall[1].position.x).toBeGreaterThanOrEqual(100);
+      expect(moveCall[1].position.y).toBeGreaterThanOrEqual(100);
+    });
+
+    it('returns error when zone_id not found', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: [] });
+      const result = await callAssistantTool('move_card', {
+        canvas_id: 'canvas-1',
+        view_id: 'view-a',
+        zone_id: 'nonexistent-zone',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('not found');
+    });
+  });
+
+  describe('add_card width/height and zone support', () => {
+    it('passes width and height as numbers to canvas command', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { id: 'view-1' } });
+      const result = await callAssistantTool('add_card', {
+        canvas_id: 'canvas-1',
+        type: 'agent',
+        width: 400,
+        height: 250,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('add_view', expect.objectContaining({
+        size: { w: 400, h: 250 },
+      }));
+    });
+
+    it('preserves position_x=0 (no falsy substitution)', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { id: 'view-1' } });
+      const result = await callAssistantTool('add_card', {
+        canvas_id: 'canvas-1',
+        type: 'agent',
+        position_x: 0,
+        position_y: 0,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('add_view', expect.objectContaining({
+        position: { x: 0, y: 0 },
+      }));
+    });
+
+    it('auto-staggers when no position given', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { id: 'view-1' } })
+        .mockResolvedValueOnce({ success: true, data: { id: 'view-2' } });
+      await callAssistantTool('add_card', { canvas_id: 'canvas-a', type: 'agent' });
+      await callAssistantTool('add_card', { canvas_id: 'canvas-a', type: 'agent' });
+      const firstPos = mockSendCanvasCommand.mock.calls[0][1].position;
+      const secondPos = mockSendCanvasCommand.mock.calls[1][1].position;
+      // Second card should be staggered 340px to the right
+      expect(secondPos.x - firstPos.x).toBe(340);
+      expect(secondPos.y).toBe(firstPos.y);
+    });
+
+    it('auto-positions inside zone when zone_id provided', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: [
+          { id: 'zone-1', type: 'zone', position: { x: 200, y: 200 }, size: { width: 600, height: 400 } },
+        ] })
+        .mockResolvedValueOnce({ success: true, data: { id: 'view-1' } });
+      const result = await callAssistantTool('add_card', {
+        canvas_id: 'canvas-1',
+        type: 'agent',
+        zone_id: 'zone-1',
+      });
+      expect(result.isError).toBeFalsy();
+      const addCall = mockSendCanvasCommand.mock.calls[1];
+      expect(addCall[0]).toBe('add_view');
+      // Position should be within zone bounds
+      expect(addCall[1].position.x).toBeGreaterThanOrEqual(200);
+      expect(addCall[1].position.y).toBeGreaterThanOrEqual(200);
+    });
+  });
+
+  describe('layout_canvas zone-aware', () => {
+    it('arranges cards and resets auto-stagger counter', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: [
+          { id: 'v1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
+          { id: 'v2', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
+        ] })
+        .mockResolvedValue({ success: true, data: {} });
+      const result = await callAssistantTool('layout_canvas', {
+        canvas_id: 'canvas-1',
+        pattern: 'horizontal',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Arranged 2 cards');
+    });
+
+    it('positions zone-contained cards within zone bounds', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: [
+          { id: 'zone-1', type: 'zone', position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, containedViewIds: ['v1'] },
+          { id: 'v1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
+          { id: 'v2', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
+        ] })
+        .mockResolvedValue({ success: true, data: {} });
+      const result = await callAssistantTool('layout_canvas', {
+        canvas_id: 'canvas-1',
+        pattern: 'grid',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('zone-aware');
+      // Should have moved outer cards (zone-1, v2) + inner card (v1)
+      const moveCalls = mockSendCanvasCommand.mock.calls.filter(c => c[0] === 'move_view');
+      expect(moveCalls.length).toBe(3); // zone-1, v2 (outer), v1 (inner)
+    });
+
+    it('returns error for empty canvas', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: [] });
+      const result = await callAssistantTool('layout_canvas', {
+        canvas_id: 'canvas-1',
+        pattern: 'grid',
+      });
+      expect(result.content[0].text).toContain('No cards');
+    });
+  });
 });

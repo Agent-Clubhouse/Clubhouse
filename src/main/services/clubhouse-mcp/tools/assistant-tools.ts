@@ -880,7 +880,8 @@ registerToolTemplate('assistant', 'add_card', {
     'Add a card to a canvas. Types: "agent" (for durable agents), "zone" (visual grouping container), "anchor" (text-only label). ' +
     'For agent cards, ALWAYS provide agent_id and project_id to bind a real agent. ' +
     'Cards are auto-staggered when no position is specified. ALWAYS call layout_canvas after adding all cards. ' +
-    'Anchors are just labels — they CANNOT be wired or used for coordination. Use group project cards for coordination.',
+    'Anchors are just labels — they CANNOT be wired or used for coordination. Use group project cards for coordination. ' +
+    'To place a card inside a zone, set zone_id to the zone\'s view ID — the card will be auto-positioned within that zone.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -889,10 +890,11 @@ registerToolTemplate('assistant', 'add_card', {
       display_name: { type: 'string', description: 'Display name for the card.' },
       agent_id: { type: 'string', description: 'For agent cards: the durable agent ID (from list_agents) to bind to this card.' },
       project_id: { type: 'string', description: 'For agent cards: the project ID the agent belongs to (from list_projects).' },
-      position_x: { type: 'number', description: 'X position. Auto-staggered if omitted.' },
-      position_y: { type: 'number', description: 'Y position. Auto-staggered if omitted.' },
-      width: { type: 'number', description: 'Width in pixels (default 300).' },
-      height: { type: 'number', description: 'Height in pixels (default 200).' },
+      position_x: { type: 'number', description: 'X position (number). Auto-staggered if omitted.' },
+      position_y: { type: 'number', description: 'Y position (number). Auto-staggered if omitted.' },
+      width: { type: 'number', description: 'Width in pixels as a number (default: agent=300, zone=600, anchor=200).' },
+      height: { type: 'number', description: 'Height in pixels as a number (default: agent=200, zone=400, anchor=100).' },
+      zone_id: { type: 'string', description: 'Zone view ID to place this card inside. Card will be auto-positioned within the zone bounds.' },
     },
     required: ['canvas_id', 'type'],
   },
@@ -902,7 +904,37 @@ registerToolTemplate('assistant', 'add_card', {
     canvas_id: canvasId, type: args.type, display_name: args.display_name,
     agent_id: args.agent_id, project_id: args.project_id,
   };
-  if (args.position_x !== undefined || args.position_y !== undefined) {
+
+  // Coerce width/height to numbers in case LLM passes strings
+  const width = args.width !== undefined ? Number(args.width) : undefined;
+  const height = args.height !== undefined ? Number(args.height) : undefined;
+
+  if (args.zone_id) {
+    // Auto-position within zone bounds
+    const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId });
+    const views = queryResult.success ? (queryResult.data as Array<{ id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number } }>) : [];
+    const zone = views.find(v => v.id === args.zone_id);
+    if (zone) {
+      const ZONE_CARD_HEIGHT = 32;
+      const ZONE_PADDING = 20;
+      const cardsInZone = views.filter(v => v.id !== zone.id && v.type !== 'zone' &&
+        v.position.x >= zone.position.x && v.position.x < zone.position.x + zone.size.width &&
+        v.position.y >= zone.position.y && v.position.y < zone.position.y + zone.size.height);
+      const col = cardsInZone.length % 3;
+      const row = Math.floor(cardsInZone.length / 3);
+      cmdArgs.position = {
+        x: zone.position.x + ZONE_PADDING + col * 340,
+        y: zone.position.y + ZONE_CARD_HEIGHT + ZONE_PADDING + row * 260,
+      };
+    } else {
+      // Zone not found — fall through to auto-stagger
+      const idx = canvasCardCounters.get(canvasId) || 0;
+      const col = idx % 4;
+      const rw = Math.floor(idx / 4);
+      cmdArgs.position = { x: 100 + col * 340, y: 100 + rw * 260 };
+      canvasCardCounters.set(canvasId, idx + 1);
+    }
+  } else if (args.position_x !== undefined || args.position_y !== undefined) {
     cmdArgs.position = { x: args.position_x ?? 100, y: args.position_y ?? 100 };
   } else {
     // Auto-stagger: each card offset 340px horizontally, wrap to next row after 4
@@ -912,8 +944,8 @@ registerToolTemplate('assistant', 'add_card', {
     cmdArgs.position = { x: 100 + col * 340, y: 100 + row * 260 };
     canvasCardCounters.set(canvasId, idx + 1);
   }
-  if (args.width !== undefined || args.height !== undefined) {
-    cmdArgs.size = { w: args.width ?? 300, h: args.height ?? 200 };
+  if (width !== undefined || height !== undefined) {
+    cmdArgs.size = { w: width ?? 300, h: height ?? 200 };
   }
   // Retry with backoff if canvas not found — handles race after create_canvas
   let result: Awaited<ReturnType<typeof sendCanvasCommand>> | null = null;
@@ -928,19 +960,47 @@ registerToolTemplate('assistant', 'add_card', {
 });
 
 registerToolTemplate('assistant', 'move_card', {
-  description: 'Move a card to a new position on the canvas.',
+  description: 'Move a card to a new position on the canvas. Parameters are x and y (numbers). ' +
+    'To place a card inside a zone, set zone_id — the card will be centered in the zone. ' +
+    'Zone containment is spatial: a card is "inside" a zone when >50% of it overlaps the zone bounds.',
   inputSchema: {
     type: 'object',
     properties: {
       canvas_id: { type: 'string', description: 'Canvas ID.' },
       view_id: { type: 'string', description: 'Card view ID.' },
-      x: { type: 'number', description: 'New X position.' },
-      y: { type: 'number', description: 'New Y position.' },
+      x: { type: 'number', description: 'New X position (number).' },
+      y: { type: 'number', description: 'New Y position (number).' },
+      position_x: { type: 'number', description: 'Alias for x.' },
+      position_y: { type: 'number', description: 'Alias for y.' },
+      zone_id: { type: 'string', description: 'Zone view ID — auto-position card inside this zone instead of using x/y.' },
     },
-    required: ['canvas_id', 'view_id', 'x', 'y'],
+    required: ['canvas_id', 'view_id'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('move_view', { canvas_id: args.canvas_id, view_id: args.view_id, position: { x: args.x, y: args.y }, project_id: args.project_id });
+  // Accept position_x/position_y as aliases for x/y
+  const targetX = args.x ?? args.position_x;
+  const targetY = args.y ?? args.position_y;
+
+  let position: { x: number; y: number };
+  if (args.zone_id) {
+    // Auto-position within zone bounds
+    const queryResult = await sendCanvasCommand('query_views', { canvas_id: args.canvas_id });
+    const views = queryResult.success ? (queryResult.data as Array<{ id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number } }>) : [];
+    const zone = views.find(v => v.id === args.zone_id);
+    if (!zone) return { content: [{ type: 'text', text: `Zone ${args.zone_id} not found.` }], isError: true };
+    const ZONE_CARD_HEIGHT = 32;
+    const ZONE_PADDING = 20;
+    position = {
+      x: zone.position.x + ZONE_PADDING + (zone.size.width / 2 - 150),
+      y: zone.position.y + ZONE_CARD_HEIGHT + ZONE_PADDING,
+    };
+  } else if (targetX !== undefined && targetY !== undefined) {
+    position = { x: Number(targetX), y: Number(targetY) };
+  } else {
+    return { content: [{ type: 'text', text: 'Either x/y coordinates or zone_id is required.' }], isError: true };
+  }
+
+  const result = await sendCanvasCommand('move_view', { canvas_id: args.canvas_id, view_id: args.view_id, position, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to move card' }], isError: true };
   return { content: [{ type: 'text', text: 'Card moved.' }] };
 });
@@ -997,26 +1057,36 @@ registerToolTemplate('assistant', 'rename_card', {
 });
 
 registerToolTemplate('assistant', 'connect_cards', {
-  description: 'Create a wire (MCP binding) between two cards. Source must be an agent card with agent_id set. ' +
-    'Target must be another agent card (NOT an anchor). Wire persists even if agents are sleeping. ' +
-    'Cannot wire to anchors — they are text-only labels.',
+  description: 'Create a wire (MCP binding) between two cards. ' +
+    'Parameters: canvas_id, source_view_id, target_view_id. ' +
+    'Source must be an agent card with agent_id set. Target must be another agent card (NOT an anchor). ' +
+    'Wire persists even if agents are sleeping. Cannot wire to anchors — they are text-only labels.',
   inputSchema: {
     type: 'object',
     properties: {
       canvas_id: { type: 'string', description: 'Canvas ID.' },
       source_view_id: { type: 'string', description: 'Source card view ID (must be an agent card).' },
       target_view_id: { type: 'string', description: 'Target card view ID.' },
+      from_card_id: { type: 'string', description: 'Alias for source_view_id.' },
+      to_card_id: { type: 'string', description: 'Alias for target_view_id.' },
     },
-    required: ['canvas_id', 'source_view_id', 'target_view_id'],
+    required: ['canvas_id'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('connect_views', { canvas_id: args.canvas_id, source_view_id: args.source_view_id, target_view_id: args.target_view_id, project_id: args.project_id });
+  // Accept from_card_id/to_card_id as aliases
+  const sourceViewId = args.source_view_id ?? args.from_card_id;
+  const targetViewId = args.target_view_id ?? args.to_card_id;
+  if (!sourceViewId || !targetViewId) {
+    return { content: [{ type: 'text', text: 'Missing required argument: source_view_id (or from_card_id) and target_view_id (or to_card_id)' }], isError: true };
+  }
+  const result = await sendCanvasCommand('connect_views', { canvas_id: args.canvas_id, source_view_id: sourceViewId, target_view_id: targetViewId, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to connect cards' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
 });
 
 registerToolTemplate('assistant', 'layout_canvas', {
-  description: 'Auto-arrange cards. Patterns: "horizontal" (row), "vertical" (column), "grid", "hub_spoke" (center + circle).',
+  description: 'Auto-arrange cards. Patterns: "horizontal" (row), "vertical" (column), "grid", "hub_spoke" (center + circle). ' +
+    'Zone-aware: cards inside zones are grouped and arranged within their zone bounds. Zones themselves are arranged in the outer layout.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1035,14 +1105,43 @@ registerToolTemplate('assistant', 'layout_canvas', {
   const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId });
   if (!queryResult.success) return { content: [{ type: 'text', text: queryResult.error || 'Failed to query views' }], isError: true };
 
-  const views = queryResult.data as Array<{ id: string; size: { width: number; height: number } }>;
+  type CanvasView = { id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number }; containedViewIds?: string[] };
+  const views = queryResult.data as CanvasView[];
   if (!views || views.length === 0) return { content: [{ type: 'text', text: 'No cards to arrange.' }] };
 
-  const positions = computeLayout(pattern, views.map(v => ({ id: v.id, width: v.size.width, height: v.size.height })));
-  for (const pos of positions) {
+  // Reset auto-stagger counter for this canvas since layout will reposition everything
+  canvasCardCounters.delete(canvasId);
+
+  // Separate zones from non-zone views, identify contained cards
+  const zones = views.filter(v => v.type === 'zone');
+  const containedIds = new Set(zones.flatMap(z => z.containedViewIds || []));
+  const outerViews = views.filter(v => v.type !== 'zone' && !containedIds.has(v.id));
+
+  // Layout outer views (non-zone cards + zones as blocks)
+  const outerCards = [...outerViews, ...zones].map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
+  const outerPositions = computeLayout(pattern, outerCards);
+  for (const pos of outerPositions) {
     await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: pos.id, position: { x: pos.x, y: pos.y } });
   }
-  return { content: [{ type: 'text', text: `Arranged ${views.length} cards in "${pattern}" layout.` }] };
+
+  // Layout cards inside each zone using grid within zone bounds
+  const ZONE_CARD_HEIGHT = 32;
+  const ZONE_PADDING = 20;
+  for (const zone of zones) {
+    const zonePos = outerPositions.find(p => p.id === zone.id);
+    if (!zonePos) continue;
+    const zoneCards = views.filter(v => (zone.containedViewIds || []).includes(v.id));
+    if (zoneCards.length === 0) continue;
+    const innerStartX = zonePos.x + ZONE_PADDING;
+    const innerStartY = zonePos.y + ZONE_CARD_HEIGHT + ZONE_PADDING;
+    const innerPositions = computeLayout('grid', zoneCards.map(v => ({ id: v.id, width: v.size.width, height: v.size.height })));
+    for (const ipos of innerPositions) {
+      // Offset inner positions to be relative to zone
+      await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: ipos.id, position: { x: innerStartX + ipos.x - 100, y: innerStartY + ipos.y - 100 } });
+    }
+  }
+
+  return { content: [{ type: 'text', text: `Arranged ${views.length} cards in "${pattern}" layout (zone-aware).` }] };
 });
 
 // ── Plugin Tools ───────────────────────────────────────────────────────────
