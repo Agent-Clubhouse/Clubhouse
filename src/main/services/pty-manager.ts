@@ -11,9 +11,13 @@ import * as headlessTerminal from './pty-headless-terminal';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 
+/** Monotonically increasing counter to detect stale session handlers. */
+let sessionGeneration = 0;
+
 interface ManagedSession {
   process: pty.IPty;
   agentId: string;
+  generation: number;
   lastActivity: number;
   killing: boolean;
   outputChunks: string[];
@@ -147,6 +151,7 @@ function createSession(process: pty.IPty, agentId: string, pendingCommand?: stri
   return {
     process,
     agentId,
+    generation: ++sessionGeneration,
     lastActivity: Date.now(),
     killing: false,
     outputChunks: [],
@@ -282,10 +287,11 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   const session = createSession(proc, agentId, pendingCommand);
   session.onExitCallback = onExit;
   sessions.set(agentId, session);
+  const expectedGeneration = session.generation;
 
   proc.onData((data: string) => {
     const current = sessions.get(agentId);
-    if (!current || current.process !== proc) return;
+    if (!current || current.generation !== expectedGeneration) return;
     // Shell emitted data while a command is pending — it's ready for input.
     // Fire the command immediately so agents start without waiting for a
     // terminal UI resize (which only happens when the hub pane is visible).
@@ -302,7 +308,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
 
   proc.onExit(({ exitCode }) => {
     const current = sessions.get(agentId);
-    if (!current || current.process !== proc) return;
+    if (!current || current.generation !== expectedGeneration) return;
 
     const fullBuffer = getSessionBuffer(current);
     const ptyBuffer = fullBuffer.slice(-500);
@@ -349,10 +355,11 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
 
   const session = createSession(proc, id);
   sessions.set(id, session);
+  const expectedGeneration = session.generation;
 
   proc.onData((data: string) => {
     const current = sessions.get(id);
-    if (!current || current.process !== proc) return;
+    if (!current || current.generation !== expectedGeneration) return;
 
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
@@ -363,7 +370,7 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
 
   proc.onExit(({ exitCode }) => {
     const current = sessions.get(id);
-    if (!current || current.process !== proc) return;
+    if (!current || current.generation !== expectedGeneration) return;
 
     headlessTerminal.dispose(id);
     cleanupSession(id);
