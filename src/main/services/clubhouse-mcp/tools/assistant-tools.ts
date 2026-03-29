@@ -1060,7 +1060,9 @@ registerToolTemplate('assistant', 'connect_cards', {
   description: 'Create a wire (MCP binding) between two cards. ' +
     'Parameters: canvas_id, source_view_id, target_view_id. ' +
     'Source must be an agent card with agent_id set. Target must be another agent card (NOT an anchor). ' +
-    'Wire persists even if agents are sleeping. Cannot wire to anchors — they are text-only labels.',
+    'Wire persists even if agents are sleeping. Cannot wire to anchors — they are text-only labels. ' +
+    'By default, agent-to-agent wires are bidirectional (both agents can call each other). ' +
+    'Set bidirectional=false for one-way communication.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1069,6 +1071,7 @@ registerToolTemplate('assistant', 'connect_cards', {
       target_view_id: { type: 'string', description: 'Target card view ID.' },
       from_card_id: { type: 'string', description: 'Alias for source_view_id.' },
       to_card_id: { type: 'string', description: 'Alias for target_view_id.' },
+      bidirectional: { type: 'boolean', description: 'Create wires in both directions. Defaults to true for agent-to-agent, false for agent-to-group-project.' },
     },
     required: ['canvas_id'],
   },
@@ -1079,7 +1082,13 @@ registerToolTemplate('assistant', 'connect_cards', {
   if (!sourceViewId || !targetViewId) {
     return { content: [{ type: 'text', text: 'Missing required argument: source_view_id (or from_card_id) and target_view_id (or to_card_id)' }], isError: true };
   }
-  const result = await sendCanvasCommand('connect_views', { canvas_id: args.canvas_id, source_view_id: sourceViewId, target_view_id: targetViewId, project_id: args.project_id });
+  const result = await sendCanvasCommand('connect_views', {
+    canvas_id: args.canvas_id,
+    source_view_id: sourceViewId,
+    target_view_id: targetViewId,
+    project_id: args.project_id,
+    bidirectional: args.bidirectional,
+  });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to connect cards' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
 });

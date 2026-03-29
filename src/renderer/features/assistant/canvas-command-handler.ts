@@ -340,7 +340,39 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
       console.warn('[assistant] MCP binding failed (agent may be sleeping):', sourceAgentId, err);
     }
 
-    return { success: true, data: { sourceAgentId, targetId, targetKind, bindingCreated } };
+    // Bidirectional: default true for agent-to-agent, false otherwise
+    const isAgentToAgent = targetKind === 'agent';
+    const bidirectional = args.bidirectional !== undefined
+      ? Boolean(args.bidirectional)
+      : isAgentToAgent;
+
+    let reverseBindingCreated = false;
+    if (bidirectional && isAgentToAgent) {
+      // Create reverse wire: target → source
+      store.addWireDefinition({
+        agentId: targetId,
+        targetId: sourceAgentId,
+        targetKind: 'agent' as any,
+        label: wireSrcName,
+        agentName: wireTgtName,
+        targetName: wireSrcName,
+      });
+
+      try {
+        window.clubhouse.mcpBinding.bind(targetId, {
+          targetId: sourceAgentId,
+          targetKind: 'agent',
+          label: wireSrcName,
+          agentName: wireTgtName,
+          targetName: wireSrcName,
+        });
+        reverseBindingCreated = true;
+      } catch (err) {
+        console.warn('[assistant] Reverse MCP binding failed (agent may be sleeping):', targetId, err);
+      }
+    }
+
+    return { success: true, data: { sourceAgentId, targetId, targetKind, bindingCreated, bidirectional, reverseBindingCreated } };
   },
 
   export_blueprint(args) {

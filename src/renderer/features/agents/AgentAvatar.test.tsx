@@ -83,6 +83,45 @@ describe('AgentAvatar', () => {
     const { container } = render(<AgentAvatar agent={makeAgent()} size="md" />);
     expect(container.querySelector('.w-7')).toBeInTheDocument();
   });
+
+  it('renders orchestrator mini icon for claude-code agents without custom icon', () => {
+    const { container } = render(
+      <AgentAvatar agent={makeAgent({ orchestrator: 'claude-code' })} />,
+    );
+    // Should render SVG mini icon, not initials
+    expect(container.querySelector('svg')).toBeInTheDocument();
+    expect(screen.queryByText('BF')).not.toBeInTheDocument();
+  });
+
+  it('renders orchestrator mini icon for copilot-cli agents without custom icon', () => {
+    const { container } = render(
+      <AgentAvatar agent={makeAgent({ orchestrator: 'copilot-cli' })} />,
+    );
+    expect(container.querySelector('svg')).toBeInTheDocument();
+    expect(screen.queryByText('BF')).not.toBeInTheDocument();
+  });
+
+  it('renders orchestrator mini icon for codex-cli agents without custom icon', () => {
+    const { container } = render(
+      <AgentAvatar agent={makeAgent({ orchestrator: 'codex-cli' })} />,
+    );
+    expect(container.querySelector('svg')).toBeInTheDocument();
+    expect(screen.queryByText('BF')).not.toBeInTheDocument();
+  });
+
+  it('prefers custom icon over orchestrator mini icon', () => {
+    useAgentStore.setState({
+      agentIcons: { 'agent-1': 'data:image/png;base64,abc' },
+    });
+    render(<AgentAvatar agent={makeAgent({ orchestrator: 'claude-code', icon: 'custom.png' })} />);
+    const img = screen.getByAltText('bold-falcon');
+    expect(img).toBeInTheDocument();
+  });
+
+  it('renders initials when no orchestrator and no custom icon', () => {
+    render(<AgentAvatar agent={makeAgent()} />);
+    expect(screen.getByText('BF')).toBeInTheDocument();
+  });
 });
 
 describe('AgentAvatarWithRing', () => {

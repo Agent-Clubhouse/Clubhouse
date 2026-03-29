@@ -279,6 +279,110 @@ describe('canvas-command-handler', () => {
     expect(result.error).toContain('no agent assigned');
   });
 
+  it('connect_views creates bidirectional wires by default for agent-to-agent', () => {
+    const createResult = sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+    sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+
+    // Set agentIds on the views
+    const canvas = mockCanvases.find(c => c.id === canvasId);
+    canvas!.views[0].agentId = 'agent_A';
+    canvas!.views[0].displayName = 'Agent A';
+    canvas!.views[1].agentId = 'agent_B';
+    canvas!.views[1].displayName = 'Agent B';
+
+    const result = sendCommand('connect_views', {
+      canvas_id: canvasId,
+      source_view_id: 'view_1',
+      target_view_id: 'view_2',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.bidirectional).toBe(true);
+    expect(result.data.reverseBindingCreated).toBe(true);
+    // Forward wire: agent_A → agent_B
+    expect(appStoreState.addWireDefinition).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: 'agent_A', targetId: 'agent_B' }),
+    );
+    // Reverse wire: agent_B → agent_A
+    expect(appStoreState.addWireDefinition).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: 'agent_B', targetId: 'agent_A' }),
+    );
+    // Both MCP bindings attempted
+    expect(mockBind).toHaveBeenCalledTimes(2);
+  });
+
+  it('connect_views creates unidirectional wire when bidirectional=false', () => {
+    const createResult = sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+    sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+
+    const canvas = mockCanvases.find(c => c.id === canvasId);
+    canvas!.views[0].agentId = 'agent_A';
+    canvas!.views[0].displayName = 'Agent A';
+    canvas!.views[1].agentId = 'agent_B';
+    canvas!.views[1].displayName = 'Agent B';
+
+    const result = sendCommand('connect_views', {
+      canvas_id: canvasId,
+      source_view_id: 'view_1',
+      target_view_id: 'view_2',
+      bidirectional: false,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.bidirectional).toBe(false);
+    // Only forward wire
+    expect(appStoreState.addWireDefinition).toHaveBeenCalledTimes(1);
+    expect(mockBind).toHaveBeenCalledTimes(1);
+  });
+
+  it('connect_views defaults to unidirectional for non-agent targets', () => {
+    const createResult = sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+    sendCommand('add_view', { canvas_id: canvasId, type: 'zone' });
+
+    const canvas = mockCanvases.find(c => c.id === canvasId);
+    canvas!.views[0].agentId = 'agent_A';
+    canvas!.views[0].displayName = 'Agent A';
+
+    const result = sendCommand('connect_views', {
+      canvas_id: canvasId,
+      source_view_id: 'view_1',
+      target_view_id: 'view_2',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.bidirectional).toBe(false);
+    // Only forward wire, no reverse
+    expect(appStoreState.addWireDefinition).toHaveBeenCalledTimes(1);
+    expect(mockBind).toHaveBeenCalledTimes(1);
+  });
+
+  it('connect_views allows forcing bidirectional=true even for non-agent targets', () => {
+    const createResult = sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+    sendCommand('add_view', { canvas_id: canvasId, type: 'zone' });
+
+    const canvas = mockCanvases.find(c => c.id === canvasId);
+    canvas!.views[0].agentId = 'agent_A';
+    canvas!.views[0].displayName = 'Agent A';
+
+    const result = sendCommand('connect_views', {
+      canvas_id: canvasId,
+      source_view_id: 'view_1',
+      target_view_id: 'view_2',
+      bidirectional: true,
+    });
+    expect(result.success).toBe(true);
+    // bidirectional=true but target is not agent, so no reverse binding created
+    expect(result.data.bidirectional).toBe(true);
+    // Reverse only created for agent-to-agent
+    expect(appStoreState.addWireDefinition).toHaveBeenCalledTimes(1);
+    expect(mockBind).toHaveBeenCalledTimes(1);
+  });
+
   // ── Unknown command ─────────────────────────────────────────────────────
 
   it('returns error for unknown command', () => {
