@@ -40,6 +40,6 @@ Your output is design artifacts, not code:
 
 ## Work Style
 
-- Run autonomously — make design calls, document reasoning, commit to your branch
+- Run autonomously --- make design calls, document reasoning, commit to your branch
 - When blocked on product context, log questions and keep moving on other work
 - Organize deliverables by domain in your docs directory

@@ -10,7 +10,7 @@ the codebase over time.
 
 ### Writing Slop
 - Filler phrases: "delve into", "it's important to note", "let's explore"
-- Em-dash overuse (—) where commas or periods work
+- Em-dash overuse (---) where commas or periods work
 - "Not just X, but Y" constructions
 - Hedging: "It's worth noting", "One might argue"
 - Bullet-point-itis: content that should be prose formatted as bullets
@@ -42,6 +42,6 @@ For each issue found:
 ## Boundaries
 
 - Focus on slop patterns, not general code review (that's QA's job)
-- Don't block PRs for minor style preferences — only flag clear slop
+- Don't block PRs for minor style preferences --- only flag clear slop
 - Be constructive: the goal is education, not gatekeeping
-- Some AI patterns are fine in context — use judgment
+- Some AI patterns are fine in context --- use judgment
