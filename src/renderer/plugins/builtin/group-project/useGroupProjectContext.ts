@@ -10,7 +10,6 @@ import type { TopicDigest, BulletinMessage } from '../../../../shared/group-proj
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
-import { ptyWrite } from '../../../services/project-proxy';
 
 export interface GroupProjectMember {
   agentId: string;
@@ -46,8 +45,17 @@ export interface GroupProjectContextValue {
   /** Fetch all messages across topics. */
   fetchAllMessages: (groupProjectId: string, since?: string, limit?: number) => Promise<BulletinMessage[]>;
 
-  /** Inject a message into an agent's PTY (works both local and remote). */
-  injectMessage: (agentId: string, message: string) => void;
+  /** Inject a message into an agent's PTY (works both local and remote, with chunked paste). */
+  injectMessage: (agentId: string, message: string) => Promise<void>;
+
+  /** Delete a single message by ID. */
+  deleteMessage: (groupProjectId: string, topic: string, messageId: string) => Promise<boolean>;
+
+  /** Delete an entire topic. */
+  deleteTopic: (groupProjectId: string, topic: string) => Promise<boolean>;
+
+  /** Set topic protection (never expire). */
+  setTopicProtection: (groupProjectId: string, topic: string, isProtected: boolean) => Promise<boolean>;
 }
 
 /** Deduplicate members by agentId. */
@@ -150,17 +158,38 @@ export function useGroupProjectContext(
     return await window.clubhouse.groupProject.getAllMessages(gpId, since, limit) as BulletinMessage[];
   }, [isRemote, satelliteId]);
 
-  // --- PTY injection: local uses ptyWrite, remote uses annexClient.ptyInput ---
-  const injectMessage = useCallback((agentId: string, message: string) => {
-    const isMultiLine = message.includes('\n');
-    const data = isMultiLine ? `\x1b[200~${message}\x1b[201~` : message;
+  // --- PTY injection: route through main process for proper chunked paste ---
+  const injectMessage = useCallback(async (agentId: string, message: string): Promise<void> => {
     if (isRemote && satelliteId) {
-      window.clubhouse.annexClient.ptyInput(satelliteId, agentId, data);
-      setTimeout(() => window.clubhouse.annexClient.ptyInput(satelliteId, agentId, '\r'), 150);
+      await window.clubhouse.annexClient.gpInjectMessage(satelliteId, agentId, message);
     } else {
-      ptyWrite(agentId, data);
-      setTimeout(() => ptyWrite(agentId, '\r'), 150);
+      await window.clubhouse.groupProject.injectMessage(agentId, message);
     }
+  }, [isRemote, satelliteId]);
+
+  // --- Delete operations ---
+  const deleteMessage = useCallback(async (gpId: string, topic: string, messageId: string): Promise<boolean> => {
+    if (isRemote && satelliteId) {
+      const result = await window.clubhouse.annexClient.gpDeleteMessage(satelliteId, gpId, topic, messageId);
+      return (result as { deleted: boolean })?.deleted ?? false;
+    }
+    return window.clubhouse.groupProject.deleteMessage(gpId, topic, messageId);
+  }, [isRemote, satelliteId]);
+
+  const deleteTopic = useCallback(async (gpId: string, topic: string): Promise<boolean> => {
+    if (isRemote && satelliteId) {
+      const result = await window.clubhouse.annexClient.gpDeleteTopic(satelliteId, gpId, topic);
+      return (result as { deleted: boolean })?.deleted ?? false;
+    }
+    return window.clubhouse.groupProject.deleteTopic(gpId, topic);
+  }, [isRemote, satelliteId]);
+
+  const setTopicProtection = useCallback(async (gpId: string, topic: string, isProtected: boolean): Promise<boolean> => {
+    if (isRemote && satelliteId) {
+      await window.clubhouse.annexClient.gpSetTopicProtection(satelliteId, gpId, topic, isProtected);
+      return true;
+    }
+    return window.clubhouse.groupProject.setTopicProtection(gpId, topic, isProtected);
   }, [isRemote, satelliteId]);
 
   return {
@@ -175,5 +204,8 @@ export function useGroupProjectContext(
     fetchTopicMessages,
     fetchAllMessages,
     injectMessage,
+    deleteMessage,
+    deleteTopic,
+    setTopicProtection,
   };
 }

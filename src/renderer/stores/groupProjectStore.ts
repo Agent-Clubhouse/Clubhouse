@@ -11,6 +11,11 @@ interface GroupProjectStoreState {
   remove: (id: string) => Promise<void>;
   postBulletinMessage: (projectId: string, topic: string, body: string) => Promise<void>;
   sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string) => Promise<unknown>;
+  deleteMessage: (projectId: string, topic: string, messageId: string) => Promise<boolean>;
+  deleteTopic: (projectId: string, topic: string) => Promise<boolean>;
+  setTopicProtection: (projectId: string, topic: string, isProtected: boolean) => Promise<boolean>;
+  getRetentionConfig: (projectId: string) => Promise<{ maxPerTopic: number; maxTotal: number }>;
+  saveRetentionConfig: (projectId: string, maxPerTopic: number, maxTotal: number) => Promise<boolean>;
 }
 
 export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
@@ -63,6 +68,26 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
 
   sendShoulderTap: async (projectId, targetAgentId, message) => {
     return window.clubhouse.groupProject.sendShoulderTap(projectId, targetAgentId, message);
+  },
+
+  deleteMessage: async (projectId, topic, messageId) => {
+    return window.clubhouse.groupProject.deleteMessage(projectId, topic, messageId);
+  },
+
+  deleteTopic: async (projectId, topic) => {
+    return window.clubhouse.groupProject.deleteTopic(projectId, topic);
+  },
+
+  setTopicProtection: async (projectId, topic, isProtected) => {
+    return window.clubhouse.groupProject.setTopicProtection(projectId, topic, isProtected);
+  },
+
+  getRetentionConfig: async (projectId) => {
+    return window.clubhouse.groupProject.getRetentionConfig(projectId);
+  },
+
+  saveRetentionConfig: async (projectId, maxPerTopic, maxTotal) => {
+    return window.clubhouse.groupProject.saveRetentionConfig(projectId, maxPerTopic, maxTotal);
   },
 }));
 
