@@ -2005,6 +2005,11 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         } catch (err) {
           ws.send(JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));
         }
+      }).catch((err) => {
+        appLog('core:annex', 'error', 'pty:spawn-shell lookup failed', {
+          meta: { projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2020,6 +2025,11 @@ function handleWsMessage(ws: WebSocket, data: string): void {
           return;
         }
         handleSpawnQuickAgentWs(ws, project, payload);
+      }).catch((err) => {
+        appLog('core:annex', 'error', 'agent:spawn lookup failed', {
+          meta: { projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2087,6 +2097,11 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         }).catch(() => {
           ws.send(JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
         });
+      }).catch((err) => {
+        appLog('core:annex', 'error', 'agent:reorder lookup failed', {
+          meta: { projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }

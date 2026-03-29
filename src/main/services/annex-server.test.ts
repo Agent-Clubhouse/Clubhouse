@@ -1870,6 +1870,49 @@ describe('annex-server', () => {
     });
   });
 
+  describe('WebSocket findProjectById promise chains have .catch() (CQ-01)', () => {
+    let source: string;
+
+    beforeAll(() => {
+      const fs = require('fs');
+      source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+    });
+
+    it('pty:spawn-shell handler catches findProjectById rejection', () => {
+      const block = source.slice(
+        source.indexOf("case 'pty:spawn-shell':"),
+        source.indexOf("case 'agent:spawn':"),
+      );
+      expect(block).toContain('findProjectById');
+      expect(block).toContain('.catch(');
+      expect(block).toContain('appLog');
+    });
+
+    it('agent:spawn handler catches findProjectById rejection', () => {
+      const block = source.slice(
+        source.indexOf("case 'agent:spawn':"),
+        source.indexOf("case 'agent:wake':"),
+      );
+      expect(block).toContain('findProjectById');
+      expect(block).toContain('.catch(');
+      expect(block).toContain('appLog');
+    });
+
+    it('agent:reorder handler catches findProjectById rejection', () => {
+      // agent:reorder is the last case before the closing brace
+      const block = source.slice(
+        source.indexOf("case 'agent:reorder':"),
+        source.indexOf("case 'agent:reorder':") + 1000,
+      );
+      expect(block).toContain('findProjectById');
+      expect(block).toContain('.catch(');
+      expect(block).toContain('appLog');
+    });
+  });
+
   // --- SEC-11: Session token expiry ---
   describe('session token expiry', () => {
     it('rejects expired tokens', async () => {
