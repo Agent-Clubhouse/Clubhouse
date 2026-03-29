@@ -16,6 +16,7 @@ import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as gitExcludeManager from './git-exclude-manager';
 import { appLog } from './log-service';
 import { jsonMcpToToml } from './toml-utils';
+import { getPersonaTemplate } from '../../renderer/features/assistant/content/personas';
 
 const EXCLUDE_TAG = 'clubhouse-mode';
 
@@ -281,10 +282,26 @@ export async function materializeAgent(params: {
     await cleanupStaleJsonInTomlConfigs(worktreePath, conv);
   }
 
-  // 1. Instructions
+  // 1. Instructions (project defaults + persona layer)
   if (defaults.instructions) {
     const resolved = replaceWildcards(defaults.instructions, ctx);
-    await provider.writeInstructions(worktreePath, resolved);
+    // If agent has a persona, append persona instructions after project defaults
+    if (agent.persona) {
+      const persona = getPersonaTemplate(agent.persona);
+      if (persona) {
+        await provider.writeInstructions(worktreePath, `${resolved}\n\n${persona.content}`);
+      } else {
+        await provider.writeInstructions(worktreePath, resolved);
+      }
+    } else {
+      await provider.writeInstructions(worktreePath, resolved);
+    }
+  } else if (agent.persona) {
+    // No project defaults but agent has a persona — write persona instructions alone
+    const persona = getPersonaTemplate(agent.persona);
+    if (persona) {
+      await provider.writeInstructions(worktreePath, persona.content);
+    }
   }
 
   // 2. Permissions
@@ -408,9 +425,19 @@ export async function previewMaterialization(params: {
   const ctx = buildWildcardContext(agent, projectPath, scp, commands);
   const _conv = provider.conventions;
 
-  const instructions = defaults.instructions
+  let instructions = defaults.instructions
     ? replaceWildcards(defaults.instructions, ctx)
     : '';
+
+  // Append persona instructions to preview if agent has a persona
+  if (agent.persona) {
+    const persona = getPersonaTemplate(agent.persona);
+    if (persona) {
+      instructions = instructions
+        ? `${instructions}\n\n${persona.content}`
+        : persona.content;
+    }
+  }
 
   const permissions = defaults.permissions
     ? {
