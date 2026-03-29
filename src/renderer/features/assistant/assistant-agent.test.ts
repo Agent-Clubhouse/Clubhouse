@@ -17,6 +17,7 @@ const mockOnStructuredEvent = vi.fn().mockReturnValue(() => {});
 const mockReadTranscript = vi.fn().mockResolvedValue(null);
 const mockAssistantSpawn = vi.fn().mockResolvedValue({ success: true });
 const mockSendFollowup = vi.fn().mockResolvedValue({ agentId: 'assistant_followup_123' });
+const mockSendStructuredFollowup = vi.fn().mockResolvedValue({ agentId: 'assistant_structured_followup_123' });
 const mockOnResult = vi.fn().mockReturnValue(() => {});
 const mockPtyWrite = vi.fn();
 const mockPtyOnData = vi.fn().mockReturnValue(() => {});
@@ -42,6 +43,7 @@ vi.stubGlobal('window', {
       bind: vi.fn().mockResolvedValue(undefined),
       unbind: vi.fn().mockResolvedValue(undefined),
       sendFollowup: mockSendFollowup,
+      sendStructuredFollowup: mockSendStructuredFollowup,
       onResult: mockOnResult,
       reset: mockAssistantReset,
       saveHistory: mockSaveHistory,
@@ -70,6 +72,7 @@ describe('assistant-agent', () => {
     mockCheckOrchestrator.mockResolvedValue({ available: true });
     mockAssistantSpawn.mockResolvedValue({ success: true });
     mockSendFollowup.mockResolvedValue({ agentId: 'assistant_followup_123' });
+    mockSendStructuredFollowup.mockResolvedValue({ agentId: 'assistant_structured_followup_123' });
     mockOnResult.mockReturnValue(() => {});
     mockOnStructuredEvent.mockReturnValue(() => {});
     mockPtyOnExit.mockReturnValue(() => {});
@@ -197,6 +200,109 @@ describe('assistant-agent', () => {
           expect.objectContaining({ message: 'How are you?' }),
         );
       }
+    });
+  });
+
+  describe('structured mode', () => {
+    it('registers event listener BEFORE spawn to prevent race condition', async () => {
+      agent.setMode('structured');
+      let listenerRegisteredBeforeSpawn = false;
+      // Track the order: onStructuredEvent should be called before spawn
+      mockOnStructuredEvent.mockImplementation(() => {
+        // At this point, spawn should NOT have been called yet
+        if (mockAssistantSpawn.mock.calls.length === 0) {
+          listenerRegisteredBeforeSpawn = true;
+        }
+        return () => {};
+      });
+      await agent.sendMessage('Hello');
+      expect(mockOnStructuredEvent).toHaveBeenCalled();
+      expect(listenerRegisteredBeforeSpawn).toBe(true);
+    });
+
+    it('cleans up old listeners before registering new ones on follow-up', async () => {
+      agent.setMode('structured');
+      const unsub1 = vi.fn();
+      const unsub2 = vi.fn();
+      mockOnStructuredEvent.mockReturnValueOnce(unsub1).mockReturnValueOnce(unsub2);
+
+      // First message
+      await agent.sendMessage('Hello');
+      expect(mockOnStructuredEvent).toHaveBeenCalledTimes(1);
+
+      // Simulate structured event handler receiving 'end' to go active
+      const eventCb = mockOnStructuredEvent.mock.calls[0][0];
+      eventCb(agent.getAgentId(), { type: 'end', timestamp: Date.now(), data: { reason: 'complete' } });
+      expect(agent.getStatus()).toBe('active');
+
+      // Follow-up: sendStructuredMessage throws → falls back to structured followup
+      mockSendStructuredMessage.mockRejectedValueOnce(new Error('not supported'));
+      await agent.sendMessage('Follow up');
+
+      // Old listener should have been cleaned up
+      expect(unsub1).toHaveBeenCalled();
+    });
+
+    it('sends structured follow-up via sendStructuredFollowup', async () => {
+      agent.setMode('structured');
+      await agent.sendMessage('Hello');
+
+      // Simulate reaching active state via 'end' event
+      const eventCb = mockOnStructuredEvent.mock.calls[0][0];
+      eventCb(agent.getAgentId(), { type: 'end', timestamp: Date.now(), data: { reason: 'complete' } });
+      expect(agent.getStatus()).toBe('active');
+
+      // Follow-up message: sendStructuredMessage throws → structured followup
+      mockSendStructuredMessage.mockRejectedValueOnce(new Error('not supported'));
+      await agent.sendMessage('Follow up');
+      expect(mockSendStructuredFollowup).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Follow up' }),
+      );
+    });
+
+    it('handles text_delta events for streaming', async () => {
+      agent.setMode('structured');
+      await agent.sendMessage('Hello');
+      const eventCb = mockOnStructuredEvent.mock.calls[0][0];
+      const agentId = agent.getAgentId();
+
+      // Send text_delta events
+      eventCb(agentId, { type: 'text_delta', timestamp: Date.now(), data: { text: 'Hi ' } });
+      eventCb(agentId, { type: 'text_delta', timestamp: Date.now(), data: { text: 'there!' } });
+
+      const items = agent.getFeedItems();
+      const assistantMsg = items.find(i => i.message?.role === 'assistant');
+      expect(assistantMsg?.message?.content).toBe('Hi there!');
+      expect(agent.getStatus()).toBe('responding');
+    });
+
+    it('finalizes message on text_done and returns to active', async () => {
+      agent.setMode('structured');
+      await agent.sendMessage('Hello');
+      const eventCb = mockOnStructuredEvent.mock.calls[0][0];
+      const agentId = agent.getAgentId();
+
+      eventCb(agentId, { type: 'text_delta', timestamp: Date.now(), data: { text: 'Complete response' } });
+      eventCb(agentId, { type: 'text_done', timestamp: Date.now(), data: { text: 'Complete response' } });
+
+      expect(agent.getStatus()).toBe('active');
+      const items = agent.getFeedItems();
+      const msg = items.find(i => i.message?.role === 'assistant');
+      // After text_done, streaming ID should be replaced with a permanent ID
+      expect(msg?.message?.id).not.toMatch(/^streaming-/);
+    });
+
+    it('ignores events from other agents', async () => {
+      agent.setMode('structured');
+      await agent.sendMessage('Hello');
+      const eventCb = mockOnStructuredEvent.mock.calls[0][0];
+
+      // Event from a different agent should be ignored
+      eventCb('other_agent_123', { type: 'text_delta', timestamp: Date.now(), data: { text: 'Intruder' } });
+
+      const items = agent.getFeedItems();
+      const intruderMsg = items.find(i => i.message?.content === 'Intruder');
+      expect(intruderMsg).toBeUndefined();
     });
   });
 

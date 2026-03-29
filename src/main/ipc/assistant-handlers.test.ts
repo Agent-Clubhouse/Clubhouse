@@ -196,6 +196,7 @@ describe('assistant-handlers', () => {
   it('registers all expected IPC channels', () => {
     expect(handlers.has(IPC.ASSISTANT.SPAWN)).toBe(true);
     expect(handlers.has(IPC.ASSISTANT.SEND_FOLLOWUP)).toBe(true);
+    expect(handlers.has(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP)).toBe(true);
     expect(handlers.has(IPC.ASSISTANT.BIND)).toBe(true);
     expect(handlers.has(IPC.ASSISTANT.UNBIND)).toBe(true);
     expect(handlers.has(IPC.ASSISTANT.RESET)).toBe(true);
@@ -371,6 +372,66 @@ describe('assistant-handlers', () => {
 
       const handler = handlers.get(IPC.ASSISTANT.SEND_FOLLOWUP)!;
       await expect(handler({}, { message: 'test' })).rejects.toThrow('does not support headless');
+    });
+  });
+
+  // ── SEND_STRUCTURED_FOLLOWUP ──────────────────────────────────────────────
+
+  describe('SEND_STRUCTURED_FOLLOWUP handler', () => {
+    it('creates a new follow-up agent and starts structured session', async () => {
+      const handler = handlers.get(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP)!;
+      const result = await handler({}, { message: 'follow up question' });
+
+      expect(result).toHaveProperty('agentId');
+      expect(result.agentId).toContain('assistant_followup_');
+      expect(mockStartStructured).toHaveBeenCalled();
+      expect(mockHeadlessSpawn).not.toHaveBeenCalled();
+    });
+
+    it('registers follow-up agent with structured runtime', async () => {
+      const handler = handlers.get(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP)!;
+      await handler({}, { message: 'test' });
+
+      expect(agentRegistry.register).toHaveBeenCalledWith(
+        expect.stringContaining('assistant_followup_'),
+        expect.objectContaining({ runtime: 'structured' }),
+      );
+    });
+
+    it('creates MCP binding for structured follow-up', async () => {
+      const handler = handlers.get(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP)!;
+      await handler({}, { message: 'test' });
+
+      expect(mockBind).toHaveBeenCalledWith(
+        expect.stringContaining('assistant_followup_'),
+        expect.objectContaining({ targetId: 'clubhouse_assistant' }),
+      );
+    });
+
+    it('creates adapter with resume: true for --continue flag', async () => {
+      const provider = createMockProvider();
+      mockResolveOrchestrator.mockResolvedValue(provider);
+
+      const handler = handlers.get(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP)!;
+      await handler({}, { message: 'test' });
+
+      expect(provider.createStructuredAdapter).toHaveBeenCalledWith({ resume: true });
+    });
+
+    it('throws if provider does not support structured mode', async () => {
+      const { isStructuredCapable } = await import('../orchestrators');
+      vi.mocked(isStructuredCapable).mockReturnValueOnce(false);
+
+      const handler = handlers.get(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP)!;
+      await expect(handler({}, { message: 'test' })).rejects.toThrow('does not support structured');
+    });
+
+    it('injects MCP config for structured follow-up', async () => {
+      const handler = handlers.get(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP)!;
+      await handler({}, { message: 'test' });
+
+      expect(mockInjectMcp).toHaveBeenCalled();
+      expect(mockSnapshotFile).toHaveBeenCalled();
     });
   });
 
