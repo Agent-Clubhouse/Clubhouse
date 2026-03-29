@@ -479,6 +479,7 @@ export async function createDurable(
   freeAgentMode?: boolean,
   mcpIds?: string[],
   structuredMode?: boolean,
+  persona?: string,
 ): Promise<DurableAgentConfig> {
   await ensureDir(clubhouseDir(projectPath));
   await ensureGitignore(projectPath);
@@ -562,6 +563,7 @@ export async function createDurable(
     ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
     ...(structuredMode ? { structuredMode } : {}),
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
+    ...(persona ? { persona } : {}),
   };
 
   const agents = await readAgents(projectPath);
