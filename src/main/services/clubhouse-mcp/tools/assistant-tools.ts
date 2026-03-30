@@ -954,31 +954,30 @@ registerToolTemplate(
 
 /**
  * Resolve canvas_id from view IDs.
- * When canvas_id is provided, validates it against inference from view IDs.
- * If inference disagrees, overrides with the inferred value and logs a warning.
  * When canvas_id is not provided, infers from view IDs.
+ * When canvas_id IS provided, validates it against inference — if inference
+ * disagrees, overrides with the inferred value and logs a warning.
  */
 async function resolveCanvasId(args: Record<string, unknown>, ...viewIdKeys: string[]): Promise<string | null> {
   const providedCanvasId = args.canvas_id as string | undefined;
-  let inferredCanvasId: string | null = null;
 
+  // Try to infer canvas_id from view IDs
   for (const key of viewIdKeys) {
     const viewId = args[key] as string | undefined;
     if (!viewId) continue;
     const result = await sendCanvasCommand('find_canvas_for_view', { view_id: viewId, project_id: args.project_id });
     if (result.success && result.data) {
       const data = result.data as { canvas_id: string; project_id: string | null };
-      inferredCanvasId = data.canvas_id;
-      break;
+      // If provided canvas_id disagrees with inference, override it
+      if (providedCanvasId && providedCanvasId !== data.canvas_id) {
+        appLog('core:assistant', 'warn', `canvas_id override: provided "${providedCanvasId}" but view belongs to "${data.canvas_id}" — using inferred value`);
+      }
+      return data.canvas_id;
     }
   }
 
-  if (providedCanvasId && inferredCanvasId && providedCanvasId !== inferredCanvasId) {
-    appLog('core:assistant', 'warn', `canvas_id override: provided "${providedCanvasId}" but view belongs to "${inferredCanvasId}" — using inferred value`);
-    return inferredCanvasId;
-  }
-
-  return inferredCanvasId || providedCanvasId || null;
+  // No inference possible — use provided canvas_id or null
+  return providedCanvasId || null;
 }
 
 registerToolTemplate('assistant', 'create_canvas', {

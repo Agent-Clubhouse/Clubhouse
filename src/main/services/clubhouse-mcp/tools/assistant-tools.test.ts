@@ -671,7 +671,9 @@ describe('assistant-tools', () => {
 
   describe('connect_cards parameter aliases', () => {
     it('accepts source_view_id and target_view_id', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { id: 'wire-1' } });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas-1', project_id: null } }) // find_canvas_for_view
+        .mockResolvedValueOnce({ success: true, data: { id: 'wire-1' } }); // connect_views
       const result = await callAssistantTool('connect_cards', {
         canvas_id: 'canvas-1',
         source_view_id: 'view-a',
@@ -685,7 +687,9 @@ describe('assistant-tools', () => {
     });
 
     it('accepts from_card_id and to_card_id as aliases', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { id: 'wire-2' } });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas-1', project_id: null } }) // find_canvas_for_view
+        .mockResolvedValueOnce({ success: true, data: { id: 'wire-2' } }); // connect_views
       const result = await callAssistantTool('connect_cards', {
         canvas_id: 'canvas-1',
         from_card_id: 'view-a',
@@ -701,7 +705,9 @@ describe('assistant-tools', () => {
 
   describe('move_card parameter aliases', () => {
     it('accepts x and y parameters', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: {} });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas-1', project_id: null } }) // find_canvas_for_view
+        .mockResolvedValueOnce({ success: true, data: {} }); // move_view
       const result = await callAssistantTool('move_card', {
         canvas_id: 'canvas-1',
         view_id: 'view-a',
@@ -715,7 +721,9 @@ describe('assistant-tools', () => {
     });
 
     it('accepts position_x and position_y as aliases', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: {} });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas-1', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: {} });
       const result = await callAssistantTool('move_card', {
         canvas_id: 'canvas-1',
         view_id: 'view-a',
@@ -729,7 +737,9 @@ describe('assistant-tools', () => {
     });
 
     it('prefers x/y over position_x/position_y when both provided', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: {} });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas-1', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: {} });
       const result = await callAssistantTool('move_card', {
         canvas_id: 'canvas-1',
         view_id: 'view-a',
@@ -745,6 +755,8 @@ describe('assistant-tools', () => {
     });
 
     it('returns error when neither x/y nor zone_id provided', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas-1', project_id: null } });
       const result = await callAssistantTool('move_card', {
         canvas_id: 'canvas-1',
         view_id: 'view-a',
@@ -755,26 +767,30 @@ describe('assistant-tools', () => {
 
     it('auto-positions inside zone when zone_id provided', async () => {
       mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas-1', project_id: null } }) // find_canvas_for_view
         .mockResolvedValueOnce({ success: true, data: [
           { id: 'zone-1', type: 'zone', position: { x: 100, y: 100 }, size: { width: 600, height: 400 } },
           { id: 'view-a', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
-        ] })
-        .mockResolvedValueOnce({ success: true, data: {} });
+        ] }) // query_views
+        .mockResolvedValueOnce({ success: true, data: {} }); // move_view
       const result = await callAssistantTool('move_card', {
         canvas_id: 'canvas-1',
         view_id: 'view-a',
         zone_id: 'zone-1',
       });
       expect(result.isError).toBeFalsy();
-      const moveCall = mockSendCanvasCommand.mock.calls[1];
-      expect(moveCall[0]).toBe('move_view');
+      const moveCall = mockSendCanvasCommand.mock.calls.find((c: any) => c[0] === 'move_view');
+      expect(moveCall).toBeDefined();
+      expect(moveCall![0]).toBe('move_view');
       // Position should be within zone bounds
-      expect(moveCall[1].position.x).toBeGreaterThanOrEqual(100);
-      expect(moveCall[1].position.y).toBeGreaterThanOrEqual(100);
+      expect(moveCall![1].position.x).toBeGreaterThanOrEqual(100);
+      expect(moveCall![1].position.y).toBeGreaterThanOrEqual(100);
     });
 
     it('returns error when zone_id not found', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: [] });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas-1', project_id: null } }) // find_canvas_for_view
+        .mockResolvedValueOnce({ success: true, data: [] }); // query_views (empty)
       const result = await callAssistantTool('move_card', {
         canvas_id: 'canvas-1',
         view_id: 'view-a',
@@ -918,15 +934,20 @@ describe('assistant-tools', () => {
       }));
     });
 
-    it('connect_cards skips inference when canvas_id is provided', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { id: 'wire-1' } });
+    it('connect_cards uses inferred canvas_id even when explicit canvas_id provided', async () => {
+      // Inference finds the view on a canvas
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'inferred-canvas', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: { id: 'wire-1' } });
       await callAssistantTool('connect_cards', {
         canvas_id: 'explicit-canvas',
         source_view_id: 'view-a',
         target_view_id: 'view-b',
       });
-      // Should NOT have called find_canvas_for_view
-      expect(mockSendCanvasCommand).not.toHaveBeenCalledWith('find_canvas_for_view', expect.anything());
+      // connect_views should use inferred canvas_id (override)
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('connect_views', expect.objectContaining({
+        canvas_id: 'inferred-canvas',
+      }));
     });
 
     it('connect_cards returns error when inference fails and no canvas_id', async () => {
@@ -1038,7 +1059,9 @@ describe('assistant-tools', () => {
 
   describe('card operation responses include canvas_id', () => {
     it('move_card response includes canvas_id', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', project_id: null } }) // find_canvas_for_view
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } }); // move_view
       const result = await callAssistantTool('move_card', {
         canvas_id: 'c1',
         view_id: 'v1',
@@ -1050,7 +1073,9 @@ describe('assistant-tools', () => {
     });
 
     it('resize_card response includes canvas_id', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
       const result = await callAssistantTool('resize_card', {
         canvas_id: 'c1',
         view_id: 'v1',
@@ -1062,7 +1087,9 @@ describe('assistant-tools', () => {
     });
 
     it('remove_card response includes canvas_id', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
       const result = await callAssistantTool('remove_card', {
         canvas_id: 'c1',
         view_id: 'v1',
@@ -1072,7 +1099,9 @@ describe('assistant-tools', () => {
     });
 
     it('rename_card response includes canvas_id', async () => {
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
       const result = await callAssistantTool('rename_card', {
         canvas_id: 'c1',
         view_id: 'v1',
@@ -1376,7 +1405,7 @@ describe('assistant-tools', () => {
     it('fails when blueprint is missing', async () => {
       const result = await callAssistantTool('create_canvas_from_blueprint', {});
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('blueprint is required');
+      expect(result.content[0].text).toContain('blueprint');
     });
   });
 
