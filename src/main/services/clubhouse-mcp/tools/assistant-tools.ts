@@ -21,7 +21,7 @@ import * as themeService from '../../theme-service';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { sendCanvasCommand } from '../canvas-command';
 import { computeLayout, computeRelativePosition, DEFAULT_CARD_SIZES } from '../canvas-layout';
-import type { RelativePosition } from '../canvas-layout';
+import type { RelativePosition, ForceEdge, ForceZoneConstraint, ForceLayoutParams } from '../canvas-layout';
 import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
 import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
 import { getPersonaTemplate, getPersonaIds } from '../../../../renderer/features/assistant/content/personas';
@@ -1313,15 +1313,20 @@ registerToolTemplate('assistant', 'connect_cards', {
 });
 
 registerToolTemplate('assistant', 'layout_canvas', {
-  description: 'Auto-arrange cards. Patterns: "horizontal" (row), "vertical" (column), "grid", "hub_spoke" (center + circle), "auto" (picks best pattern for card count). ' +
+  description: 'Auto-arrange cards. Patterns: "horizontal" (row), "vertical" (column), "grid", "hub_spoke" (center + circle), "auto" (picks best pattern for card count), "force" (physics-based force-directed — best for wired agent graphs). ' +
     'canvas_id is optional — auto-selects when only one canvas exists. ' +
     'Zone-aware: cards inside zones are grouped and arranged within their zone bounds. Zones themselves are arranged in the outer layout. ' +
+    'The "force" pattern uses wire connections to pull linked cards together and push unlinked cards apart — ideal for agent topologies. ' +
     'ALWAYS call this after adding all cards — it produces clean, readable layouts.',
   inputSchema: {
     type: 'object',
     properties: {
       canvas_id: { type: 'string', description: 'Canvas ID (optional — auto-selects when only one canvas exists).' },
-      pattern: { type: 'string', description: 'Layout: "horizontal", "vertical", "grid", "hub_spoke", or "auto" (picks best for card count).' },
+      pattern: { type: 'string', description: 'Layout: "horizontal", "vertical", "grid", "hub_spoke", "auto", or "force" (physics-based, best for wired graphs).' },
+      center_force: { type: 'number', description: 'Force pattern only: center gravity strength (0-1). Default 0.1.' },
+      repel_force: { type: 'number', description: 'Force pattern only: node repulsion strength. Default 5000.' },
+      link_force: { type: 'number', description: 'Force pattern only: edge attraction strength (0-1). Default 0.3.' },
+      link_distance: { type: 'number', description: 'Force pattern only: ideal distance between linked nodes. Default 300.' },
     },
     required: ['pattern'],
   },
@@ -1342,7 +1347,7 @@ registerToolTemplate('assistant', 'layout_canvas', {
   if (!canvasId) {
     return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id.' }], isError: true };
   }
-  const pattern = args.pattern as 'horizontal' | 'vertical' | 'grid' | 'hub_spoke' | 'auto';
+  const pattern = args.pattern as 'horizontal' | 'vertical' | 'grid' | 'hub_spoke' | 'auto' | 'force';
 
   // Reset auto-stagger counter — layout_canvas re-arranges all cards
   canvasCardCounters.delete(canvasId);
@@ -1350,7 +1355,7 @@ registerToolTemplate('assistant', 'layout_canvas', {
   const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId });
   if (!queryResult.success) return { content: [{ type: 'text', text: queryResult.error || 'Failed to query views' }], isError: true };
 
-  type CanvasView = { id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number }; containedViewIds?: string[] };
+  type CanvasView = { id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number }; containedViewIds?: string[]; agentId?: string };
   const views = queryResult.data as CanvasView[];
   if (!views || views.length === 0) return { content: [{ type: 'text', text: 'No cards to arrange.' }] };
 
@@ -1362,27 +1367,58 @@ registerToolTemplate('assistant', 'layout_canvas', {
   const containedIds = new Set(zones.flatMap(z => z.containedViewIds || []));
   const outerViews = views.filter(v => v.type !== 'zone' && !containedIds.has(v.id));
 
+  // Build edge list and zone constraints for force layout
+  let forceEdges: ForceEdge[] | undefined;
+  let forceZones: ForceZoneConstraint[] | undefined;
+  let forceParams: ForceLayoutParams | undefined;
+
+  if (pattern === 'force') {
+    // Query wire definitions to build edge list
+    const wireResult = await sendCanvasCommand('query_wires', { canvas_id: canvasId });
+    if (wireResult.success && Array.isArray(wireResult.data)) {
+      forceEdges = (wireResult.data as Array<{ sourceViewId: string; targetViewId: string }>)
+        .map(w => ({ source: w.sourceViewId, target: w.targetViewId }));
+    } else {
+      forceEdges = [];
+    }
+
+    // Build zone constraints
+    forceZones = zones.map(z => ({
+      zoneId: z.id,
+      bounds: { x: z.position.x, y: z.position.y, width: z.size.width, height: z.size.height },
+      nodeIds: (z.containedViewIds || []),
+    }));
+
+    forceParams = {
+      centerForce: args.center_force as number | undefined,
+      repelForce: args.repel_force as number | undefined,
+      linkForce: args.link_force as number | undefined,
+      linkDistance: args.link_distance as number | undefined,
+    };
+  }
+
   // Layout outer views (non-zone cards + zones as blocks)
   const outerCards = [...outerViews, ...zones].map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
-  const outerPositions = computeLayout(pattern, outerCards);
+  const outerPositions = computeLayout(pattern, outerCards, forceEdges, forceParams, forceZones);
   for (const pos of outerPositions) {
     await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: pos.id, position: { x: pos.x, y: pos.y } });
   }
 
-  // Layout cards inside each zone using grid within zone bounds
-  const ZONE_CARD_HEIGHT = 32;
-  const ZONE_PADDING = 20;
-  for (const zone of zones) {
-    const zonePos = outerPositions.find(p => p.id === zone.id);
-    if (!zonePos) continue;
-    const zoneCards = views.filter(v => (zone.containedViewIds || []).includes(v.id));
-    if (zoneCards.length === 0) continue;
-    const innerStartX = zonePos.x + ZONE_PADDING;
-    const innerStartY = zonePos.y + ZONE_CARD_HEIGHT + ZONE_PADDING;
-    const innerPositions = computeLayout('grid', zoneCards.map(v => ({ id: v.id, width: v.size.width, height: v.size.height })));
-    for (const ipos of innerPositions) {
-      // Offset inner positions to be relative to zone
-      await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: ipos.id, position: { x: innerStartX + ipos.x - 100, y: innerStartY + ipos.y - 100 } });
+  // Layout cards inside each zone (force layout handles zone containment internally; other patterns use grid)
+  if (pattern !== 'force') {
+    const ZONE_CARD_HEIGHT = 32;
+    const ZONE_PADDING = 20;
+    for (const zone of zones) {
+      const zonePos = outerPositions.find(p => p.id === zone.id);
+      if (!zonePos) continue;
+      const zoneCards = views.filter(v => (zone.containedViewIds || []).includes(v.id));
+      if (zoneCards.length === 0) continue;
+      const innerStartX = zonePos.x + ZONE_PADDING;
+      const innerStartY = zonePos.y + ZONE_CARD_HEIGHT + ZONE_PADDING;
+      const innerPositions = computeLayout('grid', zoneCards.map(v => ({ id: v.id, width: v.size.width, height: v.size.height })));
+      for (const ipos of innerPositions) {
+        await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: ipos.id, position: { x: innerStartX + ipos.x - 100, y: innerStartY + ipos.y - 100 } });
+      }
     }
   }
 

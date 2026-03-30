@@ -22,6 +22,7 @@ import { useWiring, type ZoneWireCallback } from './useWiring';
 import { useZoneWireStore } from './zone-wire-store';
 import { expandZoneWires, reconcileZoneBindings } from './zone-wire-expansion';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { layoutForceDirected, type ForceEdge, type ForceZoneConstraint } from '../../../../main/services/clubhouse-mcp/canvas-layout';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
@@ -517,6 +518,77 @@ export function CanvasWorkspace({
     if (!rect || views.length === 0) return;
     onViewportChange(viewportToFitViews(views, rect.width, rect.height));
   }, [views, onViewportChange]);
+
+  // ── Auto Layout (force-directed) ──────────────────────────────────
+
+  const handleAutoLayout = useCallback(() => {
+    if (views.length === 0) return;
+
+    // Build edge list from wire definitions
+    const edges: ForceEdge[] = [];
+    for (const wire of wireDefinitions) {
+      const sourceView = views.find(v =>
+        (v as any).agentId === wire.agentId || v.id === wire.agentId,
+      );
+      const targetView = views.find(v =>
+        (v as any).agentId === wire.targetId || v.id === wire.targetId,
+      );
+      if (sourceView && targetView) {
+        edges.push({ source: sourceView.id, target: targetView.id });
+      }
+    }
+
+    // Build zone constraints
+    const zoneViews = views.filter(v => v.type === 'zone') as ZoneCanvasView[];
+    const containedIds = new Set(zoneViews.flatMap(z => z.containedViewIds || []));
+    const zoneConstraints: ForceZoneConstraint[] = zoneViews.map(z => ({
+      zoneId: z.id,
+      bounds: { x: z.position.x, y: z.position.y, width: z.size.width, height: z.size.height },
+      nodeIds: z.containedViewIds || [],
+    }));
+
+    // Only layout non-zone, non-contained views (zones recompute via containment)
+    const layoutViews = views.filter(v => v.type !== 'zone' && !containedIds.has(v.id));
+    const cardsWithPos = layoutViews.map(v => ({
+      id: v.id,
+      width: v.size.width,
+      height: v.size.height,
+      x: v.position.x,
+      y: v.position.y,
+    }));
+
+    const targetPositions = layoutForceDirected(cardsWithPos, edges, {}, zoneConstraints);
+
+    // Animate cards to target positions
+    const startPositions = new Map(layoutViews.map(v => [v.id, { ...v.position }]));
+    const targetMap = new Map(targetPositions.map(p => [p.id, { x: p.x, y: p.y }]));
+    const duration = 500; // ms
+    const startTime = performance.now();
+
+    function animateStep(now: number) {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      // Ease-out cubic
+      const ease = 1 - Math.pow(1 - t, 3);
+
+      const positions = new Map<string, Position>();
+      for (const [id, start] of startPositions) {
+        const target = targetMap.get(id);
+        if (!target) continue;
+        positions.set(id, {
+          x: Math.round(start.x + (target.x - start.x) * ease),
+          y: Math.round(start.y + (target.y - start.y) * ease),
+        });
+      }
+      onMoveViews(positions);
+
+      if (t < 1) {
+        requestAnimationFrame(animateStep);
+      }
+    }
+
+    requestAnimationFrame(animateStep);
+  }, [views, wireDefinitions, onMoveViews]);
 
   // ── Search → focus on view ────────────────────────────────────────
 
@@ -1094,6 +1166,7 @@ export function CanvasWorkspace({
               onZoomReset={handleZoomReset}
               onCenter={handleCenter}
               onSizeToFit={handleSizeToFit}
+              onAutoLayout={handleAutoLayout}
               hasViews={views.length > 0}
               views={views}
               onSelectView={handleSearchSelect}
