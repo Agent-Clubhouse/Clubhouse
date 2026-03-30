@@ -130,6 +130,7 @@ Built-in plugins: Hub (split-pane agent workspace), Files (Monaco editor + file 
 | State management | Zustand 5 |
 | Code editor | Monaco Editor |
 | Terminal | xterm.js 6 + node-pty |
+| Canvas layout | ELK (elkjs) |
 | Build tooling | Electron Forge, Webpack, TypeScript 5.9 |
 | Testing | Vitest, Playwright |
 
@@ -143,4 +144,4 @@ See [PRINCIPLES.md](PRINCIPLES.md) for the full set of principles that guide dev
 
 ## License
 
-MIT
+MIT — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for third-party licenses.

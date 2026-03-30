@@ -256,7 +256,13 @@ export const WireOverlay = React.memo(function WireOverlay({
   // avoiding duplicate bezierPathWithOffsets calls for <defs> and <WireGroup>.
   const resolvedPaths = useMemo(() => {
     const result = new Map<string, string>();
-    for (const { key, path, from, to } of wires) {
+    for (const { key, path, from, to, binding } of wires) {
+      // When ELK has routed the path, use it directly — physics offsets
+      // would replace the carefully-calculated route with a straight bezier.
+      if (binding.routedPath) {
+        result.set(key, path);
+        continue;
+      }
       const offsets = wireOffsets.get(key);
       result.set(
         key,

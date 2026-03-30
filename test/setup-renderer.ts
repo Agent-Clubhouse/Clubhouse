@@ -435,6 +435,7 @@ vi.stubGlobal('clubhouse', {
   canvas: {
     onCommand: () => noop,
     sendCommandResult: noop,
+    layoutElk: vi.fn(async () => ({ nodes: [], edges: [] })),
   },
   window: {
     createPopout: asyncNoop,

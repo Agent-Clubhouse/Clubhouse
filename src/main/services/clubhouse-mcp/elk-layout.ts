@@ -22,12 +22,30 @@ export interface ElkLayoutResult {
 
 const ELK_OPTIONS: Record<string, string> = {
   'elk.algorithm': 'elk.layered',
-  'elk.edgeRouting': 'SPLINES',
-  'elk.spacing.nodeNode': '60',
-  'elk.spacing.edgeEdge': '20',
   'elk.direction': 'RIGHT',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '60',
+  'elk.edgeRouting': 'SPLINES',
   'elk.portConstraints': 'FIXED_SIDE',
+  // Spacing — generous gaps so edges are visually distinct
+  'elk.spacing.nodeNode': '100',
+  'elk.spacing.edgeEdge': '40',
+  'elk.spacing.edgeNode': '50',
+  'elk.spacing.componentComponent': '140',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '160',
+  'elk.layered.spacing.edgeNodeBetweenLayers': '60',
+  'elk.layered.spacing.edgeEdgeBetweenLayers': '35',
+  // Quality — max effort for crossing reduction and placement
+  'elk.layered.thoroughness': '10',
+  'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+  'elk.layered.crossingMinimization.greedySwitch.type': 'TWO_SIDED',
+  'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+  'elk.layered.nodePlacement.networkSimplex.nodeFlexibility.default': 'NODE_SIZE',
+  'elk.layered.compaction.postCompaction.strategy': 'LEFT_RIGHT_DIRECTED',
+  // Prefer long straight edges over short kinked ones
+  'elk.layered.wrapping.strategy': 'OFF',
+  'elk.layered.mergeEdges': 'false',
+  // Components and padding
+  'elk.separateConnectedComponents': 'true',
+  'elk.padding': '[top=40,left=40,bottom=40,right=40]',
 };
 
 // ---------------------------------------------------------------------------
