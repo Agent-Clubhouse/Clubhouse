@@ -30,15 +30,14 @@ export interface BuiltinPlugin {
 /** Experimental feature flags that gate conditional built-in plugins. */
 export interface ExperimentalFlags {
   sessions?: boolean;
-  review?: boolean;
   [key: string]: boolean | undefined;
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
-const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'git'];
+const BASE_DEFAULT_IDS = ['terminal', 'files', 'git', 'browser', 'review', 'canvas'];
 
 /** Canvas sub-plugin IDs — hidden from the plugin list unless canvas is enabled. */
-export const CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'agent-queue']);
+export const CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'agent-queue', 'sticky-note']);
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
@@ -47,16 +46,12 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: filesManifest, module: filesModule },
     { manifest: browserManifest, module: browserModule },
     { manifest: gitManifest, module: gitModule },
-    // Canvas is always loaded but not enabled by default
     { manifest: canvasManifest, module: canvasModule },
+    { manifest: reviewManifest, module: reviewModule },
     { manifest: groupProjectManifest, module: groupProjectModule },
     { manifest: agentQueueManifest, module: agentQueueModule },
     { manifest: stickyNoteManifest, module: stickyNoteModule },
   ];
-
-  if (experimentalFlags.review) {
-    plugins.push({ manifest: reviewManifest, module: reviewModule });
-  }
 
   if (experimentalFlags.sessions) {
     plugins.push({ manifest: sessionsManifest, module: sessionsModule });
@@ -68,9 +63,6 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
 /** Returns the set of builtin plugin IDs that should be auto-enabled on first install. */
 export function getDefaultEnabledIds(experimentalFlags: ExperimentalFlags = {}): ReadonlySet<string> {
   const ids = [...BASE_DEFAULT_IDS];
-  if (experimentalFlags.review) {
-    ids.push('review');
-  }
   if (experimentalFlags.sessions) {
     ids.push('sessions');
   }

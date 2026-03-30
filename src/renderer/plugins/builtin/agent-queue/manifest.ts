@@ -10,6 +10,7 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.8 },
   scope: 'dual',
+  requiresMcp: true,
   permissions: ['canvas', 'widgets', 'storage'],
   contributes: {
     help: {},
