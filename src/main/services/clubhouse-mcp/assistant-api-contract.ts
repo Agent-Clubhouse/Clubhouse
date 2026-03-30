@@ -362,9 +362,10 @@ export const ASSISTANT_TOOL_CATALOG = {
   agentWrite: ['create_agent', 'update_agent', 'delete_agent', 'write_agent_instructions'] as const,
   canvas: [
     'create_canvas', 'list_canvases', 'add_card', 'move_card',
-    'resize_card', 'remove_card', 'rename_card', 'connect_cards', 'layout_canvas',
-    'get_card_defaults',
+    'resize_card', 'remove_card', 'rename_card', 'connect_cards', 'disconnect_cards',
+    'layout_canvas', 'list_card_types', 'get_card_defaults',
   ] as const,
+  plugins: ['list_plugins', 'install_plugin'] as const,
 } as const;
 
 /** Flat list of all tool suffixes. */
@@ -373,6 +374,10 @@ export const ALL_TOOL_SUFFIXES = Object.values(ASSISTANT_TOOL_CATALOG).flat();
 /** Parameter alias map: common LLM guesses → actual parameter names. */
 export const PARAMETER_ALIASES: Record<string, Record<string, string>> = {
   connect_cards: {
+    from_card_id: 'source_view_id',
+    to_card_id: 'target_view_id',
+  },
+  disconnect_cards: {
     from_card_id: 'source_view_id',
     to_card_id: 'target_view_id',
   },
