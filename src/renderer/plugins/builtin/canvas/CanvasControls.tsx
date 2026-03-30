@@ -45,6 +45,20 @@ export function useAnchorCycler(
   return { count, currentIndex: safeIndex, goNext, goPrev };
 }
 
+export interface ForceLayoutSettings {
+  centerForce: number;
+  repelForce: number;
+  linkForce: number;
+  linkDistance: number;
+}
+
+const DEFAULT_FORCE_SETTINGS: ForceLayoutSettings = {
+  centerForce: 0.1,
+  repelForce: 5000,
+  linkForce: 0.3,
+  linkDistance: 300,
+};
+
 interface CanvasControlsProps {
   zoom: number;
   hasViews?: boolean;
@@ -55,6 +69,7 @@ interface CanvasControlsProps {
   onCenter: () => void;
   onSizeToFit: () => void;
   onSelectView: (viewId: string) => void;
+  onAutoLayout?: (settings: ForceLayoutSettings) => void;
   attentionMap?: Map<string, CanvasViewAttention>;
   api?: PluginAPI;
   pinnedWidgets?: Array<{
@@ -64,11 +79,13 @@ interface CanvasControlsProps {
   }>;
 }
 
-export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, attentionMap, api, pinnedWidgets }: CanvasControlsProps) {
+export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, onAutoLayout, attentionMap, api: _api, pinnedWidgets: _pinnedWidgets }: CanvasControlsProps) {
   const zoomPercent = Math.round(zoom * 100);
   const effectiveMap = attentionMap ?? new Map();
   const { count, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
   const { count: anchorCount, goNext: anchorNext, goPrev: anchorPrev } = useAnchorCycler(views, onSelectView);
+  const [showLayoutSettings, setShowLayoutSettings] = useState(false);
+  const [forceSettings, setForceSettings] = useState<ForceLayoutSettings>(DEFAULT_FORCE_SETTINGS);
 
   const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
 
@@ -204,6 +221,94 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
             <rect x="7" y="7" width="10" height="10" rx="1" />
           </svg>
         </button>
+      )}
+
+      {/* Auto Layout */}
+      {hasViews && onAutoLayout && (
+        <div className="relative flex items-center gap-0.5">
+          <button
+            onClick={() => onAutoLayout(forceSettings)}
+            className={btnClass}
+            title="Auto Layout (force-directed)"
+            data-testid="canvas-auto-layout"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="6" cy="6" r="2" />
+              <circle cx="18" cy="6" r="2" />
+              <circle cx="6" cy="18" r="2" />
+              <circle cx="18" cy="18" r="2" />
+              <line x1="8" y1="6" x2="16" y2="6" />
+              <line x1="6" y1="8" x2="6" y2="16" />
+              <line x1="18" y1="8" x2="18" y2="16" />
+              <line x1="8" y1="18" x2="16" y2="18" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setShowLayoutSettings(!showLayoutSettings)}
+            className="w-4 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
+            title="Layout settings"
+            data-testid="canvas-auto-layout-settings-toggle"
+          >
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+              <polyline points={showLayoutSettings ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
+            </svg>
+          </button>
+          {showLayoutSettings && (
+            <div
+              className="absolute top-full right-0 mt-1 w-56 bg-ctp-mantle border border-surface-0 rounded-lg shadow-lg p-3 z-50"
+              data-testid="canvas-auto-layout-settings"
+            >
+              <div className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Layout Settings</div>
+              <label className="flex items-center justify-between text-[11px] text-ctp-text mb-1.5">
+                <span>Center Force</span>
+                <input
+                  type="range" min="0" max="100" step="1"
+                  value={Math.round(forceSettings.centerForce * 100)}
+                  onChange={(e) => setForceSettings(s => ({ ...s, centerForce: Number(e.target.value) / 100 }))}
+                  className="w-20 h-1 accent-ctp-blue"
+                  data-testid="force-center-slider"
+                />
+              </label>
+              <label className="flex items-center justify-between text-[11px] text-ctp-text mb-1.5">
+                <span>Repel Force</span>
+                <input
+                  type="range" min="100" max="20000" step="100"
+                  value={forceSettings.repelForce}
+                  onChange={(e) => setForceSettings(s => ({ ...s, repelForce: Number(e.target.value) }))}
+                  className="w-20 h-1 accent-ctp-blue"
+                  data-testid="force-repel-slider"
+                />
+              </label>
+              <label className="flex items-center justify-between text-[11px] text-ctp-text mb-1.5">
+                <span>Link Force</span>
+                <input
+                  type="range" min="0" max="100" step="1"
+                  value={Math.round(forceSettings.linkForce * 100)}
+                  onChange={(e) => setForceSettings(s => ({ ...s, linkForce: Number(e.target.value) / 100 }))}
+                  className="w-20 h-1 accent-ctp-blue"
+                  data-testid="force-link-slider"
+                />
+              </label>
+              <label className="flex items-center justify-between text-[11px] text-ctp-text mb-2">
+                <span>Link Distance</span>
+                <input
+                  type="range" min="100" max="800" step="20"
+                  value={forceSettings.linkDistance}
+                  onChange={(e) => setForceSettings(s => ({ ...s, linkDistance: Number(e.target.value) }))}
+                  className="w-20 h-1 accent-ctp-blue"
+                  data-testid="force-distance-slider"
+                />
+              </label>
+              <button
+                onClick={() => setForceSettings(DEFAULT_FORCE_SETTINGS)}
+                className="w-full text-[10px] text-ctp-subtext0 hover:text-ctp-text py-0.5 rounded hover:bg-surface-1 transition-colors"
+                data-testid="force-reset-defaults"
+              >
+                Reset to defaults
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Divider */}

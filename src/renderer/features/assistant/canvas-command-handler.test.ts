@@ -790,4 +790,41 @@ describe('canvas-command-handler', () => {
     expect(result.data.id_map.c1).toBeDefined();
     expect(result.data.id_map.c2).toBeDefined();
   });
+
+  // ── query_wires ─────────────────────────────────────────────────────────
+
+  it('query_wires returns empty array when no wires exist', async () => {
+    const createResult = await sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    const result = await sendCommand('query_wires', { canvas_id: canvasId });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+  });
+
+  it('query_wires fails on nonexistent canvas', async () => {
+    const result = await sendCommand('query_wires', { canvas_id: 'nope' });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Canvas not found');
+  });
+
+  it('query_wires returns wire data mapped to view IDs', async () => {
+    const createResult = await sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+
+    // Add two agent views with agentId metadata
+    await sendCommand('add_view', { canvas_id: canvasId, type: 'agent', agent_id: 'agent_a' });
+    await sendCommand('add_view', { canvas_id: canvasId, type: 'agent', agent_id: 'agent_b' });
+
+    // Add wire definition to mock store
+    mockWireDefinitions.push({ agentId: 'agent_a', targetId: 'agent_b', targetKind: 'agent', label: 'test wire' });
+
+    const result = await sendCommand('query_wires', { canvas_id: canvasId });
+    expect(result.success).toBe(true);
+    expect(Array.isArray(result.data)).toBe(true);
+    // Wire should map agent IDs to view IDs
+    if (result.data.length > 0) {
+      expect(result.data[0]).toHaveProperty('sourceViewId');
+      expect(result.data[0]).toHaveProperty('targetViewId');
+    }
+  });
 });

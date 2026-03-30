@@ -319,6 +319,32 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
     return { success: true, data: views };
   },
 
+  query_wires(args) {
+    const pid = args.project_id as string | undefined;
+    const canvas = findCanvas(args.canvas_id as string, pid);
+    if (!canvas) return { success: false, error: `Canvas not found: ${args.canvas_id}` };
+
+    const store = getStore(pid);
+    const wireDefs = (store as any).wireDefinitions || [];
+
+    // Map wire definitions to view IDs for the force layout
+    const wires = wireDefs
+      .map((w: any) => {
+        // Find views by agentId/targetId
+        const sourceView = canvas.views.find((v: CanvasView) =>
+          (v as any).agentId === w.agentId || v.id === w.agentId,
+        );
+        const targetView = canvas.views.find((v: CanvasView) =>
+          (v as any).agentId === w.targetId || v.id === w.targetId,
+        );
+        if (!sourceView || !targetView) return null;
+        return { sourceViewId: sourceView.id, targetViewId: targetView.id };
+      })
+      .filter(Boolean);
+
+    return { success: true, data: wires };
+  },
+
   connect_views(args) {
     const canvasId = args.canvas_id as string;
     const sourceViewId = args.source_view_id as string;
