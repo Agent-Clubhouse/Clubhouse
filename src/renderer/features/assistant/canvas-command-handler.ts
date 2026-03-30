@@ -577,12 +577,13 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
         freeCardIdx++;
       }
 
-      const cardType = card.type as CanvasViewType;
-
       // Handle group-project cards as plugin views
       if (card.type === 'group-project') {
-        // Group project cards are plugin views with a specific widget type
-        const viewId = store.addPluginView?.('builtin-canvas', 'group-project', card.display_name || 'Group Project', position);
+        if (!store.addPluginView) {
+          console.warn('[assistant] addPluginView not available — skipping group-project card:', card.id);
+          continue;
+        }
+        const viewId = store.addPluginView('builtin-canvas', 'group-project', card.display_name || 'Group Project', position);
         if (viewId) {
           idMap[card.id] = viewId;
           if (card.group_project_id) {
@@ -594,6 +595,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
         continue;
       }
 
+      // Validate card type
+      const validTypes = new Set(['agent', 'zone', 'anchor', 'sticky-note']);
+      if (!validTypes.has(card.type)) {
+        console.warn('[assistant] Unknown card type in blueprint, skipping:', card.type, card.id);
+        continue;
+      }
+
+      const cardType = card.type as CanvasViewType;
       const viewId = store.addView(cardType, position);
       if (viewId) {
         idMap[card.id] = viewId;

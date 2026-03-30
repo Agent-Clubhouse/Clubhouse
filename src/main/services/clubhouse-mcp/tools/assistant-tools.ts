@@ -1532,20 +1532,24 @@ registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
     wireResults.push({ from: wire.from, to: wire.to, success: wireResult.success, error: wireResult.error });
   }
 
-  // Step 3: Apply layout
+  // Step 3: Apply layout — skip for blueprints with zones (positions already
+  // computed in renderer Phase 2 to respect zone containment)
+  const hasZones = ((blueprint.zones as unknown[]) || []).length > 0;
   const pattern = (args.layout_pattern as string) || 'auto';
-  const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId, project_id: args.project_id });
-  if (queryResult.success) {
-    const views = queryResult.data as Array<{ id: string; type: string; size: { width: number; height: number } }>;
-    const cardInfos = views.map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
-    const layouts = computeLayout(pattern as any, cardInfos);
-    for (const layout of layouts) {
-      await sendCanvasCommand('move_view', {
-        canvas_id: canvasId,
-        view_id: layout.id,
-        position: { x: layout.x, y: layout.y },
-        project_id: args.project_id,
-      });
+  if (!hasZones) {
+    const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId, project_id: args.project_id });
+    if (queryResult.success) {
+      const views = queryResult.data as Array<{ id: string; type: string; size: { width: number; height: number } }>;
+      const cardInfos = views.map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
+      const layouts = computeLayout(pattern as any, cardInfos);
+      for (const layout of layouts) {
+        await sendCanvasCommand('move_view', {
+          canvas_id: canvasId,
+          view_id: layout.id,
+          position: { x: layout.x, y: layout.y },
+          project_id: args.project_id,
+        });
+      }
     }
   }
 
@@ -1560,7 +1564,7 @@ registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
     zones_created: data.zone_count,
     cards_created: data.card_count,
     wires_created: wireResults.filter(w => w.success).length,
-    layout_applied: pattern,
+    layout_applied: hasZones ? 'skipped (zone positions preserved)' : pattern,
   };
   if (failedWires.length > 0) {
     response.wire_errors = failedWires;

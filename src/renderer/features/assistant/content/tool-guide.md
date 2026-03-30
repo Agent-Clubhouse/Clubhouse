@@ -42,17 +42,14 @@ Agents may have custom icons set by the user (shown as a non-null `icon` field i
 
 | Tool | Use when |
 |------|----------|
-| `create_canvas` | User wants a new visual workspace. Returns canvas_id. |
-| `list_canvases` | Check existing canvases before creating new ones. |
-| `create_canvas_from_blueprint` | **Preferred for multi-card canvases.** Atomic creation of zones + cards + wires in one call. |
-| `add_card` | Add a single card. ALWAYS provide agent_id + project_id for agent cards. Supports relative positioning. |
-| `move_card` | Reposition cards. Supports relative positioning and zone placement. |
-| `resize_card` | Adjust card size (zones need 600x400+). |
-| `remove_card` | Remove a card from canvas. |
-| `rename_card` | Change card display name. |
-| `connect_cards` | Create MCP wire. Source must be agent card with agent_id. Wires persist even if agent sleeps. |
-| `disconnect_cards` | Remove a wire. Auto-removes bidirectional wires. |
-| `layout_canvas` | Auto-arrange: "horizontal", "vertical", "grid", "hub_spoke", "auto". ALWAYS call after adding all cards. |
+| `create_canvas_from_blueprint` | **Preferred for 3+ cards.** Atomic zones + cards + wires in one JSON call. |
+| `create_canvas` | Single empty canvas. |
+| `list_canvases` | Check existing canvases. |
+| `add_card` | Add one card. Set agent_id + project_id for agents. |
+| `move_card` | Reposition. Supports relative positioning and zones. |
+| `connect_cards` | Create MCP wire between cards. |
+| `disconnect_cards` | Remove a wire. |
+| `layout_canvas` | Auto-arrange: horizontal, vertical, grid, hub_spoke, auto. |
 
 ### Card types and dimensions
 
