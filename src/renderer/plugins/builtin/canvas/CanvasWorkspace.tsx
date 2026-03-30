@@ -23,6 +23,7 @@ import { useZoneWireStore } from './zone-wire-store';
 import { expandZoneWires, reconcileZoneBindings } from './zone-wire-expansion';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { layoutForceDirected, type ForceEdge, type ForceZoneConstraint } from '../../../../main/services/clubhouse-mcp/canvas-layout';
+import type { ForceLayoutSettings } from './CanvasControls';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
@@ -521,7 +522,7 @@ export function CanvasWorkspace({
 
   // ── Auto Layout (force-directed) ──────────────────────────────────
 
-  const handleAutoLayout = useCallback(() => {
+  const handleAutoLayout = useCallback((settings: ForceLayoutSettings) => {
     if (views.length === 0) return;
 
     // Build edge list from wire definitions
@@ -557,7 +558,12 @@ export function CanvasWorkspace({
       y: v.position.y,
     }));
 
-    const targetPositions = layoutForceDirected(cardsWithPos, edges, {}, zoneConstraints);
+    const targetPositions = layoutForceDirected(cardsWithPos, edges, {
+      centerForce: settings.centerForce,
+      repelForce: settings.repelForce,
+      linkForce: settings.linkForce,
+      linkDistance: settings.linkDistance,
+    }, zoneConstraints);
 
     // Animate cards to target positions
     const startPositions = new Map(layoutViews.map(v => [v.id, { ...v.position }]));

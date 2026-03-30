@@ -273,9 +273,6 @@ export function layoutForceDirected(
     }
   }
 
-  // Build edge index for fast lookup
-  const _edgeSet = new Set(edges.map(e => `${e.source}:${e.target}`));
-
   // Compute center of mass
   const centerX = nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
   const centerY = nodes.reduce((s, n) => s + n.y, 0) / nodes.length;
