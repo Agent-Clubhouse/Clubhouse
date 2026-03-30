@@ -52,7 +52,6 @@ Agents may have custom icons set by the user (shown as a non-null `icon` field i
 | `connect_cards` | Create MCP wire. Source must be agent card with agent_id. Wires persist even if agent sleeps. |
 | `disconnect_cards` | Remove a wire. Auto-removes bidirectional wires. |
 | `layout_canvas` | Auto-arrange: "horizontal", "vertical", "grid", "hub_spoke", "auto". ALWAYS call after adding all cards. |
-| `list_card_types` | Card types with default sizes. Also see `get_card_defaults`. |
 
 ### Card types and dimensions
 
@@ -87,13 +86,6 @@ Anchors are just text labels. For coordination between agents, use **group proje
 - Wire agents to each other directly (agent-to-agent), or
 - Wire agents to a group project card for bulletin board coordination.
 Do NOT create "coordination hub" anchors — they have no functionality.
-
-## Plugin tools
-
-| Tool | Use when |
-|------|----------|
-| `list_plugins` | List installed plugins. |
-| `install_plugin` | Install from local path. Does NOT enable — user enables in Settings. |
 
 ## Settings and info tools
 
