@@ -82,7 +82,7 @@ export function AssistantHeader({ onReset, mode, onModeChange, orchestrator, onO
           >
             <option value="">Default</option>
             {orchestrators.map((o) => (
-              <option key={o.id} value={o.id}>{o.shortName || o.displayName}</option>
+              <option key={o.id} value={o.id}>{o.displayName || o.shortName}</option>
             ))}
           </select>
         )}

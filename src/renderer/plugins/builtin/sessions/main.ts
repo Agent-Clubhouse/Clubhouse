@@ -3,6 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule, AgentInfo, CompletedQuickA
 import type { SessionEvent, SessionSummary } from '../../../../shared/session-types';
 import { sessionsState } from './state';
 import type { PlaybackState, SessionListEntry } from './state';
+import { getOrchestratorLabel } from '../../../features/agents/orchestrator-colors';
 
 // ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -584,7 +585,7 @@ function SessionSummaryCard({ summary }: { summary: SessionSummary }) {
       className: 'flex items-center gap-3 mt-2 pt-2 border-t border-surface-0 text-[10px] text-ctp-overlay0',
     },
       summary.model && React.createElement('span', null, `Model: ${summary.model}`),
-      summary.orchestrator && React.createElement('span', null, `Provider: ${summary.orchestrator}`),
+      summary.orchestrator && React.createElement('span', null, `Provider: ${getOrchestratorLabel(summary.orchestrator)}`),
       React.createElement('span', null, `${summary.eventCount} events`),
     ),
 

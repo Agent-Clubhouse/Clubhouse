@@ -661,7 +661,7 @@ describe('MainPanel', () => {
     expect(cardText).toContain('10.0K'); // input tokens
     expect(cardText).toContain('5.0K'); // output tokens
     expect(cardText).toContain('Model: claude-sonnet-4-5-20250514');
-    expect(cardText).toContain('Provider: claude-code');
+    expect(cardText).toContain('Provider: Claude Code');
     // File list toggle
     expect(screen.getByText('Show 2 modified files')).toBeDefined();
   });
