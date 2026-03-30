@@ -38,7 +38,7 @@ export interface ExperimentalFlags {
 const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'git'];
 
 /** Canvas sub-plugin IDs — hidden from the plugin list unless canvas is enabled. */
-export const CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'agent-queue']);
+export const CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'agent-queue', 'sticky-note']);
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
