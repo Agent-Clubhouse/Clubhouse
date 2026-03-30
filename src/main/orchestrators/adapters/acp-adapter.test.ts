@@ -223,6 +223,22 @@ describe('AcpAdapter', () => {
     expect(opts.args).toContain('--allow-all-tools');
   });
 
+  it('appends extraArgs to spawn args (MCP injection)', () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: ['--acp', '--stdio'] });
+    adapter.start({
+      ...defaultSessionOpts,
+      extraArgs: ['--additional-mcp-config', '{"mcpServers":{"clubhouse":{}}}'],
+    });
+
+    const opts = MockAcpClient.mock.calls[0][0];
+    expect(opts.args).toContain('--additional-mcp-config');
+    expect(opts.args).toContain('{"mcpServers":{"clubhouse":{}}}');
+    // extraArgs should come after the base args
+    const acpIdx = opts.args.indexOf('--acp');
+    const mcpIdx = opts.args.indexOf('--additional-mcp-config');
+    expect(mcpIdx).toBeGreaterThan(acpIdx);
+  });
+
   // ── Notification mapping tests ────────────────────────────────────────────
 
   it('maps agent_message_chunk → text_delta', async () => {
@@ -624,27 +640,28 @@ describe('AcpAdapter', () => {
 
   // ── Startup failure ───────────────────────────────────────────────────────
 
-  it('emits error event when startup fails', async () => {
+  it('emits error + end events and finishes queue when startup fails', async () => {
     mockClient.start.mockRejectedValue(new Error('Connection refused'));
 
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
-    // Let the async error handler run before triggering exit
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onExit(1, null);
-
+    // The catch handler now finishes the queue — no need for onExit
     const events: StructuredEvent[] = [];
     for await (const event of stream) {
       events.push(event);
     }
 
+    // Should have error + end events from the catch handler
     expect(events.some(e => e.type === 'error')).toBe(true);
     const errorEvent = events.find(e => e.type === 'error')!;
     expect((errorEvent.data as { code: string }).code).toBe('session_start_failed');
+    expect(events.some(e => e.type === 'end')).toBe(true);
+    const endEvent = events.find(e => e.type === 'end')!;
+    expect((endEvent.data as { reason: string }).reason).toBe('error');
   });
 
-  it('emits error event when session/new fails', async () => {
+  it('emits error + end events when session/new fails', async () => {
     const { RpcError } = await import('./acp-client');
     const rpcErr = new RpcError(-32601, 'Method not found');
 
@@ -656,9 +673,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onExit(1, null);
-
+    // The catch handler now finishes the queue — no need for onExit
     const events: StructuredEvent[] = [];
     for await (const event of stream) {
       events.push(event);
@@ -667,6 +682,7 @@ describe('AcpAdapter', () => {
     expect(events.some(e => e.type === 'error')).toBe(true);
     const errorEvent = events.find(e => e.type === 'error')!;
     expect((errorEvent.data as { code: string }).code).toBe('session_start_failed');
+    expect(events.some(e => e.type === 'end')).toBe(true);
   });
 
   // ── Tool verb resolution ──────────────────────────────────────────────────
@@ -749,9 +765,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onExit(1, null);
-
+    // Queue finishes on its own now — no need for onExit
     const events: StructuredEvent[] = [];
     for await (const event of stream) {
       events.push(event);

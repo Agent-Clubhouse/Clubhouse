@@ -107,6 +107,20 @@ describe('CodexAppServerAdapter', () => {
     expect(opts.cwd).toBe('/tmp/project');
   });
 
+  it('appends extraArgs to spawn args (MCP injection)', () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start({
+      ...defaultSessionOpts,
+      extraArgs: ['-c', 'mcp_servers.clubhouse.command="node"'],
+    });
+
+    const opts = MockClient.mock.calls[0][0];
+    expect(opts.args).toEqual([
+      'app-server', '--listen', 'stdio://',
+      '-c', 'mcp_servers.clubhouse.command="node"',
+    ]);
+  });
+
   it('removes CLAUDECODE and CLAUDE_CODE_ENTRYPOINT from env', () => {
     const adapter = new CodexAppServerAdapter({
       binary: 'codex',
