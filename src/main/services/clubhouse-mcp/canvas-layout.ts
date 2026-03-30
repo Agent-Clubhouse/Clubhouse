@@ -11,6 +11,24 @@ export interface CardInfo {
   height: number;
 }
 
+export interface CardRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type RelativePosition = 'right' | 'left' | 'below' | 'above';
+
+/** Default card dimensions by type. */
+export const DEFAULT_CARD_SIZES: Record<string, { width: number; height: number }> = {
+  agent: { width: 300, height: 200 },
+  zone: { width: 600, height: 400 },
+  anchor: { width: 200, height: 100 },
+  sticky: { width: 200, height: 150 },
+  plugin: { width: 300, height: 200 },
+};
+
 export interface LayoutResult {
   id: string;
   x: number;
@@ -101,10 +119,68 @@ export function layoutHubSpoke(cards: CardInfo[], centerX = 500, centerY = 400):
 }
 
 /**
+ * Compute a position relative to an existing card.
+ *
+ * @param reference - The card to position relative to (position + size).
+ * @param position  - Where to place: 'right', 'left', 'below', 'above'.
+ * @param newWidth  - Width of the card being placed.
+ * @param newHeight - Height of the card being placed.
+ * @param buffer    - Gap between the cards (defaults to SPACING).
+ */
+export function computeRelativePosition(
+  reference: CardRect,
+  position: RelativePosition,
+  newWidth: number,
+  newHeight: number,
+  buffer: number = SPACING,
+): { x: number; y: number } {
+  switch (position) {
+    case 'right':
+      return {
+        x: snapToGrid(reference.x + reference.width + buffer),
+        y: snapToGrid(reference.y),
+      };
+    case 'left':
+      return {
+        x: snapToGrid(reference.x - newWidth - buffer),
+        y: snapToGrid(reference.y),
+      };
+    case 'below':
+      return {
+        x: snapToGrid(reference.x),
+        y: snapToGrid(reference.y + reference.height + buffer),
+      };
+    case 'above':
+      return {
+        x: snapToGrid(reference.x),
+        y: snapToGrid(reference.y - newHeight - buffer),
+      };
+    default:
+      return {
+        x: snapToGrid(reference.x + reference.width + buffer),
+        y: snapToGrid(reference.y),
+      };
+  }
+}
+
+/**
+ * Pick the best layout pattern based on card count.
+ * - 1-3 cards: horizontal
+ * - 4 cards: grid (2x2)
+ * - 5-8 cards with a "hub" role: hub_spoke
+ * - 5+ cards: grid
+ */
+export function autoLayout(cards: CardInfo[]): LayoutResult[] {
+  if (cards.length <= 3) return layoutHorizontal(cards);
+  if (cards.length <= 4) return layoutGrid(cards);
+  return layoutGrid(cards);
+}
+
+/**
  * Apply a layout pattern to a set of cards.
  */
 export function computeLayout(
-  pattern: 'horizontal' | 'vertical' | 'grid' | 'hub_spoke',
+  pattern: 'horizontal' | 'vertical' | 'grid' | 'hub_spoke' | 'auto',
   cards: CardInfo[],
 ): LayoutResult[] {
   switch (pattern) {
@@ -112,6 +188,7 @@ export function computeLayout(
     case 'vertical': return layoutVertical(cards);
     case 'grid': return layoutGrid(cards);
     case 'hub_spoke': return layoutHubSpoke(cards);
+    case 'auto': return autoLayout(cards);
     default: return layoutGrid(cards);
   }
 }

@@ -20,7 +20,8 @@ import { appLog } from '../../log-service';
 import * as themeService from '../../theme-service';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { sendCanvasCommand } from '../canvas-command';
-import { computeLayout } from '../canvas-layout';
+import { computeLayout, computeRelativePosition, DEFAULT_CARD_SIZES } from '../canvas-layout';
+import type { RelativePosition } from '../canvas-layout';
 import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
 import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
 import { getPersonaTemplate, getPersonaIds } from '../../../../renderer/features/assistant/content/personas';
@@ -976,7 +977,8 @@ registerToolTemplate('assistant', 'add_card', {
     'For agent cards, ALWAYS provide agent_id and project_id to bind a real agent. ' +
     'Cards are auto-staggered when no position is specified. ALWAYS call layout_canvas after adding all cards. ' +
     'Anchors are just labels — they CANNOT be wired or used for coordination. Use group project cards for coordination. ' +
-    'To place a card inside a zone, set zone_id to the zone\'s view ID — the card will be auto-positioned within that zone.',
+    'To place a card inside a zone, set zone_id to the zone\'s view ID — the card will be auto-positioned within that zone. ' +
+    'To place a card relative to another card, use relative_to_card_id + relative_position (e.g., "right", "below") + optional relative_buffer.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -990,11 +992,15 @@ registerToolTemplate('assistant', 'add_card', {
       width: { type: 'number', description: 'Width in pixels as a number (default: agent=300, zone=600, anchor=200).' },
       height: { type: 'number', description: 'Height in pixels as a number (default: agent=200, zone=400, anchor=100).' },
       zone_id: { type: 'string', description: 'Zone view ID to place this card inside. Card will be auto-positioned within the zone bounds.' },
+      relative_to_card_id: { type: 'string', description: 'View ID of an existing card to position relative to. Use with relative_position.' },
+      relative_position: { type: 'string', description: 'Where to place relative to the reference card: "right", "left", "below", or "above". Defaults to "right".' },
+      relative_buffer: { type: 'number', description: 'Gap in pixels between the reference card and the new card. Defaults to 60.' },
     },
     required: ['canvas_id', 'type'],
   },
 }, async (_t, _a, args) => {
   const canvasId = args.canvas_id as string;
+  const cardType = (args.type as string) || 'agent';
   const cmdArgs: Record<string, unknown> = {
     canvas_id: canvasId, type: args.type, display_name: args.display_name,
     agent_id: args.agent_id, project_id: args.project_id,
@@ -1004,7 +1010,37 @@ registerToolTemplate('assistant', 'add_card', {
   const width = args.width !== undefined ? Number(args.width) : undefined;
   const height = args.height !== undefined ? Number(args.height) : undefined;
 
-  if (args.zone_id) {
+  // Resolve the effective card size (explicit > default for type)
+  const defaults = DEFAULT_CARD_SIZES[cardType] || DEFAULT_CARD_SIZES.agent;
+  const effectiveWidth = width ?? defaults.width;
+  const effectiveHeight = height ?? defaults.height;
+
+  if (args.relative_to_card_id) {
+    // Relative positioning: place card relative to an existing card
+    const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId });
+    const views = queryResult.success ? (queryResult.data as Array<{ id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number } }>) : [];
+    const refCard = views.find(v => v.id === args.relative_to_card_id);
+    if (refCard) {
+      const relPos = (args.relative_position as RelativePosition) || 'right';
+      const buffer = args.relative_buffer !== undefined ? Number(args.relative_buffer) : undefined;
+      const pos = computeRelativePosition(
+        { x: refCard.position.x, y: refCard.position.y, width: refCard.size.width, height: refCard.size.height },
+        relPos,
+        effectiveWidth,
+        effectiveHeight,
+        buffer,
+      );
+      cmdArgs.position = pos;
+    } else {
+      // Reference card not found — fall through to auto-stagger
+      appLog('core:assistant', 'warn', `add_card relative_to: card ${args.relative_to_card_id} not found, using auto-stagger`);
+      const idx = canvasCardCounters.get(canvasId) || 0;
+      const col = idx % 4;
+      const rw = Math.floor(idx / 4);
+      cmdArgs.position = { x: 100 + col * 340, y: 100 + rw * 260 };
+      canvasCardCounters.set(canvasId, idx + 1);
+    }
+  } else if (args.zone_id) {
     // Auto-position within zone bounds
     const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId });
     const views = queryResult.success ? (queryResult.data as Array<{ id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number } }>) : [];
@@ -1040,7 +1076,7 @@ registerToolTemplate('assistant', 'add_card', {
     canvasCardCounters.set(canvasId, idx + 1);
   }
   if (width !== undefined || height !== undefined) {
-    cmdArgs.size = { w: width ?? 300, h: height ?? 200 };
+    cmdArgs.size = { w: effectiveWidth, h: effectiveHeight };
   }
   // Retry with backoff if canvas not found — handles race after create_canvas
   let result: Awaited<ReturnType<typeof sendCanvasCommand>> | null = null;
@@ -1051,12 +1087,15 @@ registerToolTemplate('assistant', 'add_card', {
     await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
   }
   if (!result!.success) return { content: [{ type: 'text', text: result!.error || 'Failed to add card' }], isError: true };
-  return { content: [{ type: 'text', text: JSON.stringify(result!.data) }] };
+  // Include canvas_id in response for LLM context reinforcement
+  const responseData = { ...(result!.data as Record<string, unknown>), canvas_id: canvasId };
+  return { content: [{ type: 'text', text: JSON.stringify(responseData) }] };
 });
 
 registerToolTemplate('assistant', 'move_card', {
   description: 'Move a card to a new position on the canvas. Parameters are x and y (numbers). ' +
     'To place a card inside a zone, set zone_id — the card will be centered in the zone. ' +
+    'To position relative to another card, use relative_to_card_id + relative_position. ' +
     'Zone containment is spatial: a card is "inside" a zone when >50% of it overlaps the zone bounds.',
   inputSchema: {
     type: 'object',
@@ -1068,6 +1107,9 @@ registerToolTemplate('assistant', 'move_card', {
       position_x: { type: 'number', description: 'Alias for x.' },
       position_y: { type: 'number', description: 'Alias for y.' },
       zone_id: { type: 'string', description: 'Zone view ID — auto-position card inside this zone instead of using x/y.' },
+      relative_to_card_id: { type: 'string', description: 'View ID of an existing card to position relative to.' },
+      relative_position: { type: 'string', description: 'Where to place: "right", "left", "below", "above". Defaults to "right".' },
+      relative_buffer: { type: 'number', description: 'Gap in pixels between cards. Defaults to 60.' },
     },
     required: ['canvas_id', 'view_id'],
   },
@@ -1077,7 +1119,25 @@ registerToolTemplate('assistant', 'move_card', {
   const targetY = args.y ?? args.position_y;
 
   let position: { x: number; y: number };
-  if (args.zone_id) {
+  if (args.relative_to_card_id) {
+    // Relative positioning
+    const queryResult = await sendCanvasCommand('query_views', { canvas_id: args.canvas_id });
+    const views = queryResult.success ? (queryResult.data as Array<{ id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number } }>) : [];
+    const refCard = views.find(v => v.id === args.relative_to_card_id);
+    if (!refCard) return { content: [{ type: 'text', text: `Reference card ${args.relative_to_card_id} not found.` }], isError: true };
+    const movingCard = views.find(v => v.id === args.view_id);
+    const movingWidth = movingCard?.size.width ?? 300;
+    const movingHeight = movingCard?.size.height ?? 200;
+    const relPos = (args.relative_position as RelativePosition) || 'right';
+    const buffer = args.relative_buffer !== undefined ? Number(args.relative_buffer) : undefined;
+    position = computeRelativePosition(
+      { x: refCard.position.x, y: refCard.position.y, width: refCard.size.width, height: refCard.size.height },
+      relPos,
+      movingWidth,
+      movingHeight,
+      buffer,
+    );
+  } else if (args.zone_id) {
     // Auto-position within zone bounds
     const queryResult = await sendCanvasCommand('query_views', { canvas_id: args.canvas_id });
     const views = queryResult.success ? (queryResult.data as Array<{ id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number } }>) : [];
@@ -1092,7 +1152,7 @@ registerToolTemplate('assistant', 'move_card', {
   } else if (targetX !== undefined && targetY !== undefined) {
     position = { x: Number(targetX), y: Number(targetY) };
   } else {
-    return { content: [{ type: 'text', text: 'Either x/y coordinates or zone_id is required.' }], isError: true };
+    return { content: [{ type: 'text', text: 'Either x/y coordinates, zone_id, or relative_to_card_id is required.' }], isError: true };
   }
 
   const result = await sendCanvasCommand('move_view', { canvas_id: args.canvas_id, view_id: args.view_id, position, project_id: args.project_id });
@@ -1189,19 +1249,20 @@ registerToolTemplate('assistant', 'connect_cards', {
 });
 
 registerToolTemplate('assistant', 'layout_canvas', {
-  description: 'Auto-arrange cards. Patterns: "horizontal" (row), "vertical" (column), "grid", "hub_spoke" (center + circle). ' +
-    'Zone-aware: cards inside zones are grouped and arranged within their zone bounds. Zones themselves are arranged in the outer layout.',
+  description: 'Auto-arrange cards. Patterns: "horizontal" (row), "vertical" (column), "grid", "hub_spoke" (center + circle), "auto" (picks best pattern for card count). ' +
+    'Zone-aware: cards inside zones are grouped and arranged within their zone bounds. Zones themselves are arranged in the outer layout. ' +
+    'ALWAYS call this after adding all cards — it produces clean, readable layouts.',
   inputSchema: {
     type: 'object',
     properties: {
       canvas_id: { type: 'string', description: 'Canvas ID.' },
-      pattern: { type: 'string', description: 'Layout: "horizontal", "vertical", "grid", or "hub_spoke".' },
+      pattern: { type: 'string', description: 'Layout: "horizontal", "vertical", "grid", "hub_spoke", or "auto" (picks best for card count).' },
     },
     required: ['canvas_id', 'pattern'],
   },
 }, async (_t, _a, args) => {
   const canvasId = args.canvas_id as string;
-  const pattern = args.pattern as 'horizontal' | 'vertical' | 'grid' | 'hub_spoke';
+  const pattern = args.pattern as 'horizontal' | 'vertical' | 'grid' | 'hub_spoke' | 'auto';
 
   // Reset auto-stagger counter — layout_canvas re-arranges all cards
   canvasCardCounters.delete(canvasId);
@@ -1246,6 +1307,31 @@ registerToolTemplate('assistant', 'layout_canvas', {
   }
 
   return { content: [{ type: 'text', text: `Arranged ${views.length} cards in "${pattern}" layout (zone-aware).` }] };
+});
+
+registerToolTemplate('assistant', 'get_card_defaults', {
+  description: 'Get default card sizes, spacing values, and layout info. Use this to know card dimensions before positioning.',
+  inputSchema: { type: 'object', properties: {} },
+}, async () => {
+  const data = {
+    card_sizes: DEFAULT_CARD_SIZES,
+    spacing: {
+      standard: 60,
+      stagger_horizontal: 340,
+      stagger_vertical: 260,
+      zone_padding: 20,
+      zone_title_height: 32,
+    },
+    layout_patterns: ['horizontal', 'vertical', 'grid', 'hub_spoke', 'auto'],
+    relative_positions: ['right', 'left', 'below', 'above'],
+    tips: [
+      'Cards are auto-staggered when position is omitted — no coordinate math needed.',
+      'Use relative_to_card_id in add_card/move_card to place cards relative to existing ones.',
+      'ALWAYS call layout_canvas after adding all cards for clean arrangement.',
+      'Use "auto" layout pattern to let the engine pick the best layout for the card count.',
+    ],
+  };
+  return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
 });
 
 // ── Plugin Tools ───────────────────────────────────────────────────────────

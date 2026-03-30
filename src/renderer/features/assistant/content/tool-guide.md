@@ -44,13 +44,14 @@ Agents may have custom icons set by the user (shown as a non-null `icon` field i
 |------|----------|
 | `create_canvas` | User wants a new visual workspace. Returns canvas_id. |
 | `list_canvases` | Check existing canvases before creating new ones. |
-| `add_card` | Add cards. ALWAYS provide agent_id + project_id for agent cards. |
-| `move_card` | Reposition cards after adding them. |
+| `add_card` | Add cards. ALWAYS provide agent_id + project_id for agent cards. Supports relative positioning. |
+| `move_card` | Reposition cards. Supports relative positioning and zone placement. |
 | `resize_card` | Adjust card size (zones need 600x400+). |
 | `remove_card` | Remove a card from canvas. |
 | `rename_card` | Change card display name. |
 | `connect_cards` | Create MCP wire. Source must be agent card with agent_id. Wires persist even if agent sleeps. |
-| `layout_canvas` | Auto-arrange: "horizontal", "vertical", "grid", "hub_spoke". ALWAYS use this instead of manual positioning. |
+| `layout_canvas` | Auto-arrange: "horizontal", "vertical", "grid", "hub_spoke", "auto". ALWAYS call after adding all cards. |
+| `get_card_defaults` | Get default card sizes, spacing values, and layout info. |
 
 ### Card types and dimensions
 
@@ -66,16 +67,11 @@ Cards are auto-staggered when you omit position — no need to calculate coordin
 
 ### Zone containment
 
-Zones are visual containers that group cards. Containment is **spatial** — a card is inside a zone when >50% of its area overlaps the zone bounds.
+Containment is **spatial** — a card is inside a zone when >50% overlaps the zone bounds. Use `zone_id` in `add_card`/`move_card` to auto-position within a zone. Zone title bar is 32px tall; minimum size 600x400. `layout_canvas` is zone-aware — contained cards stay grouped.
 
-**To place a card in a zone:**
-- Use `add_card` with `zone_id` set to the zone's view ID — auto-positions within the zone
-- Or use `move_card` with `zone_id` to move an existing card into a zone
-- Manual positioning: place the card within the zone's x/y/width/height bounds
+### Relative positioning
 
-**Zone dimensions:** Zones auto-resize to fit their contents (minimum 600x400). The zone title bar is 32px tall — card content area starts below it.
-
-**layout_canvas is zone-aware:** Cards inside zones stay grouped within their zone. Zones and non-zone cards are arranged in the outer layout pattern.
+Use `relative_to_card_id` + `relative_position` ("right"/"left"/"below"/"above") in `add_card` or `move_card` to place cards next to existing ones. Optional `relative_buffer` sets the gap (default 60px). Priority: `relative_to_card_id` > `zone_id` > `position_x/y` > auto-stagger.
 
 ### Parameter names
 
@@ -129,7 +125,7 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 4. Use zones for visual grouping — add the zone first, then add cards with `zone_id` to place them inside
 5. When connecting agents, wire them directly to each other (agent-to-agent)
 6. NEVER modify existing agents (update_agent, delete_agent) when building a canvas — only reference them via add_card
-7. You don't need to specify positions — cards are auto-staggered. Just add cards, then call layout_canvas.
+7. You don't need to specify positions — cards are auto-staggered. Use `relative_to_card_id` to place next to specific cards.
 8. Pass `width` and `height` as **numbers**, not strings (e.g., `300` not `"300"`)
 
 **Agent reconfiguration:**
