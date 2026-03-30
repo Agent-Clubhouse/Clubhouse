@@ -28,6 +28,15 @@ vi.mock('./AddAgentDialog', () => ({
   ),
 }));
 
+vi.mock('./AgentGalleryDialog', () => ({
+  AgentGalleryDialog: ({ onClose, onCreate }: any) => (
+    <div data-testid="agent-gallery-dialog">
+      <button onClick={() => onCreate({ id: 'qa', name: 'Quality Assurance' }, 'red')}>Create QA</button>
+      <button onClick={onClose}>Close Gallery</button>
+    </div>
+  ),
+}));
+
 vi.mock('./DeleteAgentDialog', () => ({
   DeleteAgentDialog: () => <div data-testid="delete-agent-dialog" />,
 }));
@@ -132,6 +141,55 @@ describe('AgentList dropdown', () => {
 
     fireEvent.click(screen.getByText('Quick Agent'));
     expect(openSpy).toHaveBeenCalled();
+  });
+
+  it('shows "From Template" option in dropdown', () => {
+    render(<AgentList />);
+    const buttons = screen.getAllByRole('button');
+    const dropdownBtn = buttons.find((b) => b.textContent === '\u25BE');
+    fireEvent.click(dropdownBtn!);
+
+    expect(screen.getByText('From Template')).toBeInTheDocument();
+  });
+
+  it('opens AgentGalleryDialog when "From Template" is clicked', () => {
+    render(<AgentList />);
+    const buttons = screen.getAllByRole('button');
+    const dropdownBtn = buttons.find((b) => b.textContent === '\u25BE');
+    fireEvent.click(dropdownBtn!);
+
+    fireEvent.click(screen.getByText('From Template'));
+    expect(screen.getByTestId('agent-gallery-dialog')).toBeInTheDocument();
+  });
+
+  it('calls createDurable with persona param when gallery creates agent', async () => {
+    const createDurableSpy = vi.fn().mockResolvedValue({
+      id: 'agent-qa', name: 'quality-assurance', color: 'red', worktreePath: '/wt/qa',
+    });
+    window.clubhouse.agent.createDurable = createDurableSpy;
+
+    render(<AgentList />);
+    const buttons = screen.getAllByRole('button');
+    const dropdownBtn = buttons.find((b) => b.textContent === '\u25BE');
+    fireEvent.click(dropdownBtn!);
+    fireEvent.click(screen.getByText('From Template'));
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Create QA'));
+    });
+
+    expect(createDurableSpy).toHaveBeenCalledWith(
+      '/project',           // projectPath
+      'quality-assurance',  // slugified name
+      'red',                // color
+      undefined,            // model
+      true,                 // useWorktree (always true for templates)
+      undefined,            // orchestrator
+      undefined,            // freeAgentMode
+      undefined,            // mcpIds
+      undefined,            // structuredMode
+      'qa',                 // persona ID
+    );
   });
 });
 
