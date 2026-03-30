@@ -8,16 +8,17 @@ describe('canvas feature gating', () => {
     expect(ids).toContain('canvas');
   });
 
-  it('canvas sub-plugins (group-project, agent-queue) are always loaded alongside canvas', () => {
+  it('canvas sub-plugins (group-project, agent-queue, sticky-note) are always loaded alongside canvas', () => {
     const plugins = getBuiltinPlugins({});
     const ids = plugins.map((p) => p.manifest.id);
     expect(ids).toContain('group-project');
     expect(ids).toContain('agent-queue');
+    expect(ids).toContain('sticky-note');
   });
 
-  it('canvas NOT in default enabled IDs (disabled by default)', () => {
+  it('canvas IS in default enabled IDs', () => {
     const defaults = getDefaultEnabledIds({});
-    expect(defaults.has('canvas')).toBe(false);
+    expect(defaults.has('canvas')).toBe(true);
   });
 
   it('canvas sub-plugins NOT in default enabled IDs', () => {
@@ -27,9 +28,10 @@ describe('canvas feature gating', () => {
     }
   });
 
-  it('CANVAS_SUB_PLUGIN_IDS contains group-project and agent-queue', () => {
+  it('CANVAS_SUB_PLUGIN_IDS contains group-project, agent-queue, and sticky-note', () => {
     expect(CANVAS_SUB_PLUGIN_IDS.has('group-project')).toBe(true);
     expect(CANVAS_SUB_PLUGIN_IDS.has('agent-queue')).toBe(true);
+    expect(CANVAS_SUB_PLUGIN_IDS.has('sticky-note')).toBe(true);
   });
 
   it('base plugins always present regardless of flags', () => {
@@ -40,11 +42,30 @@ describe('canvas feature gating', () => {
     }
   });
 
-  it('base default enabled IDs always present', () => {
+  it('default enabled IDs include terminal, files, git, browser, review, canvas', () => {
     const defaults = getDefaultEnabledIds({});
-    expect(defaults.has('hub')).toBe(true);
     expect(defaults.has('terminal')).toBe(true);
     expect(defaults.has('files')).toBe(true);
+    expect(defaults.has('git')).toBe(true);
+    expect(defaults.has('browser')).toBe(true);
+    expect(defaults.has('review')).toBe(true);
+    expect(defaults.has('canvas')).toBe(true);
+  });
+
+  it('hub is NOT in default enabled IDs', () => {
+    const defaults = getDefaultEnabledIds({});
+    expect(defaults.has('hub')).toBe(false);
+  });
+
+  it('review is always loaded (not behind experimental flag)', () => {
+    const plugins = getBuiltinPlugins({});
+    const ids = plugins.map((p) => p.manifest.id);
+    expect(ids).toContain('review');
+  });
+
+  it('review is in default enabled IDs without experimental flags', () => {
+    const defaults = getDefaultEnabledIds({});
+    expect(defaults.has('review')).toBe(true);
   });
 
   it('PluginListSettings cascade-enables sub-plugins when canvas is enabled (structural)', () => {
@@ -64,14 +85,35 @@ describe('canvas feature gating', () => {
     expect(enableBlock).toContain('activatePlugin(subId)');
   });
 
-  it('browser and git are loaded but NOT in default enabled IDs', () => {
+  it('browser and git are loaded and in default enabled IDs', () => {
     const plugins = getBuiltinPlugins({});
     const ids = plugins.map((p) => p.manifest.id);
     expect(ids).toContain('browser');
     expect(ids).toContain('git');
 
     const defaults = getDefaultEnabledIds({});
-    expect(defaults.has('browser')).toBe(false);
+    expect(defaults.has('browser')).toBe(true);
     expect(defaults.has('git')).toBe(true);
+  });
+
+  it('agent-queue manifest declares requiresMcp', () => {
+    const plugins = getBuiltinPlugins({});
+    const agentQueue = plugins.find((p) => p.manifest.id === 'agent-queue');
+    expect(agentQueue).toBeDefined();
+    expect(agentQueue!.manifest.requiresMcp).toBe(true);
+  });
+
+  it('group-project manifest declares requiresMcp', () => {
+    const plugins = getBuiltinPlugins({});
+    const groupProject = plugins.find((p) => p.manifest.id === 'group-project');
+    expect(groupProject).toBeDefined();
+    expect(groupProject!.manifest.requiresMcp).toBe(true);
+  });
+
+  it('sticky-note manifest does NOT declare requiresMcp', () => {
+    const plugins = getBuiltinPlugins({});
+    const stickyNote = plugins.find((p) => p.manifest.id === 'sticky-note');
+    expect(stickyNote).toBeDefined();
+    expect(stickyNote!.manifest.requiresMcp).toBeUndefined();
   });
 });

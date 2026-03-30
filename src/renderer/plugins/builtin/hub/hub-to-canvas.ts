@@ -209,7 +209,9 @@ export function convertAllHubsToCanvases(
         paneTree: hub.paneTree,
         referenceWidth,
         referenceHeight,
-        deleteOriginal: false,
+        // Use true so the canvas inherits the original hub name (no "-upgraded" suffix).
+        // The original hubs are preserved in storage; only the hub plugin is disabled.
+        deleteOriginal: true,
         containerWidth: referenceWidth,
         containerHeight: referenceHeight,
       }),
