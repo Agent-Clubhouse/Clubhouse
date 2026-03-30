@@ -43,6 +43,11 @@ export class CodexAppServerAdapter implements StructuredAdapter {
 
     const args = ['app-server', '--listen', 'stdio://'];
 
+    // Append extra CLI args (e.g. MCP server config flags from the spawn path)
+    if (sessionOpts.extraArgs) {
+      args.push(...sessionOpts.extraArgs);
+    }
+
     // When a command prefix is set, wrap via shell so the prefix runs first
     const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
     const spawnArgs = sessionOpts.commandPrefix

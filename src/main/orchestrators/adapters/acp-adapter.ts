@@ -62,6 +62,10 @@ export class AcpAdapter implements StructuredAdapter {
     if (sessionOpts.permissionMode === 'skip-all') {
       args.push('--allow-all-tools');
     }
+    // Append extra CLI args (e.g. MCP server config flags from the spawn path)
+    if (sessionOpts.extraArgs) {
+      args.push(...sessionOpts.extraArgs);
+    }
 
     // When a command prefix is set, wrap via shell so the prefix runs first
     const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
@@ -119,6 +123,11 @@ export class AcpAdapter implements StructuredAdapter {
           code: 'session_start_failed',
           message: err instanceof Error ? err.message : String(err),
         }));
+        queue.push(this.makeEvent('end', {
+          reason: 'error',
+          summary: err instanceof Error ? err.message : String(err),
+        }));
+        queue.finish();
       });
 
     return queue;
