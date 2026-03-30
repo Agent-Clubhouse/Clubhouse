@@ -122,10 +122,10 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
   // agent created by the assistant, or remote agent that hasn't synced yet).
   // Trigger loadDurableAgents so the store picks up the agent and subsequent
   // renders can show SleepingAgent or AgentTerminal properly.
-  const [fetchAttempted, setFetchAttempted] = useState(false);
+  const [agentFetchTriggered, setAgentFetchTriggered] = useState(false);
   useEffect(() => {
-    if (!view.agentId || assignedAgent || fetchAttempted) return;
-    setFetchAttempted(true);
+    if (!view.agentId || assignedAgent || agentFetchTriggered) return;
+    setAgentFetchTriggered(true);
     const projectId = view.projectId || (view.metadata as any)?.projectId;
     if (projectId) {
       const project = api.projects.list().find((p) => p.id === projectId);
@@ -138,7 +138,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
         }).catch(() => { /* ignore — dynamic import failure */ });
       }
     }
-  }, [view.agentId, assignedAgent, fetchAttempted, view.projectId, view.metadata, api.projects]);
+  }, [view.agentId, assignedAgent, agentFetchTriggered, view.projectId, view.metadata, api.projects]);
 
   if (view.agentId && !assignedAgent) {
     const name = view.displayName || view.title || view.agentId;
@@ -146,7 +146,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
       <div className="flex flex-col items-center justify-center h-full gap-2 p-4">
         <div className="w-8 h-8 rounded-full bg-surface-1 animate-pulse" />
         <span className="text-xs text-ctp-subtext0 truncate max-w-full">{name}</span>
-        <span className="text-[10px] text-ctp-overlay0">{fetchAttempted ? 'Sleeping' : 'Connecting...'}</span>
+        <span className="text-[10px] text-ctp-overlay0">Connecting...</span>
       </div>
     );
   }
