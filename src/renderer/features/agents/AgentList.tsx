@@ -5,6 +5,7 @@ import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { AgentListItem } from './AgentListItem';
 import { AddAgentDialog } from './AddAgentDialog';
+import { AgentGalleryDialog } from './AgentGalleryDialog';
 import { DeleteAgentDialog } from './DeleteAgentDialog';
 import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
@@ -96,6 +97,7 @@ export function AgentList() {
   const clearCompleted = useQuickAgentStore((s) => s.clearCompleted);
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
   const [showDialog, setShowDialog] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showMissionInput, setShowMissionInput] = useState(false);
   const [quickTargetParentId, setQuickTargetParentId] = useState<string | null>(null);
@@ -325,6 +327,26 @@ export function AgentList() {
     }
   };
 
+  const handleCreateFromTemplate = async (persona: { id: string; name: string }, color: string) => {
+    if (!activeProject) return;
+    setShowGallery(false);
+
+    const name = persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
+    const useWorktree = true;
+
+    const tempId = registerCreatingAgent(activeProject.id, name, color, undefined, undefined);
+    try {
+      const config = await window.clubhouse.agent.createDurable(
+        activeProject.path, name, color, undefined, useWorktree, undefined, undefined, undefined, undefined, persona.id,
+      );
+      if (tempId) removeAgent(tempId);
+      await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
+    } catch (err) {
+      if (tempId) removeAgent(tempId);
+      console.error('Failed to create agent from template:', err);
+    }
+  };
+
   const isThinking = useCallback((id: string) => {
     const last = activityTimestamps[id];
     if (!last) return false;
@@ -539,6 +561,19 @@ export function AgentList() {
                   </svg>
                   Quick Agent
                 </button>
+                <div className="border-t border-surface-0/50 my-1" />
+                <button
+                  onClick={() => { setShowDropdown(false); setShowGallery(true); }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer flex items-center gap-2 whitespace-nowrap"
+                >
+                  <svg className="flex-shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
+                    <rect x="14" y="14" width="7" height="7" rx="1" />
+                  </svg>
+                  From Template
+                </button>
               </div>
             );
           })()}
@@ -708,6 +743,12 @@ export function AgentList() {
           onClose={() => setShowDialog(false)}
           onCreate={handleCreateDurable}
           projectPath={activeProject?.path}
+        />
+      )}
+      {showGallery && (
+        <AgentGalleryDialog
+          onClose={() => setShowGallery(false)}
+          onCreate={handleCreateFromTemplate}
         />
       )}
       {deleteDialogAgent && <DeleteAgentDialog />}
