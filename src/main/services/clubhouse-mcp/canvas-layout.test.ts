@@ -163,8 +163,9 @@ describe('canvas-layout', () => {
       const oddRef: CardRect = { x: 105, y: 213, width: 300, height: 200 };
       for (const direction of ['right', 'left', 'below', 'above'] as const) {
         const pos = computeRelativePosition(oddRef, direction, 300, 200);
-        expect(pos.x % 20).toBe(0);
-        expect(pos.y % 20).toBe(0);
+        // Use Math.abs to handle -0 vs 0 from negative coordinate snapping
+        expect(Math.abs(pos.x % 20)).toBe(0);
+        expect(Math.abs(pos.y % 20)).toBe(0);
       }
     });
 

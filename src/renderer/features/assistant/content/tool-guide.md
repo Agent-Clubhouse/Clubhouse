@@ -67,31 +67,11 @@ Cards are auto-staggered when you omit position — no need to calculate coordin
 
 ### Zone containment
 
-Zones are visual containers that group cards. Containment is **spatial** — a card is inside a zone when >50% of its area overlaps the zone bounds.
-
-**To place a card in a zone:**
-- Use `add_card` with `zone_id` set to the zone's view ID — auto-positions within the zone
-- Or use `move_card` with `zone_id` to move an existing card into a zone
-- Manual positioning: place the card within the zone's x/y/width/height bounds
-
-**Zone dimensions:** Zones auto-resize to fit their contents (minimum 600x400). The zone title bar is 32px tall — card content area starts below it.
-
-**layout_canvas is zone-aware:** Cards inside zones stay grouped within their zone. Zones and non-zone cards are arranged in the outer layout pattern.
+Containment is **spatial** — a card is inside a zone when >50% overlaps the zone bounds. Use `zone_id` in `add_card`/`move_card` to auto-position within a zone. Zone title bar is 32px tall; minimum size 600x400. `layout_canvas` is zone-aware — contained cards stay grouped.
 
 ### Relative positioning
 
-Instead of calculating coordinates, place cards relative to existing ones:
-
-```
-add_card(canvas_id, type="agent", display_name="QA",
-         relative_to_card_id="<existing_card_view_id>",
-         relative_position="right",   // "right", "left", "below", "above"
-         relative_buffer=60)           // gap in pixels (default: 60)
-```
-
-This also works with `move_card`. The engine handles coordinate math and grid snapping.
-
-**Positioning priority:** `relative_to_card_id` > `zone_id` > `position_x/y` > auto-stagger.
+Use `relative_to_card_id` + `relative_position` ("right"/"left"/"below"/"above") in `add_card` or `move_card` to place cards next to existing ones. Optional `relative_buffer` sets the gap (default 60px). Priority: `relative_to_card_id` > `zone_id` > `position_x/y` > auto-stagger.
 
 ### Parameter names
 
@@ -145,10 +125,8 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 4. Use zones for visual grouping — add the zone first, then add cards with `zone_id` to place them inside
 5. When connecting agents, wire them directly to each other (agent-to-agent)
 6. NEVER modify existing agents (update_agent, delete_agent) when building a canvas — only reference them via add_card
-7. You don't need to specify positions — cards are auto-staggered. Use `relative_to_card_id` to place cards next to specific ones.
+7. You don't need to specify positions — cards are auto-staggered. Use `relative_to_card_id` to place next to specific cards.
 8. Pass `width` and `height` as **numbers**, not strings (e.g., `300` not `"300"`)
-9. Use `get_card_defaults` to look up default sizes and spacing values if unsure
-10. Use `layout_canvas` with pattern `"auto"` to let the engine pick the best layout for the card count
 
 **Agent reconfiguration:**
 `list_agents` → `update_agent` → `write_agent_instructions`
