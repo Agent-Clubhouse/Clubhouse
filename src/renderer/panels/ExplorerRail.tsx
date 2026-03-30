@@ -185,6 +185,7 @@ export function ExplorerRail() {
     return projects.find((p) => p.id === activeProjectId);
   }, [activeProjectId, projects, satelliteProjects]);
   const allPlugins = usePluginStore((s) => s.plugins);
+  const appEnabled = usePluginStore((s) => s.appEnabled);
   const isRemote = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
   const enabledPluginIds = usePluginStore(
     (s) => (activeProjectId && !isRemote ? s.projectEnabled[activeProjectId] : undefined) ?? EMPTY_STRING_ARRAY,
@@ -205,8 +206,8 @@ export function ExplorerRail() {
   const pluginTabKey = useMemo(
     () => isRemote
       ? remotePluginMatches.map((p) => `${p.id}:${p.status}`).join(',')
-      : enabledPluginIds.map((id) => `${id}:${allPlugins[id]?.status ?? ''}`).join(','),
-    [isRemote, enabledPluginIds, allPlugins, remotePluginMatches],
+      : enabledPluginIds.map((id) => `${id}:${allPlugins[id]?.status ?? ''}`).join(',') + '|' + appEnabled.join(','),
+    [isRemote, enabledPluginIds, allPlugins, remotePluginMatches, appEnabled],
   );
 
   const pluginEntries: TabEntry[] = useMemo(() => {
@@ -244,7 +245,15 @@ export function ExplorerRail() {
     }
     return enabledPluginIds
       .map((id) => allPlugins[id])
-      .filter((entry) => entry && (entry.manifest.scope === 'project' || entry.manifest.scope === 'dual') && entry.status === 'activated' && entry.manifest.contributes?.tab)
+      .filter((entry) => {
+        if (!entry) return false;
+        if (entry.manifest.scope !== 'project' && entry.manifest.scope !== 'dual') return false;
+        if (entry.status !== 'activated') return false;
+        if (!entry.manifest.contributes?.tab) return false;
+        // Dual-scope plugins must also be enabled at app level (app-first gate)
+        if (entry.manifest.scope === 'dual' && !appEnabled.includes(entry.manifest.id)) return false;
+        return true;
+      })
       .map((entry) => ({
         id: `plugin:${entry.manifest.id}`,
         label: entry.manifest.contributes!.tab!.label,

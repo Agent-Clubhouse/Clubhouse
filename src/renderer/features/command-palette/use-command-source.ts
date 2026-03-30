@@ -70,6 +70,7 @@ export function useCommandSource(): CommandItem[] {
   const projectActiveCanvasId = useStore(currentCanvasStore, (s) => s.activeCanvasId);
   const appCanvases = useAppCanvasStore((s) => s.canvases);
   const appActiveCanvasId = useAppCanvasStore((s) => s.activeCanvasId);
+  const hubPluginEnabled = usePluginStore((s) => s.appEnabled.includes('hub'));
   const canvasPluginEnabled = usePluginStore((s) => s.appEnabled.includes('canvas'));
 
   // Annex is a stable feature — commands always available
@@ -194,66 +195,69 @@ export function useCommandSource(): CommandItem[] {
     const activeProject = projects.find((p) => p.id === activeProjectId);
     const activeProjectLabel = activeProject?.displayName || activeProject?.name;
 
-    // Project hubs (active project — from reactive store)
-    if (activeProjectId) {
-      for (const hub of projectHubs) {
-        const context = hub.id === projectActiveHubId ? 'Active' : activeProjectLabel;
+    // Hub items — only shown when hub plugin is enabled
+    if (hubPluginEnabled) {
+      // Project hubs (active project — from reactive store)
+      if (activeProjectId) {
+        for (const hub of projectHubs) {
+          const context = hub.id === projectActiveHubId ? 'Active' : activeProjectLabel;
+          items.push({
+            id: `hub:project:${hub.id}`,
+            label: hub.name,
+            category: 'Spaces',
+            typeIndicator: '#',
+            keywords: ['hub', 'tab', 'workspace', 'space', activeProjectLabel || ''],
+            detail: context ? `Hub · ${context}` : 'Hub',
+            execute: () => {
+              setActiveProject(activeProjectId);
+              setExplorerTab(HUB_TAB, activeProjectId);
+              getProjectHubStore(activeProjectId).getState().setActiveHub(hub.id);
+            },
+          });
+        }
+      }
+
+      // Hubs from other (non-active) projects — loaded from storage
+      for (const entry of otherProjectHubs) {
         items.push({
-          id: `hub:project:${hub.id}`,
-          label: hub.name,
+          id: `hub:project:${entry.projectId}:${entry.hubId}`,
+          label: entry.hubName,
           category: 'Spaces',
           typeIndicator: '#',
-          keywords: ['hub', 'tab', 'workspace', 'space', activeProjectLabel || ''],
-          detail: context ? `Hub · ${context}` : 'Hub',
-          execute: () => {
-            setActiveProject(activeProjectId);
-            setExplorerTab(HUB_TAB, activeProjectId);
-            getProjectHubStore(activeProjectId).getState().setActiveHub(hub.id);
+          keywords: ['hub', 'tab', 'workspace', 'space', entry.projectName],
+          detail: `Hub · ${entry.projectName}`,
+          execute: async () => {
+            // Pre-write the desired active hub to storage so loadHub picks it up
+            await window.clubhouse.plugin.storageWrite({
+              pluginId: 'hub',
+              scope: 'project-local',
+              key: 'hub-active-id',
+              value: entry.hubId,
+              projectPath: entry.projectPath,
+            });
+            setActiveProject(entry.projectId);
+            setExplorerTab(HUB_TAB, entry.projectId);
           },
         });
       }
-    }
 
-    // Hubs from other (non-active) projects — loaded from storage
-    for (const entry of otherProjectHubs) {
-      items.push({
-        id: `hub:project:${entry.projectId}:${entry.hubId}`,
-        label: entry.hubName,
-        category: 'Spaces',
-        typeIndicator: '#',
-        keywords: ['hub', 'tab', 'workspace', 'space', entry.projectName],
-        detail: `Hub · ${entry.projectName}`,
-        execute: async () => {
-          // Pre-write the desired active hub to storage so loadHub picks it up
-          await window.clubhouse.plugin.storageWrite({
-            pluginId: 'hub',
-            scope: 'project-local',
-            key: 'hub-active-id',
-            value: entry.hubId,
-            projectPath: entry.projectPath,
-          });
-          setActiveProject(entry.projectId);
-          setExplorerTab(HUB_TAB, entry.projectId);
-        },
-      });
-    }
-
-    // App-level hubs (always shown)
-    for (const hub of appHubs) {
-      const context = hub.id === appActiveHubId && !activeProjectId ? 'Active' : 'Home';
-      items.push({
-        id: `hub:app:${hub.id}`,
-        label: hub.name,
-        category: 'Spaces',
-        typeIndicator: '#',
-        keywords: ['hub', 'tab', 'workspace', 'space', 'home', 'app'],
-        detail: `Hub · ${context}`,
-        execute: () => {
-          setActiveProject(null);
-          setExplorerTab(HUB_TAB);
-          useAppHubStore.getState().setActiveHub(hub.id);
-        },
-      });
+      // App-level hubs
+      for (const hub of appHubs) {
+        const context = hub.id === appActiveHubId && !activeProjectId ? 'Active' : 'Home';
+        items.push({
+          id: `hub:app:${hub.id}`,
+          label: hub.name,
+          category: 'Spaces',
+          typeIndicator: '#',
+          keywords: ['hub', 'tab', 'workspace', 'space', 'home', 'app'],
+          detail: `Hub · ${context}`,
+          execute: () => {
+            setActiveProject(null);
+            setExplorerTab(HUB_TAB);
+            useAppHubStore.getState().setActiveHub(hub.id);
+          },
+        });
+      }
     }
 
     // Canvas items — only shown when canvas plugin is enabled
@@ -532,7 +536,7 @@ export function useCommandSource(): CommandItem[] {
     return items;
   }, [
     projects, agents, activeProjectId, pluginsMap, projectEnabled, shortcuts,
-    annexSettings, annexStatus, annexEnabled, canvasPluginEnabled,
+    annexSettings, annexStatus, annexEnabled, hubPluginEnabled, canvasPluginEnabled,
     projectHubs, projectActiveHubId, appHubs, appActiveHubId,
     otherProjectHubs,
     projectCanvases, projectActiveCanvasId, appCanvases, appActiveCanvasId,

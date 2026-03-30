@@ -12,6 +12,7 @@ import { broadcastHubState } from './hub-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteAgentId } from '../../../stores/remoteProjectStore';
+import { useUIStore } from '../../../stores/uiStore';
 import { usePluginStore } from '../../plugin-store';
 import { UpgradeToCanvasDialog } from './UpgradeToCanvasDialog';
 import { CanvasUpgradeBanner } from './CanvasUpgradeBanner';
@@ -343,7 +344,29 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
     // Dismiss the banner permanently
     await handleDismissBanner();
-  }, [api, handleDismissBanner]);
+
+    // Navigate to the canvas that corresponds to the hub the user was viewing
+    const CANVAS_TAB = 'plugin:canvas';
+    const activeHubName = activeHub?.name;
+    if (isAppMode) {
+      if (activeHubName) {
+        const matchingCanvas = result.app.find((c) => c.name === activeHubName);
+        if (matchingCanvas) {
+          useAppCanvasStore.getState().setActiveCanvas(matchingCanvas.id);
+        }
+      }
+      useUIStore.getState().setExplorerTab(CANVAS_TAB);
+    } else if (currentProjectId) {
+      if (activeHubName) {
+        const projectCanvases = result.projects.get(currentProjectId);
+        const matchingCanvas = projectCanvases?.find((c) => c.name === activeHubName);
+        if (matchingCanvas) {
+          getProjectCanvasStore(currentProjectId).getState().setActiveCanvas(matchingCanvas.id);
+        }
+      }
+      useUIStore.getState().setExplorerTab(CANVAS_TAB, currentProjectId);
+    }
+  }, [api, handleDismissBanner, activeHub, isAppMode, currentProjectId]);
 
   // ── Stable PaneComponent identity ──────────────────────────────────
   const dataRef = useRef({ api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId, findAgentPopout });
