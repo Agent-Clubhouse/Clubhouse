@@ -9,6 +9,7 @@ import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-mess
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { Toggle } from '../../../components/Toggle';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
+import { useUIStore } from '../../../stores/uiStore';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
@@ -25,10 +26,18 @@ export function GroupProjectCanvasWidget({
   const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
   const remote = useRemoteProject(projectId);
 
+  // Detect remote app-level canvas: app mode with an active satellite host.
+  // useRemoteProject only works for project-level canvases (namespaced project IDs).
+  // For app-level canvases over Annex, activeHostId provides the satellite context.
+  const activeHostId = useUIStore((s) => s.activeHostId);
+  const isRemoteApp = isAppMode && !remote.isRemote && !!activeHostId;
+  const isRemote = remote.isRemote || isRemoteApp;
+  const satelliteId = remote.isRemote ? remote.satelliteId : isRemoteApp ? activeHostId : null;
+
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
 
   // MCP check — only relevant for local (remote satellites manage their own MCP)
-  if (!remote.isRemote && !mcpEnabled) {
+  if (!isRemote && !mcpEnabled) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 p-4 text-center" data-testid="group-project-mcp-disabled">
         <div className="w-10 h-10 rounded-lg bg-surface-1 flex items-center justify-center">
@@ -50,7 +59,7 @@ export function GroupProjectCanvasWidget({
 
   const groupProjectId = metadata.groupProjectId as string | undefined;
 
-  if (!groupProjectId && !remote.isRemote) {
+  if (!groupProjectId && !isRemote) {
     return <CreationForm onUpdateMetadata={onUpdateMetadata} />;
   }
 
@@ -62,8 +71,8 @@ export function GroupProjectCanvasWidget({
     <ProjectView
       groupProjectId={groupProjectId}
       onUpdateMetadata={onUpdateMetadata}
-      isRemote={remote.isRemote}
-      satelliteId={remote.satelliteId}
+      isRemote={isRemote}
+      satelliteId={satelliteId}
     />
   );
 }
