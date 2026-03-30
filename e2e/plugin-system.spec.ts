@@ -166,8 +166,8 @@ test.describe('Built-in Plugin Loading', () => {
       expect(pluginState.plugins['terminal'].source).toBe('builtin');
       expect(pluginState.plugins['files'].source).toBe('builtin');
 
-      // All builtins should be app-enabled by default
-      expect(pluginState.appEnabled).toContain('hub');
+      // All default builtins should be app-enabled by default
+      expect(pluginState.appEnabled).toContain('canvas');
       expect(pluginState.appEnabled).toContain('terminal');
       expect(pluginState.appEnabled).toContain('files');
     }
@@ -178,9 +178,9 @@ test.describe('Built-in Plugin Loading', () => {
     await window.waitForTimeout(1_000);
 
     // Plugin tabs should appear after the core "Agents" tab
-    // Hub has scope 'dual' with a tab contribution
-    const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
-    await expect(hubTab).toBeVisible({ timeout: 10_000 });
+    // Canvas has scope 'dual' with a tab contribution
+    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
+    await expect(canvasTab).toBeVisible({ timeout: 10_000 });
 
     // Terminal has scope 'project' with a tab contribution
     const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
@@ -193,8 +193,8 @@ test.describe('Built-in Plugin Loading', () => {
 
   test('built-in plugin tabs show correct labels', async () => {
     // Each tab should display its manifest label
-    const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
-    await expect(hubTab).toContainText('Hub');
+    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
+    await expect(canvasTab).toContainText('Canvas');
 
     const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
     await expect(terminalTab).toContainText('Terminal');
@@ -203,13 +203,13 @@ test.describe('Built-in Plugin Loading', () => {
     await expect(filesTab).toContainText('Files');
   });
 
-  test('clicking Hub tab activates it and renders content', async () => {
-    await clickExplorerTab('explorer-tab-plugin:hub');
+  test('clicking Canvas tab activates it and renders content', async () => {
+    await clickExplorerTab('explorer-tab-plugin:canvas');
 
-    const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
-    await expect(hubTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
+    await expect(canvasTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
 
-    // Hub plugin should render its content view (not blank screen)
+    // Canvas plugin should render its content view (not blank screen)
     await assertNotBlankScreen();
   });
 
@@ -238,8 +238,8 @@ test.describe('Built-in Plugin Loading', () => {
     await expect(agentsTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
 
     // Plugin tabs should not be active
-    const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
-    await expect(hubTab).toHaveAttribute('data-active', 'false', { timeout: 3_000 });
+    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
+    await expect(canvasTab).toHaveAttribute('data-active', 'false', { timeout: 3_000 });
 
     const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
     await expect(terminalTab).toHaveAttribute('data-active', 'false', { timeout: 3_000 });
@@ -251,7 +251,7 @@ test.describe('Built-in Plugin Loading', () => {
   test('rapid tab switching does not blank screen', async () => {
     const tabs = [
       'explorer-tab-agents',
-      'explorer-tab-plugin:hub',
+      'explorer-tab-plugin:canvas',
       'explorer-tab-plugin:terminal',
       'explorer-tab-plugin:files',
     ];
@@ -516,7 +516,7 @@ test.describe('Plugin Store State Integrity', () => {
     // appeared and rendered content (tested in Part A) proves activation.
     // This test serves as a deeper verification when store access is available.
     if (statuses) {
-      for (const pluginId of ['hub', 'terminal', 'files']) {
+      for (const pluginId of ['canvas', 'terminal', 'files']) {
         if (statuses[pluginId]) {
           expect(statuses[pluginId].status).toBe('activated');
         }
@@ -539,8 +539,8 @@ test.describe('Plugin Store State Integrity', () => {
     await ensureProjectView();
 
     // Plugin tabs should still be present
-    const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
-    await expect(hubTab).toBeVisible({ timeout: 10_000 });
+    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
+    await expect(canvasTab).toBeVisible({ timeout: 10_000 });
 
     const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
     await expect(terminalTab).toBeVisible({ timeout: 5_000 });
@@ -569,8 +569,8 @@ test.describe('Plugin Store State Integrity', () => {
     await window.waitForTimeout(1_000);
 
     // Plugin tabs should still be intact
-    const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
-    await expect(hubTab).toBeVisible({ timeout: 10_000 });
+    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
+    await expect(canvasTab).toBeVisible({ timeout: 10_000 });
 
     await assertNotBlankScreen();
   });
@@ -590,14 +590,14 @@ test.describe('Plugin Tab Restore on Project Switch', () => {
     expect(titleText).toContain('project-b');
   });
 
-  test('set Hub tab active on project-plugins, switch to project-b, switch back — no blank screen', async () => {
-    // Navigate to project-plugins and click Hub tab
+  test('set Canvas tab active on project-plugins, switch to project-b, switch back — no blank screen', async () => {
+    // Navigate to project-plugins and click Canvas tab
     const projPlugins = window.locator('[title="project-plugins"]').first();
     await projPlugins.click();
     await window.waitForTimeout(500);
-    await clickExplorerTab('explorer-tab-plugin:hub');
-    const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
-    await expect(hubTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+    await clickExplorerTab('explorer-tab-plugin:canvas');
+    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
+    await expect(canvasTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
 
     // Switch to project-b
     const projB = window.locator('[title="project-b"]').first();
@@ -605,13 +605,13 @@ test.describe('Plugin Tab Restore on Project Switch', () => {
     await window.waitForTimeout(1_000);
     await assertNotBlankScreen();
 
-    // Switch back to project-plugins — Hub tab should restore
+    // Switch back to project-plugins — Canvas tab should restore
     await projPlugins.click();
     await window.waitForTimeout(1_500);
     await assertNotBlankScreen();
 
-    // Hub tab should still be active (restored from saved state)
-    await expect(hubTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+    // Canvas tab should still be active (restored from saved state)
+    await expect(canvasTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
   });
 
   test('set Terminal tab active on project-plugins, switch to project-b, switch back — no blank screen', async () => {
@@ -639,12 +639,12 @@ test.describe('Plugin Tab Restore on Project Switch', () => {
   });
 
   test('rapid project switching with plugin tab active does not blank screen', async () => {
-    // Set Hub tab active on project-plugins
+    // Set Canvas tab active on project-plugins
     const projPlugins = window.locator('[title="project-plugins"]').first();
     const projB = window.locator('[title="project-b"]').first();
     await projPlugins.click();
     await window.waitForTimeout(500);
-    await clickExplorerTab('explorer-tab-plugin:hub');
+    await clickExplorerTab('explorer-tab-plugin:canvas');
 
     // Rapidly switch between projects 5 times
     for (let i = 0; i < 5; i++) {
@@ -678,7 +678,7 @@ test.describe('Plugin System Console Errors (Part F)', () => {
     await ensureProjectView();
 
     // Navigate through plugin tabs to trigger any deferred errors
-    await clickExplorerTab('explorer-tab-plugin:hub');
+    await clickExplorerTab('explorer-tab-plugin:canvas');
     await window.waitForTimeout(300);
     await clickExplorerTab('explorer-tab-plugin:terminal');
     await window.waitForTimeout(300);

@@ -123,25 +123,14 @@ describe('getBuiltinPlugins catch-all', () => {
     expect(defaultIds.has('sessions')).toBe(true);
   });
 
-  it('does not include the review plugin without experimental flag', () => {
+  it('always includes the review plugin (no experimental flag needed)', () => {
     const plugins = getBuiltinPlugins();
-    const ids = plugins.map((p) => p.manifest.id);
-    expect(ids).not.toContain('review');
-  });
-
-  it('does not auto-enable the review plugin without experimental flag', () => {
-    const defaultIds = getDefaultEnabledIds();
-    expect(defaultIds.has('review')).toBe(false);
-  });
-
-  it('includes review plugin when experimental flag is set', () => {
-    const plugins = getBuiltinPlugins({ review: true });
     const ids = plugins.map((p) => p.manifest.id);
     expect(ids).toContain('review');
   });
 
-  it('auto-enables review plugin when experimental flag is set', () => {
-    const defaultIds = getDefaultEnabledIds({ review: true });
+  it('auto-enables the review plugin by default', () => {
+    const defaultIds = getDefaultEnabledIds();
     expect(defaultIds.has('review')).toBe(true);
   });
 });

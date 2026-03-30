@@ -4,9 +4,11 @@ import {
   flattenPaneTree,
   buildCanvasViews,
   convertHubToCanvas,
+  convertAllHubsToCanvases,
   generateDuplicateHubName,
   clonePaneTree,
 } from './hub-to-canvas';
+import type { HubInstance } from './useHubStore';
 import { GRID_SIZE } from '../canvas/canvas-types';
 
 // ── Helper builders ──────────────────────────────────────────────────
@@ -345,6 +347,73 @@ describe('convertHubToCanvas', () => {
     });
     expect(result.zoomedViewId).toBeNull();
     expect(result.selectedViewId).toBeNull();
+  });
+});
+
+// ── convertAllHubsToCanvases ─────────────────────────────────────────
+
+function hubInstance(id: string, name: string, paneTree: PaneNode): HubInstance {
+  return { id, name, paneTree, focusedPaneId: 'p1', zoomedPaneId: null };
+}
+
+describe('convertAllHubsToCanvases', () => {
+  it('converts app-level hubs to canvases', () => {
+    const hubs = {
+      app: [hubInstance('h1', 'App Hub', leaf('p1', 'a1'))],
+      projects: new Map<string, HubInstance[]>(),
+    };
+    const result = convertAllHubsToCanvases(hubs, 800, 600);
+    expect(result.app).toHaveLength(1);
+    expect(result.app[0].name).toBe('App Hub');
+    expect(result.app[0].views).toHaveLength(1);
+    expect(result.projects.size).toBe(0);
+  });
+
+  it('converts per-project hubs to canvases', () => {
+    const projectHubs = new Map<string, HubInstance[]>();
+    projectHubs.set('proj-1', [
+      hubInstance('h1', 'Hub A', leaf('p1', 'a1')),
+      hubInstance('h2', 'Hub B', split('s1', 'horizontal', [leaf('p2', 'a2'), leaf('p3', 'a3')])),
+    ]);
+
+    const hubs = { app: [], projects: projectHubs };
+    const result = convertAllHubsToCanvases(hubs, 800, 600);
+
+    expect(result.app).toHaveLength(0);
+    expect(result.projects.get('proj-1')).toHaveLength(2);
+    expect(result.projects.get('proj-1')![0].name).toBe('Hub A');
+    expect(result.projects.get('proj-1')![1].name).toBe('Hub B');
+    expect(result.projects.get('proj-1')![1].views).toHaveLength(2);
+  });
+
+  it('handles multiple projects', () => {
+    const projectHubs = new Map<string, HubInstance[]>();
+    projectHubs.set('proj-1', [hubInstance('h1', 'P1 Hub', leaf('p1', 'a1'))]);
+    projectHubs.set('proj-2', [hubInstance('h2', 'P2 Hub', leaf('p2', 'a2'))]);
+
+    const hubs = { app: [], projects: projectHubs };
+    const result = convertAllHubsToCanvases(hubs, 800, 600);
+
+    expect(result.projects.size).toBe(2);
+    expect(result.projects.get('proj-1')).toHaveLength(1);
+    expect(result.projects.get('proj-2')).toHaveLength(1);
+  });
+
+  it('handles empty input', () => {
+    const hubs = { app: [], projects: new Map<string, HubInstance[]>() };
+    const result = convertAllHubsToCanvases(hubs, 800, 600);
+    expect(result.app).toHaveLength(0);
+    expect(result.projects.size).toBe(0);
+  });
+
+  it('uses deleteOriginal=false (canvas name has no suffix)', () => {
+    const hubs = {
+      app: [hubInstance('h1', 'My Hub', leaf('p1', 'a1'))],
+      projects: new Map<string, HubInstance[]>(),
+    };
+    const result = convertAllHubsToCanvases(hubs, 800, 600);
+    // deleteOriginal=false → name gets "-upgraded" suffix
+    expect(result.app[0].name).toBe('My Hub');
   });
 });
 

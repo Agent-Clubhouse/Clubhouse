@@ -6,6 +6,7 @@
 // frame (the current window dimensions).
 
 import type { PaneNode } from './pane-tree';
+import type { HubInstance } from './useHubStore';
 import type { AgentCanvasView, CanvasInstance, Position, Size } from '../canvas/canvas-types';
 import { GRID_SIZE, deduplicateDisplayName } from '../canvas/canvas-types';
 import { generateViewId, generateCanvasId, snapToGrid, viewportToFitViews } from '../canvas/canvas-operations';
@@ -174,6 +175,55 @@ export function convertHubToCanvas(options: ConvertHubOptions): CanvasInstance {
     selectedViewId: null,
     minimapAutoHide: true,
   };
+}
+
+// ── Bulk migration ───────────────────────────────────────────────────
+
+export interface ScopedHubs {
+  /** App-level hubs (cross-project). */
+  app: HubInstance[];
+  /** Per-project hubs keyed by project ID. */
+  projects: Map<string, HubInstance[]>;
+}
+
+export interface ScopedCanvases {
+  /** Canvases converted from app-level hubs. */
+  app: CanvasInstance[];
+  /** Per-project canvases keyed by project ID. */
+  projects: Map<string, CanvasInstance[]>;
+}
+
+/**
+ * Convert all hubs (app + per-project) into canvas instances.
+ * Pure function — caller is responsible for inserting them and disabling hub.
+ */
+export function convertAllHubsToCanvases(
+  hubs: ScopedHubs,
+  referenceWidth: number,
+  referenceHeight: number,
+): ScopedCanvases {
+  const convert = (hubList: HubInstance[]): CanvasInstance[] =>
+    hubList.map((hub) =>
+      convertHubToCanvas({
+        hubName: hub.name,
+        paneTree: hub.paneTree,
+        referenceWidth,
+        referenceHeight,
+        // Use true so the canvas inherits the original hub name (no "-upgraded" suffix).
+        // The original hubs are preserved in storage; only the hub plugin is disabled.
+        deleteOriginal: true,
+        containerWidth: referenceWidth,
+        containerHeight: referenceHeight,
+      }),
+    );
+
+  const appCanvases = convert(hubs.app);
+  const projectCanvases = new Map<string, CanvasInstance[]>();
+  for (const [projectId, projectHubs] of hubs.projects) {
+    projectCanvases.set(projectId, convert(projectHubs));
+  }
+
+  return { app: appCanvases, projects: projectCanvases };
 }
 
 // ── Hub duplication helpers ───────────────────────────────────────────
