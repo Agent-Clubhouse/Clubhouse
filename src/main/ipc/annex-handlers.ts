@@ -7,7 +7,6 @@ import * as annexClient from '../services/annex-client';
 import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
-import { isPreviewEligible } from '../services/preview-eligible';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, objectArg, stringArg, booleanArg } from './validation';
@@ -146,15 +145,8 @@ export function registerAnnexHandlers(): void {
   });
 }
 
-/** Conditionally start Annex server if enableServer is on AND build is preview-eligible. */
+/** Start Annex server on launch if enableServer is on. */
 export function maybeStartAnnex(): void {
-  const previewEligible = isPreviewEligible();
-  appLog('core:annex', 'info', 'Annex server startup check', {
-    meta: { previewEligible },
-  });
-
-  if (!previewEligible) return;
-
   const settings = annexSettings.getSettings();
   appLog('core:annex', 'info', 'Annex settings at startup', {
     meta: { enableServer: settings.enableServer, enableClient: settings.enableClient, deviceName: settings.deviceName },
@@ -172,10 +164,8 @@ export function maybeStartAnnex(): void {
   }
 }
 
-/** Conditionally start the Annex Bonjour client if enableClient is on AND build is preview-eligible. */
+/** Start the Annex Bonjour client on launch if enableClient is on. */
 export function maybeStartAnnexClient(): void {
-  if (!isPreviewEligible()) return;
-
   const settings = annexSettings.getSettings();
   if (!settings.enableClient) return;
 

@@ -5,10 +5,6 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
 
-vi.mock('../services/preview-eligible', () => ({
-  isPreviewEligible: vi.fn(() => true),
-}));
-
 vi.mock('../services/annex-settings', () => ({
   getSettings: vi.fn(() => ({ enableServer: false, enableClient: false, deviceName: 'My Mac' })),
   saveSettings: vi.fn(),
@@ -60,7 +56,6 @@ import * as annexClient from '../services/annex-client';
 import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
-import { isPreviewEligible } from '../services/preview-eligible';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
@@ -250,13 +245,6 @@ describe('maybeStartAnnex', () => {
     expect(annexServer.start).not.toHaveBeenCalled();
   });
 
-  it('does not start server when isPreviewEligible returns false', () => {
-    vi.mocked(isPreviewEligible).mockReturnValue(false);
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
-    maybeStartAnnex();
-    expect(annexServer.start).not.toHaveBeenCalled();
-  });
-
   it('logs error when auto-start fails', () => {
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
     vi.mocked(annexServer.start).mockImplementationOnce(() => { throw new Error('bind failed'); });
@@ -277,13 +265,6 @@ describe('maybeStartAnnexClient', () => {
     maybeStartAnnexClient();
     expect(annexClient.startClient).toHaveBeenCalled();
     expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('client auto-started'));
-  });
-
-  it('does not start client when isPreviewEligible returns false', () => {
-    vi.mocked(isPreviewEligible).mockReturnValue(false);
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
-    maybeStartAnnexClient();
-    expect(annexClient.startClient).not.toHaveBeenCalled();
   });
 
   it('does not start client when enableClient is false', () => {
