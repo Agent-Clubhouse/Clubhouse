@@ -414,6 +414,8 @@ export const IPC = {
     REQUEST: 'canvas-cmd:request',
     /** Renderer→main: result of a canvas operation. */
     RESULT: 'canvas-cmd:result',
+    /** Renderer→main: run ELK layout algorithm (async). */
+    ELK_LAYOUT: 'canvas-cmd:elk-layout',
   },
   PLUGIN_MCP: {
     CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',

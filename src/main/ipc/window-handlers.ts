@@ -424,4 +424,13 @@ export function registerWindowHandlers(): void {
       mainWindow.webContents.send(IPC.WINDOW.REQUEST_CANVAS_MUTATION, canvasId, scope, mutation, projectId);
     }
   });
+
+  // ELK layout — runs elkjs in the main process and returns positioned nodes + routed edges
+  ipcMain.handle(IPC.CANVAS_CMD.ELK_LAYOUT, withValidatedArgs(
+    [objectArg()],
+    async (_event, input) => {
+      const { layoutElk } = await import('../services/clubhouse-mcp/elk-layout');
+      return layoutElk(input);
+    },
+  ));
 }
