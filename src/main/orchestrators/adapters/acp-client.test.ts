@@ -638,4 +638,80 @@ describe('AcpClient', () => {
       expect.objectContaining({ line: 'this is not json' }),
     );
   });
+
+  // ── RPC timeout tests ────────────────────────────────────────────────────
+
+  it('rejects request after timeout', async () => {
+    vi.useFakeTimers();
+    autoHandshake(mockProc);
+    const onLog = vi.fn();
+    const client = new AcpClient({
+      binary: 'copilot',
+      args: [],
+      onLog,
+      rpcTimeoutMs: 500,
+    });
+    await client.start();
+
+    const promise = client.request('session/new', { cwd: '/tmp' });
+
+    // Advance past the timeout
+    vi.advanceTimersByTime(600);
+
+    await expect(promise).rejects.toThrow("RPC request 'session/new' timed out after 500ms");
+    expect(onLog).toHaveBeenCalledWith(
+      'error',
+      'RPC timeout → session/new',
+      expect.objectContaining({ timeoutMs: 500 }),
+    );
+
+    vi.useRealTimers();
+  });
+
+  it('clears timeout when response arrives before deadline', async () => {
+    vi.useFakeTimers();
+    autoHandshake(mockProc);
+    const client = new AcpClient({
+      binary: 'copilot',
+      args: [],
+      rpcTimeoutMs: 5000,
+    });
+    await client.start();
+
+    const promise = client.request('session/new', {});
+
+    // Respond before timeout
+    emitData(
+      mockProc,
+      JSON.stringify({ jsonrpc: '2.0', id: 2, result: { sessionId: 'ok' } }) + '\n',
+    );
+
+    const result = await promise;
+    expect(result).toEqual({ sessionId: 'ok' });
+
+    // Advance timer past original deadline — should NOT reject
+    vi.advanceTimersByTime(10000);
+
+    vi.useRealTimers();
+  });
+
+  it('uses default 30s timeout when rpcTimeoutMs not specified', async () => {
+    vi.useFakeTimers();
+    autoHandshake(mockProc);
+    const onLog = vi.fn();
+    const client = new AcpClient({ binary: 'copilot', args: [], onLog });
+    await client.start();
+
+    const promise = client.request('session/new', {});
+
+    // Advance just under 30s — should NOT timeout yet
+    vi.advanceTimersByTime(29_000);
+
+    // Advance past 30s — should timeout
+    vi.advanceTimersByTime(2_000);
+
+    await expect(promise).rejects.toThrow('timed out after 30000ms');
+
+    vi.useRealTimers();
+  });
 });

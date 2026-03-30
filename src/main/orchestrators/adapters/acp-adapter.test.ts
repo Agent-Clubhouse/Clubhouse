@@ -790,6 +790,9 @@ describe('AcpAdapter', () => {
       'core:structured:acp',
       'debug',
       'Unmapped ACP notification: unknown_future_method',
+      expect.objectContaining({
+        meta: expect.objectContaining({ method: 'unknown_future_method' }),
+      }),
     );
   });
 
@@ -799,5 +802,65 @@ describe('AcpAdapter', () => {
 
     const opts = MockAcpClient.mock.calls[0][0];
     expect(opts.onLog).toBeDefined();
+  });
+
+  // ── session/update mapping tests ──────────────────────────────────────────
+
+  it('maps session/update with token data → usage event', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onNotification('session/update', {
+      input_tokens: 500,
+      output_tokens: 200,
+      cost_usd: 0.01,
+    });
+    mockClient.onExit(0, null);
+
+    const events = await collectEvents(stream, 2);
+    expect(events[0].type).toBe('usage');
+    expect(events[0].data).toEqual({
+      inputTokens: 500,
+      outputTokens: 200,
+      cacheReadTokens: undefined,
+      cacheWriteTokens: undefined,
+      costUsd: 0.01,
+    });
+  });
+
+  it('maps session/update with camelCase token fields', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onNotification('session/update', {
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+    mockClient.onExit(0, null);
+
+    const events = await collectEvents(stream, 2);
+    expect(events[0].type).toBe('usage');
+    expect(events[0].data).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: undefined,
+      cacheWriteTokens: undefined,
+      costUsd: undefined,
+    });
+  });
+
+  it('ignores session/update with no token data', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+
+    await new Promise(r => setTimeout(r, 10));
+    mockClient.onNotification('session/update', { status: 'streaming' });
+    mockClient.onExit(0, null);
+
+    const events = await collectEvents(stream, 1);
+    // Only the end event, session/update was silently ignored
+    expect(events[0].type).toBe('end');
   });
 });

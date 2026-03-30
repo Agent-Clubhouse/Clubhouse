@@ -891,4 +891,33 @@ describe('CodexAppServerAdapter', () => {
     const opts = MockClient.mock.calls[0][0];
     expect(opts.onLog).toBeDefined();
   });
+
+  // ── configWarning handling ──────────────────────────────────────────────
+
+  it('handles configWarning notification gracefully without emitting events', async () => {
+    const mockAppLog = vi.mocked(appLog);
+    mockAppLog.mockClear();
+
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    mockClient.onNotification('configWarning', {
+      message: 'Unknown config key: foo',
+    });
+    mockClient.onExit(0, null);
+
+    const events = await collectEvents(stream, 1);
+    // Only the end event — configWarning produces no UI event
+    expect(events[0].type).toBe('end');
+
+    // But it should be logged at info level
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured:codex',
+      'info',
+      'Codex config warning',
+      expect.objectContaining({
+        meta: expect.objectContaining({ message: 'Unknown config key: foo' }),
+      }),
+    );
+  });
 });

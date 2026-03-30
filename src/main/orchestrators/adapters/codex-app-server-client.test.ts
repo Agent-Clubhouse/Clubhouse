@@ -575,4 +575,113 @@ describe('CodexAppServerClient', () => {
 
     expect(onLog).toHaveBeenCalledWith('info', 'Codex init handshake complete', undefined);
   });
+
+  // ── Dispatch fix: no spurious warnings ──────────────────────────────────
+
+  it('does not log warning for valid notifications', async () => {
+    const onLog = vi.fn();
+    const onNotification = vi.fn();
+    const client = new CodexAppServerClient({
+      binary: 'codex',
+      args: [],
+      onLog,
+      onNotification,
+    });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await client.start();
+    onLog.mockClear();
+
+    // Send a valid notification (has method, no id)
+    emitData(
+      mockProc,
+      JSON.stringify({ method: 'item/agentMessage/delta', params: { delta: { text: 'hi' } } }) + '\n',
+    );
+
+    // Should NOT have logged the spurious "neither id nor method" warning
+    const warningCalls = onLog.mock.calls.filter(
+      ([, msg]) => typeof msg === 'string' && msg.includes('neither id nor method'),
+    );
+    expect(warningCalls).toHaveLength(0);
+    expect(onNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs info for messages with neither id nor method', async () => {
+    const onLog = vi.fn();
+    const client = new CodexAppServerClient({
+      binary: 'codex',
+      args: [],
+      onLog,
+    });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await client.start();
+    onLog.mockClear();
+
+    // Send a message with neither id nor method
+    emitData(mockProc, JSON.stringify({ data: 'orphan' }) + '\n');
+
+    expect(onLog).toHaveBeenCalledWith(
+      'info',
+      'Codex message with neither id nor method (ignored)',
+      expect.objectContaining({ keys: ['data'] }),
+    );
+  });
+
+  // ── RPC timeout tests ────────────────────────────────────────────────────
+
+  it('rejects request after timeout', async () => {
+    vi.useFakeTimers();
+    const onLog = vi.fn();
+    const client = new CodexAppServerClient({
+      binary: 'codex',
+      args: [],
+      onLog,
+      rpcTimeoutMs: 500,
+    });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await vi.advanceTimersByTimeAsync(0);
+    await client.start();
+
+    const promise = client.request('thread/start', { model: 'gpt-5' });
+
+    // Advance past the timeout
+    vi.advanceTimersByTime(600);
+
+    await expect(promise).rejects.toThrow("RPC request 'thread/start' timed out after 500ms");
+    expect(onLog).toHaveBeenCalledWith(
+      'error',
+      'RPC timeout → thread/start',
+      expect.objectContaining({ timeoutMs: 500 }),
+    );
+
+    vi.useRealTimers();
+  });
+
+  it('clears timeout when response arrives before deadline', async () => {
+    vi.useFakeTimers();
+    const client = new CodexAppServerClient({
+      binary: 'codex',
+      args: [],
+      rpcTimeoutMs: 5000,
+    });
+
+    setTimeout(() => autoRespondInit(mockProc), 0);
+    await vi.advanceTimersByTimeAsync(0);
+    await client.start();
+
+    const promise = client.request('thread/start', {});
+
+    // Respond before timeout
+    emitData(mockProc, JSON.stringify({ id: 2, result: { thread: { id: 't1' } } }) + '\n');
+
+    const result = await promise;
+    expect(result).toEqual({ thread: { id: 't1' } });
+
+    // Advance past original deadline — should NOT reject
+    vi.advanceTimersByTime(10000);
+
+    vi.useRealTimers();
+  });
 });
