@@ -868,4 +868,195 @@ describe('assistant-tools', () => {
       expect(result.content[0].text).toContain('No cards');
     });
   });
+
+  // ── Canvas ID inference (P0 fix) ──────────────────────────────────────
+
+  describe('canvas_id inference from view IDs', () => {
+    it('connect_cards infers canvas_id from source_view_id', async () => {
+      // First call: find_canvas_for_view → success
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'inferred-canvas', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: { sourceAgentId: 'a1', targetId: 'a2', targetKind: 'agent' } });
+
+      const result = await callAssistantTool('connect_cards', {
+        source_view_id: 'view-src',
+        target_view_id: 'view-tgt',
+      });
+      expect(result.isError).toBeFalsy();
+      // Should have called find_canvas_for_view first
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('find_canvas_for_view', expect.objectContaining({
+        view_id: 'view-src',
+      }));
+      // Then connect_views with the inferred canvas_id
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('connect_views', expect.objectContaining({
+        canvas_id: 'inferred-canvas',
+        source_view_id: 'view-src',
+        target_view_id: 'view-tgt',
+      }));
+    });
+
+    it('connect_cards skips inference when canvas_id is provided', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { id: 'wire-1' } });
+      await callAssistantTool('connect_cards', {
+        canvas_id: 'explicit-canvas',
+        source_view_id: 'view-a',
+        target_view_id: 'view-b',
+      });
+      // Should NOT have called find_canvas_for_view
+      expect(mockSendCanvasCommand).not.toHaveBeenCalledWith('find_canvas_for_view', expect.anything());
+    });
+
+    it('connect_cards returns error when inference fails and no canvas_id', async () => {
+      // Both source and target view lookups fail
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: false, error: 'No canvas contains view' })
+        .mockResolvedValueOnce({ success: false, error: 'No canvas contains view' });
+      const result = await callAssistantTool('connect_cards', {
+        source_view_id: 'nonexistent',
+        target_view_id: 'also-nonexistent',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Could not determine canvas_id');
+    });
+
+    it('move_card infers canvas_id from view_id', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'inferred-canvas', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: {} });
+
+      const result = await callAssistantTool('move_card', {
+        view_id: 'view-a',
+        x: 100,
+        y: 200,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('find_canvas_for_view', expect.objectContaining({
+        view_id: 'view-a',
+      }));
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('move_view', expect.objectContaining({
+        canvas_id: 'inferred-canvas',
+      }));
+    });
+
+    it('resize_card infers canvas_id from view_id', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'inferred-canvas', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: {} });
+
+      const result = await callAssistantTool('resize_card', {
+        view_id: 'view-a',
+        width: 400,
+        height: 300,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('find_canvas_for_view', expect.objectContaining({
+        view_id: 'view-a',
+      }));
+    });
+
+    it('remove_card infers canvas_id from view_id', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'inferred-canvas', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: {} });
+
+      const result = await callAssistantTool('remove_card', {
+        view_id: 'view-a',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('find_canvas_for_view', expect.objectContaining({
+        view_id: 'view-a',
+      }));
+    });
+
+    it('rename_card infers canvas_id from view_id', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'inferred-canvas', project_id: null } })
+        .mockResolvedValueOnce({ success: true, data: {} });
+
+      const result = await callAssistantTool('rename_card', {
+        view_id: 'view-a',
+        name: 'New Name',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('find_canvas_for_view', expect.objectContaining({
+        view_id: 'view-a',
+      }));
+    });
+
+    it('layout_canvas infers canvas_id when only one canvas exists', async () => {
+      // First call: list_canvases → one canvas
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: [{ id: 'only-canvas' }] })
+        .mockResolvedValueOnce({ success: true, data: [{ id: 'v1', type: 'agent', size: { width: 300, height: 200 } }] })
+        .mockResolvedValueOnce({ success: true, data: {} }); // move_view
+
+      const result = await callAssistantTool('layout_canvas', {
+        pattern: 'grid',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('list_canvases', expect.anything());
+    });
+
+    it('layout_canvas returns error when multiple canvases exist and no canvas_id', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({
+        success: true,
+        data: [{ id: 'canvas-a' }, { id: 'canvas-b' }],
+      });
+
+      const result = await callAssistantTool('layout_canvas', {
+        pattern: 'grid',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Multiple canvases');
+    });
+  });
+
+  // ── Card operation responses include canvas_id ────────────────────────
+
+  describe('card operation responses include canvas_id', () => {
+    it('move_card response includes canvas_id', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
+      const result = await callAssistantTool('move_card', {
+        canvas_id: 'c1',
+        view_id: 'v1',
+        x: 100,
+        y: 200,
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.canvas_id).toBe('c1');
+    });
+
+    it('resize_card response includes canvas_id', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
+      const result = await callAssistantTool('resize_card', {
+        canvas_id: 'c1',
+        view_id: 'v1',
+        width: 400,
+        height: 300,
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.canvas_id).toBe('c1');
+    });
+
+    it('remove_card response includes canvas_id', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
+      const result = await callAssistantTool('remove_card', {
+        canvas_id: 'c1',
+        view_id: 'v1',
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.canvas_id).toBe('c1');
+    });
+
+    it('rename_card response includes canvas_id', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { canvas_id: 'c1', view_id: 'v1' } });
+      const result = await callAssistantTool('rename_card', {
+        canvas_id: 'c1',
+        view_id: 'v1',
+        name: 'Test',
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.canvas_id).toBe('c1');
+    });
+  });
 });
