@@ -459,22 +459,33 @@ describe('canvas-over-annex state sync', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────
-  // CanvasView paused overlay: structural verification that the
-  // canvas view wrapper checks satellite paused state.
+  // Canvas paused overlay: structural verification that the workspace
+  // (not individual card views) checks satellite paused state.
   // ─────────────────────────────────────────────────────────────────────
 
   describe('canvas satellite paused overlay (structural)', () => {
-    it('CanvasView.tsx imports annexClientStore for satellite paused detection', () => {
+    it('CanvasWorkspace.tsx imports annexClientStore for full-canvas satellite paused overlay', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, '../plugins/builtin/canvas/CanvasWorkspace.tsx'),
+        'utf-8',
+      );
+      expect(source).toContain('useAnnexClientStore');
+      expect(source).toContain('satellitePaused');
+      expect(source).toContain('isAnySatellitePaused');
+      expect(source).toContain('canvas-satellite-paused-overlay');
+    });
+
+    it('CanvasView.tsx no longer renders per-card paused overlay', () => {
       const fs = require('fs');
       const path = require('path');
       const source = fs.readFileSync(
         path.resolve(__dirname, '../plugins/builtin/canvas/CanvasView.tsx'),
         'utf-8',
       );
-      expect(source).toContain('useAnnexClientStore');
-      expect(source).toContain('satellitePaused');
-      expect(source).toContain('isSatellitePaused');
-      expect(source).toContain('canvas-satellite-paused-overlay');
+      expect(source).not.toContain('canvas-satellite-paused-overlay');
+      expect(source).not.toContain('useAnnexClientStore');
     });
   });
 

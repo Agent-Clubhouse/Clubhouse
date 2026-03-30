@@ -7,9 +7,8 @@ import { AgentCanvasView } from './AgentCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType, generatePluginWidgetDisplayName, isWidgetPending, onRegistryChange, parsePluginWidgetType } from '../../canvas-widget-registry';
-import { useRemoteProjectStore, isRemoteProjectId, isRemoteAgentId, parseNamespacedId } from '../../../stores/remoteProjectStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
-import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { LinkDropdown } from './LinkDropdown';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -129,24 +128,6 @@ export function CanvasViewComponent({
   const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
   const isCanvasRemote = canvasProjectId ? isRemoteProjectId(canvasProjectId) : false;
 
-  // Detect if the satellite for this view is paused.
-  // For project-scoped remote canvases, use the canvas project ID.
-  // For app-mode canvases, check the view's agent ID (may be remote even on a local canvas).
-  const satellitePaused = useAnnexClientStore((s) => s.satellitePaused);
-  const viewSatelliteId = useMemo(() => {
-    if (isCanvasRemote && canvasProjectId) {
-      return parseNamespacedId(canvasProjectId)?.satelliteId ?? null;
-    }
-    // App-mode: check if the agent on this view is a remote agent
-    if (view.type === 'agent') {
-      const agentId = (view as AgentCanvasViewType).agentId;
-      if (agentId && isRemoteAgentId(agentId)) {
-        return parseNamespacedId(agentId)?.satelliteId ?? null;
-      }
-    }
-    return null;
-  }, [isCanvasRemote, canvasProjectId, view]);
-  const isSatellitePaused = viewSatelliteId ? !!satellitePaused[viewSatelliteId] : false;
 
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
   const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 0, startH: 0, startX: 0, startY: 0, direction: 'se' as ResizeDirection });
@@ -851,20 +832,6 @@ export function CanvasViewComponent({
         onWheel={isSelected ? (e) => e.stopPropagation() : undefined}
       >
         {!isZoomed && renderContent()}
-        {isSatellitePaused && (
-          <div className="absolute inset-0 flex items-center justify-center bg-ctp-base/80 z-10" data-testid="canvas-satellite-paused-overlay">
-            <div className="text-center">
-              <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-surface-2 flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-ctp-subtext0">
-                  <rect x="6" y="4" width="4" height="16" rx="1" />
-                  <rect x="14" y="4" width="4" height="16" rx="1" />
-                </svg>
-              </div>
-              <p className="text-xs text-ctp-subtext0 font-medium">Session paused</p>
-              <p className="text-[10px] text-ctp-overlay0 mt-1">Satellite has paused remote control</p>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── Resize handles (edges + corners) ─────────────────────── */}
