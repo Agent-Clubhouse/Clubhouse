@@ -631,36 +631,37 @@ describe('CodexAppServerClient', () => {
   // ── RPC timeout tests ────────────────────────────────────────────────────
 
   it('rejects request after timeout', async () => {
-    vi.useFakeTimers();
     const onLog = vi.fn();
     const client = new CodexAppServerClient({
       binary: 'codex',
       args: [],
       onLog,
-      rpcTimeoutMs: 500,
+      rpcTimeoutMs: 100,
     });
 
+    // Start with real timers so init handshake completes
     setTimeout(() => autoRespondInit(mockProc), 0);
-    await vi.advanceTimersByTimeAsync(0);
     await client.start();
+
+    // Now switch to fake timers for the timeout test
+    vi.useFakeTimers();
 
     const promise = client.request('thread/start', { model: 'gpt-5' });
 
     // Advance past the timeout
-    vi.advanceTimersByTime(600);
+    vi.advanceTimersByTime(200);
 
-    await expect(promise).rejects.toThrow("RPC request 'thread/start' timed out after 500ms");
+    await expect(promise).rejects.toThrow("RPC request 'thread/start' timed out after 100ms");
     expect(onLog).toHaveBeenCalledWith(
       'error',
       'RPC timeout → thread/start',
-      expect.objectContaining({ timeoutMs: 500 }),
+      expect.objectContaining({ timeoutMs: 100 }),
     );
 
     vi.useRealTimers();
   });
 
   it('clears timeout when response arrives before deadline', async () => {
-    vi.useFakeTimers();
     const client = new CodexAppServerClient({
       binary: 'codex',
       args: [],
@@ -668,8 +669,9 @@ describe('CodexAppServerClient', () => {
     });
 
     setTimeout(() => autoRespondInit(mockProc), 0);
-    await vi.advanceTimersByTimeAsync(0);
     await client.start();
+
+    vi.useFakeTimers();
 
     const promise = client.request('thread/start', {});
 
