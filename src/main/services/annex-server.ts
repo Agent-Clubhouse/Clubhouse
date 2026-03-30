@@ -84,6 +84,11 @@ let unsubGroupProjectChanged: (() => void) | null = null;
 let unsubBulletinMessage: (() => void) | null = null;
 let unsubGroupProjectRegistry: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+// Server-side WebSocket heartbeat: detect dead controller connections (e.g. mobile app killed)
+const SERVER_HEARTBEAT_INTERVAL_MS = 30_000; // 30s ping interval
+const wsAlive = new WeakMap<WebSocket, boolean>();
 
 /** Whether the satellite session is currently paused (tracks across reconnects). */
 let sessionPaused = false;
@@ -2379,6 +2384,10 @@ export function start(): void {
   });
 
   wss.on('connection', async (ws) => {
+    // Mark connection alive for heartbeat
+    wsAlive.set(ws, true);
+    ws.on('pong', () => { wsAlive.set(ws, true); });
+
     // Send snapshot on connect
     try {
       ws.send(JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
@@ -2523,6 +2532,22 @@ export function start(): void {
     }
   }, 60_000);
 
+  // Server-side heartbeat: ping all WS clients and terminate unresponsive ones.
+  // This catches dead controller connections (e.g. mobile app killed, network lost)
+  // that would otherwise leave the "connected (paused)" badge stuck forever.
+  heartbeatInterval = setInterval(() => {
+    if (!wss) return;
+    for (const client of wss.clients) {
+      if (wsAlive.get(client) === false) {
+        appLog('core:annex', 'info', 'Heartbeat: terminating unresponsive WebSocket client');
+        client.terminate();
+        continue;
+      }
+      wsAlive.set(client, false);
+      try { client.ping(); } catch { client.terminate(); }
+    }
+  }, SERVER_HEARTBEAT_INTERVAL_MS);
+
   // Start both servers
   let mainReady = false;
   let pairingReady = false;
@@ -2600,6 +2625,11 @@ export function stop(): void {
   if (staleEvictionInterval) {
     clearInterval(staleEvictionInterval);
     staleEvictionInterval = null;
+  }
+
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
   }
 
   annexEventBus.setActive(false);
@@ -3001,4 +3031,7 @@ export const _testing = {
   get sessionTokens() { return sessionTokens; },
   isValidToken,
   TOKEN_TTL_MS,
+  SERVER_HEARTBEAT_INTERVAL_MS,
+  wsAlive,
+  get heartbeatInterval() { return heartbeatInterval; },
 };

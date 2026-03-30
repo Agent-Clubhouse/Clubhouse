@@ -279,7 +279,21 @@ export const satellitePtyExitBus = {
 /** Listen for satellite updates pushed from main process. */
 export function initAnnexClientListener(): () => void {
   const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites: SatelliteConnection[]) => {
-    useAnnexClientStore.setState({ satellites });
+    // Clear paused state for satellites that are no longer connected —
+    // prevents stale "paused" badges when a satellite dies unexpectedly.
+    const currentPaused = useAnnexClientStore.getState().satellitePaused;
+    const updatedPaused = { ...currentPaused };
+    let pausedChanged = false;
+    for (const sat of satellites) {
+      if (sat.state === 'disconnected' && updatedPaused[sat.id]) {
+        delete updatedPaused[sat.id];
+        pausedChanged = true;
+      }
+    }
+    useAnnexClientStore.setState({
+      satellites,
+      ...(pausedChanged ? { satellitePaused: updatedPaused } : {}),
+    });
   });
 
   const unsubDiscovered = window.clubhouse.annexClient.onDiscoveredChanged((services: DiscoveredService[]) => {

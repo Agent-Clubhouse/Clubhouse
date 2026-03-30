@@ -392,6 +392,41 @@ describe('annexClientStore', () => {
       expect(getState().satellitePaused['sat-1']).toBe(true);
     });
 
+    it('clears satellitePaused when satellite transitions to disconnected', () => {
+      // Simulate a satellite that was paused but then disconnected
+      useAnnexClientStore.setState({ satellitePaused: { 'PP:QQ:RR:SS': true } });
+
+      let satellitesCallback: ((sats: SatelliteConnection[]) => void) | undefined;
+      mockAnnexClient.onSatellitesChanged.mockImplementationOnce((cb: any) => {
+        satellitesCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+
+      // Satellite disconnects (e.g. mobile app killed, heartbeat timeout)
+      satellitesCallback!([{ ...SATELLITE, state: 'disconnected' }]);
+
+      expect(getState().satellitePaused['PP:QQ:RR:SS']).toBeUndefined();
+    });
+
+    it('preserves satellitePaused for connected satellites on update', () => {
+      useAnnexClientStore.setState({ satellitePaused: { 'PP:QQ:RR:SS': true } });
+
+      let satellitesCallback: ((sats: SatelliteConnection[]) => void) | undefined;
+      mockAnnexClient.onSatellitesChanged.mockImplementationOnce((cb: any) => {
+        satellitesCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+
+      // Satellite is still connected
+      satellitesCallback!([{ ...SATELLITE, state: 'connected' }]);
+
+      expect(getState().satellitePaused['PP:QQ:RR:SS']).toBe(true);
+    });
+
     it('defaults to unpaused when snapshot has no sessionPaused field', () => {
       useAnnexClientStore.setState({
         satellitePaused: { 'sat-1': true },
