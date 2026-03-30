@@ -4,10 +4,10 @@ import type { NoteColor } from './StickyNoteCanvasWidget';
 
 // Full class names spelled out so Tailwind includes them in the build.
 const COLOR_DOT_CLASSES: Record<NoteColor, string> = {
-  yellow: 'bg-ctp-yellow/60 border-ctp-yellow',
-  blue:   'bg-ctp-blue/60 border-ctp-blue',
-  green:  'bg-ctp-green/60 border-ctp-green',
-  pink:   'bg-ctp-pink/60 border-ctp-pink',
+  yellow: 'bg-ctp-warning/60 border-ctp-warning',
+  blue:   'bg-ctp-info/60 border-ctp-info',
+  green:  'bg-ctp-success/60 border-ctp-success',
+  pink:   'bg-ctp-error/60 border-ctp-error',
 };
 
 interface StickyNoteViewerProps {
