@@ -23,6 +23,8 @@ import { useZoneWireStore } from './zone-wire-store';
 import { expandZoneWires, reconcileZoneBindings } from './zone-wire-expansion';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
+import { useAnnexClientStore } from '../../../stores/annexClientStore';
+import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import type { PluginCanvasView as PluginCanvasViewType } from './canvas-types';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
@@ -190,17 +192,33 @@ export function CanvasWorkspace({
     const sub = api.agents.onAnyChange(() => setAgentTick((n) => n + 1));
     return () => sub.dispose();
   }, [api]);
+  // Also subscribe to remote agent state changes so wires re-render after annex wake
+  const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const sleepingAgentIds = useMemo(() => {
     void agentTick; // reactive dependency
-    const agents = api.agents.list();
     const sleeping = new Set<string>();
+    // Local agents
+    const agents = api.agents.list();
     for (const agent of agents) {
       if (agent.status === 'sleeping' || agent.status === 'error') {
         sleeping.add(agent.id);
       }
     }
+    // Remote agents (annex)
+    for (const [nsId, agent] of Object.entries(remoteAgents)) {
+      if (agent.status === 'sleeping' || agent.status === 'error') {
+        sleeping.add(nsId);
+      }
+    }
     return sleeping;
-  }, [api, agentTick]);
+  }, [api, agentTick, remoteAgents]);
+
+  // ── Satellite pause detection (full canvas overlay) ───────────
+  const satellitePaused = useAnnexClientStore((s) => s.satellitePaused);
+  const isAnySatellitePaused = useMemo(
+    () => Object.values(satellitePaused).some(Boolean),
+    [satellitePaused],
+  );
 
   const handleWireClick = useCallback((binding: McpBindingEntry, event: React.MouseEvent) => {
     setWirePopover({ binding, x: event.clientX, y: event.clientY });
@@ -890,6 +908,25 @@ export function CanvasWorkspace({
           );
         })()}
       </div>
+
+      {/* Satellite pause overlay — covers entire canvas content area */}
+      {isAnySatellitePaused && (
+        <div
+          className="absolute inset-0 z-[9998] flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
+          data-testid="canvas-satellite-paused-overlay"
+        >
+          <div className="text-center">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-surface-2 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-ctp-subtext0">
+                <rect x="6" y="4" width="4" height="16" rx="1" />
+                <rect x="14" y="4" width="4" height="16" rx="1" />
+              </svg>
+            </div>
+            <p className="text-sm text-ctp-subtext0 font-medium">Session paused</p>
+            <p className="text-xs text-ctp-overlay0 mt-1">The satellite has paused remote control</p>
+          </div>
+        </div>
+      )}
 
       {/* Minimap */}
       {views.length > 0 && !zoomedView && (
