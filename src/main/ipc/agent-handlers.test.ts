@@ -70,6 +70,13 @@ vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
 
+vi.mock('../../renderer/features/assistant/content/personas', () => ({
+  getPersonaTemplate: vi.fn((id: string) => {
+    if (id === 'qa') return { id: 'qa', name: 'Quality Assurance', description: 'QA agent', content: '# QA Agent\nReview code.' };
+    return undefined;
+  }),
+}));
+
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAgentHandlers } from './agent-handlers';
@@ -123,8 +130,8 @@ describe('agent-handlers', () => {
 
   it('CREATE_DURABLE delegates to agentConfig.createDurable', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined);
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined);
+    const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined);
     expect(result).toEqual({ id: 'agent-1', name: 'Test' });
   });
 
@@ -386,5 +393,76 @@ describe('agent-handlers', () => {
   it('rejects non-integer offset for READ_TRANSCRIPT_PAGE', () => {
     const handler = handlers.get(IPC.AGENT.READ_TRANSCRIPT_PAGE)!;
     expect(() => handler({}, 'a1', 1.5, 10)).toThrow('must be an integer');
+  });
+
+  // --- Persona injection on CREATE_DURABLE ---
+
+  it('CREATE_DURABLE with persona injects instructions when worktree exists', async () => {
+    const mockWriteInstructions = vi.fn();
+    const mockReadInstructions = vi.fn().mockResolvedValue('Existing instructions');
+    vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({
+      id: 'claude-code', displayName: 'Claude Code',
+      writeInstructions: mockWriteInstructions,
+      readInstructions: mockReadInstructions,
+      getModelOptions: vi.fn(() => []),
+      toolVerb: vi.fn(() => null),
+    } as any);
+    vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
+      id: 'agent-qa', name: 'qa-bot', color: 'red', worktreePath: '/wt/qa',
+    } as any);
+
+    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
+    await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'qa');
+
+    expect(mockReadInstructions).toHaveBeenCalledWith('/wt/qa');
+    expect(mockWriteInstructions).toHaveBeenCalledWith('/wt/qa', expect.stringContaining('Existing instructions'));
+    expect(mockWriteInstructions).toHaveBeenCalledWith('/wt/qa', expect.stringContaining('# QA Agent'));
+  });
+
+  it('CREATE_DURABLE with persona skips injection when no worktree', async () => {
+    vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
+      id: 'agent-pm', name: 'pm-bot', color: 'indigo',
+    } as any);
+
+    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
+    await handler({}, '/project', 'pm-bot', 'indigo', undefined, false, undefined, false, undefined, undefined, 'qa');
+
+    // Should not call resolveOrchestrator since no worktreePath
+    expect(agentSystem.resolveOrchestrator).not.toHaveBeenCalled();
+  });
+
+  it('CREATE_DURABLE with invalid persona skips injection gracefully', async () => {
+    vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
+      id: 'agent-x', name: 'x-bot', color: 'blue', worktreePath: '/wt/x',
+    } as any);
+
+    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
+    const result = await handler({}, '/project', 'x-bot', 'blue', undefined, true, undefined, false, undefined, undefined, 'nonexistent');
+
+    // Should succeed (agent created) but no instructions written
+    expect(result).toEqual(expect.objectContaining({ id: 'agent-x' }));
+    // resolveOrchestrator should not be called since template is undefined
+    // (the getPersonaTemplate mock returns undefined for nonexistent)
+  });
+
+  it('CREATE_DURABLE with persona handles read failure gracefully', async () => {
+    const mockWriteInstructions = vi.fn();
+    const mockReadInstructions = vi.fn().mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({
+      id: 'claude-code', displayName: 'Claude Code',
+      writeInstructions: mockWriteInstructions,
+      readInstructions: mockReadInstructions,
+      getModelOptions: vi.fn(() => []),
+      toolVerb: vi.fn(() => null),
+    } as any);
+    vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
+      id: 'agent-qa2', name: 'qa-bot', color: 'red', worktreePath: '/wt/qa2',
+    } as any);
+
+    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
+    await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'qa');
+
+    // Should write persona content standalone (no existing instructions)
+    expect(mockWriteInstructions).toHaveBeenCalledWith('/wt/qa2', '# QA Agent\nReview code.');
   });
 });

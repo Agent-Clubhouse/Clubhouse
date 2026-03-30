@@ -30,9 +30,29 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), booleanArg({ optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode) => {
-        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode);
+      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), booleanArg({ optional: true }), stringArg({ optional: true })],
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode, persona) => {
+        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode, persona);
+
+        // Inject persona instructions into the agent's worktree
+        if (persona && config.worktreePath) {
+          try {
+            const { getPersonaTemplate } = await import('../../renderer/features/assistant/content/personas');
+            const template = getPersonaTemplate(persona);
+            if (template) {
+              const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
+              let existing = '';
+              try { existing = await provider.readInstructions(config.worktreePath); } catch { /* no existing */ }
+              const combined = existing ? `${existing}\n\n${template.content}` : template.content;
+              await provider.writeInstructions(config.worktreePath, combined);
+            }
+          } catch (err) {
+            appLog('agents', 'warn', 'Failed to inject persona instructions on create', {
+              meta: { agentName: name, persona, error: err instanceof Error ? err.message : String(err) },
+            });
+          }
+        }
+
         broadcastSnapshotRefresh();
         return config;
       },
