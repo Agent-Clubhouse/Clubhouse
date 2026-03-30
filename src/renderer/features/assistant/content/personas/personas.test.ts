@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { PERSONA_TEMPLATES, getPersonaTemplate, getPersonaIds } from './index';
 
 describe('persona templates', () => {
-  it('exports 7 persona templates', () => {
-    expect(PERSONA_TEMPLATES).toHaveLength(7);
+  it('exports 9 persona templates', () => {
+    expect(PERSONA_TEMPLATES).toHaveLength(9);
   });
 
   it('each template has required fields', () => {
@@ -27,9 +27,9 @@ describe('persona templates', () => {
     expect(getPersonaTemplate('nonexistent')).toBeUndefined();
   });
 
-  it('getPersonaIds returns all 7 IDs', () => {
+  it('getPersonaIds returns all 9 IDs', () => {
     const ids = getPersonaIds();
-    expect(ids).toHaveLength(7);
+    expect(ids).toHaveLength(9);
     expect(ids).toContain('project-manager');
     expect(ids).toContain('qa');
     expect(ids).toContain('ui-lead');
@@ -37,6 +37,8 @@ describe('persona templates', () => {
     expect(ids).toContain('executor-pr-only');
     expect(ids).toContain('executor-merge');
     expect(ids).toContain('doc-updater');
+    expect(ids).toContain('judge');
+    expect(ids).toContain('researcher');
   });
 
   it('all templates have unique IDs', () => {

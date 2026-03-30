@@ -13,7 +13,7 @@ describe('help-content', () => {
 
   it('has 37 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(37);
+    expect(total).toBe(39);
   });
 
   it('each section has at least 1 topic', () => {
@@ -65,9 +65,9 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('orchestrators');
   });
 
-  it('Agent Personas section has 7 topics', () => {
+  it('Agent Personas section has 9 topics', () => {
     const personas = HELP_SECTIONS.find((s) => s.id === 'personas');
-    expect(personas?.topics).toHaveLength(7);
+    expect(personas?.topics).toHaveLength(9);
   });
 
   it('includes all persona topics', () => {
@@ -77,5 +77,7 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('persona-quality-auditor');
     expect(allTopicIds).toContain('persona-executor-merge');
     expect(allTopicIds).toContain('persona-doc-updater');
+    expect(allTopicIds).toContain('persona-judge');
+    expect(allTopicIds).toContain('persona-researcher');
   });
 });

@@ -1,53 +1,54 @@
 # Cookbook: Group Project (Multi-App)
 
 ## When to use
-Work spanning two separate applications or repositories that need coordinated development — e.g., a backend API and frontend client, a library and its consumers, or two microservices that share a contract.
+Work spanning two separate applications or repositories — backend + frontend, library + consumers, or two microservices sharing a contract.
 
 ## Team
-- **1 Coordinator** — plans work, dispatches missions, makes decisions (project-manager persona)
-- **1 QA** — reviews PRs across both apps (qa persona)
-- **2 zones** with 2 workers each (4 executors total, executor-merge persona)
+- **1 Coordinator** (project-manager persona)
+- **1 QA** (qa persona) — reviews PRs across both apps
+- **2 zones** with 2 workers each (executor-merge persona)
+- **1 Group Project** card — coordination hub
 
 Each zone maps to a separate Clubhouse project (separate git repo).
 
 ## Canvas Layout
 
-Cards:
-- 1 plugin card: Group Project (coordination hub)
-- 1 agent card: Coordinator (project-manager persona)
-- 1 agent card: QA (qa persona)
-- 1 zone card: "App A" (contains 2 executor agents)
-- 2 agent cards inside App A zone: Worker-A1, Worker-A2
-- 1 zone card: "App B" (contains 2 executor agents)
-- 2 agent cards inside App B zone: Worker-B1, Worker-B2
+- 1 group-project card: coordination hub
+- 2 zones: "App A" and "App B" with 2 workers each
+- All agents connect to the group project card
+- Layout: `grid` — coordinator and QA top, zones below
 
-Wires:
-- All agents -> Group Project card (bulletin board coordination)
+## Blueprint JSON
 
-Layout: `grid` — coordinator and QA on top row, two zones side by side below.
-
-## MCP Tool Sequence
-
+```json
+{
+  "name": "Multi-App",
+  "zones": [
+    { "id": "z-a", "name": "App A" },
+    { "id": "z-b", "name": "App B" }
+  ],
+  "cards": [
+    { "id": "gp", "type": "group-project", "name": "Coordination" },
+    { "id": "coord", "type": "agent", "name": "Coordinator", "persona": "project-manager" },
+    { "id": "qa", "type": "agent", "name": "QA", "persona": "qa" },
+    { "id": "wa1", "type": "agent", "name": "Worker-A1", "persona": "executor-merge", "zone": "z-a" },
+    { "id": "wa2", "type": "agent", "name": "Worker-A2", "persona": "executor-merge", "zone": "z-a" },
+    { "id": "wb1", "type": "agent", "name": "Worker-B1", "persona": "executor-merge", "zone": "z-b" },
+    { "id": "wb2", "type": "agent", "name": "Worker-B2", "persona": "executor-merge", "zone": "z-b" }
+  ],
+  "wires": [
+    { "from": "coord", "to": "gp", "bidirectional": true },
+    { "from": "qa", "to": "gp", "bidirectional": true },
+    { "from": "wa1", "to": "gp", "bidirectional": true },
+    { "from": "wa2", "to": "gp", "bidirectional": true },
+    { "from": "wb1", "to": "gp", "bidirectional": true },
+    { "from": "wb2", "to": "gp", "bidirectional": true }
+  ]
+}
 ```
-1. create_canvas({ name: "<project-name> Multi-App" })
-2. add_card({ canvas_id, type: "plugin", display_name: "Group Project" })
-3. create_agent({ project_path: app_a_path, name: "Coordinator", persona: "project-manager" })
-4. add_card({ canvas_id, type: "agent", agent_id: coordinator_id, project_id: app_a_project_id })
-5. create_agent({ project_path: app_a_path, name: "QA", persona: "qa" })
-6. add_card({ canvas_id, type: "agent", agent_id: qa_id, project_id: app_a_project_id })
-7. add_card({ canvas_id, type: "zone", display_name: "App A" })
-8. create_agent({ project_path: app_a_path, name: "Worker-A1", persona: "executor-merge" })
-9. add_card({ canvas_id, type: "agent", agent_id: worker_a1_id, project_id: app_a_project_id, zone_id: app_a_zone_id })
-10. create_agent({ project_path: app_a_path, name: "Worker-A2", persona: "executor-merge" })
-11. add_card({ canvas_id, type: "agent", agent_id: worker_a2_id, project_id: app_a_project_id, zone_id: app_a_zone_id })
-12. add_card({ canvas_id, type: "zone", display_name: "App B" })
-13. create_agent({ project_path: app_b_path, name: "Worker-B1", persona: "executor-merge" })
-14. add_card({ canvas_id, type: "agent", agent_id: worker_b1_id, project_id: app_b_project_id, zone_id: app_b_zone_id })
-15. create_agent({ project_path: app_b_path, name: "Worker-B2", persona: "executor-merge" })
-16. add_card({ canvas_id, type: "agent", agent_id: worker_b2_id, project_id: app_b_project_id, zone_id: app_b_zone_id })
-17. connect_cards — each agent card -> Group Project card
-18. layout_canvas({ canvas_id, pattern: "grid" })
-```
+
+## GP Instructions
+Default: "Coordinate cross-app development. Coordinator dispatches missions, workers from each app report progress, QA reviews PRs from both. Topics: missions, progress, blockers, decisions."
 
 ## Coordination
-All agents communicate via the group project bulletin board. Coordinator dispatches missions and resolves cross-app design decisions. Each zone's workers operate on their respective Clubhouse project. QA reviews PRs from both apps.
+All agents communicate via the group project bulletin board. Coordinator dispatches missions and resolves cross-app design decisions. QA reviews PRs from both apps.

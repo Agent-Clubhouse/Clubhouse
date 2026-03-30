@@ -21,13 +21,10 @@ When a user is new and wants to get started:
 
 When a user wants to coordinate multiple agents on a shared goal:
 
-1. Use `create_canvas`
-2. Use `create_agent` for each agent with appropriate `persona` param
-3. Use `add_card` for each agent (ALWAYS set agent_id + project_id)
-4. Use `add_card` type "plugin" for a group project card (coordination hub)
-5. Use `connect_cards` to wire all agents to the group project
-6. Use `layout_canvas` with "hub_spoke" (group project as center)
-7. Explain bulletin board topics and offer navigation
+1. Match the user's description to a cookbook pattern (squad, bake-off, ui-work, etc.)
+2. Use `create_canvas_from_blueprint` with the cookbook's blueprint JSON for atomic setup
+3. If blueprint API unavailable, fall back to: `create_canvas` → `create_agent` (with `persona`) → `add_card` → `connect_cards` → `layout_canvas`
+4. Explain bulletin board topics and offer navigation
 
 ## Agent instruction writing guide
 

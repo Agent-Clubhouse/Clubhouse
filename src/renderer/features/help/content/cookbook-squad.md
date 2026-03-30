@@ -1,6 +1,6 @@
 # Squad
 
-A flexible team pattern with a coordinator, quality gate, optional specialists, and N workers. The default pattern for most multi-agent work.
+A focused team with a coordinator, quality gate, optional specialists, and N workers. All agents connect to a central group project card. The default pattern for multi-agent work.
 
 ## When to Use
 
@@ -11,47 +11,26 @@ A flexible team pattern with a coordinator, quality gate, optional specialists, 
 ## Canvas Layout
 
 **Cards (5+):**
-- **Coordinator** — durable agent, plans and dispatches work
-- **QA** — durable agent, reviews all PRs
-- **UI Lead** (optional) — durable agent, design review for visual work
-- **Quality Auditor** (optional) — durable agent, reviews for AI-generated patterns
-- **Workers (N)** — durable agents with merge permission
+- **Group Project** — coordination hub (center)
+- **Coordinator** — plans and dispatches work (project-manager persona)
+- **QA** — reviews all PRs (qa persona)
+- **UI Lead** (optional) — design review (ui-lead persona)
+- **Quality Auditor** (optional) — reviews AI-generated patterns (quality-auditor persona)
+- **Workers (N)** — implementation with merge (executor-merge persona)
 
-**Zones (1):**
-- One zone containing all workers
+**Wires:** All agents → Group Project (bidirectional)
 
-**Wires:**
-- Coordinator → each worker (mission dispatch)
-- Each worker → QA (PR review)
-- Each worker → UI Lead (if present, design review)
-- Coordinator → QA (approval authority)
+**Layout:** `hub_spoke` with group project as the hub
 
-**Layout:** `hub_spoke` with coordinator as the hub
+## Preferred: Blueprint API
 
-## MCP Tool Sequence
-
-```
-1. create_canvas(name: "Squad")
-2. add_card(type: "agent", name: "coordinator", role: "Project driver, planning and dispatch")
-3. add_card(type: "agent", name: "qa", role: "Quality gate, approve/reject PRs")
-4. add_card(type: "agent", name: "worker-1", role: "Implementation with merge")
-5. add_card(type: "agent", name: "worker-2", role: "Implementation with merge")
-6. add_card(type: "agent", name: "worker-3", role: "Implementation with merge")
-7. add_zone(name: "Workers", cards: [worker-1, worker-2, worker-3])
-8. add_wire(from: coordinator, to: worker-1, label: "Dispatch")
-9. add_wire(from: coordinator, to: worker-2, label: "Dispatch")
-10. add_wire(from: coordinator, to: worker-3, label: "Dispatch")
-11. add_wire(from: worker-1, to: qa, label: "PR review")
-12. add_wire(from: worker-2, to: qa, label: "PR review")
-13. add_wire(from: worker-3, to: qa, label: "PR review")
-14. layout_canvas(pattern: "hub_spoke")
-```
+Use `create_canvas_from_blueprint` with the squad blueprint JSON for atomic one-call setup. See the Squad cookbook in assistant content for the full blueprint.
 
 ## Scaling
 
-- Add more workers by repeating the add_card + add_wire pattern
-- Add UI Lead or Quality Auditor as additional hub spokes wired from workers
-- For large squads (6+ workers), consider splitting into two zones with the Group Project pattern instead
+- Add more workers by adding cards + wires to the GP
+- Add UI Lead or Quality Auditor as additional agents wired to GP
+- For large squads (6+ workers), consider splitting into zones with the Group Project (Multi-App) pattern
 
 ## Agent Instructions
 
@@ -59,4 +38,4 @@ A flexible team pattern with a coordinator, quality gate, optional specialists, 
 
 **QA:** Final gate before merge. Verify green CI, test coverage, spec compliance. Reject with specific file:line feedback.
 
-**Workers:** Pick up missions, branch off main, implement with tests, validate locally, open PR, post progress. Rebase between merges.
+**Workers:** Pick up missions, branch off main, implement with tests, validate locally, open PR, post progress.

@@ -1,75 +1,70 @@
 # Cookbook: Bake-Off
 
 ## When to use
-A|B testing of two competing approaches to the same problem — architectural spikes, implementation comparisons, competing design directions. Two teams work independently, then judges evaluate. Useful when the best approach is unclear and you want to see both before committing.
+A|B testing of two competing approaches. Two teams work independently, then judges evaluate. Useful when the best approach is unclear.
 
 ## Team
-- **1 Central Coordinator** — defines the challenge, sets rules, declares winner (project-manager persona)
-- **2 Team Zones** (Alpha and Beta), each containing:
-  - 1 Team Coordinator — manages their team's approach (project-manager persona)
-  - 1 QA — reviews their team's PRs (qa persona)
-  - N Workers — implement their team's solution (executor-pr-only persona, no merge — work stays on branches)
-- **1-2 Judges** — evaluate both teams' output against criteria, connected to central coordinator
+- **1 Central Coordinator** (project-manager persona) — defines challenge, declares winner
+- **Team Alpha**: 1 Lead + 1 QA + N Workers (executor-pr-only, no merge)
+- **Team Beta**: 1 Lead + 1 QA + N Workers (executor-pr-only, no merge)
+- **1 Judge** (judge persona) — evaluates both teams' output
+- **3 Group Projects**: Alpha Team GP, Beta Team GP, Judging GP
+- **3 Zones**: Alpha (cyan), Beta (rose), Judging (violet)
 
-Workers use executor-pr-only (no merge) so competing approaches stay on separate branches until a winner is chosen.
+Workers use executor-pr-only so competing approaches stay on branches until a winner is chosen.
 
 ## Canvas Layout
 
-Cards:
-- 1 agent card: Central Coordinator (top center)
-- 1 zone card: "Team Alpha"
-  - 1 agent card: Alpha Coordinator
-  - 1 agent card: Alpha QA
-  - N agent cards: Alpha Workers
-- 1 zone card: "Team Beta"
-  - 1 agent card: Beta Coordinator
-  - 1 agent card: Beta QA
-  - N agent cards: Beta Workers
-- 1-2 agent cards: Judges
+- 3 named colored zones containing their respective teams
+- Central Coordinator direct-connects to Alpha Lead + Beta Lead
+- Each team communicates via its own GP
+- Judge + Coordinator share the Judging GP
+- Layout: `grid` — judging zone top, team zones side by side below
 
-Wires:
-- Central Coordinator -> Alpha Coordinator, Beta Coordinator (challenge dispatch)
-- Alpha Coordinator -> Alpha Workers (mission dispatch within team)
-- Beta Coordinator -> Beta Workers (mission dispatch within team)
-- Alpha Workers -> Alpha QA (team-internal review)
-- Beta Workers -> Beta QA (team-internal review)
-- Alpha Coordinator -> Judge(s) (submit team output)
-- Beta Coordinator -> Judge(s) (submit team output)
-- Judge(s) -> Central Coordinator (verdict)
+## Blueprint JSON
 
-Layout: `grid` — central coordinator and judges on top row, two team zones side by side below.
+Use `create_canvas_from_blueprint` for atomic creation:
 
-## MCP Tool Sequence
-
+```json
+{
+  "name": "Bake-Off",
+  "zones": [
+    { "id": "z-alpha", "name": "Team Alpha", "color": "cyan" },
+    { "id": "z-beta", "name": "Team Beta", "color": "rose" },
+    { "id": "z-judge", "name": "Judging", "color": "violet" }
+  ],
+  "cards": [
+    { "id": "gp-alpha", "type": "group-project", "name": "Alpha Team GP", "zone": "z-alpha" },
+    { "id": "alpha-lead", "type": "agent", "name": "Alpha Lead", "persona": "project-manager", "zone": "z-alpha" },
+    { "id": "alpha-qa", "type": "agent", "name": "Alpha QA", "persona": "qa", "zone": "z-alpha" },
+    { "id": "alpha-w1", "type": "agent", "name": "Alpha Worker-1", "persona": "executor-pr-only", "zone": "z-alpha" },
+    { "id": "gp-beta", "type": "group-project", "name": "Beta Team GP", "zone": "z-beta" },
+    { "id": "beta-lead", "type": "agent", "name": "Beta Lead", "persona": "project-manager", "zone": "z-beta" },
+    { "id": "beta-qa", "type": "agent", "name": "Beta QA", "persona": "qa", "zone": "z-beta" },
+    { "id": "beta-w1", "type": "agent", "name": "Beta Worker-1", "persona": "executor-pr-only", "zone": "z-beta" },
+    { "id": "gp-judging", "type": "group-project", "name": "Judging GP", "zone": "z-judge" },
+    { "id": "coordinator", "type": "agent", "name": "Central Coordinator", "persona": "project-manager", "zone": "z-judge" },
+    { "id": "judge", "type": "agent", "name": "Judge", "persona": "judge", "zone": "z-judge" }
+  ],
+  "wires": [
+    { "from": "alpha-lead", "to": "gp-alpha", "bidirectional": true },
+    { "from": "alpha-qa", "to": "gp-alpha", "bidirectional": true },
+    { "from": "alpha-w1", "to": "gp-alpha", "bidirectional": true },
+    { "from": "beta-lead", "to": "gp-beta", "bidirectional": true },
+    { "from": "beta-qa", "to": "gp-beta", "bidirectional": true },
+    { "from": "beta-w1", "to": "gp-beta", "bidirectional": true },
+    { "from": "coordinator", "to": "gp-judging", "bidirectional": true },
+    { "from": "judge", "to": "gp-judging", "bidirectional": true },
+    { "from": "coordinator", "to": "alpha-lead" },
+    { "from": "coordinator", "to": "beta-lead" }
+  ]
+}
 ```
-1. create_canvas({ name: "<challenge-name> Bake-Off" })
-2. create_agent({ project_path, name: "Central Coordinator", persona: "project-manager" })
-3. add_card({ canvas_id, type: "agent", agent_id: central_coord_id, project_id })
-4. create_agent({ project_path, name: "Judge", persona: "qa" })
-5. add_card({ canvas_id, type: "agent", agent_id: judge_id, project_id })
-6. add_card({ canvas_id, type: "zone", display_name: "Team Alpha" })
-7. create_agent({ project_path, name: "Alpha Coordinator", persona: "project-manager" })
-8. add_card({ canvas_id, type: "agent", agent_id: alpha_coord_id, project_id, zone_id: alpha_zone_id })
-9. create_agent({ project_path, name: "Alpha QA", persona: "qa" })
-10. add_card({ canvas_id, type: "agent", agent_id: alpha_qa_id, project_id, zone_id: alpha_zone_id })
-11. create_agent({ project_path, name: "Alpha Worker-1", persona: "executor-pr-only" })
-12. add_card({ canvas_id, type: "agent", agent_id: alpha_w1_id, project_id, zone_id: alpha_zone_id })
-13. add_card({ canvas_id, type: "zone", display_name: "Team Beta" })
-14. create_agent({ project_path, name: "Beta Coordinator", persona: "project-manager" })
-15. add_card({ canvas_id, type: "agent", agent_id: beta_coord_id, project_id, zone_id: beta_zone_id })
-16. create_agent({ project_path, name: "Beta QA", persona: "qa" })
-17. add_card({ canvas_id, type: "agent", agent_id: beta_qa_id, project_id, zone_id: beta_zone_id })
-18. create_agent({ project_path, name: "Beta Worker-1", persona: "executor-pr-only" })
-19. add_card({ canvas_id, type: "agent", agent_id: beta_w1_id, project_id, zone_id: beta_zone_id })
-20. connect_cards — Central Coordinator -> Alpha Coordinator, Beta Coordinator
-21. connect_cards — Alpha Coordinator -> Alpha Workers
-22. connect_cards — Beta Coordinator -> Beta Workers
-23. connect_cards — Alpha Workers -> Alpha QA
-24. connect_cards — Beta Workers -> Beta QA
-25. connect_cards — Alpha Coordinator -> Judge, Beta Coordinator -> Judge
-26. connect_cards — Judge -> Central Coordinator
-27. layout_canvas({ canvas_id, pattern: "grid" })
-```
+
+## GP Instructions
+- **Alpha Team GP**: "Alpha team builds competing implementation. Lead dispatches, workers implement, QA reviews. Post progress and PRs."
+- **Beta Team GP**: "Beta team builds competing implementation. Lead dispatches, workers implement, QA reviews. Post progress and PRs."
+- **Judging GP**: "Evaluate Alpha vs Beta output. Judge scores against criteria. Coordinator declares winner and merges."
 
 ## Coordination
-Central Coordinator posts the challenge spec to both teams simultaneously. Teams work independently — no cross-team communication. When both teams submit, judges evaluate against predefined criteria (performance, code quality, maintainability, test coverage). Central Coordinator merges the winning team's branch and closes the other.
+Central Coordinator posts the challenge spec to both leads. Teams work independently — no cross-team communication. When both submit, Judge evaluates via the Judging GP. Coordinator merges the winner's branch.

@@ -5,6 +5,8 @@ import qualityAuditor from './quality-auditor.md';
 import executorPrOnly from './executor-pr-only.md';
 import executorMerge from './executor-merge.md';
 import docUpdater from './doc-updater.md';
+import judge from './judge.md';
+import researcher from './researcher.md';
 
 export interface PersonaTemplate {
   id: string;
@@ -55,6 +57,18 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
     name: 'Documentation Updater',
     description: 'Monitors git log and board, updates local markdown docs.',
     content: docUpdater,
+  },
+  {
+    id: 'judge',
+    name: 'Judge',
+    description: 'Critical evaluation with scoring against criteria. Delivers clear yes/no verdicts.',
+    content: judge,
+  },
+  {
+    id: 'researcher',
+    name: 'Researcher',
+    description: 'Domain-scoped investigation with cited findings and actionable conclusions.',
+    content: researcher,
   },
 ];
 

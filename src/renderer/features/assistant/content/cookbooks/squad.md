@@ -1,49 +1,55 @@
 # Cookbook: Squad
 
 ## When to use
-A focused team working on a single project with coordinated planning — feature sprints, large refactors, new product development. The most common pattern for serious multi-agent work.
+A focused team working on a single project — feature sprints, large refactors, new product development. The most common pattern for multi-agent work.
 
 ## Team
-- **1 Coordinator** — plans, dispatches, tracks progress (project-manager persona)
-- **1 QA** — reviews all PRs, enforces quality bar (qa persona)
-- **Optional: 1 UI Lead** — visual/interaction design (ui-lead persona)
-- **Optional: 1 Quality Auditor** — reviews for AI-generated anti-patterns (quality-auditor persona)
-- **N Workers** — implementation agents with merge permission (executor-merge persona)
+- **1 Coordinator** (project-manager persona)
+- **1 QA** (qa persona)
+- **Optional: 1 UI Lead** (ui-lead persona)
+- **Optional: 1 Quality Auditor** (quality-auditor persona)
+- **N Workers** (executor-merge persona)
+- **1 Group Project** card — coordination hub
 
 Scale N based on task parallelism. 3-5 workers is typical.
 
 ## Canvas Layout
 
-Cards:
-- 1 plugin card: Group Project (coordination hub, center)
-- 1 agent card: Coordinator (project-manager persona)
-- 1 agent card: QA (qa persona)
-- 0-1 agent card: UI Lead (optional, ui-lead persona)
-- 0-1 agent card: Quality Auditor (optional, quality-auditor persona)
-- N agent cards: Workers (executor-merge persona)
+- 1 group-project card: coordination hub (center)
+- 1 agent card per role
+- All agents connect to the group project card
+- Layout: `hub_spoke` — group project at center
 
-Wires:
-- All agents -> Group Project card (bulletin board coordination)
+## Blueprint JSON
 
-Layout: `hub_spoke` — group project card at center, all agents arranged around it.
+Use `create_canvas_from_blueprint` for atomic creation:
 
-## MCP Tool Sequence
-
+```json
+{
+  "name": "Squad",
+  "zones": [],
+  "cards": [
+    { "id": "gp", "type": "group-project", "name": "Coordination" },
+    { "id": "coord", "type": "agent", "name": "Coordinator", "persona": "project-manager" },
+    { "id": "qa", "type": "agent", "name": "QA", "persona": "qa" },
+    { "id": "w1", "type": "agent", "name": "Worker-1", "persona": "executor-merge" },
+    { "id": "w2", "type": "agent", "name": "Worker-2", "persona": "executor-merge" },
+    { "id": "w3", "type": "agent", "name": "Worker-3", "persona": "executor-merge" }
+  ],
+  "wires": [
+    { "from": "coord", "to": "gp", "bidirectional": true },
+    { "from": "qa", "to": "gp", "bidirectional": true },
+    { "from": "w1", "to": "gp", "bidirectional": true },
+    { "from": "w2", "to": "gp", "bidirectional": true },
+    { "from": "w3", "to": "gp", "bidirectional": true }
+  ]
+}
 ```
-1. create_canvas({ name: "<squad-name>" })
-2. add_card({ canvas_id, type: "plugin", display_name: "Group Project" })
-3. create_agent({ project_path, name: "Coordinator", persona: "project-manager" })
-4. add_card({ canvas_id, type: "agent", agent_id: coordinator_id, project_id })
-5. create_agent({ project_path, name: "QA", persona: "qa" })
-6. add_card({ canvas_id, type: "agent", agent_id: qa_id, project_id })
-7. create_agent({ project_path, name: "Worker-1", persona: "executor-merge" })
-8. add_card({ canvas_id, type: "agent", agent_id: worker1_id, project_id })
-   ... repeat for N workers
-9. connect_cards — each agent card -> Group Project card
-10. layout_canvas({ canvas_id, pattern: "hub_spoke" })
-```
 
-Optional agents (UI Lead with `persona: "ui-lead"`, Quality Auditor with `persona: "quality-auditor"`) follow the same create_agent + add_card + connect_cards pattern.
+Optional agents (UI Lead, Quality Auditor) follow the same pattern — add card + wire to GP.
+
+## GP Instructions
+Default: "Coordinate squad work. Coordinator posts missions, workers report progress, QA reviews PRs. Topics: missions, progress, blockers, decisions."
 
 ## Coordination
-All agents communicate via the group project bulletin board. Coordinator posts mission briefs to `missions` topic, tracks progress via `progress` topic, resolves blockers via `blockers` topic. QA has veto power on merges. Workers operate autonomously within their assigned missions: branch, implement, test, PR, standby.
+All agents communicate via the group project bulletin board. Coordinator posts mission briefs to `missions`, tracks `progress`, resolves `blockers`. QA has veto power on merges. Workers: branch, implement, test, PR, standby.

@@ -30,6 +30,8 @@ import personaQualityAuditor from '../assistant/content/personas/quality-auditor
 import personaExecutorPrOnly from '../assistant/content/personas/executor-pr-only.md';
 import personaExecutorMerge from '../assistant/content/personas/executor-merge.md';
 import personaDocUpdater from '../assistant/content/personas/doc-updater.md';
+import personaJudge from '../assistant/content/personas/judge.md';
+import personaResearcher from '../assistant/content/personas/researcher.md';
 import cookbookLongRunningJob from '../assistant/content/cookbooks/long-running-job.md';
 import cookbookUiWork from '../assistant/content/cookbooks/ui-work.md';
 import cookbookGroupProject from '../assistant/content/cookbooks/group-project.md';
@@ -122,6 +124,8 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'persona-executor-pr-only', title: 'Executor (PR Only)', content: personaExecutorPrOnly },
       { id: 'persona-executor-merge', title: 'Executor (Full Merge)', content: personaExecutorMerge },
       { id: 'persona-doc-updater', title: 'Documentation Updater', content: personaDocUpdater },
+      { id: 'persona-judge', title: 'Judge', content: personaJudge },
+      { id: 'persona-researcher', title: 'Researcher', content: personaResearcher },
     ],
   },
   {
