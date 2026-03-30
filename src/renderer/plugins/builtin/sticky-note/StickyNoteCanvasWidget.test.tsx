@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { StickyNoteCanvasWidget, TINTS, NOTE_COLORS } from './StickyNoteCanvasWidget';
@@ -48,37 +48,32 @@ describe('StickyNoteCanvasWidget', () => {
     expect(screen.queryByTestId('sticky-note-editor')).toBeNull();
   });
 
-  it('switches to edit mode when Edit is clicked', () => {
+  it('has no separate Edit button and enters edit mode from the content area', () => {
     render(<StickyNoteCanvasWidget {...makeProps()} />);
-    fireEvent.click(screen.getByTestId('sticky-note-edit'));
+    expect(screen.queryByTestId('sticky-note-edit')).toBeNull();
+    fireEvent.click(screen.getByTestId('sticky-note-content'));
     expect(screen.getByTestId('sticky-note-editor')).toBeTruthy();
     expect(screen.queryByTestId('sticky-note-viewer')).toBeNull();
   });
 
-  it('saves content and returns to view mode', () => {
+  it('blurring the textarea saves content and returns to view mode', () => {
     const onUpdateMetadata = vi.fn();
     render(<StickyNoteCanvasWidget {...makeProps({ onUpdateMetadata, metadata: { content: 'hello' } })} />);
-    fireEvent.click(screen.getByTestId('sticky-note-edit'));
+    fireEvent.click(screen.getByTestId('sticky-note-content'));
 
     const textarea = screen.getByTestId('sticky-note-textarea') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'updated content' } });
-    fireEvent.click(screen.getByTestId('sticky-note-save'));
+    fireEvent.blur(textarea);
 
     expect(onUpdateMetadata).toHaveBeenCalledWith({ content: 'updated content' });
     expect(screen.getByTestId('sticky-note-viewer')).toBeTruthy();
   });
 
-  it('cancels edit and returns to view mode without saving', () => {
-    const onUpdateMetadata = vi.fn();
-    render(<StickyNoteCanvasWidget {...makeProps({ onUpdateMetadata })} />);
-    fireEvent.click(screen.getByTestId('sticky-note-edit'));
-
-    const textarea = screen.getByTestId('sticky-note-textarea') as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: 'draft' } });
-    fireEvent.click(screen.getByTestId('sticky-note-cancel'));
-
-    // onUpdateMetadata called by onUnmountSave (auto-save on unmount), but not by Save button
-    expect(screen.getByTestId('sticky-note-viewer')).toBeTruthy();
+  it('has no Save or Cancel buttons in edit mode', () => {
+    render(<StickyNoteCanvasWidget {...makeProps()} />);
+    fireEvent.click(screen.getByTestId('sticky-note-content'));
+    expect(screen.queryByTestId('sticky-note-save')).toBeNull();
+    expect(screen.queryByTestId('sticky-note-cancel')).toBeNull();
   });
 
   it('changes color via color picker', () => {
