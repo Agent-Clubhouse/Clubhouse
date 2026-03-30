@@ -44,7 +44,8 @@ Agents may have custom icons set by the user (shown as a non-null `icon` field i
 |------|----------|
 | `create_canvas` | User wants a new visual workspace. Returns canvas_id. |
 | `list_canvases` | Check existing canvases before creating new ones. |
-| `add_card` | Add cards. ALWAYS provide agent_id + project_id for agent cards. Supports relative positioning. |
+| `create_canvas_from_blueprint` | **Preferred for multi-card canvases.** Atomic creation of zones + cards + wires in one call. |
+| `add_card` | Add a single card. ALWAYS provide agent_id + project_id for agent cards. Supports relative positioning. |
 | `move_card` | Reposition cards. Supports relative positioning and zone placement. |
 | `resize_card` | Adjust card size (zones need 600x400+). |
 | `remove_card` | Remove a card from canvas. |
@@ -125,7 +126,7 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 4. Use zones for visual grouping — add the zone first, then add cards with `zone_id` to place them inside
 5. When connecting agents, wire them directly to each other (agent-to-agent)
 6. NEVER modify existing agents (update_agent, delete_agent) when building a canvas — only reference them via add_card
-7. You don't need to specify positions — cards are auto-staggered. Use `relative_to_card_id` to place next to specific cards.
+7. For 3+ cards, use `create_canvas_from_blueprint` — one JSON call creates everything atomically.
 8. Pass `width` and `height` as **numbers**, not strings (e.g., `300` not `"300"`)
 
 **Agent reconfiguration:**

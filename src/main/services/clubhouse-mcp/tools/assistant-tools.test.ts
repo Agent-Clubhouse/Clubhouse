@@ -1262,4 +1262,218 @@ describe('assistant-tools', () => {
       }
     });
   });
+
+  // ── create_canvas_from_blueprint ──────────────────────────────────────
+
+  describe('create_canvas_from_blueprint', () => {
+    it('creates canvas from blueprint and returns id_map', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            canvas_id: 'canvas_bp_1',
+            name: 'Test Board',
+            id_map: { c1: 'view_1', c2: 'view_2' },
+            zone_count: 0,
+            card_count: 2,
+            wire_count: 0,
+          },
+        })
+        // query_views for layout
+        .mockResolvedValueOnce({
+          success: true,
+          data: [
+            { id: 'view_1', type: 'agent', size: { width: 300, height: 200 } },
+            { id: 'view_2', type: 'agent', size: { width: 300, height: 200 } },
+          ],
+        })
+        // move_view calls for layout
+        .mockResolvedValue({ success: true });
+
+      const result = await callAssistantTool('create_canvas_from_blueprint', {
+        blueprint: {
+          name: 'Test Board',
+          cards: [
+            { id: 'c1', type: 'agent', display_name: 'Agent 1' },
+            { id: 'c2', type: 'agent', display_name: 'Agent 2' },
+          ],
+        },
+      });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.canvas_id).toBe('canvas_bp_1');
+      expect(data.id_map).toEqual({ c1: 'view_1', c2: 'view_2' });
+      expect(data.cards_created).toBe(2);
+    });
+
+    it('creates wires from blueprint using connect_views', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            canvas_id: 'canvas_bp_2',
+            name: 'Wired',
+            id_map: { a1: 'view_10', a2: 'view_11' },
+            zone_count: 0,
+            card_count: 2,
+            wire_count: 1,
+          },
+        })
+        // connect_views
+        .mockResolvedValueOnce({ success: true, data: { sourceAgentId: 'agent1', targetId: 'agent2' } })
+        // query_views for layout
+        .mockResolvedValueOnce({ success: true, data: [] })
+        .mockResolvedValue({ success: true });
+
+      const result = await callAssistantTool('create_canvas_from_blueprint', {
+        blueprint: {
+          name: 'Wired',
+          cards: [
+            { id: 'a1', type: 'agent' },
+            { id: 'a2', type: 'agent' },
+          ],
+          wires: [{ from: 'a1', to: 'a2', bidirectional: true }],
+        },
+      });
+      const data = JSON.parse(result.content[0].text);
+      expect(data.wires_created).toBe(1);
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('connect_views', expect.objectContaining({
+        canvas_id: 'canvas_bp_2',
+        source_view_id: 'view_10',
+        target_view_id: 'view_11',
+        bidirectional: true,
+      }));
+    });
+
+    it('reports wire errors for unknown blueprint IDs', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            canvas_id: 'canvas_bp_3',
+            name: 'Bad Wire',
+            id_map: { a1: 'view_20' },
+            zone_count: 0,
+            card_count: 1,
+            wire_count: 1,
+          },
+        })
+        .mockResolvedValueOnce({ success: true, data: [] })
+        .mockResolvedValue({ success: true });
+
+      const result = await callAssistantTool('create_canvas_from_blueprint', {
+        blueprint: {
+          name: 'Bad Wire',
+          cards: [{ id: 'a1', type: 'agent' }],
+          wires: [{ from: 'a1', to: 'nonexistent' }],
+        },
+      });
+      const data = JSON.parse(result.content[0].text);
+      expect(data.wire_errors).toBeDefined();
+      expect(data.wire_errors[0].error).toContain('nonexistent');
+    });
+
+    it('fails when blueprint is missing', async () => {
+      const result = await callAssistantTool('create_canvas_from_blueprint', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('blueprint is required');
+    });
+  });
+
+  // ── canvas_id override ──────────────────────────────────────────────────
+
+  describe('canvas_id override via resolveCanvasId', () => {
+    it('overrides wrong canvas_id with inferred value', async () => {
+      mockSendCanvasCommand
+        // find_canvas_for_view returns different canvas
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas_real', project_id: null } })
+        // move_view succeeds
+        .mockResolvedValueOnce({ success: true });
+
+      const result = await callAssistantTool('move_card', {
+        canvas_id: 'canvas_wrong',
+        view_id: 'view_abc',
+        x: 100,
+        y: 200,
+      });
+      expect(result.isError).toBeUndefined();
+      // move_view should be called with the inferred canvas_id, not the wrong one
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('move_view', expect.objectContaining({
+        canvas_id: 'canvas_real',
+      }));
+    });
+
+    it('uses provided canvas_id when inference agrees', async () => {
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: { canvas_id: 'canvas_correct', project_id: null } })
+        .mockResolvedValueOnce({ success: true });
+
+      const result = await callAssistantTool('move_card', {
+        canvas_id: 'canvas_correct',
+        view_id: 'view_xyz',
+        x: 50,
+        y: 50,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('move_view', expect.objectContaining({
+        canvas_id: 'canvas_correct',
+      }));
+    });
+  });
+
+  // ── Blueprint JSON fixtures validation ──────────────────────────────────
+
+  describe('blueprint JSON fixtures', () => {
+    const blueprintDir = path.resolve(__dirname, '../../../../renderer/features/assistant/content/blueprints');
+
+    for (const name of ['squad', 'bake-off', 'long-running-job', 'ui-work', 'group-project']) {
+      it(`${name}.json is valid blueprint JSON`, async () => {
+        const content = await fsp.readFile(path.join(blueprintDir, `${name}.json`), 'utf-8');
+        const bp = JSON.parse(content);
+        expect(bp.name).toBeTruthy();
+        // Cards array must exist
+        expect(Array.isArray(bp.cards)).toBe(true);
+        // Every card has id and type
+        for (const card of bp.cards) {
+          expect(card.id).toBeTruthy();
+          expect(card.type).toBeTruthy();
+        }
+        // Zones reference in cards must match zone IDs
+        const zoneIds = new Set((bp.zones || []).map((z: any) => z.id));
+        for (const card of bp.cards) {
+          if (card.zone) {
+            expect(zoneIds.has(card.zone)).toBe(true);
+          }
+        }
+        // Wire references must match card/zone IDs
+        const allIds = new Set([
+          ...(bp.zones || []).map((z: any) => z.id),
+          ...bp.cards.map((c: any) => c.id),
+        ]);
+        for (const wire of bp.wires || []) {
+          expect(allIds.has(wire.from)).toBe(true);
+          expect(allIds.has(wire.to)).toBe(true);
+        }
+      });
+    }
+
+    it('bake-off blueprint has 3 zones and 3 group-projects', async () => {
+      const content = await fsp.readFile(path.join(blueprintDir, 'bake-off.json'), 'utf-8');
+      const bp = JSON.parse(content);
+      expect(bp.zones).toHaveLength(3);
+      const gps = bp.cards.filter((c: any) => c.type === 'group-project');
+      expect(gps).toHaveLength(3);
+    });
+
+    it('squad blueprint has all cards wired to GP hub', async () => {
+      const content = await fsp.readFile(path.join(blueprintDir, 'squad.json'), 'utf-8');
+      const bp = JSON.parse(content);
+      const agentCards = bp.cards.filter((c: any) => c.type === 'agent');
+      // Every agent should have a wire to the GP
+      for (const agent of agentCards) {
+        const hasWire = bp.wires.some((w: any) => w.from === agent.id && w.to === 'gp');
+        expect(hasWire).toBe(true);
+      }
+    });
+  });
 });

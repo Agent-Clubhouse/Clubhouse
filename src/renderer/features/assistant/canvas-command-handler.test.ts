@@ -49,6 +49,24 @@ const mockStoreState = () => ({
     }
   }),
   updateView: vi.fn(),
+  addPluginView: vi.fn((pluginId: string, widgetType: string, label: string, position: any, metadata?: any, defaultSize?: any) => {
+    const viewId = `view_${++mockViewIdCounter}`;
+    const active = mockCanvases.find(c => c.id === mockActiveCanvasId);
+    if (active) {
+      active.views.push({
+        id: viewId,
+        type: 'plugin',
+        pluginWidgetType: widgetType,
+        pluginId,
+        position,
+        displayName: label,
+        title: label,
+        size: defaultSize || { width: 300, height: 200 },
+        metadata: metadata || {},
+      });
+    }
+    return viewId;
+  }),
   addWireDefinition: vi.fn((def: any) => { mockWireDefinitions.push(def); }),
   removeWireDefinition: vi.fn((agentId: string, targetId: string) => {
     const idx = mockWireDefinitions.findIndex((w: any) => w.agentId === agentId && w.targetId === targetId);
@@ -150,6 +168,24 @@ describe('canvas-command-handler', () => {
       const active = mockCanvases.find(c => c.id === mockActiveCanvasId);
       if (active) {
         active.views.push({ id: viewId, type, position, displayName: '', title: '', size: { width: 300, height: 200 }, metadata: {} });
+      }
+      return viewId;
+    });
+    appStoreState.addPluginView.mockImplementation((pluginId: string, widgetType: string, label: string, position: any, metadata?: any, defaultSize?: any) => {
+      const viewId = `view_${++mockViewIdCounter}`;
+      const active = mockCanvases.find(c => c.id === mockActiveCanvasId);
+      if (active) {
+        active.views.push({
+          id: viewId,
+          type: 'plugin',
+          pluginWidgetType: widgetType,
+          pluginId,
+          position,
+          displayName: label,
+          title: label,
+          size: defaultSize || { width: 300, height: 200 },
+          metadata: metadata || {},
+        });
       }
       return viewId;
     });
@@ -634,5 +670,124 @@ describe('canvas-command-handler', () => {
       result.data.view_id,
       expect.objectContaining({ content: '', color: 'yellow' }),
     );
+  });
+
+  // ── create_from_blueprint ──────────────────────────────────────────────
+
+  it('create_from_blueprint creates canvas with zones and cards', async () => {
+    const result = await sendCommand('create_from_blueprint', {
+      blueprint: {
+        name: 'Test Board',
+        zones: [{ id: 'z1', name: 'Zone A', color: 'cyan' }],
+        cards: [
+          { id: 'c1', type: 'agent', display_name: 'Agent 1' },
+          { id: 'c2', type: 'agent', display_name: 'Agent 2', zone: 'z1' },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.canvas_id).toBeTruthy();
+    expect(result.data.id_map).toBeDefined();
+    expect(result.data.zone_count).toBe(1);
+    expect(result.data.card_count).toBe(2);
+    // Zone + 2 cards = 3 views total
+    expect(Object.keys(result.data.id_map)).toHaveLength(3);
+    // All IDs mapped to real view IDs
+    expect(result.data.id_map.z1).toMatch(/^view_/);
+    expect(result.data.id_map.c1).toMatch(/^view_/);
+    expect(result.data.id_map.c2).toMatch(/^view_/);
+  });
+
+  it('create_from_blueprint handles empty blueprint', async () => {
+    const result = await sendCommand('create_from_blueprint', {
+      blueprint: { name: 'Empty' },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.zone_count).toBe(0);
+    expect(result.data.card_count).toBe(0);
+    expect(result.data.wire_count).toBe(0);
+  });
+
+  it('create_from_blueprint creates group-project cards via addPluginView', async () => {
+    const result = await sendCommand('create_from_blueprint', {
+      blueprint: {
+        name: 'GP Test',
+        cards: [
+          { id: 'gp1', type: 'group-project', display_name: 'My GP' },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.id_map.gp1).toMatch(/^view_/);
+    expect(appStoreState.addPluginView).toHaveBeenCalledWith(
+      'builtin-canvas',
+      'group-project',
+      'My GP',
+      expect.any(Object),
+    );
+  });
+
+  it('create_from_blueprint binds agent metadata', async () => {
+    const result = await sendCommand('create_from_blueprint', {
+      blueprint: {
+        name: 'Agent Test',
+        cards: [
+          { id: 'a1', type: 'agent', display_name: 'Worker', agent_id: 'durable_123', project_id: 'proj_456' },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(appStoreState.updateView).toHaveBeenCalledWith(
+      result.data.id_map.a1,
+      expect.objectContaining({ agentId: 'durable_123', projectId: 'proj_456' }),
+    );
+  });
+
+  it('create_from_blueprint sets zone color', async () => {
+    const result = await sendCommand('create_from_blueprint', {
+      blueprint: {
+        name: 'Zone Color Test',
+        zones: [{ id: 'z1', name: 'Cyan Zone', color: 'cyan' }],
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(appStoreState.updateView).toHaveBeenCalledWith(
+      result.data.id_map.z1,
+      expect.objectContaining({ themeId: 'cyan' }),
+    );
+  });
+
+  it('create_from_blueprint requires blueprint arg', async () => {
+    const result = await sendCommand('create_from_blueprint', {});
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('blueprint is required');
+  });
+
+  it('create_from_blueprint names the canvas', async () => {
+    const result = await sendCommand('create_from_blueprint', {
+      blueprint: { name: 'Named Canvas' },
+    });
+    expect(result.success).toBe(true);
+    expect(appStoreState.renameCanvas).toHaveBeenCalledWith(
+      result.data.canvas_id,
+      'Named Canvas',
+    );
+  });
+
+  it('create_from_blueprint positions cards inside zones', async () => {
+    const result = await sendCommand('create_from_blueprint', {
+      blueprint: {
+        name: 'Zone Position Test',
+        zones: [{ id: 'z1', name: 'Zone' }],
+        cards: [
+          { id: 'c1', type: 'agent', display_name: 'In Zone', zone: 'z1' },
+          { id: 'c2', type: 'agent', display_name: 'Free' },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+    // Both cards should be created
+    expect(result.data.id_map.c1).toBeDefined();
+    expect(result.data.id_map.c2).toBeDefined();
   });
 });
