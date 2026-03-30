@@ -1,0 +1,13 @@
+{
+  "name": "Long-Running Job",
+  "zones": [],
+  "cards": [
+    { "id": "executor", "type": "agent", "display_name": "Executor" },
+    { "id": "qa", "type": "agent", "display_name": "QA" },
+    { "id": "gp", "type": "group-project", "display_name": "Job Board" }
+  ],
+  "wires": [
+    { "from": "executor", "to": "gp", "bidirectional": false },
+    { "from": "qa", "to": "gp", "bidirectional": false }
+  ]
+}

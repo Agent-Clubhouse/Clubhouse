@@ -1,0 +1,37 @@
+{
+  "name": "Bake-Off",
+  "zones": [
+    { "id": "zone-alpha", "name": "Alpha Team", "color": "cyan" },
+    { "id": "zone-beta", "name": "Beta Team", "color": "rose" },
+    { "id": "zone-judging", "name": "Judging", "color": "violet" }
+  ],
+  "cards": [
+    { "id": "coordinator", "type": "agent", "display_name": "Coordinator" },
+    { "id": "gp-alpha", "type": "group-project", "display_name": "Alpha Team GP", "zone": "zone-alpha" },
+    { "id": "alpha-lead", "type": "agent", "display_name": "Alpha Lead", "zone": "zone-alpha" },
+    { "id": "alpha-qa", "type": "agent", "display_name": "Alpha QA", "zone": "zone-alpha" },
+    { "id": "alpha-worker1", "type": "agent", "display_name": "Alpha Worker 1", "zone": "zone-alpha" },
+    { "id": "alpha-worker2", "type": "agent", "display_name": "Alpha Worker 2", "zone": "zone-alpha" },
+    { "id": "gp-beta", "type": "group-project", "display_name": "Beta Team GP", "zone": "zone-beta" },
+    { "id": "beta-lead", "type": "agent", "display_name": "Beta Lead", "zone": "zone-beta" },
+    { "id": "beta-qa", "type": "agent", "display_name": "Beta QA", "zone": "zone-beta" },
+    { "id": "beta-worker1", "type": "agent", "display_name": "Beta Worker 1", "zone": "zone-beta" },
+    { "id": "beta-worker2", "type": "agent", "display_name": "Beta Worker 2", "zone": "zone-beta" },
+    { "id": "gp-judging", "type": "group-project", "display_name": "Judging GP", "zone": "zone-judging" },
+    { "id": "judge", "type": "agent", "display_name": "Judge", "zone": "zone-judging" }
+  ],
+  "wires": [
+    { "from": "coordinator", "to": "alpha-lead", "bidirectional": true },
+    { "from": "coordinator", "to": "beta-lead", "bidirectional": true },
+    { "from": "alpha-lead", "to": "gp-alpha", "bidirectional": false },
+    { "from": "alpha-qa", "to": "gp-alpha", "bidirectional": false },
+    { "from": "alpha-worker1", "to": "gp-alpha", "bidirectional": false },
+    { "from": "alpha-worker2", "to": "gp-alpha", "bidirectional": false },
+    { "from": "beta-lead", "to": "gp-beta", "bidirectional": false },
+    { "from": "beta-qa", "to": "gp-beta", "bidirectional": false },
+    { "from": "beta-worker1", "to": "gp-beta", "bidirectional": false },
+    { "from": "beta-worker2", "to": "gp-beta", "bidirectional": false },
+    { "from": "judge", "to": "gp-judging", "bidirectional": false },
+    { "from": "coordinator", "to": "gp-judging", "bidirectional": false }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "Group Project",
+  "zones": [
+    { "id": "zone-a", "name": "Zone A" },
+    { "id": "zone-b", "name": "Zone B" }
+  ],
+  "cards": [
+    { "id": "coordinator", "type": "agent", "display_name": "Coordinator" },
+    { "id": "qa-a", "type": "agent", "display_name": "QA (Zone A)" },
+    { "id": "qa-b", "type": "agent", "display_name": "QA (Zone B)" },
+    { "id": "gp", "type": "group-project", "display_name": "Project Board" },
+    { "id": "worker-a1", "type": "agent", "display_name": "Worker A1", "zone": "zone-a" },
+    { "id": "worker-a2", "type": "agent", "display_name": "Worker A2", "zone": "zone-a" },
+    { "id": "worker-b1", "type": "agent", "display_name": "Worker B1", "zone": "zone-b" },
+    { "id": "worker-b2", "type": "agent", "display_name": "Worker B2", "zone": "zone-b" }
+  ],
+  "wires": [
+    { "from": "coordinator", "to": "gp", "bidirectional": false },
+    { "from": "qa-a", "to": "gp", "bidirectional": false },
+    { "from": "qa-b", "to": "gp", "bidirectional": false },
+    { "from": "worker-a1", "to": "gp", "bidirectional": false },
+    { "from": "worker-a2", "to": "gp", "bidirectional": false },
+    { "from": "worker-b1", "to": "gp", "bidirectional": false },
+    { "from": "worker-b2", "to": "gp", "bidirectional": false }
+  ]
+}

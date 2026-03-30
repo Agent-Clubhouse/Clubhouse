@@ -361,7 +361,7 @@ export const ASSISTANT_TOOL_CATALOG = {
   projectWrite: ['add_project', 'remove_project', 'update_project'] as const,
   agentWrite: ['create_agent', 'update_agent', 'delete_agent', 'write_agent_instructions'] as const,
   canvas: [
-    'create_canvas', 'list_canvases', 'add_card', 'move_card',
+    'create_canvas', 'create_canvas_from_blueprint', 'list_canvases', 'add_card', 'move_card',
     'resize_card', 'remove_card', 'rename_card', 'connect_cards', 'disconnect_cards',
     'layout_canvas', 'list_card_types', 'get_card_defaults',
   ] as const,

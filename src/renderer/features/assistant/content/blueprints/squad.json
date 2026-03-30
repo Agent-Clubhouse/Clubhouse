@@ -1,0 +1,19 @@
+{
+  "name": "Squad",
+  "zones": [],
+  "cards": [
+    { "id": "coordinator", "type": "agent", "display_name": "Coordinator" },
+    { "id": "gp", "type": "group-project", "display_name": "Squad Board" },
+    { "id": "qa", "type": "agent", "display_name": "QA" },
+    { "id": "worker1", "type": "agent", "display_name": "Worker 1" },
+    { "id": "worker2", "type": "agent", "display_name": "Worker 2" },
+    { "id": "worker3", "type": "agent", "display_name": "Worker 3" }
+  ],
+  "wires": [
+    { "from": "coordinator", "to": "gp", "bidirectional": false },
+    { "from": "qa", "to": "gp", "bidirectional": false },
+    { "from": "worker1", "to": "gp", "bidirectional": false },
+    { "from": "worker2", "to": "gp", "bidirectional": false },
+    { "from": "worker3", "to": "gp", "bidirectional": false }
+  ]
+}

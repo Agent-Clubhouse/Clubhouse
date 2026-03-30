@@ -1,0 +1,15 @@
+{
+  "name": "UI Work",
+  "zones": [],
+  "cards": [
+    { "id": "executor", "type": "agent", "display_name": "Executor" },
+    { "id": "qa", "type": "agent", "display_name": "QA" },
+    { "id": "ui-lead", "type": "agent", "display_name": "UI Lead" },
+    { "id": "gp", "type": "group-project", "display_name": "UI Project Board" }
+  ],
+  "wires": [
+    { "from": "executor", "to": "gp", "bidirectional": false },
+    { "from": "qa", "to": "gp", "bidirectional": false },
+    { "from": "ui-lead", "to": "gp", "bidirectional": false }
+  ]
+}
