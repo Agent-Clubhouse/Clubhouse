@@ -5,12 +5,15 @@ import {
   layoutVertical,
   layoutGrid,
   layoutHubSpoke,
+  layoutForceDirected,
   computeLayout,
   computeRelativePosition,
   autoLayout,
   DEFAULT_CARD_SIZES,
   type CardInfo,
   type CardRect,
+  type ForceEdge,
+  type ForceZoneConstraint,
 } from './canvas-layout';
 
 const cards: CardInfo[] = [
@@ -222,4 +225,159 @@ describe('canvas-layout', () => {
       expect(DEFAULT_CARD_SIZES.plugin).toEqual({ width: 300, height: 200 });
     });
   });
+
+  describe('layoutForceDirected', () => {
+    const cardsWithPos = [
+      { id: 'a', width: 300, height: 200, x: 100, y: 100 },
+      { id: 'b', width: 300, height: 200, x: 100, y: 100 },
+      { id: 'c', width: 300, height: 200, x: 100, y: 100 },
+    ];
+
+    it('returns positions for all cards', () => {
+      const result = layoutForceDirected(cardsWithPos, []);
+      expect(result).toHaveLength(3);
+      expect(result.map(r => r.id)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('returns empty for no cards', () => {
+      expect(layoutForceDirected([], [])).toHaveLength(0);
+    });
+
+    it('returns single card at its position', () => {
+      const result = layoutForceDirected([cardsWithPos[0]], []);
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('a');
+    });
+
+    it('spreads overlapping cards apart via repulsion', () => {
+      // All cards start at same position
+      const result = layoutForceDirected(cardsWithPos, []);
+      const positions = new Map(result.map(r => [r.id, { x: r.x, y: r.y }]));
+
+      // After repulsion, cards should be spread apart
+      const a = positions.get('a')!;
+      const b = positions.get('b')!;
+      const dist = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+      expect(dist).toBeGreaterThan(100);
+    });
+
+    it('pulls linked cards closer than unlinked ones', () => {
+      const edges: ForceEdge[] = [{ source: 'a', target: 'b' }];
+      const spreadCards = [
+        { id: 'a', width: 300, height: 200, x: 0, y: 0 },
+        { id: 'b', width: 300, height: 200, x: 1000, y: 0 },
+        { id: 'c', width: 300, height: 200, x: 0, y: 1000 },
+      ];
+
+      const result = layoutForceDirected(spreadCards, edges);
+      const positions = new Map(result.map(r => [r.id, { x: r.x, y: r.y }]));
+
+      const a = positions.get('a')!;
+      const b = positions.get('b')!;
+      const c = positions.get('c')!;
+
+      const distAB = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+      const distAC = Math.sqrt((a.x - c.x) ** 2 + (a.y - c.y) ** 2);
+
+      // A-B are linked, so should be closer than A-C (unlinked)
+      expect(distAB).toBeLessThan(distAC);
+    });
+
+    it('snaps all positions to grid', () => {
+      const result = layoutForceDirected(cardsWithPos, []);
+      for (const r of result) {
+        expect(Math.abs(r.x % 20)).toBe(0);
+        expect(Math.abs(r.y % 20)).toBe(0);
+      }
+    });
+
+    it('respects zone constraints', () => {
+      const zoneBounds = { x: 0, y: 0, width: 800, height: 600 };
+      const zones: ForceZoneConstraint[] = [{
+        zoneId: 'zone1',
+        bounds: zoneBounds,
+        nodeIds: ['a', 'b'],
+      }];
+
+      const result = layoutForceDirected(cardsWithPos, [], {}, zones);
+      const a = result.find(r => r.id === 'a')!;
+      const b = result.find(r => r.id === 'b')!;
+
+      // Cards a and b should be within zone bounds
+      expect(a.x).toBeGreaterThanOrEqual(zoneBounds.x);
+      expect(a.x).toBeLessThanOrEqual(zoneBounds.x + zoneBounds.width);
+      expect(a.y).toBeGreaterThanOrEqual(zoneBounds.y);
+      expect(a.y).toBeLessThanOrEqual(zoneBounds.y + zoneBounds.height);
+      expect(b.x).toBeGreaterThanOrEqual(zoneBounds.x);
+      expect(b.x).toBeLessThanOrEqual(zoneBounds.x + zoneBounds.width);
+    });
+
+    it('accepts custom force parameters', () => {
+      // Very high repulsion should spread cards significantly
+      const highRepel = layoutForceDirected(cardsWithPos, [], { repelForce: 50000, iterations: 200 });
+      const lowRepel = layoutForceDirected(cardsWithPos, [], { repelForce: 500, centerForce: 0.5, iterations: 200 });
+
+      const spreadHigh = computeSpread(highRepel);
+      const spreadLow = computeSpread(lowRepel);
+
+      // With high repulsion, cards should spread more than with low repulsion + high center gravity
+      expect(spreadHigh).toBeGreaterThan(spreadLow);
+    });
+
+    it('handles hub-spoke topology (1 center + N spokes)', () => {
+      const hubCards = [
+        { id: 'hub', width: 300, height: 200, x: 400, y: 400 },
+        { id: 's1', width: 300, height: 200, x: 100, y: 100 },
+        { id: 's2', width: 300, height: 200, x: 700, y: 100 },
+        { id: 's3', width: 300, height: 200, x: 400, y: 700 },
+      ];
+      const edges: ForceEdge[] = [
+        { source: 'hub', target: 's1' },
+        { source: 'hub', target: 's2' },
+        { source: 'hub', target: 's3' },
+      ];
+
+      const result = layoutForceDirected(hubCards, edges);
+      expect(result).toHaveLength(4);
+
+      // All positions should be valid numbers
+      for (const r of result) {
+        expect(Number.isFinite(r.x)).toBe(true);
+        expect(Number.isFinite(r.y)).toBe(true);
+      }
+    });
+  });
+
+  describe('computeLayout with force pattern', () => {
+    it('dispatches force pattern and returns positions', () => {
+      const result = computeLayout('force', cards);
+      expect(result).toHaveLength(4);
+      for (const r of result) {
+        expect(r.x % 20).toBe(0);
+        expect(r.y % 20).toBe(0);
+      }
+    });
+
+    it('force layout with edges produces valid results', () => {
+      const edges: ForceEdge[] = [
+        { source: 'a', target: 'b' },
+        { source: 'b', target: 'c' },
+      ];
+      const result = computeLayout('force', cards, edges);
+      expect(result).toHaveLength(4);
+    });
+  });
 });
+
+/** Helper: compute total spread (sum of pairwise distances). */
+function computeSpread(positions: Array<{ x: number; y: number }>): number {
+  let total = 0;
+  for (let i = 0; i < positions.length; i++) {
+    for (let j = i + 1; j < positions.length; j++) {
+      const dx = positions[i].x - positions[j].x;
+      const dy = positions[i].y - positions[j].y;
+      total += Math.sqrt(dx * dx + dy * dy);
+    }
+  }
+  return total;
+}

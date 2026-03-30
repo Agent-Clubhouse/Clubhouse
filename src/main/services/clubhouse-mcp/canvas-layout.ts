@@ -253,9 +253,16 @@ export function layoutForceDirected(
 
   const p = { ...DEFAULT_FORCE_PARAMS, ...params };
 
-  // Initialize nodes with positions and zero velocity
-  const nodes: ForceNode[] = cards.map(c => ({
-    id: c.id, x: c.x, y: c.y, width: c.width, height: c.height, vx: 0, vy: 0,
+  // Initialize nodes with positions and zero velocity.
+  // Add small deterministic jitter to break symmetry when cards overlap.
+  const nodes: ForceNode[] = cards.map((c, i) => ({
+    id: c.id,
+    x: c.x + (i * 7 % 13) * 10 - 60,
+    y: c.y + (i * 11 % 13) * 10 - 60,
+    width: c.width,
+    height: c.height,
+    vx: 0,
+    vy: 0,
   }));
 
   // Build zone membership lookup: nodeId → zone constraint
@@ -267,9 +274,7 @@ export function layoutForceDirected(
   }
 
   // Build edge index for fast lookup
-  const edgeSet = new Set(edges.map(e => `${e.source}:${e.target}`));
-  const isLinked = (a: string, b: string) =>
-    edgeSet.has(`${a}:${b}`) || edgeSet.has(`${b}:${a}`);
+  const _edgeSet = new Set(edges.map(e => `${e.source}:${e.target}`));
 
   // Compute center of mass
   const centerX = nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
@@ -302,8 +307,8 @@ export function layoutForceDirected(
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i];
         const b = nodes[j];
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
         // Use node size to compute minimum distance
