@@ -942,6 +942,24 @@ registerToolTemplate(
 // CANVAS TOOLS (Phase 5)
 // ══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Resolve canvas_id from view IDs when not explicitly provided.
+ * Uses find_canvas_for_view renderer command to search all stores.
+ */
+async function resolveCanvasId(args: Record<string, unknown>, ...viewIdKeys: string[]): Promise<string | null> {
+  if (args.canvas_id) return args.canvas_id as string;
+  for (const key of viewIdKeys) {
+    const viewId = args[key] as string | undefined;
+    if (!viewId) continue;
+    const result = await sendCanvasCommand('find_canvas_for_view', { view_id: viewId, project_id: args.project_id });
+    if (result.success && result.data) {
+      const data = result.data as { canvas_id: string; project_id: string | null };
+      return data.canvas_id;
+    }
+  }
+  return null;
+}
+
 registerToolTemplate('assistant', 'create_canvas', {
   description: 'Create a new canvas tab. Provide project_id to create in a specific project, otherwise creates at app level.',
   inputSchema: { type: 'object', properties: {
@@ -1094,13 +1112,14 @@ registerToolTemplate('assistant', 'add_card', {
 
 registerToolTemplate('assistant', 'move_card', {
   description: 'Move a card to a new position on the canvas. Parameters are x and y (numbers). ' +
+    'canvas_id is optional — it will be inferred from the view_id. ' +
     'To place a card inside a zone, set zone_id — the card will be centered in the zone. ' +
     'To position relative to another card, use relative_to_card_id + relative_position. ' +
     'Zone containment is spatial: a card is "inside" a zone when >50% of it overlaps the zone bounds.',
   inputSchema: {
     type: 'object',
     properties: {
-      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      canvas_id: { type: 'string', description: 'Canvas ID (optional — inferred from view_id if omitted).' },
       view_id: { type: 'string', description: 'Card view ID.' },
       x: { type: 'number', description: 'New X position (number).' },
       y: { type: 'number', description: 'New Y position (number).' },
@@ -1111,9 +1130,14 @@ registerToolTemplate('assistant', 'move_card', {
       relative_position: { type: 'string', description: 'Where to place: "right", "left", "below", "above". Defaults to "right".' },
       relative_buffer: { type: 'number', description: 'Gap in pixels between cards. Defaults to 60.' },
     },
-    required: ['canvas_id', 'view_id'],
+    required: ['view_id'],
   },
 }, async (_t, _a, args) => {
+  const canvasId = await resolveCanvasId(args, 'view_id');
+  if (!canvasId) {
+    return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
+  }
+
   // Accept position_x/position_y as aliases for x/y
   const targetX = args.x ?? args.position_x;
   const targetY = args.y ?? args.position_y;
@@ -1139,7 +1163,7 @@ registerToolTemplate('assistant', 'move_card', {
     );
   } else if (args.zone_id) {
     // Auto-position within zone bounds
-    const queryResult = await sendCanvasCommand('query_views', { canvas_id: args.canvas_id });
+    const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId });
     const views = queryResult.success ? (queryResult.data as Array<{ id: string; type: string; position: { x: number; y: number }; size: { width: number; height: number } }>) : [];
     const zone = views.find(v => v.id === args.zone_id);
     if (!zone) return { content: [{ type: 'text', text: `Zone ${args.zone_id} not found.` }], isError: true };
@@ -1155,80 +1179,92 @@ registerToolTemplate('assistant', 'move_card', {
     return { content: [{ type: 'text', text: 'Either x/y coordinates, zone_id, or relative_to_card_id is required.' }], isError: true };
   }
 
-  const result = await sendCanvasCommand('move_view', { canvas_id: args.canvas_id, view_id: args.view_id, position, project_id: args.project_id });
+  const result = await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: args.view_id, position, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to move card' }], isError: true };
-  return { content: [{ type: 'text', text: 'Card moved.' }] };
+  return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card moved.', canvas_id: canvasId, view_id: args.view_id }) }] };
 });
 
 registerToolTemplate('assistant', 'resize_card', {
-  description: 'Resize a card on the canvas.',
+  description: 'Resize a card on the canvas. canvas_id is optional — inferred from view_id.',
   inputSchema: {
     type: 'object',
     properties: {
-      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      canvas_id: { type: 'string', description: 'Canvas ID (optional — inferred from view_id if omitted).' },
       view_id: { type: 'string', description: 'Card view ID.' },
       width: { type: 'number', description: 'New width.' },
       height: { type: 'number', description: 'New height.' },
     },
-    required: ['canvas_id', 'view_id', 'width', 'height'],
+    required: ['view_id', 'width', 'height'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('resize_view', { canvas_id: args.canvas_id, view_id: args.view_id, size: { w: args.width, h: args.height }, project_id: args.project_id });
+  const canvasId = await resolveCanvasId(args, 'view_id');
+  if (!canvasId) {
+    return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
+  }
+  const result = await sendCanvasCommand('resize_view', { canvas_id: canvasId, view_id: args.view_id, size: { w: args.width, h: args.height }, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to resize card' }], isError: true };
-  return { content: [{ type: 'text', text: 'Card resized.' }] };
+  return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card resized.', canvas_id: canvasId, view_id: args.view_id }) }] };
 });
 
 registerToolTemplate('assistant', 'remove_card', {
-  description: 'Remove a card from the canvas.',
+  description: 'Remove a card from the canvas. canvas_id is optional — inferred from view_id.',
   inputSchema: {
     type: 'object',
     properties: {
-      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      canvas_id: { type: 'string', description: 'Canvas ID (optional — inferred from view_id if omitted).' },
       view_id: { type: 'string', description: 'Card view ID to remove.' },
     },
-    required: ['canvas_id', 'view_id'],
+    required: ['view_id'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('remove_view', { canvas_id: args.canvas_id, view_id: args.view_id, project_id: args.project_id });
+  const canvasId = await resolveCanvasId(args, 'view_id');
+  if (!canvasId) {
+    return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
+  }
+  const result = await sendCanvasCommand('remove_view', { canvas_id: canvasId, view_id: args.view_id, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to remove card' }], isError: true };
-  return { content: [{ type: 'text', text: 'Card removed.' }] };
+  return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card removed.', canvas_id: canvasId, view_id: args.view_id }) }] };
 });
 
 registerToolTemplate('assistant', 'rename_card', {
-  description: 'Rename a card on the canvas.',
+  description: 'Rename a card on the canvas. canvas_id is optional — inferred from view_id.',
   inputSchema: {
     type: 'object',
     properties: {
-      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      canvas_id: { type: 'string', description: 'Canvas ID (optional — inferred from view_id if omitted).' },
       view_id: { type: 'string', description: 'Card view ID.' },
       name: { type: 'string', description: 'New display name.' },
     },
-    required: ['canvas_id', 'view_id', 'name'],
+    required: ['view_id', 'name'],
   },
 }, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('rename_view', { canvas_id: args.canvas_id, view_id: args.view_id, name: args.name, project_id: args.project_id });
+  const canvasId = await resolveCanvasId(args, 'view_id');
+  if (!canvasId) {
+    return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
+  }
+  const result = await sendCanvasCommand('rename_view', { canvas_id: canvasId, view_id: args.view_id, name: args.name, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to rename card' }], isError: true };
-  return { content: [{ type: 'text', text: 'Card renamed.' }] };
+  return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card renamed.', canvas_id: canvasId, view_id: args.view_id }) }] };
 });
 
 registerToolTemplate('assistant', 'connect_cards', {
   description: 'Create a wire (MCP binding) between two cards. ' +
-    'Parameters: canvas_id, source_view_id, target_view_id. ' +
     'Source must be an agent card with agent_id set. Target must be another agent card (NOT an anchor). ' +
+    'canvas_id is optional — it will be inferred from the card view IDs. ' +
     'Wire persists even if agents are sleeping. Cannot wire to anchors — they are text-only labels. ' +
     'By default, agent-to-agent wires are bidirectional (both agents can call each other). ' +
     'Set bidirectional=false for one-way communication.',
   inputSchema: {
     type: 'object',
     properties: {
-      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      canvas_id: { type: 'string', description: 'Canvas ID (optional — inferred from card IDs if omitted).' },
       source_view_id: { type: 'string', description: 'Source card view ID (must be an agent card).' },
       target_view_id: { type: 'string', description: 'Target card view ID.' },
       from_card_id: { type: 'string', description: 'Alias for source_view_id.' },
       to_card_id: { type: 'string', description: 'Alias for target_view_id.' },
       bidirectional: { type: 'boolean', description: 'Create wires in both directions. Defaults to true for agent-to-agent, false for agent-to-group-project.' },
     },
-    required: ['canvas_id'],
+    required: [],
   },
 }, async (_t, _a, args) => {
   // Accept from_card_id/to_card_id as aliases
@@ -1237,8 +1273,12 @@ registerToolTemplate('assistant', 'connect_cards', {
   if (!sourceViewId || !targetViewId) {
     return { content: [{ type: 'text', text: 'Missing required argument: source_view_id (or from_card_id) and target_view_id (or to_card_id)' }], isError: true };
   }
+  const canvasId = await resolveCanvasId({ ...args, source_view_id: sourceViewId, target_view_id: targetViewId }, 'source_view_id', 'target_view_id');
+  if (!canvasId) {
+    return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the card view IDs exist on a canvas.' }], isError: true };
+  }
   const result = await sendCanvasCommand('connect_views', {
-    canvas_id: args.canvas_id,
+    canvas_id: canvasId,
     source_view_id: sourceViewId,
     target_view_id: targetViewId,
     project_id: args.project_id,
@@ -1250,18 +1290,34 @@ registerToolTemplate('assistant', 'connect_cards', {
 
 registerToolTemplate('assistant', 'layout_canvas', {
   description: 'Auto-arrange cards. Patterns: "horizontal" (row), "vertical" (column), "grid", "hub_spoke" (center + circle), "auto" (picks best pattern for card count). ' +
+    'canvas_id is optional — auto-selects when only one canvas exists. ' +
     'Zone-aware: cards inside zones are grouped and arranged within their zone bounds. Zones themselves are arranged in the outer layout. ' +
     'ALWAYS call this after adding all cards — it produces clean, readable layouts.',
   inputSchema: {
     type: 'object',
     properties: {
-      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      canvas_id: { type: 'string', description: 'Canvas ID (optional — auto-selects when only one canvas exists).' },
       pattern: { type: 'string', description: 'Layout: "horizontal", "vertical", "grid", "hub_spoke", or "auto" (picks best for card count).' },
     },
-    required: ['canvas_id', 'pattern'],
+    required: ['pattern'],
   },
 }, async (_t, _a, args) => {
-  const canvasId = args.canvas_id as string;
+  let canvasId = args.canvas_id as string | undefined;
+  if (!canvasId) {
+    // Try to find the only canvas — if there's exactly one, use it
+    const listResult = await sendCanvasCommand('list_canvases', { project_id: args.project_id });
+    if (listResult.success) {
+      const canvases = listResult.data as Array<{ id: string }>;
+      if (canvases.length === 1) {
+        canvasId = canvases[0].id;
+      } else {
+        return { content: [{ type: 'text', text: `Multiple canvases exist. Provide canvas_id. Available: ${canvases.map(c => c.id).join(', ')}` }], isError: true };
+      }
+    }
+  }
+  if (!canvasId) {
+    return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id.' }], isError: true };
+  }
   const pattern = args.pattern as 'horizontal' | 'vertical' | 'grid' | 'hub_spoke' | 'auto';
 
   // Reset auto-stagger counter — layout_canvas re-arranges all cards
@@ -1306,7 +1362,7 @@ registerToolTemplate('assistant', 'layout_canvas', {
     }
   }
 
-  return { content: [{ type: 'text', text: `Arranged ${views.length} cards in "${pattern}" layout (zone-aware).` }] };
+  return { content: [{ type: 'text', text: JSON.stringify({ message: `Arranged ${views.length} cards in "${pattern}" layout (zone-aware).`, canvas_id: canvasId }) }] };
 });
 
 registerToolTemplate('assistant', 'get_card_defaults', {

@@ -61,6 +61,11 @@ export function getProjectCanvasStore(projectId: string | null): ReturnType<type
   return store;
 }
 
+/** Return all known project IDs that have canvas stores (for cross-store search). */
+export function getKnownProjectIds(): string[] {
+  return Array.from(projectCanvasStores.keys());
+}
+
 export function activate(ctx: PluginContext, api: PluginAPI): void {
   const getStore = () =>
     api.context.mode === 'app' ? useAppCanvasStore : getProjectCanvasStore(api.context.projectId ?? null);
