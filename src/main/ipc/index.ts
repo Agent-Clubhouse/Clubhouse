@@ -21,6 +21,7 @@ import * as hookServer from '../services/hook-server';
 import { registerBuiltinProviders, getAllProviders } from '../orchestrators';
 import { autoDetectDefaults } from '../services/orchestrator-settings';
 import * as logService from '../services/log-service';
+import { cleanupStaleFlags } from '../services/experimental-settings';
 import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
 
 export function registerAllHandlers(): void {
@@ -59,6 +60,9 @@ export function registerAllHandlers(): void {
   registerGroupProjectHandlers();
   registerAgentQueueHandlers();
   registerAssistantHandlers();
+
+  // Remove stale experimental flags for features that have been promoted
+  cleanupStaleFlags().catch(() => {});
 
   // Start the hook server for agent status events
   hookServer.start().catch((err) => {
