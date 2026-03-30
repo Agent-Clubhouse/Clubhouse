@@ -115,7 +115,7 @@ function findCanvasForView(viewId: string, projectIdHint?: string): { canvas_id:
   return null;
 }
 
-const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views', 'disconnect_views', 'import_blueprint']);
+const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views', 'disconnect_views', 'import_blueprint', 'create_from_blueprint']);
 
 /**
  * Execute a command on a specific canvas, switching active canvas if needed.
@@ -504,6 +504,142 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
     }
 
     return { success: true, data: { sourceAgentId, targetId, unbindSuccess, reverseRemoved } };
+  },
+
+  create_from_blueprint(args) {
+    const pid = args.project_id as string | undefined;
+    const blueprint = args.blueprint as {
+      name?: string;
+      zones?: Array<{ id: string; name: string; color?: string }>;
+      cards?: Array<{ id: string; type: string; display_name?: string; agent_id?: string; project_id?: string; zone?: string; content?: string; color?: string; plugin_widget_type?: string; plugin_id?: string; group_project_id?: string }>;
+      wires?: Array<{ from: string; to: string; bidirectional?: boolean }>;
+    };
+
+    if (!blueprint) return { success: false, error: 'blueprint is required' };
+
+    const store = getStore(pid);
+    const canvasId = store.addCanvas();
+    if (blueprint.name) {
+      store.renameCanvas(canvasId, blueprint.name);
+    }
+
+    // Map blueprint IDs → real view IDs
+    const idMap: Record<string, string> = {};
+
+    // Phase 1: Create zones first (they must exist before cards reference them)
+    const prevActive = store.activeCanvasId;
+    store.setActiveCanvas(canvasId);
+
+    for (const zone of blueprint.zones || []) {
+      const viewId = store.addView('zone', { x: 0, y: 0 });
+      if (viewId) {
+        idMap[zone.id] = viewId;
+        if (zone.name) store.renameView(viewId, zone.name);
+        store.resizeView(viewId, { width: 600, height: 400 });
+        if (zone.color) {
+          store.updateView(viewId, { themeId: zone.color } as any);
+        }
+      }
+    }
+
+    // Phase 2: Create cards
+    const STAGGER_H = 340;
+    const STAGGER_V = 260;
+    const ZONE_PADDING = 20;
+    const ZONE_TITLE_H = 32;
+    // Track how many cards placed in each zone for auto-positioning
+    const zoneCardCounts: Record<string, number> = {};
+    let freeCardIdx = 0;
+
+    for (const card of blueprint.cards || []) {
+      let position: Position;
+
+      if (card.zone && idMap[card.zone]) {
+        // Position inside zone
+        const zoneViewId = idMap[card.zone];
+        const canvas = store.canvases.find((c: CanvasInstance) => c.id === canvasId);
+        const zoneView = canvas?.views.find((v: CanvasView) => v.id === zoneViewId);
+        const zx = zoneView?.position.x ?? 0;
+        const zy = zoneView?.position.y ?? 0;
+        const count = zoneCardCounts[card.zone] || 0;
+        const col = count % 3;
+        const row = Math.floor(count / 3);
+        position = {
+          x: zx + ZONE_PADDING + col * STAGGER_H,
+          y: zy + ZONE_TITLE_H + ZONE_PADDING + row * STAGGER_V,
+        };
+        zoneCardCounts[card.zone] = count + 1;
+      } else {
+        // Auto-stagger free cards
+        const col = freeCardIdx % 4;
+        const row = Math.floor(freeCardIdx / 4);
+        position = { x: 100 + col * STAGGER_H, y: 100 + row * STAGGER_V };
+        freeCardIdx++;
+      }
+
+      const cardType = card.type as CanvasViewType;
+
+      // Handle group-project cards as plugin views
+      if (card.type === 'group-project') {
+        // Group project cards are plugin views with a specific widget type
+        const viewId = store.addPluginView?.('builtin-canvas', 'group-project', card.display_name || 'Group Project', position);
+        if (viewId) {
+          idMap[card.id] = viewId;
+          if (card.group_project_id) {
+            store.updateView(viewId, {
+              metadata: { groupProjectId: card.group_project_id },
+            } as any);
+          }
+        }
+        continue;
+      }
+
+      const viewId = store.addView(cardType, position);
+      if (viewId) {
+        idMap[card.id] = viewId;
+        if (card.display_name) store.renameView(viewId, card.display_name);
+
+        // Bind agent metadata
+        if (cardType === 'agent' && card.agent_id) {
+          const agentName = card.display_name || card.agent_id;
+          store.updateView(viewId, {
+            agentId: card.agent_id,
+            projectId: card.project_id ?? null,
+            title: agentName,
+            displayName: agentName,
+            metadata: {
+              agentId: card.agent_id,
+              projectId: card.project_id ?? null,
+              agentName,
+              projectName: null,
+            },
+          } as any);
+        }
+
+        // Sticky note properties
+        if (cardType === 'sticky-note') {
+          store.updateView(viewId, {
+            content: card.content || '',
+            color: card.color || 'yellow',
+          } as any);
+        }
+      }
+    }
+
+    // Restore previous active canvas
+    if (prevActive && prevActive !== canvasId) store.setActiveCanvas(prevActive);
+
+    return {
+      success: true,
+      data: {
+        canvas_id: canvasId,
+        name: blueprint.name || canvasId,
+        id_map: idMap,
+        zone_count: (blueprint.zones || []).length,
+        card_count: (blueprint.cards || []).length,
+        wire_count: (blueprint.wires || []).length,
+      },
+    };
   },
 
   export_blueprint(args) {

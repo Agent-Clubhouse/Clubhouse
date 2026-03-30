@@ -953,21 +953,32 @@ registerToolTemplate(
 // ══════════════════════════════════════════════════════════════════════════
 
 /**
- * Resolve canvas_id from view IDs when not explicitly provided.
- * Uses find_canvas_for_view renderer command to search all stores.
+ * Resolve canvas_id from view IDs.
+ * When canvas_id is provided, validates it against inference from view IDs.
+ * If inference disagrees, overrides with the inferred value and logs a warning.
+ * When canvas_id is not provided, infers from view IDs.
  */
 async function resolveCanvasId(args: Record<string, unknown>, ...viewIdKeys: string[]): Promise<string | null> {
-  if (args.canvas_id) return args.canvas_id as string;
+  const providedCanvasId = args.canvas_id as string | undefined;
+  let inferredCanvasId: string | null = null;
+
   for (const key of viewIdKeys) {
     const viewId = args[key] as string | undefined;
     if (!viewId) continue;
     const result = await sendCanvasCommand('find_canvas_for_view', { view_id: viewId, project_id: args.project_id });
     if (result.success && result.data) {
       const data = result.data as { canvas_id: string; project_id: string | null };
-      return data.canvas_id;
+      inferredCanvasId = data.canvas_id;
+      break;
     }
   }
-  return null;
+
+  if (providedCanvasId && inferredCanvasId && providedCanvasId !== inferredCanvasId) {
+    appLog('core:assistant', 'warn', `canvas_id override: provided "${providedCanvasId}" but view belongs to "${inferredCanvasId}" — using inferred value`);
+    return inferredCanvasId;
+  }
+
+  return inferredCanvasId || providedCanvasId || null;
 }
 
 registerToolTemplate('assistant', 'create_canvas', {
@@ -1402,6 +1413,161 @@ registerToolTemplate('assistant', 'get_card_defaults', {
     ],
   };
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+});
+
+// ── create_canvas_from_blueprint ──────────────────────────────────────────
+
+registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
+  description:
+    'Create a complete canvas from a JSON blueprint in one atomic call. ' +
+    'Supports zones (named, colored), agent cards, group-project cards, sticky notes, anchors, and wires. ' +
+    'Use this instead of multiple add_card/connect_cards calls for multi-card canvases. ' +
+    'Returns canvas_id and a map of blueprint IDs to real view IDs. ' +
+    'Wires are created with MCP bindings — source must reference an agent card with agent_id.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      blueprint: {
+        type: 'object',
+        description: 'Blueprint JSON with name, zones, cards, and wires.',
+        properties: {
+          name: { type: 'string', description: 'Canvas name.' },
+          zones: {
+            type: 'array',
+            description: 'Zones to create. Each has id, name, and optional color.',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                name: { type: 'string' },
+                color: { type: 'string', description: 'Zone color/theme (e.g., cyan, rose, violet).' },
+              },
+              required: ['id', 'name'],
+            },
+          },
+          cards: {
+            type: 'array',
+            description: 'Cards to create. Types: agent, group-project, sticky-note, anchor.',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                type: { type: 'string', description: '"agent", "group-project", "sticky-note", or "anchor".' },
+                display_name: { type: 'string' },
+                agent_id: { type: 'string', description: 'For agent cards: durable agent ID.' },
+                project_id: { type: 'string', description: 'For agent cards: project ID.' },
+                zone: { type: 'string', description: 'Blueprint zone ID to place this card in.' },
+                content: { type: 'string', description: 'For sticky notes: text content.' },
+                color: { type: 'string', description: 'For sticky notes: color.' },
+                group_project_id: { type: 'string', description: 'For group-project cards: the group project ID.' },
+              },
+              required: ['id', 'type'],
+            },
+          },
+          wires: {
+            type: 'array',
+            description: 'Wires between cards. Source must be an agent card with agent_id.',
+            items: {
+              type: 'object',
+              properties: {
+                from: { type: 'string', description: 'Blueprint ID of source card.' },
+                to: { type: 'string', description: 'Blueprint ID of target card.' },
+                bidirectional: { type: 'boolean', description: 'Default: true for agent-to-agent, false for agent-to-group-project.' },
+              },
+              required: ['from', 'to'],
+            },
+          },
+        },
+      },
+      project_id: { type: 'string', description: 'Project ID for canvas scope. Omit for app-level.' },
+      layout_pattern: { type: 'string', description: 'Layout pattern to apply after creation. Default: "auto".' },
+    },
+    required: ['blueprint'],
+  },
+}, async (_t, _a, args) => {
+  const blueprint = args.blueprint as Record<string, unknown>;
+  if (!blueprint) {
+    return { content: [{ type: 'text', text: 'blueprint is required' }], isError: true };
+  }
+
+  // Step 1: Create canvas + zones + cards atomically in the renderer
+  const createResult = await sendCanvasCommand('create_from_blueprint', {
+    blueprint,
+    project_id: args.project_id,
+  });
+
+  if (!createResult.success) {
+    return { content: [{ type: 'text', text: createResult.error || 'Failed to create canvas from blueprint' }], isError: true };
+  }
+
+  const data = createResult.data as {
+    canvas_id: string;
+    name: string;
+    id_map: Record<string, string>;
+    zone_count: number;
+    card_count: number;
+    wire_count: number;
+  };
+
+  const canvasId = data.canvas_id;
+  const idMap = data.id_map;
+
+  // Step 2: Create wires using the ID map (main process handles MCP bindings)
+  const wires = (blueprint.wires as Array<{ from: string; to: string; bidirectional?: boolean }>) || [];
+  const wireResults: Array<{ from: string; to: string; success: boolean; error?: string }> = [];
+
+  for (const wire of wires) {
+    const sourceViewId = idMap[wire.from];
+    const targetViewId = idMap[wire.to];
+    if (!sourceViewId || !targetViewId) {
+      wireResults.push({ from: wire.from, to: wire.to, success: false, error: `Blueprint ID not found: ${!sourceViewId ? wire.from : wire.to}` });
+      continue;
+    }
+    const wireResult = await sendCanvasCommand('connect_views', {
+      canvas_id: canvasId,
+      source_view_id: sourceViewId,
+      target_view_id: targetViewId,
+      project_id: args.project_id,
+      bidirectional: wire.bidirectional,
+    });
+    wireResults.push({ from: wire.from, to: wire.to, success: wireResult.success, error: wireResult.error });
+  }
+
+  // Step 3: Apply layout
+  const pattern = (args.layout_pattern as string) || 'auto';
+  const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId, project_id: args.project_id });
+  if (queryResult.success) {
+    const views = queryResult.data as Array<{ id: string; type: string; size: { width: number; height: number } }>;
+    const cardInfos = views.map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
+    const layouts = computeLayout(pattern as any, cardInfos);
+    for (const layout of layouts) {
+      await sendCanvasCommand('move_view', {
+        canvas_id: canvasId,
+        view_id: layout.id,
+        position: { x: layout.x, y: layout.y },
+        project_id: args.project_id,
+      });
+    }
+  }
+
+  // Reset auto-stagger counter for this canvas
+  canvasCardCounters.delete(canvasId);
+
+  const failedWires = wireResults.filter(w => !w.success);
+  const response: Record<string, unknown> = {
+    canvas_id: canvasId,
+    name: data.name,
+    id_map: idMap,
+    zones_created: data.zone_count,
+    cards_created: data.card_count,
+    wires_created: wireResults.filter(w => w.success).length,
+    layout_applied: pattern,
+  };
+  if (failedWires.length > 0) {
+    response.wire_errors = failedWires;
+  }
+
+  return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
 });
 
 // ── disconnect_cards ──────────────────────────────────────────────────────
