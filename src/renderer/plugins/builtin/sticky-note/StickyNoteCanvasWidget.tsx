@@ -40,7 +40,8 @@ export function StickyNoteCanvasWidget({ api, metadata, onUpdateMetadata }: Canv
 
   const tint = (TINTS[color] ?? TINTS.yellow)[theme.type];
 
-  const handleSave = (newContent: string) => {
+  // Called when the textarea blurs — saves content and returns to preview mode.
+  const handleBlurSave = (newContent: string) => {
     onUpdateMetadata({ content: newContent });
     setEditing(false);
   };
@@ -54,8 +55,7 @@ export function StickyNoteCanvasWidget({ api, metadata, onUpdateMetadata }: Canv
       {editing ? (
         <StickyNoteEditor
           content={content}
-          onSave={handleSave}
-          onCancel={() => setEditing(false)}
+          onSave={handleBlurSave}
           onUnmountSave={(val) => onUpdateMetadata({ content: val })}
         />
       ) : (

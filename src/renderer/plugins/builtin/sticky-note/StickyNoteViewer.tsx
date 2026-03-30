@@ -23,14 +23,7 @@ export function StickyNoteViewer({ content, color, noteColors, onEdit, onColorCh
 
   return (
     <div className="flex flex-col h-full" data-testid="sticky-note-viewer">
-      <div className="flex items-center gap-1.5 px-2 py-1 border-b border-ctp-surface1 shrink-0">
-        <button
-          className="text-xs px-2 py-0.5 bg-ctp-surface1 text-ctp-text rounded hover:bg-ctp-surface2 mr-auto"
-          onClick={onEdit}
-          data-testid="sticky-note-edit"
-        >
-          Edit
-        </button>
+      <div className="flex items-center justify-end gap-1.5 px-2 py-1 border-b border-ctp-surface1 shrink-0">
         {noteColors.map((c) => (
           <button
             key={c}
@@ -44,8 +37,9 @@ export function StickyNoteViewer({ content, color, noteColors, onEdit, onColorCh
         ))}
       </div>
       <div
-        className="flex-1 overflow-auto p-3 text-xs text-ctp-text prose prose-sm max-w-none"
+        className="flex-1 overflow-auto p-3 text-xs text-ctp-text prose prose-sm max-w-none cursor-text"
         dangerouslySetInnerHTML={{ __html: html }}
+        onClick={onEdit}
         data-testid="sticky-note-content"
       />
     </div>
