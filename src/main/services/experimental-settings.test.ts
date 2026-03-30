@@ -14,7 +14,7 @@ vi.mock('fs', () => ({
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from './settings-store';
-import { getSettings, cleanupStaleFlags } from './experimental-settings';
+import { cleanupStaleFlags } from './experimental-settings';
 
 describe('experimental-settings', () => {
   beforeEach(() => {
