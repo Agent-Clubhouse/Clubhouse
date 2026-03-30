@@ -46,29 +46,30 @@ describe('orchestrator-colors', () => {
   });
 
   describe('getOrchestratorLabel', () => {
-    it('returns shortName from orchestrator info when available', () => {
+    it('prefers displayName from orchestrator info when available', () => {
       const orchestrators = [
         { id: 'claude-code', shortName: 'CC', displayName: 'Claude Code' },
         { id: 'copilot-cli', shortName: 'GHCP', displayName: 'GitHub Copilot CLI' },
       ];
-      expect(getOrchestratorLabel('claude-code', orchestrators)).toBe('CC');
-      expect(getOrchestratorLabel('copilot-cli', orchestrators)).toBe('GHCP');
+      expect(getOrchestratorLabel('claude-code', orchestrators)).toBe('Claude Code');
+      expect(getOrchestratorLabel('copilot-cli', orchestrators)).toBe('GitHub Copilot CLI');
     });
 
-    it('falls back to displayName when shortName is missing', () => {
+    it('falls back to shortName when displayName is missing', () => {
       const orchestrators = [
-        { id: 'custom-orch', displayName: 'Custom Orchestrator' },
+        { id: 'custom-orch', shortName: 'CO' },
       ];
-      expect(getOrchestratorLabel('custom-orch', orchestrators)).toBe('Custom Orchestrator');
+      expect(getOrchestratorLabel('custom-orch', orchestrators)).toBe('CO');
     });
 
-    it('uses static short names when orchestrator list is not provided', () => {
-      expect(getOrchestratorLabel('claude-code')).toBe('CC');
-      expect(getOrchestratorLabel('copilot-cli')).toBe('GHCP');
+    it('uses static display names when orchestrator list is not provided', () => {
+      expect(getOrchestratorLabel('claude-code')).toBe('Claude Code');
+      expect(getOrchestratorLabel('copilot-cli')).toBe('GitHub Copilot');
+      expect(getOrchestratorLabel('codex-cli')).toBe('Codex');
     });
 
-    it('uses static short names when orchestrator list is empty', () => {
-      expect(getOrchestratorLabel('claude-code', [])).toBe('CC');
+    it('uses static display names when orchestrator list is empty', () => {
+      expect(getOrchestratorLabel('claude-code', [])).toBe('Claude Code');
     });
 
     it('falls back to raw ID for unknown orchestrators with no list', () => {
@@ -77,7 +78,7 @@ describe('orchestrator-colors', () => {
 
     it('falls back to raw ID for unknown orchestrators not in list', () => {
       const orchestrators = [
-        { id: 'claude-code', shortName: 'CC', displayName: 'Claude Code' },
+        { id: 'claude-code', displayName: 'Claude Code' },
       ];
       expect(getOrchestratorLabel('unknown-provider', orchestrators)).toBe('unknown-provider');
     });

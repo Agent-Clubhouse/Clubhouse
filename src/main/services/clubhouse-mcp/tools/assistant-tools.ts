@@ -25,7 +25,7 @@ import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
 import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
 import { getPersonaTemplate, getPersonaIds } from '../../../../renderer/features/assistant/content/personas';
 import { IPC } from '../../../../shared/ipc-channels';
-import { BUILTIN_THEMES } from '../../../../renderer/themes';
+import { getAllThemes } from '../../../../renderer/themes';
 
 /**
  * Register all assistant MCP tools (read + write).
@@ -414,7 +414,7 @@ registerToolTemplate(
   },
   async () => {
     const currentSettings = themeService.getSettings() || { themeId: 'catppuccin-mocha' };
-    const themes = Object.values(BUILTIN_THEMES).map((t) => ({
+    const themes = Object.values(getAllThemes()).map((t) => ({
       id: t.id,
       name: t.name,
       type: t.type,

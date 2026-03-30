@@ -54,7 +54,7 @@ export function AssistantInput({ onSend, disabled = false, status }: Props) {
     ? 'Waiting for response\u2026'
     : status === 'starting'
     ? 'Starting assistant\u2026'
-    : 'Ask anything or type / for commands\u2026';
+    : 'Ask anything\u2026';
 
   const canSend = message.trim().length > 0 && !disabled;
 
