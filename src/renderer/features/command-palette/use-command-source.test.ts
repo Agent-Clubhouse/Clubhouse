@@ -192,7 +192,7 @@ describe('useCommandSource', () => {
     uiStoreState.explorerTab = 'agents';
     annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     annexState.status = { advertising: false, port: 0, pin: '', connectedCount: 0 };
-    pluginStoreState.appEnabled = ['canvas'];
+    pluginStoreState.appEnabled = ['hub', 'canvas'];
     projectStoreState.activeProjectId = 'p1';
     projectHubState.hubs = [{ id: 'ph1', name: 'ProjectHub1' }];
     projectHubState.activeHubId = 'ph1';
@@ -575,7 +575,7 @@ describe('useCommandSource', () => {
 
   it('hides all canvas items when canvas plugin is not in appEnabled', () => {
     const saved = pluginStoreState.appEnabled;
-    pluginStoreState.appEnabled = [];
+    pluginStoreState.appEnabled = ['hub'];
     try {
       const { result } = renderHook(() => useCommandSource());
       const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
@@ -587,11 +587,51 @@ describe('useCommandSource', () => {
 
   it('still shows hub items when canvas plugin is disabled', () => {
     const saved = pluginStoreState.appEnabled;
-    pluginStoreState.appEnabled = [];
+    pluginStoreState.appEnabled = ['hub'];
     try {
       const { result } = renderHook(() => useCommandSource());
       const hubItems = result.current.filter((i: any) => i.id.startsWith('hub:'));
       expect(hubItems.length).toBeGreaterThan(0);
+    } finally {
+      pluginStoreState.appEnabled = saved;
+    }
+  });
+
+  // ── Hub gating: items hidden when hub plugin disabled ──────────────
+
+  it('hides all hub items when hub plugin is not in appEnabled', () => {
+    const saved = pluginStoreState.appEnabled;
+    pluginStoreState.appEnabled = ['canvas'];
+    try {
+      const { result } = renderHook(() => useCommandSource());
+      const hubItems = result.current.filter((i: any) => i.id.startsWith('hub:'));
+      expect(hubItems).toHaveLength(0);
+    } finally {
+      pluginStoreState.appEnabled = saved;
+    }
+  });
+
+  it('still shows canvas items when hub plugin is disabled', () => {
+    const saved = pluginStoreState.appEnabled;
+    pluginStoreState.appEnabled = ['canvas'];
+    try {
+      const { result } = renderHook(() => useCommandSource());
+      const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
+      expect(canvasItems.length).toBeGreaterThan(0);
+    } finally {
+      pluginStoreState.appEnabled = saved;
+    }
+  });
+
+  it('hides both hub and canvas items when both plugins are disabled', () => {
+    const saved = pluginStoreState.appEnabled;
+    pluginStoreState.appEnabled = [];
+    try {
+      const { result } = renderHook(() => useCommandSource());
+      const hubItems = result.current.filter((i: any) => i.id.startsWith('hub:'));
+      const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
+      expect(hubItems).toHaveLength(0);
+      expect(canvasItems).toHaveLength(0);
     } finally {
       pluginStoreState.appEnabled = saved;
     }

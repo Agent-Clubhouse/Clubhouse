@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
+import { usePluginStore } from '../plugins/plugin-store';
 import { ExplorerRail } from './ExplorerRail';
 import type { Project } from '../../shared/types';
 
@@ -119,5 +120,89 @@ describe('ExplorerRail tabs nav', () => {
     expect(nav).toBeInTheDocument();
     expect(nav!.className).toContain('overflow-y-auto');
     expect(nav!.className).toContain('min-h-0');
+  });
+});
+
+describe('ExplorerRail app-first gate for dual-scope plugins', () => {
+  beforeEach(() => {
+    resetStores();
+    useUIStore.setState({ explorerTab: 'agents' });
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'TestProj' })],
+      activeProjectId: 'p1',
+      projectIcons: {},
+    });
+  });
+
+  it('hides dual-scope plugin tab when not in appEnabled', () => {
+    usePluginStore.setState({
+      plugins: {
+        hub: {
+          manifest: {
+            id: 'hub',
+            name: 'Hub',
+            version: '1.0.0',
+            scope: 'dual',
+            contributes: { tab: { label: 'Hub' } },
+          },
+          status: 'activated',
+          source: 'builtin',
+          pluginPath: '',
+        },
+      },
+      projectEnabled: { p1: ['hub'] },
+      appEnabled: [],
+    });
+
+    render(<ExplorerRail />);
+    expect(screen.queryByText('Hub')).not.toBeInTheDocument();
+  });
+
+  it('shows dual-scope plugin tab when in both appEnabled and projectEnabled', () => {
+    usePluginStore.setState({
+      plugins: {
+        hub: {
+          manifest: {
+            id: 'hub',
+            name: 'Hub',
+            version: '1.0.0',
+            scope: 'dual',
+            contributes: { tab: { label: 'Hub' } },
+          },
+          status: 'activated',
+          source: 'builtin',
+          pluginPath: '',
+        },
+      },
+      projectEnabled: { p1: ['hub'] },
+      appEnabled: ['hub'],
+    });
+
+    render(<ExplorerRail />);
+    expect(screen.getByText('Hub')).toBeInTheDocument();
+  });
+
+  it('shows project-scope plugin tab without requiring appEnabled', () => {
+    usePluginStore.setState({
+      plugins: {
+        files: {
+          manifest: {
+            id: 'files',
+            name: 'Files',
+            version: '1.0.0',
+            scope: 'project',
+            contributes: { tab: { label: 'Files' } },
+          },
+          status: 'activated',
+          source: 'builtin',
+          pluginPath: '',
+        },
+      },
+      projectEnabled: { p1: ['files'] },
+      appEnabled: [],
+    });
+
+    render(<ExplorerRail />);
+    expect(screen.getByText('Files')).toBeInTheDocument();
   });
 });
