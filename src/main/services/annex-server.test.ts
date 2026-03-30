@@ -1389,6 +1389,36 @@ describe('annex-server', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Server-side WebSocket heartbeat
+  // -------------------------------------------------------------------------
+
+  describe('server-side heartbeat', () => {
+    it('starts heartbeat interval when server starts', async () => {
+      annexServer.start();
+      await new Promise((r) => setTimeout(r, 100));
+
+      const { _testing } = await import('./annex-server');
+      expect(_testing.heartbeatInterval).not.toBeNull();
+    });
+
+    it('clears heartbeat interval on server stop', async () => {
+      annexServer.start();
+      await new Promise((r) => setTimeout(r, 100));
+
+      const { _testing } = await import('./annex-server');
+      expect(_testing.heartbeatInterval).not.toBeNull();
+
+      annexServer.stop();
+      expect(_testing.heartbeatInterval).toBeNull();
+    });
+
+    it('exposes correct heartbeat interval constant', async () => {
+      const { _testing } = await import('./annex-server');
+      expect(_testing.SERVER_HEARTBEAT_INTERVAL_MS).toBe(30_000);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Durable agent REST endpoints (create, delete, worktree-status)
   // -------------------------------------------------------------------------
 
