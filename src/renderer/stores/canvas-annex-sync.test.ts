@@ -457,4 +457,140 @@ describe('canvas-over-annex state sync', () => {
       expect(views1[0].agentId).not.toBe(views2[0].agentId);
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // CanvasView paused overlay: structural verification that the
+  // canvas view wrapper checks satellite paused state.
+  // ─────────────────────────────────────────────────────────────────────
+
+  describe('canvas satellite paused overlay (structural)', () => {
+    it('CanvasView.tsx imports annexClientStore for satellite paused detection', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, '../plugins/builtin/canvas/CanvasView.tsx'),
+        'utf-8',
+      );
+      expect(source).toContain('useAnnexClientStore');
+      expect(source).toContain('satellitePaused');
+      expect(source).toContain('isSatellitePaused');
+      expect(source).toContain('canvas-satellite-paused-overlay');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Snapshot race: a stale snapshot must not overwrite a running agent
+  // back to sleeping when agent:woken was already processed.
+  // ─────────────────────────────────────────────────────────────────────
+
+  describe('snapshot preserves running agent status (fixes sleep/wake desync)', () => {
+    it('does not downgrade running agent to sleeping on snapshot merge', () => {
+      const store = useRemoteProjectStore.getState();
+
+      // Initial snapshot: agent-a running, agent-b sleeping
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot());
+
+      const nsA = namespacedAgentId(SAT_ID, 'agent-a');
+      const nsB = namespacedAgentId(SAT_ID, 'agent-b');
+      expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('running');
+      expect(useRemoteProjectStore.getState().remoteAgents[nsB].status).toBe('sleeping');
+
+      // Simulate agent:woken for agent-b (controller received the event)
+      store.updateRemoteAgentRunState(SAT_ID, 'agent-b', 'running');
+      expect(useRemoteProjectStore.getState().remoteAgents[nsB].status).toBe('running');
+
+      // Stale snapshot arrives with agent-b still sleeping
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot({
+        agents: {
+          'proj-1': [
+            { id: 'agent-a', name: 'Agent A', kind: 'durable', status: 'running', projectId: 'proj-1', color: '#ff0000' } as any,
+            { id: 'agent-b', name: 'Agent B', kind: 'durable', status: 'sleeping', projectId: 'proj-1', color: '#00ff00' } as any,
+          ],
+        },
+      }));
+
+      // agent-b should still be running — snapshot must not downgrade it
+      expect(useRemoteProjectStore.getState().remoteAgents[nsB].status).toBe('running');
+      // agent-a should remain running (unchanged)
+      expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('running');
+    });
+
+    it('allows sleeping status from snapshot when agent was not running', () => {
+      const store = useRemoteProjectStore.getState();
+
+      // Initial snapshot: both agents sleeping
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot({
+        agents: {
+          'proj-1': [
+            { id: 'agent-a', name: 'Agent A', kind: 'durable', status: 'sleeping', projectId: 'proj-1', color: '' } as any,
+          ],
+        },
+      }));
+
+      const nsA = namespacedAgentId(SAT_ID, 'agent-a');
+      expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('sleeping');
+
+      // Another snapshot also says sleeping — should stay sleeping
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot({
+        agents: {
+          'proj-1': [
+            { id: 'agent-a', name: 'Agent A', kind: 'durable', status: 'sleeping', projectId: 'proj-1', color: '' } as any,
+          ],
+        },
+      }));
+
+      expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('sleeping');
+    });
+
+    it('allows running status from snapshot to update a sleeping agent', () => {
+      const store = useRemoteProjectStore.getState();
+
+      // Initial snapshot: agent sleeping
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot({
+        agents: {
+          'proj-1': [
+            { id: 'agent-a', name: 'Agent A', kind: 'durable', status: 'sleeping', projectId: 'proj-1', color: '' } as any,
+          ],
+        },
+      }));
+
+      const nsA = namespacedAgentId(SAT_ID, 'agent-a');
+      expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('sleeping');
+
+      // Snapshot says agent is now running — should update
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot({
+        agents: {
+          'proj-1': [
+            { id: 'agent-a', name: 'Agent A', kind: 'durable', status: 'running', projectId: 'proj-1', color: '' } as any,
+          ],
+        },
+      }));
+
+      expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('running');
+    });
+
+    it('pty:exit correctly transitions running agent to sleeping after snapshot preservation', () => {
+      const store = useRemoteProjectStore.getState();
+
+      // Snapshot: agent running
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot());
+
+      const nsA = namespacedAgentId(SAT_ID, 'agent-a');
+      expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('running');
+
+      // Stale snapshot tries to downgrade — preserved as running
+      store.applySatelliteSnapshot(SAT_ID, 'Sat', makeCanvasSnapshot({
+        agents: {
+          'proj-1': [
+            { id: 'agent-a', name: 'Agent A', kind: 'durable', status: 'sleeping', projectId: 'proj-1', color: '' } as any,
+          ],
+        },
+      }));
+      expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('running');
+
+      // pty:exit event arrives — this is authoritative, should transition to sleeping
+      store.updateRemoteAgentRunState(SAT_ID, 'agent-a', 'sleeping');
+      expect(useRemoteProjectStore.getState().remoteAgents[nsA].status).toBe('sleeping');
+    });
+  });
 });
