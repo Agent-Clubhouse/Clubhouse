@@ -11,7 +11,7 @@ vi.mock('../services/preview-eligible', () => ({
 
 vi.mock('../services/annex-settings', () => ({
   getSettings: vi.fn(() => ({ enableServer: false, enableClient: false, deviceName: 'My Mac' })),
-  saveSettings: vi.fn(),
+  saveSettings: vi.fn(async () => {}),
   hasPersistedSettings: vi.fn(() => true),
 }));
 

@@ -364,8 +364,9 @@ vi.mock('../services/safe-mode', () => ({
 // ── Service mocks (annex-handlers deps) ────────────────────────────────
 vi.mock('../services/annex-settings', () => ({
   getSettings: vi.fn(() => ({ enabled: false, pin: '1234' })),
-  saveSettings: vi.fn(),
+  saveSettings: vi.fn(async () => {}),
   regeneratePin: vi.fn(() => '5678'),
+  hasPersistedSettings: vi.fn(() => true),
 }));
 
 // ── Service mocks (marketplace-handlers deps) ──────────────────────────
