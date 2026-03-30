@@ -256,7 +256,7 @@ function setupCanvasCommandDefault(): void {
 import { registerAssistantTools } from '../src/main/services/clubhouse-mcp/tools/assistant-tools';
 import { _resetForTesting, callTool, getScopedToolList } from '../src/main/services/clubhouse-mcp/tool-registry';
 import { bindingManager } from '../src/main/services/clubhouse-mcp';
-import { ALL_TOOL_SUFFIXES, ASSISTANT_TOOL_CATALOG, PARAMETER_ALIASES } from '../src/main/services/clubhouse-mcp/assistant-api-contract';
+import { ALL_TOOL_SUFFIXES } from '../src/main/services/clubhouse-mcp/assistant-api-contract';
 
 // ── Test Helpers ──────────────────────────────────────────────────────────
 
