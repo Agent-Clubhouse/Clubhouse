@@ -47,12 +47,17 @@ export type JsonRpcMessage =
   | JsonRpcNotification
   | JsonRpcServerRequest;
 
+/** Default timeout for RPC requests (ms). Prevents indefinite hangs on init failures. */
+const DEFAULT_RPC_TIMEOUT_MS = 30_000;
+
 export interface AcpClientOpts {
   binary: string;
   args: string[];
   cwd?: string;
   env?: Record<string, string>;
   clientInfo?: { name: string; version: string };
+  /** RPC request timeout in milliseconds (default: 30000) */
+  rpcTimeoutMs?: number;
   /** Called for notifications (method, no id) */
   onNotification?: (method: string, params: unknown) => void;
   /** Called for server-initiated requests (method + id) */
@@ -139,15 +144,28 @@ export class AcpClient {
     return this.stderrBuffer.join('');
   }
 
-  /** Send a JSON-RPC request and wait for the response. */
+  /** Send a JSON-RPC request and wait for the response. Rejects after the configured timeout. */
   request(method: string, params?: unknown): Promise<unknown> {
     const id = this.nextId++;
     const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
+    const timeoutMs = this.opts.rpcTimeoutMs ?? DEFAULT_RPC_TIMEOUT_MS;
 
     this.log('info', `RPC request → ${method}`, { id, method, params });
 
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id);
+          const err = new RpcError(-32000, `RPC request '${method}' timed out after ${timeoutMs}ms`);
+          this.log('error', `RPC timeout → ${method}`, { id, timeoutMs });
+          reject(err);
+        }
+      }, timeoutMs);
+
+      this.pending.set(id, {
+        resolve: (result) => { clearTimeout(timer); resolve(result); },
+        reject: (err) => { clearTimeout(timer); reject(err); },
+      });
       this.send(msg);
     });
   }

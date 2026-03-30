@@ -1,11 +1,16 @@
 import { spawn, type ChildProcess } from 'child_process';
 
+/** Default timeout for RPC requests (ms). Prevents indefinite hangs on init failures. */
+const DEFAULT_RPC_TIMEOUT_MS = 30_000;
+
 export interface CodexAppServerClientOpts {
   binary: string;
   args: string[];
   cwd?: string;
   env?: Record<string, string>;
   clientInfo?: { name: string; title: string; version: string };
+  /** RPC request timeout in milliseconds (default: 30000) */
+  rpcTimeoutMs?: number;
   /** Called for notifications (method, no id) */
   onNotification?: (method: string, params: unknown) => void;
   /** Called for server-initiated requests (method + id) */
@@ -100,16 +105,29 @@ export class CodexAppServerClient {
     return this.stderrBuffer.join('');
   }
 
-  /** Send a JSON-RPC request and wait for the response. */
+  /** Send a JSON-RPC request and wait for the response. Rejects after the configured timeout. */
   request(method: string, params?: unknown): Promise<unknown> {
     const id = this.nextId++;
     const msg: Record<string, unknown> = { id, method };
     if (params !== undefined) msg.params = params;
+    const timeoutMs = this.opts.rpcTimeoutMs ?? DEFAULT_RPC_TIMEOUT_MS;
 
     this.log('info', `RPC request → ${method}`, { id, method, params });
 
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id);
+          const err = new Error(`RPC request '${method}' timed out after ${timeoutMs}ms`);
+          this.log('error', `RPC timeout → ${method}`, { id, timeoutMs });
+          reject(err);
+        }
+      }, timeoutMs);
+
+      this.pending.set(id, {
+        resolve: (result) => { clearTimeout(timer); resolve(result); },
+        reject: (err) => { clearTimeout(timer); reject(err); },
+      });
       this.send(msg);
     });
   }
@@ -207,10 +225,12 @@ export class CodexAppServerClient {
     } else if (hasMethod) {
       // Notification
       this.opts.onNotification?.(msg.method as string, msg.params);
+    } else {
+      // Messages with neither id nor method — log at debug level and ignore
+      this.log('info', 'Codex message with neither id nor method (ignored)', {
+        keys: Object.keys(msg),
+      });
     }
-    this.log('warn', 'Codex message with neither id nor method', {
-      keys: Object.keys(msg),
-    });
   }
 
   private handleResponse(msg: Record<string, unknown>): void {

@@ -291,8 +291,28 @@ export class AcpAdapter implements StructuredAdapter {
           toolId: p.tool_id != null ? String(p.tool_id) : undefined,
         });
 
+      // GHCP sends session/update during streaming with token counts and status.
+      // Map to usage events when token data is present, otherwise suppress.
+      case 'session/update': {
+        const inputTokens = p.input_tokens ?? p.inputTokens;
+        const outputTokens = p.output_tokens ?? p.outputTokens;
+        if (inputTokens != null || outputTokens != null) {
+          return this.makeEvent('usage', {
+            inputTokens: Number(inputTokens ?? 0),
+            outputTokens: Number(outputTokens ?? 0),
+            cacheReadTokens: p.cache_read_tokens != null ? Number(p.cache_read_tokens) : undefined,
+            cacheWriteTokens: undefined,
+            costUsd: p.cost_usd != null ? Number(p.cost_usd) : undefined,
+          });
+        }
+        // Status-only updates (no token data) — silently ignore
+        return null;
+      }
+
       default:
-        appLog('core:structured:acp', 'debug', `Unmapped ACP notification: ${method}`);
+        appLog('core:structured:acp', 'debug', `Unmapped ACP notification: ${method}`, {
+          meta: { method, paramsKeys: Object.keys(p) },
+        });
         return null;
     }
   }

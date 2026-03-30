@@ -314,6 +314,15 @@ export class CodexAppServerAdapter implements StructuredAdapter {
         return null; // Already pushed events directly
       }
 
+      // Codex sends configWarning during init — informational, not actionable.
+      // Log at debug level and suppress from the UI event stream.
+      case 'configWarning': {
+        appLog('core:structured:codex', 'info', 'Codex config warning', {
+          meta: { message: String(p.message ?? p.warning ?? ''), params: p },
+        });
+        return null;
+      }
+
       default:
         appLog('core:structured:codex', 'info', `Unmapped Codex notification: ${method}`, {
           meta: { method, paramsKeys: Object.keys(p) },

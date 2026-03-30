@@ -404,8 +404,10 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     });
 
     ws.on('error', (err) => {
-      appLog('core:annex-client', 'error', 'WebSocket error', {
-        meta: { fingerprint: sat.fingerprint, error: err.message },
+      // Downgrade to 'warn' after 3 consecutive reconnect attempts to reduce log noise
+      const level = sat.reconnectAttempt >= 3 ? 'warn' : 'error';
+      appLog('core:annex-client', level, 'WebSocket error', {
+        meta: { fingerprint: sat.fingerprint, error: err.message, attempt: sat.reconnectAttempt },
       });
       sat.ws = null;
       setState(sat, 'disconnected', err.message);
