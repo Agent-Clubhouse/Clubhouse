@@ -851,7 +851,7 @@ describe('Assistant Tools Integration Tests', () => {
 
     // Mission 18: Content audit — persona creation should accept valid persona IDs
     it('create_agent accepts all 7 valid persona IDs without error', async () => {
-      const validPersonas = ['project-manager', 'qa', 'ui-lead', 'slop-detector',
+      const validPersonas = ['project-manager', 'qa', 'ui-lead', 'quality-auditor',
         'executor-pr-only', 'executor-merge', 'doc-updater'];
 
       for (const persona of validPersonas) {

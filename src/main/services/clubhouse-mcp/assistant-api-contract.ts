@@ -363,6 +363,7 @@ export const ASSISTANT_TOOL_CATALOG = {
   canvas: [
     'create_canvas', 'list_canvases', 'add_card', 'move_card',
     'resize_card', 'remove_card', 'rename_card', 'connect_cards', 'layout_canvas',
+    'get_card_defaults',
   ] as const,
 } as const;
 
