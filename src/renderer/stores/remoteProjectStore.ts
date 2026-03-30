@@ -341,11 +341,27 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
 
     // Merge into store (replace this satellite's data, keep others)
     set((state) => {
-      // Remove old agents for this satellite
+      // Remove old agents for this satellite, but remember which ones
+      // are currently "running" so we don't let a stale snapshot
+      // downgrade them.  The dedicated pty:exit / agent:completed events
+      // handle the running → sleeping transition authoritatively.
       const filteredAgents = { ...state.remoteAgents };
+      const runningAgentIds = new Set<string>();
       for (const key of Object.keys(filteredAgents)) {
         if (key.startsWith(satellitePrefix(satelliteId))) {
+          if (filteredAgents[key].status === 'running') {
+            runningAgentIds.add(key);
+          }
           delete filteredAgents[key];
+        }
+      }
+
+      // Preserve "running" status for agents the controller already
+      // knows are running — a snapshot built concurrently with the
+      // wake may still report "sleeping".
+      for (const [nsId, agent] of Object.entries(newAgents)) {
+        if (agent.status === 'sleeping' && runningAgentIds.has(nsId)) {
+          newAgents[nsId] = { ...agent, status: 'running' };
         }
       }
 
