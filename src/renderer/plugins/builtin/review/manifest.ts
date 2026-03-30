@@ -37,6 +37,13 @@ export const manifest: PluginManifest = {
         description: 'Filter to only show agents that need attention (permission requests or errors).',
         default: false,
       },
+      {
+        key: 'include-remote',
+        type: 'boolean',
+        label: 'Include Remote Agents',
+        description: 'Include remote (annex) agents in the review carousel.',
+        default: true,
+      },
     ],
     help: {
       topics: [

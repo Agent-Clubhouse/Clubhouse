@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, AgentInfo, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
+import { isRemoteAgentId } from '../../../stores/remoteProjectStore';
 
 // ── Activate / Deactivate ──────────────────────────────────────────────
 
@@ -35,6 +36,11 @@ export function filterNeedsAttention(
   });
 }
 
+export function filterRemoteAgents(agents: AgentInfo[], includeRemote: boolean): AgentInfo[] {
+  if (includeRemote) return agents;
+  return agents.filter((a) => !isRemoteAgentId(a.id));
+}
+
 export function resolveIndex(current: number, length: number, delta: -1 | 1): number {
   if (length === 0) return 0;
   return (current + delta + length) % length;
@@ -67,6 +73,93 @@ function ArrowButton({ direction, onClick }: { direction: 'left' | 'right'; onCl
   );
 }
 
+// ── Jump List Button ──────────────────────────────────────────────────
+
+function JumpListButton({
+  agents,
+  currentIndex,
+  AgentAvatar,
+  onJumpTo,
+}: {
+  agents: AgentInfo[];
+  currentIndex: number;
+  AgentAvatar: React.ComponentType<{ agentId: string; size?: 'sm' | 'md'; showStatusRing?: boolean }>;
+  onJumpTo: (index: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on click outside
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return React.createElement('div', { ref: containerRef, className: 'relative' },
+    // Hamburger button
+    React.createElement('button', {
+      onClick: () => setOpen((v) => !v),
+      'aria-label': 'Agent list',
+      'data-testid': 'review-jump-list-button',
+      className: [
+        'p-1 rounded transition-colors cursor-pointer',
+        open
+          ? 'bg-surface-1 text-ctp-text'
+          : 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1',
+      ].join(' '),
+    },
+      React.createElement('svg', {
+        width: 14, height: 14, viewBox: '0 0 24 24',
+        fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+        strokeLinecap: 'round',
+      },
+        React.createElement('line', { x1: 3, y1: 6, x2: 21, y2: 6 }),
+        React.createElement('line', { x1: 3, y1: 12, x2: 21, y2: 12 }),
+        React.createElement('line', { x1: 3, y1: 18, x2: 21, y2: 18 }),
+      ),
+    ),
+
+    // Dropdown
+    open && React.createElement('div', {
+      className: [
+        'absolute top-full right-0 mt-1 z-30',
+        'min-w-[200px] max-h-[320px] overflow-y-auto',
+        'rounded-lg bg-surface-0/95 backdrop-blur-sm shadow-lg border border-surface-2',
+        'py-1',
+      ].join(' '),
+    },
+      agents.length === 0
+        ? React.createElement('div', {
+            className: 'px-3 py-2 text-xs text-ctp-subtext0',
+          }, 'No agents')
+        : agents.map((agent, idx) =>
+            React.createElement('button', {
+              key: agent.id,
+              onClick: () => { onJumpTo(idx); setOpen(false); },
+              className: [
+                'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors cursor-pointer',
+                idx === currentIndex
+                  ? 'bg-surface-1 text-ctp-text'
+                  : 'text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text',
+              ].join(' '),
+            },
+              React.createElement(AgentAvatar, { agentId: agent.id, size: 'sm', showStatusRing: true }),
+              React.createElement('span', { className: 'truncate font-medium' }, agent.name),
+              React.createElement('span', { className: 'ml-auto text-ctp-subtext0 shrink-0' },
+                isRemoteAgentId(agent.id) ? 'remote' : agent.status,
+              ),
+            ),
+          ),
+    ),
+  );
+}
+
 // ── Floating Top Bar ───────────────────────────────────────────────────
 
 function FloatingBar({
@@ -83,6 +176,10 @@ function FloatingBar({
   onToggleSleeping,
   needsAttentionOnly,
   onToggleNeedsAttention,
+  includeRemote,
+  onToggleIncludeRemote,
+  agents,
+  onJumpTo,
   onPrev,
   onNext,
 }: {
@@ -99,6 +196,10 @@ function FloatingBar({
   onToggleSleeping: () => void;
   needsAttentionOnly: boolean;
   onToggleNeedsAttention: () => void;
+  includeRemote: boolean;
+  onToggleIncludeRemote: () => void;
+  agents: AgentInfo[];
+  onJumpTo: (index: number) => void;
   onPrev: () => void;
   onNext: () => void;
 }) {
@@ -196,6 +297,28 @@ function FloatingBar({
       }),
       'Needs attention',
     ),
+
+    // Separator
+    React.createElement('div', { className: 'w-px h-4 bg-surface-2 mx-1' }),
+
+    // Include remote checkbox
+    React.createElement('label', {
+      className: 'flex items-center gap-1.5 text-ctp-subtext0 hover:text-ctp-text cursor-pointer transition-colors',
+    },
+      React.createElement('input', {
+        type: 'checkbox',
+        checked: includeRemote,
+        onChange: onToggleIncludeRemote,
+        className: 'accent-ctp-accent cursor-pointer',
+      }),
+      'Include remote',
+    ),
+
+    // Separator
+    React.createElement('div', { className: 'w-px h-4 bg-surface-2 mx-1' }),
+
+    // Hamburger jump-list button
+    React.createElement(JumpListButton, { agents, currentIndex, AgentAvatar, onJumpTo }),
   );
 }
 
@@ -292,10 +415,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const [includeSleeping, setIncludeSleeping] = useState(settingValue ?? true);
   const needsAttentionSettingValue = api.settings.get<boolean>('needs-attention-only');
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(needsAttentionSettingValue ?? false);
+  const includeRemoteSettingValue = api.settings.get<boolean>('include-remote');
+  const [includeRemote, setIncludeRemote] = useState(includeRemoteSettingValue ?? true);
   useEffect(() => {
     const sub = api.settings.onChange((key, value) => {
       if (key === 'include-sleeping') setIncludeSleeping(value as boolean);
       if (key === 'needs-attention-only') setNeedsAttentionOnly(value as boolean);
+      if (key === 'include-remote') setIncludeRemote(value as boolean);
     });
     return () => sub.dispose();
   }, [api]);
@@ -318,11 +444,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const agents = useMemo(() => {
     let filtered = filterAgents(allAgents, includeSleeping);
+    filtered = filterRemoteAgents(filtered, includeRemote);
     if (needsAttentionOnly) {
       filtered = filterNeedsAttention(filtered, detailedStatuses);
     }
     return filtered;
-  }, [allAgents, includeSleeping, needsAttentionOnly, detailedStatuses]);
+  }, [allAgents, includeSleeping, includeRemote, needsAttentionOnly, detailedStatuses]);
 
   // Navigation state
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -379,6 +506,19 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     api.settings.set('needs-attention-only', next);
   }, [needsAttentionOnly, api]);
 
+  const handleToggleIncludeRemote = useCallback(() => {
+    const next = !includeRemote;
+    setIncludeRemote(next);
+    api.settings.set('include-remote', next);
+  }, [includeRemote, api]);
+
+  const jumpTo = useCallback((index: number) => {
+    if (index >= 0 && index < agents.length) {
+      setSlideDirection(null);
+      setCurrentIndex(index);
+    }
+  }, [agents.length]);
+
   const handleSleep = useCallback(() => {
     const agent = agents[currentIndex];
     if (agent) api.agents.kill(agent.id);
@@ -401,6 +541,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         onToggleSleeping: handleToggleSleeping,
         needsAttentionOnly,
         onToggleNeedsAttention: handleToggleNeedsAttention,
+        includeRemote,
+        onToggleIncludeRemote: handleToggleIncludeRemote,
+        agents: [],
+        onJumpTo: jumpTo,
         onPrev: goPrev,
         onNext: goNext,
       }),
@@ -438,6 +582,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onToggleSleeping: handleToggleSleeping,
       needsAttentionOnly,
       onToggleNeedsAttention: handleToggleNeedsAttention,
+      includeRemote,
+      onToggleIncludeRemote: handleToggleIncludeRemote,
+      agents,
+      onJumpTo: jumpTo,
       onPrev: goPrev,
       onNext: goNext,
     }),
