@@ -8,7 +8,7 @@
 import React, { useMemo } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType } from './canvas-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
-import { computeWirePath, bezierPathWithOffsets, viewRect } from './wire-utils';
+import { computeWirePath, bezierPathWithOffsets, viewRect, closestEdgeMidpoint } from './wire-utils';
 import type { EdgeMidpoint } from './wire-utils';
 import { WireFlowDots, WireFlowDotFilters } from './WireFlowDots';
 import { useWirePhysics } from './useWirePhysics';
@@ -218,7 +218,10 @@ export const WireOverlay = React.memo(function WireOverlay({
 
       const srcRect = viewRect(srcPos, source.size);
       const tgtRect = viewRect(tgtPos, target.size);
-      const { path, from, to } = computeWirePath(srcRect, tgtRect);
+      // Use ELK-routed path when available, otherwise compute direct bezier
+      const { path, from, to } = binding.routedPath
+        ? { path: binding.routedPath, from: closestEdgeMidpoint(srcRect, tgtRect), to: closestEdgeMidpoint(tgtRect, srcRect) }
+        : computeWirePath(srcRect, tgtRect);
 
       result.push({
         key: `${binding.agentId}--${binding.targetId}`,

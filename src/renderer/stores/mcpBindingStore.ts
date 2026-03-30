@@ -20,6 +20,8 @@ export interface McpBindingEntry {
    * Tool suffixes disabled on this wire (e.g. ["read_output", "broadcast"]).
    */
   disabledTools?: string[];
+  /** SVG path string from ELK layout. Used instead of direct bezier when present. */
+  routedPath?: string;
 }
 
 interface McpBindingStoreState {

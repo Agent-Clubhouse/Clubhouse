@@ -317,6 +317,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         projectName: b.projectName,
         ...(b.instructions ? { instructions: b.instructions } : {}),
         ...(b.disabledTools && b.disabledTools.length > 0 ? { disabledTools: b.disabledTools } : {}),
+        ...(b.routedPath ? { routedPath: b.routedPath } : {}),
       }));
       await storage.write(STORAGE_KEY_WIRES, data);
     },
@@ -491,6 +492,21 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       set(updateActiveCanvas(get(), (canvas) => ({
         views: recomputeZones(updateViewPosOp(canvas.views, viewId, position)),
       })));
+      // Invalidate ELK-routed paths for wires connected to the moved view
+      const movedView = get().views.find((v) => v.id === viewId);
+      const affectedId = (movedView?.type === 'agent' && (movedView as AgentCanvasView).agentId)
+        ? (movedView as AgentCanvasView).agentId!
+        : viewId;
+      const wires = get().wireDefinitions;
+      if (wires.some((w) => w.routedPath && (w.agentId === affectedId || w.targetId === affectedId))) {
+        set({
+          wireDefinitions: wires.map((w) =>
+            (w.agentId === affectedId || w.targetId === affectedId)
+              ? { ...w, routedPath: undefined }
+              : w,
+          ),
+        });
+      }
     },
 
     resizeView: (viewId, size) => {
