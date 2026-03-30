@@ -12,6 +12,7 @@ vi.mock('../services/preview-eligible', () => ({
 vi.mock('../services/annex-settings', () => ({
   getSettings: vi.fn(() => ({ enableServer: false, enableClient: false, deviceName: 'My Mac' })),
   saveSettings: vi.fn(),
+  hasPersistedSettings: vi.fn(() => true),
 }));
 
 vi.mock('../services/annex-server', () => ({
@@ -265,6 +266,56 @@ describe('maybeStartAnnex', () => {
       meta: expect.objectContaining({ error: 'bind failed' }),
     }));
   });
+
+  it('auto-enables and starts server on first launch when no settings file exists', () => {
+    vi.mocked(annexSettings.hasPersistedSettings).mockReturnValue(false);
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    maybeStartAnnex();
+    expect(annexSettings.saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ enableServer: true, enableClient: true }),
+    );
+    expect(annexServer.start).toHaveBeenCalled();
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('First launch'));
+  });
+
+  it('does not auto-enable when settings file already exists', () => {
+    vi.mocked(annexSettings.hasPersistedSettings).mockReturnValue(true);
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    maybeStartAnnex();
+    expect(annexSettings.saveSettings).not.toHaveBeenCalled();
+    expect(annexServer.start).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-enable on first launch when not preview-eligible', () => {
+    vi.mocked(isPreviewEligible).mockReturnValue(false);
+    vi.mocked(annexSettings.hasPersistedSettings).mockReturnValue(false);
+    maybeStartAnnex();
+    expect(annexSettings.saveSettings).not.toHaveBeenCalled();
+    expect(annexServer.start).not.toHaveBeenCalled();
+  });
+
+  it('auto-enable preserves existing device name and other settings', () => {
+    vi.mocked(annexSettings.hasPersistedSettings).mockReturnValue(false);
+    vi.mocked(annexSettings.getSettings).mockReturnValue({
+      enableServer: false,
+      enableClient: false,
+      deviceName: 'Sisters MacBook',
+      alias: 'Sisters MacBook',
+      icon: 'laptop',
+      color: 'blue',
+      autoReconnect: true,
+    });
+    maybeStartAnnex();
+    expect(annexSettings.saveSettings).toHaveBeenCalledWith({
+      enableServer: true,
+      enableClient: true,
+      deviceName: 'Sisters MacBook',
+      alias: 'Sisters MacBook',
+      icon: 'laptop',
+      color: 'blue',
+      autoReconnect: true,
+    });
+  });
 });
 
 describe('maybeStartAnnexClient', () => {
@@ -299,5 +350,12 @@ describe('maybeStartAnnexClient', () => {
     expect(appLog).toHaveBeenCalledWith('core:annex', 'error', expect.any(String), expect.objectContaining({
       meta: expect.objectContaining({ error: 'bonjour failed' }),
     }));
+  });
+
+  it('starts client when auto-enabled settings are in cache from maybeStartAnnex', () => {
+    // Simulate post-auto-enable: settings cache now has enableClient: true
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: true, deviceName: 'Mac' });
+    maybeStartAnnexClient();
+    expect(annexClient.startClient).toHaveBeenCalled();
   });
 });

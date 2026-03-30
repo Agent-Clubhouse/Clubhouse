@@ -7,6 +7,8 @@ export interface SettingsStore<T> {
   save(settings: T): Promise<void>;
   /** Sequential read-modify-write: reads the current value, applies `fn`, saves, and returns the updated value. */
   update(fn: (current: T) => T): Promise<T>;
+  /** Returns true when the settings file exists on disk (i.e. settings have been persisted at least once). */
+  fileExists(): boolean;
 }
 
 const settingsStoreResetters = new Set<() => void>();
@@ -94,6 +96,9 @@ export function createSettingsStore<T>(
       const current = store.get();
       const updated = fn(current);
       return store.save(updated).then(() => cloneSettings(updated));
+    },
+    fileExists() {
+      return fs.existsSync(filePath);
     },
   };
 

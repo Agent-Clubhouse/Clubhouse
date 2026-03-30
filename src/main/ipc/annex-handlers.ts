@@ -146,7 +146,8 @@ export function registerAnnexHandlers(): void {
   });
 }
 
-/** Conditionally start Annex server if enableServer is on AND build is preview-eligible. */
+/** Conditionally start Annex server if enableServer is on AND build is preview-eligible.
+ *  On the very first launch (no persisted settings file), auto-enables both server and client. */
 export function maybeStartAnnex(): void {
   const previewEligible = isPreviewEligible();
   appLog('core:annex', 'info', 'Annex server startup check', {
@@ -154,6 +155,33 @@ export function maybeStartAnnex(): void {
   });
 
   if (!previewEligible) return;
+
+  // First-run auto-enable: when no settings file has ever been persisted,
+  // default to enabled so new preview-eligible installs advertise immediately.
+  if (!annexSettings.hasPersistedSettings()) {
+    appLog('core:annex', 'info', 'First launch on preview-eligible build — auto-enabling Annex server and client');
+    const settings = annexSettings.getSettings();
+    annexSettings.saveSettings({
+      ...settings,
+      enableServer: true,
+      enableClient: true,
+    }).catch((err) => {
+      appLog('core:annex', 'error', 'Failed to persist auto-enabled Annex settings', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+
+    // Cache is updated synchronously by saveSettings; start the server.
+    try {
+      annexServer.start();
+      appLog('core:annex', 'info', 'Annex server auto-started on first launch');
+    } catch (err) {
+      appLog('core:annex', 'error', 'Failed to auto-start Annex server on first launch', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    return;
+  }
 
   const settings = annexSettings.getSettings();
   appLog('core:annex', 'info', 'Annex settings at startup', {
@@ -172,7 +200,8 @@ export function maybeStartAnnex(): void {
   }
 }
 
-/** Conditionally start the Annex Bonjour client if enableClient is on AND build is preview-eligible. */
+/** Conditionally start the Annex Bonjour client if enableClient is on AND build is preview-eligible.
+ *  Reads from the in-memory settings cache, which maybeStartAnnex() may have already auto-enabled. */
 export function maybeStartAnnexClient(): void {
   if (!isPreviewEligible()) return;
 

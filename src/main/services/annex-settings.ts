@@ -39,3 +39,8 @@ export async function saveSettings(settings: AnnexSettings): Promise<void> {
 }
 
 export const updateSettings = store.update;
+
+/** Returns true when annex-settings.json exists on disk (settings have been persisted at least once). */
+export function hasPersistedSettings(): boolean {
+  return store.fileExists();
+}

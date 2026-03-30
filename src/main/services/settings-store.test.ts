@@ -35,14 +35,16 @@ describe('settings-store', () => {
   });
 
   describe('createSettingsStore', () => {
-    it('returns an object with get, save, and update methods', () => {
+    it('returns an object with get, save, update, and fileExists methods', () => {
       const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
       expect(store).toHaveProperty('get');
       expect(store).toHaveProperty('save');
       expect(store).toHaveProperty('update');
+      expect(store).toHaveProperty('fileExists');
       expect(typeof store.get).toBe('function');
       expect(typeof store.save).toBe('function');
       expect(typeof store.update).toBe('function');
+      expect(typeof store.fileExists).toBe('function');
     });
   });
 
@@ -215,6 +217,29 @@ describe('settings-store', () => {
 
       expect(writeOrder).toEqual(['first', 'second']);
       expect(store.get().name).toBe('second');
+    });
+  });
+
+  describe('fileExists', () => {
+    it('returns false when the settings file does not exist', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+      expect(store.fileExists()).toBe(false);
+    });
+
+    it('returns true when the settings file exists', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+      expect(store.fileExists()).toBe(true);
+    });
+
+    it('checks the correct file path', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      const store = createSettingsStore<TestSettings>('my-config.json', DEFAULTS);
+      store.fileExists();
+      expect(vi.mocked(fs.existsSync)).toHaveBeenCalledWith(
+        path.join('/tmp/test-app', 'my-config.json'),
+      );
     });
   });
 

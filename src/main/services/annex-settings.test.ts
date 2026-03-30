@@ -16,7 +16,7 @@ vi.mock('fs', () => ({
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from './settings-store';
-import { getSettings, saveSettings } from './annex-settings';
+import { getSettings, saveSettings, hasPersistedSettings } from './annex-settings';
 
 describe('annex-settings', () => {
   beforeEach(() => {
@@ -107,6 +107,18 @@ describe('annex-settings', () => {
       const written = JSON.parse(vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string);
       expect(written.enableServer).toBe(false);
       expect(written.enableClient).toBe(false);
+    });
+  });
+
+  describe('hasPersistedSettings', () => {
+    it('returns false when no settings file exists', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      expect(hasPersistedSettings()).toBe(false);
+    });
+
+    it('returns true when settings file exists', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      expect(hasPersistedSettings()).toBe(true);
     });
   });
 
