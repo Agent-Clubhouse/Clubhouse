@@ -161,7 +161,7 @@ describe('QuickAgentGhostCompact', () => {
 
   it('shows orchestrator badge', () => {
     render(<QuickAgentGhostCompact {...defaultProps} />);
-    expect(screen.getByText('CC')).toBeInTheDocument();
+    expect(screen.getByText('Claude Code')).toBeInTheDocument();
   });
 
   it('calls onDismiss on trash button click', () => {

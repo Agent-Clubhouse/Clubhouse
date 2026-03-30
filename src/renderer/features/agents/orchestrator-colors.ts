@@ -35,12 +35,13 @@ export function getOrchestratorColor(id: string): { bg: string; text: string } {
 
 /**
  * Format an orchestrator ID into a display label.
- * Looks up the shortName from the provided orchestrator list, falling back
- * to a static map of known short names, then to the raw ID.
+ * Prefers the displayName from the provided orchestrator list, falling back
+ * to a static map of known display names, then to the raw ID.
  */
-const ORCHESTRATOR_SHORT_NAMES: Record<string, string> = {
-  'claude-code': 'CC',
-  'copilot-cli': 'GHCP',
+const ORCHESTRATOR_DISPLAY_NAMES: Record<string, string> = {
+  'claude-code': 'Claude Code',
+  'copilot-cli': 'GitHub Copilot',
+  'codex-cli': 'Codex',
 };
 
 export function getOrchestratorLabel(
@@ -48,8 +49,8 @@ export function getOrchestratorLabel(
   allOrchestrators?: Array<{ id: string; shortName?: string; displayName?: string }>,
 ): string {
   const info = allOrchestrators?.find((o) => o.id === orchId);
-  if (info) return info.shortName || info.displayName || orchId;
-  return ORCHESTRATOR_SHORT_NAMES[orchId] || orchId;
+  if (info) return info.displayName || info.shortName || orchId;
+  return ORCHESTRATOR_DISPLAY_NAMES[orchId] || orchId;
 }
 
 /**
