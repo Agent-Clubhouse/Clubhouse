@@ -14,7 +14,10 @@ import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteAgentId } from '../../../stores/remoteProjectStore';
 import { usePluginStore } from '../../plugin-store';
 import { UpgradeToCanvasDialog } from './UpgradeToCanvasDialog';
-import { convertHubToCanvas } from './hub-to-canvas';
+import { CanvasUpgradeBanner } from './CanvasUpgradeBanner';
+import { MigrateAllHubsModal } from './MigrateAllHubsModal';
+import { convertHubToCanvas, convertAllHubsToCanvases } from './hub-to-canvas';
+import type { ScopedHubs } from './hub-to-canvas';
 import { useAppCanvasStore, getProjectCanvasStore } from '../canvas/main';
 import { createScopedStorage } from '../../plugin-api-storage';
 
@@ -258,6 +261,90 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().duplicateHub(hubId, PANE_PREFIX);
   }, [store]);
 
+  // ── Canvas upgrade banner + bulk migration ────────────────────────
+
+  const BANNER_DISMISSED_KEY = 'canvas-upgrade-banner-dismissed';
+  const globalStorage = api.storage.global;
+
+  const [bannerDismissed, setBannerDismissed] = useState(true); // hidden until loaded
+  const [showMigrateModal, setShowMigrateModal] = useState(false);
+
+  // Load dismissed state on mount
+  useEffect(() => {
+    globalStorage.read(BANNER_DISMISSED_KEY).then((val) => {
+      setBannerDismissed(val === true);
+    }).catch(() => {
+      setBannerDismissed(false);
+    });
+  }, [globalStorage]);
+
+  const showBanner = canvasEnabled && !bannerDismissed;
+
+  const handleDismissBanner = useCallback(async () => {
+    setBannerDismissed(true);
+    await globalStorage.write(BANNER_DISMISSED_KEY, true);
+  }, [globalStorage]);
+
+  // Collect all hubs across app + open projects for migration count
+  const allHubCount = useMemo(() => {
+    let count = useAppHubStore.getState().hubs.length;
+    for (const [, projectStore] of projectHubStores) {
+      count += projectStore.getState().hubs.length;
+    }
+    return count;
+  }, [hubs]); // re-derive when current store's hubs change
+
+  const handleMigrateAll = useCallback(async () => {
+    setShowMigrateModal(false);
+
+    // Gather all hubs
+    const appHubs = useAppHubStore.getState().hubs;
+    const projectMap = new Map<string, ReturnType<typeof useAppHubStore.getState>['hubs']>();
+    for (const [projectId, projectStore] of projectHubStores) {
+      const loaded = projectStore.getState().loaded;
+      if (loaded) {
+        projectMap.set(projectId, projectStore.getState().hubs);
+      }
+    }
+
+    const scopedHubs: ScopedHubs = { app: appHubs, projects: projectMap };
+    const result = convertAllHubsToCanvases(scopedHubs, window.innerWidth, window.innerHeight);
+
+    // Insert app-level canvases
+    const appCanvasStore = useAppCanvasStore;
+    const appCanvasStorage = createScopedStorage('canvas', 'global');
+    for (const canvas of result.app) {
+      await appCanvasStore.getState().loadAndInsertCanvas(canvas, appCanvasStorage);
+    }
+
+    // Insert per-project canvases
+    for (const [projectId, canvases] of result.projects) {
+      const projCanvasStore = getProjectCanvasStore(projectId);
+      // We need the project path to build storage — look it up from the project store's context
+      const projects = api.projects.list();
+      const proj = projects.find((p) => p.id === projectId);
+      if (!proj) continue;
+      const projCanvasStorage = createScopedStorage('canvas', 'project-local', proj.path);
+      for (const canvas of canvases) {
+        await projCanvasStore.getState().loadAndInsertCanvas(canvas, projCanvasStorage);
+      }
+    }
+
+    // Disable hub plugin and persist
+    usePluginStore.getState().disableApp('hub');
+    try {
+      await window.clubhouse.plugin.storageWrite({
+        pluginId: '_system',
+        scope: 'global',
+        key: 'app-enabled',
+        value: usePluginStore.getState().appEnabled,
+      });
+    } catch { /* best effort */ }
+
+    // Dismiss the banner permanently
+    await handleDismissBanner();
+  }, [api, handleDismissBanner]);
+
   // ── Stable PaneComponent identity ──────────────────────────────────
   const dataRef = useRef({ api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId, findAgentPopout });
   dataRef.current = { api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId, findAgentPopout };
@@ -313,6 +400,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onUpgradeToCanvas: canvasEnabled ? handleUpgradeToCanvas : undefined,
       onDuplicateHub: handleDuplicateHub,
     }),
+    showBanner && React.createElement(CanvasUpgradeBanner, {
+      onMigrateAll: () => setShowMigrateModal(true),
+      onDismiss: handleDismissBanner,
+    }),
     hubPopout
       ? React.createElement('div', { className: 'flex-1 min-h-0' },
           React.createElement(PoppedOutPlaceholder, {
@@ -335,6 +426,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onUpgrade: () => performUpgrade(false),
       onUpgradeAndDelete: () => performUpgrade(true),
       onClose: () => setUpgradeHubId(null),
+    }),
+    showMigrateModal && React.createElement(MigrateAllHubsModal, {
+      hubCount: allHubCount,
+      onConfirm: handleMigrateAll,
+      onCancel: () => setShowMigrateModal(false),
     }),
   );
 }
