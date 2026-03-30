@@ -62,6 +62,13 @@ describe('review manifest', () => {
     expect(setting!.default).toBe(false);
   });
 
+  it('contributes include-remote boolean setting defaulting to true', () => {
+    const setting = manifest.contributes!.settings!.find((s) => s.key === 'include-remote');
+    expect(setting).toBeDefined();
+    expect(setting!.type).toBe('boolean');
+    expect(setting!.default).toBe(true);
+  });
+
   it('declares required permissions', () => {
     expect(manifest.permissions).toEqual(
       expect.arrayContaining(['commands', 'agents', 'projects', 'widgets', 'navigation']),

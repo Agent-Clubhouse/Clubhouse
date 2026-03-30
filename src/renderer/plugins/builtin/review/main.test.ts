@@ -143,6 +143,39 @@ describe('filterNeedsAttention', () => {
   });
 });
 
+describe('filterRemoteAgents', () => {
+  const local1 = makeAgent({ id: 'agent-1', name: 'local-alpha' });
+  const local2 = makeAgent({ id: 'agent-2', name: 'local-beta' });
+  const remote1 = makeAgent({ id: 'remote||sat1||r-agent-1', name: 'remote-alpha' });
+  const remote2 = makeAgent({ id: 'remote||sat2||r-agent-2', name: 'remote-beta' });
+
+  it('returns all agents when includeRemote is true', () => {
+    const result = reviewModule.filterRemoteAgents([local1, remote1, local2, remote2], true);
+    expect(result).toHaveLength(4);
+  });
+
+  it('excludes remote agents when includeRemote is false', () => {
+    const result = reviewModule.filterRemoteAgents([local1, remote1, local2, remote2], false);
+    expect(result).toHaveLength(2);
+    expect(result.map((a) => a.id)).toEqual(['agent-1', 'agent-2']);
+  });
+
+  it('returns empty array when all agents are remote and includeRemote is false', () => {
+    const result = reviewModule.filterRemoteAgents([remote1, remote2], false);
+    expect(result).toHaveLength(0);
+  });
+
+  it('returns all local agents when there are no remote agents', () => {
+    const result = reviewModule.filterRemoteAgents([local1, local2], false);
+    expect(result).toHaveLength(2);
+  });
+
+  it('returns empty array for empty input', () => {
+    const result = reviewModule.filterRemoteAgents([], false);
+    expect(result).toHaveLength(0);
+  });
+});
+
 describe('resolveIndex', () => {
   it('wraps forward at the end', () => {
     expect(reviewModule.resolveIndex(4, 5, 1)).toBe(0);
