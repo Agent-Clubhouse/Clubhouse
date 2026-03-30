@@ -14,7 +14,7 @@ A flexible team pattern with a coordinator, quality gate, optional specialists, 
 - **Coordinator** — durable agent, plans and dispatches work
 - **QA** — durable agent, reviews all PRs
 - **UI Lead** (optional) — durable agent, design review for visual work
-- **Slop Detector** (optional) — durable agent, reviews for AI-generated patterns
+- **Quality Auditor** (optional) — durable agent, reviews for AI-generated patterns
 - **Workers (N)** — durable agents with merge permission
 
 **Zones (1):**
@@ -50,7 +50,7 @@ A flexible team pattern with a coordinator, quality gate, optional specialists, 
 ## Scaling
 
 - Add more workers by repeating the add_card + add_wire pattern
-- Add UI Lead or Slop Detector as additional hub spokes wired from workers
+- Add UI Lead or Quality Auditor as additional hub spokes wired from workers
 - For large squads (6+ workers), consider splitting into two zones with the Group Project pattern instead
 
 ## Agent Instructions

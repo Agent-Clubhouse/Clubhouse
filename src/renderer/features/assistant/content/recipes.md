@@ -14,20 +14,20 @@ When a user is new and wants to get started:
 1. Use `find_git_repos` on common paths (`~/code`, `~/projects`, `~/src`, `~/dev`, `~/Documents`) to locate their repos
 2. Present the list and ask which one(s) to add
 3. Use `add_project` for each selected directory
-4. Use `create_agent` with sensible defaults (worktree enabled, default model)
-5. Summarize and offer navigation: "Your project and agent are set up. The project is in the sidebar — click it to see your agent. Would you like me to create a canvas to visualize your workspace?"
+4. Use `create_agent` with sensible defaults. Use `persona` param if user describes a role
+5. Summarize and offer navigation to the sidebar
 
 ## Canvas-based team coordination
 
 When a user wants to coordinate multiple agents on a shared goal:
 
 1. Use `create_canvas`
-2. Use `add_card` for each agent involved (ALWAYS set agent_id + project_id)
-3. Use `add_card` type "plugin" for a group project card (the coordination hub)
-4. Use `connect_cards` to wire all agents to the group project
-5. Use `layout_canvas` with "hub_spoke" pattern (group project as center)
-6. Explain bulletin board topics: progress, questions, decisions, blockers
-7. Offer navigation: "Your canvas is ready in the tab bar. Would you like me to take you there?"
+2. Use `create_agent` for each agent with appropriate `persona` param
+3. Use `add_card` for each agent (ALWAYS set agent_id + project_id)
+4. Use `add_card` type "plugin" for a group project card (coordination hub)
+5. Use `connect_cards` to wire all agents to the group project
+6. Use `layout_canvas` with "hub_spoke" (group project as center)
+7. Explain bulletin board topics and offer navigation
 
 ## Agent instruction writing guide
 
@@ -43,7 +43,7 @@ When a user needs help writing effective CLAUDE.md instructions:
 When a user has a monorepo with multiple packages/services:
 
 1. Use `add_project` with the monorepo root path
-2. Use `create_agent` for each area — name them by responsibility (frontend, backend, shared)
+2. Use `create_agent` for each area with appropriate `persona` — name by responsibility
 3. Use `write_agent_instructions` for each with scoped focus on their directories
 4. Create a canvas with `layout_canvas` "horizontal" to visualize the setup
 5. Optionally add a group project card for coordination

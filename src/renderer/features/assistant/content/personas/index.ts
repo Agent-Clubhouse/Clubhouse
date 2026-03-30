@@ -1,7 +1,7 @@
 import projectManager from './project-manager.md';
 import qa from './qa.md';
 import uiLead from './ui-lead.md';
-import slopDetector from './slop-detector.md';
+import qualityAuditor from './quality-auditor.md';
 import executorPrOnly from './executor-pr-only.md';
 import executorMerge from './executor-merge.md';
 import docUpdater from './doc-updater.md';
@@ -33,10 +33,10 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
     content: uiLead,
   },
   {
-    id: 'slop-detector',
-    name: 'Slop Detector',
-    description: 'Reviews for AI-generated patterns: writing slop, code slop, UI slop.',
-    content: slopDetector,
+    id: 'quality-auditor',
+    name: 'Quality Auditor',
+    description: 'Reviews for AI-generated patterns: writing quality, code quality, UI quality.',
+    content: qualityAuditor,
   },
   {
     id: 'executor-pr-only',

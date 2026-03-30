@@ -550,7 +550,7 @@ describe('materialization-service', () => {
     });
 
     it('includes persona instructions in preview', async () => {
-      const agentWithPersona = { ...testAgent, persona: 'slop-detector' };
+      const agentWithPersona = { ...testAgent, persona: 'quality-auditor' };
       mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
@@ -566,7 +566,7 @@ describe('materialization-service', () => {
       });
 
       expect(preview.instructions).toContain('Agent bold-falcon');
-      expect(preview.instructions).toContain('Slop Detector');
+      expect(preview.instructions).toContain('Quality Auditor');
     });
   });
 

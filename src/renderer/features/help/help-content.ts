@@ -26,7 +26,7 @@ import troubleshootingSafeMode from './content/troubleshooting-safe-mode.md';
 import personaProjectManager from '../assistant/content/personas/project-manager.md';
 import personaQa from '../assistant/content/personas/qa.md';
 import personaUiLead from '../assistant/content/personas/ui-lead.md';
-import personaSlopDetector from '../assistant/content/personas/slop-detector.md';
+import personaQualityAuditor from '../assistant/content/personas/quality-auditor.md';
 import personaExecutorPrOnly from '../assistant/content/personas/executor-pr-only.md';
 import personaExecutorMerge from '../assistant/content/personas/executor-merge.md';
 import personaDocUpdater from '../assistant/content/personas/doc-updater.md';
@@ -118,7 +118,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'persona-project-manager', title: 'Project Manager / Coordinator', content: personaProjectManager },
       { id: 'persona-qa', title: 'QA / Quality Control', content: personaQa },
       { id: 'persona-ui-lead', title: 'UI / Design Lead', content: personaUiLead },
-      { id: 'persona-slop-detector', title: 'Slop Detector', content: personaSlopDetector },
+      { id: 'persona-quality-auditor', title: 'Quality Auditor', content: personaQualityAuditor },
       { id: 'persona-executor-pr-only', title: 'Executor (PR Only)', content: personaExecutorPrOnly },
       { id: 'persona-executor-merge', title: 'Executor (Full Merge)', content: personaExecutorMerge },
       { id: 'persona-doc-updater', title: 'Documentation Updater', content: personaDocUpdater },

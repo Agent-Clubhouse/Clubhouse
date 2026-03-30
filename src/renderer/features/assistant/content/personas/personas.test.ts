@@ -33,7 +33,7 @@ describe('persona templates', () => {
     expect(ids).toContain('project-manager');
     expect(ids).toContain('qa');
     expect(ids).toContain('ui-lead');
-    expect(ids).toContain('slop-detector');
+    expect(ids).toContain('quality-auditor');
     expect(ids).toContain('executor-pr-only');
     expect(ids).toContain('executor-merge');
     expect(ids).toContain('doc-updater');

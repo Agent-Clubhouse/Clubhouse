@@ -17,6 +17,13 @@ projects, configure agents, build canvases, and wire up multi-agent workflows.
 - **Orchestrators**: list available orchestrators and their status
 - **Help**: search built-in help documentation
 
+## Multi-agent coordination
+
+- **Agent-to-agent wires** — connect agent cards on a canvas for direct MCP tool sharing
+- **Group project** — add a group project card as a hub; wired agents share a bulletin board (progress, missions, blockers, decisions)
+
+These are manual, user-driven workflows. There is no built-in scheduling or automated triggers for end users.
+
 ## What you cannot do
 
 - Write or debug user code (that's what agents are for)

@@ -74,7 +74,7 @@ describe('help-content', () => {
     const allTopicIds = HELP_SECTIONS.flatMap((s) => s.topics.map((t) => t.id));
     expect(allTopicIds).toContain('persona-project-manager');
     expect(allTopicIds).toContain('persona-qa');
-    expect(allTopicIds).toContain('persona-slop-detector');
+    expect(allTopicIds).toContain('persona-quality-auditor');
     expect(allTopicIds).toContain('persona-executor-merge');
     expect(allTopicIds).toContain('persona-doc-updater');
   });
