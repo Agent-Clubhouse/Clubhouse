@@ -235,14 +235,12 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
             data-testid="canvas-auto-layout"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="6" cy="6" r="2" />
-              <circle cx="18" cy="6" r="2" />
-              <circle cx="6" cy="18" r="2" />
-              <circle cx="18" cy="18" r="2" />
-              <line x1="8" y1="6" x2="16" y2="6" />
-              <line x1="6" y1="8" x2="6" y2="16" />
-              <line x1="18" y1="8" x2="18" y2="16" />
-              <line x1="8" y1="18" x2="16" y2="18" />
+              {/* Flow graph: left node branching to two right nodes */}
+              <rect x="2" y="9" width="6" height="6" rx="1" />
+              <rect x="16" y="3" width="6" height="6" rx="1" />
+              <rect x="16" y="15" width="6" height="6" rx="1" />
+              <path d="M 8 12 L 12 12 L 12 6 L 16 6" />
+              <path d="M 12 12 L 12 18 L 16 18" />
             </svg>
           </button>
           <button
