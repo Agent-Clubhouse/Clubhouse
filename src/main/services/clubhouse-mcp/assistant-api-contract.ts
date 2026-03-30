@@ -338,7 +338,7 @@ export interface LayoutCanvasInput {
   /** Canvas ID. Required. */
   canvas_id: string;
   /** Layout pattern. Required. */
-  pattern: 'horizontal' | 'vertical' | 'grid' | 'hub_spoke';
+  pattern: 'horizontal' | 'vertical' | 'grid' | 'hub_spoke' | 'elk';
 }
 /**
  * Side effects:

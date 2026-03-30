@@ -383,7 +383,7 @@ export function layoutForceDirected(
  * Apply a layout pattern to a set of cards.
  */
 export function computeLayout(
-  pattern: 'horizontal' | 'vertical' | 'grid' | 'hub_spoke' | 'auto' | 'force',
+  pattern: 'horizontal' | 'vertical' | 'grid' | 'hub_spoke' | 'auto' | 'force' | 'elk',
   cards: CardInfo[],
   edges?: ForceEdge[],
   forceParams?: ForceLayoutParams,
@@ -405,6 +405,10 @@ export function computeLayout(
       }));
       return layoutForceDirected(cardsWithPos, edges || [], forceParams, zones);
     }
+    case 'elk':
+      // ELK is async — callers should use layoutElk() directly.
+      // Sync fallback uses grid layout.
+      return layoutGrid(cards);
     default: return layoutGrid(cards);
   }
 }
