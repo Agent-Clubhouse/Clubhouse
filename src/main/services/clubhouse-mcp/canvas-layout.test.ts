@@ -176,8 +176,8 @@ describe('canvas-layout', () => {
       expect(pos.y).toBe(200);
 
       const posAbove = computeRelativePosition(ref, 'above', 600, 400);
-      // "above" uses newHeight
-      expect(pos.x).toBe(460);
+      // "above" uses newHeight, x stays same as reference
+      expect(posAbove.x).toBe(100);
       expect(posAbove.y).toBe(snapToGrid(200 - 400 - 60)); // -260 snapped
     });
   });
