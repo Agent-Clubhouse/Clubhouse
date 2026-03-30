@@ -331,9 +331,25 @@ describe('GroupProjectCanvasWidget — Annex remote support', () => {
     expect(source).toContain('remote.isRemote');
   });
 
-  it('passes isRemote and satelliteId to ProjectView', () => {
-    expect(source).toContain('isRemote={remote.isRemote}');
-    expect(source).toContain('satelliteId={remote.satelliteId}');
+  it('detects remote app-level canvas via activeHostId from useUIStore', () => {
+    expect(source).toContain('useUIStore');
+    expect(source).toContain('activeHostId');
+    expect(source).toContain('isRemoteApp');
+  });
+
+  it('computes effective isRemote combining project-level and app-level detection', () => {
+    // isRemote should be true when either useRemoteProject detects it OR activeHostId is set in app mode
+    expect(source).toContain('const isRemote = remote.isRemote || isRemoteApp');
+  });
+
+  it('computes effective satelliteId from either source', () => {
+    // satelliteId should come from remote.satelliteId (project-level) or activeHostId (app-level)
+    expect(source).toContain('remote.isRemote ? remote.satelliteId : isRemoteApp ? activeHostId : null');
+  });
+
+  it('passes computed isRemote and satelliteId to ProjectView', () => {
+    expect(source).toContain('isRemote={isRemote}');
+    expect(source).toContain('satelliteId={satelliteId}');
   });
 
   it('uses useGroupProjectContext hook for data abstraction', () => {
@@ -342,8 +358,8 @@ describe('GroupProjectCanvasWidget — Annex remote support', () => {
   });
 
   it('MCP check only applies to local mode', () => {
-    // MCP gate should be conditioned on !remote.isRemote
-    expect(source).toContain('!remote.isRemote && !mcpEnabled');
+    // MCP gate should be conditioned on !isRemote
+    expect(source).toContain('!isRemote && !mcpEnabled');
   });
 
   it('context hook reads from remote store when isRemote', () => {
