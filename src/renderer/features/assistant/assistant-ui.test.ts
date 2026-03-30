@@ -1,6 +1,6 @@
 import { createElement } from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useUIStore } from '../../stores/uiStore';
 import { AssistantFeed } from './AssistantFeed';
 import { AssistantInput } from './AssistantInput';
@@ -168,5 +168,36 @@ describe('AssistantHeader component', () => {
     }));
     const structuredBtn = screen.getByTestId('mode-structured');
     expect(structuredBtn.className).toContain('bg-ctp-accent');
+  });
+
+  it('orchestrator dropdown shows displayName not shortName', async () => {
+    const mockOrchestrators = [
+      { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC' },
+      { id: 'copilot-cli', displayName: 'GitHub Copilot CLI', shortName: 'GHCP' },
+      { id: 'codex-cli', displayName: 'Codex CLI', shortName: 'CX' },
+    ];
+    const original = window.clubhouse.agent.getOrchestrators;
+    window.clubhouse.agent.getOrchestrators = async () => mockOrchestrators as any;
+
+    render(createElement(AssistantHeader, {
+      onReset: vi.fn(),
+      mode: 'headless',
+      onModeChange: vi.fn(),
+      orchestrator: null,
+      onOrchestratorChange: vi.fn(),
+      status: 'idle',
+    }));
+
+    await waitFor(() => {
+      const select = screen.getByTestId('orchestrator-select');
+      const options = select.querySelectorAll('option');
+      // Default + 3 orchestrators
+      expect(options.length).toBe(4);
+      expect(options[1].textContent).toBe('Claude Code');
+      expect(options[2].textContent).toBe('GitHub Copilot CLI');
+      expect(options[3].textContent).toBe('Codex CLI');
+    });
+
+    window.clubhouse.agent.getOrchestrators = original;
   });
 });

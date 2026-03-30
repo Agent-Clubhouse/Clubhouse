@@ -614,10 +614,19 @@ registerToolTemplate(
     const color = (args.color as string) || AGENT_COLORS[0]?.id || 'emerald';
     const model = args.model as string | undefined;
     const useWorktree = args.use_worktree !== false; // default true
-    const orchestrator = args.orchestrator as string | undefined;
+    const orchestratorArg = args.orchestrator as string | undefined;
     const freeAgentMode = args.free_agent_mode as boolean | undefined;
     const mcpIds = args.mcp_ids ? (args.mcp_ids as string).split(',').map(s => s.trim()).filter(Boolean) : undefined;
     const personaId = args.persona as string | undefined;
+
+    // Resolve orchestrator — default to project/app default so avatar always renders
+    let orchestrator = orchestratorArg;
+    if (!orchestrator) {
+      try {
+        const defaultProvider = await resolveOrchestrator(projectPath);
+        orchestrator = defaultProvider.id;
+      } catch { /* leave undefined — createDurable handles it */ }
+    }
 
     // Validate persona ID if provided
     if (personaId && !getPersonaTemplate(personaId)) {

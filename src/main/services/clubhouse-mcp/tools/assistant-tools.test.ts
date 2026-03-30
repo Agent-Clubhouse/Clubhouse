@@ -534,6 +534,20 @@ describe('assistant-tools', () => {
     }
   });
 
+  it('create_agent defaults orchestrator to project default when not specified', async () => {
+    mockCreateDurable.mockClear();
+    const result = await callAssistantTool('create_agent', {
+      project_path: '/home/user/my-app',
+      name: 'no-orch-agent',
+    });
+
+    if (!result.isError) {
+      const call = mockCreateDurable.mock.calls[mockCreateDurable.mock.calls.length - 1];
+      // orchestrator is arg index 5 — should be resolved to 'claude-code' not undefined
+      expect(call[5]).toBe('claude-code');
+    }
+  });
+
   it('update_agent does not pass icon to updateDurable when icon arg is omitted', async () => {
     mockUpdateDurable.mockClear();
     const result = await callAssistantTool('update_agent', {

@@ -343,7 +343,7 @@ export function ProfilesSettingsView() {
                     <div className="text-xs text-ctp-subtext0 mt-0.5 font-mono">
                       {Object.entries(p.orchestrators).map(([orchId, entry]) => {
                         const envStr = Object.entries(entry.env).map(([k, v]) => `${k}=${v}`).join(', ');
-                        const orchName = allOrchestrators.find((o) => o.id === orchId)?.shortName || orchId;
+                        const orchName = allOrchestrators.find((o) => o.id === orchId)?.displayName || orchId;
                         return envStr ? `${orchName}: ${envStr}` : null;
                       }).filter(Boolean).join(' | ') || 'No env vars set'}
                     </div>
