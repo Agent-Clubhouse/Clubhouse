@@ -27,6 +27,7 @@ import { searchHelpTopics } from '../../../../renderer/features/help/help-search
 import { getPersonaTemplate, getPersonaIds } from '../../../../renderer/features/assistant/content/personas';
 import { IPC } from '../../../../shared/ipc-channels';
 import { getAllThemes } from '../../../../renderer/themes';
+import { discoverCommunityPlugins } from '../../plugin-discovery';
 
 /**
  * Register all assistant MCP tools (read + write).
@@ -991,8 +992,9 @@ const canvasCardCounters = new Map<string, number>();
 
 registerToolTemplate('assistant', 'add_card', {
   description:
-    'Add a card to a canvas. Types: "agent" (for durable agents), "zone" (visual grouping container), "anchor" (text-only label). ' +
+    'Add a card to a canvas. Types: "agent" (for durable agents), "zone" (visual grouping container), "anchor" (text-only label), "sticky-note" (note with text and color). ' +
     'For agent cards, ALWAYS provide agent_id and project_id to bind a real agent. ' +
+    'For sticky notes, provide content (text) and optionally color (yellow/pink/blue/green/purple). ' +
     'Cards are auto-staggered when no position is specified. ALWAYS call layout_canvas after adding all cards. ' +
     'Anchors are just labels — they CANNOT be wired or used for coordination. Use group project cards for coordination. ' +
     'To place a card inside a zone, set zone_id to the zone\'s view ID — the card will be auto-positioned within that zone. ' +
@@ -1001,14 +1003,16 @@ registerToolTemplate('assistant', 'add_card', {
     type: 'object',
     properties: {
       canvas_id: { type: 'string', description: 'Canvas ID.' },
-      type: { type: 'string', description: 'Card type: "agent", "zone", or "anchor".' },
+      type: { type: 'string', description: 'Card type: "agent", "zone", "anchor", or "sticky-note".' },
       display_name: { type: 'string', description: 'Display name for the card.' },
       agent_id: { type: 'string', description: 'For agent cards: the durable agent ID (from list_agents) to bind to this card.' },
       project_id: { type: 'string', description: 'For agent cards: the project ID the agent belongs to (from list_projects).' },
+      content: { type: 'string', description: 'For sticky-note cards: the text content (markdown supported).' },
+      color: { type: 'string', description: 'For sticky-note cards: background color — "yellow", "pink", "blue", "green", or "purple". Defaults to "yellow".' },
       position_x: { type: 'number', description: 'X position (number). Auto-staggered if omitted.' },
       position_y: { type: 'number', description: 'Y position (number). Auto-staggered if omitted.' },
-      width: { type: 'number', description: 'Width in pixels as a number (default: agent=300, zone=600, anchor=200).' },
-      height: { type: 'number', description: 'Height in pixels as a number (default: agent=200, zone=400, anchor=100).' },
+      width: { type: 'number', description: 'Width in pixels as a number (default: agent=300, zone=600, anchor=200, sticky-note=250).' },
+      height: { type: 'number', description: 'Height in pixels as a number (default: agent=200, zone=400, anchor=100, sticky-note=250).' },
       zone_id: { type: 'string', description: 'Zone view ID to place this card inside. Card will be auto-positioned within the zone bounds.' },
       relative_to_card_id: { type: 'string', description: 'View ID of an existing card to position relative to. Use with relative_position.' },
       relative_position: { type: 'string', description: 'Where to place relative to the reference card: "right", "left", "below", or "above". Defaults to "right".' },
@@ -1022,6 +1026,7 @@ registerToolTemplate('assistant', 'add_card', {
   const cmdArgs: Record<string, unknown> = {
     canvas_id: canvasId, type: args.type, display_name: args.display_name,
     agent_id: args.agent_id, project_id: args.project_id,
+    content: args.content, color: args.color,
   };
 
   // Coerce width/height to numbers in case LLM passes strings
@@ -1390,9 +1395,156 @@ registerToolTemplate('assistant', 'get_card_defaults', {
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
 });
 
+// ── disconnect_cards ──────────────────────────────────────────────────────
+
+registerToolTemplate('assistant', 'disconnect_cards', {
+  description: 'Remove a wire (MCP binding) between two cards. ' +
+    'Parameters: canvas_id, source_view_id, target_view_id. ' +
+    'If the wire was bidirectional, both directions are removed automatically.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      canvas_id: { type: 'string', description: 'Canvas ID.' },
+      source_view_id: { type: 'string', description: 'Source card view ID.' },
+      target_view_id: { type: 'string', description: 'Target card view ID.' },
+      from_card_id: { type: 'string', description: 'Alias for source_view_id.' },
+      to_card_id: { type: 'string', description: 'Alias for target_view_id.' },
+    },
+    required: ['canvas_id'],
+  },
+}, async (_t, _a, args) => {
+  const sourceViewId = args.source_view_id ?? args.from_card_id;
+  const targetViewId = args.target_view_id ?? args.to_card_id;
+  if (!sourceViewId || !targetViewId) {
+    return { content: [{ type: 'text', text: 'Missing required argument: source_view_id (or from_card_id) and target_view_id (or to_card_id)' }], isError: true };
+  }
+  const result = await sendCanvasCommand('disconnect_views', {
+    canvas_id: args.canvas_id,
+    source_view_id: sourceViewId,
+    target_view_id: targetViewId,
+    project_id: args.project_id,
+  });
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to disconnect cards' }], isError: true };
+  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+});
+
+// ── list_card_types ──────────────────────────────────────────────────────
+
+registerToolTemplate('assistant', 'list_card_types', {
+  description: 'List all available canvas card types with descriptions and default sizes.',
+  inputSchema: { type: 'object', properties: {} },
+}, async () => {
+  const cardTypes = [
+    { type: 'agent', description: 'Durable agent card. Bind to a real agent with agent_id + project_id.', defaultSize: { width: 300, height: 200 } },
+    { type: 'zone', description: 'Visual container that groups other cards. Containment is spatial (>50% overlap).', defaultSize: { width: 600, height: 400 } },
+    { type: 'anchor', description: 'Text-only label. Cannot be wired or used for coordination.', defaultSize: { width: 200, height: 100 } },
+    { type: 'sticky-note', description: 'Sticky note with text content and color. For quick notes, ideas, or annotations.', defaultSize: { width: 250, height: 250 } },
+    { type: 'plugin', description: 'Plugin-provided widget (browser, terminal, file viewer, group project, etc.). Created by plugins, not directly via add_card.', defaultSize: { width: 480, height: 480 } },
+  ];
+  return { content: [{ type: 'text', text: JSON.stringify(cardTypes, null, 2) }] };
+});
+
 // ── Plugin Tools ───────────────────────────────────────────────────────────
-// NOTE: Plugin enable/disable lives in the renderer store (plugin-store.ts)
-// and has no main-process API. These tools will be added when renderer-side
-// IPC for plugin management is available.
+
+registerToolTemplate('assistant', 'list_plugins', {
+  description:
+    'List installed plugins with their name, description, version, and status. ' +
+    'Shows both builtin and community (user-installed) plugins.',
+  inputSchema: { type: 'object', properties: {} },
+}, async () => {
+  try {
+    const discovered = await discoverCommunityPlugins();
+    const plugins = discovered.map(p => ({
+      id: p.manifest.id,
+      name: p.manifest.name,
+      version: p.manifest.version,
+      description: p.manifest.description || null,
+      author: p.manifest.author || null,
+      scope: p.manifest.scope,
+      source: p.fromMarketplace ? 'marketplace' : 'community',
+      path: p.pluginPath,
+    }));
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          pluginCount: plugins.length,
+          plugins,
+          note: 'Builtin plugins (canvas, browser, terminal, etc.) are always loaded and not listed here.',
+        }, null, 2),
+      }],
+    };
+  } catch (err) {
+    return {
+      content: [{ type: 'text', text: `Failed to list plugins: ${err instanceof Error ? err.message : String(err)}` }],
+      isError: true,
+    };
+  }
+});
+
+registerToolTemplate('assistant', 'install_plugin', {
+  description:
+    'Install a plugin from a local path. Copies the plugin directory to ~/.clubhouse/plugins/. ' +
+    'IMPORTANT: This only installs the plugin — the user must enable it manually in Settings > Plugins. ' +
+    'This is a security boundary: automated installation does not grant the plugin any permissions.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      source_path: {
+        type: 'string',
+        description: 'Absolute path to the plugin directory (must contain a manifest.json).',
+      },
+      plugin_id: {
+        type: 'string',
+        description: 'Optional plugin ID override. Defaults to the ID in manifest.json.',
+      },
+    },
+    required: ['source_path'],
+  },
+}, async (_t, _a, args) => {
+  const sourcePath = (args.source_path as string).replace(/^~/, process.env.HOME || '/tmp');
+  try {
+    // Validate source path exists and has manifest.json
+    const manifestPath = path.join(sourcePath, 'manifest.json');
+    const manifestRaw = await fsp.readFile(manifestPath, 'utf-8');
+    const manifest = JSON.parse(manifestRaw);
+
+    const pluginId = (args.plugin_id as string) || manifest.id;
+    if (!pluginId) {
+      return { content: [{ type: 'text', text: 'Plugin manifest.json must have an "id" field.' }], isError: true };
+    }
+
+    // Validate plugin ID is safe (no path traversal)
+    if (pluginId.includes('/') || pluginId.includes('\\') || pluginId.includes('..') || pluginId.includes('\0')) {
+      return { content: [{ type: 'text', text: `Invalid plugin ID: ${pluginId}` }], isError: true };
+    }
+
+    // Copy to ~/.clubhouse/plugins/<plugin_id>/
+    const pluginsDir = path.join(app.getPath('home'), '.clubhouse', 'plugins');
+    const destDir = path.join(pluginsDir, pluginId);
+
+    await fsp.mkdir(pluginsDir, { recursive: true });
+    await fsp.cp(sourcePath, destDir, { recursive: true });
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          message: `Plugin "${manifest.name || pluginId}" installed successfully.`,
+          id: pluginId,
+          name: manifest.name || pluginId,
+          version: manifest.version || 'unknown',
+          installedTo: destDir,
+          note: 'Plugin installed but NOT enabled. The user must enable it manually in Settings > Plugins.',
+        }),
+      }],
+    };
+  } catch (err) {
+    return {
+      content: [{ type: 'text', text: `Failed to install plugin: ${err instanceof Error ? err.message : String(err)}` }],
+      isError: true,
+    };
+  }
+});
 
 } // end registerAssistantTools

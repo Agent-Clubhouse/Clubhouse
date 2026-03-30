@@ -115,7 +115,7 @@ function findCanvasForView(viewId: string, projectIdHint?: string): { canvas_id:
   return null;
 }
 
-const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views', 'import_blueprint']);
+const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views', 'disconnect_views', 'import_blueprint']);
 
 /**
  * Execute a command on a specific canvas, switching active canvas if needed.
@@ -242,6 +242,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
           },
         } as any);
         console.log('[assistant] Agent card bound:', { viewId, agentId, projectId });
+      }
+
+      // Set sticky note content and color
+      if (viewId && type === 'sticky-note') {
+        store.updateView(viewId, {
+          content: (args.content as string) || '',
+          color: (args.color as string) || 'yellow',
+        } as any);
       }
 
       return { view_id: viewId, canvas_id: canvasId, agent_bound: !!(args.agent_id) };
@@ -424,6 +432,78 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
     }
 
     return { success: true, data: { canvas_id: canvasId, sourceAgentId, targetId, targetKind, bindingCreated, bidirectional, reverseBindingCreated } };
+  },
+
+  disconnect_views(args) {
+    const canvasId = args.canvas_id as string;
+    const sourceViewId = args.source_view_id as string;
+    const targetViewId = args.target_view_id as string;
+    const pid = args.project_id as string | undefined;
+
+    const canvas = findCanvas(canvasId, pid);
+    if (!canvas) return { success: false, error: `Canvas not found: ${canvasId}` };
+
+    const sourceView = canvas.views.find((v: CanvasView) => v.id === sourceViewId);
+    const targetView = canvas.views.find((v: CanvasView) => v.id === targetViewId);
+    if (!sourceView) return { success: false, error: `Source view not found: ${sourceViewId}` };
+    if (!targetView) return { success: false, error: `Target view not found: ${targetViewId}` };
+
+    const sourceAgentId = (sourceView as any).agentId;
+    if (!sourceAgentId) {
+      return { success: false, error: 'Source agent card has no agent assigned' };
+    }
+
+    // Determine target ID (same logic as connect_views)
+    let targetId: string;
+    if (targetView.type === 'agent') {
+      targetId = (targetView as any).agentId || targetView.id;
+    } else if (targetView.type === 'plugin') {
+      const widgetType = (targetView as any).pluginWidgetType || '';
+      if (widgetType.includes('group-project')) {
+        targetId = String(targetView.metadata?.groupProjectId || targetView.id);
+      } else if (widgetType.includes('agent-queue')) {
+        targetId = String(targetView.metadata?.queueId || targetView.id);
+      } else {
+        targetId = targetView.id;
+      }
+    } else {
+      targetId = targetView.id;
+    }
+
+    // Remove wire definition from canvas store
+    const store = getStore(pid);
+    store.removeWireDefinition(sourceAgentId, targetId);
+
+    // Remove live MCP binding
+    let unbindSuccess = false;
+    try {
+      window.clubhouse.mcpBinding.unbind(sourceAgentId, targetId);
+      unbindSuccess = true;
+    } catch (err) {
+      console.warn('[assistant] MCP unbind failed:', sourceAgentId, targetId, err);
+    }
+
+    // Handle bidirectional: also remove reverse wire if it exists
+    let reverseRemoved = false;
+    const targetAgentId = targetView.type === 'agent' ? ((targetView as any).agentId || targetView.id) : null;
+    if (targetAgentId) {
+      // Check if a reverse wire definition exists
+      const wires = store.wireDefinitions || [];
+      const hasReverse = wires.some(
+        (w: any) => w.agentId === targetAgentId && w.targetId === sourceAgentId,
+      );
+      if (hasReverse) {
+        store.removeWireDefinition(targetAgentId, sourceAgentId);
+        try {
+          window.clubhouse.mcpBinding.unbind(targetAgentId, sourceAgentId);
+        } catch (err) {
+          console.warn('[assistant] Reverse MCP unbind failed:', targetAgentId, sourceAgentId, err);
+        }
+        reverseRemoved = true;
+      }
+    }
+
+    return { success: true, data: { sourceAgentId, targetId, unbindSuccess, reverseRemoved } };
   },
 
   export_blueprint(args) {

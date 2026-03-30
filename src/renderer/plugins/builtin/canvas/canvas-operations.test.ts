@@ -27,8 +27,8 @@ import {
   computeZoneBounds,
   recomputeZones,
 } from './canvas-operations';
-import type { CanvasView, AgentCanvasView, ZoneCanvasView } from './canvas-types';
-import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, MIN_ZOOM, MAX_ZOOM, CANVAS_SIZE, MIN_ZONE_WIDTH, MIN_ZONE_HEIGHT, ZONE_PADDING } from './canvas-types';
+import type { CanvasView, AgentCanvasView, StickyNoteCanvasView, ZoneCanvasView } from './canvas-types';
+import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, MIN_ZOOM, MAX_ZOOM, CANVAS_SIZE, MIN_ZONE_WIDTH, MIN_ZONE_HEIGHT, ZONE_PADDING, DEFAULT_STICKY_WIDTH, DEFAULT_STICKY_HEIGHT } from './canvas-types';
 
 describe('canvas-operations', () => {
   // ── ID generation ──────────────────────────────────────────────────
@@ -93,6 +93,22 @@ describe('canvas-operations', () => {
       const view = createView('agent', { x: 13, y: 27 }, 0);
       expect(view.position.x % GRID_SIZE).toBe(0);
       expect(view.position.y % GRID_SIZE).toBe(0);
+    });
+
+    it('creates a sticky-note view with default content and color', () => {
+      const view = createView('sticky-note', { x: 100, y: 200 }, 3);
+      expect(view.type).toBe('sticky-note');
+      expect(view.position).toEqual({ x: 100, y: 200 });
+      expect(view.zIndex).toBe(3);
+      expect(view.size).toEqual({ width: DEFAULT_STICKY_WIDTH, height: DEFAULT_STICKY_HEIGHT });
+      expect((view as StickyNoteCanvasView).content).toBe('');
+      expect((view as StickyNoteCanvasView).color).toBe('yellow');
+      expect(view.displayName).toBe('Sticky Note');
+    });
+
+    it('deduplicates sticky-note display names', () => {
+      const v1 = createView('sticky-note', { x: 0, y: 0 }, 0, ['Sticky Note']);
+      expect(v1.displayName).toBe('Sticky Note (2)');
     });
   });
 

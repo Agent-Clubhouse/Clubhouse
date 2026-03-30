@@ -15,6 +15,7 @@ import type {
   AgentCanvasView,
   AnchorCanvasView,
   PluginCanvasView,
+  StickyNoteCanvasView,
   ZoneCanvasView,
   Position,
   Size,
@@ -30,7 +31,7 @@ export const BLUEPRINT_VERSION = 1;
 
 /** Serialisable description of a single canvas widget. */
 export interface BlueprintView {
-  type: 'agent' | 'anchor' | 'plugin' | 'zone';
+  type: 'agent' | 'anchor' | 'plugin' | 'sticky-note' | 'zone';
   title: string;
   position: Position;
   size: Size;
@@ -50,6 +51,10 @@ export interface BlueprintView {
 
   // Zone-specific (type: 'zone')
   themeId?: string;
+
+  // Sticky-note-specific (type: 'sticky-note')
+  content?: string;
+  color?: string;
 }
 
 /** A portable, JSON-serialisable canvas board description. */
@@ -138,6 +143,12 @@ export function exportBlueprint(canvas: CanvasInstance): CanvasBlueprint {
         base.pluginId = pluginView.pluginId;
         break;
       }
+      case 'sticky-note': {
+        const stickyView = view as StickyNoteCanvasView;
+        base.content = stickyView.content;
+        base.color = stickyView.color;
+        break;
+      }
       case 'zone': {
         const zoneView = view as ZoneCanvasView;
         base.themeId = zoneView.themeId;
@@ -224,6 +235,14 @@ export function importBlueprint(
           pluginWidgetType: bv.pluginWidgetType,
           pluginId: bv.pluginId,
         } satisfies PluginCanvasView;
+
+      case 'sticky-note':
+        return {
+          ...base,
+          type: 'sticky-note' as const,
+          content: bv.content || '',
+          color: bv.color || 'yellow',
+        } satisfies StickyNoteCanvasView;
 
       case 'zone':
         return {

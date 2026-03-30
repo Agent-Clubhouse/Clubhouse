@@ -6,6 +6,7 @@ import type {
   AgentCanvasView,
   AnchorCanvasView,
   PluginCanvasView,
+  StickyNoteCanvasView,
   ZoneCanvasView,
   Position,
   Size,
@@ -20,6 +21,8 @@ import {
   DEFAULT_ANCHOR_WIDTH,
   DEFAULT_ANCHOR_HEIGHT,
   ANCHOR_HEIGHT,
+  DEFAULT_STICKY_WIDTH,
+  DEFAULT_STICKY_HEIGHT,
   DEFAULT_ZONE_WIDTH,
   DEFAULT_ZONE_HEIGHT,
   MIN_ZONE_WIDTH,
@@ -103,6 +106,19 @@ export function createView(
         containedViewIds: [],
         size: { width: DEFAULT_ZONE_WIDTH, height: DEFAULT_ZONE_HEIGHT },
       } satisfies ZoneCanvasView;
+    }
+    case 'sticky-note': {
+      const displayName = deduplicateDisplayName('Sticky Note', existingDisplayNames);
+      return {
+        ...base,
+        type: 'sticky-note',
+        title: 'Sticky Note',
+        displayName,
+        metadata: {},
+        content: '',
+        color: 'yellow',
+        size: { width: DEFAULT_STICKY_WIDTH, height: DEFAULT_STICKY_HEIGHT },
+      } satisfies StickyNoteCanvasView;
     }
     case 'plugin':
       // Plugin views are created via createPluginView instead

@@ -58,6 +58,12 @@ vi.mock('../../log-service', () => ({
   appLog: vi.fn(),
 }));
 
+vi.mock('../../plugin-discovery', async () => {
+  return {
+    discoverCommunityPlugins: vi.fn().mockResolvedValue([]),
+  };
+});
+
 const mockSendCanvasCommand = vi.fn().mockResolvedValue({ success: true, data: { view_id: 'view_1' } });
 
 vi.mock('../canvas-command', () => ({
@@ -76,6 +82,9 @@ vi.mock('../../theme-service', () => ({
 import { registerAssistantTools } from './assistant-tools';
 import { _resetForTesting, callTool, getScopedToolList } from '../tool-registry';
 import { bindingManager } from '..';
+import { discoverCommunityPlugins } from '../../plugin-discovery';
+
+const mockDiscoverCommunityPlugins = vi.mocked(discoverCommunityPlugins);
 
 const TEST_AGENT_ID = 'assistant-test-agent';
 const ASSISTANT_TARGET_ID = 'clubhouse_assistant';
@@ -1057,6 +1066,186 @@ describe('assistant-tools', () => {
       });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.canvas_id).toBe('c1');
+    });
+  });
+
+  // ── New tools: disconnect_cards, list_card_types, list_plugins, install_plugin ──
+
+  it('registers new tools in scoped tool list', () => {
+    const tools = getScopedToolList(TEST_AGENT_ID);
+    const names = tools.map(t => t.name);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__disconnect_cards`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__list_card_types`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__list_plugins`);
+    expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__install_plugin`);
+  });
+
+  describe('disconnect_cards', () => {
+    it('sends disconnect_views command', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { sourceAgentId: 'a1', targetId: 'a2', unbindSuccess: true, reverseRemoved: false } });
+      const result = await callAssistantTool('disconnect_cards', {
+        canvas_id: 'canvas-1',
+        source_view_id: 'view-a',
+        target_view_id: 'view-b',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('disconnect_views', expect.objectContaining({
+        source_view_id: 'view-a',
+        target_view_id: 'view-b',
+      }));
+    });
+
+    it('accepts from_card_id and to_card_id as aliases', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { sourceAgentId: 'a1', targetId: 'a2' } });
+      const result = await callAssistantTool('disconnect_cards', {
+        canvas_id: 'canvas-1',
+        from_card_id: 'view-a',
+        to_card_id: 'view-b',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('disconnect_views', expect.objectContaining({
+        source_view_id: 'view-a',
+        target_view_id: 'view-b',
+      }));
+    });
+
+    it('returns error when source/target missing', async () => {
+      const result = await callAssistantTool('disconnect_cards', {
+        canvas_id: 'canvas-1',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Missing required argument');
+    });
+
+    it('returns error when canvas command fails', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: false, error: 'Source view not found' });
+      const result = await callAssistantTool('disconnect_cards', {
+        canvas_id: 'canvas-1',
+        source_view_id: 'view-a',
+        target_view_id: 'view-b',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Source view not found');
+    });
+  });
+
+  describe('list_card_types', () => {
+    it('returns all card types with descriptions and sizes', async () => {
+      const result = await callAssistantTool('list_card_types');
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data).toBeInstanceOf(Array);
+      expect(data.length).toBe(5);
+      const types = data.map((t: any) => t.type);
+      expect(types).toContain('agent');
+      expect(types).toContain('zone');
+      expect(types).toContain('anchor');
+      expect(types).toContain('sticky-note');
+      expect(types).toContain('plugin');
+      // Each type has description and defaultSize
+      for (const cardType of data) {
+        expect(cardType).toHaveProperty('description');
+        expect(cardType).toHaveProperty('defaultSize');
+        expect(cardType.defaultSize).toHaveProperty('width');
+        expect(cardType.defaultSize).toHaveProperty('height');
+      }
+    });
+  });
+
+  describe('add_card sticky-note', () => {
+    it('passes content and color args for sticky-note type', async () => {
+      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: { view_id: 'sticky-1' } });
+      const result = await callAssistantTool('add_card', {
+        canvas_id: 'canvas-1',
+        type: 'sticky-note',
+        display_name: 'My Note',
+        content: 'Remember to fix the bug',
+        color: 'pink',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockSendCanvasCommand).toHaveBeenCalledWith('add_view', expect.objectContaining({
+        type: 'sticky-note',
+        content: 'Remember to fix the bug',
+        color: 'pink',
+      }));
+    });
+  });
+
+  describe('list_plugins', () => {
+    it('returns discovered community plugins', async () => {
+      mockDiscoverCommunityPlugins.mockResolvedValueOnce([
+        {
+          manifest: { id: 'test-plugin', name: 'Test Plugin', version: '1.0.0', description: 'A test plugin', author: 'Test', scope: 'app' } as any,
+          pluginPath: '/home/user/.clubhouse/plugins/test-plugin',
+          fromMarketplace: false,
+        },
+      ]);
+      const result = await callAssistantTool('list_plugins');
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.pluginCount).toBe(1);
+      expect(data.plugins[0].id).toBe('test-plugin');
+      expect(data.plugins[0].name).toBe('Test Plugin');
+      expect(data.plugins[0].version).toBe('1.0.0');
+      expect(data.plugins[0].source).toBe('community');
+    });
+
+    it('handles empty plugin list', async () => {
+      mockDiscoverCommunityPlugins.mockResolvedValueOnce([]);
+      const result = await callAssistantTool('list_plugins');
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.pluginCount).toBe(0);
+      expect(data.plugins).toEqual([]);
+    });
+
+    it('handles discovery errors', async () => {
+      mockDiscoverCommunityPlugins.mockRejectedValueOnce(new Error('Permission denied'));
+      const result = await callAssistantTool('list_plugins');
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Permission denied');
+    });
+  });
+
+  describe('install_plugin', () => {
+    it('requires source_path', async () => {
+      const result = await callAssistantTool('install_plugin', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Missing required argument');
+    });
+
+    it('rejects invalid plugin IDs with path traversal', async () => {
+      const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'plugin-test-'));
+      const manifestPath = path.join(tmpDir, 'manifest.json');
+      await fsp.writeFile(manifestPath, JSON.stringify({ id: '../evil', name: 'Evil', version: '1.0.0' }));
+
+      try {
+        const result = await callAssistantTool('install_plugin', { source_path: tmpDir });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('Invalid plugin ID');
+      } finally {
+        await fsp.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects source_path without manifest.json', async () => {
+      const result = await callAssistantTool('install_plugin', { source_path: '/nonexistent/plugin' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Failed to install plugin');
+    });
+
+    it('rejects plugin manifest without id', async () => {
+      const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'plugin-test-'));
+      const manifestPath = path.join(tmpDir, 'manifest.json');
+      await fsp.writeFile(manifestPath, JSON.stringify({ name: 'No ID', version: '1.0.0' }));
+
+      try {
+        const result = await callAssistantTool('install_plugin', { source_path: tmpDir });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('must have an "id" field');
+      } finally {
+        await fsp.rm(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 });

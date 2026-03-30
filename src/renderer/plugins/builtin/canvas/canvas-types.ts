@@ -6,7 +6,7 @@ import type { CanvasWidgetMetadata } from '../../../../shared/plugin-types';
  * Browser, file, terminal, and git views are provided by their respective plugins
  * via the widget API (type: 'plugin').
  */
-export type CanvasViewType = 'agent' | 'anchor' | 'plugin' | 'zone';
+export type CanvasViewType = 'agent' | 'anchor' | 'plugin' | 'sticky-note' | 'zone';
 
 export interface Position {
   x: number;
@@ -61,6 +61,14 @@ export interface PluginCanvasView extends CanvasViewBase {
   pluginId: string;
 }
 
+export interface StickyNoteCanvasView extends CanvasViewBase {
+  type: 'sticky-note';
+  /** Markdown text content of the sticky note. */
+  content: string;
+  /** Background color identifier (e.g. 'yellow', 'pink', 'blue', 'green', 'purple'). */
+  color: string;
+}
+
 export interface ZoneCanvasView extends CanvasViewBase {
   type: 'zone';
   /** The theme applied to all widgets contained within this zone. */
@@ -69,7 +77,7 @@ export interface ZoneCanvasView extends CanvasViewBase {
   containedViewIds: string[];
 }
 
-export type CanvasView = AgentCanvasView | AnchorCanvasView | PluginCanvasView | ZoneCanvasView;
+export type CanvasView = AgentCanvasView | AnchorCanvasView | PluginCanvasView | StickyNoteCanvasView | ZoneCanvasView;
 
 // ── Canvas instance (one per tab) ────────────────────────────────────
 
@@ -135,6 +143,8 @@ export const DEFAULT_ANCHOR_WIDTH = 240;
 export const DEFAULT_ANCHOR_HEIGHT = 50;
 /** Anchors have a fixed height — they cannot be resized vertically. */
 export const ANCHOR_HEIGHT = 50;
+export const DEFAULT_STICKY_WIDTH = 250;
+export const DEFAULT_STICKY_HEIGHT = 250;
 export const DEFAULT_ZONE_WIDTH = 600;
 export const DEFAULT_ZONE_HEIGHT = 400;
 export const MIN_ZONE_WIDTH = 300;

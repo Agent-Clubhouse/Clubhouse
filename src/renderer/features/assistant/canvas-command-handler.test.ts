@@ -50,6 +50,11 @@ const mockStoreState = () => ({
   }),
   updateView: vi.fn(),
   addWireDefinition: vi.fn((def: any) => { mockWireDefinitions.push(def); }),
+  removeWireDefinition: vi.fn((agentId: string, targetId: string) => {
+    const idx = mockWireDefinitions.findIndex((w: any) => w.agentId === agentId && w.targetId === targetId);
+    if (idx !== -1) mockWireDefinitions.splice(idx, 1);
+  }),
+  get wireDefinitions() { return mockWireDefinitions; },
   saveCanvas: vi.fn().mockResolvedValue(undefined),
   saveWires: vi.fn().mockResolvedValue(undefined),
   loadCanvas: vi.fn().mockResolvedValue(undefined),
@@ -91,6 +96,7 @@ vi.mock('../../plugins/plugin-api-storage', () => ({
 // Mock window.clubhouse
 const mockSendCommandResult = vi.fn();
 const mockBind = vi.fn();
+const mockUnbind = vi.fn();
 let commandHandler: ((req: any) => void) | null = null;
 
 vi.stubGlobal('window', {
@@ -104,6 +110,7 @@ vi.stubGlobal('window', {
     },
     mcpBinding: {
       bind: mockBind,
+      unbind: mockUnbind,
     },
   },
 });
@@ -510,5 +517,122 @@ describe('canvas-command-handler', () => {
     const q2 = await sendCommand('query_views', { canvas_id: c2.data.canvas_id });
     expect(q1.data).toHaveLength(1);
     expect(q2.data).toHaveLength(2);
+  });
+
+  // ── disconnect_views ───────────────────────────────────────────────────
+
+  it('disconnect_views removes wire and MCP binding', async () => {
+    const createResult = await sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    await sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+    await sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+
+    const canvas = mockCanvases.find(c => c.id === canvasId);
+    canvas!.views[0].agentId = 'agent_A';
+    canvas!.views[0].displayName = 'Agent A';
+    canvas!.views[1].agentId = 'agent_B';
+    canvas!.views[1].displayName = 'Agent B';
+
+    // First connect
+    await sendCommand('connect_views', {
+      canvas_id: canvasId,
+      source_view_id: 'view_1',
+      target_view_id: 'view_2',
+    });
+    expect(mockWireDefinitions.length).toBeGreaterThanOrEqual(1);
+
+    // Now disconnect
+    const result = await sendCommand('disconnect_views', {
+      canvas_id: canvasId,
+      source_view_id: 'view_1',
+      target_view_id: 'view_2',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.sourceAgentId).toBe('agent_A');
+    expect(result.data.targetId).toBe('agent_B');
+    expect(mockUnbind).toHaveBeenCalledWith('agent_A', 'agent_B');
+  });
+
+  it('disconnect_views removes reverse wire for bidirectional connections', async () => {
+    const createResult = await sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    await sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+    await sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+
+    const canvas = mockCanvases.find(c => c.id === canvasId);
+    canvas!.views[0].agentId = 'agent_X';
+    canvas!.views[0].displayName = 'Agent X';
+    canvas!.views[1].agentId = 'agent_Y';
+    canvas!.views[1].displayName = 'Agent Y';
+
+    // Connect bidirectional (default for agent-to-agent)
+    await sendCommand('connect_views', {
+      canvas_id: canvasId,
+      source_view_id: 'view_1',
+      target_view_id: 'view_2',
+    });
+    // Should have 2 wire definitions (forward + reverse)
+    expect(mockWireDefinitions.length).toBe(2);
+
+    // Disconnect
+    const result = await sendCommand('disconnect_views', {
+      canvas_id: canvasId,
+      source_view_id: 'view_1',
+      target_view_id: 'view_2',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.reverseRemoved).toBe(true);
+    // Both directions should have been unbound
+    expect(mockUnbind).toHaveBeenCalledWith('agent_X', 'agent_Y');
+    expect(mockUnbind).toHaveBeenCalledWith('agent_Y', 'agent_X');
+  });
+
+  it('disconnect_views fails when source has no agent', async () => {
+    const createResult = await sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    await sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+    await sendCommand('add_view', { canvas_id: canvasId, type: 'agent' });
+
+    const result = await sendCommand('disconnect_views', {
+      canvas_id: canvasId,
+      source_view_id: 'view_1',
+      target_view_id: 'view_2',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('no agent assigned');
+  });
+
+  // ── add_view sticky-note ──────────────────────────────────────────────
+
+  it('add_view creates a sticky-note and sets content/color', async () => {
+    const createResult = await sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    const result = await sendCommand('add_view', {
+      canvas_id: canvasId,
+      type: 'sticky-note',
+      content: 'Remember to fix the bug',
+      color: 'pink',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.view_id).toBeTruthy();
+    // updateView should have been called with content and color
+    expect(appStoreState.updateView).toHaveBeenCalledWith(
+      result.data.view_id,
+      expect.objectContaining({ content: 'Remember to fix the bug', color: 'pink' }),
+    );
+  });
+
+  it('add_view sticky-note defaults to empty content and yellow color', async () => {
+    const createResult = await sendCommand('add_canvas', {});
+    const canvasId = createResult.data.canvas_id;
+    const result = await sendCommand('add_view', {
+      canvas_id: canvasId,
+      type: 'sticky-note',
+    });
+    expect(result.success).toBe(true);
+    expect(appStoreState.updateView).toHaveBeenCalledWith(
+      result.data.view_id,
+      expect.objectContaining({ content: '', color: 'yellow' }),
+    );
   });
 });
