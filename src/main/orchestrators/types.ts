@@ -102,6 +102,13 @@ export interface PasteSubmitTiming {
   chunkSize?: number;
   /** Delay (ms) between chunks when chunking is enabled (default 30). */
   chunkDelayMs?: number;
+  /**
+   * Delay (ms) after writing the bracketed paste end marker (`\x1b[201~`).
+   * Gives the CLI time to exit paste mode before any subsequent writes
+   * (e.g. the Enter keystroke).  Without this, the `\r` can be folded into
+   * the paste content on slower CLIs.  Default 150.
+   */
+  postEndMarkerDelayMs?: number;
 }
 
 // ── Capability Sub-interfaces ───────────────────────────────────────────────

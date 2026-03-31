@@ -173,11 +173,12 @@ export abstract class BaseProvider implements OrchestratorProvider {
   /** Default paste submit timing — works for Claude Code's paste preview flow */
   getPasteSubmitTiming(): PasteSubmitTiming {
     return {
-      initialDelayMs: 350,
+      initialDelayMs: 500,
       retryDelayMs: 300,
       finalCheckDelayMs: 250,
       chunkSize: 512,
-      chunkDelayMs: 30,
+      chunkDelayMs: 50,
+      postEndMarkerDelayMs: 150,
     };
   }
 }
