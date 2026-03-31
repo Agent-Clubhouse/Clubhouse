@@ -19,6 +19,9 @@ vi.mock('../features/agents/SleepingAgent', () => ({
 vi.mock('../features/agents/HeadlessAgentView', () => ({
   HeadlessAgentView: () => <div data-testid="headless-agent" />,
 }));
+vi.mock('../features/agents/structured/StructuredAgentView', () => ({
+  StructuredAgentView: (props: any) => <div data-testid="structured-agent-view" data-agent-id={props.agentId} />,
+}));
 vi.mock('../features/agents/AgentSettingsView', () => ({
   AgentSettingsView: () => <div data-testid="agent-settings" />,
 }));
@@ -469,6 +472,147 @@ describe('MainContentView satellite disconnected overlay', () => {
 
     render(<MainContentView />);
     expect(screen.getByTestId('plugin-content-view')).toBeInTheDocument();
+    expect(screen.getByTestId('satellite-disconnected-overlay')).toBeInTheDocument();
+  });
+});
+
+describe('MainContentView structured mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+  });
+
+  it('renders StructuredAgentView for a running durable agent with structuredMode', () => {
+    useAgentStore.setState({
+      agents: {
+        'a-1': {
+          id: 'a-1',
+          projectId: 'proj-1',
+          status: 'running',
+          kind: 'durable',
+          name: 'structured-agent',
+          color: 'blue',
+          structuredMode: true,
+        } as any,
+      },
+      activeAgentId: 'a-1',
+    });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('structured-agent-view')).toBeInTheDocument();
+    expect(screen.getByTestId('structured-agent-view')).toHaveAttribute('data-agent-id', 'a-1');
+    expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('headless-agent')).not.toBeInTheDocument();
+  });
+
+  it('renders AgentTerminal for a running agent without structuredMode', async () => {
+    useAgentStore.setState({
+      agents: {
+        'a-1': {
+          id: 'a-1',
+          projectId: 'proj-1',
+          status: 'running',
+          kind: 'durable',
+          name: 'pty-agent',
+          color: 'blue',
+        } as any,
+      },
+      activeAgentId: 'a-1',
+    });
+
+    render(<MainContentView />);
+
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(screen.getByTestId('agent-terminal')).toBeInTheDocument();
+    expect(screen.queryByTestId('structured-agent-view')).not.toBeInTheDocument();
+  });
+
+  it('renders SleepingAgent for a sleeping structured agent', () => {
+    useAgentStore.setState({
+      agents: {
+        'a-1': {
+          id: 'a-1',
+          projectId: 'proj-1',
+          status: 'sleeping',
+          kind: 'durable',
+          name: 'structured-agent',
+          color: 'blue',
+          structuredMode: true,
+        } as any,
+      },
+      activeAgentId: 'a-1',
+    });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('sleeping-agent')).toBeInTheDocument();
+    expect(screen.queryByTestId('structured-agent-view')).not.toBeInTheDocument();
+  });
+
+  it('prefers headless over structured when both flags are set', () => {
+    useAgentStore.setState({
+      agents: {
+        'a-1': {
+          id: 'a-1',
+          projectId: 'proj-1',
+          status: 'running',
+          kind: 'durable',
+          name: 'dual-agent',
+          color: 'blue',
+          headless: true,
+          structuredMode: true,
+        } as any,
+      },
+      activeAgentId: 'a-1',
+    });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('headless-agent')).toBeInTheDocument();
+    expect(screen.queryByTestId('structured-agent-view')).not.toBeInTheDocument();
+  });
+
+  it('shows satellite disconnected overlay over structured agent view on remote project', () => {
+    const satelliteId = 'sat-fp';
+    const remoteProjectId = `remote||${satelliteId}||proj-1`;
+
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    useAnnexClientStore.setState({
+      satellites: [{
+        id: satelliteId,
+        alias: 'My Laptop',
+        icon: '',
+        color: 'blue',
+        fingerprint: satelliteId,
+        state: 'disconnected',
+        host: '192.168.1.1',
+        mainPort: 9100,
+        pairingPort: 9101,
+        snapshot: null,
+        lastError: null,
+      }] as any,
+    });
+    useAgentStore.setState({
+      agents: {},
+      activeAgentId: `remote||${satelliteId}||a-1`,
+    });
+    useRemoteProjectStore.setState({
+      remoteAgents: {
+        [`remote||${satelliteId}||a-1`]: {
+          id: `remote||${satelliteId}||a-1`,
+          projectId: remoteProjectId,
+          status: 'running',
+          kind: 'durable',
+          name: 'structured-agent',
+          color: 'blue',
+          structuredMode: true,
+        } as any,
+      },
+    });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('structured-agent-view')).toBeInTheDocument();
     expect(screen.getByTestId('satellite-disconnected-overlay')).toBeInTheDocument();
   });
 });
