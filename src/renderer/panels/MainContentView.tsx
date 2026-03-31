@@ -6,6 +6,7 @@ import { useProjectStore } from '../stores/projectStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
 import { SleepingAgent } from '../features/agents/SleepingAgent';
 import { HeadlessAgentView } from '../features/agents/HeadlessAgentView';
+import { StructuredAgentView } from '../features/agents/structured/StructuredAgentView';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/agents/QuickAgentGhost';
 import { PoppedOutPlaceholder } from '../features/popout/PoppedOutPlaceholder';
@@ -173,6 +174,22 @@ export function MainContentView() {
       return (
         <div className="relative h-full">
           <HeadlessAgentView agent={activeAgent} />
+          {isSatelliteDisconnected && activeSatellite && (
+            <SatelliteDisconnectedOverlay
+              satelliteId={activeSatellite.fingerprint}
+              satelliteAlias={activeSatellite.alias}
+              satelliteState={activeSatellite.state}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // Structured running agents get the rich chat feed instead of a terminal
+    if (activeAgent.structuredMode) {
+      return (
+        <div className="relative h-full">
+          <StructuredAgentView agentId={activeAgentId!} />
           {isSatelliteDisconnected && activeSatellite && (
             <SatelliteDisconnectedOverlay
               satelliteId={activeSatellite.fingerprint}
