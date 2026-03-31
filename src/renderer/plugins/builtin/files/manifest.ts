@@ -10,7 +10,7 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.8 },
   scope: 'project',
-  permissions: ['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas', 'annex'],
+  permissions: ['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas', 'annex', 'projects'],
   contributes: {
     tab: { label: 'Files', title: 'Files', icon: FOLDER_ICON, layout: 'sidebar-content' },
     canvasWidgets: [

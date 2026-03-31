@@ -21,11 +21,11 @@ describe('files plugin manifest', () => {
     expect(manifest.engine.api).toBe(0.8);
   });
 
-  it('declares required permissions including canvas', () => {
+  it('declares required permissions including canvas and projects', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas', 'annex']),
+      expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas', 'annex', 'projects']),
     );
-    expect(manifest.permissions).toHaveLength(8);
+    expect(manifest.permissions).toHaveLength(9);
   });
 
   it('contributes tab.title', () => {
