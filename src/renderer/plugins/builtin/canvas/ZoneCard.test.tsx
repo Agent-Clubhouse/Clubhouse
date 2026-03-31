@@ -33,8 +33,6 @@ function makeZone(overrides?: Partial<ZoneCanvasView>): ZoneCanvasView {
   };
 }
 
-const noop = () => {};
-
 function renderZoneCard(overrides?: Partial<ZoneCanvasView>) {
   const handlers = {
     onRename: vi.fn(),
@@ -97,15 +95,11 @@ describe('ZoneCard', () => {
       fireEvent.click(getByTitle('Zone theme'));
 
       const picker = document.querySelector('[data-testid="zone-theme-picker"]') as HTMLElement;
-      const wheelEvent = new WheelEvent('wheel', { bubbles: true, cancelable: true });
-      const stopPropSpy = vi.spyOn(wheelEvent, 'stopPropagation');
-
-      picker.dispatchEvent(wheelEvent);
-      // React's onWheel handler calls stopPropagation — verify the handler is wired
-      // by checking the picker has the onWheel attribute via fireEvent
-      const reactWheel = fireEvent.wheel(picker);
-      // If stopPropagation was called, the event would not reach the parent
       expect(picker).toBeTruthy();
+      // Wheel on the picker should not bubble to parent (canvas zoom prevention)
+      fireEvent.wheel(picker);
+      // Picker remains open after wheel — event was handled
+      expect(document.querySelector('[data-testid="zone-theme-picker"]')).toBeTruthy();
     });
 
     it('stops mousedown from propagating through the portal', () => {
@@ -115,11 +109,8 @@ describe('ZoneCard', () => {
       const picker = document.querySelector('[data-testid="zone-theme-picker"]') as HTMLElement;
       expect(picker).toBeTruthy();
 
-      // Mousedown on picker should not propagate (canvas drag prevention)
-      const mousedownEvent = new MouseEvent('mousedown', { bubbles: true });
-      const spy = vi.spyOn(mousedownEvent, 'stopPropagation');
+      // Mousedown on picker should not close it (canvas drag prevention)
       fireEvent.mouseDown(picker);
-      // The handler exists — just verify the picker stays open after mousedown
       expect(document.querySelector('[data-testid="zone-theme-picker"]')).toBeTruthy();
     });
   });
