@@ -4,6 +4,7 @@ import type { CanvasWidgetMetadata, PluginAPI } from '../../../../shared/plugin-
 import type { RegisteredCanvasWidget } from '../../canvas-widget-registry';
 import { CanvasSearch } from './CanvasSearch';
 import { useAttentionCycler } from './canvas-attention';
+import type { ElkAlgorithm, LayeredDirection } from '../../../../main/services/clubhouse-mcp/elk-layout';
 
 /** Hook for cycling through anchor views on the canvas. */
 export function useAnchorCycler(
@@ -45,19 +46,36 @@ export function useAnchorCycler(
   return { count, currentIndex: safeIndex, goNext, goPrev };
 }
 
-export interface ForceLayoutSettings {
-  centerForce: number;
-  repelForce: number;
-  linkForce: number;
-  linkDistance: number;
+export interface AutolayoutOptions {
+  algorithm: ElkAlgorithm;
+  direction?: LayeredDirection;
+  /** Root node for radial — filled in by the workspace from selectedViewId. */
+  rootId?: string;
 }
 
-const DEFAULT_FORCE_SETTINGS: ForceLayoutSettings = {
-  centerForce: 0.1,
-  repelForce: 5000,
-  linkForce: 0.3,
-  linkDistance: 300,
+const ALGORITHM_LABELS: Record<ElkAlgorithm, string> = {
+  layered: 'Layered',
+  radial: 'Radial',
+  force: 'Force',
+  mrtree: 'Tree',
 };
+
+const ALGORITHM_DESCRIPTIONS: Record<ElkAlgorithm, string> = {
+  layered: 'Hierarchical flow with spline routing',
+  radial: 'Concentric circles from selected card',
+  force: 'Physics-based node spreading',
+  mrtree: 'Compact tree hierarchy',
+};
+
+const DIRECTION_LABELS: Record<LayeredDirection, string> = {
+  RIGHT: '\u2192',
+  DOWN: '\u2193',
+  LEFT: '\u2190',
+  UP: '\u2191',
+};
+
+const DIRECTIONS: LayeredDirection[] = ['RIGHT', 'DOWN', 'LEFT', 'UP'];
+const ALGORITHMS: ElkAlgorithm[] = ['layered', 'radial', 'force', 'mrtree'];
 
 interface CanvasControlsProps {
   zoom: number;
@@ -69,8 +87,8 @@ interface CanvasControlsProps {
   onCenter: () => void;
   onSizeToFit: () => void;
   onSelectView: (viewId: string) => void;
-  onAutoLayout?: (settings: ForceLayoutSettings) => void;
-  onElkLayout?: () => void;
+  onAutolayout?: (options: AutolayoutOptions) => void;
+  hasSelection?: boolean;
   attentionMap?: Map<string, CanvasViewAttention>;
   api?: PluginAPI;
   pinnedWidgets?: Array<{
@@ -80,16 +98,28 @@ interface CanvasControlsProps {
   }>;
 }
 
-export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, onAutoLayout, onElkLayout, attentionMap, api: _api, pinnedWidgets: _pinnedWidgets }: CanvasControlsProps) {
+export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, onAutolayout, hasSelection, attentionMap, api: _api, pinnedWidgets: _pinnedWidgets }: CanvasControlsProps) {
   const zoomPercent = Math.round(zoom * 100);
   const effectiveMap = attentionMap ?? new Map();
   const { count, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
   const { count: anchorCount, goNext: anchorNext, goPrev: anchorPrev } = useAnchorCycler(views, onSelectView);
-  const [showLayoutSettings, setShowLayoutSettings] = useState(false);
-  const [forceSettings, setForceSettings] = useState<ForceLayoutSettings>(DEFAULT_FORCE_SETTINGS);
-  const [layoutMode, setLayoutMode] = useState<'force' | 'elk'>('force');
+  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
+  const [algorithm, setAlgorithm] = useState<ElkAlgorithm>('layered');
+  const [direction, setDirection] = useState<LayeredDirection>('RIGHT');
 
   const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
+
+  const handleLayout = useCallback(() => {
+    if (!onAutolayout) return;
+    onAutolayout({ algorithm, direction: algorithm === 'layered' || algorithm === 'mrtree' ? direction : undefined });
+  }, [onAutolayout, algorithm, direction]);
+
+  const handleAlgorithmSelect = useCallback((alg: ElkAlgorithm) => {
+    setAlgorithm(alg);
+    if (!onAutolayout) return;
+    onAutolayout({ algorithm: alg, direction: alg === 'layered' || alg === 'mrtree' ? direction : undefined });
+    setShowLayoutMenu(false);
+  }, [onAutolayout, direction]);
 
   return (
     <div
@@ -226,12 +256,12 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
       )}
 
       {/* Auto Layout */}
-      {hasViews && onAutoLayout && (
+      {hasViews && onAutolayout && (
         <div className="relative flex items-center gap-0.5">
           <button
-            onClick={() => layoutMode === 'elk' && onElkLayout ? onElkLayout() : onAutoLayout(forceSettings)}
+            onClick={handleLayout}
             className={btnClass}
-            title={layoutMode === 'elk' ? 'Auto Layout (ELK layered)' : 'Auto Layout (force-directed)'}
+            title={`Auto Layout (${ALGORITHM_LABELS[algorithm]}${algorithm === 'layered' || algorithm === 'mrtree' ? ' ' + DIRECTION_LABELS[direction] : ''})`}
             data-testid="canvas-auto-layout"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -244,85 +274,83 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
             </svg>
           </button>
           <button
-            onClick={() => setShowLayoutSettings(!showLayoutSettings)}
+            onClick={() => setShowLayoutMenu(!showLayoutMenu)}
             className="w-4 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
-            title="Layout settings"
-            data-testid="canvas-auto-layout-settings-toggle"
+            title="Layout options"
+            data-testid="canvas-auto-layout-menu-toggle"
           >
             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-              <polyline points={showLayoutSettings ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
+              <polyline points={showLayoutMenu ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
             </svg>
           </button>
-          {showLayoutSettings && (
+          {showLayoutMenu && (
             <div
-              className="absolute top-full right-0 mt-1 w-56 bg-ctp-mantle border border-surface-0 rounded-lg shadow-lg p-3 z-50"
-              data-testid="canvas-auto-layout-settings"
+              className="absolute top-full right-0 mt-1 w-56 bg-ctp-mantle border border-surface-0 rounded-lg shadow-lg p-2 z-50"
+              data-testid="canvas-auto-layout-menu"
             >
-              <div className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Layout Mode</div>
-              <div className="flex gap-1 mb-3" data-testid="layout-mode-toggle">
+              <div className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1.5 px-1">Auto Layout</div>
+              {ALGORITHMS.map((alg) => (
                 <button
-                  onClick={() => setLayoutMode('force')}
-                  className={`flex-1 text-[10px] py-1 rounded transition-colors ${layoutMode === 'force' ? 'bg-ctp-accent text-ctp-crust font-semibold' : 'bg-surface-0 text-ctp-subtext0 hover:text-ctp-text'}`}
+                  key={alg}
+                  onClick={() => handleAlgorithmSelect(alg)}
+                  className={`w-full text-left px-2 py-1.5 rounded text-[11px] transition-colors flex items-center justify-between ${
+                    algorithm === alg
+                      ? 'bg-ctp-accent/15 text-ctp-accent font-medium'
+                      : 'text-ctp-text hover:bg-surface-1'
+                  }`}
+                  data-testid={`layout-algorithm-${alg}`}
                 >
-                  Force
+                  <div>
+                    <div>{ALGORITHM_LABELS[alg]}</div>
+                    <div className="text-[9px] text-ctp-subtext0 mt-0.5">{ALGORITHM_DESCRIPTIONS[alg]}</div>
+                  </div>
+                  {algorithm === alg && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
                 </button>
-                <button
-                  onClick={() => setLayoutMode('elk')}
-                  className={`flex-1 text-[10px] py-1 rounded transition-colors ${layoutMode === 'elk' ? 'bg-ctp-accent text-ctp-crust font-semibold' : 'bg-surface-0 text-ctp-subtext0 hover:text-ctp-text'}`}
-                >
-                  ELK
-                </button>
-              </div>
-              {layoutMode === 'force' && <>
-              <div className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Force Settings</div>
-              <label className="flex items-center justify-between text-[11px] text-ctp-text mb-1.5">
-                <span>Center Force</span>
-                <input
-                  type="range" min="0" max="100" step="1"
-                  value={Math.round(forceSettings.centerForce * 100)}
-                  onChange={(e) => setForceSettings(s => ({ ...s, centerForce: Number(e.target.value) / 100 }))}
-                  className="w-20 h-1 accent-ctp-blue"
-                  data-testid="force-center-slider"
-                />
-              </label>
-              <label className="flex items-center justify-between text-[11px] text-ctp-text mb-1.5">
-                <span>Repel Force</span>
-                <input
-                  type="range" min="100" max="20000" step="100"
-                  value={forceSettings.repelForce}
-                  onChange={(e) => setForceSettings(s => ({ ...s, repelForce: Number(e.target.value) }))}
-                  className="w-20 h-1 accent-ctp-blue"
-                  data-testid="force-repel-slider"
-                />
-              </label>
-              <label className="flex items-center justify-between text-[11px] text-ctp-text mb-1.5">
-                <span>Link Force</span>
-                <input
-                  type="range" min="0" max="100" step="1"
-                  value={Math.round(forceSettings.linkForce * 100)}
-                  onChange={(e) => setForceSettings(s => ({ ...s, linkForce: Number(e.target.value) / 100 }))}
-                  className="w-20 h-1 accent-ctp-blue"
-                  data-testid="force-link-slider"
-                />
-              </label>
-              <label className="flex items-center justify-between text-[11px] text-ctp-text mb-2">
-                <span>Link Distance</span>
-                <input
-                  type="range" min="100" max="800" step="20"
-                  value={forceSettings.linkDistance}
-                  onChange={(e) => setForceSettings(s => ({ ...s, linkDistance: Number(e.target.value) }))}
-                  className="w-20 h-1 accent-ctp-blue"
-                  data-testid="force-distance-slider"
-                />
-              </label>
-              <button
-                onClick={() => setForceSettings(DEFAULT_FORCE_SETTINGS)}
-                className="w-full text-[10px] text-ctp-subtext0 hover:text-ctp-text py-0.5 rounded hover:bg-surface-1 transition-colors"
-                data-testid="force-reset-defaults"
-              >
-                Reset to defaults
-              </button>
-              </>}
+              ))}
+
+              {/* Direction picker for layered/mrtree */}
+              {(algorithm === 'layered' || algorithm === 'mrtree') && (
+                <>
+                  <div className="w-full h-px bg-surface-0 my-1.5" />
+                  <div className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1 px-1">Direction</div>
+                  <div className="flex gap-1 px-1" data-testid="layout-direction-picker">
+                    {DIRECTIONS.map((dir) => (
+                      <button
+                        key={dir}
+                        onClick={() => {
+                          setDirection(dir);
+                          if (onAutolayout) onAutolayout({ algorithm, direction: dir });
+                        }}
+                        className={`flex-1 text-center text-sm py-1 rounded transition-colors ${
+                          direction === dir
+                            ? 'bg-ctp-accent text-ctp-crust font-semibold'
+                            : 'bg-surface-0 text-ctp-subtext0 hover:text-ctp-text'
+                        }`}
+                        title={dir.charAt(0) + dir.slice(1).toLowerCase()}
+                        data-testid={`layout-direction-${dir.toLowerCase()}`}
+                      >
+                        {DIRECTION_LABELS[dir]}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Radial hint */}
+              {algorithm === 'radial' && (
+                <>
+                  <div className="w-full h-px bg-surface-0 my-1.5" />
+                  <div className="text-[10px] text-ctp-subtext0 px-1">
+                    {hasSelection
+                      ? 'Radiates from selected card'
+                      : 'Select a card first for center, or auto-picks most connected'}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

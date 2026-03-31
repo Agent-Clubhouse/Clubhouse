@@ -20,9 +20,10 @@ import { appLog } from '../../log-service';
 import * as themeService from '../../theme-service';
 import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { sendCanvasCommand } from '../canvas-command';
-import { computeLayout, computeRelativePosition, DEFAULT_CARD_SIZES } from '../canvas-layout';
+import { computeRelativePosition, layoutGrid, DEFAULT_CARD_SIZES } from '../canvas-layout';
 import { layoutElk } from '../elk-layout';
-import type { RelativePosition, ForceEdge, ForceZoneConstraint, ForceLayoutParams } from '../canvas-layout';
+import type { ElkAlgorithm, LayeredDirection } from '../elk-layout';
+import type { RelativePosition } from '../canvas-layout';
 import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
 import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
 import { getPersonaTemplate, getPersonaIds } from '../../../../renderer/features/assistant/content/personas';
@@ -1321,28 +1322,25 @@ registerToolTemplate('assistant', 'connect_cards', {
 });
 
 registerToolTemplate('assistant', 'layout_canvas', {
-  description: 'Auto-arrange cards. Patterns: "horizontal" (row), "vertical" (column), "grid", "hub_spoke" (center + circle), "auto" (picks best pattern for card count), "force" (physics-based force-directed — best for wired agent graphs), "elk" (ELK layered layout — best for clean wire routing, minimizes edge crossings, spaces parallel wires apart). ' +
+  description: 'Auto-arrange cards using ELK layout algorithms. Algorithms: "layered" (hierarchical with spline wire routing — best default), "radial" (concentric circles from a root node), "force" (physics-based spreading), "mrtree" (compact tree hierarchy). ' +
     'canvas_id is optional — auto-selects when only one canvas exists. ' +
-    'Zone-aware: cards inside zones are grouped and arranged within their zone bounds. Zones themselves are arranged in the outer layout. ' +
-    'The "force" pattern uses wire connections to pull linked cards together and push unlinked cards apart — ideal for agent topologies. ' +
-    'The "elk" pattern uses the Eclipse Layout Kernel for layered graph layout with spline edge routing — produces the cleanest wire arrangements. ' +
+    'Zone-aware: cards inside zones are grouped and arranged within their zone bounds. ' +
+    'For layered/mrtree, set direction to control flow: "RIGHT" (default), "DOWN", "LEFT", "UP". ' +
+    'For radial, set root_id to center the layout on a specific card (auto-picks most-connected if omitted). ' +
     'ALWAYS call this after adding all cards — it produces clean, readable layouts.',
   inputSchema: {
     type: 'object',
     properties: {
       canvas_id: { type: 'string', description: 'Canvas ID (optional — auto-selects when only one canvas exists).' },
-      pattern: { type: 'string', description: 'Layout: "horizontal", "vertical", "grid", "hub_spoke", "auto", "force" (physics-based), or "elk" (layered with spline wire routing — cleanest for complex graphs).' },
-      center_force: { type: 'number', description: 'Force pattern only: center gravity strength (0-1). Default 0.1.' },
-      repel_force: { type: 'number', description: 'Force pattern only: node repulsion strength. Default 5000.' },
-      link_force: { type: 'number', description: 'Force pattern only: edge attraction strength (0-1). Default 0.3.' },
-      link_distance: { type: 'number', description: 'Force pattern only: ideal distance between linked nodes. Default 300.' },
+      algorithm: { type: 'string', description: 'Layout algorithm: "layered" (hierarchical with spline routing — best default), "radial" (concentric circles), "force" (physics-based), or "mrtree" (tree hierarchy).' },
+      direction: { type: 'string', description: 'Flow direction for layered/mrtree: "RIGHT" (default), "DOWN", "LEFT", "UP".' },
+      root_id: { type: 'string', description: 'Radial only: view ID of the center card. Auto-picks most-connected if omitted.' },
     },
-    required: ['pattern'],
+    required: ['algorithm'],
   },
 }, async (_t, _a, args) => {
   let canvasId = args.canvas_id as string | undefined;
   if (!canvasId) {
-    // Try to find the only canvas — if there's exactly one, use it
     const listResult = await sendCanvasCommand('list_canvases', { project_id: args.project_id });
     if (listResult.success) {
       const canvases = listResult.data as Array<{ id: string }>;
@@ -1356,7 +1354,10 @@ registerToolTemplate('assistant', 'layout_canvas', {
   if (!canvasId) {
     return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id.' }], isError: true };
   }
-  const pattern = args.pattern as 'horizontal' | 'vertical' | 'grid' | 'hub_spoke' | 'auto' | 'force' | 'elk';
+
+  const algorithm = (args.algorithm as ElkAlgorithm) || 'layered';
+  const direction = args.direction as LayeredDirection | undefined;
+  const rootId = args.root_id as string | undefined;
 
   // Reset auto-stagger counter — layout_canvas re-arranges all cards
   canvasCardCounters.delete(canvasId);
@@ -1368,129 +1369,70 @@ registerToolTemplate('assistant', 'layout_canvas', {
   const views = queryResult.data as CanvasView[];
   if (!views || views.length === 0) return { content: [{ type: 'text', text: 'No cards to arrange.' }] };
 
-  // Reset auto-stagger counter for this canvas since layout will reposition everything
-  canvasCardCounters.delete(canvasId);
-
   // Separate zones from non-zone views, identify contained cards
   const zones = views.filter(v => v.type === 'zone');
   const containedIds = new Set(zones.flatMap(z => z.containedViewIds || []));
   const outerViews = views.filter(v => v.type !== 'zone' && !containedIds.has(v.id));
 
-  // Build edge list and zone constraints for force layout
-  let forceEdges: ForceEdge[] | undefined;
-  let forceZones: ForceZoneConstraint[] | undefined;
-  let forceParams: ForceLayoutParams | undefined;
+  // Query wire definitions for edge routing
+  const wireResult = await sendCanvasCommand('query_wires', { canvas_id: canvasId });
+  const wires = wireResult.success && Array.isArray(wireResult.data)
+    ? wireResult.data as Array<{ sourceViewId: string; targetViewId: string; agentId?: string; targetId?: string }>
+    : [];
 
-  if (pattern === 'force') {
-    // Query wire definitions to build edge list
-    const wireResult = await sendCanvasCommand('query_wires', { canvas_id: canvasId });
-    if (wireResult.success && Array.isArray(wireResult.data)) {
-      forceEdges = (wireResult.data as Array<{ sourceViewId: string; targetViewId: string }>)
-        .map(w => ({ source: w.sourceViewId, target: w.targetViewId }));
-    } else {
-      forceEdges = [];
-    }
+  const elkEdges = wires.map((w, i) => ({
+    id: `e${i}`,
+    source: w.sourceViewId,
+    target: w.targetViewId,
+  }));
 
-    // Build zone constraints
-    forceZones = zones.map(z => ({
-      zoneId: z.id,
-      bounds: { x: z.position.x, y: z.position.y, width: z.size.width, height: z.size.height },
-      nodeIds: (z.containedViewIds || []),
-    }));
+  const elkZones = zones.map(z => ({
+    id: z.id,
+    width: z.size.width,
+    height: z.size.height,
+    childIds: z.containedViewIds || [],
+  }));
 
-    forceParams = {
-      centerForce: args.center_force as number | undefined,
-      repelForce: args.repel_force as number | undefined,
-      linkForce: args.link_force as number | undefined,
-      linkDistance: args.link_distance as number | undefined,
-    };
-  }
+  const elkCards = [...outerViews, ...views.filter(v => containedIds.has(v.id))].map(v => {
+    const zoneId = zones.find(z => (z.containedViewIds || []).includes(v.id))?.id;
+    return { id: v.id, width: v.size.width, height: v.size.height, zoneId };
+  });
 
-  // ── ELK layout (async, handles its own zone/wire logic) ──────────
-  if (pattern === 'elk') {
-    // Query wire definitions for edge routing
-    const wireResult = await sendCanvasCommand('query_wires', { canvas_id: canvasId });
-    const wires = wireResult.success && Array.isArray(wireResult.data)
-      ? wireResult.data as Array<{ sourceViewId: string; targetViewId: string; agentId?: string; targetId?: string }>
-      : [];
-
-    const elkEdges = wires.map((w, i) => ({
-      id: `e${i}`,
-      source: w.sourceViewId,
-      target: w.targetViewId,
-    }));
-
-    const elkZones = zones.map(z => ({
-      id: z.id,
-      width: z.size.width,
-      height: z.size.height,
-      childIds: z.containedViewIds || [],
-    }));
-
-    const elkCards = [...outerViews, ...views.filter(v => containedIds.has(v.id))].map(v => {
-      const zoneId = zones.find(z => (z.containedViewIds || []).includes(v.id))?.id;
-      return { id: v.id, width: v.size.width, height: v.size.height, zoneId };
+  try {
+    const elkResult = await layoutElk({
+      cards: elkCards,
+      edges: elkEdges,
+      zones: elkZones,
+      options: { algorithm, direction, rootId },
     });
 
-    try {
-      const elkResult = await layoutElk({ cards: elkCards, edges: elkEdges, zones: elkZones });
-
-      for (const pos of elkResult.nodes) {
-        await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: pos.id, position: { x: pos.x, y: pos.y } });
-      }
-
-      // Store routed edge paths on wire definitions
-      for (const edge of elkResult.edges) {
-        const wire = wires[parseInt(edge.id.slice(1))];
-        if (wire?.agentId && wire?.targetId) {
-          await sendCanvasCommand('update_wire', {
-            canvas_id: canvasId,
-            agent_id: wire.agentId,
-            target_id: wire.targetId,
-            updates: { routedPath: edge.path },
-          });
-        }
-      }
-
-      return { content: [{ type: 'text', text: JSON.stringify({ message: `Arranged ${views.length} cards with ELK layered layout and spline wire routing.`, canvas_id: canvasId }) }] };
-    } catch (err: any) {
-      // ELK failed — fall back to force layout
-      const fallbackEdges = elkEdges.map(e => ({ source: e.source, target: e.target }));
-      const fallbackCards = [...outerViews, ...zones].map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
-      const fallbackPositions = computeLayout('force', fallbackCards, fallbackEdges);
-      for (const pos of fallbackPositions) {
-        await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: pos.id, position: { x: pos.x, y: pos.y } });
-      }
-      return { content: [{ type: 'text', text: JSON.stringify({ message: `ELK layout failed (${err.message}), fell back to force layout.`, canvas_id: canvasId }) }] };
+    for (const pos of elkResult.nodes) {
+      await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: pos.id, position: { x: pos.x, y: pos.y } });
     }
-  }
 
-  // Layout outer views (non-zone cards + zones as blocks)
-  const outerCards = [...outerViews, ...zones].map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
-  const outerPositions = computeLayout(pattern, outerCards, forceEdges, forceParams, forceZones);
-  for (const pos of outerPositions) {
-    await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: pos.id, position: { x: pos.x, y: pos.y } });
-  }
-
-  // Layout cards inside each zone (force layout handles zone containment internally; other patterns use grid)
-  if (pattern !== 'force') {
-    const ZONE_CARD_HEIGHT = 32;
-    const ZONE_PADDING = 20;
-    for (const zone of zones) {
-      const zonePos = outerPositions.find(p => p.id === zone.id);
-      if (!zonePos) continue;
-      const zoneCards = views.filter(v => (zone.containedViewIds || []).includes(v.id));
-      if (zoneCards.length === 0) continue;
-      const innerStartX = zonePos.x + ZONE_PADDING;
-      const innerStartY = zonePos.y + ZONE_CARD_HEIGHT + ZONE_PADDING;
-      const innerPositions = computeLayout('grid', zoneCards.map(v => ({ id: v.id, width: v.size.width, height: v.size.height })));
-      for (const ipos of innerPositions) {
-        await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: ipos.id, position: { x: innerStartX + ipos.x - 100, y: innerStartY + ipos.y - 100 } });
+    // Store routed edge paths on wire definitions
+    for (const edge of elkResult.edges) {
+      const wire = wires[parseInt(edge.id.slice(1))];
+      if (wire?.agentId && wire?.targetId) {
+        await sendCanvasCommand('update_wire', {
+          canvas_id: canvasId,
+          agent_id: wire.agentId,
+          target_id: wire.targetId,
+          updates: { routedPath: edge.path },
+        });
       }
     }
-  }
 
-  return { content: [{ type: 'text', text: JSON.stringify({ message: `Arranged ${views.length} cards in "${pattern}" layout (zone-aware).`, canvas_id: canvasId }) }] };
+    return { content: [{ type: 'text', text: JSON.stringify({ message: `Arranged ${views.length} cards with ${algorithm} layout.`, canvas_id: canvasId }) }] };
+  } catch (err: any) {
+    // ELK failed — fall back to grid layout
+    const fallbackCards = [...outerViews, ...zones].map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
+    const fallbackPositions = layoutGrid(fallbackCards);
+    for (const pos of fallbackPositions) {
+      await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: pos.id, position: { x: pos.x, y: pos.y } });
+    }
+    return { content: [{ type: 'text', text: JSON.stringify({ message: `Layout failed (${err.message}), fell back to grid.`, canvas_id: canvasId }) }] };
+  }
 });
 
 registerToolTemplate('assistant', 'get_card_defaults', {
@@ -1512,7 +1454,7 @@ registerToolTemplate('assistant', 'get_card_defaults', {
       'Cards are auto-staggered when position is omitted — no coordinate math needed.',
       'Use relative_to_card_id in add_card/move_card to place cards relative to existing ones.',
       'ALWAYS call layout_canvas after adding all cards for clean arrangement.',
-      'Use "auto" layout pattern to let the engine pick the best layout for the card count.',
+      'Use "layered" algorithm (default) for DAGs, "radial" for hub-spoke, "force" for organic graphs, "mrtree" for strict trees.',
     ],
   };
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
@@ -1583,7 +1525,7 @@ registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
         },
       },
       project_id: { type: 'string', description: 'Project ID for canvas scope. Omit for app-level.' },
-      layout_pattern: { type: 'string', description: 'Layout pattern to apply after creation. Default: "auto".' },
+      layout_pattern: { type: 'string', description: 'Layout algorithm to apply after creation: "layered" (default), "radial", "force", "mrtree".' },
     },
     required: ['blueprint'],
   },
@@ -1639,20 +1581,33 @@ registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
   // Step 3: Apply layout — skip for blueprints with zones (positions already
   // computed in renderer Phase 2 to respect zone containment)
   const hasZones = ((blueprint.zones as unknown[]) || []).length > 0;
-  const pattern = (args.layout_pattern as string) || 'auto';
+  const layoutAlgorithm = (args.layout_pattern as ElkAlgorithm) || 'layered';
   if (!hasZones) {
     const queryResult = await sendCanvasCommand('query_views', { canvas_id: canvasId, project_id: args.project_id });
     if (queryResult.success) {
       const views = queryResult.data as Array<{ id: string; type: string; size: { width: number; height: number } }>;
-      const cardInfos = views.map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
-      const layouts = computeLayout(pattern as any, cardInfos);
-      for (const layout of layouts) {
-        await sendCanvasCommand('move_view', {
-          canvas_id: canvasId,
-          view_id: layout.id,
-          position: { x: layout.x, y: layout.y },
-          project_id: args.project_id,
-        });
+      const elkCards = views.map(v => ({ id: v.id, width: v.size.width, height: v.size.height }));
+      try {
+        const elkResult = await layoutElk({ cards: elkCards, edges: [], zones: [], options: { algorithm: layoutAlgorithm } });
+        for (const pos of elkResult.nodes) {
+          await sendCanvasCommand('move_view', {
+            canvas_id: canvasId,
+            view_id: pos.id,
+            position: { x: pos.x, y: pos.y },
+            project_id: args.project_id,
+          });
+        }
+      } catch {
+        // Fallback to grid if ELK fails
+        const gridPositions = layoutGrid(elkCards);
+        for (const pos of gridPositions) {
+          await sendCanvasCommand('move_view', {
+            canvas_id: canvasId,
+            view_id: pos.id,
+            position: { x: pos.x, y: pos.y },
+            project_id: args.project_id,
+          });
+        }
       }
     }
   }
@@ -1668,7 +1623,7 @@ registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
     zones_created: data.zone_count,
     cards_created: data.card_count,
     wires_created: wireResults.filter(w => w.success).length,
-    layout_applied: hasZones ? 'skipped (zone positions preserved)' : pattern,
+    layout_applied: hasZones ? 'skipped (zone positions preserved)' : layoutAlgorithm,
   };
   if (failedWires.length > 0) {
     response.wire_errors = failedWires;
