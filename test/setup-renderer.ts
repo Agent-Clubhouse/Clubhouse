@@ -264,6 +264,7 @@ vi.stubGlobal('clubhouse', {
     getTheme: async () => ({ themeId: 'catppuccin-mocha' }),
     saveTheme: asyncNoop,
     onThemeChanged: vi.fn(() => noop),
+    syncPluginThemes: asyncNoop,
     updateTitleBarOverlay: asyncNoop,
     getOrchestratorSettings: async () => ({ enabled: ['claude-code'] }),
     saveOrchestratorSettings: asyncNoop,

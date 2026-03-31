@@ -79,6 +79,14 @@ vi.mock('../../theme-service', () => ({
   saveSettings: (...a: unknown[]) => mockThemeSave(...a),
 }));
 
+const { mockGetPluginThemes } = vi.hoisted(() => ({
+  mockGetPluginThemes: vi.fn().mockReturnValue([]),
+}));
+vi.mock('../../plugin-theme-store', () => ({
+  // vi.fn() gets reset by vitest's mockReset: true — fall back to [] to match production behavior
+  getPluginThemes: (...a: unknown[]) => mockGetPluginThemes(...a) ?? [],
+}));
+
 import { registerAssistantTools } from './assistant-tools';
 import { _resetForTesting, callTool, getScopedToolList } from '../tool-registry';
 import { bindingManager } from '..';
@@ -503,6 +511,23 @@ describe('assistant-tools', () => {
       expect(theme).toHaveProperty('type');
       expect(['dark', 'light']).toContain(theme.type);
     }
+  });
+
+  it('list_themes includes plugin-contributed themes from the store', async () => {
+    mockGetPluginThemes.mockReturnValueOnce([
+      { id: 'plugin:cool-pack:ocean', name: 'Ocean', type: 'dark' },
+      { id: 'plugin:cool-pack:sunrise', name: 'Sunrise', type: 'light' },
+    ]);
+    const result = await callAssistantTool('list_themes');
+    expect(result.isError).toBeFalsy();
+    const data = JSON.parse(result.content[0].text);
+    const ids = data.availableThemes.map((t: any) => t.id);
+    // Builtins still present
+    expect(ids).toContain('catppuccin-mocha');
+    expect(ids).toContain('nord');
+    // Plugin themes visible
+    expect(ids).toContain('plugin:cool-pack:ocean');
+    expect(ids).toContain('plugin:cool-pack:sunrise');
   });
 
   // ── Icon preservation ──────────────────────────────────────────────────

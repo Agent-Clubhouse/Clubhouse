@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { ThemeId, ThemeDefinition } from '../../shared/types';
-import { getTheme, getAllThemeIds, BUILTIN_THEMES, onRegistryChange } from '../themes';
+import { getTheme, getAllThemeIds, getAllThemes, BUILTIN_THEMES, onRegistryChange } from '../themes';
 import { applyTheme } from '../themes/apply-theme';
 
 /** Notify the main process to update the Windows title bar overlay colors. */
@@ -67,6 +67,22 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   },
 }));
 
+/** Push non-builtin themes to the main process so MCP tools can see them. */
+function syncPluginThemesToMain(): void {
+  try {
+    const builtinIds = new Set(Object.keys(BUILTIN_THEMES));
+    const allThemes = getAllThemes();
+    const pluginThemes = Object.values(allThemes)
+      .filter((t) => !builtinIds.has(t.id))
+      .map((t) => ({ id: t.id, name: t.name, type: t.type }));
+    Promise.resolve(window.clubhouse.app.syncPluginThemes(pluginThemes)).catch(() => {
+      /* main process not ready yet — safe to ignore */
+    });
+  } catch {
+    /* preload bridge not available yet */
+  }
+}
+
 // Auto-refresh available themes when the registry changes
 onRegistryChange(() => {
   const store = useThemeStore.getState();
@@ -80,4 +96,7 @@ onRegistryChange(() => {
     syncTitleBarOverlay(fallback);
     useThemeStore.setState({ themeId: 'catppuccin-mocha', theme: fallback });
   }
+
+  // Sync plugin themes to main process for MCP tool visibility
+  syncPluginThemesToMain();
 });
