@@ -21,11 +21,12 @@ import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../
 import { resolveOrchestrator } from '../services/agent-system';
 import * as annexServer from '../services/annex-server';
 import * as experimentalSettings from '../services/experimental-settings';
-import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayArg } from './validation';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
 import * as ptyManager from '../services/pty-manager';
 import * as agentSystem from '../services/agent-system';
+import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
 const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
@@ -106,6 +107,20 @@ export function registerAppHandlers(): void {
     async (_event, settings) => {
       await themeService.saveSettings(settings as any);
       annexServer.broadcastThemeChanged();
+    },
+  ));
+
+  // Receive plugin-contributed themes from the renderer so MCP tools can list them
+  ipcMain.handle(IPC.APP.SYNC_PLUGIN_THEMES, withValidatedArgs(
+    [arrayArg(objectArg<PluginThemeSummary>({
+      validate: (v, name) => {
+        if (typeof v.id !== 'string' || !v.id) throw new Error(`${name}.id must be a non-empty string`);
+        if (typeof v.name !== 'string' || !v.name) throw new Error(`${name}.name must be a non-empty string`);
+        if (v.type !== 'dark' && v.type !== 'light') throw new Error(`${name}.type must be 'dark' or 'light'`);
+      },
+    }))],
+    (_event, themes) => {
+      syncPluginThemes(themes);
     },
   ));
 

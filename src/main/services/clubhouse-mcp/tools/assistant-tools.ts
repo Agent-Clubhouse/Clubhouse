@@ -27,7 +27,8 @@ import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
 import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
 import { getPersonaTemplate, getPersonaIds } from '../../../../renderer/features/assistant/content/personas';
 import { IPC } from '../../../../shared/ipc-channels';
-import { getAllThemes } from '../../../../renderer/themes';
+import { BUILTIN_THEMES } from '../../../../renderer/themes';
+import { getPluginThemes } from '../../plugin-theme-store';
 import { discoverCommunityPlugins } from '../../plugin-discovery';
 
 /**
@@ -417,11 +418,17 @@ registerToolTemplate(
   },
   async () => {
     const currentSettings = themeService.getSettings() || { themeId: 'catppuccin-mocha' };
-    const themes = Object.values(getAllThemes()).map((t) => ({
+
+    // Combine builtin themes (available directly in main) with plugin-contributed
+    // themes synced from the renderer via IPC.
+    const builtinThemes = Object.values(BUILTIN_THEMES).map((t) => ({
       id: t.id,
       name: t.name,
       type: t.type,
     }));
+    const pluginThemes = getPluginThemes();
+    const themes = [...builtinThemes, ...pluginThemes];
+
     return {
       content: [{
         type: 'text',

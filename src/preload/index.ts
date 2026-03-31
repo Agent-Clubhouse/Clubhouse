@@ -662,6 +662,8 @@ const api = {
       ipcRenderer.on(IPC.APP.THEME_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.APP.THEME_CHANGED, listener); };
     },
+    syncPluginThemes: (themes: Array<{ id: string; name: string; type: 'dark' | 'light' }>) =>
+      ipcRenderer.invoke(IPC.APP.SYNC_PLUGIN_THEMES, themes),
     updateTitleBarOverlay: (colors: { color: string; symbolColor: string }) =>
       ipcRenderer.invoke(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, colors),
     getOrchestratorSettings: () =>
