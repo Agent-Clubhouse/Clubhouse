@@ -709,6 +709,36 @@ describe('updateDurable', () => {
       expect(lastWritten[0].name).toBe('old-name'); // not 'foo'
     }
   });
+
+  it('sets emoji', async () => {
+    await updateDurable(PROJECT_PATH, 'durable_upd', { emoji: '\u{1F680}' });
+    await flushAgentConfig(PROJECT_PATH);
+    const result = JSON.parse(writtenAgents);
+    expect(result[0].emoji).toBe('\u{1F680}');
+    // Emoji clears image icon
+    expect(result[0]).not.toHaveProperty('icon');
+  });
+
+  it('clears emoji when null', async () => {
+    // Start with an agent that has an emoji
+    const agentsWithEmoji = [{ id: 'durable_upd', name: 'old-name', color: 'indigo', emoji: '\u{1F525}', branch: 'old-name/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agentsWithEmoji));
+
+    await updateDurable(PROJECT_PATH, 'durable_upd', { emoji: null });
+    await flushAgentConfig(PROJECT_PATH);
+    const result = JSON.parse(writtenAgents);
+    expect(result[0]).not.toHaveProperty('emoji');
+  });
+
+  it('clears emoji when empty string', async () => {
+    const agentsWithEmoji = [{ id: 'durable_upd', name: 'old-name', color: 'indigo', emoji: '\u{1F525}', branch: 'old-name/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agentsWithEmoji));
+
+    await updateDurable(PROJECT_PATH, 'durable_upd', { emoji: '' });
+    await flushAgentConfig(PROJECT_PATH);
+    const result = JSON.parse(writtenAgents);
+    expect(result[0]).not.toHaveProperty('emoji');
+  });
 });
 
 describe('getWorktreeStatus', () => {
