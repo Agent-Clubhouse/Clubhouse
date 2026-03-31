@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { render } from '@testing-library/react';
+import React from 'react';
 import { validateBuiltinPlugin } from '../builtin-plugin-testing';
 import { manifest } from './manifest';
 import * as reviewModule from './main';
@@ -201,5 +203,55 @@ describe('resolveIndex', () => {
   it('stays at 0 for single-element list', () => {
     expect(reviewModule.resolveIndex(0, 1, 1)).toBe(0);
     expect(reviewModule.resolveIndex(0, 1, -1)).toBe(0);
+  });
+});
+
+describe('FloatingBar layout', () => {
+  const noop = () => {};
+  const StubAvatar = () => React.createElement('span', null, 'A');
+
+  function renderBar(overrides: Partial<Parameters<typeof reviewModule.FloatingBar>[0]> = {}) {
+    return render(
+      React.createElement(reviewModule.FloatingBar, {
+        currentIndex: 0,
+        total: 22,
+        agentId: 'agent-1',
+        agentName: 'alpha',
+        agentStatus: 'running',
+        detailedState: null,
+        AgentAvatar: StubAvatar,
+        isRunning: true,
+        onSleep: noop,
+        includeSleeping: false,
+        onToggleSleeping: noop,
+        needsAttentionOnly: false,
+        onToggleNeedsAttention: noop,
+        includeRemote: false,
+        onToggleIncludeRemote: noop,
+        agents: [makeAgent()],
+        onJumpTo: noop,
+        onPrev: noop,
+        onNext: noop,
+        ...overrides,
+      }),
+    );
+  }
+
+  it('renders agent counter on a single line (no text wrapping)', () => {
+    const { container } = renderBar({ currentIndex: 0, total: 22 });
+    const counterSpan = container.querySelector('span.text-ctp-subtext0');
+    expect(counterSpan).not.toBeNull();
+    expect(counterSpan!.textContent).toBe('(running)');
+    // The bar container should prevent wrapping
+    const bar = container.firstElementChild!;
+    expect(bar.className).toContain('whitespace-nowrap');
+  });
+
+  it('agent info section prevents text wrapping', () => {
+    const { container } = renderBar();
+    // The agent info span wraps avatar + name + status + counter
+    const agentInfo = container.querySelector('span.flex.items-center.gap-1\\.5');
+    expect(agentInfo).not.toBeNull();
+    expect(agentInfo!.className).toContain('whitespace-nowrap');
   });
 });

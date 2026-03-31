@@ -162,7 +162,8 @@ function JumpListButton({
 
 // ── Floating Top Bar ───────────────────────────────────────────────────
 
-function FloatingBar({
+/** @internal Exported for testing only. */
+export function FloatingBar({
   currentIndex,
   total,
   agentId,
@@ -226,14 +227,14 @@ function FloatingBar({
       'absolute top-3 left-1/2 -translate-x-1/2 z-20',
       'flex items-center gap-2 px-3 py-1.5 rounded-lg',
       'bg-surface-0/90 backdrop-blur-sm shadow-lg',
-      'text-xs text-ctp-text select-none',
+      'text-xs text-ctp-text select-none whitespace-nowrap',
     ].join(' '),
   },
     // Left arrow
     makeMiniArrow(chevronLeft, 'Previous agent', onPrev),
 
     // Agent info with avatar
-    React.createElement('span', { className: 'flex items-center gap-1.5' },
+    React.createElement('span', { className: 'flex items-center gap-1.5 whitespace-nowrap' },
       agentId
         ? React.createElement(AgentAvatar, { agentId, size: 'sm', showStatusRing: true })
         : null,
