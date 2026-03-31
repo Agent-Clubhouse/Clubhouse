@@ -373,7 +373,7 @@ describe('Assistant Tools Integration Tests', () => {
 
       // Step 5: Layout
       const layoutResult = await call('layout_canvas', {
-        canvas_id: canvasId, pattern: 'horizontal',
+        canvas_id: canvasId, algorithm: 'layered',
       });
       expect(layoutResult.isError).toBeFalsy();
       expect(layoutResult.content[0].text).toContain('Arranged');
@@ -432,7 +432,7 @@ describe('Assistant Tools Integration Tests', () => {
       const createResult = await call('create_canvas', { name: 'Empty Canvas' });
       const canvasId = parseJson(createResult).canvas_id;
 
-      const result = await call('layout_canvas', { canvas_id: canvasId, pattern: 'grid' });
+      const result = await call('layout_canvas', { canvas_id: canvasId, algorithm: 'layered' });
       expect(result.isError).toBeFalsy();
       expect(result.content[0].text).toContain('No cards');
     });
@@ -808,7 +808,7 @@ describe('Assistant Tools Integration Tests', () => {
 
       // Layout
       const layoutResult = await call('layout_canvas', {
-        canvas_id: canvasId, pattern: 'hub_spoke',
+        canvas_id: canvasId, algorithm: 'layered',
       });
       expect(layoutResult.isError).toBeFalsy();
       expect(layoutResult.content[0].text).toContain('4 cards');
