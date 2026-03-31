@@ -69,14 +69,18 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
 /** Push non-builtin themes to the main process so MCP tools can see them. */
 function syncPluginThemesToMain(): void {
-  const builtinIds = new Set(Object.keys(BUILTIN_THEMES));
-  const allThemes = getAllThemes();
-  const pluginThemes = Object.values(allThemes)
-    .filter((t) => !builtinIds.has(t.id))
-    .map((t) => ({ id: t.id, name: t.name, type: t.type }));
-  window.clubhouse.app.syncPluginThemes(pluginThemes).catch(() => {
-    /* main process not ready yet — safe to ignore */
-  });
+  try {
+    const builtinIds = new Set(Object.keys(BUILTIN_THEMES));
+    const allThemes = getAllThemes();
+    const pluginThemes = Object.values(allThemes)
+      .filter((t) => !builtinIds.has(t.id))
+      .map((t) => ({ id: t.id, name: t.name, type: t.type }));
+    Promise.resolve(window.clubhouse.app.syncPluginThemes(pluginThemes)).catch(() => {
+      /* main process not ready yet — safe to ignore */
+    });
+  } catch {
+    /* preload bridge not available yet */
+  }
 }
 
 // Auto-refresh available themes when the registry changes
