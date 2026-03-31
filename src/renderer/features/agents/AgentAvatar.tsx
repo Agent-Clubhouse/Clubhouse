@@ -97,6 +97,18 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor }:
       );
     }
 
+    // Emoji avatar
+    if (agent.emoji) {
+      return (
+        <div
+          className={`${innerSize} rounded-full flex items-center justify-center flex-shrink-0`}
+          style={{ backgroundColor: `${bgColor}20` }}
+        >
+          <span className={size === 'sm' ? 'text-sm' : 'text-base'} role="img">{agent.emoji}</span>
+        </div>
+      );
+    }
+
     // Image icon avatar
     if (agent.icon && iconDataUrl) {
       return (

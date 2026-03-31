@@ -46,6 +46,7 @@ export interface Project {
   path: string;
   color?: string;       // AGENT_COLORS id (e.g. 'emerald')
   icon?: string;        // filename in ~/.clubhouse/project-icons/
+  emoji?: string;       // single emoji character used as icon (mutually exclusive with icon)
   displayName?: string; // user-set display name (overrides `name` in UI)
   orchestrator?: OrchestratorId;
 }
@@ -61,6 +62,7 @@ export interface Agent {
   status: AgentStatus;
   color: string;
   icon?: string;         // filename in ~/.clubhouse/agent-icons/
+  emoji?: string;        // single emoji character used as icon (mutually exclusive with icon)
   worktreePath?: string;
   branch?: string;
   exitCode?: number;
@@ -188,6 +190,7 @@ export interface DurableAgentConfig {
   name: string;
   color: string;
   icon?: string;        // filename in ~/.clubhouse/agent-icons/
+  emoji?: string;       // single emoji character used as icon
   branch?: string;
   worktreePath?: string;
   createdAt: string;

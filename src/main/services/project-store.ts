@@ -283,7 +283,7 @@ export async function remove(id: string): Promise<void> {
   }
 }
 
-export async function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>): Promise<Project[]> {
+export async function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'emoji' | 'name' | 'displayName' | 'orchestrator'>>): Promise<Project[]> {
   let shouldRemoveIcon = false;
 
   const result = await updateProjects((projects) => {
@@ -321,6 +321,19 @@ export async function update(id: string, updates: Partial<Pick<Project, 'color' 
 
       if (updates.orchestrator !== undefined) {
         next.orchestrator = updates.orchestrator;
+      }
+
+      if (updates.emoji !== undefined) {
+        if (updates.emoji === '') {
+          delete next.emoji;
+        } else {
+          next.emoji = updates.emoji;
+          // Emoji and image icon are mutually exclusive — clear image when emoji is set
+          if (next.emoji) {
+            shouldRemoveIcon = true;
+            delete next.icon;
+          }
+        }
       }
 
       return next;

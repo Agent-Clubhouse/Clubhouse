@@ -33,6 +33,13 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
         if (updates.icon !== undefined) {
           patched.icon = updates.icon === null ? undefined : updates.icon;
         }
+        if (updates.emoji !== undefined) {
+          patched.emoji = updates.emoji === null ? undefined : updates.emoji;
+          // Emoji and image icon are mutually exclusive
+          if (patched.emoji) {
+            patched.icon = undefined;
+          }
+        }
         return { agents: { ...s.agents, [id]: patched } };
       });
     },

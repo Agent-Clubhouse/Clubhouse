@@ -80,7 +80,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.UPDATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), objectArg<{ name?: string; color?: string; icon?: string | null }>()],
+      [stringArg(), stringArg(), objectArg<{ name?: string; color?: string; icon?: string | null; emoji?: string | null }>()],
       async (_event, projectPath, agentId, updates) => {
         return agentConfig.updateDurable(projectPath, agentId, updates);
       },

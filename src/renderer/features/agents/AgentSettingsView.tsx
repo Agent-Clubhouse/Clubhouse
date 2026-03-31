@@ -8,6 +8,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
+import { EmojiPicker } from '../../components/EmojiPicker';
 import { SkillsSection } from './SkillsSection';
 import { AgentTemplatesSection } from './AgentTemplatesSection';
 import { McpJsonSection } from './McpJsonSection';
@@ -46,6 +47,8 @@ export function AgentSettingsView({ agent }: Props) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(agent.name);
   const [cropImageDataUrl, setCropImageDataUrl] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const { pickAgentIcon, saveAgentIcon, removeAgentIcon, agentIcons } = useAgentStore();
   const iconDataUrl = agentIcons[agent.id];
@@ -101,6 +104,20 @@ export function AgentSettingsView({ agent }: Props) {
   const handleRemoveIcon = async () => {
     if (!activeProject) return;
     await removeAgentIcon(agent.id, activeProject.path);
+  };
+
+  const handleEmojiSelect = async (emoji: string) => {
+    if (!activeProject) return;
+    await updateAgent(agent.id, { emoji }, activeProject.path);
+    // Clear image icon since emoji takes precedence
+    if (agent.icon) {
+      await removeAgentIcon(agent.id, activeProject.path);
+    }
+  };
+
+  const handleRemoveEmoji = async () => {
+    if (!activeProject) return;
+    await updateAgent(agent.id, { emoji: null }, activeProject.path);
   };
 
   const handleFreeAgentModeChange = async (enabled: boolean) => {
@@ -459,7 +476,14 @@ export function AgentSettingsView({ agent }: Props) {
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-3">Appearance</h3>
           <div className="flex items-start gap-4">
             {/* Large avatar preview */}
-            {agent.icon && iconDataUrl ? (
+            {agent.emoji ? (
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: `${colorInfo?.hex || '#6366f1'}20` }}
+              >
+                <span className="text-2xl" role="img">{agent.emoji}</span>
+              </div>
+            ) : agent.icon && iconDataUrl ? (
               <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0">
                 <img src={iconDataUrl} alt={agent.name} className="w-full h-full object-cover" />
               </div>
@@ -529,10 +553,10 @@ export function AgentSettingsView({ agent }: Props) {
                 </div>
               </div>
 
-              {/* Icon upload */}
+              {/* Icon upload / emoji */}
               <div>
                 <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Icon</span>
-                <div className="flex gap-2 mt-1">
+                <div className="flex gap-2 mt-1 relative">
                   <button
                     onClick={handlePickIcon}
                     disabled={isRunning}
@@ -542,13 +566,31 @@ export function AgentSettingsView({ agent }: Props) {
                   >
                     Choose Image
                   </button>
-                  {agent.icon && iconDataUrl && !isRunning && (
+                  <button
+                    ref={emojiButtonRef}
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    disabled={isRunning}
+                    className={`px-3 py-1 text-xs rounded-lg bg-surface-0 border border-surface-2
+                      text-ctp-text hover:bg-surface-1 cursor-pointer transition-colors
+                      ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    Choose Emoji
+                  </button>
+                  {((agent.icon && iconDataUrl) || agent.emoji) && !isRunning && (
                     <button
-                      onClick={handleRemoveIcon}
+                      onClick={agent.emoji ? handleRemoveEmoji : handleRemoveIcon}
                       className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:text-red-400 hover:border-red-400/50 cursor-pointer transition-colors"
                     >
                       Remove
                     </button>
+                  )}
+                  {showEmojiPicker && (
+                    <div className="absolute top-8 left-0 z-50">
+                      <EmojiPicker
+                        onSelect={handleEmojiSelect}
+                        onClose={() => setShowEmojiPicker(false)}
+                      />
+                    </div>
                   )}
                 </div>
               </div>
