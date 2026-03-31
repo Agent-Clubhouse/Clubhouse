@@ -139,6 +139,11 @@ vi.mock('../services/preview-eligible', () => ({
   isPreviewEligible: vi.fn(() => true),
 }));
 
+const mockSyncPluginThemes = vi.fn();
+vi.mock('../services/plugin-theme-store', () => ({
+  syncPluginThemes: (...a: unknown[]) => mockSyncPluginThemes(...a),
+}));
+
 vi.mock('./mcp-binding-handlers', () => ({
   onMcpSettingsChanged: vi.fn(),
 }));
@@ -183,7 +188,7 @@ describe('app-handlers', () => {
       IPC.APP.OPEN_EXTERNAL_URL, IPC.APP.GET_VERSION, IPC.APP.GET_ARCH_INFO,
       IPC.APP.GET_NOTIFICATION_SETTINGS, IPC.APP.SAVE_NOTIFICATION_SETTINGS,
       IPC.APP.SEND_NOTIFICATION, IPC.APP.CLOSE_NOTIFICATION,
-      IPC.APP.GET_THEME, IPC.APP.SAVE_THEME, IPC.APP.UPDATE_TITLE_BAR_OVERLAY,
+      IPC.APP.GET_THEME, IPC.APP.SAVE_THEME, IPC.APP.SYNC_PLUGIN_THEMES, IPC.APP.UPDATE_TITLE_BAR_OVERLAY,
       IPC.APP.GET_ORCHESTRATOR_SETTINGS, IPC.APP.SAVE_ORCHESTRATOR_SETTINGS,
       IPC.APP.GET_HEADLESS_SETTINGS, IPC.APP.SAVE_HEADLESS_SETTINGS,
       IPC.APP.GET_BADGE_SETTINGS, IPC.APP.SAVE_BADGE_SETTINGS,
@@ -311,6 +316,16 @@ describe('app-handlers', () => {
     await handler({}, { themeId: 'light' });
     expect(themeService.saveSettings).toHaveBeenCalled();
     expect(annexServer.broadcastThemeChanged).toHaveBeenCalled();
+  });
+
+  it('SYNC_PLUGIN_THEMES forwards themes to plugin-theme-store', async () => {
+    const handler = handleHandlers.get(IPC.APP.SYNC_PLUGIN_THEMES)!;
+    const themes = [
+      { id: 'plugin:pack:ocean', name: 'Ocean', type: 'dark' },
+      { id: 'plugin:pack:sunrise', name: 'Sunrise', type: 'light' },
+    ];
+    await handler({}, themes);
+    expect(mockSyncPluginThemes).toHaveBeenCalledWith(themes);
   });
 
   it('UPDATE_TITLE_BAR_OVERLAY sets overlay on ALL windows on win32', async () => {

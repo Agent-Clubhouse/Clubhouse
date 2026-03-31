@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { ThemeId } from '../../shared/types';
 
 // ---------- mock applyTheme before importing store ----------
@@ -12,6 +12,7 @@ const mockApp = {
   saveTheme: vi.fn().mockResolvedValue(undefined),
   updateTitleBarOverlay: vi.fn().mockResolvedValue(undefined),
   getExperimentalSettings: vi.fn().mockResolvedValue({} as Record<string, boolean>),
+  syncPluginThemes: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.stubGlobal('window', {
@@ -19,8 +20,9 @@ vi.stubGlobal('window', {
 });
 
 import { useThemeStore } from './themeStore';
-import { THEMES } from '../themes';
+import { THEMES, registerTheme, unregisterTheme } from '../themes';
 import { applyTheme } from '../themes/apply-theme';
+import type { ThemeDefinition } from '../../shared/types';
 
 // ---------- helpers ----------
 function getState() {
@@ -153,6 +155,53 @@ describe('themeStore', () => {
     it('theme reference from THEMES map is used directly (no copies)', async () => {
       await getState().setTheme('terminal');
       expect(getState().theme).toBe(THEMES['terminal']);
+    });
+  });
+
+  // ---- plugin theme sync to main ----
+  describe('plugin theme sync', () => {
+    const fakePluginTheme: ThemeDefinition = {
+      id: 'plugin:test:ocean',
+      name: 'Ocean',
+      type: 'dark',
+      colors: THEMES['catppuccin-mocha'].colors,
+      hljs: THEMES['catppuccin-mocha'].hljs,
+      terminal: THEMES['catppuccin-mocha'].terminal,
+    };
+
+    afterEach(() => {
+      unregisterTheme(fakePluginTheme.id);
+    });
+
+    it('syncs plugin themes to main when a theme is registered', () => {
+      mockApp.syncPluginThemes.mockClear();
+      registerTheme(fakePluginTheme);
+
+      expect(mockApp.syncPluginThemes).toHaveBeenCalledTimes(1);
+      const synced = mockApp.syncPluginThemes.mock.calls[0][0];
+      const ids = synced.map((t: { id: string }) => t.id);
+      expect(ids).toContain('plugin:test:ocean');
+      // Builtins should NOT be in the synced list
+      expect(ids).not.toContain('catppuccin-mocha');
+    });
+
+    it('syncs updated list when a plugin theme is unregistered', () => {
+      registerTheme(fakePluginTheme);
+      mockApp.syncPluginThemes.mockClear();
+      unregisterTheme(fakePluginTheme.id);
+
+      expect(mockApp.syncPluginThemes).toHaveBeenCalledTimes(1);
+      const synced = mockApp.syncPluginThemes.mock.calls[0][0];
+      const ids = synced.map((t: { id: string }) => t.id);
+      expect(ids).not.toContain('plugin:test:ocean');
+    });
+
+    it('refreshes availableThemeIds when registry changes', () => {
+      registerTheme(fakePluginTheme);
+      expect(getState().availableThemeIds).toContain('plugin:test:ocean');
+
+      unregisterTheme(fakePluginTheme.id);
+      expect(getState().availableThemeIds).not.toContain('plugin:test:ocean');
     });
   });
 });
