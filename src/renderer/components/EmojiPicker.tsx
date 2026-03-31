@@ -117,7 +117,7 @@ interface EmojiPickerProps {
 
 export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
   const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0].id);
+  const [activeCategory, setActiveCategory] = useState<string>(CATEGORIES[0].id);
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const categoryRefs = useRef<Record<string, HTMLDivElement | null>>({});
