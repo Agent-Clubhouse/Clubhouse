@@ -83,7 +83,8 @@ const { mockGetPluginThemes } = vi.hoisted(() => ({
   mockGetPluginThemes: vi.fn().mockReturnValue([]),
 }));
 vi.mock('../../plugin-theme-store', () => ({
-  getPluginThemes: (...a: unknown[]) => mockGetPluginThemes(...a),
+  // vi.fn() gets reset by vitest's mockReset: true — fall back to [] to match production behavior
+  getPluginThemes: (...a: unknown[]) => mockGetPluginThemes(...a) ?? [],
 }));
 
 import { registerAssistantTools } from './assistant-tools';

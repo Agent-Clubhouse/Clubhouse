@@ -426,7 +426,7 @@ registerToolTemplate(
       name: t.name,
       type: t.type,
     }));
-    const pluginThemes = getPluginThemes();
+    const pluginThemes = getPluginThemes() ?? [];
     const themes = [...builtinThemes, ...pluginThemes];
 
     return {
