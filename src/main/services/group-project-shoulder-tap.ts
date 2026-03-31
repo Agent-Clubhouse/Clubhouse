@@ -19,11 +19,12 @@ import { appLog } from './log-service';
 
 /** Default paste submit timing used when no provider is available. */
 const DEFAULT_TIMING: PasteSubmitTiming = {
-  initialDelayMs: 350,
+  initialDelayMs: 500,
   retryDelayMs: 300,
   finalCheckDelayMs: 250,
   chunkSize: 512,
-  chunkDelayMs: 30,
+  chunkDelayMs: 50,
+  postEndMarkerDelayMs: 150,
 };
 
 export interface ShoulderTapParams {
@@ -123,6 +124,7 @@ export async function executeShoulderTap(params: ShoulderTapParams): Promise<Sho
           taggedMessage,
           timing.chunkSize,
           timing.chunkDelayMs,
+          timing.postEndMarkerDelayMs,
         );
 
         await submitAfterPaste(binding.agentId, timing);

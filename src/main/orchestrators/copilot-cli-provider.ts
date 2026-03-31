@@ -112,11 +112,12 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
    */
   override getPasteSubmitTiming(): PasteSubmitTiming {
     return {
-      initialDelayMs: 800,
+      initialDelayMs: 1200,
       retryDelayMs: 600,
       finalCheckDelayMs: 400,
       chunkSize: 256,
-      chunkDelayMs: 80,
+      chunkDelayMs: 120,
+      postEndMarkerDelayMs: 300,
     };
   }
 

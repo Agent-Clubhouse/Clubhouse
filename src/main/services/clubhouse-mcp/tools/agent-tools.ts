@@ -39,12 +39,17 @@ export function sleep(ms: number): Promise<void> {
  *
  * When chunkSize is set and the body exceeds it, the body is split into
  * chunks with `chunkDelayMs` between each write.
+ *
+ * A dedicated `postEndMarkerDelayMs` is inserted AFTER the end marker to
+ * give the CLI time to exit paste mode before any subsequent writes (like
+ * an Enter keystroke).  Without this, `\r` can be folded into the paste.
  */
 export async function writeChunkedBracketedPaste(
   agentId: string,
   body: string,
   chunkSize?: number,
   chunkDelayMs = 30,
+  postEndMarkerDelayMs = 150,
 ): Promise<void> {
   ptyManager.write(agentId, '\x1b[200~');
 
@@ -64,6 +69,9 @@ export async function writeChunkedBracketedPaste(
   await sleep(chunkDelayMs);
 
   ptyManager.write(agentId, '\x1b[201~');
+
+  // Delay AFTER end marker so the CLI can exit paste mode before \r arrives
+  await sleep(postEndMarkerDelayMs);
 }
 
 /**
@@ -215,7 +223,7 @@ export function registerAgentTools(): void {
           // Resolve provider-specific paste submit timing up front.
           const provider = getProvider(reg.orchestrator);
           const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming()
-            ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
+            ?? { initialDelayMs: 500, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 50, postEndMarkerDelayMs: 150 };
 
           if (isMultiLine) {
             // Chunked bracketed paste: send start marker, body in chunks
@@ -226,6 +234,7 @@ export function registerAgentTools(): void {
               taggedMessage,
               timing.chunkSize,
               timing.chunkDelayMs,
+              timing.postEndMarkerDelayMs,
             );
           } else {
             ptyManager.write(targetId, taggedMessage);
@@ -494,7 +503,7 @@ export function registerAgentTools(): void {
           // Submit with Enter
           const provider = getProvider(reg.orchestrator);
           const timing = provider?.getPasteSubmitTiming()
-            ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
+            ?? { initialDelayMs: 500, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 50, postEndMarkerDelayMs: 150 };
 
           await sleep(timing.initialDelayMs);
           ptyManager.write(targetId, '\r');
