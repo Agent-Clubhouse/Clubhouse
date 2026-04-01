@@ -1322,18 +1322,18 @@ registerToolTemplate('assistant', 'connect_cards', {
 });
 
 registerToolTemplate('assistant', 'layout_canvas', {
-  description: 'Auto-arrange cards using ELK layout algorithms. Algorithms: "layered" (hierarchical with spline wire routing — best default), "radial" (concentric circles from a root node), "force" (physics-based spreading), "mrtree" (compact tree hierarchy). ' +
+  description: 'Auto-arrange cards using ELK layout algorithms. Algorithms: "layered" (hierarchical with spline wire routing — best default), "stress" (clean layout preserving graph distances), "radial" (concentric circles from a root node). ' +
     'canvas_id is optional — auto-selects when only one canvas exists. ' +
     'Zone-aware: cards inside zones are grouped and arranged within their zone bounds. ' +
-    'For layered/mrtree, set direction to control flow: "RIGHT" (default), "DOWN", "LEFT", "UP". ' +
+    'For layered, set direction to control flow: "RIGHT" (default), "DOWN", "LEFT", "UP". ' +
     'For radial, set root_id to center the layout on a specific card (auto-picks most-connected if omitted). ' +
     'ALWAYS call this after adding all cards — it produces clean, readable layouts.',
   inputSchema: {
     type: 'object',
     properties: {
       canvas_id: { type: 'string', description: 'Canvas ID (optional — auto-selects when only one canvas exists).' },
-      algorithm: { type: 'string', description: 'Layout algorithm: "layered" (hierarchical with spline routing — best default), "radial" (concentric circles), "force" (physics-based), or "mrtree" (tree hierarchy).' },
-      direction: { type: 'string', description: 'Flow direction for layered/mrtree: "RIGHT" (default), "DOWN", "LEFT", "UP".' },
+      algorithm: { type: 'string', description: 'Layout algorithm: "layered" (hierarchical with spline routing — best default), "stress" (clean general-purpose), or "radial" (concentric circles).' },
+      direction: { type: 'string', description: 'Flow direction for layered: "RIGHT" (default), "DOWN", "LEFT", "UP".' },
       root_id: { type: 'string', description: 'Radial only: view ID of the center card. Auto-picks most-connected if omitted.' },
     },
     required: ['algorithm'],
@@ -1454,7 +1454,7 @@ registerToolTemplate('assistant', 'get_card_defaults', {
       'Cards are auto-staggered when position is omitted — no coordinate math needed.',
       'Use relative_to_card_id in add_card/move_card to place cards relative to existing ones.',
       'ALWAYS call layout_canvas after adding all cards for clean arrangement.',
-      'Use "layered" algorithm (default) for DAGs, "radial" for hub-spoke, "force" for organic graphs, "mrtree" for strict trees.',
+      'Use "layered" algorithm (default) for DAGs, "stress" for general graphs, "radial" for hub-spoke.',
     ],
   };
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
@@ -1525,7 +1525,7 @@ registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
         },
       },
       project_id: { type: 'string', description: 'Project ID for canvas scope. Omit for app-level.' },
-      layout_pattern: { type: 'string', description: 'Layout algorithm to apply after creation: "layered" (default), "radial", "force", "mrtree".' },
+      layout_pattern: { type: 'string', description: 'Layout algorithm to apply after creation: "layered" (default), "stress", "radial".' },
     },
     required: ['blueprint'],
   },

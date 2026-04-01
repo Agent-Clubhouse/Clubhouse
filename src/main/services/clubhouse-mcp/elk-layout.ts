@@ -5,7 +5,7 @@ import { snapToGrid } from './canvas-layout';
 // Public types
 // ---------------------------------------------------------------------------
 
-export type ElkAlgorithm = 'layered' | 'radial' | 'force' | 'mrtree';
+export type ElkAlgorithm = 'layered' | 'stress' | 'radial';
 export type LayeredDirection = 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
 
 export interface ElkLayoutOptions {
@@ -70,21 +70,13 @@ const RADIAL_OPTIONS: Record<string, string> = {
   'elk.radial.orderId': 'true',
 };
 
-const FORCE_OPTIONS: Record<string, string> = {
+const STRESS_OPTIONS: Record<string, string> = {
   ...SHARED_OPTIONS,
-  'elk.algorithm': 'elk.force',
+  'elk.algorithm': 'elk.stress',
   'elk.spacing.nodeNode': '100',
-  'elk.force.temperature': '0.001',
-  'elk.force.iterations': '300',
-  'elk.force.repulsion': '20.0',
-};
-
-const MRTREE_OPTIONS: Record<string, string> = {
-  ...SHARED_OPTIONS,
-  'elk.algorithm': 'elk.mrtree',
-  'elk.spacing.nodeNode': '60',
-  'elk.mrtree.weighting': 'CONSTRAINT',
-  'elk.mrtree.searchOrder': 'DFS',
+  'elk.spacing.componentComponent': '140',
+  'elk.stress.desiredEdgeLength': '200',
+  'elk.stress.epsilon': '0.001',
 };
 
 function getElkOptions(opts?: ElkLayoutOptions): Record<string, string> {
@@ -94,14 +86,10 @@ function getElkOptions(opts?: ElkLayoutOptions): Record<string, string> {
       const direction = opts?.direction ?? 'RIGHT';
       return { ...LAYERED_OPTIONS, 'elk.direction': direction };
     }
+    case 'stress':
+      return { ...STRESS_OPTIONS };
     case 'radial':
       return { ...RADIAL_OPTIONS };
-    case 'force':
-      return { ...FORCE_OPTIONS };
-    case 'mrtree': {
-      const direction = opts?.direction ?? 'DOWN';
-      return { ...MRTREE_OPTIONS, 'elk.direction': direction };
-    }
     default:
       return { ...LAYERED_OPTIONS, 'elk.direction': 'RIGHT' };
   }

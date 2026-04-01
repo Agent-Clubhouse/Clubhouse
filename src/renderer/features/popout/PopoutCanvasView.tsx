@@ -355,6 +355,10 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         onUpdateZoneTheme={handleUpdateZoneTheme}
         minimapAutoHide={minimapAutoHide}
         onMinimapAutoHideChange={setMinimapAutoHide}
+        elkAlgorithm="layered"
+        elkDirection="RIGHT"
+        onElkAlgorithmChange={() => {}}
+        onElkDirectionChange={() => {}}
       />
     </div>
   );

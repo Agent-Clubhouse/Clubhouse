@@ -174,6 +174,8 @@ export function convertHubToCanvas(options: ConvertHubOptions): CanvasInstance {
     zoomedViewId: null,
     selectedViewId: null,
     minimapAutoHide: true,
+    elkAlgorithm: 'layered',
+    elkDirection: 'RIGHT',
   };
 }
 

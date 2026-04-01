@@ -270,6 +270,8 @@ export function importBlueprint(
     zoomedViewId: null,
     selectedViewId: null,
     minimapAutoHide: true,
+    elkAlgorithm: 'layered',
+    elkDirection: 'RIGHT',
   };
 }
 
