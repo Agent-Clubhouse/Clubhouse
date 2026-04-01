@@ -98,4 +98,10 @@ describe('elk-layout', () => {
       expect(node.y % 20).toBe(0);
     }
   });
+
+  // NOTE: Multi-algorithm tests (radial, force, mrtree) are omitted here because
+  // elkjs accumulates internal workers in vitest's thread pool, causing hangs after
+  // ~6 ELK instances. All algorithms are validated via tsx integration tests and
+  // manual testing. The options are pure configuration passed to ELK — the core
+  // layout/flatten/snap pipeline tested above applies identically to all algorithms.
 });

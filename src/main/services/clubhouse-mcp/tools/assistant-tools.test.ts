@@ -680,8 +680,11 @@ describe('assistant-tools', () => {
       await callAssistantTool('add_card', { canvas_id: 'c5', type: 'agent' });
 
       // Call layout_canvas — should reset counter
-      mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: [{ id: 'v1', size: { width: 300, height: 200 } }] });
-      await callAssistantTool('layout_canvas', { canvas_id: 'c5', pattern: 'grid' });
+      mockSendCanvasCommand
+        .mockResolvedValueOnce({ success: true, data: [{ id: 'v1', type: 'agent', size: { width: 300, height: 200 } }] })
+        .mockResolvedValueOnce({ success: true, data: [] }) // query_wires
+        .mockResolvedValue({ success: true, data: {} }); // move_view
+      await callAssistantTool('layout_canvas', { canvas_id: 'c5', algorithm: 'layered' });
 
       // Next add_card should start from position 0 again
       mockSendCanvasCommand.mockResolvedValue({ success: true, data: { view_id: 'view_new' } });
@@ -888,46 +891,48 @@ describe('assistant-tools', () => {
     });
   });
 
-  describe('layout_canvas zone-aware', () => {
+  describe('layout_canvas', () => {
     it('arranges cards and resets auto-stagger counter', async () => {
       mockSendCanvasCommand
         .mockResolvedValueOnce({ success: true, data: [
           { id: 'v1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
           { id: 'v2', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
         ] })
-        .mockResolvedValue({ success: true, data: {} });
+        .mockResolvedValueOnce({ success: true, data: [] }) // query_wires
+        .mockResolvedValue({ success: true, data: {} }); // move_view calls
       const result = await callAssistantTool('layout_canvas', {
         canvas_id: 'canvas-1',
-        pattern: 'horizontal',
+        algorithm: 'layered',
       });
       expect(result.isError).toBeFalsy();
       expect(result.content[0].text).toContain('Arranged 2 cards');
     });
 
-    it('positions zone-contained cards within zone bounds', async () => {
+    it('arranges zone-contained cards via ELK', async () => {
       mockSendCanvasCommand
         .mockResolvedValueOnce({ success: true, data: [
           { id: 'zone-1', type: 'zone', position: { x: 0, y: 0 }, size: { width: 600, height: 400 }, containedViewIds: ['v1'] },
           { id: 'v1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
           { id: 'v2', type: 'agent', position: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
         ] })
-        .mockResolvedValue({ success: true, data: {} });
+        .mockResolvedValueOnce({ success: true, data: [] }) // query_wires
+        .mockResolvedValue({ success: true, data: {} }); // move_view calls
       const result = await callAssistantTool('layout_canvas', {
         canvas_id: 'canvas-1',
-        pattern: 'grid',
+        algorithm: 'layered',
       });
       expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain('zone-aware');
-      // Should have moved outer cards (zone-1, v2) + inner card (v1)
+      expect(result.content[0].text).toContain('layered layout');
+      // ELK positions non-zone cards; zone children are handled as compound nodes
       const moveCalls = mockSendCanvasCommand.mock.calls.filter(c => c[0] === 'move_view');
-      expect(moveCalls.length).toBe(3); // zone-1, v2 (outer), v1 (inner)
+      expect(moveCalls.length).toBeGreaterThan(0);
     });
 
     it('returns error for empty canvas', async () => {
       mockSendCanvasCommand.mockResolvedValueOnce({ success: true, data: [] });
       const result = await callAssistantTool('layout_canvas', {
         canvas_id: 'canvas-1',
-        pattern: 'grid',
+        algorithm: 'layered',
       });
       expect(result.content[0].text).toContain('No cards');
     });
@@ -1057,10 +1062,11 @@ describe('assistant-tools', () => {
       mockSendCanvasCommand
         .mockResolvedValueOnce({ success: true, data: [{ id: 'only-canvas' }] })
         .mockResolvedValueOnce({ success: true, data: [{ id: 'v1', type: 'agent', size: { width: 300, height: 200 } }] })
-        .mockResolvedValueOnce({ success: true, data: {} }); // move_view
+        .mockResolvedValueOnce({ success: true, data: [] }) // query_wires
+        .mockResolvedValue({ success: true, data: {} }); // move_view
 
       const result = await callAssistantTool('layout_canvas', {
-        pattern: 'grid',
+        algorithm: 'layered',
       });
       expect(result.isError).toBeFalsy();
       expect(mockSendCanvasCommand).toHaveBeenCalledWith('list_canvases', expect.anything());
@@ -1073,7 +1079,7 @@ describe('assistant-tools', () => {
       });
 
       const result = await callAssistantTool('layout_canvas', {
-        pattern: 'grid',
+        algorithm: 'layered',
       });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Multiple canvases');

@@ -5,10 +5,22 @@ import { snapToGrid } from './canvas-layout';
 // Public types
 // ---------------------------------------------------------------------------
 
+export type ElkAlgorithm = 'layered' | 'radial' | 'force' | 'mrtree';
+export type LayeredDirection = 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
+
+export interface ElkLayoutOptions {
+  algorithm: ElkAlgorithm;
+  /** Flow direction for layered algorithm. Default: 'RIGHT'. */
+  direction?: LayeredDirection;
+  /** Root node ID for radial algorithm. If omitted, auto-picks the most-connected node. */
+  rootId?: string;
+}
+
 export interface ElkLayoutInput {
   cards: Array<{ id: string; width: number; height: number; zoneId?: string }>;
   edges: Array<{ id: string; source: string; target: string }>;
   zones: Array<{ id: string; width: number; height: number; childIds: string[] }>;
+  options?: ElkLayoutOptions;
 }
 
 export interface ElkLayoutResult {
@@ -17,15 +29,20 @@ export interface ElkLayoutResult {
 }
 
 // ---------------------------------------------------------------------------
-// ELK options
+// Algorithm-specific ELK option sets
 // ---------------------------------------------------------------------------
 
-const ELK_OPTIONS: Record<string, string> = {
+const SHARED_OPTIONS: Record<string, string> = {
+  'elk.separateConnectedComponents': 'true',
+  'elk.padding': '[top=40,left=40,bottom=40,right=40]',
+};
+
+const LAYERED_OPTIONS: Record<string, string> = {
+  ...SHARED_OPTIONS,
   'elk.algorithm': 'elk.layered',
-  'elk.direction': 'RIGHT',
   'elk.edgeRouting': 'SPLINES',
   'elk.portConstraints': 'FIXED_SIDE',
-  // Spacing — generous gaps so edges are visually distinct
+  // Spacing
   'elk.spacing.nodeNode': '100',
   'elk.spacing.edgeEdge': '40',
   'elk.spacing.edgeNode': '50',
@@ -33,24 +50,89 @@ const ELK_OPTIONS: Record<string, string> = {
   'elk.layered.spacing.nodeNodeBetweenLayers': '160',
   'elk.layered.spacing.edgeNodeBetweenLayers': '60',
   'elk.layered.spacing.edgeEdgeBetweenLayers': '35',
-  // Quality — max effort for crossing reduction and placement
+  // Quality
   'elk.layered.thoroughness': '10',
   'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
   'elk.layered.crossingMinimization.greedySwitch.type': 'TWO_SIDED',
   'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
   'elk.layered.nodePlacement.networkSimplex.nodeFlexibility.default': 'NODE_SIZE',
   'elk.layered.compaction.postCompaction.strategy': 'LEFT_RIGHT_DIRECTED',
-  // Prefer long straight edges over short kinked ones
   'elk.layered.wrapping.strategy': 'OFF',
   'elk.layered.mergeEdges': 'false',
-  // Components and padding
-  'elk.separateConnectedComponents': 'true',
-  'elk.padding': '[top=40,left=40,bottom=40,right=40]',
 };
+
+const RADIAL_OPTIONS: Record<string, string> = {
+  ...SHARED_OPTIONS,
+  'elk.algorithm': 'elk.radial',
+  'elk.spacing.nodeNode': '80',
+  'elk.radial.compactor': 'WEDGE_COMPACTION',
+  'elk.radial.centerOnRoot': 'true',
+  'elk.radial.orderId': 'true',
+};
+
+const FORCE_OPTIONS: Record<string, string> = {
+  ...SHARED_OPTIONS,
+  'elk.algorithm': 'elk.force',
+  'elk.spacing.nodeNode': '100',
+  'elk.force.temperature': '0.001',
+  'elk.force.iterations': '300',
+  'elk.force.repulsion': '20.0',
+};
+
+const MRTREE_OPTIONS: Record<string, string> = {
+  ...SHARED_OPTIONS,
+  'elk.algorithm': 'elk.mrtree',
+  'elk.spacing.nodeNode': '60',
+  'elk.mrtree.weighting': 'CONSTRAINT',
+  'elk.mrtree.searchOrder': 'DFS',
+};
+
+function getElkOptions(opts?: ElkLayoutOptions): Record<string, string> {
+  const algorithm = opts?.algorithm ?? 'layered';
+  switch (algorithm) {
+    case 'layered': {
+      const direction = opts?.direction ?? 'RIGHT';
+      return { ...LAYERED_OPTIONS, 'elk.direction': direction };
+    }
+    case 'radial':
+      return { ...RADIAL_OPTIONS };
+    case 'force':
+      return { ...FORCE_OPTIONS };
+    case 'mrtree': {
+      const direction = opts?.direction ?? 'DOWN';
+      return { ...MRTREE_OPTIONS, 'elk.direction': direction };
+    }
+    default:
+      return { ...LAYERED_OPTIONS, 'elk.direction': 'RIGHT' };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Auto-pick the most-connected node as the root for radial layout. */
+function pickRootNode(
+  cards: Array<{ id: string }>,
+  edges: Array<{ source: string; target: string }>,
+): string | undefined {
+  if (cards.length === 0) return undefined;
+  const degree = new Map<string, number>();
+  for (const card of cards) degree.set(card.id, 0);
+  for (const edge of edges) {
+    degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
+    degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
+  }
+  let maxId = cards[0].id;
+  let maxDeg = 0;
+  for (const [id, deg] of degree) {
+    if (deg > maxDeg) {
+      maxDeg = deg;
+      maxId = id;
+    }
+  }
+  return maxId;
+}
 
 /** Convert ELK edge sections (start, bends, end) into an SVG cubic-bezier path. */
 function sectionsToSvgPath(sections: { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; bendPoints?: Array<{ x: number; y: number }> }[]): string {
@@ -139,10 +221,18 @@ function flattenEdges(
 // ---------------------------------------------------------------------------
 
 export async function layoutElk(input: ElkLayoutInput): Promise<ElkLayoutResult> {
-  const { cards, edges, zones } = input;
+  const { cards, edges, zones, options } = input;
 
   if (cards.length === 0 && zones.length === 0) {
     return { nodes: [], edges: [] };
+  }
+
+  const elkOptions = getElkOptions(options);
+
+  // For radial layout, determine root node
+  let rootId: string | undefined;
+  if (options?.algorithm === 'radial') {
+    rootId = options.rootId ?? pickRootNode(cards, edges);
   }
 
   // Build a set of card ids that belong to a zone for quick lookup.
@@ -163,14 +253,19 @@ export async function layoutElk(input: ElkLayoutInput): Promise<ElkLayoutResult>
       width: zone.width,
       height: zone.height,
       children: zoneChildren,
-      layoutOptions: { ...ELK_OPTIONS },
+      layoutOptions: { ...elkOptions },
     });
   }
 
   // Standalone (non-zoned) cards.
   for (const card of cards) {
     if (!zoneChildIds.has(card.id)) {
-      topChildren.push({ id: card.id, width: card.width, height: card.height });
+      const nodeProps: ElkNode = { id: card.id, width: card.width, height: card.height };
+      // Mark the root node for radial layout
+      if (rootId && card.id === rootId) {
+        nodeProps.layoutOptions = { 'elk.radial.centerOnRoot': 'true' };
+      }
+      topChildren.push(nodeProps);
     }
   }
 
@@ -185,7 +280,7 @@ export async function layoutElk(input: ElkLayoutInput): Promise<ElkLayoutResult>
     id: 'root',
     children: topChildren,
     edges: elkEdges,
-    layoutOptions: { ...ELK_OPTIONS },
+    layoutOptions: { ...elkOptions },
   };
 
   const elk = new ELK();
