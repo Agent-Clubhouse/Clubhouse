@@ -55,14 +55,16 @@ export interface AutolayoutOptions {
 
 const ALGORITHM_LABELS: Record<ElkAlgorithm, string> = {
   layered: 'Layered',
-  stress: 'Stress',
   radial: 'Radial',
+  force: 'Force',
+  mrtree: 'Tree',
 };
 
 const ALGORITHM_DESCRIPTIONS: Record<ElkAlgorithm, string> = {
   layered: 'Hierarchical flow with spline routing',
-  stress: 'Clean layout preserving graph distances',
   radial: 'Concentric circles from selected card',
+  force: 'Physics-based node spreading',
+  mrtree: 'Compact tree hierarchy',
 };
 
 const DIRECTION_LABELS: Record<LayeredDirection, string> = {
@@ -73,7 +75,7 @@ const DIRECTION_LABELS: Record<LayeredDirection, string> = {
 };
 
 const DIRECTIONS: LayeredDirection[] = ['RIGHT', 'DOWN', 'LEFT', 'UP'];
-const ALGORITHMS: ElkAlgorithm[] = ['layered', 'stress', 'radial'];
+const ALGORITHMS: ElkAlgorithm[] = ['layered', 'radial', 'force', 'mrtree'];
 
 interface CanvasControlsProps {
   zoom: number;
@@ -115,13 +117,13 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
 
   const handleLayout = useCallback(() => {
     if (!onAutolayout) return;
-    onAutolayout({ algorithm, direction: algorithm === 'layered' ? direction : undefined });
+    onAutolayout({ algorithm, direction: algorithm === 'layered' || algorithm === 'mrtree' ? direction : undefined });
   }, [onAutolayout, algorithm, direction]);
 
   const handleAlgorithmSelect = useCallback((alg: ElkAlgorithm) => {
     setAlgorithm(alg);
     if (!onAutolayout) return;
-    onAutolayout({ algorithm: alg, direction: alg === 'layered' ? direction : undefined });
+    onAutolayout({ algorithm: alg, direction: alg === 'layered' || alg === 'mrtree' ? direction : undefined });
     setShowLayoutMenu(false);
   }, [onAutolayout, direction]);
 
@@ -265,7 +267,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
           <button
             onClick={handleLayout}
             className={btnClass}
-            title={`Auto Layout (${ALGORITHM_LABELS[algorithm]}${algorithm === 'layered' ? ' ' + DIRECTION_LABELS[direction] : ''})`}
+            title={`Auto Layout (${ALGORITHM_LABELS[algorithm]}${algorithm === 'layered' || algorithm === 'mrtree' ? ' ' + DIRECTION_LABELS[direction] : ''})`}
             data-testid="canvas-auto-layout"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -316,8 +318,8 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
                 </button>
               ))}
 
-              {/* Direction picker for layered */}
-              {algorithm === 'layered' && (
+              {/* Direction picker for layered/mrtree */}
+              {(algorithm === 'layered' || algorithm === 'mrtree') && (
                 <>
                   <div className="w-full h-px bg-surface-0 my-1.5" />
                   <div className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1 px-1">Direction</div>

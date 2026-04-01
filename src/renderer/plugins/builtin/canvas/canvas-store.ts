@@ -98,9 +98,9 @@ export interface CanvasState {
   setMinimapAutoHide: (value: boolean) => void;
 
   // ELK layout preferences (per canvas, persisted)
-  elkAlgorithm: 'layered' | 'stress' | 'radial';
+  elkAlgorithm: 'layered' | 'radial' | 'force' | 'mrtree';
   elkDirection: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
-  setElkAlgorithm: (value: 'layered' | 'stress' | 'radial') => void;
+  setElkAlgorithm: (value: 'layered' | 'radial' | 'force' | 'mrtree') => void;
   setElkDirection: (value: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP') => void;
 
   // Convenience selectors

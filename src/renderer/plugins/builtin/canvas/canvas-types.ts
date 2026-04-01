@@ -93,8 +93,8 @@ export interface CanvasInstance {
   /** Whether the minimap auto-hides after pan/zoom interactions. Persisted per canvas. */
   minimapAutoHide: boolean;
   /** ELK layout algorithm preference. Persisted per canvas. */
-  elkAlgorithm: 'layered' | 'stress' | 'radial';
-  /** Flow direction for layered algorithm. Persisted per canvas. */
+  elkAlgorithm: 'layered' | 'radial' | 'force' | 'mrtree';
+  /** Flow direction for layered/mrtree algorithm. Persisted per canvas. */
   elkDirection: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
 }
 
@@ -107,7 +107,7 @@ export interface CanvasInstanceData {
   nextZIndex: number;
   zoomedViewId?: string | null;
   minimapAutoHide?: boolean;
-  elkAlgorithm?: 'layered' | 'stress' | 'radial';
+  elkAlgorithm?: 'layered' | 'radial' | 'force' | 'mrtree';
   elkDirection?: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
 }
 

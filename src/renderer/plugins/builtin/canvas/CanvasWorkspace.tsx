@@ -78,9 +78,9 @@ interface CanvasWorkspaceProps {
   onUpdateZoneTheme: (zoneId: string, themeId: string) => void;
   minimapAutoHide: boolean;
   onMinimapAutoHideChange: (value: boolean) => void;
-  elkAlgorithm: 'layered' | 'stress' | 'radial';
+  elkAlgorithm: 'layered' | 'radial' | 'force' | 'mrtree';
   elkDirection: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
-  onElkAlgorithmChange: (value: 'layered' | 'stress' | 'radial') => void;
+  onElkAlgorithmChange: (value: 'layered' | 'radial' | 'force' | 'mrtree') => void;
   onElkDirectionChange: (value: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP') => void;
   /** When true, render all agent-to-agent wires as bidirectional. */
   bidirectionalWires?: boolean;

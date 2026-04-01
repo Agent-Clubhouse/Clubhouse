@@ -547,7 +547,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onMinimapAutoHideChange: (value: boolean) => store.getState().setMinimapAutoHide(value),
             elkAlgorithm,
             elkDirection,
-            onElkAlgorithmChange: (value: 'layered' | 'stress' | 'radial') => store.getState().setElkAlgorithm(value),
+            onElkAlgorithmChange: (value: 'layered' | 'radial' | 'force' | 'mrtree') => store.getState().setElkAlgorithm(value),
             onElkDirectionChange: (value: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP') => store.getState().setElkDirection(value),
             bidirectionalWires,
             createBidirectionalWires,
