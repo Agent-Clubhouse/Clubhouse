@@ -39,5 +39,5 @@ export function buildAssistantInstructions(): string {
     '---',
     '',
     recipes,
-  ].join('\n');
+  ].join('\n').replace(/\r\n/g, '\n');  // Normalize CRLF for consistent size across platforms
 }
