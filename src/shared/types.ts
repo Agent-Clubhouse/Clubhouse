@@ -642,6 +642,10 @@ export interface UpdateSettings {
   lastSeenVersion: string | null;
 }
 
+export interface MarketplaceSettings {
+  showBetaPlugins: boolean;
+}
+
 export interface PendingReleaseNotes {
   version: string;
   releaseNotes: string;

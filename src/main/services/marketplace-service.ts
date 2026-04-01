@@ -4,6 +4,8 @@ import * as crypto from 'crypto';
 import { app } from 'electron';
 import AdmZip from 'adm-zip';
 import { appLog } from './log-service';
+import { createSettingsStore } from './settings-store';
+import type { MarketplaceSettings } from '../../shared/types';
 import type {
   MarketplaceRegistry,
   MarketplaceFeatured,
@@ -19,6 +21,15 @@ const REGISTRY_URL =
   'https://raw.githubusercontent.com/Agent-Clubhouse/Clubhouse-Workshop/main/registry/registry.json';
 const FEATURED_URL =
   'https://raw.githubusercontent.com/Agent-Clubhouse/Clubhouse-Workshop/main/registry/featured.json';
+export const PREVIEW_REGISTRY_URL =
+  'https://raw.githubusercontent.com/Agent-Clubhouse/Clubhouse-Workshop/main/registry/preview-registry.json';
+
+const marketplaceSettingsStore = createSettingsStore<MarketplaceSettings>('marketplace-settings.json', {
+  showBetaPlugins: false,
+});
+
+export const getMarketplaceSettings = marketplaceSettingsStore.get;
+export const saveMarketplaceSettings = marketplaceSettingsStore.save;
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const FETCH_TIMEOUT_MS = 30_000; // 30 seconds for registry/metadata fetches

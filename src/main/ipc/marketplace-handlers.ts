@@ -10,6 +10,7 @@ import type {
   CustomMarketplaceRemoveRequest,
   CustomMarketplaceToggleRequest,
 } from '../../shared/marketplace-types';
+import type { MarketplaceSettings } from '../../shared/types';
 import { withValidatedArgs, objectArg } from './validation';
 
 export function registerMarketplaceHandlers(): void {
@@ -88,7 +89,26 @@ export function registerMarketplaceHandlers(): void {
 
   ipcMain.handle(IPC.MARKETPLACE.FETCH_CUSTOM_REGISTRIES, async () => {
     const customs = await customMarketplaceService.listCustomMarketplaces();
-    const result = await marketplaceService.fetchAllRegistries(customs);
+    const { showBetaPlugins } = marketplaceService.getMarketplaceSettings();
+    const allCustoms = showBetaPlugins
+      ? [...customs, { id: '_preview', name: 'Beta Plugins', url: marketplaceService.PREVIEW_REGISTRY_URL, enabled: true }]
+      : customs;
+    const result = await marketplaceService.fetchAllRegistries(allCustoms);
     return result.custom;
   });
+
+  ipcMain.handle(IPC.MARKETPLACE.GET_SETTINGS, async () => {
+    return marketplaceService.getMarketplaceSettings();
+  });
+
+  ipcMain.handle(IPC.MARKETPLACE.SAVE_SETTINGS, withValidatedArgs(
+    [objectArg<MarketplaceSettings>({
+      validate: (v, name) => {
+        if (typeof v.showBetaPlugins !== 'boolean') throw new Error(`${name}.showBetaPlugins must be a boolean`);
+      },
+    })],
+    async (_event, settings) => {
+      await marketplaceService.saveMarketplaceSettings(settings);
+    },
+  ));
 }

@@ -289,6 +289,8 @@ export const IPC = {
     REMOVE_CUSTOM: 'marketplace:remove-custom',
     TOGGLE_CUSTOM: 'marketplace:toggle-custom',
     FETCH_CUSTOM_REGISTRIES: 'marketplace:fetch-custom-registries',
+    GET_SETTINGS: 'marketplace:get-settings',
+    SAVE_SETTINGS: 'marketplace:save-settings',
   },
   PROFILE: {
     GET_SETTINGS: 'profile:get-settings',

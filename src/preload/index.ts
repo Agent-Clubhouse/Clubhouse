@@ -588,6 +588,10 @@ const api = {
       ipcRenderer.invoke(IPC.MARKETPLACE.TOGGLE_CUSTOM, req),
     fetchCustomRegistries: () =>
       ipcRenderer.invoke(IPC.MARKETPLACE.FETCH_CUSTOM_REGISTRIES),
+    getMarketplaceSettings: () =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.GET_SETTINGS),
+    saveMarketplaceSettings: (settings: { showBetaPlugins: boolean }) =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.SAVE_SETTINGS, settings),
   },
   pluginMcp: {
     contributeTools: (pluginId: string, tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>) =>
