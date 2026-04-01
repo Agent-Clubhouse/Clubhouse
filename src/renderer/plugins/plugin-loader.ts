@@ -120,15 +120,11 @@ export async function initializePluginSystem(): Promise<void> {
     }
     store.setExternalPluginsEnabled(externalEnabled);
 
-    // Read persisted show-beta-plugins flag
+    // Read persisted showBetaPlugins flag from marketplace settings
     let betaPluginsEnabled = false;
     try {
-      const persisted = await window.clubhouse.plugin.storageRead({
-        pluginId: '_system',
-        scope: 'global',
-        key: 'show-beta-plugins',
-      });
-      betaPluginsEnabled = persisted === true;
+      const marketplaceSettings = await window.clubhouse.marketplace.getMarketplaceSettings();
+      betaPluginsEnabled = marketplaceSettings?.showBetaPlugins === true;
     } catch {
       // Default to disabled
     }

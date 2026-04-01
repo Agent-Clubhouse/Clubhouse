@@ -889,12 +889,7 @@ export function PluginListSettings() {
     const newValue = !showBetaPlugins;
     setShowBetaPlugins(newValue);
     try {
-      await window.clubhouse.plugin.storageWrite({
-        pluginId: '_system',
-        scope: 'global',
-        key: 'show-beta-plugins',
-        value: newValue,
-      });
+      await window.clubhouse.marketplace.saveMarketplaceSettings({ showBetaPlugins: newValue });
     } catch { /* ignore */ }
   };
 
