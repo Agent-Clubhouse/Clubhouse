@@ -233,6 +233,8 @@ vi.stubGlobal('clubhouse', {
     removeCustomMarketplace: asyncNoop,
     toggleCustomMarketplace: asyncNoop,
     fetchCustomRegistries: async () => [],
+    getMarketplaceSettings: vi.fn().mockResolvedValue({ showBetaPlugins: false }),
+    saveMarketplaceSettings: vi.fn().mockResolvedValue(undefined),
   },
   log: {
     write: noop,
