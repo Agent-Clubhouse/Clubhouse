@@ -739,6 +739,8 @@ export function PluginListSettings() {
   const projectEnabled = usePluginStore((s) => s.projectEnabled);
   const appEnabled = usePluginStore((s) => s.appEnabled);
   const externalPluginsEnabled = usePluginStore((s) => s.externalPluginsEnabled);
+  const showBetaPlugins = usePluginStore((s) => s.showBetaPlugins);
+  const setShowBetaPlugins = usePluginStore((s) => s.setShowBetaPlugins);
   const enableForProject = usePluginStore((s) => s.enableForProject);
   const disableForProject = usePluginStore((s) => s.disableForProject);
   const enableApp = usePluginStore((s) => s.enableApp);
@@ -878,6 +880,19 @@ export function PluginListSettings() {
         pluginId: '_system',
         scope: 'global',
         key: 'external-plugins-enabled',
+        value: newValue,
+      });
+    } catch { /* ignore */ }
+  };
+
+  const handleBetaPluginsToggle = async () => {
+    const newValue = !showBetaPlugins;
+    setShowBetaPlugins(newValue);
+    try {
+      await window.clubhouse.plugin.storageWrite({
+        pluginId: '_system',
+        scope: 'global',
+        key: 'show-beta-plugins',
         value: newValue,
       });
     } catch { /* ignore */ }
@@ -1065,10 +1080,39 @@ export function PluginListSettings() {
           </>
         )}
 
+        {/* Beta plugins toggle (app context only) */}
+        {isAppContext && (
+          <div className={`${builtinPlugins.length > 0 ? 'mt-6 pt-6 border-t border-surface-1' : ''}`}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider">Beta</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-ctp-subtext0">Show beta plugins</span>
+                <button
+                  onClick={handleBetaPluginsToggle}
+                  className={`
+                    relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
+                    ${showBetaPlugins ? 'bg-ctp-accent' : 'bg-surface-2'}
+                  `}
+                >
+                  <span
+                    className={`
+                      absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
+                      ${showBetaPlugins ? 'translate-x-4' : 'translate-x-0'}
+                    `}
+                  />
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-ctp-subtext0 mb-3">
+              Show available beta versions from the official plugin registry.
+            </p>
+          </div>
+        )}
+
         {/* Master switch + External section (app context only) */}
         {isAppContext && (
           <>
-            <div className={`${builtinPlugins.length > 0 ? 'mt-6 pt-6 border-t border-surface-1' : ''}`}>
+            <div className={`mt-6 pt-6 border-t border-surface-1`}>
               <div className="flex items-center justify-between mb-1">
                 <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider">External</h3>
                 <div className="flex items-center gap-2">
