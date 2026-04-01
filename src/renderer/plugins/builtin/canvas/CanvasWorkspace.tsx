@@ -78,6 +78,10 @@ interface CanvasWorkspaceProps {
   onUpdateZoneTheme: (zoneId: string, themeId: string) => void;
   minimapAutoHide: boolean;
   onMinimapAutoHideChange: (value: boolean) => void;
+  elkAlgorithm: 'layered' | 'radial' | 'force' | 'mrtree';
+  elkDirection: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
+  onElkAlgorithmChange: (value: 'layered' | 'radial' | 'force' | 'mrtree') => void;
+  onElkDirectionChange: (value: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP') => void;
   /** When true, render all agent-to-agent wires as bidirectional. */
   bidirectionalWires?: boolean;
   /** When true, auto-create reverse direction for agent-to-agent wires. */
@@ -113,6 +117,10 @@ export function CanvasWorkspace({
   onUpdateZoneTheme,
   minimapAutoHide,
   onMinimapAutoHideChange,
+  elkAlgorithm,
+  elkDirection,
+  onElkAlgorithmChange,
+  onElkDirectionChange,
   bidirectionalWires,
   createBidirectionalWires,
 }: CanvasWorkspaceProps) {
@@ -1193,6 +1201,10 @@ export function CanvasWorkspace({
               onSizeToFit={handleSizeToFit}
               onAutolayout={handleAutolayout}
               hasSelection={selectedViewId !== null}
+              elkAlgorithm={elkAlgorithm}
+              elkDirection={elkDirection}
+              onElkAlgorithmChange={onElkAlgorithmChange}
+              onElkDirectionChange={onElkDirectionChange}
               hasViews={views.length > 0}
               views={views}
               onSelectView={handleSearchSelect}

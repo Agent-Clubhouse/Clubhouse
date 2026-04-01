@@ -89,6 +89,10 @@ interface CanvasControlsProps {
   onSelectView: (viewId: string) => void;
   onAutolayout?: (options: AutolayoutOptions) => void;
   hasSelection?: boolean;
+  elkAlgorithm?: ElkAlgorithm;
+  elkDirection?: LayeredDirection;
+  onElkAlgorithmChange?: (algorithm: ElkAlgorithm) => void;
+  onElkDirectionChange?: (direction: LayeredDirection) => void;
   attentionMap?: Map<string, CanvasViewAttention>;
   api?: PluginAPI;
   pinnedWidgets?: Array<{
@@ -98,14 +102,16 @@ interface CanvasControlsProps {
   }>;
 }
 
-export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, onAutolayout, hasSelection, attentionMap, api: _api, pinnedWidgets: _pinnedWidgets }: CanvasControlsProps) {
+export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, onAutolayout, hasSelection, elkAlgorithm: storedAlgorithm, elkDirection: storedDirection, onElkAlgorithmChange, onElkDirectionChange, attentionMap, api: _api, pinnedWidgets: _pinnedWidgets }: CanvasControlsProps) {
   const zoomPercent = Math.round(zoom * 100);
   const effectiveMap = attentionMap ?? new Map();
   const { count, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
   const { count: anchorCount, goNext: anchorNext, goPrev: anchorPrev } = useAnchorCycler(views, onSelectView);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
-  const [algorithm, setAlgorithm] = useState<ElkAlgorithm>('layered');
-  const [direction, setDirection] = useState<LayeredDirection>('RIGHT');
+  const algorithm = storedAlgorithm ?? 'layered';
+  const direction = storedDirection ?? 'RIGHT';
+  const setAlgorithm = useCallback((alg: ElkAlgorithm) => onElkAlgorithmChange?.(alg), [onElkAlgorithmChange]);
+  const setDirection = useCallback((dir: LayeredDirection) => onElkDirectionChange?.(dir), [onElkDirectionChange]);
 
   const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
 

@@ -97,14 +97,18 @@ export interface CanvasState {
   minimapAutoHide: boolean;
   setMinimapAutoHide: (value: boolean) => void;
 
+  // ELK layout preferences (per canvas, persisted)
+  elkAlgorithm: 'layered' | 'radial' | 'force' | 'mrtree';
+  elkDirection: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
+  setElkAlgorithm: (value: 'layered' | 'radial' | 'force' | 'mrtree') => void;
+  setElkDirection: (value: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP') => void;
+
   // Convenience selectors
   activeCanvas: () => CanvasInstance;
   views: CanvasView[];
   viewport: Viewport;
   zoomedViewId: string | null;
   selectedViewId: string | null;
-
-  // Note: minimapAutoHide is declared above with its setter
 }
 
 // ── Storage keys ─────────────────────────────────────────────────────
@@ -125,6 +129,8 @@ function createCanvasInstance(): CanvasInstance {
     zoomedViewId: null,
     selectedViewId: null,
     minimapAutoHide: true,
+    elkAlgorithm: 'layered',
+    elkDirection: 'RIGHT',
   };
 }
 
@@ -141,10 +147,12 @@ function updateActiveCanvas(state: CanvasState, updater: (canvas: CanvasInstance
     zoomedViewId: active.zoomedViewId,
     selectedViewId: active.selectedViewId,
     minimapAutoHide: active.minimapAutoHide,
+    elkAlgorithm: active.elkAlgorithm,
+    elkDirection: active.elkDirection,
   };
 }
 
-function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport' | 'zoomedViewId' | 'selectedViewId' | 'minimapAutoHide'> {
+function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport' | 'zoomedViewId' | 'selectedViewId' | 'minimapAutoHide' | 'elkAlgorithm' | 'elkDirection'> {
   const active = canvases.find((c) => c.id === activeCanvasId) ?? canvases[0];
   return {
     views: active.views,
@@ -152,6 +160,8 @@ function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): P
     zoomedViewId: active.zoomedViewId,
     selectedViewId: active.selectedViewId,
     minimapAutoHide: active.minimapAutoHide,
+    elkAlgorithm: active.elkAlgorithm,
+    elkDirection: active.elkDirection,
   };
 }
 
@@ -170,6 +180,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     selectedViewIds: [],
     wireDefinitions: [],
     minimapAutoHide: true,
+    elkAlgorithm: 'layered',
+    elkDirection: 'RIGHT',
     loaded: false,
     wiresLoaded: false,
 
@@ -207,6 +219,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
               zoomedViewId: s.zoomedViewId ?? null,
               selectedViewId: null,
               minimapAutoHide: s.minimapAutoHide ?? true,
+              elkAlgorithm: s.elkAlgorithm ?? 'layered',
+              elkDirection: s.elkDirection ?? 'RIGHT',
             };
           });
           const savedActive = await storage.read(STORAGE_KEY_ACTIVE) as string | null;
@@ -236,6 +250,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         viewport: c.viewport,
         nextZIndex: c.nextZIndex,
         minimapAutoHide: c.minimapAutoHide,
+        elkAlgorithm: c.elkAlgorithm,
+        elkDirection: c.elkDirection,
       }));
       await storage.write(STORAGE_KEY_INSTANCES, data);
       await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
@@ -375,6 +391,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           zoomedViewId: s.zoomedViewId ?? null,
           selectedViewId: (s as any).selectedViewId ?? existing?.selectedViewId ?? null,
           minimapAutoHide: existing?.minimapAutoHide ?? s.minimapAutoHide ?? true,
+          elkAlgorithm: existing?.elkAlgorithm ?? s.elkAlgorithm ?? 'layered',
+          elkDirection: existing?.elkDirection ?? s.elkDirection ?? 'RIGHT',
         };
       });
 
@@ -596,6 +614,20 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     setMinimapAutoHide: (value) => {
       set(updateActiveCanvas(get(), () => ({
         minimapAutoHide: value,
+      })));
+    },
+
+    // ── ELK layout preferences ──────────────────────────────────
+
+    setElkAlgorithm: (value) => {
+      set(updateActiveCanvas(get(), () => ({
+        elkAlgorithm: value,
+      })));
+    },
+
+    setElkDirection: (value) => {
+      set(updateActiveCanvas(get(), () => ({
+        elkDirection: value,
       })));
     },
 
