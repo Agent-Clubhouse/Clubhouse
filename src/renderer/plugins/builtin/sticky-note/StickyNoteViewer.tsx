@@ -37,7 +37,7 @@ export function StickyNoteViewer({ content, color, noteColors, onEdit, onColorCh
         ))}
       </div>
       <div
-        className="flex-1 overflow-auto p-3 text-xs text-ctp-text prose prose-sm max-w-none cursor-text"
+        className="flex-1 overflow-auto p-3 text-xs text-ctp-text sticky-note-prose cursor-text"
         dangerouslySetInnerHTML={{ __html: html }}
         onClick={onEdit}
         data-testid="sticky-note-content"
