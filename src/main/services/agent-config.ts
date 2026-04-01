@@ -623,7 +623,7 @@ export async function renameDurable(projectPath: string, agentId: string, newNam
 export async function updateDurable(
   projectPath: string,
   agentId: string,
-  updates: { name?: string; color?: string; icon?: string | null },
+  updates: { name?: string; color?: string; icon?: string | null; emoji?: string | null },
 ): Promise<void> {
   const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
@@ -635,6 +635,15 @@ export async function updateDurable(
       delete agent.icon;
     } else {
       agent.icon = updates.icon;
+    }
+  }
+  if (updates.emoji !== undefined) {
+    if (updates.emoji === null || updates.emoji === '') {
+      delete agent.emoji;
+    } else {
+      agent.emoji = updates.emoji;
+      // Emoji and image icon are mutually exclusive — clear image when emoji is set
+      delete agent.icon;
     }
   }
   await writeAgents(projectPath, agents);

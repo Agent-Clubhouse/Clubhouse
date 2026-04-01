@@ -122,6 +122,31 @@ describe('AgentAvatar', () => {
     render(<AgentAvatar agent={makeAgent()} />);
     expect(screen.getByText('BF')).toBeInTheDocument();
   });
+
+  it('renders emoji when emoji is set', () => {
+    render(<AgentAvatar agent={makeAgent({ emoji: '\u{1F680}' })} />);
+    expect(screen.getByRole('img')).toHaveTextContent('\u{1F680}');
+    // Should not show initials
+    expect(screen.queryByText('BF')).not.toBeInTheDocument();
+  });
+
+  it('prefers emoji over image icon', () => {
+    useAgentStore.setState({
+      agentIcons: { 'agent-1': 'data:image/png;base64,abc' },
+    });
+    render(<AgentAvatar agent={makeAgent({ emoji: '\u{1F525}', icon: 'custom.png' })} />);
+    expect(screen.getByRole('img')).toHaveTextContent('\u{1F525}');
+    expect(screen.queryByAltText('bold-falcon')).not.toBeInTheDocument();
+  });
+
+  it('prefers emoji over orchestrator mini icon', () => {
+    const { container } = render(
+      <AgentAvatar agent={makeAgent({ emoji: '\u{1F99E}', orchestrator: 'claude-code' })} />,
+    );
+    expect(screen.getByRole('img')).toHaveTextContent('\u{1F99E}');
+    // Should not have orchestrator SVG
+    expect(container.querySelector('svg')).not.toBeInTheDocument();
+  });
 });
 
 describe('AgentAvatarWithRing', () => {

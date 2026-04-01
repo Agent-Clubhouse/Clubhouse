@@ -97,6 +97,7 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
   const label = project.displayName || project.name;
   const letter = label.charAt(0).toUpperCase();
   const hasImage = !!project.icon && !!iconDataUrl;
+  const hasEmoji = !!project.emoji;
   const badges = useBadgeStore((s) => s.badges);
   const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
   const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
@@ -139,11 +140,14 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
             }
           `}
           style={isActive ? {
-            backgroundColor: hasImage ? undefined : hex,
+            backgroundColor: (hasImage || hasEmoji) ? undefined : hex,
+            ...(hasEmoji && { backgroundColor: `${hex}20` }),
             boxShadow: `0 10px 15px -3px ${hex}30, 0 4px 6px -4px ${hex}30`,
-          } : undefined}
+          } : hasEmoji ? { backgroundColor: `${hex}10` } : undefined}
         >
-          {hasImage ? (
+          {hasEmoji ? (
+            <span className="text-xl" role="img">{project.emoji}</span>
+          ) : hasImage ? (
             <img
               src={iconDataUrl}
               alt={label}

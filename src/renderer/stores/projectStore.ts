@@ -13,7 +13,7 @@ interface ProjectState {
   pickAndAddProject: () => Promise<Project | null>;
   checkGit: (projectId: string, dirPath: string) => Promise<boolean>;
   gitInit: (projectId: string, dirPath: string) => Promise<boolean>;
-  updateProject: (id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>) => Promise<void>;
+  updateProject: (id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'emoji' | 'name' | 'displayName' | 'orchestrator'>>) => Promise<void>;
   pickProjectIcon: (projectId: string) => Promise<void>;
   pickProjectImage: () => Promise<string | null>;
   saveCroppedProjectIcon: (projectId: string, dataUrl: string) => Promise<void>;
@@ -101,8 +101,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   updateProject: async (id, updates) => {
     const projects = await window.clubhouse.project.update(id, updates);
     set({ projects });
-    // If icon was removed, clear from cache
-    if (updates.icon === '') {
+    // If icon was removed (or emoji set which clears icon), clear from cache
+    if (updates.icon === '' || updates.emoji) {
       set((s) => {
         const { [id]: _, ...projectIcons } = s.projectIcons;
         return { projectIcons };

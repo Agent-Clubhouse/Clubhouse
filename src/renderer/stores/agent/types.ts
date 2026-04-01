@@ -44,7 +44,7 @@ export interface AgentCrudSlice {
   renameAgent: (id: string, newName: string, projectPath: string) => Promise<void>;
   updateAgent: (
     id: string,
-    updates: { name?: string; color?: string; icon?: string | null },
+    updates: { name?: string; color?: string; icon?: string | null; emoji?: string | null },
     projectPath: string,
   ) => Promise<void>;
   reorderAgents: (projectPath: string, orderedIds: string[]) => Promise<void>;

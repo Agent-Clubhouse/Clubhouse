@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { ResetProjectDialog } from './ResetProjectDialog';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
+import { EmojiPicker } from '../../components/EmojiPicker';
 import type { LaunchWrapperConfig, McpCatalogEntry } from '../../../shared/types';
 
 function NameAndPathSection({ projectId }: { projectId: string }) {
@@ -66,10 +67,13 @@ function AppearanceSection({ projectId }: { projectId: string }) {
   const { projects, projectIcons, updateProject, pickProjectImage, saveCroppedProjectIcon } = useProjectStore();
   const project = projects.find((p) => p.id === projectId);
   const [cropImageDataUrl, setCropImageDataUrl] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
   if (!project) return null;
 
   const iconDataUrl = projectIcons[project.id];
   const hasImage = !!project.icon && !!iconDataUrl;
+  const hasEmoji = !!project.emoji;
   const colorInfo = project.color ? AGENT_COLORS.find((c) => c.id === project.color) : null;
   const hex = colorInfo?.hex || '#6366f1';
   const label = project.displayName || project.name;
@@ -84,10 +88,26 @@ function AppearanceSection({ projectId }: { projectId: string }) {
   const handleCropConfirm = async (croppedDataUrl: string) => {
     setCropImageDataUrl(null);
     await saveCroppedProjectIcon(project.id, croppedDataUrl);
+    // Clear emoji since image takes precedence when explicitly set
+    if (project.emoji) {
+      await updateProject(project.id, { emoji: '' });
+    }
   };
 
   const handleCropCancel = () => {
     setCropImageDataUrl(null);
+  };
+
+  const handleEmojiSelect = async (emoji: string) => {
+    await updateProject(project.id, { emoji });
+  };
+
+  const handleRemoveIcon = async () => {
+    if (hasEmoji) {
+      await updateProject(project.id, { emoji: '' });
+    } else {
+      await updateProject(project.id, { icon: '' });
+    }
   };
 
   return (
@@ -95,11 +115,13 @@ function AppearanceSection({ projectId }: { projectId: string }) {
       {/* Icon */}
       <div>
         <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">Icon</label>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 relative">
           <div className="w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0"
-            style={hasImage ? undefined : { backgroundColor: `${hex}20`, color: hex }}
+            style={hasImage ? undefined : hasEmoji ? { backgroundColor: `${hex}15` } : { backgroundColor: `${hex}20`, color: hex }}
           >
-            {hasImage ? (
+            {hasEmoji ? (
+              <span className="text-2xl" role="img">{project.emoji}</span>
+            ) : hasImage ? (
               <img src={iconDataUrl} alt={label} className="w-full h-full object-cover" />
             ) : (
               <span className="text-xl font-bold">{label.charAt(0).toUpperCase()}</span>
@@ -112,14 +134,30 @@ function AppearanceSection({ projectId }: { projectId: string }) {
           >
             Choose Image
           </button>
-          {hasImage && (
+          <button
+            ref={emojiButtonRef}
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className="px-3 py-1.5 text-xs rounded-lg bg-surface-0 border border-surface-2
+              text-ctp-text hover:bg-surface-1 cursor-pointer transition-colors"
+          >
+            Choose Emoji
+          </button>
+          {(hasImage || hasEmoji) && (
             <button
-              onClick={() => updateProject(project.id, { icon: '' })}
+              onClick={handleRemoveIcon}
               className="px-3 py-1.5 text-xs rounded-lg bg-surface-0 border border-surface-2
                 text-ctp-subtext0 hover:text-red-400 hover:border-red-400/50 cursor-pointer transition-colors"
             >
               Remove
             </button>
+          )}
+          {showEmojiPicker && (
+            <div className="absolute top-12 left-0 z-50">
+              <EmojiPicker
+                onSelect={handleEmojiSelect}
+                onClose={() => setShowEmojiPicker(false)}
+              />
+            </div>
           )}
         </div>
       </div>
