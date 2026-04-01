@@ -30,6 +30,9 @@ import { IPC } from '../../../../shared/ipc-channels';
 import { BUILTIN_THEMES } from '../../../../renderer/themes';
 import { getPluginThemes } from '../../plugin-theme-store';
 import { discoverCommunityPlugins } from '../../plugin-discovery';
+import { fetchAllRegistries, installPlugin as marketplaceInstallPlugin } from '../../marketplace-service';
+import { listCustomMarketplaces } from '../../custom-marketplace-service';
+import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../../../shared/marketplace-types';
 
 /**
  * Register all assistant MCP tools (read + write).
@@ -1827,6 +1830,259 @@ registerToolTemplate('assistant', 'install_plugin', {
       isError: true,
     };
   }
+});
+
+// ── Marketplace Tools ──────────────────────────────────────────────────────
+
+registerToolTemplate('assistant', 'list_marketplace_plugins', {
+  description:
+    'List plugins available in the Clubhouse marketplace. Returns name, description, author, tags, ' +
+    'latest version, permissions, and whether each plugin is already installed locally. ' +
+    'Use this to help users discover plugins, answer "what plugins are available?", or suggest ' +
+    'relevant plugins when a user describes a problem that a plugin could solve (e.g., scheduling → automation plugin, ' +
+    'custom themes → theme plugin). Supports optional search to filter by name, description, author, or tags.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      search: {
+        type: 'string',
+        description: 'Optional search query to filter plugins by name, description, author, or tags.',
+      },
+      tag: {
+        type: 'string',
+        description: 'Optional tag to filter plugins (e.g., "automation", "theme", "workflow").',
+      },
+      official_only: {
+        type: 'boolean',
+        description: 'If true, only return official plugins. Defaults to false.',
+      },
+    },
+  },
+}, async (_targetId, _agentId, args) => {
+  try {
+    const search = (args.search as string || '').toLowerCase().trim();
+    const tagFilter = (args.tag as string || '').toLowerCase().trim();
+    const officialOnly = args.official_only as boolean || false;
+
+    // Fetch registries (official + custom)
+    const customMarketplaces = await listCustomMarketplaces();
+    const { allPlugins } = await fetchAllRegistries(customMarketplaces);
+
+    // Get installed plugins for comparison
+    const installed = await discoverCommunityPlugins();
+    const installedIds = new Set(installed.map(p => p.manifest.id));
+
+    // Filter plugins
+    let filtered = allPlugins;
+    if (officialOnly) {
+      filtered = filtered.filter(p => p.official);
+    }
+    if (tagFilter) {
+      filtered = filtered.filter(p => p.tags.some(t => t.toLowerCase() === tagFilter));
+    }
+    if (search) {
+      filtered = filtered.filter(p =>
+        p.name.toLowerCase().includes(search) ||
+        p.description.toLowerCase().includes(search) ||
+        p.author.toLowerCase().includes(search) ||
+        p.tags.some(t => t.toLowerCase().includes(search)),
+      );
+    }
+
+    const latestApiVersion = Math.max(...SUPPORTED_PLUGIN_API_VERSIONS);
+
+    const plugins = filtered.map(p => {
+      const latestRelease = p.releases[p.latest];
+      const compatible = latestRelease
+        ? SUPPORTED_PLUGIN_API_VERSIONS.includes(latestRelease.api)
+        : false;
+      return {
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        author: p.author,
+        official: p.official,
+        tags: p.tags,
+        latest_version: p.latest,
+        installed: installedIds.has(p.id),
+        compatible,
+        permissions: latestRelease?.permissions ?? [],
+        size_bytes: latestRelease?.size ?? null,
+        marketplace: p.marketplaceName ?? 'Official',
+      };
+    });
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          total: plugins.length,
+          plugins,
+          hint: plugins.length === 0 && search
+            ? `No plugins matched "${search}". Try a broader search or list all with no filters.`
+            : 'To install a plugin, use the download_marketplace_plugin tool. Plugins must be enabled manually by the user in Settings > Plugins.',
+        }, null, 2),
+      }],
+    };
+  } catch (err) {
+    return {
+      content: [{ type: 'text', text: `Failed to fetch marketplace: ${err instanceof Error ? err.message : String(err)}` }],
+      isError: true,
+    };
+  }
+});
+
+registerToolTemplate('assistant', 'download_marketplace_plugin', {
+  description:
+    'Download and install a plugin from the Clubhouse marketplace. This downloads the plugin but does NOT ' +
+    'enable it — the user must enable it manually in Settings > Plugins. This is a security boundary: ' +
+    'automated installation does not grant the plugin any permissions. ' +
+    'After downloading, always tell the user: 1) The plugin was downloaded successfully, ' +
+    '2) They need to go to Settings > Plugins to enable it, and 3) Offer to open the plugin settings view for them.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      plugin_id: {
+        type: 'string',
+        description: 'The plugin ID from the marketplace (from list_marketplace_plugins).',
+      },
+      version: {
+        type: 'string',
+        description: 'Version to install. Defaults to the latest version.',
+      },
+    },
+    required: ['plugin_id'],
+  },
+}, async (_targetId, _agentId, args) => {
+  try {
+    const pluginId = args.plugin_id as string;
+    const requestedVersion = args.version as string | undefined;
+
+    // Fetch registry to get plugin details
+    const customMarketplaces = await listCustomMarketplaces();
+    const { allPlugins } = await fetchAllRegistries(customMarketplaces);
+
+    const plugin = allPlugins.find(p => p.id === pluginId);
+    if (!plugin) {
+      return {
+        content: [{ type: 'text', text: `Plugin "${pluginId}" not found in the marketplace. Use list_marketplace_plugins to see available plugins.` }],
+        isError: true,
+      };
+    }
+
+    const version = requestedVersion || plugin.latest;
+    const release = plugin.releases[version];
+    if (!release) {
+      const available = Object.keys(plugin.releases).join(', ');
+      return {
+        content: [{ type: 'text', text: `Version "${version}" not found for plugin "${plugin.name}". Available versions: ${available}` }],
+        isError: true,
+      };
+    }
+
+    // Check API compatibility
+    if (!SUPPORTED_PLUGIN_API_VERSIONS.includes(release.api)) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Plugin "${plugin.name}" v${version} requires API version ${release.api}, which is not supported. ` +
+            `Supported API versions: ${SUPPORTED_PLUGIN_API_VERSIONS.join(', ')}. The user may need to update Clubhouse.`,
+        }],
+        isError: true,
+      };
+    }
+
+    // Check if already installed
+    const installed = await discoverCommunityPlugins();
+    const existing = installed.find(p => p.manifest.id === pluginId);
+    if (existing) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            message: `Plugin "${plugin.name}" is already installed (version ${existing.manifest.version}).`,
+            id: pluginId,
+            installed_version: existing.manifest.version,
+            latest_version: plugin.latest,
+            note: existing.manifest.version !== plugin.latest
+              ? 'A newer version is available. The user can update via Settings > Plugins.'
+              : 'Already up to date.',
+          }),
+        }],
+      };
+    }
+
+    // Download and install
+    const result = await marketplaceInstallPlugin({
+      pluginId,
+      version,
+      assetUrl: release.asset,
+      sha256: release.sha256,
+    });
+
+    if (!result.success) {
+      return {
+        content: [{ type: 'text', text: `Failed to download plugin "${plugin.name}": ${result.error}` }],
+        isError: true,
+      };
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          message: `Plugin "${plugin.name}" v${version} downloaded successfully.`,
+          id: pluginId,
+          name: plugin.name,
+          version,
+          permissions: release.permissions,
+          note: 'Plugin downloaded but NOT enabled. The user must enable it manually in Settings > Plugins.',
+          next_steps: [
+            'Tell the user the plugin was downloaded successfully.',
+            'Explain they need to go to Settings > Plugins to enable it.',
+            'Offer to open the plugin settings view using the open_plugin_settings tool.',
+          ],
+        }, null, 2),
+      }],
+    };
+  } catch (err) {
+    return {
+      content: [{ type: 'text', text: `Failed to download plugin: ${err instanceof Error ? err.message : String(err)}` }],
+      isError: true,
+    };
+  }
+});
+
+registerToolTemplate('assistant', 'open_plugin_settings', {
+  description:
+    'Navigate the user to the Plugins settings view. Optionally opens the detail page for a specific plugin. ' +
+    'Use this after downloading a plugin to help the user enable it, or when the user asks about plugin configuration.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      plugin_id: {
+        type: 'string',
+        description: 'Optional plugin ID to open its detail/settings page directly. If omitted, opens the plugin list.',
+      },
+    },
+  },
+}, async (_targetId, _agentId, args) => {
+  const pluginId = args.plugin_id as string | undefined;
+
+  // Send navigation IPC to all windows
+  const windows = BrowserWindow.getAllWindows();
+  for (const win of windows) {
+    win.webContents.send(IPC.WINDOW.NAVIGATE_TO_PLUGIN_SETTINGS, pluginId);
+  }
+
+  return {
+    content: [{
+      type: 'text',
+      text: pluginId
+        ? `Opened plugin settings for "${pluginId}". The user can enable the plugin and review its permissions there.`
+        : 'Opened the Plugins settings view. The user can browse, enable, and configure plugins there.',
+    }],
+  };
 });
 
 } // end registerAssistantTools

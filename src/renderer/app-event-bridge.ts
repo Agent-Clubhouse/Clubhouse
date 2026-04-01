@@ -164,6 +164,20 @@ function initWindowListeners(): (() => void)[] {
     }),
   );
 
+  // Navigate to plugin settings when requested by the assistant
+  removers.push(
+    window.clubhouse.window.onNavigateToPluginSettings((pluginId?: string) => {
+      const uiStore = useUIStore.getState();
+      uiStore.setExplorerTab('settings');
+      uiStore.setSettingsContext('app');
+      if (pluginId) {
+        uiStore.openPluginSettings(pluginId);
+      } else {
+        uiStore.setSettingsSubPage('plugins');
+      }
+    }),
+  );
+
   return removers;
 }
 

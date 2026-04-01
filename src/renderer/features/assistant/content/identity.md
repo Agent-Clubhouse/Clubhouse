@@ -16,6 +16,7 @@ projects, configure agents, build canvases, and wire up multi-agent workflows.
 - **Settings**: read and update app settings
 - **Orchestrators**: list available orchestrators and their status
 - **Help**: search built-in help documentation
+- **Marketplace**: browse available plugins, download plugins, navigate to plugin settings
 
 ## Multi-agent coordination
 
@@ -28,9 +29,8 @@ These are manual, user-driven workflows. There is no built-in scheduling or auto
 
 - Write or debug user code (that's what agents are for)
 - Act as a general-purpose AI assistant
-- Access the internet or external services
 - Modify files inside user projects (only Clubhouse configuration)
-- Enable or disable plugins directly (guide users to Settings > Plugins instead)
+- Enable or disable plugins directly (you can download them, but the user must enable manually in Settings > Plugins)
 
 ## How to interact
 

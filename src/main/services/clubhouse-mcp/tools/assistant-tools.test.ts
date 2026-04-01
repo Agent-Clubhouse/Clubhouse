@@ -64,6 +64,54 @@ vi.mock('../../plugin-discovery', async () => {
   };
 });
 
+const mockFetchAllRegistries = vi.fn().mockResolvedValue({
+  official: { registry: { version: 1, updated: '2026-01-01', plugins: [] }, featured: null },
+  custom: [],
+  allPlugins: [
+    {
+      id: 'automation-plugin',
+      name: 'Automation Suite',
+      description: 'Schedule recurring tasks with cron expressions',
+      author: 'Clubhouse Team',
+      official: true,
+      repo: 'https://github.com/example/automation',
+      path: 'plugins/automation',
+      tags: ['automation', 'scheduling', 'cron'],
+      latest: '1.0.0',
+      releases: {
+        '1.0.0': { api: 0.9, asset: 'https://example.com/automation-1.0.0.zip', sha256: 'abc123', permissions: ['commands', 'storage'], size: 50000 },
+      },
+    },
+    {
+      id: 'theme-pack',
+      name: 'Extra Themes',
+      description: 'Additional color themes for Clubhouse',
+      author: 'Community',
+      official: false,
+      repo: 'https://github.com/example/themes',
+      path: 'plugins/themes',
+      tags: ['theme', 'appearance'],
+      latest: '2.0.0',
+      releases: {
+        '2.0.0': { api: 0.9, asset: 'https://example.com/themes-2.0.0.zip', sha256: 'def456', permissions: ['theme'], size: 12000 },
+      },
+      marketplaceId: 'custom-1',
+      marketplaceName: 'Community Hub',
+    },
+  ],
+});
+
+const mockMarketplaceInstallPlugin = vi.fn().mockResolvedValue({ success: true });
+
+vi.mock('../../marketplace-service', () => ({
+  fetchAllRegistries: (...a: unknown[]) => mockFetchAllRegistries(...a),
+  installPlugin: (...a: unknown[]) => mockMarketplaceInstallPlugin(...a),
+}));
+
+vi.mock('../../custom-marketplace-service', () => ({
+  listCustomMarketplaces: vi.fn().mockResolvedValue([]),
+}));
+
 const mockSendCanvasCommand = vi.fn().mockResolvedValue({ success: true, data: { view_id: 'view_1' } });
 
 vi.mock('../canvas-command', () => ({
@@ -1528,6 +1576,140 @@ describe('assistant-tools', () => {
         const hasWire = bp.wires.some((w: any) => w.from === agent.id && w.to === 'gp');
         expect(hasWire).toBe(true);
       }
+    });
+  });
+
+  // ── Marketplace tools ─────────────────────────────────────────────────
+
+  describe('marketplace tools', () => {
+    beforeEach(() => {
+      mockFetchAllRegistries.mockClear();
+      mockMarketplaceInstallPlugin.mockClear();
+      mockDiscoverCommunityPlugins.mockReset().mockResolvedValue([]);
+    });
+
+    it('registers marketplace tools in scoped tool list', () => {
+      const tools = getScopedToolList(TEST_AGENT_ID);
+      const names = tools.map(t => t.name);
+      expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__list_marketplace_plugins`);
+      expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__download_marketplace_plugin`);
+      expect(names).toContain(`assistant__${ASSISTANT_TARGET_ID}__open_plugin_settings`);
+    });
+
+    it('list_marketplace_plugins returns all plugins with no filters', async () => {
+      const result = await callAssistantTool('list_marketplace_plugins', {});
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.total).toBe(2);
+      expect(data.plugins[0].id).toBe('automation-plugin');
+      expect(data.plugins[1].id).toBe('theme-pack');
+    });
+
+    it('list_marketplace_plugins filters by search term', async () => {
+      const result = await callAssistantTool('list_marketplace_plugins', { search: 'cron' });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.total).toBe(1);
+      expect(data.plugins[0].id).toBe('automation-plugin');
+    });
+
+    it('list_marketplace_plugins filters by tag', async () => {
+      const result = await callAssistantTool('list_marketplace_plugins', { tag: 'theme' });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.total).toBe(1);
+      expect(data.plugins[0].id).toBe('theme-pack');
+    });
+
+    it('list_marketplace_plugins filters official only', async () => {
+      const result = await callAssistantTool('list_marketplace_plugins', { official_only: true });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.total).toBe(1);
+      expect(data.plugins[0].official).toBe(true);
+    });
+
+    it('list_marketplace_plugins marks installed plugins', async () => {
+      mockDiscoverCommunityPlugins.mockResolvedValue([
+        { manifest: { id: 'automation-plugin', name: 'Automation', version: '1.0.0' }, pluginPath: '/p', fromMarketplace: true },
+      ] as any);
+      const result = await callAssistantTool('list_marketplace_plugins', {});
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.plugins.find((p: any) => p.id === 'automation-plugin').installed).toBe(true);
+      expect(data.plugins.find((p: any) => p.id === 'theme-pack').installed).toBe(false);
+    });
+
+    it('list_marketplace_plugins returns hint when search has no results', async () => {
+      const result = await callAssistantTool('list_marketplace_plugins', { search: 'nonexistent' });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.total).toBe(0);
+      expect(data.hint).toContain('No plugins matched');
+    });
+
+    it('list_marketplace_plugins includes marketplace source', async () => {
+      const result = await callAssistantTool('list_marketplace_plugins', {});
+      const data = JSON.parse(result.content[0].text);
+      expect(data.plugins[0].marketplace).toBe('Official');
+      expect(data.plugins[1].marketplace).toBe('Community Hub');
+    });
+
+    it('download_marketplace_plugin downloads and installs a plugin', async () => {
+      const result = await callAssistantTool('download_marketplace_plugin', { plugin_id: 'automation-plugin' });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.message).toContain('downloaded successfully');
+      expect(data.id).toBe('automation-plugin');
+      expect(data.note).toContain('NOT enabled');
+      expect(mockMarketplaceInstallPlugin).toHaveBeenCalledWith({
+        pluginId: 'automation-plugin',
+        version: '1.0.0',
+        assetUrl: 'https://example.com/automation-1.0.0.zip',
+        sha256: 'abc123',
+      });
+    });
+
+    it('download_marketplace_plugin returns error for unknown plugin', async () => {
+      const result = await callAssistantTool('download_marketplace_plugin', { plugin_id: 'nonexistent' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('not found in the marketplace');
+    });
+
+    it('download_marketplace_plugin detects already installed', async () => {
+      mockDiscoverCommunityPlugins.mockResolvedValue([
+        { manifest: { id: 'automation-plugin', name: 'Automation Suite', version: '1.0.0' }, pluginPath: '/p', fromMarketplace: true },
+      ] as any);
+      const result = await callAssistantTool('download_marketplace_plugin', { plugin_id: 'automation-plugin' });
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.message).toContain('already installed');
+      expect(mockMarketplaceInstallPlugin).not.toHaveBeenCalled();
+    });
+
+    it('download_marketplace_plugin handles install failure', async () => {
+      mockMarketplaceInstallPlugin.mockResolvedValueOnce({ success: false, error: 'Network error' });
+      const result = await callAssistantTool('download_marketplace_plugin', { plugin_id: 'automation-plugin' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Network error');
+    });
+
+    it('download_marketplace_plugin rejects invalid version', async () => {
+      const result = await callAssistantTool('download_marketplace_plugin', { plugin_id: 'automation-plugin', version: '99.0.0' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('not found');
+    });
+
+    it('open_plugin_settings sends IPC to navigate', async () => {
+      const result = await callAssistantTool('open_plugin_settings', { plugin_id: 'automation-plugin' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Opened plugin settings');
+    });
+
+    it('open_plugin_settings works without plugin_id', async () => {
+      const result = await callAssistantTool('open_plugin_settings', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Plugins settings view');
     });
   });
 });

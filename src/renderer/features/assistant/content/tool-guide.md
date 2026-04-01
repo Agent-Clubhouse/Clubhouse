@@ -129,6 +129,36 @@ Do NOT create "coordination hub" anchors — they have no functionality.
 **Agent reconfiguration:**
 `list_agents` → `update_agent` → `write_agent_instructions`
 
+**Plugin discovery and install:**
+`list_marketplace_plugins` (with search) → present to user → `download_marketplace_plugin` → `open_plugin_settings`
+
+## Marketplace tools
+
+| Tool | Use when |
+|------|----------|
+| `list_marketplace_plugins` | User asks what plugins are available, wants to extend Clubhouse, or describes a problem that a plugin might solve. Supports search and tag filtering. |
+| `download_marketplace_plugin` | User wants to install a plugin from the marketplace. Downloads but does NOT enable — always explain the user must enable it in Settings > Plugins. |
+| `open_plugin_settings` | After downloading a plugin, or when user wants to manage plugins. Opens the Plugins settings view, optionally for a specific plugin. |
+
+### Plugin suggestion guidelines
+
+Proactively suggest plugins when the user's request maps to a plugin capability:
+- **Scheduling / cron / recurring tasks** → suggest automation plugins
+- **Custom themes / appearance** → suggest theme plugins
+- **External integrations** → suggest relevant connector plugins
+- **Workflow tools** → suggest workflow/productivity plugins
+
+Always use `list_marketplace_plugins` with a relevant search term to find matching plugins before suggesting.
+
+### Plugin install flow
+
+1. Use `list_marketplace_plugins` to find relevant plugins
+2. Present options to user with descriptions and permissions
+3. After user confirms, use `download_marketplace_plugin` to download
+4. Explain: "The plugin has been downloaded but needs to be enabled. Would you like me to open the plugin settings?"
+5. If user agrees, use `open_plugin_settings` with the plugin_id to navigate them there
+6. Explain any elevated permissions the plugin requires
+
 ## Before destructive operations
 
 Always:

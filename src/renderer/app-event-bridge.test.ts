@@ -14,6 +14,7 @@ const mockRemovers = {
   onRequestCanvasState: vi.fn(),
   onCanvasMutation: vi.fn(),
   onNavigateToAgent: vi.fn(),
+  onNavigateToPluginSettings: vi.fn(),
   onExit: vi.fn(),
   onHookEvent: vi.fn(),
   onAgentWaking: vi.fn(),
@@ -45,6 +46,7 @@ vi.stubGlobal('window', {
       respondCanvasState: vi.fn(),
       onCanvasMutation: vi.fn(() => mockRemovers.onCanvasMutation),
       onNavigateToAgent: vi.fn(() => mockRemovers.onNavigateToAgent),
+      onNavigateToPluginSettings: vi.fn(() => mockRemovers.onNavigateToPluginSettings),
     },
     pty: {
       onExit: vi.fn(() => mockRemovers.onExit),
@@ -307,6 +309,7 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.window.onRequestCanvasState).toHaveBeenCalled();
     expect(window.clubhouse.window.onCanvasMutation).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToAgent).toHaveBeenCalled();
+    expect(window.clubhouse.window.onNavigateToPluginSettings).toHaveBeenCalled();
   });
 
   it('should register agent lifecycle listeners', () => {

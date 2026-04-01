@@ -494,6 +494,7 @@ describe('app-event-bridge.ts – listener registration', () => {
       'onRequestCanvasState',
       'onCanvasMutation',
       'onNavigateToAgent',
+      'onNavigateToPluginSettings',
     ];
 
     for (const listener of expectedListeners) {

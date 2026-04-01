@@ -1024,6 +1024,11 @@ const api = {
       ipcRenderer.on(IPC.WINDOW.NAVIGATE_TO_AGENT, listener);
       return () => { ipcRenderer.removeListener(IPC.WINDOW.NAVIGATE_TO_AGENT, listener); };
     },
+    onNavigateToPluginSettings: (callback: (pluginId?: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, pluginId?: string) => callback(pluginId);
+      ipcRenderer.on(IPC.WINDOW.NAVIGATE_TO_PLUGIN_SETTINGS, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.NAVIGATE_TO_PLUGIN_SETTINGS, listener); };
+    },
     getAgentState: (): Promise<{
       agents: Record<string, unknown>;
       agentDetailedStatus: Record<string, unknown>;
