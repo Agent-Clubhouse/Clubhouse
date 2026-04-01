@@ -366,6 +366,7 @@ export const ASSISTANT_TOOL_CATALOG = {
     'layout_canvas', 'list_card_types', 'get_card_defaults',
   ] as const,
   plugins: ['list_plugins', 'install_plugin'] as const,
+  marketplace: ['list_marketplace_plugins', 'download_marketplace_plugin', 'open_plugin_settings'] as const,
 } as const;
 
 /** Flat list of all tool suffixes. */

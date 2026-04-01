@@ -64,44 +64,41 @@ vi.mock('../../plugin-discovery', async () => {
   };
 });
 
-const mockFetchAllRegistries = vi.fn().mockResolvedValue({
-  official: { registry: { version: 1, updated: '2026-01-01', plugins: [] }, featured: null },
-  custom: [],
-  allPlugins: [
-    {
-      id: 'automation-plugin',
-      name: 'Automation Suite',
-      description: 'Schedule recurring tasks with cron expressions',
-      author: 'Clubhouse Team',
-      official: true,
-      repo: 'https://github.com/example/automation',
-      path: 'plugins/automation',
-      tags: ['automation', 'scheduling', 'cron'],
-      latest: '1.0.0',
-      releases: {
-        '1.0.0': { api: 0.9, asset: 'https://example.com/automation-1.0.0.zip', sha256: 'abc123', permissions: ['commands', 'storage'], size: 50000 },
-      },
+const MOCK_MARKETPLACE_PLUGINS = [
+  {
+    id: 'automation-plugin',
+    name: 'Automation Suite',
+    description: 'Schedule recurring tasks with cron expressions',
+    author: 'Clubhouse Team',
+    official: true,
+    repo: 'https://github.com/example/automation',
+    path: 'plugins/automation',
+    tags: ['automation', 'scheduling', 'cron'],
+    latest: '1.0.0',
+    releases: {
+      '1.0.0': { api: 0.9, asset: 'https://example.com/automation-1.0.0.zip', sha256: 'abc123', permissions: ['commands', 'storage'], size: 50000 },
     },
-    {
-      id: 'theme-pack',
-      name: 'Extra Themes',
-      description: 'Additional color themes for Clubhouse',
-      author: 'Community',
-      official: false,
-      repo: 'https://github.com/example/themes',
-      path: 'plugins/themes',
-      tags: ['theme', 'appearance'],
-      latest: '2.0.0',
-      releases: {
-        '2.0.0': { api: 0.9, asset: 'https://example.com/themes-2.0.0.zip', sha256: 'def456', permissions: ['theme'], size: 12000 },
-      },
-      marketplaceId: 'custom-1',
-      marketplaceName: 'Community Hub',
+  },
+  {
+    id: 'theme-pack',
+    name: 'Extra Themes',
+    description: 'Additional color themes for Clubhouse',
+    author: 'Community',
+    official: false,
+    repo: 'https://github.com/example/themes',
+    path: 'plugins/themes',
+    tags: ['theme', 'appearance'],
+    latest: '2.0.0',
+    releases: {
+      '2.0.0': { api: 0.9, asset: 'https://example.com/themes-2.0.0.zip', sha256: 'def456', permissions: ['theme'], size: 12000 },
     },
-  ],
-});
+    marketplaceId: 'custom-1',
+    marketplaceName: 'Community Hub',
+  },
+];
 
-const mockMarketplaceInstallPlugin = vi.fn().mockResolvedValue({ success: true });
+const mockFetchAllRegistries = vi.fn();
+const mockMarketplaceInstallPlugin = vi.fn();
 
 vi.mock('../../marketplace-service', () => ({
   fetchAllRegistries: (...a: unknown[]) => mockFetchAllRegistries(...a),
@@ -1583,9 +1580,13 @@ describe('assistant-tools', () => {
 
   describe('marketplace tools', () => {
     beforeEach(() => {
-      mockFetchAllRegistries.mockClear();
-      mockMarketplaceInstallPlugin.mockClear();
-      mockDiscoverCommunityPlugins.mockReset().mockResolvedValue([]);
+      mockFetchAllRegistries.mockResolvedValue({
+        official: { registry: { version: 1, updated: '2026-01-01', plugins: [] }, featured: null },
+        custom: [],
+        allPlugins: MOCK_MARKETPLACE_PLUGINS,
+      });
+      mockMarketplaceInstallPlugin.mockResolvedValue({ success: true });
+      mockDiscoverCommunityPlugins.mockResolvedValue([]);
     });
 
     it('registers marketplace tools in scoped tool list', () => {
