@@ -26,6 +26,7 @@ interface PluginState {
   safeModeActive: boolean;
   pluginSettings: Record<string, Record<string, unknown>>; // "projectId:pluginId" or "app:pluginId" -> settings
   externalPluginsEnabled: boolean;
+  showBetaPlugins: boolean;
   permissionViolations: PermissionViolation[];
   contextRevision: number;
   /** Dynamic plugin titles set via the window API (pluginId -> title). */
@@ -34,6 +35,7 @@ interface PluginState {
   // Actions
   bumpContextRevision: () => void;
   setExternalPluginsEnabled: (enabled: boolean) => void;
+  setShowBetaPlugins: (enabled: boolean) => void;
   registerPlugin: (manifest: PluginManifest, source: PluginSource, pluginPath: string, status?: PluginStatus, error?: string) => void;
   setPluginStatus: (pluginId: string, status: PluginStatus, error?: string) => void;
   setPluginModule: (pluginId: string, mod: PluginModule) => void;
@@ -63,6 +65,7 @@ export const usePluginStore = create<PluginState>((set) => ({
   safeModeActive: false,
   pluginSettings: {},
   externalPluginsEnabled: false,
+  showBetaPlugins: false,
   permissionViolations: [],
   contextRevision: 0,
   pluginTitles: {},
@@ -72,6 +75,9 @@ export const usePluginStore = create<PluginState>((set) => ({
 
   setExternalPluginsEnabled: (enabled) =>
     set({ externalPluginsEnabled: enabled }),
+
+  setShowBetaPlugins: (enabled) =>
+    set({ showBetaPlugins: enabled }),
 
   registerPlugin: (manifest, source, pluginPath, status = 'registered', error) =>
     set((s) => ({
