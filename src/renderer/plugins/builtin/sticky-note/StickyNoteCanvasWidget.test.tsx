@@ -86,7 +86,7 @@ describe('StickyNoteCanvasWidget', () => {
   it('uses yellow tint as default when no color metadata is set', () => {
     const { container } = render(<StickyNoteCanvasWidget {...makeProps({ metadata: {} })} />);
     const widget = container.querySelector('[data-testid="sticky-note-widget"]');
-    expect(widget?.className).toContain('bg-ctp-yellow');
+    expect(widget?.className).toContain(TINTS.yellow.dark.split(' ')[0]);
   });
 
   it('applies the correct tint class for the given color', () => {
@@ -94,7 +94,7 @@ describe('StickyNoteCanvasWidget', () => {
       <StickyNoteCanvasWidget {...makeProps({ metadata: { color: 'blue' } })} />,
     );
     const widget = container.querySelector('[data-testid="sticky-note-widget"]');
-    expect(widget?.className).toContain('bg-ctp-blue');
+    expect(widget?.className).toContain(TINTS.blue.dark.split(' ')[0]);
   });
 
   it('subscribes to theme changes on mount and unsubscribes on unmount', () => {
