@@ -31,8 +31,27 @@ vi.mock('./AddAgentDialog', () => ({
 vi.mock('./AgentGalleryDialog', () => ({
   AgentGalleryDialog: ({ onClose, onCreate }: any) => (
     <div data-testid="agent-gallery-dialog">
-      <button onClick={() => onCreate({ id: 'qa', name: 'Quality Assurance' }, 'red')}>Create QA</button>
+      <button onClick={() => onCreate({ id: 'qa', name: 'Quality Assurance', description: 'QA persona', content: '# QA' }, 'red')}>Create QA</button>
       <button onClick={onClose}>Close Gallery</button>
+    </div>
+  ),
+}));
+
+vi.mock('./TemplateConfigDialog', () => ({
+  TemplateConfigDialog: ({ persona, personaColor, onClose, onCreate }: any) => (
+    <div data-testid="template-config-dialog">
+      <span>Configure {persona.name}</span>
+      <button onClick={() => onCreate({
+        persona,
+        name: persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, ''),
+        color: personaColor,
+        model: 'default',
+        orchestrator: 'claude-code',
+        useWorktree: true,
+        freeAgentMode: false,
+        structuredMode: false,
+      })}>Confirm Template</button>
+      <button onClick={onClose}>Cancel Config</button>
     </div>
   ),
 }));
@@ -162,7 +181,23 @@ describe('AgentList dropdown', () => {
     expect(screen.getByTestId('agent-gallery-dialog')).toBeInTheDocument();
   });
 
-  it('calls createDurable with persona param when gallery creates agent', async () => {
+  it('shows template config dialog after gallery selection', () => {
+    render(<AgentList />);
+    const buttons = screen.getAllByRole('button');
+    const dropdownBtn = buttons.find((b) => b.textContent === '\u25BE');
+    fireEvent.click(dropdownBtn!);
+    fireEvent.click(screen.getByText('From Template'));
+
+    // Select template from gallery
+    fireEvent.click(screen.getByText('Create QA'));
+
+    // Gallery closes, config dialog opens
+    expect(screen.queryByTestId('agent-gallery-dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
+    expect(screen.getByText('Configure Quality Assurance')).toBeInTheDocument();
+  });
+
+  it('calls createDurable with persona param after template config', async () => {
     const createDurableSpy = vi.fn().mockResolvedValue({
       id: 'agent-qa', name: 'quality-assurance', color: 'red', worktreePath: '/wt/qa',
     });
@@ -174,20 +209,24 @@ describe('AgentList dropdown', () => {
     fireEvent.click(dropdownBtn!);
     fireEvent.click(screen.getByText('From Template'));
 
+    // Select template from gallery
+    fireEvent.click(screen.getByText('Create QA'));
+
+    // Confirm in config dialog
     await act(async () => {
-      fireEvent.click(screen.getByText('Create QA'));
+      fireEvent.click(screen.getByText('Confirm Template'));
     });
 
     expect(createDurableSpy).toHaveBeenCalledWith(
       '/project',           // projectPath
       'quality-assurance',  // slugified name
       'red',                // color
-      undefined,            // model
-      true,                 // useWorktree (always true for templates)
-      undefined,            // orchestrator
-      undefined,            // freeAgentMode
+      undefined,            // model (default → undefined)
+      true,                 // useWorktree
+      'claude-code',        // orchestrator
+      undefined,            // freeAgentMode (false → undefined)
       undefined,            // mcpIds
-      undefined,            // structuredMode
+      undefined,            // structuredMode (false → undefined)
       'qa',                 // persona ID
     );
   });

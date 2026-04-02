@@ -5,8 +5,8 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useRemoteProjectStore, isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
-import { AGENT_COLORS } from '../../../shared/name-generator';
 import { getOrchestratorColor, getModelColor, getOrchestratorLabel, formatModelLabel } from './orchestrator-colors';
+import { AgentAvatar } from './AgentAvatar';
 
 interface Props {
   agent: Agent;
@@ -151,7 +151,6 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
-  const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
   const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
@@ -395,31 +394,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
       >
         {/* Avatar with status ring */}
         <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
-          <div
-            className="w-9 h-9 rounded-full flex items-center justify-center"
-            style={{ border: `2px solid ${ringColor}` }}
-          >
-            {isDurable ? (
-              agent.icon && iconDataUrl ? (
-                <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0">
-                  <img src={iconDataUrl} alt={agent.name} className="w-full h-full object-cover" />
-                </div>
-              ) : (
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-                  style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
-                >
-                  {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
-                </div>
-              )
-            ) : (
-              <div className="w-7 h-7 rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                </svg>
-              </div>
-            )}
-          </div>
+          <AgentAvatar agent={agent} size="md" showRing ringColor={ringColor} iconUrl={iconDataUrl} />
           {/* Free Agent Mode badge */}
           {agent.freeAgentMode && (
             <div

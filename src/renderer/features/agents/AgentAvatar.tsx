@@ -70,27 +70,38 @@ function OrchestratorMiniIcon({ orchestrator, size }: { orchestrator?: Orchestra
 
 interface Props {
   agent: Agent;
-  size?: 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   showRing?: boolean;
   ringColor?: string;
+  /** Override icon URL (e.g. for remote agents whose icons are in a different store) */
+  iconUrl?: string;
 }
 
-export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor }: Props) {
+const SIZE_CONFIG = {
+  xs: { outer: 'w-7 h-7', inner: 'w-5 h-5', font: 'text-[8px]', icon: 20, bolt: 8 },
+  sm: { outer: 'w-8 h-8', inner: 'w-6 h-6', font: 'text-[9px]', icon: 24, bolt: 10 },
+  md: { outer: 'w-9 h-9', inner: 'w-7 h-7', font: 'text-[10px]', icon: 28, bolt: 12 },
+  lg: { outer: 'w-14 h-14', inner: 'w-12 h-12', font: 'text-base', icon: 48, bolt: 16 },
+};
+
+export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, iconUrl }: Props) {
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const bgColor = colorInfo?.hex || '#6366f1';
-  const iconDataUrl = useAgentStore((s) => s.agentIcons[agent.id]);
+  const storeIconUrl = useAgentStore((s) => s.agentIcons[agent.id]);
+  const iconDataUrl = iconUrl ?? storeIconUrl;
 
-  const outerSize = size === 'sm' ? 'w-8 h-8' : 'w-9 h-9';
-  const innerSize = size === 'sm' ? 'w-6 h-6' : 'w-7 h-7';
-  const fontSize = size === 'sm' ? 'text-[9px]' : 'text-[10px]';
-  const iconPx = size === 'sm' ? 24 : 28;
+  const s = SIZE_CONFIG[size];
+  const outerSize = s.outer;
+  const innerSize = s.inner;
+  const fontSize = s.font;
+  const iconPx = s.icon;
 
   const renderContent = () => {
     if (agent.kind !== 'durable') {
       // Quick agent: lightning bolt
       return (
         <div className={`${innerSize} rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0`}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg width={s.bolt} height={s.bolt} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
         </div>
