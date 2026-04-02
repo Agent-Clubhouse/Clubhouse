@@ -120,8 +120,9 @@ function getElkOptions(opts?: ElkLayoutOptions): Record<string, string> {
  * Auto-pick the most-connected node as the root for radial layout.
  * If `gpHubIds` is provided, prefer those as the root (GP hub cards
  * are natural centers for hub-spoke topologies).
+ * @internal Exported for testing.
  */
-function pickRootNode(
+export function pickRootNode(
   cards: Array<{ id: string }>,
   edges: Array<{ source: string; target: string }>,
   gpHubIds?: string[],

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { layoutElk, ElkLayoutInput } from './elk-layout';
+import { layoutElk, ElkLayoutInput, resolveOverlaps, pickRootNode } from './elk-layout';
 
 function emptyInput(): ElkLayoutInput {
   return { cards: [], edges: [], zones: [] };
@@ -104,4 +104,180 @@ describe('elk-layout', () => {
   // ~6 ELK instances. All algorithms are validated via tsx integration tests and
   // manual testing. The options are pure configuration passed to ELK — the core
   // layout/flatten/snap pipeline tested above applies identically to all algorithms.
+});
+
+describe('resolveOverlaps', () => {
+  it('returns positions unchanged when no overlaps exist', () => {
+    const nodes = [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 400, y: 0 },
+    ];
+    const sizes = new Map([
+      ['a', { width: 300, height: 200 }],
+      ['b', { width: 300, height: 200 }],
+    ]);
+    const result = resolveOverlaps(nodes, sizes);
+    expect(result).toEqual(nodes);
+  });
+
+  it('pushes apart two overlapping cards', () => {
+    // Cards at same position — definitely overlapping
+    const nodes = [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 50, y: 0 },
+    ];
+    const sizes = new Map([
+      ['a', { width: 300, height: 200 }],
+      ['b', { width: 300, height: 200 }],
+    ]);
+    const result = resolveOverlaps(nodes, sizes);
+
+    // After resolution, no AABB overlap should remain
+    const ax1 = result[0].x, ay1 = result[0].y;
+    const ax2 = ax1 + 300, ay2 = ay1 + 200;
+    const bx1 = result[1].x, by1 = result[1].y;
+    const bx2 = bx1 + 300, by2 = by1 + 200;
+
+    const overlapX = Math.min(ax2, bx2) - Math.max(ax1, bx1);
+    const overlapY = Math.min(ay2, by2) - Math.max(ay1, by1);
+    const hasOverlap = overlapX > 0 && overlapY > 0;
+    expect(hasOverlap).toBe(false);
+  });
+
+  it('resolves overlaps among multiple cards', () => {
+    // Three cards stacked at the same position
+    const nodes = [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 10, y: 10 },
+      { id: 'c', x: 20, y: 20 },
+    ];
+    const sizes = new Map([
+      ['a', { width: 200, height: 150 }],
+      ['b', { width: 200, height: 150 }],
+      ['c', { width: 200, height: 150 }],
+    ]);
+    const result = resolveOverlaps(nodes, sizes);
+
+    // Check all pairs for no overlap
+    for (let i = 0; i < result.length; i++) {
+      for (let j = i + 1; j < result.length; j++) {
+        const a = result[i], b = result[j];
+        const sA = sizes.get(a.id)!;
+        const sB = sizes.get(b.id)!;
+        const overlapX = Math.min(a.x + sA.width, b.x + sB.width) - Math.max(a.x, b.x);
+        const overlapY = Math.min(a.y + sA.height, b.y + sB.height) - Math.max(a.y, b.y);
+        expect(overlapX > 0 && overlapY > 0).toBe(false);
+      }
+    }
+  });
+
+  it('handles single node without error', () => {
+    const result = resolveOverlaps(
+      [{ id: 'a', x: 100, y: 100 }],
+      new Map([['a', { width: 300, height: 200 }]]),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ id: 'a', x: 100, y: 100 });
+  });
+
+  it('handles empty input', () => {
+    expect(resolveOverlaps([], new Map())).toEqual([]);
+  });
+
+  it('accounts for variable card sizes', () => {
+    // Small card overlapping with a much larger card
+    const nodes = [
+      { id: 'small', x: 0, y: 0 },
+      { id: 'large', x: 100, y: 50 },
+    ];
+    const sizes = new Map([
+      ['small', { width: 100, height: 80 }],
+      ['large', { width: 600, height: 400 }],
+    ]);
+    const result = resolveOverlaps(nodes, sizes);
+
+    const a = result.find(n => n.id === 'small')!;
+    const b = result.find(n => n.id === 'large')!;
+    const overlapX = Math.min(a.x + 100, b.x + 600) - Math.max(a.x, b.x);
+    const overlapY = Math.min(a.y + 80, b.y + 400) - Math.max(a.y, b.y);
+    expect(overlapX > 0 && overlapY > 0).toBe(false);
+  });
+
+  it('uses default card size when size is missing from map', () => {
+    const nodes = [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 50, y: 50 },
+    ];
+    // No sizes provided — should use 300x200 defaults
+    const result = resolveOverlaps(nodes, new Map());
+    expect(result).toHaveLength(2);
+    // Should still resolve — just using default sizes
+    const a = result[0], b = result[1];
+    const overlapX = Math.min(a.x + 300, b.x + 300) - Math.max(a.x, b.x);
+    const overlapY = Math.min(a.y + 200, b.y + 200) - Math.max(a.y, b.y);
+    expect(overlapX > 0 && overlapY > 0).toBe(false);
+  });
+});
+
+describe('pickRootNode', () => {
+  it('returns undefined for empty card list', () => {
+    expect(pickRootNode([], [])).toBeUndefined();
+  });
+
+  it('returns the only card when there is one', () => {
+    expect(pickRootNode([{ id: 'a' }], [])).toBe('a');
+  });
+
+  it('picks the most-connected card', () => {
+    const cards = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const edges = [
+      { source: 'b', target: 'a' },
+      { source: 'b', target: 'c' },
+      { source: 'a', target: 'c' },
+    ];
+    // b has degree 2 (source twice), a has degree 2 (target + source), c has degree 2
+    // Actually: a=2, b=2, c=2 — all equal, first with max wins
+    // Let's make b clearly the most connected
+    const edges2 = [
+      { source: 'b', target: 'a' },
+      { source: 'b', target: 'c' },
+    ];
+    expect(pickRootNode(cards, edges2)).toBe('b');
+  });
+
+  it('prefers GP hub card when gpHubIds is provided', () => {
+    const cards = [{ id: 'a' }, { id: 'hub' }, { id: 'c' }];
+    const edges = [
+      { source: 'a', target: 'c' },
+      { source: 'a', target: 'hub' },
+    ];
+    // 'a' has degree 2, 'hub' has degree 1, 'c' has degree 1
+    // Without gpHubIds, 'a' would be picked. With gpHubIds, 'hub' should be preferred
+    expect(pickRootNode(cards, edges, ['hub'])).toBe('hub');
+  });
+
+  it('falls back to most-connected if GP hub has no connections', () => {
+    const cards = [{ id: 'a' }, { id: 'hub' }, { id: 'c' }];
+    const edges = [
+      { source: 'a', target: 'c' },
+    ];
+    // 'hub' has degree 0, so should fall back to 'a' (degree 1)
+    expect(pickRootNode(cards, edges, ['hub'])).toBe('a');
+  });
+
+  it('picks the most-connected hub among multiple GP hubs', () => {
+    const cards = [{ id: 'a' }, { id: 'hub1' }, { id: 'hub2' }];
+    const edges = [
+      { source: 'hub1', target: 'a' },
+      { source: 'hub2', target: 'a' },
+      { source: 'hub2', target: 'hub1' },
+    ];
+    // hub1 degree=2, hub2 degree=2 — first with max wins
+    // Actually hub2: source twice = 2, target 0 => degree 2
+    // hub1: source once = 1, target twice = 2 => degree 2? No.
+    // hub1: source=1 (to a), target=1 (from hub2) => degree 2
+    // hub2: source=2 (to a, to hub1), target=0 => degree 2
+    // Equal — first one (hub1) wins
+    expect(pickRootNode(cards, edges, ['hub1', 'hub2'])).toBe('hub1');
+  });
 });
