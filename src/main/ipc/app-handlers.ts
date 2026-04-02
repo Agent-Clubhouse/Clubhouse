@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { app, BrowserWindow, clipboard, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
@@ -12,6 +12,7 @@ import * as badgeSettings from '../services/badge-settings';
 import { clipboardSettings } from './settings-handlers';
 import * as autoUpdateService from '../services/auto-update-service';
 import * as soundService from '../services/sound-service';
+import { readImageSafe } from '../services/clipboard-guard';
 import * as sessionSettings from '../services/session-settings';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
@@ -205,12 +206,9 @@ export function registerAppHandlers(): void {
   // Read image from the system clipboard using Electron's native API.
   // navigator.clipboard.read() is unreliable for images in Electron,
   // so we use the main-process clipboard module directly.
-  ipcMain.handle(IPC.APP.READ_CLIPBOARD_IMAGE, () => {
-    const image = clipboard.readImage();
-    if (image.isEmpty()) return null;
-    const png = image.toPNG();
-    return { base64: png.toString('base64'), mimeType: 'image/png' };
-  });
+  // Wrapped via clipboard-guard to skip reads after macOS wake-from-sleep
+  // (the pasteboard daemon can block for 25s+ causing a full UI hang).
+  ipcMain.handle(IPC.APP.READ_CLIPBOARD_IMAGE, () => readImageSafe());
 
   ipcMain.handle(IPC.APP.SET_DOCK_BADGE, withValidatedArgs(
     [numberArg({ integer: true, min: 0 })],

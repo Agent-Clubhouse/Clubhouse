@@ -196,7 +196,12 @@ app.on('ready', () => {
   buildMenu();
 
   // Resume satellite connections when the machine wakes from sleep
+  // and notify clipboard guard to defer reads during pasteboard warmup.
   powerMonitor.on('resume', () => {
+    try {
+      const { notifyResume } = require('./services/clipboard-guard');
+      notifyResume();
+    } catch { /* clipboard guard may not be loaded */ }
     try {
       const annexClient = require('./services/annex-client');
       annexClient.resumeAllConnections();
