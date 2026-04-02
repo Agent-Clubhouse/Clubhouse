@@ -14,6 +14,8 @@ export interface ElkLayoutOptions {
   direction?: LayeredDirection;
   /** Root node ID for radial algorithm. If omitted, auto-picks the most-connected node. */
   rootId?: string;
+  /** Preferred center card ID set via "Set as Layout Center" context menu. */
+  layoutCenterId?: string;
 }
 
 export interface ElkLayoutInput {
@@ -64,10 +66,13 @@ const LAYERED_OPTIONS: Record<string, string> = {
 const RADIAL_OPTIONS: Record<string, string> = {
   ...SHARED_OPTIONS,
   'elk.algorithm': 'elk.radial',
-  'elk.spacing.nodeNode': '80',
+  'elk.spacing.nodeNode': '120',
+  'elk.spacing.componentComponent': '140',
   'elk.radial.compactor': 'WEDGE_COMPACTION',
   'elk.radial.centerOnRoot': 'true',
   'elk.radial.orderId': 'true',
+  // Ensure radial rings have enough room for large cards
+  'elk.radial.radius': '0',
 };
 
 const FORCE_OPTIONS: Record<string, string> = {
@@ -111,10 +116,15 @@ function getElkOptions(opts?: ElkLayoutOptions): Record<string, string> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Auto-pick the most-connected node as the root for radial layout. */
+/**
+ * Auto-pick the most-connected node as the root for radial layout.
+ * If `gpHubIds` is provided, prefer those as the root (GP hub cards
+ * are natural centers for hub-spoke topologies).
+ */
 function pickRootNode(
   cards: Array<{ id: string }>,
   edges: Array<{ source: string; target: string }>,
+  gpHubIds?: string[],
 ): string | undefined {
   if (cards.length === 0) return undefined;
   const degree = new Map<string, number>();
@@ -123,6 +133,21 @@ function pickRootNode(
     degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
     degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
   }
+
+  // Prefer GP hub card if present and has connections
+  if (gpHubIds && gpHubIds.length > 0) {
+    let bestHub: string | undefined;
+    let bestHubDeg = -1;
+    for (const hubId of gpHubIds) {
+      const deg = degree.get(hubId) ?? 0;
+      if (deg > bestHubDeg) {
+        bestHubDeg = deg;
+        bestHub = hubId;
+      }
+    }
+    if (bestHub && bestHubDeg > 0) return bestHub;
+  }
+
   let maxId = cards[0].id;
   let maxDeg = 0;
   for (const [id, deg] of degree) {
@@ -132,6 +157,75 @@ function pickRootNode(
     }
   }
   return maxId;
+}
+
+/**
+ * Resolve overlapping nodes after ELK layout.
+ * Pushes overlapping cards apart along the vector from the center
+ * of the layout to the card, preserving radial structure.
+ */
+export function resolveOverlaps(
+  nodes: Array<{ id: string; x: number; y: number }>,
+  cardSizes: Map<string, { width: number; height: number }>,
+  padding = 20,
+  maxIterations = 10,
+): Array<{ id: string; x: number; y: number }> {
+  // Work with mutable copies
+  const positions = nodes.map(n => ({ ...n }));
+  if (positions.length <= 1) return positions;
+
+  for (let iter = 0; iter < maxIterations; iter++) {
+    let hadOverlap = false;
+
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const a = positions[i];
+        const b = positions[j];
+        const sizeA = cardSizes.get(a.id) ?? { width: 300, height: 200 };
+        const sizeB = cardSizes.get(b.id) ?? { width: 300, height: 200 };
+
+        // Check AABB overlap with padding
+        const overlapX = (sizeA.width / 2 + sizeB.width / 2 + padding) -
+          Math.abs((a.x + sizeA.width / 2) - (b.x + sizeB.width / 2));
+        const overlapY = (sizeA.height / 2 + sizeB.height / 2 + padding) -
+          Math.abs((a.y + sizeA.height / 2) - (b.y + sizeB.height / 2));
+
+        if (overlapX > 0 && overlapY > 0) {
+          hadOverlap = true;
+
+          // Push apart along the axis of least overlap
+          const centerAx = a.x + sizeA.width / 2;
+          const centerAy = a.y + sizeA.height / 2;
+          const centerBx = b.x + sizeB.width / 2;
+          const centerBy = b.y + sizeB.height / 2;
+
+          let dx = centerBx - centerAx;
+          let dy = centerBy - centerAy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < 1) {
+            // Cards are at nearly the same position — push apart arbitrarily
+            dx = 1;
+            dy = 0;
+          } else {
+            dx /= dist;
+            dy /= dist;
+          }
+
+          // Use the smaller overlap to determine push distance
+          const push = Math.min(overlapX, overlapY) / 2 + 1;
+          a.x -= dx * push;
+          a.y -= dy * push;
+          b.x += dx * push;
+          b.y += dy * push;
+        }
+      }
+    }
+
+    if (!hadOverlap) break;
+  }
+
+  return positions;
 }
 
 /** Convert ELK edge sections (start, bends, end) into an SVG cubic-bezier path. */
@@ -229,10 +323,23 @@ export async function layoutElk(input: ElkLayoutInput): Promise<ElkLayoutResult>
 
   const elkOptions = getElkOptions(options);
 
-  // For radial layout, determine root node
+  // For radial layout, dynamically adjust spacing based on card dimensions
+  if (options?.algorithm === 'radial' && cards.length > 0) {
+    const maxWidth = Math.max(...cards.map(c => c.width));
+    const maxHeight = Math.max(...cards.map(c => c.height));
+    const maxDimension = Math.max(maxWidth, maxHeight);
+    // Ensure nodeNode spacing is at least as large as the biggest card + padding
+    const dynamicSpacing = Math.max(120, maxDimension + 40);
+    elkOptions['elk.spacing.nodeNode'] = String(dynamicSpacing);
+  }
+
+  // For radial layout, determine root node:
+  // Priority: explicit rootId (selected card) > layoutCenterId (stored) > auto-detect
   let rootId: string | undefined;
   if (options?.algorithm === 'radial') {
-    rootId = options.rootId ?? pickRootNode(cards, edges);
+    rootId = options.rootId
+      ?? options.layoutCenterId
+      ?? pickRootNode(cards, edges);
   }
 
   // Build a set of card ids that belong to a zone for quick lookup.
@@ -286,11 +393,22 @@ export async function layoutElk(input: ElkLayoutInput): Promise<ElkLayoutResult>
   const elk = new ELK();
   const result = await elk.layout(graph);
 
-  const nodes = flattenNodes(result).map((n) => ({
+  let nodes = flattenNodes(result).map((n) => ({
     id: n.id,
     x: snapToGrid(n.x),
     y: snapToGrid(n.y),
   }));
+
+  // For radial layout, resolve any remaining overlaps caused by
+  // ELK not fully accounting for variable card dimensions
+  if (options?.algorithm === 'radial') {
+    const cardSizes = new Map(cards.map(c => [c.id, { width: c.width, height: c.height }]));
+    nodes = resolveOverlaps(nodes, cardSizes).map(n => ({
+      id: n.id,
+      x: snapToGrid(n.x),
+      y: snapToGrid(n.y),
+    }));
+  }
 
   const edgePaths = flattenEdges(result);
 
