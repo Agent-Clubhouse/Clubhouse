@@ -82,6 +82,10 @@ interface CanvasViewComponentProps {
   onDragEnd: (position: Position) => void;
   onResizeEnd: (size: Size, position: Position) => void;
   onUpdate: (updates: Partial<CanvasView>) => void;
+  /** Right-click context menu handler for view-level actions. */
+  onViewContextMenu?: (e: React.MouseEvent) => void;
+  /** Whether this card is the radial layout center. */
+  isLayoutCenter?: boolean;
 }
 
 export function CanvasViewComponent({
@@ -108,6 +112,8 @@ export function CanvasViewComponent({
   onDragEnd,
   onResizeEnd,
   onUpdate,
+  onViewContextMenu,
+  isLayoutCenter,
 }: CanvasViewComponentProps) {
   const [dragPos, setDragPos] = useState<Position | null>(null);
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
@@ -512,11 +518,13 @@ export function CanvasViewComponent({
         }}
         onMouseEnter={() => setAnchorHovered(true)}
         onMouseLeave={() => setAnchorHovered(false)}
+        onContextMenu={onViewContextMenu}
         data-testid={`canvas-view-${view.id}`}
         data-attention={attention?.level ?? undefined}
         data-selected={isSelected ? 'true' : undefined}
         data-multi-selected={isMultiSelected ? 'true' : undefined}
         data-collapsed={isCollapsedVisually ? 'true' : undefined}
+        data-layout-center={isLayoutCenter ? 'true' : undefined}
       >
         {/* Anchor icon — always visible, acts as drag handle */}
         <div
@@ -649,11 +657,22 @@ export function CanvasViewComponent({
           onSelect();
         }
       }}
+      onContextMenu={onViewContextMenu}
       data-testid={`canvas-view-${view.id}`}
       data-attention={attention?.level ?? undefined}
       data-selected={isSelected ? 'true' : undefined}
       data-multi-selected={isMultiSelected ? 'true' : undefined}
+      data-layout-center={isLayoutCenter ? 'true' : undefined}
     >
+      {/* Layout center indicator */}
+      {isLayoutCenter && (
+        <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-ctp-accent rounded-full flex items-center justify-center z-10" title="Radial layout center">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--ctp-crust)" strokeWidth="3" strokeLinecap="round">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </div>
+      )}
       {/* Title bar — drag handle */}
       <div
         className="group/titlebar flex items-center gap-1.5 px-2.5 py-1.5 bg-ctp-mantle border-b border-surface-0 cursor-grab active:cursor-grabbing flex-shrink-0 rounded-t-lg"

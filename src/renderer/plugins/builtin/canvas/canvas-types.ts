@@ -96,6 +96,8 @@ export interface CanvasInstance {
   elkAlgorithm: 'layered' | 'radial' | 'force' | 'mrtree';
   /** Flow direction for layered/mrtree algorithm. Persisted per canvas. */
   elkDirection: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
+  /** Preferred center card ID for radial layout. Persisted per canvas. */
+  layoutCenterId: string | null;
 }
 
 /** Serialisable snapshot persisted to storage */
@@ -109,6 +111,7 @@ export interface CanvasInstanceData {
   minimapAutoHide?: boolean;
   elkAlgorithm?: 'layered' | 'radial' | 'force' | 'mrtree';
   elkDirection?: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
+  layoutCenterId?: string | null;
 }
 
 // ── Display name deduplication ────────────────────────────────────────

@@ -91,6 +91,7 @@ interface CanvasControlsProps {
   hasSelection?: boolean;
   elkAlgorithm?: ElkAlgorithm;
   elkDirection?: LayeredDirection;
+  layoutCenterId?: string | null;
   onElkAlgorithmChange?: (algorithm: ElkAlgorithm) => void;
   onElkDirectionChange?: (direction: LayeredDirection) => void;
   attentionMap?: Map<string, CanvasViewAttention>;
@@ -102,7 +103,7 @@ interface CanvasControlsProps {
   }>;
 }
 
-export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, onAutolayout, hasSelection, elkAlgorithm: storedAlgorithm, elkDirection: storedDirection, onElkAlgorithmChange, onElkDirectionChange, attentionMap, api: _api, pinnedWidgets: _pinnedWidgets }: CanvasControlsProps) {
+export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, onAutolayout, hasSelection, elkAlgorithm: storedAlgorithm, elkDirection: storedDirection, layoutCenterId, onElkAlgorithmChange, onElkDirectionChange, attentionMap, api: _api, pinnedWidgets: _pinnedWidgets }: CanvasControlsProps) {
   const zoomPercent = Math.round(zoom * 100);
   const effectiveMap = attentionMap ?? new Map();
   const { count, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
@@ -353,7 +354,9 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
                   <div className="text-[10px] text-ctp-subtext0 px-1">
                     {hasSelection
                       ? 'Radiates from selected card'
-                      : 'Select a card first for center, or auto-picks most connected'}
+                      : layoutCenterId
+                        ? 'Using stored layout center (right-click card to change)'
+                        : 'Select a card or right-click → Set as Layout Center'}
                   </div>
                 </>
               )}

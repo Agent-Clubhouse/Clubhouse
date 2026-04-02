@@ -12,6 +12,7 @@ import { CanvasViewComponent, formatViewType, buildProjectContext } from './Canv
 import { AgentCanvasView } from './AgentCanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu, type ContextMenuSelection } from './CanvasContextMenu';
+import { MenuPortal } from './MenuPortal';
 import { CanvasAttentionIndicators } from './CanvasAttentionIndicators';
 import { useCanvasAttention, computeOffScreenIndicators } from './canvas-attention';
 import { WireOverlay } from './WireOverlay';
@@ -80,8 +81,10 @@ interface CanvasWorkspaceProps {
   onMinimapAutoHideChange: (value: boolean) => void;
   elkAlgorithm: 'layered' | 'radial' | 'force' | 'mrtree';
   elkDirection: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
+  layoutCenterId: string | null;
   onElkAlgorithmChange: (value: 'layered' | 'radial' | 'force' | 'mrtree') => void;
   onElkDirectionChange: (value: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP') => void;
+  onSetLayoutCenterId: (value: string | null) => void;
   /** When true, render all agent-to-agent wires as bidirectional. */
   bidirectionalWires?: boolean;
   /** When true, auto-create reverse direction for agent-to-agent wires. */
@@ -119,8 +122,10 @@ export function CanvasWorkspace({
   onMinimapAutoHideChange,
   elkAlgorithm,
   elkDirection,
+  layoutCenterId,
   onElkAlgorithmChange,
   onElkDirectionChange,
+  onSetLayoutCenterId,
   bidirectionalWires,
   createBidirectionalWires,
 }: CanvasWorkspaceProps) {
@@ -128,6 +133,7 @@ export function CanvasWorkspace({
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null);
+  const [viewContextMenu, setViewContextMenu] = useState<{ x: number; y: number; viewId: string } | null>(null);
   const [containerSize, setContainerSize] = useState<Size>({ width: 0, height: 0 });
 
   // ── Selection rectangle (lasso) ──────────────────────────────
@@ -501,7 +507,21 @@ export function CanvasWorkspace({
 
   const handleDismissContextMenu = useCallback(() => {
     setContextMenu(null);
+    setViewContextMenu(null);
   }, []);
+
+  // ── View context menu (right-click on card) ────────────────────
+
+  const handleViewContextMenu = useCallback((viewId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setViewContextMenu({ x: e.clientX, y: e.clientY, viewId });
+  }, []);
+
+  const handleSetLayoutCenter = useCallback((viewId: string) => {
+    onSetLayoutCenterId(layoutCenterId === viewId ? null : viewId);
+    setViewContextMenu(null);
+  }, [layoutCenterId, onSetLayoutCenterId]);
 
   // ── Zoom controls ──────────────────────────────────────────────
 
@@ -564,7 +584,7 @@ export function CanvasWorkspace({
       }
     }
 
-    // For radial layout, use selected view as root
+    // For radial layout, use selected view as root, falling back to stored center
     const rootId = opts.algorithm === 'radial' && selectedViewId ? selectedViewId : undefined;
 
     try {
@@ -576,6 +596,7 @@ export function CanvasWorkspace({
           algorithm: opts.algorithm,
           direction: opts.direction,
           rootId,
+          layoutCenterId: layoutCenterId ?? undefined,
         },
       });
 
@@ -621,7 +642,7 @@ export function CanvasWorkspace({
     } catch (err) {
       console.error('[Autolayout] layout failed:', err);
     }
-  }, [views, wireDefinitions, selectedViewId, onMoveViews, onUpdateWireDefinition]);
+  }, [views, wireDefinitions, selectedViewId, layoutCenterId, onMoveViews, onUpdateWireDefinition]);
 
   // ── Search → focus on view ────────────────────────────────────────
 
@@ -958,6 +979,8 @@ export function CanvasWorkspace({
                 onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
                 onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
                 onUpdate={(updates) => onUpdateView(view.id, updates)}
+                onViewContextMenu={(e) => handleViewContextMenu(view.id, e)}
+                isLayoutCenter={layoutCenterId === view.id}
               />
             </ZoneThemeProvider>
           );
@@ -1203,6 +1226,7 @@ export function CanvasWorkspace({
               hasSelection={selectedViewId !== null}
               elkAlgorithm={elkAlgorithm}
               elkDirection={elkDirection}
+              layoutCenterId={layoutCenterId}
               onElkAlgorithmChange={onElkAlgorithmChange}
               onElkDirectionChange={onElkDirectionChange}
               hasViews={views.length > 0}
@@ -1265,6 +1289,47 @@ export function CanvasWorkspace({
           onSelect={handleContextMenuAction}
           onDismiss={handleDismissContextMenu}
         />
+      )}
+
+      {/* View context menu (right-click on card) */}
+      {viewContextMenu && (
+        <MenuPortal>
+          <div
+            className="fixed z-[9999] min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
+            style={{ left: viewContextMenu.x, top: viewContextMenu.y }}
+            data-testid="view-context-menu"
+          >
+            <button
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
+              onClick={() => handleSetLayoutCenter(viewContextMenu.viewId)}
+              data-testid="view-context-menu-set-layout-center"
+            >
+              <span className="w-4 text-center text-ctp-overlay0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </span>
+              {layoutCenterId === viewContextMenu.viewId ? 'Remove as Layout Center' : 'Set as Layout Center'}
+            </button>
+            <button
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
+              onClick={() => { handleCenterView(viewContextMenu.viewId); setViewContextMenu(null); }}
+              data-testid="view-context-menu-center-view"
+            >
+              <span className="w-4 text-center text-ctp-overlay0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <line x1="12" y1="2" x2="12" y2="6" />
+                  <line x1="12" y1="18" x2="12" y2="22" />
+                  <line x1="2" y1="12" x2="6" y2="12" />
+                  <line x1="18" y1="12" x2="22" y2="12" />
+                </svg>
+              </span>
+              Center in Viewport
+            </button>
+          </div>
+        </MenuPortal>
       )}
 
       {/* Wire config popover (screen-space, outside transform container) */}

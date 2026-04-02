@@ -136,6 +136,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const minimapAutoHide = store((s) => s.minimapAutoHide);
   const elkAlgorithm = store((s) => s.elkAlgorithm);
   const elkDirection = store((s) => s.elkDirection);
+  const layoutCenterId = store((s) => s.layoutCenterId);
   const bindings = useMcpBindingStore((s) => s.bindings);
   const settingsKey = `${isAppMode ? 'app' : api.context.projectId}:canvas`;
   const bidirectionalWires = usePluginStore(
@@ -231,7 +232,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   useEffect(() => {
     if (!loaded || !wiresLoaded) return;
     scheduleSave();
-  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, loaded, wiresLoaded, scheduleSave]);
+  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave]);
 
   // ── Agent wake reconciliation ────────────────────────────────────
   // When an agent wakes up (bindings appear in MCP store that match wire
@@ -549,6 +550,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             elkDirection,
             onElkAlgorithmChange: (value: 'layered' | 'radial' | 'force' | 'mrtree') => store.getState().setElkAlgorithm(value),
             onElkDirectionChange: (value: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP') => store.getState().setElkDirection(value),
+            layoutCenterId,
+            onSetLayoutCenterId: (value: string | null) => store.getState().setLayoutCenterId(value),
             bidirectionalWires,
             createBidirectionalWires,
           }),
