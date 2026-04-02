@@ -240,4 +240,53 @@ describe('QuickAgentDialog', () => {
     fireEvent.click(backdrop!);
     expect(mockCloseDialog).toHaveBeenCalled();
   });
+
+  it('shows Custom option in model selector', () => {
+    setupStores();
+    render(<QuickAgentDialog />);
+    const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+    const options = Array.from(modelSelect.querySelectorAll('option'));
+    const customOption = options.find((o) => o.value === 'custom');
+    expect(customOption).toBeDefined();
+    expect(customOption!.textContent).toBe('Custom...');
+  });
+
+  it('reveals text input when Custom model is selected', () => {
+    setupStores();
+    render(<QuickAgentDialog />);
+    const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+    fireEvent.change(modelSelect, { target: { value: 'custom' } });
+    expect(screen.getByPlaceholderText('e.g. claude-opus-4-6[1m]')).toBeInTheDocument();
+  });
+
+  it('disables Start Agent when Custom model is selected but empty', () => {
+    setupStores();
+    render(<QuickAgentDialog />);
+    const textarea = screen.getByPlaceholderText('What should this quick agent do?');
+    fireEvent.change(textarea, { target: { value: 'Fix bug' } });
+    const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+    fireEvent.change(modelSelect, { target: { value: 'custom' } });
+    expect(screen.getByText('Start Agent')).toBeDisabled();
+  });
+
+  it('passes custom model string to spawnQuickAgent', async () => {
+    const { mockSpawnQuickAgent } = setupStores();
+    render(<QuickAgentDialog />);
+    const textarea = screen.getByPlaceholderText('What should this quick agent do?');
+    fireEvent.change(textarea, { target: { value: 'Fix bug' } });
+    const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+    fireEvent.change(modelSelect, { target: { value: 'custom' } });
+    const customInput = screen.getByPlaceholderText('e.g. claude-opus-4-6[1m]');
+    fireEvent.change(customInput, { target: { value: 'claude-opus-4-6[1m]' } });
+    fireEvent.click(screen.getByText('Start Agent'));
+    expect(mockSpawnQuickAgent).toHaveBeenCalledWith(
+      'proj-1',
+      '/project1',
+      'Fix bug',
+      'claude-opus-4-6[1m]',
+      undefined,
+      'claude-code',
+      undefined,
+    );
+  });
 });

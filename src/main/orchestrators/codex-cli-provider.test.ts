@@ -602,6 +602,13 @@ describe('CodexCliProvider', () => {
       expect(ids).toContain('gpt-5');
     });
 
+    it('includes 1M context variants', async () => {
+      const options = await provider.getModelOptions();
+      const ids = options.map(o => o.id);
+      expect(ids).toContain('claude-opus-4-6[1m]');
+      expect(ids).toContain('claude-sonnet-4-6[1m]');
+    });
+
     it('first option is always default', async () => {
       const options = await provider.getModelOptions();
       expect(options[0].id).toBe('default');

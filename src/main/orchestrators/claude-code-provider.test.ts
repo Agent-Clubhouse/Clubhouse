@@ -131,6 +131,18 @@ describe('ClaudeCodeProvider', () => {
       expect(args).not.toContain('--model');
     });
 
+    it('passes 1M context model string through to CLI', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', model: 'claude-opus-4-6[1m]' });
+      expect(args).toContain('--model');
+      expect(args).toContain('claude-opus-4-6[1m]');
+    });
+
+    it('passes arbitrary custom model string through to CLI', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', model: 'my-custom-model-v3' });
+      expect(args).toContain('--model');
+      expect(args).toContain('my-custom-model-v3');
+    });
+
     it('adds --allowedTools for each tool', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
@@ -314,6 +326,13 @@ describe('ClaudeCodeProvider', () => {
       expect(ids).toContain('opus');
       expect(ids).toContain('sonnet');
       expect(ids).toContain('haiku');
+    });
+
+    it('includes 1M context variants', async () => {
+      const options = await provider.getModelOptions();
+      const ids = options.map(o => o.id);
+      expect(ids).toContain('claude-opus-4-6[1m]');
+      expect(ids).toContain('claude-sonnet-4-6[1m]');
     });
   });
 
