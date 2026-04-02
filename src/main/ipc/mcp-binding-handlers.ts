@@ -13,6 +13,7 @@ import { registerAgentQueueTools } from '../services/clubhouse-mcp/tools/agent-q
 import { registerAssistantTools } from '../services/clubhouse-mcp/tools/assistant-tools';
 import { registerCanvasTools } from '../services/clubhouse-mcp/tools/canvas-tools';
 import { registerCanvasCommandHandler } from '../services/clubhouse-mcp/canvas-command';
+import { registerCommandPaletteHandler } from '../services/clubhouse-mcp/command-palette-bridge';
 import { agentRegistry } from '../services/agent-registry';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -60,6 +61,7 @@ export function registerMcpBindingHandlers(): void {
   registerAssistantTools();
   registerCanvasTools();
   registerCanvasCommandHandler();
+  registerCommandPaletteHandler();
 
   appLog('core:mcp', 'info', 'MCP binding handlers registered');
 

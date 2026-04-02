@@ -2040,4 +2040,52 @@ registerToolTemplate('assistant', 'open_plugin_settings', {
   };
 });
 
+// ── Command Palette Access ────────────────────────────────────────────────────
+
+registerToolTemplate('assistant', 'list_commands', {
+  description:
+    'List all available command palette commands. Returns an array of { id, label, category, keywords, detail }. ' +
+    'Use this to discover what navigation and action commands are available, then use run_command to execute them. ' +
+    'Commands include: navigating to projects, agents, canvases, hubs, settings pages, and app actions. ' +
+    'Optionally filter by category: "Projects", "Agents", "Spaces", "Navigation", "Settings", "Actions".',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      category: {
+        type: 'string',
+        description: 'Optional category filter (e.g. "Spaces", "Navigation", "Actions").',
+      },
+    },
+  },
+}, async (_t, _a, args) => {
+  const { sendCommandPaletteRequest } = await import('../command-palette-bridge');
+  const result = await sendCommandPaletteRequest('list_commands', { category: args.category });
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to list commands' }], isError: true };
+  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+});
+
+registerToolTemplate('assistant', 'run_command', {
+  description:
+    'Execute a command palette command by its ID. Use list_commands first to discover available commands. ' +
+    'This gives you full app navigation and control: open projects, switch to canvases/hubs, ' +
+    'toggle settings, open the assistant panel, and more. ' +
+    'Example IDs: "canvas:project:CANVAS_ID", "project:PROJECT_ID", "agent:AGENT_ID", ' +
+    '"nav:agents", "nav:home", "action:toggle-settings".',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      command_id: {
+        type: 'string',
+        description: 'The command ID to execute (from list_commands output).',
+      },
+    },
+    required: ['command_id'],
+  },
+}, async (_t, _a, args) => {
+  const { sendCommandPaletteRequest } = await import('../command-palette-bridge');
+  const result = await sendCommandPaletteRequest('run_command', { command_id: args.command_id });
+  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to run command' }], isError: true };
+  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+});
+
 } // end registerAssistantTools

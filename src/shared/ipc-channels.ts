@@ -421,6 +421,12 @@ export const IPC = {
     /** Renderer→main: run ELK layout algorithm (async). */
     ELK_LAYOUT: 'canvas-cmd:elk-layout',
   },
+  CMD_PALETTE: {
+    /** Main→renderer push: request a command palette operation. */
+    REQUEST: 'cmd-palette:request',
+    /** Renderer→main: result of a command palette operation. */
+    RESULT: 'cmd-palette:result',
+  },
   PLUGIN_MCP: {
     CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
     REMOVE_TOOLS: 'plugin-mcp:remove-tools',
