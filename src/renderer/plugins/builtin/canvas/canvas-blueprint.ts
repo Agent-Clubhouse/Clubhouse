@@ -272,6 +272,7 @@ export function importBlueprint(
     minimapAutoHide: true,
     elkAlgorithm: 'layered',
     elkDirection: 'RIGHT',
+    layoutCenterId: null,
   };
 }
 

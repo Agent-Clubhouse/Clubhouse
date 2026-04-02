@@ -230,19 +230,12 @@ describe('pickRootNode', () => {
 
   it('picks the most-connected card', () => {
     const cards = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    // b is the most connected (degree 2 as source)
     const edges = [
       { source: 'b', target: 'a' },
       { source: 'b', target: 'c' },
-      { source: 'a', target: 'c' },
     ];
-    // b has degree 2 (source twice), a has degree 2 (target + source), c has degree 2
-    // Actually: a=2, b=2, c=2 — all equal, first with max wins
-    // Let's make b clearly the most connected
-    const edges2 = [
-      { source: 'b', target: 'a' },
-      { source: 'b', target: 'c' },
-    ];
-    expect(pickRootNode(cards, edges2)).toBe('b');
+    expect(pickRootNode(cards, edges)).toBe('b');
   });
 
   it('prefers GP hub card when gpHubIds is provided', () => {

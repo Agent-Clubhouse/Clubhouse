@@ -176,6 +176,7 @@ export function convertHubToCanvas(options: ConvertHubOptions): CanvasInstance {
     minimapAutoHide: true,
     elkAlgorithm: 'layered',
     elkDirection: 'RIGHT',
+    layoutCenterId: null,
   };
 }
 

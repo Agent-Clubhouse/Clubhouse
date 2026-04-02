@@ -359,6 +359,8 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         elkDirection="RIGHT"
         onElkAlgorithmChange={() => {}}
         onElkDirectionChange={() => {}}
+        layoutCenterId={null}
+        onSetLayoutCenterId={() => {}}
       />
     </div>
   );
