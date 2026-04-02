@@ -383,4 +383,73 @@ describe('AgentSettingsView', () => {
       expect(screen.getByTestId('utility-terminal')).toBeInTheDocument();
     });
   });
+
+  describe('custom model', () => {
+    it('shows Custom option in model selector', () => {
+      renderSettings();
+      const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+      const options = Array.from(modelSelect.querySelectorAll('option'));
+      expect(options.find((o) => o.value === 'custom')).toBeDefined();
+    });
+
+    it('reveals text input when Custom is selected', () => {
+      renderSettings();
+      const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+      fireEvent.change(modelSelect, { target: { value: 'custom' } });
+      expect(screen.getByPlaceholderText('e.g. claude-opus-4-6[1m]')).toBeInTheDocument();
+    });
+
+    it('loads non-standard persisted model as Custom with value in text input', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({
+        model: 'my-special-model-v3',
+      });
+      renderSettings();
+      await waitFor(() => {
+        const modelSelect = screen.getByDisplayValue('Custom...') as HTMLSelectElement;
+        expect(modelSelect.value).toBe('custom');
+      });
+      expect(screen.getByDisplayValue('my-special-model-v3')).toBeInTheDocument();
+    });
+
+    it('persists custom model on blur', async () => {
+      const mockUpdate = vi.fn().mockResolvedValue(undefined);
+      (window.clubhouse.agent as any).updateDurableConfig = mockUpdate;
+      renderSettings();
+      const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+      fireEvent.change(modelSelect, { target: { value: 'custom' } });
+      const customInput = screen.getByPlaceholderText('e.g. claude-opus-4-6[1m]');
+      fireEvent.change(customInput, { target: { value: 'claude-opus-4-6[1m]' } });
+      fireEvent.blur(customInput);
+      await waitFor(() => {
+        expect(mockUpdate).toHaveBeenCalledWith('/project', 'agent-1', { model: 'claude-opus-4-6[1m]' });
+      });
+    });
+
+    it('shows Custom option in QAD model selector', async () => {
+      renderSettings();
+      // Navigate to Quick Agent tab
+      const qadTab = screen.getByRole('button', { name: /Quick Agent/i });
+      fireEvent.click(qadTab);
+      await waitFor(() => {
+        expect(screen.getByText('Default model')).toBeInTheDocument();
+      });
+      // The QAD model selector is the select element after the "Default model" label
+      const label = screen.getByText('Default model');
+      const qadModelSelect = label.parentElement!.querySelector('select') as HTMLSelectElement;
+      const options = Array.from(qadModelSelect.querySelectorAll('option'));
+      expect(options.find((o) => o.value === 'custom')).toBeDefined();
+    });
+
+    it('loads non-standard QAD default model as Custom', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({
+        quickAgentDefaults: { defaultModel: 'exotic-model-7b' },
+      });
+      renderSettings();
+      const qadTab = screen.getByRole('button', { name: /Quick Agent/i });
+      fireEvent.click(qadTab);
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('exotic-model-7b')).toBeInTheDocument();
+      });
+    });
+  });
 });
