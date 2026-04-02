@@ -132,6 +132,7 @@ vi.mock('./clubhouse-mcp/binding-manager', () => ({
 // Mock theme-service
 vi.mock('./theme-service', () => ({
   getActiveThemeId: vi.fn().mockReturnValue('catppuccin-mocha'),
+  getSettings: vi.fn().mockReturnValue({ themeId: 'catppuccin-mocha' }),
 }));
 
 // Mock annex-settings
@@ -143,6 +144,12 @@ vi.mock('./annex-settings', () => ({
 // Mock plugin-manifest-registry
 vi.mock('./plugin-manifest-registry', () => ({
   listAllManifests: vi.fn().mockReturnValue([]),
+}));
+
+// Mock plugin-storage
+vi.mock('./plugin-storage', () => ({
+  readKey: vi.fn().mockResolvedValue(null),
+  writeKey: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock annex-identity
@@ -199,6 +206,7 @@ import * as structuredManagerModule from './structured-manager';
 import * as _eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
+import * as pluginStorage from './plugin-storage';
 import * as fileServiceModule from './file-service';
 import { generateQuickName } from '../../shared/name-generator';
 import { appLog } from './log-service';
@@ -275,6 +283,7 @@ describe('annex-server', () => {
     vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
     vi.mocked(agentSystem.spawnAgent).mockResolvedValue(undefined);
     vi.mocked(agentSystem.getAvailableOrchestrators).mockReturnValue([]);
+    vi.mocked(pluginStorage.readKey).mockResolvedValue(null);
     vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
     vi.mocked(structuredManagerModule.respondToPermission).mockResolvedValue(undefined);
     vi.mocked(generateQuickName).mockReturnValue('swift-fox');
@@ -1948,37 +1957,90 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('snapshot includes canvas wires', () => {
-    it('buildSnapshot reads canvas-wires storage key alongside canvas-instances', async () => {
-      const source = await import('fs').then(fs => fs.readFileSync(
-        path.join(__dirname, 'annex-server.ts'), 'utf-8',
-      ));
-      // Verify per-project canvas state reads canvas-wires
-      expect(source).toContain("key: 'canvas-wires',\n          projectPath: proj.path,");
-      // Verify app-level canvas state reads canvas-wires
-      expect(source).toContain("key: 'canvas-wires',\n      }),\n    ]);");
-    });
+    it('buildSnapshot reads canvas-wires key for each project', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
 
-    it('canvasState type includes wireDefinitions field', async () => {
-      const source = await import('fs').then(fs => fs.readFileSync(
-        path.join(__dirname, 'annex-server.ts'), 'utf-8',
-      ));
-      // Verify the canvasState record type includes wireDefinitions
-      expect(source).toContain('wireDefinitions?: unknown[]');
-    });
+      // Mock plugin-storage to return canvases and wires
+      const readKeyMock = vi.mocked(pluginStorage.readKey);
+      readKeyMock.mockImplementation(async (opts: any) => {
+        if (opts.key === 'canvas-instances') return [{ id: 'c1', name: 'Main', views: [] }];
+        if (opts.key === 'canvas-active-id') return 'c1';
+        if (opts.key === 'canvas-wires') return [{ agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Wire' }];
+        return null;
+      });
 
-    it('conditionally includes wireDefinitions in per-project canvas state', async () => {
-      const source = await import('fs').then(fs => fs.readFileSync(
-        path.join(__dirname, 'annex-server.ts'), 'utf-8',
-      ));
-      // Verify wire definitions are spread conditionally
-      expect(source).toContain('wireDefinitions: wires');
-    });
+      // Start the server so broadcastSnapshotRefresh has WS context
+      await startAndPair();
 
-    it('conditionally includes wireDefinitions in app-level canvas state', async () => {
+      // Clear call history to only track our snapshot call
+      readKeyMock.mockClear();
+      readKeyMock.mockImplementation(async (opts: any) => {
+        if (opts.key === 'canvas-instances') return [{ id: 'c1', name: 'Main', views: [] }];
+        if (opts.key === 'canvas-active-id') return 'c1';
+        if (opts.key === 'canvas-wires') return [{ agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Wire' }];
+        return null;
+      });
+
+      // broadcastSnapshotRefresh triggers buildSnapshot internally
+      annexServer.broadcastSnapshotRefresh();
+
+      // Wait for the async buildSnapshot to complete
+      await new Promise((r) => setTimeout(r, 500));
+
+      // Verify readKey was called with canvas-wires for the project
+      const readKeyCalls = readKeyMock.mock.calls;
+      const wireCall = readKeyCalls.find((call: any[]) =>
+        call[0]?.key === 'canvas-wires' && call[0]?.projectPath === '/tmp/test',
+      );
+      expect(wireCall).toBeDefined();
+    }, 10_000);
+
+    it('buildSnapshot reads canvas-wires for app-level (global) canvas state', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+
+      const readKeyMock = vi.mocked(pluginStorage.readKey);
+      readKeyMock.mockImplementation(async (opts: any) => {
+        if (opts.scope === 'global' && opts.key === 'canvas-instances') return [{ id: 'g1', name: 'Global', views: [] }];
+        if (opts.scope === 'global' && opts.key === 'canvas-active-id') return 'g1';
+        if (opts.scope === 'global' && opts.key === 'canvas-wires') return [{ agentId: 'x', targetId: 'y' }];
+        return null;
+      });
+
+      await startAndPair();
+
+      readKeyMock.mockClear();
+      readKeyMock.mockImplementation(async (opts: any) => {
+        if (opts.scope === 'global' && opts.key === 'canvas-instances') return [{ id: 'g1', name: 'Global', views: [] }];
+        if (opts.scope === 'global' && opts.key === 'canvas-active-id') return 'g1';
+        if (opts.scope === 'global' && opts.key === 'canvas-wires') return [{ agentId: 'x', targetId: 'y' }];
+        return null;
+      });
+
+      annexServer.broadcastSnapshotRefresh();
+      await new Promise((r) => setTimeout(r, 500));
+
+      const readKeyCalls = readKeyMock.mock.calls;
+      const wireCall = readKeyCalls.find((call: any[]) =>
+        call[0]?.key === 'canvas-wires' && call[0]?.scope === 'global',
+      );
+      expect(wireCall).toBeDefined();
+    }, 10_000);
+
+    it('client-side hydrateFromRemote already accepts wireDefinitions (existing coverage)', async () => {
+      // This test documents that the annex client hydration path already
+      // handles wireDefinitions. Full behavioral tests exist in
+      // remote-canvas-wire-sync.test.ts (5 tests covering restore, non-overwrite,
+      // and replacement). This ensures the contract is stable.
       const source = await import('fs').then(fs => fs.readFileSync(
-        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+        path.join(__dirname, '../../renderer/plugins/builtin/canvas/canvas-store.ts'), 'utf-8',
       ));
-      expect(source).toContain('wireDefinitions: appWires');
+      // hydrateFromRemote accepts wireDefinitions as third parameter
+      expect(source).toContain('hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?)');
     });
   });
 
@@ -1987,40 +2049,7 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('wake handler waits for agent running', () => {
-    it('handleWakeAgent awaits waitForAgentRunning before broadcastSnapshotRefresh', async () => {
-      const source = await import('fs').then(fs => fs.readFileSync(
-        path.join(__dirname, 'annex-server.ts'), 'utf-8',
-      ));
-      // The wake handler must await waitForAgentRunning before broadcasting
-      const wakeBlock = source.slice(
-        source.indexOf('async function handleWakeAgent'),
-        source.indexOf('async function handleWakeAgent') + 2000,
-      );
-      expect(wakeBlock).toContain('await waitForAgentRunning(config.id)');
-      // broadcastSnapshotRefresh must come AFTER the await
-      const awaitIdx = wakeBlock.indexOf('await waitForAgentRunning');
-      const broadcastIdx = wakeBlock.indexOf('broadcastSnapshotRefresh()');
-      expect(awaitIdx).toBeLessThan(broadcastIdx);
-    });
-
-    it('waitForAgentRunning polls isRunning with retries', async () => {
-      const source = await import('fs').then(fs => fs.readFileSync(
-        path.join(__dirname, 'annex-server.ts'), 'utf-8',
-      ));
-      const fn = source.slice(
-        source.indexOf('async function waitForAgentRunning'),
-        source.indexOf('async function waitForAgentRunning') + 800,
-      );
-      // Must check all three runtime modes
-      expect(fn).toContain('ptyManager.isRunning(agentId)');
-      expect(fn).toContain('isHeadlessAgent(agentId)');
-      expect(fn).toContain('structuredManager.isStructuredSession(agentId)');
-      // Must have retry loop
-      expect(fn).toContain('maxAttempts');
-      expect(fn).toContain('setTimeout');
-    });
-
-    it('wake endpoint calls spawnAgent then waits before snapshot refresh', async () => {
+    it('agent shows running status after wake (not sleeping)', async () => {
       vi.mocked(projectStore.list).mockReturnValue([
         { id: 'proj_1', name: 'test', path: '/tmp/test' },
       ]);
@@ -2030,25 +2059,71 @@ describe('annex-server', () => {
           worktreePath: '/tmp/test/.clubhouse/agents/agent-1',
         } as any,
       ]);
-      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
+
+      // Agent starts as sleeping; becomes running after spawn completes
+      let agentRunning = false;
+      vi.mocked(ptyManagerModule.isRunning).mockImplementation((id?: string) => {
+        if (id === 'durable_1') return agentRunning;
+        return false;
+      });
+
+      // Simulate spawn making the agent running
+      vi.mocked(agentSystem.spawnAgent).mockImplementation(async () => {
+        agentRunning = true;
+      });
 
       const { port, token } = await startAndPair();
 
-      // After spawn, simulate the agent becoming running on second poll
-      let callCount = 0;
-      vi.mocked(ptyManagerModule.isRunning).mockImplementation(() => {
-        callCount++;
-        return callCount > 1;
-      });
-
-      const res = await request(
+      // Wake the agent
+      const wakeRes = await request(
         port, 'POST', '/api/v1/agents/durable_1/wake',
         { message: 'Start working' },
         authHeaders(token),
       );
-      expect(res.status).toBe(200);
+      expect(wakeRes.status).toBe(200);
       expect(agentSystem.spawnAgent).toHaveBeenCalled();
-    });
+
+      // Verify agent is now running via the agents endpoint
+      const agentsRes = await request(
+        port, 'GET', '/api/v1/projects/proj_1/agents',
+        undefined, authHeaders(token),
+      );
+      const agents = JSON.parse(agentsRes.body);
+      expect(agents[0].status).toBe('running');
+    }, 10_000);
+
+    it('wake handler tolerates agent that takes multiple polls to register', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        {
+          id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01',
+          worktreePath: '/tmp/test/.clubhouse/agents/agent-1',
+        } as any,
+      ]);
+
+      // Agent becomes running after 3 checks (simulating startup delay)
+      let checkCount = 0;
+      vi.mocked(ptyManagerModule.isRunning).mockImplementation((id?: string) => {
+        if (id === 'durable_1') {
+          checkCount++;
+          return checkCount > 3;
+        }
+        return false;
+      });
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'POST', '/api/v1/agents/durable_1/wake',
+        { message: 'Delayed start' },
+        authHeaders(token),
+      );
+      expect(res.status).toBe(200);
+      // isRunning should have been called multiple times (polling)
+      expect(checkCount).toBeGreaterThan(1);
+    }, 10_000);
   });
 
   // -------------------------------------------------------------------------
@@ -2056,36 +2131,94 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('GP member status checks all execution modes', () => {
-    it('groupProjectMembers status uses isHeadlessAgent and isStructuredSession', async () => {
-      const source = await import('fs').then(fs => fs.readFileSync(
-        path.join(__dirname, 'annex-server.ts'), 'utf-8',
-      ));
-      // Find all lines that determine GP member status
-      const statusLines = source.split('\n').filter(
-        (line: string) => line.includes("? 'connected' : 'sleeping'"),
-      );
-      // All status lines should check headless and structured modes
-      for (const line of statusLines) {
-        expect(line).toContain('isHeadlessAgent(');
-        expect(line).toContain('structuredManager.isStructuredSession(');
-      }
-    });
+    it('headless agent shows as connected in GP members endpoint', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
 
-    it('no GP member status line uses only ptyManager.isRunning', async () => {
-      const source = await import('fs').then(fs => fs.readFileSync(
-        path.join(__dirname, 'annex-server.ts'), 'utf-8',
-      ));
-      // Ensure no status line uses ONLY ptyManager without the other checks
-      const statusLines = source.split('\n').filter(
-        (line: string) => line.includes("? 'connected' : 'sleeping'"),
+      vi.mocked(groupProjectRegistry.get).mockResolvedValue({
+        id: 'gp_1', name: 'Test GP', description: '', members: [],
+      } as any);
+
+      vi.mocked(bindingManager.getAllBindings).mockReturnValue([
+        { agentId: 'agent-h1', agentName: 'headless-agent', targetId: 'gp_1', targetKind: 'group-project', label: 'GP' } as any,
+      ]);
+
+      // Agent is headless-only (not PTY, not structured)
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
+      vi.mocked(agentSystem.isHeadlessAgent).mockImplementation((id: string) => id === 'agent-h1');
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'GET', '/api/v1/group-projects/gp_1/members',
+        undefined, authHeaders(token),
       );
-      for (const line of statusLines) {
-        // Each line must have all three checks
-        expect(line).toContain('ptyManager.isRunning(');
-        expect(line).toContain('isHeadlessAgent(');
-        expect(line).toContain('structuredManager.isStructuredSession(');
-      }
-    });
+      expect(res.status).toBe(200);
+      const members = JSON.parse(res.body);
+      expect(members).toHaveLength(1);
+      expect(members[0].agentName).toBe('headless-agent');
+      expect(members[0].status).toBe('connected');
+    }, 10_000);
+
+    it('structured agent shows as connected in GP members endpoint', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
+
+      vi.mocked(groupProjectRegistry.get).mockResolvedValue({
+        id: 'gp_1', name: 'Test GP', description: '', members: [],
+      } as any);
+
+      vi.mocked(bindingManager.getAllBindings).mockReturnValue([
+        { agentId: 'agent-s1', agentName: 'structured-agent', targetId: 'gp_1', targetKind: 'group-project', label: 'GP' } as any,
+      ]);
+
+      // Agent is structured-only
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
+      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
+      vi.mocked(structuredManagerModule.isStructuredSession).mockImplementation((id: string) => id === 'agent-s1');
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'GET', '/api/v1/group-projects/gp_1/members',
+        undefined, authHeaders(token),
+      );
+      expect(res.status).toBe(200);
+      const members = JSON.parse(res.body);
+      expect(members).toHaveLength(1);
+      expect(members[0].agentName).toBe('structured-agent');
+      expect(members[0].status).toBe('connected');
+    }, 10_000);
+
+    it('sleeping agent shows as sleeping in GP members endpoint', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
+
+      vi.mocked(groupProjectRegistry.get).mockResolvedValue({
+        id: 'gp_1', name: 'Test GP', description: '', members: [],
+      } as any);
+
+      vi.mocked(bindingManager.getAllBindings).mockReturnValue([
+        { agentId: 'agent-z1', agentName: 'sleeping-agent', targetId: 'gp_1', targetKind: 'group-project', label: 'GP' } as any,
+      ]);
+
+      // Agent is not running in any mode
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
+      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'GET', '/api/v1/group-projects/gp_1/members',
+        undefined, authHeaders(token),
+      );
+      expect(res.status).toBe(200);
+      const members = JSON.parse(res.body);
+      expect(members).toHaveLength(1);
+      expect(members[0].status).toBe('sleeping');
+    }, 10_000);
   });
 
   // --- SEC-11: Session token expiry ---

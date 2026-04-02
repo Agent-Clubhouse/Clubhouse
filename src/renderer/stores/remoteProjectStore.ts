@@ -310,10 +310,10 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
     // Namespace canvas state by project ID, including agentId/projectId
     // fields within each canvas view so they match the namespaced IDs
     // used in remoteAgents.
-    const newCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }> = {};
+    const newCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }> = {};
     if (snapshot.canvasState) {
       for (const [projId, cs] of Object.entries(snapshot.canvasState)) {
-        const typed = cs as { canvases: Array<{ views?: unknown[] } & Record<string, unknown>>; activeCanvasId: string };
+        const typed = cs as { canvases: Array<{ views?: unknown[] } & Record<string, unknown>>; activeCanvasId: string; wireDefinitions?: unknown[] };
         const namespacedCanvases = typed.canvases.map((canvas) => {
           if (!canvas.views || !Array.isArray(canvas.views)) return canvas;
           return {
