@@ -74,6 +74,11 @@ describe('AgentAvatar', () => {
     expect(ringEls.length).toBe(0);
   });
 
+  it('supports xs size', () => {
+    const { container } = render(<AgentAvatar agent={makeAgent()} size="xs" />);
+    expect(container.querySelector('.w-5')).toBeInTheDocument();
+  });
+
   it('supports sm size', () => {
     const { container } = render(<AgentAvatar agent={makeAgent()} size="sm" />);
     expect(container.querySelector('.w-6')).toBeInTheDocument();
@@ -82,6 +87,29 @@ describe('AgentAvatar', () => {
   it('supports md size', () => {
     const { container } = render(<AgentAvatar agent={makeAgent()} size="md" />);
     expect(container.querySelector('.w-7')).toBeInTheDocument();
+  });
+
+  it('supports lg size', () => {
+    const { container } = render(<AgentAvatar agent={makeAgent()} size="lg" />);
+    expect(container.querySelector('.w-12')).toBeInTheDocument();
+  });
+
+  it('uses iconUrl prop over store icon', () => {
+    useAgentStore.setState({
+      agentIcons: { 'agent-1': 'data:image/png;base64,store-icon' },
+    });
+    render(<AgentAvatar agent={makeAgent({ icon: 'custom.png' })} iconUrl="data:image/png;base64,override" />);
+    const img = screen.getByAltText('bold-falcon');
+    expect(img).toHaveAttribute('src', 'data:image/png;base64,override');
+  });
+
+  it('falls back to store icon when iconUrl is not provided', () => {
+    useAgentStore.setState({
+      agentIcons: { 'agent-1': 'data:image/png;base64,store-icon' },
+    });
+    render(<AgentAvatar agent={makeAgent({ icon: 'custom.png' })} />);
+    const img = screen.getByAltText('bold-falcon');
+    expect(img).toHaveAttribute('src', 'data:image/png;base64,store-icon');
   });
 
   it('renders orchestrator mini icon for claude-code agents without custom icon', () => {

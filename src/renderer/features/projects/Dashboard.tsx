@@ -5,6 +5,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { Project, Agent, CompletedQuickAgent } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
+import { AgentAvatar as SharedAgentAvatar } from '../agents/AgentAvatar';
 import { formatDuration } from '../../utils/format';
 
 /* ─── Helpers ─── */
@@ -70,11 +71,12 @@ const STATUS_RING_COLOR: Record<string, string> = {
   error: '#f87171',
 };
 
-/* ─── Agent Avatar (compact) ─── */
+/* ─── Agent Avatar (compact) — delegates to shared component ─── */
+
+const DASHBOARD_SIZE_MAP = { sm: 'xs', md: 'sm' } as const;
 
 function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' }) {
   const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
-  const iconDataUrl = useAgentStore((s) => s.agentIcons[agent.id]);
   const detailed = detailedStatus[agent.id];
   const isWorking = agent.status === 'running' && detailed?.state === 'working';
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
@@ -82,47 +84,9 @@ function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' 
     : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
     : baseRingColor;
 
-  const outerDim = size === 'sm' ? 'w-7 h-7' : 'w-8 h-8';
-  const innerDim = size === 'sm' ? 'w-5 h-5 text-[8px]' : 'w-6 h-6 text-[9px]';
-  const iconSize = size === 'sm' ? 8 : 10;
-
-  const inner = agent.kind === 'durable' ? (
-    (() => {
-      // Image icon avatar
-      if (agent.icon && iconDataUrl) {
-        return (
-          <div className={`${innerDim} rounded-full overflow-hidden flex-shrink-0`}>
-            <img src={iconDataUrl} alt={agent.name} className="w-full h-full object-cover" />
-          </div>
-        );
-      }
-      // Default initials
-      const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
-      return (
-        <div
-          className={`${innerDim} rounded-full flex items-center justify-center font-bold text-white`}
-          style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
-        >
-          {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
-        </div>
-      );
-    })()
-  ) : (
-    <div className={`${innerDim} rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0`}>
-      <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-      </svg>
-    </div>
-  );
-
   return (
     <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
-      <div
-        className={`${outerDim} rounded-full flex items-center justify-center`}
-        style={{ border: `2px solid ${ringColor}` }}
-      >
-        {inner}
-      </div>
+      <SharedAgentAvatar agent={agent} size={DASHBOARD_SIZE_MAP[size]} showRing ringColor={ringColor} />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { EmojiPicker } from '../../components/EmojiPicker';
 import { SkillsSection } from './SkillsSection';
 import { AgentTemplatesSection } from './AgentTemplatesSection';
 import { McpJsonSection } from './McpJsonSection';
+import { AgentAvatar } from './AgentAvatar';
 
 type SettingsTab = 'main' | 'quick';
 
@@ -436,20 +437,7 @@ export function AgentSettingsView({ agent }: Props) {
             <path d="M12 19l-7-7 7-7" />
           </svg>
         </button>
-        <div className="relative">
-          {agent.icon && iconDataUrl ? (
-            <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0">
-              <img src={iconDataUrl} alt={agent.name} className="w-full h-full object-cover" />
-            </div>
-          ) : (
-            <div
-              className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
-              style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
-            >
-              {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
-            </div>
-          )}
-        </div>
+        <AgentAvatar agent={agent} size="xs" iconUrl={iconDataUrl} />
         <span className="text-sm font-medium text-ctp-text">{agent.name}</span>
         <span className="text-xs text-ctp-subtext0">Settings</span>
         <div className="ml-auto">
@@ -509,27 +497,7 @@ export function AgentSettingsView({ agent }: Props) {
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-3">Appearance</h3>
           <div className="flex items-start gap-4">
             {/* Large avatar preview */}
-            {agent.emoji ? (
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: `${colorInfo?.hex || '#6366f1'}20` }}
-              >
-                <span className="text-2xl" role="img">{agent.emoji}</span>
-              </div>
-            ) : agent.icon && iconDataUrl ? (
-              <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0">
-                <img src={iconDataUrl} alt={agent.name} className="w-full h-full object-cover" />
-              </div>
-            ) : (
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
-              >
-                <span className="text-base font-bold text-white">
-                  {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
-                </span>
-              </div>
-            )}
+            <AgentAvatar agent={agent} size="lg" iconUrl={iconDataUrl} />
 
             <div className="flex-1 space-y-3">
               {/* Rename */}

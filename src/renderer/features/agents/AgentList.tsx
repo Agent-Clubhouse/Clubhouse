@@ -6,6 +6,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { AgentListItem } from './AgentListItem';
 import { AddAgentDialog } from './AddAgentDialog';
 import { AgentGalleryDialog } from './AgentGalleryDialog';
+import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialog';
 import { DeleteAgentDialog } from './DeleteAgentDialog';
 import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
@@ -14,6 +15,7 @@ import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
+import type { PersonaTemplate } from '../assistant/content/personas';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
@@ -98,6 +100,7 @@ export function AgentList() {
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
   const [showDialog, setShowDialog] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
+  const [pendingTemplate, setPendingTemplate] = useState<{ persona: PersonaTemplate; color: string } | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showMissionInput, setShowMissionInput] = useState(false);
   const [quickTargetParentId, setQuickTargetParentId] = useState<string | null>(null);
@@ -327,17 +330,22 @@ export function AgentList() {
     }
   };
 
-  const handleCreateFromTemplate = async (persona: { id: string; name: string }, color: string) => {
-    if (!activeProject) return;
+  const handleGallerySelect = (persona: PersonaTemplate, color: string) => {
     setShowGallery(false);
+    setPendingTemplate({ persona, color });
+  };
 
-    const name = persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
-    const useWorktree = true;
+  const handleCreateFromTemplate = async (templateConfig: TemplateConfig) => {
+    if (!activeProject) return;
+    setPendingTemplate(null);
+
+    const { persona, name, color, model, useWorktree, orchestrator: orch, freeAgentMode: fam, structuredMode: sm, mcpIds } = templateConfig;
 
     const tempId = registerCreatingAgent(activeProject.id, name, color, undefined, undefined);
     try {
       const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, undefined, useWorktree, undefined, undefined, undefined, undefined, persona.id,
+        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree,
+        orch, fam || undefined, mcpIds, sm || undefined, persona.id,
       );
       if (tempId) removeAgent(tempId);
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
@@ -748,6 +756,15 @@ export function AgentList() {
       {showGallery && (
         <AgentGalleryDialog
           onClose={() => setShowGallery(false)}
+          onCreate={handleGallerySelect}
+        />
+      )}
+      {pendingTemplate && (
+        <TemplateConfigDialog
+          persona={pendingTemplate.persona}
+          personaColor={pendingTemplate.color}
+          projectPath={activeProject?.path}
+          onClose={() => setPendingTemplate(null)}
           onCreate={handleCreateFromTemplate}
         />
       )}
