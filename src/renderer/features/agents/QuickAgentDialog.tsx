@@ -23,6 +23,7 @@ export function QuickAgentDialog() {
   const [parentAgentId, setParentAgentId] = useState<string>('');
   const [orchestrator, setOrchestrator] = useState('');
   const [model, setModel] = useState('default');
+  const [customModel, setCustomModel] = useState('');
   const [freeAgentMode, setFreeAgentMode] = useState(false);
   const [mission, setMission] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -37,6 +38,7 @@ export function QuickAgentDialog() {
       setParentAgentId('');
       setOrchestrator(enabledOrchestrators[0]?.id || '');
       setModel('default');
+      setCustomModel('');
       setFreeAgentMode(false);
       setMission('');
       // Focus the text input after a tick
@@ -60,8 +62,11 @@ export function QuickAgentDialog() {
   const resolvedOrch = allOrchestrators.find((o) => o.id === resolvedOrchId);
   const supportsPermissions = resolvedOrch?.capabilities?.permissions ?? false;
 
+  const resolvedModel = model === 'custom' ? customModel.trim() : model;
+
   const handleSubmit = async () => {
     if (!selectedProject || !mission.trim()) return;
+    if (model === 'custom' && !customModel.trim()) return;
     const parentId = parentAgentId || undefined;
     const selectedOrchestrator = (!parentId && orchestrator) ? orchestrator : undefined;
     const freeMode = freeAgentMode || undefined;
@@ -76,7 +81,7 @@ export function QuickAgentDialog() {
         selectedProject.id,
         selectedProject.path,
         mission.trim(),
-        model,
+        resolvedModel,
         parentId,
         selectedOrchestrator,
         freeMode,
@@ -155,7 +160,7 @@ export function QuickAgentDialog() {
         )}
 
         {/* Model */}
-        <label className="block mb-3">
+        <div className="block mb-3">
           <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Model</span>
           <select
             value={model}
@@ -166,8 +171,19 @@ export function QuickAgentDialog() {
             {MODEL_OPTIONS.map((opt) => (
               <option key={opt.id} value={opt.id}>{opt.label}</option>
             ))}
+            <option value="custom">Custom...</option>
           </select>
-        </label>
+          {model === 'custom' && (
+            <input
+              type="text"
+              value={customModel}
+              onChange={(e) => setCustomModel(e.target.value)}
+              placeholder="e.g. claude-opus-4-6[1m]"
+              className="mt-1.5 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
+                text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-indigo-500"
+            />
+          )}
+        </div>
 
         {/* Free Agent Mode */}
         <label
@@ -218,7 +234,7 @@ export function QuickAgentDialog() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!mission.trim() || !selectedProjectId}
+            disabled={!mission.trim() || !selectedProjectId || (model === 'custom' && !customModel.trim())}
             className="px-4 py-1.5 text-xs rounded bg-indigo-500 text-white
               hover:bg-indigo-600 cursor-pointer font-medium
               disabled:opacity-40 disabled:cursor-not-allowed"

@@ -42,6 +42,8 @@ const MODEL_OPTIONS = [
   { id: 'opus', label: 'Opus' },
   { id: 'sonnet', label: 'Sonnet' },
   { id: 'haiku', label: 'Haiku' },
+  { id: 'claude-opus-4-6[1m]', label: 'Opus 4.6 (1M)' },
+  { id: 'claude-sonnet-4-6[1m]', label: 'Sonnet 4.6 (1M)' },
 ];
 
 const DEFAULT_DURABLE_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)'];

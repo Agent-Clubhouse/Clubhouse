@@ -159,13 +159,14 @@ export function AgentSettingsView({ agent }: Props) {
   };
 
   // Agent model state
-  const [agentModel, setAgentModel] = useState(agent.model || 'default');
+  const isKnownModel = (id: string) => MODEL_OPTIONS.some((opt) => opt.id === id);
+  const initModel = agent.model || 'default';
+  const [agentModel, setAgentModel] = useState(isKnownModel(initModel) ? initModel : 'custom');
+  const [agentCustomModel, setAgentCustomModel] = useState(isKnownModel(initModel) ? '' : initModel);
 
-  const handleModelChange = async (value: string) => {
+  const persistModel = async (value: string) => {
     if (!projectPath) return;
-    setAgentModel(value);
     await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { model: value });
-    // Update in-memory store so the agent list badge reflects immediately
     useAgentStore.setState((s) => {
       const existing = s.agents[agent.id];
       if (!existing) return s;
@@ -176,6 +177,23 @@ export function AgentSettingsView({ agent }: Props) {
         },
       };
     });
+  };
+
+  const handleModelChange = async (value: string) => {
+    setAgentModel(value);
+    if (value === 'custom') {
+      // Don't persist yet — wait for custom input
+      setAgentCustomModel('');
+    } else {
+      await persistModel(value);
+    }
+  };
+
+  const handleCustomModelBlur = async () => {
+    const trimmed = agentCustomModel.trim();
+    if (trimmed) {
+      await persistModel(trimmed);
+    }
   };
 
   // Resolve orchestrator display name
@@ -209,6 +227,7 @@ export function AgentSettingsView({ agent }: Props) {
   const [qadSystemPrompt, setQadSystemPrompt] = useState('');
   const [qadAllowedTools, setQadAllowedTools] = useState('');
   const [qadDefaultModel, setQadDefaultModel] = useState('');
+  const [qadCustomModel, setQadCustomModel] = useState('');
   const [qadFreeAgentMode, setQadFreeAgentMode] = useState(false);
   const [qadDirty, setQadDirty] = useState(false);
   const [qadSaving, setQadSaving] = useState(false);
@@ -281,11 +300,24 @@ export function AgentSettingsView({ agent }: Props) {
         if (defaults) {
           setQadSystemPrompt(defaults.systemPrompt || '');
           setQadAllowedTools((defaults.allowedTools || []).join('\n'));
-          setQadDefaultModel(defaults.defaultModel || '');
+          const savedQadModel = defaults.defaultModel || '';
+          if (savedQadModel && !isKnownModel(savedQadModel)) {
+            setQadDefaultModel('custom');
+            setQadCustomModel(savedQadModel);
+          } else {
+            setQadDefaultModel(savedQadModel);
+          }
           setQadFreeAgentMode(defaults.freeAgentMode ?? false);
         }
         // Sync agent model and free agent mode from disk
-        setAgentModel(config?.model || 'default');
+        const savedModel = config?.model || 'default';
+        if (isKnownModel(savedModel)) {
+          setAgentModel(savedModel);
+          setAgentCustomModel('');
+        } else {
+          setAgentModel('custom');
+          setAgentCustomModel(savedModel);
+        }
         setFreeAgentMode(config?.freeAgentMode ?? false);
         setStructuredMode(config?.structuredMode ?? false);
         setQadLoaded(true);
@@ -379,7 +411,8 @@ export function AgentSettingsView({ agent }: Props) {
     if (qadSystemPrompt.trim()) defaults.systemPrompt = qadSystemPrompt.trim();
     const tools = qadAllowedTools.split('\n').map((l) => l.trim()).filter(Boolean);
     if (tools.length > 0) defaults.allowedTools = tools;
-    if (qadDefaultModel && qadDefaultModel !== 'default') defaults.defaultModel = qadDefaultModel;
+    const resolvedQadModel = qadDefaultModel === 'custom' ? qadCustomModel.trim() : qadDefaultModel;
+    if (resolvedQadModel && resolvedQadModel !== 'default') defaults.defaultModel = resolvedQadModel;
     if (qadFreeAgentMode) defaults.freeAgentMode = true;
     await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { quickAgentDefaults: defaults });
     setQadDirty(false);
@@ -629,7 +662,20 @@ export function AgentSettingsView({ agent }: Props) {
                   {MODEL_OPTIONS.map((opt) => (
                     <option key={opt.id} value={opt.id}>{opt.label}</option>
                   ))}
+                  <option value="custom">Custom...</option>
                 </select>
+                {agentModel === 'custom' && (
+                  <input
+                    type="text"
+                    value={agentCustomModel}
+                    onChange={(e) => setAgentCustomModel(e.target.value)}
+                    onBlur={handleCustomModelBlur}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModelBlur(); }}
+                    placeholder="e.g. claude-opus-4-6[1m]"
+                    disabled={agent.status === 'running'}
+                    className="mt-1.5 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                )}
               </div>
 
               {/* Structured Mode */}
@@ -997,7 +1043,18 @@ export function AgentSettingsView({ agent }: Props) {
                     {MODEL_OPTIONS.map((opt) => (
                       <option key={opt.id} value={opt.id}>{opt.label}</option>
                     ))}
+                    <option value="custom">Custom...</option>
                   </select>
+                  {qadDefaultModel === 'custom' && (
+                    <input
+                      type="text"
+                      value={qadCustomModel}
+                      onChange={(e) => { setQadCustomModel(e.target.value); setQadDirty(true); }}
+                      placeholder="e.g. claude-opus-4-6[1m]"
+                      disabled={isRunning}
+                      className={`mt-1.5 w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus:border-ctp-blue focus:outline-none placeholder:text-ctp-overlay0 ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    />
+                  )}
                 </div>
                 <div>
                   <label

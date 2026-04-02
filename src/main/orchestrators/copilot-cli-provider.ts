@@ -33,6 +33,8 @@ const FALLBACK_MODEL_OPTIONS = [
   { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
   { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
   { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5' },
+  { id: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M)' },
+  { id: 'claude-sonnet-4-6[1m]', label: 'Claude Sonnet 4.6 (1M)' },
   { id: 'gpt-5', label: 'GPT 5' },
   { id: 'gpt-5-mini', label: 'GPT 5 Mini' },
 ];

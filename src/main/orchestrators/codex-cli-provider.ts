@@ -43,6 +43,8 @@ const FALLBACK_MODEL_OPTIONS = [
   { id: 'gpt-5.2-codex', label: 'GPT 5.2 Codex' },
   { id: 'codex-mini-latest', label: 'Codex Mini' },
   { id: 'gpt-5', label: 'GPT 5' },
+  { id: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M)' },
+  { id: 'claude-sonnet-4-6[1m]', label: 'Claude Sonnet 4.6 (1M)' },
 ];
 
 const CODEX_MODEL_CHOICES_PATTERN = /--model\s+(?:<\w+>)?\s*.*?\(choices:\s*([\s\S]*?)\)/;
