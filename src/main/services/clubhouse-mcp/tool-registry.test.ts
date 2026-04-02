@@ -11,7 +11,7 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { registerToolTemplate, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, _resetForTesting } from './tool-registry';
+import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
@@ -639,6 +639,99 @@ describe('ToolRegistry', () => {
       expect(suffixes).toContain('list_members');
       expect(suffixes).not.toContain('shoulder_tap');
       expect(suffixes).toContain('broadcast'); // broadcast not disabled at wire level
+    });
+  });
+
+  describe('global tools', () => {
+    it('global tools appear for agents with no bindings', () => {
+      registerGlobalTool('my_global_tool', {
+        description: 'A global tool',
+        inputSchema: { type: 'object' },
+      }, vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }));
+
+      const tools = getScopedToolList('any-agent');
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('my_global_tool');
+      expect(tools[0].description).toBe('A global tool');
+    });
+
+    it('global tools appear alongside binding-scoped tools', () => {
+      registerGlobalTool('global_one', {
+        description: 'Global',
+        inputSchema: { type: 'object' },
+      }, vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }));
+
+      registerToolTemplate('agent', 'send_message', {
+        description: 'Send',
+        inputSchema: { type: 'object' },
+      }, vi.fn());
+
+      agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+      });
+
+      const tools = getScopedToolList('agent-1');
+      // 1 binding-scoped + 1 global
+      expect(tools).toHaveLength(2);
+      expect(tools.find(t => t.name === 'global_one')).toBeDefined();
+      expect(tools.find(t => t.name.includes('send_message'))).toBeDefined();
+      agentRegistry.untrack('agent-2');
+    });
+
+    it('callTool resolves global tools without requiring a binding', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'global result' }],
+      });
+      registerGlobalTool('canvas__create_canvas', {
+        description: 'Create a canvas',
+        inputSchema: { type: 'object', properties: { name: { type: 'string' } } },
+      }, handler);
+
+      const result = await callTool('agent-1', 'canvas__create_canvas', { name: 'Test' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toBe('global result');
+      expect(handler).toHaveBeenCalledWith('agent-1', { name: 'Test' });
+    });
+
+    it('callTool validates required arguments for global tools', async () => {
+      registerGlobalTool('need_args', {
+        description: 'Needs args',
+        inputSchema: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+      }, vi.fn());
+
+      const result = await callTool('agent-1', 'need_args', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Missing required argument: id');
+    });
+
+    it('callTool validates argument types for global tools', async () => {
+      registerGlobalTool('typed_args', {
+        description: 'Typed',
+        inputSchema: {
+          type: 'object',
+          properties: { count: { type: 'number' } },
+        },
+      }, vi.fn());
+
+      const result = await callTool('agent-1', 'typed_args', { count: 'not_a_number' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Invalid type');
+    });
+
+    it('global tools are cleared by _resetForTesting', () => {
+      registerGlobalTool('temp_tool', {
+        description: 'Temp',
+        inputSchema: { type: 'object' },
+      }, vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }));
+
+      expect(getScopedToolList('any-agent')).toHaveLength(1);
+      _resetForTesting();
+      expect(getScopedToolList('any-agent')).toHaveLength(0);
     });
   });
 });
