@@ -440,6 +440,10 @@ vi.stubGlobal('clubhouse', {
     sendCommandResult: noop,
     layoutElk: vi.fn(async () => ({ nodes: [], edges: [] })),
   },
+  commandPalette: {
+    onRequest: () => noop,
+    sendResult: noop,
+  },
   window: {
     createPopout: asyncNoop,
     closePopout: asyncNoop,

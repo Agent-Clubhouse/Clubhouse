@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useStore } from 'zustand';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -8,7 +8,7 @@ import { usePluginStore } from '../../plugins/plugin-store';
 import { useKeyboardShortcutsStore, formatBinding } from '../../stores/keyboardShortcutsStore';
 import { useAnnexStore } from '../../stores/annexStore';
 import { getProjectHubStore, useAppHubStore } from '../../plugins/builtin/hub/main';
-import { getProjectCanvasStore, useAppCanvasStore } from '../../plugins/builtin/canvas/main';
+import { getProjectCanvasStore, getKnownProjectIds, useAppCanvasStore } from '../../plugins/builtin/canvas/main';
 import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CommandItem, SETTINGS_PAGES } from './command-registry';
@@ -83,16 +83,42 @@ export function useCommandSource(): CommandItem[] {
 
   // Load hubs from non-active projects so the palette shows all hubs
   const [otherProjectHubs, setOtherProjectHubs] = useState<CrossProjectHub[]>([]);
-  // Load canvases from non-active projects
+  // Load canvases from non-active projects (reactive via store subscriptions)
   const [otherProjectCanvases, setOtherProjectCanvases] = useState<CrossProjectCanvas[]>([]);
+
+  // Build cross-project canvas entries from live Zustand stores (reactive)
+  const refreshOtherCanvases = useCallback(() => {
+    const canvasEntries: CrossProjectCanvas[] = [];
+    for (const project of projects) {
+      if (project.id === activeProjectId) continue;
+      // Check if a live store exists for this project
+      const knownIds = getKnownProjectIds();
+      if (knownIds.includes(project.id)) {
+        const store = getProjectCanvasStore(project.id);
+        const canvases = store.getState().canvases;
+        for (const canvas of canvases) {
+          canvasEntries.push({
+            canvasId: canvas.id,
+            canvasName: canvas.name,
+            projectId: project.id,
+            projectName: project.displayName || project.name,
+            projectPath: project.path,
+          });
+        }
+      }
+    }
+    return canvasEntries;
+  }, [projects, activeProjectId]);
+
   useEffect(() => {
     let cancelled = false;
     async function loadOtherSpaces() {
       const hubEntries: CrossProjectHub[] = [];
       const canvasEntries: CrossProjectCanvas[] = [];
+      const knownIds = new Set(getKnownProjectIds());
       for (const project of projects) {
         if (project.id === activeProjectId) continue;
-        // Load hubs
+        // Load hubs from storage (hub stores may not be reactive)
         try {
           const instances = await window.clubhouse.plugin.storageRead({
             pluginId: 'hub',
@@ -112,34 +138,67 @@ export function useCommandSource(): CommandItem[] {
             }
           }
         } catch { /* ignore read errors for individual projects */ }
-        // Load canvases
-        try {
-          const instances = await window.clubhouse.plugin.storageRead({
-            pluginId: 'canvas',
-            scope: 'project-local',
-            key: 'canvas-instances',
-            projectPath: project.path,
-          }) as { id: string; name: string }[] | null;
-          if (Array.isArray(instances)) {
-            for (const inst of instances) {
-              canvasEntries.push({
-                canvasId: inst.id,
-                canvasName: inst.name,
-                projectId: project.id,
-                projectName: project.displayName || project.name,
-                projectPath: project.path,
-              });
+        // Load canvases from storage only for projects without a live store
+        if (!knownIds.has(project.id)) {
+          try {
+            const instances = await window.clubhouse.plugin.storageRead({
+              pluginId: 'canvas',
+              scope: 'project-local',
+              key: 'canvas-instances',
+              projectPath: project.path,
+            }) as { id: string; name: string }[] | null;
+            if (Array.isArray(instances)) {
+              for (const inst of instances) {
+                canvasEntries.push({
+                  canvasId: inst.id,
+                  canvasName: inst.name,
+                  projectId: project.id,
+                  projectName: project.displayName || project.name,
+                  projectPath: project.path,
+                });
+              }
             }
-          }
-        } catch { /* ignore read errors for individual projects */ }
+          } catch { /* ignore read errors for individual projects */ }
+        }
       }
       if (!cancelled) {
         setOtherProjectHubs(hubEntries);
-        setOtherProjectCanvases(canvasEntries);
+        // Merge: storage-loaded canvases + live store canvases
+        const liveCanvases = refreshOtherCanvases();
+        setOtherProjectCanvases([...canvasEntries, ...liveCanvases]);
       }
     }
     loadOtherSpaces();
     return () => { cancelled = true; };
+  }, [projects, activeProjectId, refreshOtherCanvases]);
+
+  // Subscribe to canvas store changes for non-active projects (reactive updates)
+  useEffect(() => {
+    const unsubs: (() => void)[] = [];
+    for (const project of projects) {
+      if (project.id === activeProjectId) continue;
+      const knownIds = getKnownProjectIds();
+      if (knownIds.includes(project.id)) {
+        const store = getProjectCanvasStore(project.id);
+        const unsub = store.subscribe(() => {
+          setOtherProjectCanvases((prev) => {
+            // Remove old entries for this project, add fresh ones from store
+            const withoutProject = prev.filter((e) => e.projectId !== project.id);
+            const canvases = store.getState().canvases;
+            const fresh = canvases.map((canvas) => ({
+              canvasId: canvas.id,
+              canvasName: canvas.name,
+              projectId: project.id,
+              projectName: project.displayName || project.name,
+              projectPath: project.path,
+            }));
+            return [...withoutProject, ...fresh];
+          });
+        });
+        unsubs.push(unsub);
+      }
+    }
+    return () => { unsubs.forEach((u) => u()); };
   }, [projects, activeProjectId]);
 
   return useMemo(() => {

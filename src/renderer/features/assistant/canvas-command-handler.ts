@@ -12,6 +12,8 @@ import { exportBlueprint, importBlueprint, validateBlueprint } from '../../plugi
 import type { CanvasBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
 import { createScopedStorage } from '../../plugins/plugin-api-storage';
 import type { ScopedStorage } from '../../../shared/plugin-types';
+import { useProjectStore } from '../../stores/projectStore';
+import { useUIStore } from '../../stores/uiStore';
 
 interface CanvasCommandRequest {
   callId: string;
@@ -33,6 +35,15 @@ function sendResult(callId: string, result: CanvasCommandResult): void {
 function normPid(pid: unknown): string | undefined {
   if (!pid || pid === 'app' || pid === '') return undefined;
   return pid as string;
+}
+
+/** Resolve project ID: use provided value, or fall back to active project. */
+function resolveProjectId(pid: unknown): string | undefined {
+  const explicit = normPid(pid);
+  if (explicit) return explicit;
+  // Default to the active project so canvases appear where the user is looking
+  const activeProjectId = useProjectStore.getState().activeProjectId;
+  return activeProjectId ?? undefined;
 }
 
 function getStore(projectId?: string): CanvasState {
@@ -117,6 +128,8 @@ function findCanvasForView(viewId: string, projectIdHint?: string): { canvas_id:
 
 const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views', 'disconnect_views', 'import_blueprint', 'create_from_blueprint']);
 
+const CANVAS_TAB = 'plugin:canvas';
+
 /**
  * Execute a command on a specific canvas, switching active canvas if needed.
  *
@@ -180,13 +193,25 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
   },
 
   add_canvas(args) {
-    const pid = args.project_id as string | undefined;
+    // Resolve project ID: use explicit value, or fall back to active project
+    // so the canvas appears in the store the user is currently viewing.
+    const pid = args.project_id === 'app' ? undefined : resolveProjectId(args.project_id);
     const store = getStore(pid);
     const id = store.addCanvas();
     if (args.name) {
       store.renameCanvas(id, args.name as string);
     }
-    return { success: true, data: { canvas_id: id } };
+
+    // Auto-navigate: switch UI to show the new canvas so the user sees it
+    if (pid) {
+      useProjectStore.getState().setActiveProject(pid);
+      useUIStore.getState().setExplorerTab(CANVAS_TAB, pid);
+    } else {
+      useUIStore.getState().setExplorerTab(CANVAS_TAB);
+    }
+    store.setActiveCanvas(id);
+
+    return { success: true, data: { canvas_id: id, project_id: pid || null } };
   },
 
   list_canvases(args) {
@@ -532,8 +557,53 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
     return { success: true, data: { sourceAgentId, targetId, unbindSuccess, reverseRemoved } };
   },
 
-  create_from_blueprint(args) {
+  navigate_to_canvas(args) {
+    const canvasId = args.canvas_id as string;
     const pid = args.project_id as string | undefined;
+    if (!canvasId) return { success: false, error: 'canvas_id is required' };
+
+    // Verify the canvas exists
+    const canvas = findCanvas(canvasId, pid);
+    if (!canvas) return { success: false, error: `Canvas not found: ${canvasId}` };
+
+    // Determine which store owns this canvas
+    const normalizedPid = normPid(pid);
+    let ownerProjectId: string | null = null;
+
+    if (normalizedPid) {
+      const projStore = getProjectCanvasStore(normalizedPid).getState();
+      if (projStore.canvases.some((c: CanvasInstance) => c.id === canvasId)) {
+        ownerProjectId = normalizedPid;
+      }
+    }
+    if (!ownerProjectId) {
+      // Check all known project stores
+      for (const knownPid of getKnownProjectIds()) {
+        const projStore = getProjectCanvasStore(knownPid).getState();
+        if (projStore.canvases.some((c: CanvasInstance) => c.id === canvasId)) {
+          ownerProjectId = knownPid;
+          break;
+        }
+      }
+    }
+
+    // Navigate: set active project, explorer tab, and active canvas
+    if (ownerProjectId) {
+      useProjectStore.getState().setActiveProject(ownerProjectId);
+      useUIStore.getState().setExplorerTab(CANVAS_TAB, ownerProjectId);
+      getProjectCanvasStore(ownerProjectId).getState().setActiveCanvas(canvasId);
+    } else {
+      // App-level canvas
+      useProjectStore.getState().setActiveProject(null);
+      useUIStore.getState().setExplorerTab(CANVAS_TAB);
+      useAppCanvasStore.getState().setActiveCanvas(canvasId);
+    }
+
+    return { success: true, data: { canvas_id: canvasId, project_id: ownerProjectId, name: canvas.name } };
+  },
+
+  create_from_blueprint(args) {
+    const pid = args.project_id === 'app' ? undefined : resolveProjectId(args.project_id);
     const blueprint = args.blueprint as {
       name?: string;
       zones?: Array<{ id: string; name: string; color?: string }>;
@@ -661,8 +731,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
       }
     }
 
-    // Restore previous active canvas
-    if (prevActive && prevActive !== canvasId) store.setActiveCanvas(prevActive);
+    // Auto-navigate to the new canvas so the user sees it
+    if (pid) {
+      useProjectStore.getState().setActiveProject(pid);
+      useUIStore.getState().setExplorerTab(CANVAS_TAB, pid);
+    } else {
+      useUIStore.getState().setExplorerTab(CANVAS_TAB);
+    }
+    store.setActiveCanvas(canvasId);
 
     return {
       success: true,
@@ -688,7 +764,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
   },
 
   import_blueprint(args) {
-    const pid = args.project_id as string | undefined;
+    const pid = args.project_id === 'app' ? undefined : resolveProjectId(args.project_id);
     const blueprint = args.blueprint as CanvasBlueprint;
 
     const validationError = validateBlueprint(blueprint);

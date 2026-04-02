@@ -11,7 +11,9 @@ import { registerBrowserTools, registerWebview, unregisterWebview } from '../ser
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
 import { registerAgentQueueTools } from '../services/clubhouse-mcp/tools/agent-queue-tools';
 import { registerAssistantTools } from '../services/clubhouse-mcp/tools/assistant-tools';
+import { registerCanvasTools } from '../services/clubhouse-mcp/tools/canvas-tools';
 import { registerCanvasCommandHandler } from '../services/clubhouse-mcp/canvas-command';
+import { registerCommandPaletteHandler } from '../services/clubhouse-mcp/command-palette-bridge';
 import { agentRegistry } from '../services/agent-registry';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -57,7 +59,9 @@ export function registerMcpBindingHandlers(): void {
   registerGroupProjectTools();
   registerAgentQueueTools();
   registerAssistantTools();
+  registerCanvasTools();
   registerCanvasCommandHandler();
+  registerCommandPaletteHandler();
 
   appLog('core:mcp', 'info', 'MCP binding handlers registered');
 

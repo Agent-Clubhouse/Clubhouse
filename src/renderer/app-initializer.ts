@@ -31,6 +31,7 @@ import { useToastStore } from './stores/toastStore';
 import { processResumeQueue } from './services/resume-queue';
 import type { RestartSessionState } from '../shared/types';
 import { initCanvasCommandHandler } from './features/assistant/canvas-command-handler';
+import { initCommandPaletteHandler } from './features/command-palette/command-palette-handler';
 
 // ─── Settings Loading ───────────────────────────────────────────────────────
 
@@ -79,6 +80,10 @@ export async function initApp(): Promise<() => void> {
   //     Must be after plugin system so canvas store is available.
   const canvasCleanup = initCanvasCommandHandler();
   if (canvasCleanup) cleanups.push(canvasCleanup);
+
+  // 2c. Initialize command palette handler for assistant MCP tools.
+  const cmdPaletteCleanup = initCommandPaletteHandler();
+  if (cmdPaletteCleanup) cleanups.push(cmdPaletteCleanup);
 
   // 3. Set up badge side effects AFTER settings are loaded, so subscriptions
   //    see the correct initial state.

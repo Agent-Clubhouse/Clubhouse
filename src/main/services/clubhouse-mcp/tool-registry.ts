@@ -23,6 +23,15 @@ const toolTemplates = new Map<BindingTargetKind, Array<{
 }>>();
 
 /**
+ * Global tools — available to ALL agents regardless of bindings.
+ * Used for core platform capabilities like canvas operations.
+ */
+const globalTools = new Map<string, {
+  definition: McpToolDefinition;
+  handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+}>();
+
+/**
  * Register a tool template for a target kind.
  * When an agent is bound to a target of this kind, a tool will be generated
  * using a human-readable name pattern.
@@ -39,6 +48,21 @@ export function registerToolTemplate(
     toolTemplates.set(targetKind, templates);
   }
   templates.push({ nameSuffix, definition, handler });
+}
+
+/**
+ * Register a global tool available to all agents (no binding required).
+ * Used for core platform capabilities like canvas management.
+ */
+export function registerGlobalTool(
+  name: string,
+  definition: Omit<McpToolDefinition, 'name'>,
+  handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>,
+): void {
+  globalTools.set(name, {
+    definition: { ...definition, name },
+    handler,
+  });
 }
 
 /** Sanitize an ID for use in tool names (replace non-alphanumeric with underscores). */
@@ -152,6 +176,11 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     }
   }
 
+  // Append global tools (always available regardless of bindings)
+  for (const [, tool] of globalTools) {
+    tools.push(tool.definition);
+  }
+
   return tools;
 }
 
@@ -163,6 +192,28 @@ export async function callTool(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpToolResult> {
+  // Check global tools first (no binding required)
+  const globalTool = globalTools.get(toolName);
+  if (globalTool) {
+    const schema = globalTool.definition.inputSchema;
+    if (schema && typeof schema === 'object') {
+      const required = (schema.required as string[]) || [];
+      const properties = (schema.properties as Record<string, { type?: string }>) || {};
+      for (const field of required) {
+        if (args[field] === undefined || args[field] === null) {
+          return { content: [{ type: 'text', text: `Missing required argument: ${field}` }], isError: true };
+        }
+      }
+      for (const [key, value] of Object.entries(args)) {
+        const propSchema = properties[key];
+        if (propSchema?.type && typeof value !== propSchema.type) {
+          return { content: [{ type: 'text', text: `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}` }], isError: true };
+        }
+      }
+    }
+    return globalTool.handler(agentId, args);
+  }
+
   const parsed = parseToolName(toolName);
   if (!parsed) {
     appLog('core:mcp', 'warn', 'Tool call: failed to parse tool name', {
@@ -245,7 +296,8 @@ export async function callTool(
   return template.handler(binding.targetId, agentId, args);
 }
 
-/** For testing: clear all registered templates. */
+/** For testing: clear all registered templates and global tools. */
 export function _resetForTesting(): void {
   toolTemplates.clear();
+  globalTools.clear();
 }
