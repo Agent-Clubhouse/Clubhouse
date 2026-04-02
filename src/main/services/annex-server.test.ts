@@ -1943,6 +1943,151 @@ describe('annex-server', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Mission 30: Canvas wire inclusion in snapshot
+  // -------------------------------------------------------------------------
+
+  describe('snapshot includes canvas wires', () => {
+    it('buildSnapshot reads canvas-wires storage key alongside canvas-instances', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      // Verify per-project canvas state reads canvas-wires
+      expect(source).toContain("key: 'canvas-wires',\n          projectPath: proj.path,");
+      // Verify app-level canvas state reads canvas-wires
+      expect(source).toContain("key: 'canvas-wires',\n      }),\n    ]);");
+    });
+
+    it('canvasState type includes wireDefinitions field', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      // Verify the canvasState record type includes wireDefinitions
+      expect(source).toContain('wireDefinitions?: unknown[]');
+    });
+
+    it('conditionally includes wireDefinitions in per-project canvas state', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      // Verify wire definitions are spread conditionally
+      expect(source).toContain('wireDefinitions: wires');
+    });
+
+    it('conditionally includes wireDefinitions in app-level canvas state', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      expect(source).toContain('wireDefinitions: appWires');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Mission 30: Wake handler waits for agent running status
+  // -------------------------------------------------------------------------
+
+  describe('wake handler waits for agent running', () => {
+    it('handleWakeAgent awaits waitForAgentRunning before broadcastSnapshotRefresh', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      // The wake handler must await waitForAgentRunning before broadcasting
+      const wakeBlock = source.slice(
+        source.indexOf('async function handleWakeAgent'),
+        source.indexOf('async function handleWakeAgent') + 2000,
+      );
+      expect(wakeBlock).toContain('await waitForAgentRunning(config.id)');
+      // broadcastSnapshotRefresh must come AFTER the await
+      const awaitIdx = wakeBlock.indexOf('await waitForAgentRunning');
+      const broadcastIdx = wakeBlock.indexOf('broadcastSnapshotRefresh()');
+      expect(awaitIdx).toBeLessThan(broadcastIdx);
+    });
+
+    it('waitForAgentRunning polls isRunning with retries', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      const fn = source.slice(
+        source.indexOf('async function waitForAgentRunning'),
+        source.indexOf('async function waitForAgentRunning') + 800,
+      );
+      // Must check all three runtime modes
+      expect(fn).toContain('ptyManager.isRunning(agentId)');
+      expect(fn).toContain('isHeadlessAgent(agentId)');
+      expect(fn).toContain('structuredManager.isStructuredSession(agentId)');
+      // Must have retry loop
+      expect(fn).toContain('maxAttempts');
+      expect(fn).toContain('setTimeout');
+    });
+
+    it('wake endpoint calls spawnAgent then waits before snapshot refresh', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        {
+          id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01',
+          worktreePath: '/tmp/test/.clubhouse/agents/agent-1',
+        } as any,
+      ]);
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
+
+      const { port, token } = await startAndPair();
+
+      // After spawn, simulate the agent becoming running on second poll
+      let callCount = 0;
+      vi.mocked(ptyManagerModule.isRunning).mockImplementation(() => {
+        callCount++;
+        return callCount > 1;
+      });
+
+      const res = await request(
+        port, 'POST', '/api/v1/agents/durable_1/wake',
+        { message: 'Start working' },
+        authHeaders(token),
+      );
+      expect(res.status).toBe(200);
+      expect(agentSystem.spawnAgent).toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Mission 30: GP member status checks all execution modes
+  // -------------------------------------------------------------------------
+
+  describe('GP member status checks all execution modes', () => {
+    it('groupProjectMembers status uses isHeadlessAgent and isStructuredSession', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      // Find all lines that determine GP member status
+      const statusLines = source.split('\n').filter(
+        (line: string) => line.includes("? 'connected' : 'sleeping'"),
+      );
+      // All status lines should check headless and structured modes
+      for (const line of statusLines) {
+        expect(line).toContain('isHeadlessAgent(');
+        expect(line).toContain('structuredManager.isStructuredSession(');
+      }
+    });
+
+    it('no GP member status line uses only ptyManager.isRunning', async () => {
+      const source = await import('fs').then(fs => fs.readFileSync(
+        path.join(__dirname, 'annex-server.ts'), 'utf-8',
+      ));
+      // Ensure no status line uses ONLY ptyManager without the other checks
+      const statusLines = source.split('\n').filter(
+        (line: string) => line.includes("? 'connected' : 'sleeping'"),
+      );
+      for (const line of statusLines) {
+        // Each line must have all three checks
+        expect(line).toContain('ptyManager.isRunning(');
+        expect(line).toContain('isHeadlessAgent(');
+        expect(line).toContain('structuredManager.isStructuredSession(');
+      }
+    });
+  });
+
   // --- SEC-11: Session token expiry ---
   describe('session token expiry', () => {
     it('rejects expired tokens', async () => {

@@ -462,11 +462,11 @@ async function buildSnapshot(): Promise<object> {
     annexEnabled: (m.permissions ?? []).includes('annex'),
   }));
 
-  // Read per-project canvas state in parallel
-  const canvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }> = {};
+  // Read per-project canvas state in parallel (including wires)
+  const canvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }> = {};
   await Promise.all(projects.map(async (proj) => {
     try {
-      const [canvases, activeId] = await Promise.all([
+      const [canvases, activeId, wires] = await Promise.all([
         readPluginStorageKey({
           pluginId: 'canvas',
           scope: 'project-local',
@@ -479,11 +479,18 @@ async function buildSnapshot(): Promise<object> {
           key: 'canvas-active-id',
           projectPath: proj.path,
         }),
+        readPluginStorageKey({
+          pluginId: 'canvas',
+          scope: 'project-local',
+          key: 'canvas-wires',
+          projectPath: proj.path,
+        }),
       ]);
       if (canvases && Array.isArray(canvases) && canvases.length > 0) {
         canvasState[proj.id] = {
           canvases,
           activeCanvasId: (activeId as string) || (canvases[0] as any)?.id || '',
+          ...(wires && Array.isArray(wires) && wires.length > 0 ? { wireDefinitions: wires } : {}),
         };
       }
     } catch {
@@ -491,10 +498,10 @@ async function buildSnapshot(): Promise<object> {
     }
   }));
 
-  // Read app-level (global scope) canvas state
-  let appCanvasState: { canvases: unknown[]; activeCanvasId: string } | null = null;
+  // Read app-level (global scope) canvas state (including wires)
+  let appCanvasState: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] } | null = null;
   try {
-    const [appCanvases, appActiveId] = await Promise.all([
+    const [appCanvases, appActiveId, appWires] = await Promise.all([
       readPluginStorageKey({
         pluginId: 'canvas',
         scope: 'global',
@@ -505,11 +512,17 @@ async function buildSnapshot(): Promise<object> {
         scope: 'global',
         key: 'canvas-active-id',
       }),
+      readPluginStorageKey({
+        pluginId: 'canvas',
+        scope: 'global',
+        key: 'canvas-wires',
+      }),
     ]);
     if (appCanvases && Array.isArray(appCanvases) && appCanvases.length > 0) {
       appCanvasState = {
         canvases: appCanvases,
         activeCanvasId: (appActiveId as string) || (appCanvases[0] as any)?.id || '',
+        ...(appWires && Array.isArray(appWires) && appWires.length > 0 ? { wireDefinitions: appWires } : {}),
       };
     }
   } catch {
@@ -538,7 +551,7 @@ async function buildSnapshot(): Promise<object> {
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
-          status: ptyManager.isRunning(b.agentId) ? 'connected' : 'sleeping',
+          status: (ptyManager.isRunning(b.agentId) || isHeadlessAgent(b.agentId) || structuredManager.isStructuredSession(b.agentId)) ? 'connected' : 'sleeping',
         }));
       if (members.length > 0) {
         groupProjectMembers[gp.id] = members;
@@ -676,6 +689,30 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
   }
 
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Agent readiness helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Poll until the agent is registered as running (PTY, headless, or structured).
+ * spawnAgent() resolves after the process is launched but before runtime
+ * registration completes, so a brief poll avoids the race where
+ * broadcastSnapshotRefresh() builds a snapshot showing 'sleeping'.
+ */
+async function waitForAgentRunning(agentId: string, maxAttempts = 10, intervalMs = 100): Promise<void> {
+  for (let i = 0; i < maxAttempts; i++) {
+    if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
+      return;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  // If the agent never registered, continue anyway — the snapshot will show
+  // 'sleeping' which is better than blocking indefinitely.
+  appLog('core:annex', 'warn', 'Agent did not register as running within timeout', {
+    meta: { agentId, maxAttempts, intervalMs },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -899,12 +936,18 @@ async function handleWakeAgent(
       meta: { agentId, agentName: config.name },
     });
 
-    // Broadcast agent:woken + refresh snapshot so controllers see updated status
+    // Broadcast agent:woken event immediately
     broadcastAndBuffer('agent:woken', {
       agentId: config.id,
       message,
       source: 'annex',
     });
+
+    // Wait for the agent to be registered as running before refreshing the
+    // snapshot.  spawnAgent() resolves after the process is launched, but the
+    // PTY / headless / structured session may not yet be registered, causing
+    // mapDurableAgent() to report 'sleeping' instead of 'running'.
+    await waitForAgentRunning(config.id);
     broadcastSnapshotRefresh();
 
     sendJson(res, 200, {
@@ -1742,7 +1785,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
-          status: ptyManager.isRunning(b.agentId) ? 'connected' : 'sleeping',
+          status: (ptyManager.isRunning(b.agentId) || isHeadlessAgent(b.agentId) || structuredManager.isStructuredSession(b.agentId)) ? 'connected' : 'sleeping',
         }));
     } catch { /* ignore */ }
     sendJson(res, 200, { ...project, members });
@@ -1979,7 +2022,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
-          status: ptyManager.isRunning(b.agentId) ? 'connected' : 'sleeping',
+          status: (ptyManager.isRunning(b.agentId) || isHeadlessAgent(b.agentId) || structuredManager.isStructuredSession(b.agentId)) ? 'connected' : 'sleeping',
         }));
     } catch { /* ignore */ }
     sendJson(res, 200, members);
