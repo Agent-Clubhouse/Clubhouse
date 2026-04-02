@@ -2,7 +2,7 @@
  * Clubhouse MCP — public API.
  *
  * Provides agent-to-widget and agent-to-agent interaction via MCP tools.
- * Behind the `experimentalSettings.clubhouseMcp` feature gate.
+ * Configured via MCP settings (mcp-settings.json). Defaults to OFF.
  */
 
 export { bindingManager } from './binding-manager';

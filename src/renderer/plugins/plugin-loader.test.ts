@@ -630,18 +630,29 @@ describe('plugin-loader', () => {
       );
     });
 
-    it('clears the stale canvas experimental flag', async () => {
+    it('clears stale canvas and mcp experimental flags in one pass', async () => {
       setupCanvasBuiltins();
       mockApp.getExperimentalSettings.mockResolvedValue({ canvas: true, mcp: true });
 
       await initializePluginSystem();
 
-      expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({ mcp: true });
+      expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({});
     });
 
-    it('does not migrate when experimentalFlags.canvas is falsy', async () => {
+    it('clears stale mcp flag even when canvas is not present', async () => {
       setupCanvasBuiltins();
       mockApp.getExperimentalSettings.mockResolvedValue({ mcp: true });
+
+      await initializePluginSystem();
+
+      const { appEnabled } = usePluginStore.getState();
+      expect(appEnabled).not.toContain('canvas');
+      expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({});
+    });
+
+    it('does not migrate canvas when experimentalFlags.canvas is falsy', async () => {
+      setupCanvasBuiltins();
+      mockApp.getExperimentalSettings.mockResolvedValue({ sessions: true });
 
       await initializePluginSystem();
 

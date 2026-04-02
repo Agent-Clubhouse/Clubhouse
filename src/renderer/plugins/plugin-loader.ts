@@ -196,16 +196,15 @@ export async function initializePluginSystem(): Promise<void> {
     // Migration: canvas was previously auto-enabled in-memory via the
     // experimental 'canvas' flag but never persisted to the app-enabled
     // storage.  v0.38 removed the flag path, so existing users who had
-    // canvas enabled lost their enablement.  Only migrate canvas itself —
-    // sub-plugins (group-project, agent-queue) depend on MCP which is
-    // still experimental; users can enable them manually.
+    // canvas enabled lost their enablement.  Sub-plugins (group-project,
+    // agent-queue) require MCP which is configured via MCP settings.
     if (experimentalFlags && experimentalFlags.canvas) {
       const migrationState = usePluginStore.getState();
       if (!migrationState.appEnabled.includes('canvas')) {
         migrationState.enableApp('canvas');
         rendererLog('core:plugins', 'info', 'Migrated canvas from experimental flag to app-enabled');
       }
-      // Persist the migrated state and clear the stale flag
+      // Persist the migrated state
       try {
         await window.clubhouse.plugin.storageWrite({
           pluginId: '_system',
@@ -214,11 +213,24 @@ export async function initializePluginSystem(): Promise<void> {
           value: usePluginStore.getState().appEnabled,
         });
       } catch { /* best effort */ }
-      try {
-        const cleaned = { ...experimentalFlags };
-        delete cleaned.canvas;
-        await window.clubhouse.app.saveExperimentalSettings(cleaned);
-      } catch { /* best effort */ }
+    }
+
+    // Clean up stale experimental flags in a single pass.
+    // - 'canvas': migrated to app-enabled above
+    // - 'mcp': promoted to regular setting (mcp-settings.json)
+    {
+      const staleKeys = ['canvas', 'mcp'];
+      const keysToRemove = staleKeys.filter((k) => experimentalFlags && k in experimentalFlags);
+      if (keysToRemove.length > 0) {
+        try {
+          const cleaned = { ...experimentalFlags };
+          for (const k of keysToRemove) delete cleaned[k];
+          await window.clubhouse.app.saveExperimentalSettings(cleaned);
+          for (const k of keysToRemove) {
+            rendererLog('core:plugins', 'info', `Cleared stale '${k}' experimental flag`);
+          }
+        } catch { /* best effort */ }
+      }
     }
 
     // Activate app-scoped and dual-scoped plugins that are in appEnabled.

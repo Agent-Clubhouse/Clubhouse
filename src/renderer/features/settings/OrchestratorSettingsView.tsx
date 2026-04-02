@@ -297,16 +297,11 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const mcpLoaded = useMcpSettingsStore((s) => s.loaded);
   const loadMcpSettings = useMcpSettingsStore((s) => s.loadSettings);
 
-  const [showMcp, setShowMcp] = useState(false);
-
   useEffect(() => {
     loadClubhouseSettings();
     loadSessionSettings();
     loadFreeAgentSettings();
     loadMcpSettings();
-    window.clubhouse.app.getExperimentalSettings().then((s) => {
-      setShowMcp(!!s.mcp);
-    });
   }, [loadClubhouseSettings, loadSessionSettings, loadFreeAgentSettings, loadMcpSettings]);
 
   if (!project) return null;
@@ -438,8 +433,8 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
           </select>
         </DefaultRow>
 
-        {/* MCP Override — only visible when MCP experimental feature enabled + global MCP enabled */}
-        {showMcp && mcpLoaded && mcpGlobalEnabled && (
+        {/* MCP Override — visible when global MCP enabled */}
+        {mcpLoaded && mcpGlobalEnabled && (
           <DefaultRow label="MCP Override" description="Override MCP bridge injection for this project">
             <select
               value={currentMcpMode}

@@ -22,11 +22,6 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Sessions',
     description: 'Browse and replay historical agent conversation sessions with timeline playback. Requires app restart.',
   },
-  {
-    id: 'mcp',
-    label: 'Clubhouse MCP',
-    description: 'Agent-widget and agent-to-agent interaction via MCP bridge. Enables the MCP settings page. Requires app restart.',
-  },
 ];
 
 export function ExperimentalSettingsView() {

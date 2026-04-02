@@ -47,6 +47,14 @@ describe('ExperimentalSettingsView', () => {
     expect(screen.getByText('Theme Gradients & Fonts')).toBeInTheDocument();
   });
 
+  it('does not list Clubhouse MCP as experimental (promoted)', async () => {
+    render(<ExperimentalSettingsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Structured Mode')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Clubhouse MCP')).not.toBeInTheDocument();
+  });
+
   it('toggles a feature and saves', async () => {
     mockGetExperimentalSettings.mockResolvedValue({ structuredMode: false });
     const { container } = render(<ExperimentalSettingsView />);

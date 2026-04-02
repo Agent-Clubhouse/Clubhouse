@@ -84,6 +84,12 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     render(<AccessoryPanel />);
     expect(screen.getByText('External Editor')).toBeInTheDocument();
   });
+
+  it('always shows Clubhouse MCP nav item (no longer experimental)', async () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+    render(<AccessoryPanel />);
+    expect(screen.getByText('Clubhouse MCP')).toBeInTheDocument();
+  });
 });
 
 describe('AccessoryPanel annex plugin sidebar gating', () => {
