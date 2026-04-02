@@ -96,20 +96,110 @@ const configCache = new Map<string, CacheEntry>();
 /** How long to wait before flushing dirty cache entries to disk (ms) */
 const FLUSH_DELAY_MS = 100;
 
+// ---------------------------------------------------------------------------
+// Agent config validation — catches ghost agents and corruption early
+// ---------------------------------------------------------------------------
+
+/** Pattern for auto-generated durable IDs: durable_<timestamp>_<random> */
+const DURABLE_ID_PATTERN = /^durable_\d+_[a-z0-9]+$/;
+
+interface ValidationIssue {
+  agentId: string;
+  issue: string;
+  severity: 'warn' | 'error';
+}
+
+/**
+ * Validate an array of agent configs and return any issues found.
+ * Does NOT modify the configs — callers decide how to handle issues.
+ */
+export function validateAgentConfigs(agents: DurableAgentConfig[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const seenIds = new Map<string, number>();
+
+  for (let i = 0; i < agents.length; i++) {
+    const agent = agents[i];
+
+    // Check for missing required fields
+    if (!agent.id) {
+      issues.push({ agentId: `index_${i}`, issue: 'Missing agent ID', severity: 'error' });
+      continue;
+    }
+
+    if (!agent.name) {
+      issues.push({ agentId: agent.id, issue: 'Missing agent name — will display as raw ID', severity: 'error' });
+    } else if (agent.name === agent.id || DURABLE_ID_PATTERN.test(agent.name)) {
+      // Name looks like a raw ID — likely a ghost agent
+      issues.push({ agentId: agent.id, issue: `Agent name "${agent.name}" matches ID pattern — possible ghost agent`, severity: 'warn' });
+    }
+
+    if (!agent.color) {
+      issues.push({ agentId: agent.id, issue: 'Missing agent color', severity: 'warn' });
+    }
+
+    // Check for duplicate IDs
+    const prevIndex = seenIds.get(agent.id);
+    if (prevIndex !== undefined) {
+      issues.push({ agentId: agent.id, issue: `Duplicate agent ID at indices ${prevIndex} and ${i}`, severity: 'error' });
+    } else {
+      seenIds.set(agent.id, i);
+    }
+
+    // Check worktree path exists if specified
+    if (agent.worktreePath && !agent.worktreePath.includes(path.sep)) {
+      issues.push({ agentId: agent.id, issue: `Suspicious worktreePath: "${agent.worktreePath}"`, severity: 'warn' });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Deduplicate agents by ID, keeping the first occurrence.
+ * Returns deduplicated array and list of removed duplicates.
+ */
+function deduplicateAgents(agents: DurableAgentConfig[]): { agents: DurableAgentConfig[]; removed: DurableAgentConfig[] } {
+  const seen = new Set<string>();
+  const result: DurableAgentConfig[] = [];
+  const removed: DurableAgentConfig[] = [];
+
+  for (const agent of agents) {
+    if (!agent.id || seen.has(agent.id)) {
+      removed.push(agent);
+    } else {
+      seen.add(agent.id);
+      result.push(agent);
+    }
+  }
+
+  return { agents: result, removed };
+}
+
 async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConfig[]> {
   const configPath = agentsConfigPath(projectPath);
   const backupPath = agentsBackupPath(projectPath);
+
+  appLog('core:agent-config', 'debug', 'Reading agent configs from disk', {
+    meta: { configPath, backupPath },
+  });
+
+  let agents: DurableAgentConfig[] | null = null;
+  let source: 'main' | 'backup' | 'empty' = 'empty';
 
   // Try to read main config
   if (await pathExists(configPath)) {
     try {
       const raw = await fsp.readFile(configPath, 'utf-8');
-      const agents: DurableAgentConfig[] = JSON.parse(raw);
-      if (Array.isArray(agents)) {
+      const parsed: DurableAgentConfig[] = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        agents = parsed;
+        source = 'main';
         appLog('core:agent-config', 'info', `Loaded ${agents.length} agent(s) from disk`, {
-          meta: { configPath, agentIds: agents.map((a) => a.id) },
+          meta: {
+            configPath,
+            agents: agents.map((a) => ({ id: a.id, name: a.name, hasWorktree: !!a.worktreePath })),
+          },
         });
-        return agents;
       }
     } catch (err) {
       appLog('core:agent-config', 'error', 'Failed to parse agents.json — attempting recovery from backup', {
@@ -119,17 +209,21 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
   }
 
   // Main file missing or corrupt — fall back to backup
-  if (await pathExists(backupPath)) {
+  if (!agents && await pathExists(backupPath)) {
     try {
       const raw = await fsp.readFile(backupPath, 'utf-8');
-      const agents: DurableAgentConfig[] = JSON.parse(raw);
-      if (Array.isArray(agents) && agents.length > 0) {
+      const parsed: DurableAgentConfig[] = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        agents = parsed;
+        source = 'backup';
         appLog('core:agent-config', 'warn', `Recovered ${agents.length} agent(s) from backup`, {
-          meta: { backupPath },
+          meta: {
+            backupPath,
+            agents: agents.map((a) => ({ id: a.id, name: a.name })),
+          },
         });
         // Restore backup to main file so future reads succeed
         await writeAgentsToDisk(projectPath, agents);
-        return agents;
       }
     } catch (backupErr) {
       appLog('core:agent-config', 'error', 'Backup agents.json.bak is also corrupt', {
@@ -138,7 +232,32 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
     }
   }
 
-  return [];
+  if (!agents) {
+    appLog('core:agent-config', 'info', 'No agent configs found on disk', { meta: { projectPath } });
+    return [];
+  }
+
+  // Validate loaded configs
+  const issues = validateAgentConfigs(agents);
+  if (issues.length > 0) {
+    appLog('core:agent-config', 'warn', `Agent config validation found ${issues.length} issue(s)`, {
+      meta: { source, issues },
+    });
+  }
+
+  // Deduplicate — remove agents with duplicate IDs
+  const { agents: deduped, removed } = deduplicateAgents(agents);
+  if (removed.length > 0) {
+    appLog('core:agent-config', 'warn', `Removed ${removed.length} duplicate agent(s)`, {
+      meta: {
+        removedAgents: removed.map((a) => ({ id: a.id, name: a.name })),
+      },
+    });
+    // Persist the deduplicated list
+    await writeAgentsToDisk(projectPath, deduped);
+  }
+
+  return deduped;
 }
 
 async function writeAgentsToDisk(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
@@ -1033,4 +1152,76 @@ export async function removeAgentIcon(projectPath: string, agentId: string): Pro
     delete agent.icon;
     await writeAgents(projectPath, agents);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Recovery audit — compares running agents against disk configs
+// ---------------------------------------------------------------------------
+
+export interface RecoveryAuditResult {
+  projectPath: string;
+  diskAgents: Array<{ id: string; name: string }>;
+  runningAgentIds: string[];
+  missingFromDisk: string[];
+  ghostAgents: Array<{ id: string; name: string }>;
+  duplicateIds: string[];
+  healthy: boolean;
+}
+
+/**
+ * Audit agent state for a project by comparing disk configs against a set of
+ * running agent IDs (provided by the caller, since the agent registry lives
+ * in a different module).
+ *
+ * Returns a structured result with discrepancies. Logs a summary.
+ */
+export async function auditRecovery(
+  projectPath: string,
+  runningAgentIds: Set<string>,
+): Promise<RecoveryAuditResult> {
+  const agents = await readAgents(projectPath);
+
+  const diskAgents = agents.map((a) => ({ id: a.id, name: a.name }));
+  const diskIds = new Set(agents.map((a) => a.id));
+
+  // Running agents not found in disk config
+  const missingFromDisk = [...runningAgentIds].filter((id) => !diskIds.has(id));
+
+  // Ghost agents: name is missing or matches the raw ID pattern
+  const ghostAgents = agents
+    .filter((a) => !a.name || a.name === a.id || DURABLE_ID_PATTERN.test(a.name))
+    .map((a) => ({ id: a.id, name: a.name || '(missing)' }));
+
+  // Duplicate IDs
+  const idCounts = new Map<string, number>();
+  for (const a of agents) {
+    idCounts.set(a.id, (idCounts.get(a.id) || 0) + 1);
+  }
+  const duplicateIds = [...idCounts.entries()].filter(([, count]) => count > 1).map(([id]) => id);
+
+  const healthy = missingFromDisk.length === 0 && ghostAgents.length === 0 && duplicateIds.length === 0;
+
+  const result: RecoveryAuditResult = {
+    projectPath,
+    diskAgents,
+    runningAgentIds: [...runningAgentIds],
+    missingFromDisk,
+    ghostAgents,
+    duplicateIds,
+    healthy,
+  };
+
+  appLog('core:agent-config', healthy ? 'info' : 'warn', 'Recovery audit complete', {
+    meta: {
+      projectPath,
+      diskAgentCount: agents.length,
+      runningAgentCount: runningAgentIds.size,
+      healthy,
+      ...(missingFromDisk.length > 0 ? { missingFromDisk } : {}),
+      ...(ghostAgents.length > 0 ? { ghostAgents } : {}),
+      ...(duplicateIds.length > 0 ? { duplicateIds } : {}),
+    },
+  });
+
+  return result;
 }

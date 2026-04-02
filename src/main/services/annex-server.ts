@@ -841,15 +841,45 @@ async function handleWakeAgent(
     return;
   }
 
-  // Check if already running
+  // Check if already running (process-level check)
   if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
     sendJson(res, 409, { error: 'agent_already_running' });
     return;
   }
 
+  // Guard: check if already registered in agent registry (stale registration from crashed spawn)
+  const existingRegistration = agentRegistry.get(agentId);
+  if (existingRegistration) {
+    appLog('core:annex', 'warn', 'Stale agent registration found during wake — cleaning up before respawn', {
+      meta: { agentId, existingRegistration: { projectPath: existingRegistration.projectPath, runtime: existingRegistration.runtime } },
+    });
+    agentRegistry.untrack(agentId);
+  }
+
   const { config, project } = agentInfo;
   const model = (body.model as string | undefined) || config.model;
   const cwd = config.worktreePath || project.path;
+
+  // Validate agent config before spawn
+  if (!config.name || config.name === config.id) {
+    appLog('core:annex', 'warn', 'Agent config has missing or ghost name — using disk config name as-is', {
+      meta: { agentId, configName: config.name, configId: config.id },
+    });
+  }
+
+  appLog('core:annex', 'info', 'Waking durable agent', {
+    meta: {
+      agentId,
+      agentName: config.name,
+      projectId: project.id,
+      projectPath: project.path,
+      cwd,
+      model: model || 'default',
+      orchestrator: config.orchestrator || 'default',
+      resume,
+      hasWorktree: !!config.worktreePath,
+    },
+  });
 
   try {
     await spawnAgent({
@@ -863,6 +893,10 @@ async function handleWakeAgent(
       freeAgentMode: config.freeAgentMode,
       resume,
       sessionId: resume ? config.lastSessionId : undefined,
+    });
+
+    appLog('core:annex', 'info', 'Agent spawn completed successfully', {
+      meta: { agentId, agentName: config.name },
     });
 
     // Broadcast agent:woken + refresh snapshot so controllers see updated status
@@ -887,7 +921,7 @@ async function handleWakeAgent(
     });
   } catch (err) {
     appLog('core:annex', 'error', 'Failed to wake agent', {
-      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      meta: { agentId, agentName: config.name, error: err instanceof Error ? err.message : String(err) },
     });
     sendJson(res, 500, { error: 'wake_failed' });
   }
@@ -2267,9 +2301,31 @@ async function handleWakeAgentWs(
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_already_running' } }));
     return;
   }
+
+  // Guard: clean up stale registry entry from crashed spawn
+  const existingRegistration = agentRegistry.get(agentId);
+  if (existingRegistration) {
+    appLog('core:annex', 'warn', 'Stale agent registration found during WS wake — cleaning up before respawn', {
+      meta: { agentId, existingRegistration: { projectPath: existingRegistration.projectPath, runtime: existingRegistration.runtime } },
+    });
+    agentRegistry.untrack(agentId);
+  }
+
   const { config, project } = agentInfo;
   const agentModel = options.model || config.model;
   const cwd = config.worktreePath || project.path;
+
+  appLog('core:annex', 'info', 'Waking durable agent (WS)', {
+    meta: {
+      agentId,
+      agentName: config.name,
+      projectId: project.id,
+      cwd,
+      model: agentModel || 'default',
+      orchestrator: config.orchestrator || 'default',
+      resume: options.resume,
+    },
+  });
 
   try {
     await spawnAgent({
@@ -2279,10 +2335,18 @@ async function handleWakeAgentWs(
       resume: options.resume,
       sessionId: options.resume ? config.lastSessionId : undefined,
     });
+
+    appLog('core:annex', 'info', 'Agent spawn completed successfully (WS)', {
+      meta: { agentId, agentName: config.name },
+    });
+
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-v2' });
     broadcastSnapshotRefresh();
     ws.send(JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
-  } catch {
+  } catch (err) {
+    appLog('core:annex', 'error', 'Failed to wake agent (WS)', {
+      meta: { agentId, agentName: config.name, error: err instanceof Error ? err.message : String(err) },
+    });
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));
   }
 }
@@ -2721,6 +2785,27 @@ export function broadcastSnapshotRefresh(): void {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   });
+}
+
+/**
+ * Run a recovery audit for all projects — compares running agents (in the
+ * agent registry) against disk configs. Logs discrepancies as warnings.
+ *
+ * Call after server start or after a batch of agents are woken to validate
+ * that the in-memory state matches persistent storage.
+ */
+export async function runRecoveryAudit(): Promise<void> {
+  const projects = await projectStore.list();
+  const runningRegistrations = agentRegistry.getAllRegistrations();
+  const runningIds = new Set(runningRegistrations.keys());
+
+  appLog('core:annex', 'info', 'Running post-recovery audit', {
+    meta: { projectCount: projects.length, runningAgentCount: runningIds.size },
+  });
+
+  for (const proj of projects) {
+    await agentConfig.auditRecovery(proj.path, runningIds);
+  }
 }
 
 /** Broadcast theme change to all connected WS clients. */

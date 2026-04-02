@@ -109,7 +109,14 @@ export function registerMcpBindingHandlers(): void {
     [stringArg(), stringArg(), objectArg<Record<string, string>>()],
     (event, agentId, targetId, instructions) => {
       assertCallerIsAppWindow(event);
-      assertAgentRegistered(agentId as string);
+      // Allow setting instructions for sleeping (unregistered) durable agents.
+      // Binding metadata is stored in memory and will be active when the agent
+      // wakes up and connects to the MCP bridge. Blocking this for sleeping
+      // agents causes race conditions during recovery when canvas wires are
+      // restored before agents are spawned.
+      if (!agentRegistry.get(agentId as string)) {
+        appLog('core:mcp', 'debug', 'Setting instructions for sleeping agent binding', { meta: { agentId, targetId } });
+      }
       bindingManager.setInstructions(agentId as string, targetId as string, instructions as Record<string, string>);
       appLog('core:mcp', 'info', 'Binding instructions updated', { meta: { agentId, targetId } });
     },
@@ -119,7 +126,11 @@ export function registerMcpBindingHandlers(): void {
     [stringArg(), stringArg(), arrayArg(stringArg())],
     (event, agentId, targetId, disabledTools) => {
       assertCallerIsAppWindow(event);
-      assertAgentRegistered(agentId as string);
+      // Allow modifying disabled tools for sleeping agents (same rationale as
+      // SET_INSTRUCTIONS above — binding metadata is just stored, not executed).
+      if (!agentRegistry.get(agentId as string)) {
+        appLog('core:mcp', 'debug', 'Setting disabled tools for sleeping agent binding', { meta: { agentId, targetId } });
+      }
       bindingManager.setDisabledTools(agentId as string, targetId as string, disabledTools as string[]);
       appLog('core:mcp', 'info', 'Binding disabled tools updated', { meta: { agentId, targetId, disabledTools } });
     },

@@ -239,11 +239,11 @@ describe('SEC-06: MCP binding IPC authorization', () => {
   });
 
   describe('SET_INSTRUCTIONS', () => {
-    it('rejects setInstructions for unregistered agent', () => {
+    it('allows setInstructions for sleeping (unregistered) agent — recovery safety', () => {
       mockGet.mockReturnValue(undefined);
       const handler = getHandler(IPC.MCP_BINDING.SET_INSTRUCTIONS);
-      expect(() => handler(fakeEvent, 'unknown-agent', 'target-1', { key: 'val' })).toThrow('Agent not registered');
-      expect(bindingManager.setInstructions).not.toHaveBeenCalled();
+      expect(() => handler(fakeEvent, 'sleeping-agent', 'target-1', { key: 'val' })).not.toThrow();
+      expect(bindingManager.setInstructions).toHaveBeenCalledWith('sleeping-agent', 'target-1', { key: 'val' });
     });
 
     it('allows setInstructions for registered agent', () => {
@@ -263,11 +263,11 @@ describe('SEC-06: MCP binding IPC authorization', () => {
   });
 
   describe('SET_DISABLED_TOOLS', () => {
-    it('rejects setDisabledTools for unregistered agent', () => {
+    it('allows setDisabledTools for sleeping (unregistered) agent — recovery safety', () => {
       mockGet.mockReturnValue(undefined);
       const handler = getHandler('mcp-binding:set-disabled-tools');
-      expect(() => handler(fakeEvent, 'unknown-agent', 'target-1', ['tool-a'])).toThrow('Agent not registered');
-      expect(bindingManager.setDisabledTools).not.toHaveBeenCalled();
+      expect(() => handler(fakeEvent, 'sleeping-agent', 'target-1', ['tool-a'])).not.toThrow();
+      expect(bindingManager.setDisabledTools).toHaveBeenCalledWith('sleeping-agent', 'target-1', ['tool-a']);
     });
 
     it('allows setDisabledTools for registered agent', () => {
