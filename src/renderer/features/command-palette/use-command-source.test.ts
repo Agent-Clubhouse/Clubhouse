@@ -150,6 +150,7 @@ const mockProjectCanvasStore = Object.assign(
 
 vi.mock('../../plugins/builtin/canvas/main', () => ({
   getProjectCanvasStore: () => mockProjectCanvasStore,
+  getKnownProjectIds: () => [] as string[],
   useAppCanvasStore: Object.assign(
     (selector: any) => selector(appCanvasState),
     { getState: () => appCanvasState },
