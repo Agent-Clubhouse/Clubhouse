@@ -211,6 +211,8 @@ export interface DurableAgentConfig {
   mcpOverride?: boolean;
   /** Persona template ID applied at creation. Used to re-inject instructions on materialization. */
   persona?: string;
+  /** Path to a custom instructions file appended to the agent's system prompt at launch */
+  customInstructionsPath?: string;
 }
 
 /** Maps an orchestrator ID to its wrapper subcommand */

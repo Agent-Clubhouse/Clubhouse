@@ -154,6 +154,14 @@ export function AgentSettingsView({ agent }: Props) {
     });
   };
 
+  const handleCustomInstructionsPathBlur = async () => {
+    if (!projectPath) return;
+    const trimmed = customInstructionsPath.trim();
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, {
+      customInstructionsPath: trimmed || null,
+    });
+  };
+
   const handleOrchestratorChange = async (value: string) => {
     if (!projectPath) return;
     await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value });
@@ -222,6 +230,9 @@ export function AgentSettingsView({ agent }: Props) {
 
   // Structured Mode state (main agent)
   const [structuredMode, setStructuredMode] = useState(agent.structuredMode ?? false);
+
+  // Custom instructions file path
+  const [customInstructionsPath, setCustomInstructionsPath] = useState('');
 
   // Quick Agent Defaults state
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
@@ -321,6 +332,7 @@ export function AgentSettingsView({ agent }: Props) {
         }
         setFreeAgentMode(config?.freeAgentMode ?? false);
         setStructuredMode(config?.structuredMode ?? false);
+        setCustomInstructionsPath(config?.customInstructionsPath ?? '');
         setQadLoaded(true);
       } catch {
         setQadLoaded(true);
@@ -713,6 +725,26 @@ export function AgentSettingsView({ agent }: Props) {
                     Not supported by {orchestratorInfo?.displayName || 'this orchestrator'}.
                   </p>
                 )}
+              </div>
+
+              {/* Custom Instructions Path */}
+              <div>
+                <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1">
+                  Custom instructions file
+                </label>
+                <input
+                  type="text"
+                  value={customInstructionsPath}
+                  onChange={(e) => setCustomInstructionsPath(e.target.value)}
+                  onBlur={handleCustomInstructionsPathBlur}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCustomInstructionsPathBlur(); }}
+                  disabled={isRunning}
+                  placeholder="e.g. /path/to/persona.md"
+                  className={`w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text font-mono placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue disabled:opacity-50 disabled:cursor-not-allowed`}
+                />
+                <p className="mt-1 text-[10px] text-ctp-subtext0/60">
+                  Path to a file appended to this agent's system prompt at launch. Useful for giving agents in the same folder unique personas.
+                </p>
               </div>
             </div>
           </div>

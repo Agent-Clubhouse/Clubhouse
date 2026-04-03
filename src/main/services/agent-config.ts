@@ -473,7 +473,7 @@ export async function getDurableConfig(projectPath: string, agentId: string): Pr
 export async function updateDurableConfig(
   projectPath: string,
   agentId: string,
-  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string; freeAgentMode?: boolean; clubhouseModeOverride?: boolean; lastSessionId?: string | null },
+  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string; freeAgentMode?: boolean; clubhouseModeOverride?: boolean; lastSessionId?: string | null; customInstructionsPath?: string | null },
 ): Promise<void> {
   const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
@@ -510,6 +510,13 @@ export async function updateDurableConfig(
       agent.lastSessionId = updates.lastSessionId;
     } else {
       delete agent.lastSessionId;
+    }
+  }
+  if (updates.customInstructionsPath !== undefined) {
+    if (updates.customInstructionsPath) {
+      agent.customInstructionsPath = updates.customInstructionsPath;
+    } else {
+      delete agent.customInstructionsPath;
     }
   }
   await writeAgents(projectPath, agents);

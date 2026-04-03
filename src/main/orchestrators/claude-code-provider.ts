@@ -160,6 +160,10 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       args.push('--append-system-prompt', opts.systemPrompt);
     }
 
+    if (opts.customInstructionsPath) {
+      args.push('--append-system-prompt-file', opts.customInstructionsPath);
+    }
+
     if (opts.mission) {
       args.push(opts.mission);
     }
@@ -263,6 +267,10 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
     if (opts.systemPrompt) {
       args.push('--append-system-prompt', opts.systemPrompt);
+    }
+
+    if (opts.customInstructionsPath) {
+      args.push('--append-system-prompt-file', opts.customInstructionsPath);
     }
 
     if (opts.noSessionPersistence) {

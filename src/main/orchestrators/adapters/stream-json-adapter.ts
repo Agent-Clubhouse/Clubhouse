@@ -86,6 +86,10 @@ export class StreamJsonAdapter implements StructuredAdapter {
       args.push('--append-system-prompt', sessionOpts.systemPrompt);
     }
 
+    if (sessionOpts.customInstructionsPath) {
+      args.push('--append-system-prompt-file', sessionOpts.customInstructionsPath);
+    }
+
     if (sessionOpts.freeAgentMode) {
       // Permission handling already applied above via permissionMode
     }
