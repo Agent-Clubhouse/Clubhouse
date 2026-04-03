@@ -1171,6 +1171,69 @@ describe('updateDurableConfig', () => {
   });
 });
 
+  it('persists customInstructionsPath and round-trips', async () => {
+    const agents = [
+      { id: 'durable_cip', name: 'cip-agent', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(pathExists).mockImplementation(async (p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_cip', { customInstructionsPath: '/path/to/persona.md' });
+
+    const result = await getDurableConfig(PROJECT_PATH, 'durable_cip');
+    expect(result).not.toBeNull();
+    expect(result!.customInstructionsPath).toBe('/path/to/persona.md');
+  });
+
+  it('clears customInstructionsPath when set to null', async () => {
+    const agents = [
+      { id: 'durable_cip_clear', name: 'cip-clear', color: 'indigo', createdAt: '2024-01-01', customInstructionsPath: '/old.md' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(pathExists).mockImplementation(async (p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_cip_clear', { customInstructionsPath: null });
+
+    const result = await getDurableConfig(PROJECT_PATH, 'durable_cip_clear');
+    expect(result).not.toBeNull();
+    expect(result!.customInstructionsPath).toBeUndefined();
+  });
+});
+
 describe('updateSessionId', () => {
   it('persists a session ID via updateSessionId helper', async () => {
     const agents = [
