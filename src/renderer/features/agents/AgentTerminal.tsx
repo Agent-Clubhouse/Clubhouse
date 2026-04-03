@@ -86,7 +86,7 @@ function AgentTerminal({ agentId, focused, zoneThemeId }, ref) {
         x: 0,
         width: term.cols,
         height: 1,
-        layer: 'bottom',
+        layer: 'top',
         backgroundColor: surface0Ref.current,
       });
     },
@@ -228,7 +228,7 @@ function AgentTerminal({ agentId, focused, zoneThemeId }, ref) {
             x: 0,
             width: term.cols,
             height: 1,
-            layer: 'bottom',
+            layer: 'top',
             backgroundColor: surface0Ref.current,
           });
         }

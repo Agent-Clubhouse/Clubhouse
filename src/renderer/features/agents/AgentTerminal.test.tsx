@@ -797,7 +797,7 @@ describe('AgentTerminal', () => {
           x: 0,
           width: 80,
           height: 1,
-          layer: 'bottom',
+          layer: 'top',
           backgroundColor: '#313244', // surface0 from test theme
         }),
       );
@@ -853,7 +853,7 @@ describe('AgentTerminal', () => {
           x: 0,
           width: 80,
           height: 1,
-          layer: 'bottom',
+          layer: 'top',
           backgroundColor: '#313244',
         }),
       );
