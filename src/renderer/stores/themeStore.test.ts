@@ -158,6 +158,95 @@ describe('themeStore', () => {
     });
   });
 
+  // ---- onRegistryChange callbacks ----
+  describe('onRegistryChange', () => {
+    const fakePluginTheme: ThemeDefinition = {
+      id: 'plugin:test:deferred',
+      name: 'Deferred',
+      type: 'dark',
+      colors: THEMES['catppuccin-mocha'].colors,
+      hljs: THEMES['catppuccin-mocha'].hljs,
+      terminal: THEMES['catppuccin-mocha'].terminal,
+    };
+
+    afterEach(() => {
+      unregisterTheme(fakePluginTheme.id);
+    });
+
+    it('re-applies preferred plugin theme when it registers after a fallback load', () => {
+      // Simulate the race: user's saved preference is the plugin theme, but it wasn't
+      // registered at startup so loadTheme fell back — themeId points to the plugin
+      // but theme is still the mocha fallback.
+      useThemeStore.setState({
+        themeId: fakePluginTheme.id as ThemeId,
+        theme: THEMES['catppuccin-mocha'],
+      });
+      vi.clearAllMocks();
+
+      // Plugin registers — triggers onRegistryChange
+      registerTheme(fakePluginTheme);
+
+      expect(applyTheme).toHaveBeenCalledWith(fakePluginTheme, { experimentalGradients: false });
+      expect(mockApp.updateTitleBarOverlay).toHaveBeenCalledWith({
+        color: fakePluginTheme.colors.mantle,
+        symbolColor: fakePluginTheme.colors.text,
+      });
+      expect(useThemeStore.getState().theme).toBe(fakePluginTheme);
+      // themeId is unchanged — only the applied theme object is updated
+      expect(useThemeStore.getState().themeId).toBe(fakePluginTheme.id);
+    });
+
+    it('does not re-apply when the active theme already matches themeId', () => {
+      // Both themeId and theme are already the plugin theme — registry fires for a
+      // different reason (another plugin registers), active state is untouched.
+      registerTheme(fakePluginTheme);
+      useThemeStore.setState({
+        themeId: fakePluginTheme.id as ThemeId,
+        theme: fakePluginTheme,
+      });
+      vi.clearAllMocks();
+
+      const otherTheme: ThemeDefinition = {
+        ...fakePluginTheme,
+        id: 'plugin:test:other',
+        name: 'Other',
+      };
+      registerTheme(otherTheme);
+      unregisterTheme(otherTheme.id);
+
+      expect(applyTheme).not.toHaveBeenCalled();
+    });
+
+    it('falls back to catppuccin-mocha when the active plugin theme is unregistered', async () => {
+      registerTheme(fakePluginTheme);
+      await getState().setTheme(fakePluginTheme.id as ThemeId);
+      vi.clearAllMocks();
+
+      unregisterTheme(fakePluginTheme.id);
+
+      expect(applyTheme).toHaveBeenCalledWith(THEMES['catppuccin-mocha'], { experimentalGradients: false });
+      expect(mockApp.updateTitleBarOverlay).toHaveBeenCalledWith({
+        color: THEMES['catppuccin-mocha'].colors.mantle,
+        symbolColor: THEMES['catppuccin-mocha'].colors.text,
+      });
+      expect(useThemeStore.getState().themeId).toBe('catppuccin-mocha');
+      expect(useThemeStore.getState().theme).toBe(THEMES['catppuccin-mocha']);
+    });
+
+    it('respects experimentalGradients when re-applying deferred theme', () => {
+      useThemeStore.setState({
+        themeId: fakePluginTheme.id as ThemeId,
+        theme: THEMES['catppuccin-mocha'],
+        experimentalGradients: true,
+      });
+      vi.clearAllMocks();
+
+      registerTheme(fakePluginTheme);
+
+      expect(applyTheme).toHaveBeenCalledWith(fakePluginTheme, { experimentalGradients: true });
+    });
+  });
+
   // ---- plugin theme sync to main ----
   describe('plugin theme sync', () => {
     const fakePluginTheme: ThemeDefinition = {

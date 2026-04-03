@@ -95,6 +95,12 @@ onRegistryChange(() => {
     applyTheme(fallback, { experimentalGradients: store.experimentalGradients });
     syncTitleBarOverlay(fallback);
     useThemeStore.setState({ themeId: 'catppuccin-mocha', theme: fallback });
+  } else if (currentTheme.id !== store.theme.id) {
+    // The preferred theme was previously unavailable (loaded with fallback) and is now registered.
+    // Re-apply so CSS variables reflect the correct theme.
+    applyTheme(currentTheme, { experimentalGradients: store.experimentalGradients });
+    syncTitleBarOverlay(currentTheme);
+    useThemeStore.setState({ theme: currentTheme });
   }
 
   // Sync plugin themes to main process for MCP tool visibility
