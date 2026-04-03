@@ -38,7 +38,7 @@ export function PlanProgress({ plan }: Props) {
                   : step.status === 'in_progress'
                     ? 'text-ctp-text font-medium'
                     : step.status === 'failed'
-                      ? 'text-red-400'
+                      ? 'text-ctp-red'
                       : 'text-ctp-subtext0'
               }`}
             >
@@ -55,7 +55,7 @@ function StepIcon({ status }: { status: string }) {
   switch (status) {
     case 'completed':
       return (
-        <svg className="w-3.5 h-3.5 text-green-400 flex-shrink-0 mt-0.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="w-3.5 h-3.5 text-ctp-green flex-shrink-0 mt-0.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="4 8 7 11 12 5" />
         </svg>
       );
@@ -67,7 +67,7 @@ function StepIcon({ status }: { status: string }) {
       );
     case 'failed':
       return (
-        <svg className="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <svg className="w-3.5 h-3.5 text-ctp-red flex-shrink-0 mt-0.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <line x1="5" y1="5" x2="11" y2="11" />
           <line x1="11" y1="5" x2="5" y2="11" />
         </svg>

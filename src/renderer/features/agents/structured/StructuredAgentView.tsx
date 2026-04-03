@@ -224,13 +224,13 @@ function FeedItemRenderer({
 function EndIcon({ reason }: { reason: string }) {
   if (reason === 'complete') {
     return (
-      <svg className="w-3.5 h-3.5 text-green-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg className="w-3.5 h-3.5 text-ctp-green" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="4 8 7 11 12 5" />
       </svg>
     );
   }
   return (
-    <svg className="w-3.5 h-3.5 text-red-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <svg className="w-3.5 h-3.5 text-ctp-red" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
       <circle cx="8" cy="8" r="6" />
       <line x1="6" y1="6" x2="10" y2="10" />
       <line x1="10" y1="6" x2="6" y2="10" />

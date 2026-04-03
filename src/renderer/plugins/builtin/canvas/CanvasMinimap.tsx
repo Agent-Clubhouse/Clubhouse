@@ -276,17 +276,17 @@ export function CanvasMinimap({
         // Determine highlight color
         const isSelected = view.id === selectedViewId || selectedViewIds.includes(view.id);
         const attention = attentionMap.get(view.id);
-        let borderColor = 'rgba(88, 91, 112, 0.3)';
-        let bgColor = 'rgba(30, 30, 46, 0.6)';
+        let borderColor = 'rgb(var(--ctp-surface0) / 0.3)';
+        let bgColor = 'rgb(var(--ctp-mantle) / 0.6)';
         if (attention?.level === 'warning') {
-          borderColor = 'rgba(250, 204, 21, 0.9)';
-          bgColor = 'rgba(250, 204, 21, 0.15)';
+          borderColor = 'rgb(var(--ctp-warning) / 0.9)';
+          bgColor = 'rgb(var(--ctp-warning) / 0.15)';
         } else if (attention?.level === 'error') {
-          borderColor = 'rgba(248, 113, 113, 0.9)';
-          bgColor = 'rgba(248, 113, 113, 0.15)';
+          borderColor = 'rgb(var(--ctp-error) / 0.9)';
+          bgColor = 'rgb(var(--ctp-error) / 0.15)';
         } else if (isSelected) {
-          borderColor = 'rgba(137, 180, 250, 0.9)';
-          bgColor = 'rgba(137, 180, 250, 0.15)';
+          borderColor = 'rgb(var(--ctp-accent) / 0.9)';
+          bgColor = 'rgb(var(--ctp-accent) / 0.15)';
         }
 
         // Anchors render as small icons instead of boxes

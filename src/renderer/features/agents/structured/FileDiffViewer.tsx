@@ -39,8 +39,8 @@ export function FileDiffViewer({ diff, defaultExpanded = false }: Props) {
         <ChangeTypeBadge type={diff.changeType} />
         <span className="text-xs font-mono text-ctp-text truncate">{diff.path}</span>
         <span className="ml-auto flex items-center gap-1.5 text-[10px] tabular-nums">
-          {stats.added > 0 && <span className="text-green-400">+{stats.added}</span>}
-          {stats.removed > 0 && <span className="text-red-400">-{stats.removed}</span>}
+          {stats.added > 0 && <span className="text-ctp-green">+{stats.added}</span>}
+          {stats.removed > 0 && <span className="text-ctp-red">-{stats.removed}</span>}
         </span>
       </button>
 
@@ -85,9 +85,9 @@ export function FileDiffViewer({ diff, defaultExpanded = false }: Props) {
 function ChangeTypeBadge({ type }: { type: FileDiff['changeType'] }) {
   const label = { create: 'Created', modify: 'Modified', delete: 'Deleted' }[type];
   const color = {
-    create: 'text-green-400 bg-green-500/15',
-    modify: 'text-indigo-400 bg-indigo-500/15',
-    delete: 'text-red-400 bg-red-500/15',
+    create: 'text-ctp-green bg-ctp-green/15',
+    modify: 'text-ctp-accent bg-ctp-accent/15',
+    delete: 'text-ctp-red bg-ctp-red/15',
   }[type];
 
   return (
@@ -97,16 +97,16 @@ function ChangeTypeBadge({ type }: { type: FileDiff['changeType'] }) {
 
 function lineRowClass(type: DiffLine['type']): string {
   switch (type) {
-    case 'added': return 'bg-green-500/8';
-    case 'removed': return 'bg-red-500/8';
+    case 'added': return 'bg-ctp-green/8';
+    case 'removed': return 'bg-ctp-red/8';
     default: return '';
   }
 }
 
 function linePrefix(type: DiffLine['type']): string {
   switch (type) {
-    case 'added': return 'text-green-400 select-none mr-1';
-    case 'removed': return 'text-red-400 select-none mr-1';
+    case 'added': return 'text-ctp-green select-none mr-1';
+    case 'removed': return 'text-ctp-red select-none mr-1';
     default: return 'text-transparent select-none mr-1';
   }
 }

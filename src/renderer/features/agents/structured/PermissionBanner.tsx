@@ -44,19 +44,19 @@ export function PermissionBanner({ request, onRespond }: Props) {
 
   return (
     <div
-      className="border border-yellow-500/40 bg-yellow-500/5 rounded-lg overflow-hidden"
+      className="border border-ctp-yellow/40 bg-ctp-yellow/5 rounded-lg overflow-hidden"
       data-testid="permission-banner"
       data-request-id={request.id}
     >
       <div className="px-4 py-3">
         {/* Header */}
         <div className="flex items-center gap-2 mb-2">
-          <svg className="w-4 h-4 text-yellow-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg className="w-4 h-4 text-ctp-yellow" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M8 1L1 14h14L8 1z" />
             <line x1="8" y1="6" x2="8" y2="9" />
             <circle cx="8" cy="11.5" r="0.5" fill="currentColor" />
           </svg>
-          <span className="text-sm font-medium text-yellow-400">Permission Required</span>
+          <span className="text-sm font-medium text-ctp-yellow">Permission Required</span>
           <span className="ml-auto text-xs text-ctp-subtext0 tabular-nums">{remaining}s</span>
         </div>
 
@@ -86,7 +86,7 @@ export function PermissionBanner({ request, onRespond }: Props) {
             Deny
           </button>
           <button
-            className="px-3 py-1 text-xs rounded bg-indigo-500 text-white hover:bg-indigo-600 transition-colors cursor-pointer"
+            className="px-3 py-1 text-xs rounded bg-ctp-accent text-white hover:bg-ctp-accent/80 transition-colors cursor-pointer"
             onClick={() => handleRespond(true)}
             data-testid="permission-approve"
           >
@@ -98,7 +98,7 @@ export function PermissionBanner({ request, onRespond }: Props) {
       {/* Countdown bar */}
       <div className="h-0.5 bg-surface-0">
         <div
-          className="h-full bg-yellow-500/60 transition-all duration-1000 ease-linear"
+          className="h-full bg-ctp-yellow/60 transition-all duration-1000 ease-linear"
           style={{ width: `${(remaining / TIMEOUT_SECONDS) * 100}%` }}
         />
       </div>

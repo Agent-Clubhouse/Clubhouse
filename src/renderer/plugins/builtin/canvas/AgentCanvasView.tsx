@@ -175,7 +175,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
                     className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg bg-surface-0 hover:bg-surface-1 text-left transition-colors"
                   >
                     <div
-                      className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
+                      className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-ctp-base flex-shrink-0"
                       style={{ backgroundColor: color }}
                     >
                       {initials}
@@ -243,7 +243,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
           onClick={() => setShowCreateDialog(true)}
           data-testid="canvas-create-agent"
           className="w-full mt-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg
-            bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 transition-colors text-xs cursor-pointer"
+            bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 transition-colors text-xs cursor-pointer"
         >
           + New Agent
         </button>

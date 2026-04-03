@@ -15,18 +15,18 @@ export function ErrorBanner({ error }: Props) {
 
   return (
     <div
-      className="border border-red-500/40 bg-red-500/10 rounded-lg overflow-hidden"
+      className="border border-ctp-red/40 bg-ctp-red/10 rounded-lg overflow-hidden"
       data-testid="error-banner"
     >
       <div className="flex items-start gap-2 px-3 py-2">
-        <svg className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="w-4 h-4 text-ctp-red flex-shrink-0 mt-0.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="8" cy="8" r="6" />
           <line x1="8" y1="5" x2="8" y2="8.5" />
           <circle cx="8" cy="11" r="0.5" fill="currentColor" />
         </svg>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-red-400">{error.code}</span>
+            <span className="text-xs font-medium text-ctp-red">{error.code}</span>
             {error.toolId && (
               <span className="text-[10px] text-ctp-subtext0 font-mono">({error.toolId})</span>
             )}

@@ -143,7 +143,7 @@ export function TranscriptViewer({ agentId }: Props) {
         </p>
         <button
           onClick={handleLoadLargeTranscript}
-          className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer"
+          className="text-xs text-ctp-accent hover:text-ctp-accent/80 cursor-pointer"
         >
           Load transcript
         </button>
@@ -276,7 +276,7 @@ function TranscriptItem({ item }: { item: DisplayItem }) {
         {truncated && (
           <button
             onClick={() => setExpanded(!expanded)}
-            className="text-indigo-400 hover:text-indigo-300 cursor-pointer mt-0.5"
+            className="text-ctp-accent hover:text-ctp-accent/80 cursor-pointer mt-0.5"
           >
             {expanded ? 'Show less' : 'Show more'}
           </button>

@@ -57,7 +57,7 @@ export function CommandOutputPanel({ command, defaultExpanded = true }: Props) {
   return (
     <div
       className={`border rounded-lg overflow-hidden ${
-        isFailed ? 'border-red-500/30 bg-red-500/5' : 'border-surface-0 bg-ctp-mantle'
+        isFailed ? 'border-ctp-red/30 bg-ctp-red/5' : 'border-surface-0 bg-ctp-mantle'
       }`}
       data-testid="command-output-panel"
     >
@@ -75,9 +75,9 @@ export function CommandOutputPanel({ command, defaultExpanded = true }: Props) {
               Running
             </span>
           ) : isFailed ? (
-            <span className="text-[10px] text-red-400">exit {command.exitCode ?? '?'}</span>
+            <span className="text-[10px] text-ctp-red">exit {command.exitCode ?? '?'}</span>
           ) : (
-            <span className="text-[10px] text-green-400">exit 0</span>
+            <span className="text-[10px] text-ctp-green">exit 0</span>
           )}
         </span>
       </button>

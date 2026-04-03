@@ -44,7 +44,7 @@ export function ActionBar({ agentId: _agentId, elapsed, usage, isComplete, onSto
         <div className="flex-1 flex items-center gap-2">
           <input
             type="text"
-            className="flex-1 bg-ctp-base border border-surface-0 rounded px-2 py-1 text-xs text-ctp-text placeholder-ctp-subtext0 outline-none focus:border-indigo-500/50 transition-colors"
+            className="flex-1 bg-ctp-base border border-surface-0 rounded px-2 py-1 text-xs text-ctp-text placeholder-ctp-subtext0 outline-none focus:border-ctp-accent/50 transition-colors"
             placeholder="Send a message..."
             value={message}
             onChange={(e) => setMessage(e.target.value)}
@@ -52,7 +52,7 @@ export function ActionBar({ agentId: _agentId, elapsed, usage, isComplete, onSto
             data-testid="message-input"
           />
           <button
-            className="px-2 py-1 text-xs rounded bg-indigo-500 text-white hover:bg-indigo-600 transition-colors disabled:opacity-40 disabled:cursor-default cursor-pointer"
+            className="px-2 py-1 text-xs rounded bg-ctp-accent text-white hover:bg-ctp-accent/80 transition-colors disabled:opacity-40 disabled:cursor-default cursor-pointer"
             onClick={handleSend}
             disabled={!message.trim()}
           >
@@ -73,7 +73,7 @@ export function ActionBar({ agentId: _agentId, elapsed, usage, isComplete, onSto
       {/* Stop button */}
       {!isComplete && (
         <button
-          className="px-3 py-1 text-xs rounded border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
+          className="px-3 py-1 text-xs rounded border border-ctp-red/30 text-ctp-red hover:bg-ctp-red/20 transition-colors cursor-pointer"
           onClick={onStop}
           data-testid="stop-button"
         >

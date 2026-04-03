@@ -27,7 +27,7 @@ export function ToolCard({ tool, output, end, status }: Props) {
     <div
       className={`border rounded-lg overflow-hidden ${
         status === 'error'
-          ? 'border-red-500/40 bg-red-500/5'
+          ? 'border-ctp-red/40 bg-ctp-red/5'
           : 'border-surface-0 bg-ctp-mantle'
       }`}
       data-testid="tool-card"
@@ -94,7 +94,7 @@ export function ToolCard({ tool, output, end, status }: Props) {
           {/* Error result */}
           {end && end.status === 'error' && (
             <div className="border-t border-surface-0 px-3 py-2">
-              <span className="text-xs text-red-400">{end.result}</span>
+              <span className="text-xs text-ctp-red">{end.result}</span>
             </div>
           )}
         </div>
@@ -114,7 +114,7 @@ function StatusIcon({ status }: { status: ToolStatus }) {
   }
   if (status === 'error') {
     return (
-      <svg className="w-3.5 h-3.5 text-red-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <svg className="w-3.5 h-3.5 text-ctp-red" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
         <circle cx="8" cy="8" r="6" />
         <line x1="6" y1="6" x2="10" y2="10" />
         <line x1="10" y1="6" x2="6" y2="10" />
@@ -123,7 +123,7 @@ function StatusIcon({ status }: { status: ToolStatus }) {
   }
   // completed
   return (
-    <svg className="w-3.5 h-3.5 text-green-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="w-3.5 h-3.5 text-ctp-green" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="8" cy="8" r="6" />
       <polyline points="5.5 8 7.5 10 10.5 6" />
     </svg>
