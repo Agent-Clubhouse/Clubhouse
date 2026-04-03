@@ -1,3 +1,4 @@
+import React from 'react';
 import { render, act, fireEvent, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useThemeStore } from '../../stores/themeStore';
@@ -27,6 +28,8 @@ vi.mock('@xterm/xterm', () => {
     focus = vi.fn();
     dispose = vi.fn();
     onData = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    registerMarker = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    registerDecoration = vi.fn().mockReturnValue({ dispose: vi.fn() });
     options: Record<string, any> = {};
     cols = 80;
     rows = 24;
@@ -144,7 +147,10 @@ describe('AgentTerminal', () => {
     });
 
     useThemeStore.setState({
-      theme: { terminal: { background: '#000', foreground: '#fff' } } as any,
+      theme: {
+        terminal: { background: '#000', foreground: '#fff' },
+        colors: { surface0: '#313244' },
+      } as any,
     });
 
     useClipboardSettingsStore.setState({
@@ -775,6 +781,62 @@ describe('AgentTerminal', () => {
       render(<AgentTerminal agentId="agent-1" zoneThemeId="catppuccin-latte" />);
       // Zone theme should use its own background, not transparent
       expect(term().options.theme).toEqual({ background: '#eff1f5', foreground: '#4c4f69' });
+    });
+  });
+
+  describe('markUserInputLine handle', () => {
+    it('registers a decoration on the current cursor row with surface0 color', () => {
+      const ref = { current: null } as React.RefObject<import('./AgentTerminal').AgentTerminalHandle>;
+      render(<AgentTerminal ref={ref} agentId="agent-1" />);
+
+      ref.current!.markUserInputLine();
+
+      expect(term().registerMarker).toHaveBeenCalledWith(0);
+      expect(term().registerDecoration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          x: 0,
+          width: 80,
+          height: 1,
+          layer: 'bottom',
+          backgroundColor: '#313244', // surface0 from test theme
+        }),
+      );
+    });
+
+    it('uses the latest surface0 color when the theme changes before calling', () => {
+      const ref = { current: null } as React.RefObject<import('./AgentTerminal').AgentTerminalHandle>;
+      render(<AgentTerminal ref={ref} agentId="agent-1" />);
+
+      act(() => {
+        useThemeStore.setState({
+          theme: {
+            terminal: { background: '#eff1f5', foreground: '#4c4f69' },
+            colors: { surface0: '#ccd0da' }, // Latte surface0
+          } as any,
+        });
+      });
+
+      ref.current!.markUserInputLine();
+
+      expect(term().registerDecoration).toHaveBeenCalledWith(
+        expect.objectContaining({ backgroundColor: '#ccd0da' }),
+      );
+    });
+
+    it('is a no-op before the terminal mounts (no crash)', () => {
+      // Create a ref but don't render yet — ref.current is null
+      const ref = { current: null } as React.RefObject<import('./AgentTerminal').AgentTerminalHandle>;
+      // Should not throw
+      expect(() => ref.current?.markUserInputLine()).not.toThrow();
+    });
+
+    it('is a no-op when registerMarker returns null', () => {
+      const ref = { current: null } as React.RefObject<import('./AgentTerminal').AgentTerminalHandle>;
+      render(<AgentTerminal ref={ref} agentId="agent-1" />);
+      term().registerMarker.mockReturnValueOnce(null);
+
+      expect(() => ref.current!.markUserInputLine()).not.toThrow();
+      expect(term().registerDecoration).not.toHaveBeenCalled();
     });
   });
 });

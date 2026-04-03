@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useMemo, useState, forwardRef, useImperativeHandle } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
@@ -38,6 +38,14 @@ const JUMP_MIN_PX = 30;
 /** Throttle interval (ms) for periodic scroll-state debug logging. */
 const SCROLL_LOG_THROTTLE_MS = 2000;
 
+export interface AgentTerminalHandle {
+  /** Place an xterm decoration on the current cursor row using the theme's surface0 color.
+   * Call this just before a user message is sent so the prompt bar renders with the
+   * correct background in light themes (where reverse-video would otherwise produce a
+   * dark bar).  No-op if the terminal is not yet mounted. */
+  markUserInputLine(): void;
+}
+
 interface Props {
   agentId: string;
   focused?: boolean;
@@ -45,7 +53,8 @@ interface Props {
   zoneThemeId?: string;
 }
 
-export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
+export const AgentTerminal = forwardRef<AgentTerminalHandle, Props>(
+function AgentTerminal({ agentId, focused, zoneThemeId }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -62,6 +71,27 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     () => hasGradientBg && !zoneThemeId ? { ...terminalColors, background: 'transparent' } : terminalColors,
     [terminalColors, hasGradientBg, zoneThemeId],
   );
+  const surface0Color = useThemeStore((s) => s.theme.colors?.surface0 ?? '#313244');
+  const surface0Ref = useRef(surface0Color);
+  surface0Ref.current = surface0Color;
+
+  useImperativeHandle(ref, () => ({
+    markUserInputLine() {
+      const term = terminalRef.current;
+      if (!term) return;
+      const marker = term.registerMarker(0);
+      if (!marker) return;
+      term.registerDecoration({
+        marker,
+        x: 0,
+        width: term.cols,
+        height: 1,
+        layer: 'bottom',
+        backgroundColor: surface0Ref.current,
+      });
+    },
+  }));
+
   const experimentalMonoFont = useThemeStore(
     (s) => s.experimentalGradients ? (s.theme.fonts?.mono ?? s.theme.fontOverride) : undefined,
   );
@@ -589,4 +619,4 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       )}
     </div>
   );
-}
+});

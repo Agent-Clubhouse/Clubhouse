@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { AgentTerminalHandle } from '../AgentTerminal';
 import type {
   StructuredEvent,
   TextDelta,
@@ -75,6 +76,9 @@ export function StructuredAgentView({ agentId }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
+  /** Ref to a co-rendered AgentTerminal — used to place a decoration on the user
+   * message row before it is sent, preventing a reverse-video dark bar in light themes. */
+  const terminalHandleRef = useRef<AgentTerminalHandle | null>(null);
   const killAgent = useAgentStore((s) => s.killAgent);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agentId]);
 
@@ -122,6 +126,7 @@ export function StructuredAgentView({ agentId }: Props) {
 
   const handleSendMessage = useCallback(
     (message: string) => {
+      terminalHandleRef.current?.markUserInputLine();
       window.clubhouse.agent.sendStructuredMessage(agentId, message);
     },
     [agentId],
