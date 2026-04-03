@@ -839,4 +839,44 @@ describe('AgentTerminal', () => {
       expect(term().registerDecoration).not.toHaveBeenCalled();
     });
   });
+
+  describe('Enter-key internal decoration trigger', () => {
+    it('places a decoration on \\r (Enter) in canvas/PTY mode', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const onDataCb = term().onData.mock.calls[0][0];
+
+      onDataCb('\r');
+
+      expect(term().registerMarker).toHaveBeenCalledWith(0);
+      expect(term().registerDecoration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          x: 0,
+          width: 80,
+          height: 1,
+          layer: 'bottom',
+          backgroundColor: '#313244',
+        }),
+      );
+    });
+
+    it('does not place a decoration for non-Enter keystrokes', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const onDataCb = term().onData.mock.calls[0][0];
+
+      onDataCb('a');
+      onDataCb('b');
+      onDataCb('\t');
+
+      expect(term().registerDecoration).not.toHaveBeenCalled();
+    });
+
+    it('still forwards \\r to PTY after placing decoration', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const onDataCb = term().onData.mock.calls[0][0];
+
+      onDataCb('\r');
+
+      expect(window.clubhouse.pty.write).toHaveBeenCalledWith('agent-1', '\r');
+    });
+  });
 });

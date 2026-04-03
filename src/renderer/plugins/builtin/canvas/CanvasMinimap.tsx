@@ -276,7 +276,7 @@ export function CanvasMinimap({
         // Determine highlight color
         const isSelected = view.id === selectedViewId || selectedViewIds.includes(view.id);
         const attention = attentionMap.get(view.id);
-        let borderColor = 'rgb(var(--ctp-overlay0) / 0.6)';
+        let borderColor = 'rgb(var(--ctp-surface2) / 0.8)';
         let bgColor = 'rgb(var(--ctp-mantle) / 0.6)';
         if (attention?.level === 'warning') {
           borderColor = 'rgb(var(--ctp-warning) / 0.9)';

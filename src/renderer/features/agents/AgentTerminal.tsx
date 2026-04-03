@@ -217,6 +217,22 @@ function AgentTerminal({ agentId, focused, zoneThemeId }, ref) {
 
     // Forward user input to PTY (local or remote)
     const inputDisposable = term.onData((data) => {
+      // Place a decoration on the current row just before Enter is submitted so
+      // the user message prompt bar renders with the theme's surface0 background
+      // instead of the reverse-video dark bar produced by Claude Code's TUI.
+      if (data === '\r') {
+        const marker = term.registerMarker(0);
+        if (marker) {
+          term.registerDecoration({
+            marker,
+            x: 0,
+            width: term.cols,
+            height: 1,
+            layer: 'bottom',
+            backgroundColor: surface0Ref.current,
+          });
+        }
+      }
       if (!isRemote) {
         window.clubhouse.pty.write(agentId, data);
       } else if (remoteParts) {
