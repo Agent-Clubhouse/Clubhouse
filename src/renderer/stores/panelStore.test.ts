@@ -154,4 +154,59 @@ describe('panelStore', () => {
     expect(usePanelStore.getState().railPinned).toBe(true);
     expect(usePanelStore.getState().explorerCollapsed).toBe(true);
   });
+
+  // ── Debounced persist tests ──────────────────────────────────────────
+
+  describe('debounced persist', () => {
+    let setItemSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+      usePanelStore.setState({
+        explorerWidth: 200,
+        explorerCollapsed: false,
+        accessoryWidth: 280,
+        accessoryCollapsed: false,
+        railPinned: false,
+        railWidth: 200,
+      });
+      setItemSpy.mockClear();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('does not persist synchronously on resize', () => {
+      usePanelStore.getState().resizeExplorer(10);
+      // No immediate localStorage write
+      expect(setItemSpy).not.toHaveBeenCalled();
+    });
+
+    it('persists after debounce timeout', () => {
+      usePanelStore.getState().resizeExplorer(10);
+      vi.advanceTimersByTime(300);
+      expect(setItemSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('coalesces rapid resizes into a single persist', () => {
+      // Simulate drag: many resizes in quick succession
+      for (let i = 0; i < 20; i++) {
+        usePanelStore.getState().resizeExplorer(5);
+      }
+      vi.advanceTimersByTime(300);
+      // Should only persist once, not 20 times
+      expect(setItemSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('persists the final state after coalescing', () => {
+      usePanelStore.getState().resizeExplorer(50);
+      usePanelStore.getState().resizeExplorer(50);
+      vi.advanceTimersByTime(300);
+
+      const persisted = JSON.parse(setItemSpy.mock.calls[0][1] as string);
+      expect(persisted.explorerWidth).toBe(300);
+    });
+  });
 });

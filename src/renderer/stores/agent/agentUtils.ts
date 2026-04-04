@@ -6,6 +6,7 @@ export const STALE_THRESHOLD_MS = 30_000;
 export const COMPLETED_QUICK_AGENT_RETENTION_MS = 60_000;
 export const MAX_COMPLETED_QUICK_AGENTS = 20;
 export const ACTIVITY_UPDATE_THROTTLE_MS = 100;
+export const MAX_ACTIVITY_ENTRIES = 500;
 
 export function omitRecordKeys<T>(record: Record<string, T>, ids: Set<string>): Record<string, T> {
   if (ids.size === 0) return record;
