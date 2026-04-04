@@ -242,8 +242,8 @@ function getPrimaryInput(input: Record<string, unknown>): string {
 // ── Headless Result Handler ───────────────────────────────────────────────
 
 function handleHeadlessResult(result: { agentId: string; exitCode: number }): void {
-  // Match against our tracked agent or a follow-up agent
-  if (result.agentId !== state.agentId && !result.agentId.startsWith('assistant_followup_')) return;
+  // Only accept results from the currently tracked agent — reject stale follow-ups
+  if (result.agentId !== state.agentId) return;
 
   // Surface non-zero exit codes as errors
   if (result.exitCode !== 0) {
@@ -396,7 +396,7 @@ async function startAgent(firstMessage: string): Promise<void> {
     // For structured mode, register the event listener BEFORE spawning
     // so we don't miss any early events from the adapter.
     if (state.mode === 'structured') {
-      setupStructuredListener(agentId);
+      setupStructuredListener();
     }
 
     const systemPrompt = buildAssistantInstructions();
@@ -446,7 +446,7 @@ async function setupInteractive(): Promise<void> {
  * Register the structured event listener for the given agent.
  * Must be called BEFORE spawning so no early events are missed.
  */
-function setupStructuredListener(_agentId: string): void {
+function setupStructuredListener(): void {
   // Remove any previous structured listener to prevent accumulation
   // across follow-up sessions (each follow-up calls startAgent again).
   cleanupAll();
@@ -472,15 +472,14 @@ function setupHeadless(): void {
  * The new session resumes from the previous session in the same workspace.
  */
 async function structuredFollowup(message: string): Promise<void> {
-  const newAgentId = `assistant_followup_${Date.now()}_${globalThis.crypto.randomUUID().slice(0, 8)}`;
-  setAgentId(newAgentId);
-
-  // Re-register listener for the new agentId (before spawn to avoid race)
-  setupStructuredListener(newAgentId);
+  // Re-register listener before spawn so we don't miss early events
+  setupStructuredListener();
 
   setStatus('responding');
 
   try {
+    // Await the IPC call to get the server-assigned agentId.
+    // Do NOT generate a client-side ID — the server is authoritative.
     const result = await window.clubhouse.assistant.sendStructuredFollowup({
       message,
       orchestrator: state.orchestrator || undefined,
