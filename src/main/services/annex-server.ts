@@ -61,6 +61,18 @@ import type {
 // Server state
 // ---------------------------------------------------------------------------
 
+/** Check if a CORS origin is allowed (file:// or localhost). */
+function isAllowedCorsOrigin(origin: string): boolean {
+  if (!origin) return false;
+  if (origin === 'file://') return true;
+  try {
+    const parsed = new URL(origin);
+    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
 // Pairing port (plain HTTP): POST /pair, GET /api/v1/identity, OPTIONS
 let pairingServer: http.Server | null = null;
 let pairingPort = 0;
@@ -1082,7 +1094,11 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
   const url = req.url || '/';
   const method = req.method || 'GET';
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '';
+  if (isAllowedCorsOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 
@@ -1196,8 +1212,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   const url = req.url || '/';
   const method = req.method || 'GET';
 
-  // CORS headers for local network
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS headers — restrict to local origins only
+  const origin = req.headers.origin || '';
+  if (isAllowedCorsOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 

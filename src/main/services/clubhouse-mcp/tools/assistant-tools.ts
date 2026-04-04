@@ -891,6 +891,23 @@ registerToolTemplate(
 
 // ── Settings Write Tool ────────────────────────────────────────────────────
 
+/** Keys the assistant is permitted to modify via update_settings. */
+const SETTINGS_ALLOWLIST = new Set([
+  'theme', 'themeId',
+  'soundEnabled', 'soundVolume', 'soundPack',
+  'notificationEnabled', 'notificationSound',
+  'zoomLevel',
+  'fontSize', 'fontFamily', 'uiFontFamily',
+  'showMinimap', 'minimapScale',
+  'sidebarWidth', 'sidebarCollapsed',
+  'showLineNumbers', 'wordWrap', 'tabSize',
+  'terminalFontSize', 'terminalFontFamily',
+  'windowBounds',
+  'locale', 'language',
+  'autoUpdate', 'updateChannel',
+  'telemetryEnabled',
+]);
+
 registerToolTemplate(
   'assistant',
   'update_settings',
@@ -902,7 +919,7 @@ registerToolTemplate(
       properties: {
         key: {
           type: 'string',
-          description: 'The settings key to update (e.g. "theme", "soundEnabled").',
+          description: `The settings key to update. Allowed keys: ${[...SETTINGS_ALLOWLIST].join(', ')}.`,
         },
         value: {
           type: 'string',
@@ -915,6 +932,14 @@ registerToolTemplate(
   async (_targetId, _agentId, args) => {
     const key = args.key as string;
     const rawValue = args.value as string;
+
+    if (!SETTINGS_ALLOWLIST.has(key)) {
+      return {
+        content: [{ type: 'text', text: `Setting "${key}" is not in the allowed list. Allowed keys: ${[...SETTINGS_ALLOWLIST].join(', ')}.` }],
+        isError: true,
+      };
+    }
+
     try {
       // Try to parse the value as JSON (for booleans, numbers, objects)
       let value: unknown;
