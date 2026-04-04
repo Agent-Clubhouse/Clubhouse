@@ -126,7 +126,7 @@ function findCanvasForView(viewId: string, projectIdHint?: string): { canvas_id:
   return null;
 }
 
-import { MUTATING_CANVAS_COMMANDS } from '../../../../shared/mutating-tools';
+import { MUTATING_CANVAS_COMMANDS } from '../../../shared/mutating-tools';
 
 const CANVAS_TAB = 'plugin:canvas';
 

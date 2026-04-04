@@ -418,10 +418,10 @@ function initAgentStateBroadcast(): () => void {
 
   // Throttle broadcasts to ~10/sec and only trigger on actual data changes.
   let throttleTimer: ReturnType<typeof setTimeout> | null = null;
-  let pendingState: { agents: unknown; agentDetailedStatus: unknown; agentIcons: unknown } | null = null;
-  let prevAgents: unknown = undefined;
-  let prevDetailedStatus: unknown = undefined;
-  let prevIcons: unknown = undefined;
+  let pendingState: { agents: Record<string, unknown>; agentDetailedStatus: Record<string, unknown>; agentIcons: Record<string, string> } | null = null;
+  let prevAgents: Record<string, unknown> | undefined = undefined;
+  let prevDetailedStatus: Record<string, unknown> | undefined = undefined;
+  let prevIcons: Record<string, string> | undefined = undefined;
 
   const unsub = useAgentStore.subscribe((state) => {
     // Skip if the fields we broadcast haven't changed (reference equality)
