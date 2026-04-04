@@ -1775,9 +1775,9 @@ describe('annex-server', () => {
         source.indexOf("case 'agent:reorder':"),
       );
 
-      // Must send error back via ws.send with canvas:mutation:error type
+      // Must send error back via safeSend with canvas:mutation:error type
       expect(mutationBlock).toContain('canvas:mutation:error');
-      expect(mutationBlock).toContain('ws.send');
+      expect(mutationBlock).toContain('safeSend(ws,');
       // Must log the error
       expect(mutationBlock).toContain('appLog');
       // Must NOT silently swallow — no empty catch body
@@ -2124,6 +2124,78 @@ describe('annex-server', () => {
       // isRunning should have been called multiple times (polling)
       expect(checkCount).toBeGreaterThan(1);
     }, 10_000);
+  });
+
+  // -------------------------------------------------------------------------
+  // safeSend helper protects WebSocket sends
+  // -------------------------------------------------------------------------
+
+  describe('safeSend guards all WebSocket sends', () => {
+    let source: string;
+
+    beforeAll(() => {
+      const fs = require('fs');
+      const path = require('path');
+      source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+    });
+
+    it('safeSend helper checks readyState before sending', () => {
+      // Verify the safeSend function exists and checks WebSocket.OPEN
+      expect(source).toContain('function safeSend(ws: WebSocket, data: string): boolean');
+      expect(source).toContain('ws.readyState === WebSocket.OPEN');
+    });
+
+    it('handleWsMessage uses safeSend instead of raw ws.send', () => {
+      // Extract handleWsMessage function body
+      const fnStart = source.indexOf('function handleWsMessage(');
+      const fnEnd = source.indexOf('\n// WS-based quick agent spawn');
+      const fnBody = source.slice(fnStart, fnEnd);
+
+      // No raw ws.send calls should remain (only safeSend)
+      const rawSendMatches = fnBody.match(/[^e]ws\.send\(/g);
+      expect(rawSendMatches).toBeNull();
+      expect(fnBody).toContain('safeSend(ws,');
+    });
+
+    it('replay loop breaks gracefully on safeSend failure', () => {
+      // The replay loop should check safeSend return value and break
+      const replaySection = source.slice(
+        source.indexOf("type === 'replay'"),
+        source.indexOf('// --- Control messages'),
+      );
+      expect(replaySection).toContain('if (!safeSend(ws,');
+      expect(replaySection).toContain('break');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // WebSocket wake handler uses waitForAgentRunning
+  // -------------------------------------------------------------------------
+
+  describe('WS wake handler waits for agent running (structural)', () => {
+    it('handleWakeAgentWs calls waitForAgentRunning before broadcastSnapshotRefresh', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // Find the WS wake handler
+      const wsWakeStart = source.indexOf('async function handleWakeAgentWs(');
+      const wsWakeEnd = source.indexOf('\n// ---', wsWakeStart + 1);
+      const wsWakeBody = source.slice(wsWakeStart, wsWakeEnd);
+
+      // Must call waitForAgentRunning before broadcastSnapshotRefresh
+      const waitIdx = wsWakeBody.indexOf('await waitForAgentRunning(');
+      const broadcastIdx = wsWakeBody.indexOf('broadcastSnapshotRefresh()');
+      expect(waitIdx).toBeGreaterThan(-1);
+      expect(broadcastIdx).toBeGreaterThan(-1);
+      expect(waitIdx).toBeLessThan(broadcastIdx);
+    });
   });
 
   // -------------------------------------------------------------------------

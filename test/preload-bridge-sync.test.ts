@@ -68,6 +68,20 @@ describe('preload bridge sync check', () => {
     }
   });
 
+  it('onHubMutation and onCanvasMutation listen on correct IPC channels', () => {
+    const preloadSource = fs.readFileSync(preloadPath, 'utf-8');
+
+    // onHubMutation must use HUB_MUTATION (not REQUEST_HUB_MUTATION)
+    const hubMutationMatch = preloadSource.match(/onHubMutation[\s\S]*?ipcRenderer\.on\(IPC\.WINDOW\.(\w+)/);
+    expect(hubMutationMatch).not.toBeNull();
+    expect(hubMutationMatch![1]).toBe('HUB_MUTATION');
+
+    // onCanvasMutation must use CANVAS_MUTATION (not REQUEST_CANVAS_MUTATION)
+    const canvasMutationMatch = preloadSource.match(/onCanvasMutation[\s\S]*?ipcRenderer\.on\(IPC\.WINDOW\.(\w+)/);
+    expect(canvasMutationMatch).not.toBeNull();
+    expect(canvasMutationMatch![1]).toBe('CANVAS_MUTATION');
+  });
+
   it('setup-renderer.ts mock covers all preload API methods', () => {
     const preloadSource = fs.readFileSync(preloadPath, 'utf-8');
     const setupSource = fs.readFileSync(setupPath, 'utf-8');
