@@ -17,6 +17,47 @@ const MIN_TIMEOUT = 100;
 const MAX_TIMEOUT = 60000;
 const DEFAULT_TIMEOUT = 15000;
 
+// Rate limiting: per-plugin concurrent limit + global rate limit
+const MAX_CONCURRENT_PER_PLUGIN = 5;
+const MAX_GLOBAL_SPAWNS_PER_MINUTE = 50;
+
+const activeProcesses = new Map<string, number>(); // pluginId → count
+const globalSpawnTimestamps: number[] = [];
+
+function canSpawn(pluginId: string): { allowed: boolean; reason?: string } {
+  // Per-plugin concurrent limit
+  const active = activeProcesses.get(pluginId) || 0;
+  if (active >= MAX_CONCURRENT_PER_PLUGIN) {
+    return { allowed: false, reason: `Plugin "${pluginId}" has ${active} concurrent processes (max ${MAX_CONCURRENT_PER_PLUGIN})` };
+  }
+
+  // Global rate limit: sliding 60s window
+  const now = Date.now();
+  const cutoff = now - 60_000;
+  while (globalSpawnTimestamps.length > 0 && globalSpawnTimestamps[0] < cutoff) {
+    globalSpawnTimestamps.shift();
+  }
+  if (globalSpawnTimestamps.length >= MAX_GLOBAL_SPAWNS_PER_MINUTE) {
+    return { allowed: false, reason: `Global rate limit exceeded (${MAX_GLOBAL_SPAWNS_PER_MINUTE} spawns/min)` };
+  }
+
+  return { allowed: true };
+}
+
+function trackSpawn(pluginId: string): void {
+  activeProcesses.set(pluginId, (activeProcesses.get(pluginId) || 0) + 1);
+  globalSpawnTimestamps.push(Date.now());
+}
+
+function trackExit(pluginId: string): void {
+  const count = activeProcesses.get(pluginId) || 0;
+  if (count <= 1) {
+    activeProcesses.delete(pluginId);
+  } else {
+    activeProcesses.set(pluginId, count - 1);
+  }
+}
+
 export function registerProcessHandlers(): void {
   ipcMain.handle(IPC.PROCESS.EXEC, withValidatedArgs([objectArg<ProcessExecRequest>({
     validate: (req, argName) => {
@@ -60,6 +101,12 @@ export function registerProcessHandlers(): void {
       return { stdout: '', stderr: `Command "${command}" not allowed for plugin "${pluginId}"`, exitCode: 1 };
     }
 
+    // Rate limit check
+    const { allowed, reason } = canSpawn(pluginId);
+    if (!allowed) {
+      return { stdout: '', stderr: reason || 'Rate limit exceeded', exitCode: 1 };
+    }
+
     // Clamp timeout
     let timeout = DEFAULT_TIMEOUT;
     if (options?.timeout !== undefined) {
@@ -68,6 +115,7 @@ export function registerProcessHandlers(): void {
 
     const cwd = projectPath || app.getPath('home');
 
+    trackSpawn(pluginId);
     return new Promise((resolve) => {
       execFile(
         command,
@@ -80,6 +128,7 @@ export function registerProcessHandlers(): void {
           maxBuffer: 10 * 1024 * 1024,
         },
         (error, stdout, stderr) => {
+          trackExit(pluginId);
           if (error && (error as any).killed) {
             resolve({ stdout: stdout || '', stderr: stderr || 'Command timed out', exitCode: 124 });
             return;
