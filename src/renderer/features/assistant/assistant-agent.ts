@@ -497,11 +497,13 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
  * Persist current feed items to disk (debounced).
  * Called after receiving responses and sending messages.
  */
+const MAX_HISTORY_ITEMS = 100;
+
 function persistHistory(): void {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     persistTimer = null;
-    const items = pendingItems.filter(
+    let items = pendingItems.filter(
       (item) =>
         // Only persist real messages, not placeholders
         !(item.type === 'message' &&
@@ -509,6 +511,10 @@ function persistHistory(): void {
           (item.message.content === '_Processing your request..._' ||
            item.message.content === '_Processing your follow-up..._')),
     );
+    // Cap to most recent entries to prevent unbounded storage growth
+    if (items.length > MAX_HISTORY_ITEMS) {
+      items = items.slice(-MAX_HISTORY_ITEMS);
+    }
     window.clubhouse.assistant.saveHistory(items).catch(() => {});
   }, 500);
 }

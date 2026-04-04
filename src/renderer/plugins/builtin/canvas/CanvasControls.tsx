@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import type { CanvasView, CanvasViewAttention, PluginCanvasView } from './canvas-types';
 import type { CanvasWidgetMetadata, PluginAPI } from '../../../../shared/plugin-types';
 import type { RegisteredCanvasWidget } from '../../canvas-widget-registry';
@@ -37,11 +37,13 @@ export function useAnchorCycler(
     onNavigate(anchorIds[prev]);
   }, [count, currentIndex, anchorIds, onNavigate]);
 
-  // Reset index when out of bounds
+  // Reset index when out of bounds (in useEffect to avoid state update during render)
   const safeIndex = count > 0 ? Math.min(currentIndex, count - 1) : 0;
-  if (safeIndex !== currentIndex && count > 0) {
-    setCurrentIndex(safeIndex);
-  }
+  useEffect(() => {
+    if (safeIndex !== currentIndex && count > 0) {
+      setCurrentIndex(safeIndex);
+    }
+  }, [safeIndex, currentIndex, count]);
 
   return { count, currentIndex: safeIndex, goNext, goPrev };
 }

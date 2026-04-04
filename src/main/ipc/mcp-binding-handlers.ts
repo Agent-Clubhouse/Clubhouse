@@ -155,19 +155,21 @@ export function registerMcpBindingHandlers(): void {
   ));
 }
 
-let bridgeStarted = false;
+let bridgeState: 'idle' | 'starting' | 'started' = 'idle';
 
 /** Conditionally start the MCP bridge server if MCP is enabled for any project. */
 export function maybeStartMcpBridge(): void {
-  if (bridgeStarted) return; // Already started — idempotent
+  if (bridgeState !== 'idle') return; // Already started or in progress
   if (!isMcpEnabledForAny()) {
     return;
   }
 
-  bridgeStarted = true;
+  bridgeState = 'starting';
 
-  bridgeServer.start().catch((err) => {
-    bridgeStarted = false; // Allow retry on failure
+  bridgeServer.start().then(() => {
+    bridgeState = 'started';
+  }).catch((err) => {
+    bridgeState = 'idle'; // Allow retry on failure
     appLog('core:mcp', 'error', 'Failed to start MCP bridge server', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
@@ -188,5 +190,5 @@ export function onMcpSettingsChanged(): void {
 /** For testing only: reset the registration guard so handlers can be re-registered. */
 export function _resetHandlersForTesting(): void {
   handlersRegistered = false;
-  bridgeStarted = false;
+  bridgeState = 'idle';
 }
