@@ -1,0 +1,258 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" width="480" height="320">
+  <!-- Concept Illustration: Canvas & Zones -->
+  <!-- Shows: Canvas workspace with colored zones containing agent cards, wires connecting them -->
+  <style>
+    .cz-label {
+      font-family: monospace;
+      font-size: 11px;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .cz-sublabel {
+      font-family: monospace;
+      font-size: 8px;
+      fill: var(--ctp-subtext0, #a6adc8);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .cz-title {
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: bold;
+      fill: var(--ctp-text, #cdd6f4);
+      text-anchor: middle;
+    }
+    .cz-zone-label {
+      font-family: monospace;
+      font-size: 9px;
+      font-weight: bold;
+      text-anchor: start;
+      dominant-baseline: central;
+    }
+    .cz-card {
+      fill: var(--ctp-surface0, #313244);
+      stroke-width: 1.5;
+      rx: 6;
+    }
+    .cz-wire {
+      stroke-width: 1.5;
+      fill: none;
+      stroke-linecap: round;
+      stroke-dasharray: 120;
+      stroke-dashoffset: 120;
+    }
+    .cz-wire-dot {
+      r: 3;
+    }
+
+    /* Zone backgrounds */
+    .zone-cyan {
+      fill: rgba(137, 220, 235, 0.06);
+      stroke: #89dceb;
+      stroke-width: 1.5;
+      stroke-dasharray: 6 3;
+      rx: 10;
+    }
+    .zone-rose {
+      fill: rgba(244, 114, 182, 0.06);
+      stroke: #f472b6;
+      stroke-width: 1.5;
+      stroke-dasharray: 6 3;
+      rx: 10;
+    }
+    .zone-violet {
+      fill: rgba(203, 166, 247, 0.06);
+      stroke: #cba6f7;
+      stroke-width: 1.5;
+      stroke-dasharray: 6 3;
+      rx: 10;
+    }
+
+    /* Card accents by orchestrator */
+    .card-claude { stroke: #fb923c; }
+    .card-copilot { stroke: #60a5fa; }
+    .card-gp { stroke: var(--ctp-accent, #89b4fa); }
+
+    /* Staggered fade-in */
+    .fade-z1 { opacity: 0; animation: czFade 0.5s ease-out 0.2s forwards; }
+    .fade-z2 { opacity: 0; animation: czFade 0.5s ease-out 0.4s forwards; }
+    .fade-z3 { opacity: 0; animation: czFade 0.5s ease-out 0.6s forwards; }
+    .fade-c1 { opacity: 0; animation: czFade 0.3s ease-out 0.5s forwards; }
+    .fade-c2 { opacity: 0; animation: czFade 0.3s ease-out 0.7s forwards; }
+    .fade-c3 { opacity: 0; animation: czFade 0.3s ease-out 0.8s forwards; }
+    .fade-c4 { opacity: 0; animation: czFade 0.3s ease-out 0.9s forwards; }
+    .fade-c5 { opacity: 0; animation: czFade 0.3s ease-out 1.0s forwards; }
+    .fade-c6 { opacity: 0; animation: czFade 0.3s ease-out 1.1s forwards; }
+
+    /* Wire draw-on */
+    .wire-1 { animation: czDraw 0.8s ease-out 1.2s forwards; }
+    .wire-2 { animation: czDraw 0.8s ease-out 1.4s forwards; }
+    .wire-3 { animation: czDraw 0.8s ease-out 1.6s forwards; }
+    .wire-4 { animation: czDraw 0.8s ease-out 1.8s forwards; }
+
+    /* Wire dot pulse */
+    .wire-dot-1 { opacity: 0; animation: czFade 0.2s ease-out 2.0s forwards, czPulse 2s ease-in-out 2.2s infinite; }
+    .wire-dot-2 { opacity: 0; animation: czFade 0.2s ease-out 2.2s forwards, czPulse 2s ease-in-out 2.6s infinite; }
+
+    @keyframes czFade { to { opacity: 1; } }
+    @keyframes czDraw { to { stroke-dashoffset: 0; } }
+    @keyframes czPulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .fade-z1, .fade-z2, .fade-z3,
+      .fade-c1, .fade-c2, .fade-c3, .fade-c4, .fade-c5, .fade-c6,
+      .wire-1, .wire-2, .wire-3, .wire-4,
+      .wire-dot-1, .wire-dot-2 {
+        animation: none !important;
+        opacity: 1 !important;
+        stroke-dashoffset: 0 !important;
+      }
+      .wire-dot-1, .wire-dot-2 { opacity: 0.7 !important; }
+    }
+  </style>
+
+  <!-- Background -->
+  <rect width="480" height="320" fill="var(--ctp-base, #1e1e2e)" rx="8"/>
+
+  <!-- Title -->
+  <text x="240" y="24" class="cz-title">Canvas &amp; Zones</text>
+  <text x="240" y="40" class="cz-sublabel" font-size="10">Zones group agents · Wires share tools · Layout arranges everything</text>
+
+  <!-- Zone 1: Alpha (cyan, left) -->
+  <g class="fade-z1">
+    <rect x="20" y="55" width="195" height="200" class="zone-cyan"/>
+    <text x="32" y="70" class="cz-zone-label" fill="#89dceb">Alpha Team</text>
+  </g>
+
+  <!-- Zone 2: Beta (rose, right) -->
+  <g class="fade-z2">
+    <rect x="230" y="55" width="195" height="130" class="zone-rose"/>
+    <text x="242" y="70" class="cz-zone-label" fill="#f472b6">Beta Team</text>
+  </g>
+
+  <!-- Zone 3: Judging (violet, bottom-right) -->
+  <g class="fade-z3">
+    <rect x="230" y="200" width="195" height="55" class="zone-violet"/>
+    <text x="242" y="215" class="cz-zone-label" fill="#cba6f7">Judging</text>
+  </g>
+
+  <!-- Cards in Alpha zone -->
+  <!-- Lead agent -->
+  <g class="fade-c1">
+    <rect x="35" y="82" width="80" height="50" class="cz-card card-claude"/>
+    <!-- Mini robot icon -->
+    <ellipse cx="52" cy="100" rx="6" ry="5" fill="#fb923c" opacity="0.5"/>
+    <circle cx="50" cy="99" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <circle cx="54" cy="99" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <text x="82" y="102" class="cz-label" font-size="9" text-anchor="start">Lead</text>
+    <text x="82" y="115" class="cz-sublabel" text-anchor="start">Claude</text>
+  </g>
+
+  <!-- Worker A -->
+  <g class="fade-c2">
+    <rect x="35" y="145" width="80" height="50" class="cz-card card-claude"/>
+    <ellipse cx="52" cy="163" rx="6" ry="5" fill="#fb923c" opacity="0.5"/>
+    <circle cx="50" cy="162" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <circle cx="54" cy="162" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <text x="82" y="165" class="cz-label" font-size="9" text-anchor="start">Worker</text>
+    <text x="82" y="178" class="cz-sublabel" text-anchor="start">Claude</text>
+  </g>
+
+  <!-- QA agent -->
+  <g class="fade-c3">
+    <rect x="125" y="145" width="80" height="50" class="cz-card card-copilot"/>
+    <ellipse cx="142" cy="163" rx="6" ry="5" fill="#60a5fa" opacity="0.5"/>
+    <circle cx="140" cy="162" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <circle cx="144" cy="162" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <text x="172" y="165" class="cz-label" font-size="9" text-anchor="start">QA</text>
+    <text x="172" y="178" class="cz-sublabel" text-anchor="start">Copilot</text>
+  </g>
+
+  <!-- Group Project hub (Alpha zone) -->
+  <g class="fade-c4">
+    <rect x="125" y="82" width="80" height="50" class="cz-card card-gp"/>
+    <!-- GP icon: small bulletin board -->
+    <rect x="142" y="94" width="12" height="10" rx="1" fill="var(--ctp-accent, #89b4fa)" opacity="0.5"/>
+    <rect x="145" y="97" width="6" height="2" rx="0.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <rect x="145" y="100" width="4" height="2" rx="0.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <text x="175" y="102" class="cz-label" font-size="9" text-anchor="start">GP</text>
+    <text x="175" y="115" class="cz-sublabel" text-anchor="start">Hub</text>
+  </g>
+
+  <!-- Cards in Beta zone -->
+  <g class="fade-c5">
+    <rect x="245" y="82" width="80" height="50" class="cz-card card-claude"/>
+    <ellipse cx="262" cy="100" rx="6" ry="5" fill="#fb923c" opacity="0.5"/>
+    <circle cx="260" cy="99" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <circle cx="264" cy="99" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <text x="292" y="102" class="cz-label" font-size="9" text-anchor="start">Lead</text>
+    <text x="292" y="115" class="cz-sublabel" text-anchor="start">Claude</text>
+  </g>
+
+  <g class="fade-c5">
+    <rect x="340" y="82" width="75" height="50" class="cz-card card-copilot"/>
+    <ellipse cx="357" cy="100" rx="6" ry="5" fill="#60a5fa" opacity="0.5"/>
+    <circle cx="355" cy="99" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <circle cx="359" cy="99" r="1.5" fill="var(--ctp-base, #1e1e2e)"/>
+    <text x="382" y="102" class="cz-label" font-size="9" text-anchor="start">QA</text>
+    <text x="382" y="115" class="cz-sublabel" text-anchor="start">Copilot</text>
+  </g>
+
+  <!-- Beta Worker -->
+  <g class="fade-c5">
+    <rect x="290" y="140" width="80" height="35" class="cz-card card-claude"/>
+    <text x="330" y="160" class="cz-label" font-size="9">Worker</text>
+  </g>
+
+  <!-- Judge card in Judging zone -->
+  <g class="fade-c6">
+    <rect x="290" y="210" width="80" height="35" class="cz-card" style="stroke: #cba6f7;">
+    </rect>
+    <text x="330" y="225" class="cz-label" font-size="9">Judge</text>
+    <text x="330" y="237" class="cz-sublabel">Evaluates</text>
+  </g>
+
+  <!-- Wires -->
+  <!-- Lead → GP in Alpha zone -->
+  <line x1="115" y1="107" x2="125" y2="107" stroke="var(--ctp-accent, #89b4fa)" class="cz-wire wire-1"/>
+
+  <!-- Worker → GP -->
+  <path d="M115 170 Q120 170 120 140 Q120 132 125 132" stroke="#a6e3a1" class="cz-wire wire-2" fill="none"/>
+
+  <!-- QA → GP -->
+  <path d="M165 145 Q165 137 165 132" stroke="#a6e3a1" class="cz-wire wire-2" fill="none"/>
+
+  <!-- Cross-zone: Alpha GP → Beta Lead -->
+  <line x1="205" y1="107" x2="245" y2="107" stroke="#f5a623" class="cz-wire wire-3" stroke-dasharray="4 3"/>
+  <circle cx="225" cy="107" fill="#f5a623" class="cz-wire-dot wire-dot-1"/>
+
+  <!-- Cross-zone: Beta Lead → Judge -->
+  <path d="M285 132 Q290 180 330 210" stroke="#cba6f7" class="cz-wire wire-4" fill="none" stroke-dasharray="4 3"/>
+  <circle cx="310" cy="180" fill="#cba6f7" class="cz-wire-dot wire-dot-2"/>
+
+  <!-- Legend -->
+  <g transform="translate(20, 272)">
+    <rect x="0" y="-4" width="440" height="38" rx="6" fill="var(--ctp-surface0, #313244)" opacity="0.5"/>
+
+    <rect x="10" y="2" width="12" height="8" rx="2" fill="none" stroke="#89dceb" stroke-width="1" stroke-dasharray="3 2"/>
+    <text x="28" y="7" class="cz-sublabel" text-anchor="start">Zone</text>
+
+    <rect x="65" y="2" width="12" height="8" rx="2" fill="var(--ctp-surface0, #313244)" stroke="#fb923c" stroke-width="1"/>
+    <text x="83" y="7" class="cz-sublabel" text-anchor="start">Agent</text>
+
+    <rect x="125" y="2" width="12" height="8" rx="2" fill="var(--ctp-surface0, #313244)" stroke="var(--ctp-accent, #89b4fa)" stroke-width="1"/>
+    <text x="143" y="7" class="cz-sublabel" text-anchor="start">Group Project</text>
+
+    <line x1="225" y1="6" x2="245" y2="6" stroke="#a6e3a1" stroke-width="1.5"/>
+    <text x="252" y="7" class="cz-sublabel" text-anchor="start">Wire (in-zone)</text>
+
+    <line x1="330" y1="6" x2="350" y2="6" stroke="#f5a623" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <text x="357" y="7" class="cz-sublabel" text-anchor="start">Wire (cross-zone)</text>
+
+    <text x="220" y="23" class="cz-sublabel" font-size="7" text-anchor="middle">Zones group related agents · Wires expose MCP tools between cards · Cross-zone wires connect teams</text>
+  </g>
+</svg>
