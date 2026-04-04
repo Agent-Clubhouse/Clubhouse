@@ -4,7 +4,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { Project, Agent, CompletedQuickAgent } from '../../../shared/types';
-import { AGENT_COLORS } from '../../../shared/name-generator';
+import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentAvatar as SharedAgentAvatar } from '../agents/AgentAvatar';
 import { formatDuration } from '../../utils/format';
 
@@ -65,11 +65,7 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
-const STATUS_RING_COLOR: Record<string, string> = {
-  running: '#22c55e',
-  sleeping: '#6c7086',
-  error: '#f87171',
-};
+import { STATUS_RING_COLORS as STATUS_RING_COLOR } from '../agents/status-colors';
 
 /* ─── Agent Avatar (compact) — delegates to shared component ─── */
 
@@ -260,8 +256,7 @@ function ProjectCardIcon({ project }: { project: Project }) {
   const projectIcons = useProjectStore((s) => s.projectIcons);
   const iconDataUrl = projectIcons[project.id];
   const hasImage = !!project.icon && !!iconDataUrl;
-  const colorInfo = project.color ? AGENT_COLORS.find((c) => c.id === project.color) : null;
-  const hex = colorInfo?.hex || '#6366f1';
+  const hex = getAgentColorHex(project.color);
 
   if (hasImage) {
     return (

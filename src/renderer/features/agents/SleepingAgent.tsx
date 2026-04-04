@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Agent } from '../../../shared/types';
-import { AGENT_COLORS } from '../../../shared/name-generator';
+import { getAgentColorHex } from '../../../shared/name-generator';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
@@ -17,7 +17,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agent.id) : null, [agent.id, isRemote]);
   // Use the agent's own project, not the globally-active project
   const agentProject = projects.find((p) => p.id === agent.projectId);
-  const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
+  const colorHex = getAgentColorHex(agent.color);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false);
@@ -101,7 +101,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
             {agent.kind === 'durable' && (
               <div
                 className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
+                style={{ backgroundColor: colorHex }}
               />
             )}
             <h2 className="text-lg font-semibold text-ctp-text">{agent.name}</h2>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
-import { AGENT_COLORS } from '../../../shared/name-generator';
+import { AGENT_COLORS, getAgentColorHex } from '../../../shared/name-generator';
 import { ResetProjectDialog } from './ResetProjectDialog';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { EmojiPicker } from '../../components/EmojiPicker';
@@ -74,8 +74,7 @@ function AppearanceSection({ projectId }: { projectId: string }) {
   const iconDataUrl = projectIcons[project.id];
   const hasImage = !!project.icon && !!iconDataUrl;
   const hasEmoji = !!project.emoji;
-  const colorInfo = project.color ? AGENT_COLORS.find((c) => c.id === project.color) : null;
-  const hex = colorInfo?.hex || '#6366f1';
+  const hex = getAgentColorHex(project.color);
   const label = project.displayName || project.name;
 
   const handlePickImage = async () => {
@@ -308,6 +307,7 @@ function DangerZone({ projectId, projectPath, projectName }: { projectId: string
   const [showResetDialog, setShowResetDialog] = useState(false);
 
   const handleClose = () => {
+    if (!window.confirm('Close this project? Project-specific settings may need to be reconfigured.')) return;
     toggleSettings();
     removeProject(projectId);
   };
@@ -325,8 +325,8 @@ function DangerZone({ projectId, projectPath, projectName }: { projectId: string
         <div className="flex items-center gap-3">
           <button
             onClick={handleClose}
-            className="px-4 py-2 text-sm rounded-lg bg-surface-0 border border-surface-2
-              text-ctp-subtext1 hover:bg-surface-1 hover:text-ctp-text cursor-pointer transition-colors"
+            className="px-4 py-2 text-sm rounded-lg bg-red-500/10 border border-red-500/30
+              text-red-400 hover:bg-red-500/20 cursor-pointer transition-colors"
           >
             Close Project
           </button>

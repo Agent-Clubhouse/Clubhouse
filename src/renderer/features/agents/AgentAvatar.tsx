@@ -1,6 +1,6 @@
 import { useAgentStore } from '../../stores/agentStore';
 import { Agent, OrchestratorId } from '../../../shared/types';
-import { AGENT_COLORS } from '../../../shared/name-generator';
+import { getAgentColorHex } from '../../../shared/name-generator';
 
 /* ── Orchestrator mini icons for agent avatars ────────────────────── */
 
@@ -85,8 +85,7 @@ const SIZE_CONFIG = {
 };
 
 export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, iconUrl }: Props) {
-  const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
-  const bgColor = colorInfo?.hex || '#6366f1';
+  const bgColor = getAgentColorHex(agent.color);
   const storeIconUrl = useAgentStore((s) => s.agentIcons[agent.id]);
   const iconDataUrl = iconUrl ?? storeIconUrl;
 
@@ -173,12 +172,7 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
   );
 }
 
-export const STATUS_RING_COLOR: Record<string, string> = {
-  running: '#22c55e',
-  sleeping: '#6c7086',
-  waking: '#f59e0b',
-  error: '#f87171',
-};
+export { STATUS_RING_COLORS as STATUS_RING_COLOR } from './status-colors';
 
 export function AgentAvatarWithRing({ agent }: { agent: Agent }) {
   const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);

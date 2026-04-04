@@ -63,6 +63,12 @@
     box-sizing: border-box;
   }
 
+  /* WCAG 2.1 Level AA — visible keyboard focus indicator (2.4.7) */
+  *:focus-visible {
+    outline: 2px solid rgb(var(--ctp-accent));
+    outline-offset: 2px;
+  }
+
   body {
     background-color: rgb(var(--ctp-base));
     color: rgb(var(--ctp-text));
