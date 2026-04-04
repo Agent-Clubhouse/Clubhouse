@@ -236,10 +236,17 @@ describe('GroupProjectCanvasWidget — orchestrator-aware polling', () => {
     expect(source).toContain('useAgentStore');
   });
 
-  it('looks up orchestrator per member in handleTogglePolling', () => {
-    // Should get agents from store and look up orchestrator per connected member
+  it('imports useRemoteProjectStore for remote agent orchestrator lookup', () => {
+    expect(source).toContain("from '../../../stores/remoteProjectStore'");
+    expect(source).toContain('useRemoteProjectStore');
+  });
+
+  it('merges local and remote agents for orchestrator lookup', () => {
+    // handleTogglePolling should get agents from both stores
     expect(source).toContain('useAgentStore.getState().agents');
-    expect(source).toContain('agents[member.agentId]?.orchestrator');
+    expect(source).toContain('useRemoteProjectStore.getState().remoteAgents');
+    expect(source).toContain('const allAgents = { ...localAgents, ...remoteAgents }');
+    expect(source).toContain('allAgents[member.agentId]?.orchestrator');
   });
 
   it('passes orchestrator to pollingStartMsg and pollingStopMsg', () => {
@@ -309,6 +316,30 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
     expect(source).toContain('description: editDesc');
     expect(source).toContain('instructions: editInstr');
     expect(source).toContain('metadata: { shoulderTapEnabled }');
+  });
+});
+
+// ── Optimistic update for remote GP mutations ─────────────────────────
+
+describe('GroupProjectCanvasWidget — remote GP optimistic update', () => {
+  const hookSource = readFileSync(join(__dirname, 'useGroupProjectContext.ts'), 'utf-8');
+
+  it('optimistically updates local remote GP store after remote mutation', () => {
+    // After calling gpUpdate on the satellite, the hook should update
+    // the local remoteGroupProjects store so the UI reflects the change.
+    expect(hookSource).toContain('useRemoteProjectStore.getState().updateRemoteGroupProject');
+  });
+
+  it('strips namespace prefix when looking up GP in remote store', () => {
+    // The gpId might be namespaced (remote||satId||origId) — strip to find in store
+    expect(hookSource).toContain("gpId.startsWith('remote||')");
+    expect(hookSource).toContain("gpId.split('||').pop()");
+  });
+
+  it('merges metadata fields rather than replacing', () => {
+    // Metadata updates should merge with existing metadata, not overwrite
+    expect(hookSource).toContain('...((existing as any).metadata || {})');
+    expect(hookSource).toContain('...fields.metadata');
   });
 });
 
