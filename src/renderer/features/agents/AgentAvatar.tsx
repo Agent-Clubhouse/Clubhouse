@@ -172,6 +172,7 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
   );
 }
 
+import { STATUS_RING_COLORS as STATUS_RING_COLOR } from './status-colors';
 export { STATUS_RING_COLORS as STATUS_RING_COLOR } from './status-colors';
 
 export function AgentAvatarWithRing({ agent }: { agent: Agent }) {

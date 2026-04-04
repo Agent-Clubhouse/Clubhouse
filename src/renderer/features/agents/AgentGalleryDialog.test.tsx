@@ -1,8 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AgentGalleryDialog } from './AgentGalleryDialog';
 
-vi.mock('../../../shared/name-generator', () => ({
-  AGENT_COLORS: [
+vi.mock('../../../shared/name-generator', () => {
+  const colors = [
     { id: 'indigo', hex: '#6366f1', label: 'Indigo' },
     { id: 'red', hex: '#ef4444', label: 'Red' },
     { id: 'emerald', hex: '#10b981', label: 'Emerald' },
@@ -10,8 +10,12 @@ vi.mock('../../../shared/name-generator', () => ({
     { id: 'amber', hex: '#f59e0b', label: 'Amber' },
     { id: 'blue', hex: '#3b82f6', label: 'Blue' },
     { id: 'cyan', hex: '#06b6d4', label: 'Cyan' },
-  ],
-}));
+  ];
+  return {
+    AGENT_COLORS: colors,
+    getAgentColorHex: (id: string) => colors.find((c) => c.id === id)?.hex || '#6366f1',
+  };
+});
 
 describe('AgentGalleryDialog', () => {
   const defaultProps = {
