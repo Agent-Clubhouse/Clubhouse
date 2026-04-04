@@ -35,6 +35,15 @@ import type { OrchestratorId } from '../orchestrators';
 const ASSISTANT_TARGET_ID = 'clubhouse_assistant';
 const LOG_NS = 'core:assistant';
 
+/** Resolve a convention path within a workspace, rejecting traversal attempts. */
+function safeWorkspacePath(workspace: string, relativePath: string): string {
+  const resolved = path.resolve(workspace, relativePath);
+  if (!resolved.startsWith(path.resolve(workspace) + path.sep) && resolved !== path.resolve(workspace)) {
+    throw new Error(`Path traversal detected: ${relativePath}`);
+  }
+  return resolved;
+}
+
 /**
  * Shared MCP injection setup used by all 5 spawn/followup paths.
  * Generates a nonce, snapshots the MCP config file, and injects the
@@ -47,7 +56,7 @@ async function prepareMcpInjection(
   agentRegistry.setNonce(agentId, nonce);
 
   const mcpConfigFile = conventions?.mcpConfigFile || '.mcp.json';
-  const mcpJsonPath = path.join(workspace, mcpConfigFile);
+  const mcpJsonPath = safeWorkspacePath(workspace, mcpConfigFile);
   configPipeline.snapshotFile(agentId, mcpJsonPath);
 
   let mcpPort = 0;
@@ -134,7 +143,7 @@ export function registerAssistantHandlers(): void {
       const localInstructions = provider.conventions?.localInstructionsFile;
       if (localInstructions && localInstructions !== 'CLAUDE.md') {
         try {
-          const instrPath = path.join(workspace, localInstructions);
+          const instrPath = safeWorkspacePath(workspace, localInstructions);
           fs.mkdirSync(path.dirname(instrPath), { recursive: true });
           fs.writeFileSync(instrPath, systemPrompt, 'utf-8');
           appLog(LOG_NS, 'info', `Wrote ${localInstructions} to workspace`, { meta: { path: instrPath } });
