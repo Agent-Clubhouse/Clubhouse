@@ -63,10 +63,16 @@ function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<
 function validateNonce(agentId: string, req: http.IncomingMessage): boolean {
   const expectedNonce = getAgentNonce(agentId);
   const receivedNonce = req.headers['x-clubhouse-nonce'] as string | undefined;
-  if (expectedNonce && receivedNonce !== expectedNonce) {
-    appLog('core:hook-server', 'warn', 'Rejected hook event with invalid nonce', {
-      meta: { agentId },
-    });
+  if (!expectedNonce || receivedNonce !== expectedNonce) {
+    if (!expectedNonce) {
+      appLog('core:hook-server', 'warn', 'Rejected hook event — no nonce registered for agent', {
+        meta: { agentId },
+      });
+    } else {
+      appLog('core:hook-server', 'warn', 'Rejected hook event with invalid nonce', {
+        meta: { agentId },
+      });
+    }
     return false;
   }
   return true;

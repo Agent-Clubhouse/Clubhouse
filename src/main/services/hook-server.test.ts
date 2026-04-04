@@ -311,6 +311,22 @@ describe('hook-server', () => {
       expect(status).toBe(200);
       expect(mockSend).not.toHaveBeenCalled();
     });
+
+    it('rejects events when agent has no nonce registered', async () => {
+      mockGetAgentNonce.mockReturnValue(undefined);
+      const status = await postToServer(port, '/hook/agent-1', {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+      });
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(status).toBe(200);
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(mockAppLog).toHaveBeenCalledWith(
+        'core:hook-server', 'warn', 'Rejected hook event — no nonce registered for agent',
+        expect.objectContaining({ meta: { agentId: 'agent-1' } }),
+      );
+    });
   });
 
   describe('unknown agent events are discarded', () => {
@@ -411,15 +427,16 @@ describe('hook-server', () => {
     });
 
     it('handles parseHookEvent throwing an error', async () => {
+      const VALID_NONCE = 'parse-error-nonce';
       mockGetAgentProjectPath.mockReturnValue('/my/project');
       mockGetAgentOrchestrator.mockReturnValue('claude-code');
-      mockGetAgentNonce.mockReturnValue(undefined);
+      mockGetAgentNonce.mockReturnValue(VALID_NONCE);
       mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => { throw new Error('Parse error'); }),
         toolVerb: vi.fn(),
       });
 
-      const status = await postToServer(port, '/hook/agent-1', { hook_event_name: 'PreToolUse' });
+      const status = await postToServer(port, '/hook/agent-1', { hook_event_name: 'PreToolUse' }, { 'X-Clubhouse-Nonce': VALID_NONCE });
       expect(status).toBe(200);
       await new Promise(r => setTimeout(r, 50));
       expect(mockSend).not.toHaveBeenCalled();
