@@ -431,6 +431,7 @@ function ExpandedProjectView({
   }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, members, project, injectMessage]);
 
   const handleDeleteMessage = useCallback(async (topic: string, messageId: string) => {
+    if (!window.confirm('Delete this message?')) return;
     await deleteMessage(groupProjectId, topic, messageId);
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
     if (selectedMessageId === messageId) setSelectedMessageId(null);
@@ -643,7 +644,7 @@ function ExpandedProjectView({
                   {selectedMessage.sender}
                 </span>
                 <span className="text-ctp-overlay0">
-                  {new Date(selectedMessage.timestamp).toLocaleString()}
+                  {formatTime(selectedMessage.timestamp)}
                 </span>
                 {selectedTopic === ALL_TOPICS_KEY && (
                   <span className="text-ctp-overlay0">
@@ -1049,6 +1050,7 @@ function senderShort(sender: string): string {
 function formatTime(iso: string): string {
   try {
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
     return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   } catch {
     return iso;
