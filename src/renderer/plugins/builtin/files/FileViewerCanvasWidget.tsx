@@ -81,7 +81,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   }, [api]);
 
   useEffect(() => {
-    if (!filePath || !projectId || !activeProject) {
+    if (!filePath || !projectId || (!activeProject && !remote.isRemote)) {
       setFileContent(null);
       return;
     }

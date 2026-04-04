@@ -104,6 +104,45 @@ describe('FileViewerCanvasWidget — worktree switch metadata', () => {
   });
 });
 
+// ── Remote file loading guard ──────────────────────────────────────
+//
+// The file content loading effect should allow remote projects even when
+// activeProject is null (remote projects aren't in the local project store).
+
+describe('FileViewerCanvasWidget — remote file loading guard', () => {
+  function shouldLoadFileContent(
+    filePath: string | undefined,
+    projectId: string | undefined,
+    activeProject: unknown | null,
+    isRemote: boolean,
+  ): boolean {
+    if (!filePath || !projectId || (!activeProject && !isRemote)) {
+      return false;
+    }
+    return true;
+  }
+
+  it('blocks when no filePath', () => {
+    expect(shouldLoadFileContent(undefined, 'proj-1', {}, false)).toBe(false);
+  });
+
+  it('blocks when no projectId', () => {
+    expect(shouldLoadFileContent('file.ts', undefined, {}, false)).toBe(false);
+  });
+
+  it('blocks when no activeProject and not remote', () => {
+    expect(shouldLoadFileContent('file.ts', 'proj-1', null, false)).toBe(false);
+  });
+
+  it('allows when activeProject exists (local)', () => {
+    expect(shouldLoadFileContent('file.ts', 'proj-1', { id: 'proj-1' }, false)).toBe(true);
+  });
+
+  it('allows remote project even without activeProject', () => {
+    expect(shouldLoadFileContent('file.ts', 'remote||sat-1||proj-1', null, true)).toBe(true);
+  });
+});
+
 // ── Manifest — metadataKeys ─────────────────────────────────────────
 
 describe('files manifest — file-viewer metadataKeys', () => {
