@@ -296,7 +296,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const restoredDefinitions: McpBindingEntry[] = [];
         for (const entry of saved) {
           if (!entry.agentId || !entry.targetId || !entry.label || !entry.targetKind) continue;
-          if (shouldReconcile && !validIds.has(entry.agentId) && !validIds.has(entry.targetId)) continue;
+          if (shouldReconcile && (!validIds.has(entry.agentId) || !validIds.has(entry.targetId))) continue;
           restoredDefinitions.push(entry);
           try {
             await window.clubhouse.mcpBinding.bind(entry.agentId, {
