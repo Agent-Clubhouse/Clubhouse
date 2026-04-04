@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffe
 import type { CanvasView, CanvasViewType, ZoneCanvasView, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
 import type { ResizeDirection } from './CanvasView';
-import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect } from './canvas-operations';
+import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect, clampMenuPosition, resolveRadialRootId } from './canvas-operations';
 import { ZoneBackground } from './ZoneBackground';
 import { ZoneCard } from './ZoneCard';
 import { ZoneDeleteDialog } from './ZoneDeleteDialog';
@@ -540,10 +540,13 @@ export function CanvasWorkspace({
     const el = viewMenuRef.current;
     if (!el || !viewContextMenu) return;
     const rect = el.getBoundingClientRect();
-    const overflowX = rect.right - window.innerWidth + 8;
-    const overflowY = rect.bottom - window.innerHeight + 8;
-    if (overflowX > 0) el.style.left = `${viewContextMenu.x - overflowX}px`;
-    if (overflowY > 0) el.style.top = `${viewContextMenu.y - overflowY}px`;
+    const clamped = clampMenuPosition(
+      viewContextMenu.x, viewContextMenu.y,
+      rect.width, rect.height,
+      window.innerWidth, window.innerHeight,
+    );
+    if (clamped.x !== viewContextMenu.x) el.style.left = `${clamped.x}px`;
+    if (clamped.y !== viewContextMenu.y) el.style.top = `${clamped.y}px`;
   }, [viewContextMenu]);
 
   // ── Zoom controls ──────────────────────────────────────────────
@@ -608,7 +611,7 @@ export function CanvasWorkspace({
     }
 
     // For radial layout, determine root: selected card > stored center > auto-detect (server-side)
-    const rootId = opts.algorithm === 'radial' ? (selectedViewId ?? layoutCenterId ?? undefined) : undefined;
+    const rootId = resolveRadialRootId(opts.algorithm, selectedViewId, layoutCenterId);
 
     try {
       const result = await window.clubhouse.canvas.layoutElk({

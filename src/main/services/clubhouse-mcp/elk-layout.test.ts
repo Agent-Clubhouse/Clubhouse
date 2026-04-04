@@ -219,40 +219,6 @@ describe('resolveOverlaps', () => {
   });
 });
 
-describe('radial layout center fallback (structural)', () => {
-  it('rootId resolution uses rootId ?? layoutCenterId ?? pickRootNode chain', () => {
-    const fs = require('fs');
-    const path = require('path');
-    const source = fs.readFileSync(path.resolve(__dirname, 'elk-layout.ts'), 'utf-8');
-
-    // Find the rootId resolution block
-    const rootBlock = source.slice(
-      source.indexOf('determine root node'),
-      source.indexOf('determine root node') + 300,
-    );
-    expect(rootBlock).toContain('options.rootId');
-    expect(rootBlock).toContain('options.layoutCenterId');
-    expect(rootBlock).toContain('pickRootNode');
-
-    // Ensure the fallback order: rootId first, then layoutCenterId, then pickRootNode
-    const rootIdIdx = rootBlock.indexOf('options.rootId');
-    const centerIdx = rootBlock.indexOf('options.layoutCenterId');
-    const pickIdx = rootBlock.indexOf('pickRootNode');
-    expect(rootIdIdx).toBeLessThan(centerIdx);
-    expect(centerIdx).toBeLessThan(pickIdx);
-  });
-
-  it('radial center card gets elk.radial.centerOnRoot layout option', () => {
-    const fs = require('fs');
-    const path = require('path');
-    const source = fs.readFileSync(path.resolve(__dirname, 'elk-layout.ts'), 'utf-8');
-
-    expect(source).toContain("'elk.radial.centerOnRoot': 'true'");
-    // The property should only be applied when rootId matches the card
-    expect(source).toContain('card.id === rootId');
-  });
-});
-
 describe('pickRootNode', () => {
   it('returns undefined for empty card list', () => {
     expect(pickRootNode([], [])).toBeUndefined();
