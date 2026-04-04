@@ -1,4 +1,4 @@
-import { ReactNode, useState, useRef, useCallback, useMemo } from 'react';
+import React, { ReactNode, useState, useRef, useCallback, useMemo } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId, type PluginMatchResult } from '../stores/remoteProjectStore';
@@ -119,7 +119,7 @@ const PLUGIN_FALLBACK_ICON = (
   </svg>
 );
 
-function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isActive: boolean; projectId: string | null; onClick: () => void }) {
+const TabButton = React.memo(function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isActive: boolean; projectId: string | null; onClick: () => void }) {
   const isDisabled = tab.disabled === true;
   const badges = useBadgeStore((s) => s.badges);
   const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
@@ -161,7 +161,7 @@ function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isAct
       {tabBadge && !isDisabled && <Badge type={tabBadge.type} value={tabBadge.value} inline />}
     </button>
   );
-}
+});
 
 export function ExplorerRail() {
   const explorerTab = useUIStore((s) => s.explorerTab);

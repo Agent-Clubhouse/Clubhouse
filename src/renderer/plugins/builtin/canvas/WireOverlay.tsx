@@ -51,42 +51,47 @@ interface WireOverlayProps {
   forceBidirectional?: boolean;
 }
 
+/** Index maps for O(1) binding resolution instead of linear scans. */
+interface ViewIndex {
+  viewMap: Map<string, CanvasView>;
+  agentIdToView: Map<string, CanvasView>;
+  groupProjectIdToView: Map<string, CanvasView>;
+}
+
+function buildViewIndex(viewMap: Map<string, CanvasView>): ViewIndex {
+  const agentIdToView = new Map<string, CanvasView>();
+  const groupProjectIdToView = new Map<string, CanvasView>();
+  for (const v of viewMap.values()) {
+    if (v.type === 'agent') {
+      agentIdToView.set((v as AgentCanvasViewType).agentId, v);
+    }
+    if (v.type === 'plugin' && v.metadata?.groupProjectId) {
+      groupProjectIdToView.set(v.metadata.groupProjectId as string, v);
+    }
+  }
+  return { viewMap, agentIdToView, groupProjectIdToView };
+}
+
 /**
  * Resolve a binding to its source and target views.
  * Source is the agent view (by agentId), target is looked up by targetId = view.id.
  */
 function resolveBindingViews(
   binding: McpBindingEntry,
-  viewMap: Map<string, CanvasView>,
+  index: ViewIndex,
 ): { source: CanvasView; target: CanvasView } | null {
-  // Find agent view by agentId
-  let source: CanvasView | undefined;
-  for (const v of viewMap.values()) {
-    if (v.type === 'agent' && (v as AgentCanvasViewType).agentId === binding.agentId) {
-      source = v;
-      break;
-    }
-  }
+  // Find agent view by agentId — O(1) via index
+  const source = index.agentIdToView.get(binding.agentId);
   if (!source) return null;
 
   // Look up target by view id first, then by agentId for agent-to-agent bindings,
   // then by metadata.groupProjectId for group-project bindings.
-  let target = viewMap.get(binding.targetId);
+  let target = index.viewMap.get(binding.targetId);
   if (!target && binding.targetKind === 'agent') {
-    for (const v of viewMap.values()) {
-      if (v.type === 'agent' && (v as AgentCanvasViewType).agentId === binding.targetId) {
-        target = v;
-        break;
-      }
-    }
+    target = index.agentIdToView.get(binding.targetId);
   }
   if (!target && binding.targetKind === 'group-project') {
-    for (const v of viewMap.values()) {
-      if (v.type === 'plugin' && v.metadata?.groupProjectId === binding.targetId) {
-        target = v;
-        break;
-      }
-    }
+    target = index.groupProjectIdToView.get(binding.targetId);
   }
   if (!target) return null;
 
@@ -173,10 +178,10 @@ export const WireOverlay = React.memo(function WireOverlay({
   onWireClick,
   forceBidirectional,
 }: WireOverlayProps) {
-  const viewMap = useMemo(() => {
+  const viewIndex = useMemo(() => {
     const m = new Map<string, CanvasView>();
     for (const v of views) m.set(v.id, v);
-    return m;
+    return buildViewIndex(m);
   }, [views]);
 
   const wires = useMemo(() => {
@@ -209,7 +214,7 @@ export const WireOverlay = React.memo(function WireOverlay({
         rendered.add(pairKey);
       }
 
-      const resolved = resolveBindingViews(binding, viewMap);
+      const resolved = resolveBindingViews(binding, viewIndex);
       if (!resolved) continue;
 
       const { source, target } = resolved;
@@ -236,7 +241,7 @@ export const WireOverlay = React.memo(function WireOverlay({
     }
 
     return result;
-  }, [bindings, viewMap, viewPositions, forceBidirectional]);
+  }, [bindings, viewIndex, viewPositions, forceBidirectional]);
 
   // Build wire specs for physics hook
   const wireSpecs = useMemo(

@@ -565,7 +565,8 @@ export function recomputeZones(views: CanvasView[]): CanvasView[] {
   let updated = [...views];
   for (const zone of zones) {
     const containedIds = computeZoneContainment(zone, updated);
-    const containedViews = updated.filter((v) => containedIds.includes(v.id));
+    const containedIdSet = new Set(containedIds);
+    const containedViews = updated.filter((v) => containedIdSet.has(v.id));
     const { position, size } = computeZoneBounds(zone, containedViews);
 
     updated = updated.map((v) =>
