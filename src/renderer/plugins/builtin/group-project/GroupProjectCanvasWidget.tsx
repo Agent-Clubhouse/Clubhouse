@@ -6,7 +6,7 @@ import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
-import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
+import { pollingStartMsg, pollingStopMsg, pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { Toggle } from '../../../components/Toggle';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
@@ -236,6 +236,15 @@ function ProjectCard({
     }
   }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, members, project, injectMessage]);
 
+  const handleNudgePolling = useCallback(() => {
+    const name = project?.name || groupProjectId;
+    const agents = useAgentStore.getState().agents;
+    for (const member of members) {
+      const orchestrator = agents[member.agentId]?.orchestrator;
+      void injectMessage(member.agentId, pollingNudgeMsg(name, orchestrator));
+    }
+  }, [members, project, groupProjectId, injectMessage]);
+
   return (
     <div className="flex flex-col h-full p-4 gap-3">
       {/* Status + actions row */}
@@ -256,6 +265,14 @@ function ProjectCard({
           title="Broadcast message"
         >
           <MegaphoneIcon size={14} />
+        </button>
+        {/* Polling nudge */}
+        <button
+          onClick={handleNudgePolling}
+          className="p-1 text-ctp-overlay1 hover:text-ctp-yellow transition-colors flex-shrink-0"
+          title="Nudge all agents to start polling if not already"
+        >
+          <NudgeIcon size={14} />
         </button>
         {/* Polling toggle */}
         <button
@@ -341,6 +358,7 @@ function ExpandedProjectView({
   const [editDesc, setEditDesc] = useState(project?.description || '');
   const [editInstr, setEditInstr] = useState(project?.instructions || '');
   const [shoulderTapEnabled, setShoulderTapEnabled] = useState(!!(project?.metadata?.shoulderTapEnabled));
+  const [agentControlEnabled, setAgentControlEnabled] = useState(!!(project?.metadata?.agentControlEnabled));
   const [saving, setSaving] = useState(false);
 
   // Sync local state when project data loads or changes externally
@@ -349,13 +367,15 @@ function ExpandedProjectView({
       setEditDesc(project.description || '');
       setEditInstr(project.instructions || '');
       setShoulderTapEnabled(!!(project.metadata?.shoulderTapEnabled));
+      setAgentControlEnabled(!!(project.metadata?.agentControlEnabled));
     }
-  }, [project?.description, project?.instructions, project?.metadata?.shoulderTapEnabled]);
+  }, [project?.description, project?.instructions, project?.metadata?.shoulderTapEnabled, project?.metadata?.agentControlEnabled]);
 
   const hasUnsavedChanges = project
     ? editDesc !== (project.description || '') ||
       editInstr !== (project.instructions || '') ||
-      shoulderTapEnabled !== !!(project.metadata?.shoulderTapEnabled)
+      shoulderTapEnabled !== !!(project.metadata?.shoulderTapEnabled) ||
+      agentControlEnabled !== !!(project.metadata?.agentControlEnabled)
     : false;
 
   const handleSaveDescInstr = useCallback(async () => {
@@ -365,12 +385,12 @@ function ExpandedProjectView({
       await update(groupProjectId, {
         description: editDesc,
         instructions: editInstr,
-        metadata: { shoulderTapEnabled },
+        metadata: { shoulderTapEnabled, agentControlEnabled },
       });
     } finally {
       setSaving(false);
     }
-  }, [hasUnsavedChanges, saving, update, groupProjectId, editDesc, editInstr, shoulderTapEnabled]);
+  }, [hasUnsavedChanges, saving, update, groupProjectId, editDesc, editInstr, shoulderTapEnabled, agentControlEnabled]);
 
   const displayName = project?.name || 'Group Project';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
@@ -435,6 +455,15 @@ function ExpandedProjectView({
     }
   }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, members, project, injectMessage]);
 
+  const handleNudgePolling = useCallback(() => {
+    const name = project?.name || groupProjectId;
+    const agents = useAgentStore.getState().agents;
+    for (const member of members) {
+      const orchestrator = agents[member.agentId]?.orchestrator;
+      void injectMessage(member.agentId, pollingNudgeMsg(name, orchestrator));
+    }
+  }, [members, project, groupProjectId, injectMessage]);
+
   const handleDeleteMessage = useCallback(async (topic: string, messageId: string) => {
     if (!window.confirm('Delete this message?')) return;
     await deleteMessage(groupProjectId, topic, messageId);
@@ -469,6 +498,7 @@ function ExpandedProjectView({
         onShowTapModal={() => setShowTapModal(true)}
         pollingEnabled={pollingEnabled}
         onTogglePolling={handleTogglePolling}
+        onNudgePolling={handleNudgePolling}
         onToggleRetention={() => setShowRetentionSettings((v) => !v)}
         showRetentionSettings={showRetentionSettings}
       />
@@ -500,10 +530,14 @@ function ExpandedProjectView({
             className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
           />
         </div>
-        <div className="flex flex-col justify-between flex-shrink-0">
+        <div className="flex flex-col justify-between flex-shrink-0 gap-1.5">
           <div className="flex items-center gap-2">
             <Toggle checked={shoulderTapEnabled} onChange={setShoulderTapEnabled} />
             <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap" title="Allow agents to inject messages into each other's terminals">Shoulder Tap</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Toggle checked={agentControlEnabled} onChange={setAgentControlEnabled} />
+            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap" title="Allow agents to wake, start/stop polling for other agents">Agent Control</span>
           </div>
           <button
             onClick={handleSaveDescInstr}
@@ -706,6 +740,7 @@ function ExpandedHeader({
   onShowTapModal,
   pollingEnabled,
   onTogglePolling,
+  onNudgePolling,
   onToggleRetention,
   showRetentionSettings,
 }: {
@@ -716,6 +751,7 @@ function ExpandedHeader({
   onShowTapModal: () => void;
   pollingEnabled: boolean;
   onTogglePolling: () => void;
+  onNudgePolling: () => void;
   onToggleRetention: () => void;
   showRetentionSettings: boolean;
 }) {
@@ -781,6 +817,14 @@ function ExpandedHeader({
         title="Broadcast message"
       >
         <MegaphoneIcon size={14} />
+      </button>
+      {/* Polling nudge */}
+      <button
+        onClick={onNudgePolling}
+        className="p-1 text-ctp-overlay1 hover:text-ctp-yellow transition-colors flex-shrink-0"
+        title="Nudge all agents to start polling if not already"
+      >
+        <NudgeIcon size={14} />
       </button>
       {/* Polling toggle */}
       <button
@@ -1015,6 +1059,16 @@ function PollingIcon({ size = 14, active = false }: { size?: number; active?: bo
       ) : (
         <line x1="2" y1="12" x2="22" y2="12" />
       )}
+    </svg>
+  );
+}
+
+function NudgeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      <line x1="12" y1="2" x2="12" y2="4" />
     </svg>
   );
 }

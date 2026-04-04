@@ -31,7 +31,7 @@ function getPasteDelayMs(agentId: string): number {
 }
 
 /** Inject a message into an agent's PTY using bracketed paste + Enter. */
-function injectPtyMessage(agentId: string, message: string): void {
+export function injectPtyMessage(agentId: string, message: string): void {
   try {
     ptyManager.write(agentId, `\x1b[200~${message}\x1b[201~`);
     setTimeout(() => ptyManager.write(agentId, '\r'), getPasteDelayMs(agentId));

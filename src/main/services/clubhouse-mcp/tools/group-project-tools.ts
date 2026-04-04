@@ -7,9 +7,15 @@ import { registerToolTemplate } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
-import { isAgentAlive } from '../../group-project-lifecycle';
+import { isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
+import { spawnAgent } from '../../agent-system';
+import { listDurable } from '../../agent-config';
+import * as projectStore from '../../project-store';
+import { getAgentOrchestrator } from '../../agent-registry';
+import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
 import * as annexEventBus from '../../annex-event-bus';
+import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
 
 /** Resolve agent status for a member entry. */
@@ -409,6 +415,256 @@ export function registerGroupProjectTools(): void {
           isError: true,
         };
       }
+    },
+  );
+
+  // group__<name>_<hash>__wake_agent
+  registerToolTemplate(
+    'group-project',
+    'wake_agent',
+    {
+      description:
+        'Wake a sleeping agent connected to this group project.\n\n' +
+        'Use list_members to find agents with status "sleeping", then call this tool ' +
+        'with their agentId to start them. Optionally provide a mission message that ' +
+        'will be sent to the agent once it starts.\n\n' +
+        'Returns the agent status after the wake attempt.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          target_agent_id: {
+            type: 'string',
+            description: 'The agentId of the sleeping agent to wake (from list_members).',
+          },
+          message: {
+            type: 'string',
+            description: 'Optional mission or message to send to the agent after waking.',
+          },
+        },
+        required: ['target_agent_id'],
+      },
+    },
+    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const targetAgentId = args.target_agent_id as string;
+      const message = args.message as string | undefined;
+
+      if (!targetAgentId) {
+        return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
+      }
+
+      // Verify target is a member of this group project
+      const allBindings = bindingManager.getAllBindings();
+      const memberBinding = allBindings.find(
+        b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
+      );
+      if (!memberBinding) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is not a member of this group project.` }],
+          isError: true,
+        };
+      }
+
+      // Check if already running
+      if (isAgentAlive(targetAgentId)) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ agentId: targetAgentId, status: 'already_running' }),
+          }],
+        };
+      }
+
+      // Find the agent's durable config across all projects
+      try {
+        const projects = await projectStore.list();
+        let agentConfig: Awaited<ReturnType<typeof listDurable>>[number] | undefined;
+        let projectPath: string | undefined;
+
+        for (const proj of projects) {
+          const durables = await listDurable(proj.path);
+          const found = durables.find(d => d.id === targetAgentId);
+          if (found) {
+            agentConfig = found;
+            projectPath = proj.path;
+            break;
+          }
+        }
+
+        if (!agentConfig || !projectPath) {
+          return {
+            content: [{ type: 'text', text: `Could not find durable config for agent ${targetAgentId}.` }],
+            isError: true,
+          };
+        }
+
+        const cwd = agentConfig.worktreePath || projectPath;
+
+        await spawnAgent({
+          agentId: targetAgentId,
+          projectPath,
+          cwd,
+          kind: 'durable',
+          model: agentConfig.model,
+          mission: message,
+          orchestrator: agentConfig.orchestrator,
+        });
+
+        appLog('core:group-project', 'info', 'Agent woken via GP tool', {
+          meta: { agentId: targetAgentId, projectPath },
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              agentId: targetAgentId,
+              agentName: memberBinding.agentName || targetAgentId,
+              status: 'starting',
+              message: message || null,
+            }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Failed to wake agent: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // group__<name>_<hash>__start_polling
+  registerToolTemplate(
+    'group-project',
+    'start_polling',
+    {
+      description:
+        'Send a polling start instruction to a specific connected agent.\n\n' +
+        'Injects a message into the agent\'s terminal instructing it to begin polling ' +
+        'the group project bulletin board. The instruction is tailored to the agent\'s ' +
+        'orchestrator (e.g. Claude Code agents get /loop instructions).\n\n' +
+        'The agent must be connected (not sleeping) for this to work.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          target_agent_id: {
+            type: 'string',
+            description: 'The agentId of the connected agent (from list_members).',
+          },
+        },
+        required: ['target_agent_id'],
+      },
+    },
+    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const targetAgentId = args.target_agent_id as string;
+      if (!targetAgentId) {
+        return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
+      }
+
+      // Verify target is a member
+      const allBindings = bindingManager.getAllBindings();
+      const memberBinding = allBindings.find(
+        b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
+      );
+      if (!memberBinding) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is not a member of this group project.` }],
+          isError: true,
+        };
+      }
+
+      if (!isAgentAlive(targetAgentId)) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is sleeping — wake it first.` }],
+          isError: true,
+        };
+      }
+
+      const project = await groupProjectRegistry.get(targetId);
+      const projectName = project?.name || targetId;
+      const orchestrator = getAgentOrchestrator(targetAgentId);
+      const msg = pollingStartMsg(projectName, orchestrator);
+
+      injectPtyMessage(targetAgentId, msg);
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            agentId: targetAgentId,
+            agentName: memberBinding.agentName || targetAgentId,
+            action: 'start_polling',
+            delivered: true,
+          }, null, 2),
+        }],
+      };
+    },
+  );
+
+  // group__<name>_<hash>__stop_polling
+  registerToolTemplate(
+    'group-project',
+    'stop_polling',
+    {
+      description:
+        'Send a polling stop instruction to a specific connected agent.\n\n' +
+        'Injects a message into the agent\'s terminal instructing it to stop polling ' +
+        'the group project bulletin board.\n\n' +
+        'The agent must be connected (not sleeping) for this to work.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          target_agent_id: {
+            type: 'string',
+            description: 'The agentId of the connected agent (from list_members).',
+          },
+        },
+        required: ['target_agent_id'],
+      },
+    },
+    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const targetAgentId = args.target_agent_id as string;
+      if (!targetAgentId) {
+        return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
+      }
+
+      // Verify target is a member
+      const allBindings = bindingManager.getAllBindings();
+      const memberBinding = allBindings.find(
+        b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
+      );
+      if (!memberBinding) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is not a member of this group project.` }],
+          isError: true,
+        };
+      }
+
+      if (!isAgentAlive(targetAgentId)) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is sleeping — cannot send stop instruction.` }],
+          isError: true,
+        };
+      }
+
+      const project = await groupProjectRegistry.get(targetId);
+      const projectName = project?.name || targetId;
+      const orchestrator = getAgentOrchestrator(targetAgentId);
+      const msg = pollingStopMsg(projectName, orchestrator);
+
+      injectPtyMessage(targetAgentId, msg);
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            agentId: targetAgentId,
+            agentName: memberBinding.agentName || targetAgentId,
+            action: 'stop_polling',
+            delivered: true,
+          }, null, 2),
+        }],
+      };
     },
   );
 

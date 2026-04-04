@@ -15,6 +15,9 @@ const SHOULDER_TAP_SUFFIXES = new Set(['shoulder_tap', 'broadcast']);
 /** Hint appended to read_bulletin description when shoulder tap is enabled. */
 const SHOULDER_TAP_HINT = '\n\nCheck the "shoulder-tap" topic for direct messages to you.';
 
+/** Tool suffixes gated behind the group-project agentControlEnabled setting. */
+const AGENT_CONTROL_SUFFIXES = new Set(['wake_agent', 'start_polling', 'stop_polling']);
+
 /**
  * Tool templates keyed by targetKind.
  * Each template generates tools for a specific bound target.
@@ -137,11 +140,13 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     // When target agent is sleeping (not in registry), only expose status and wake tools
     const isTargetSleeping = binding.targetKind === 'agent' && !agentRegistry.get(binding.targetId);
 
-    // For group-project bindings, check if shoulder tap is enabled at the project level
+    // For group-project bindings, check feature flags at the project level
     let shoulderTapEnabled = false;
+    let agentControlEnabled = false;
     if (binding.targetKind === 'group-project') {
       const project = groupProjectRegistry.getSync(binding.targetId);
       shoulderTapEnabled = !!(project?.metadata?.shoulderTapEnabled);
+      agentControlEnabled = !!(project?.metadata?.agentControlEnabled);
     }
 
     for (const template of templates) {
@@ -156,6 +161,11 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
 
       // Skip shoulder tap tools when not enabled at the group project level
       if (binding.targetKind === 'group-project' && SHOULDER_TAP_SUFFIXES.has(template.nameSuffix) && !shoulderTapEnabled) {
+        continue;
+      }
+
+      // Skip agent control tools when not enabled at the group project level
+      if (binding.targetKind === 'group-project' && AGENT_CONTROL_SUFFIXES.has(template.nameSuffix) && !agentControlEnabled) {
         continue;
       }
 
