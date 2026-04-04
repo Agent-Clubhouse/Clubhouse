@@ -13,6 +13,7 @@ import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../stores/remoteProjectStore';
+import { useToastStore } from '../../stores/toastStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 import type { PersonaTemplate } from '../assistant/content/personas';
@@ -264,6 +265,7 @@ export function AgentList() {
       await spawnQuickAgent(activeProject.id, activeProject.path, mission.trim(), selectedModel, parentId || undefined, parentId ? undefined : selectedOrchestrator, freeMode);
     } catch (err) {
       console.error('Failed to spawn quick agent:', err);
+      useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
     setMission('');
     setQuickModel('default');
@@ -308,6 +310,7 @@ export function AgentList() {
         // Snapshot refresh is broadcast by the satellite — controller will update automatically
       } catch (err) {
         console.error('Failed to create remote durable agent:', err);
+        useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
       }
       return;
     }
@@ -327,6 +330,7 @@ export function AgentList() {
     } catch (err) {
       if (tempId) removeAgent(tempId);
       console.error('Failed to create durable agent:', err);
+      useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   };
 
@@ -352,6 +356,7 @@ export function AgentList() {
     } catch (err) {
       if (tempId) removeAgent(tempId);
       console.error('Failed to create agent from template:', err);
+      useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   };
 

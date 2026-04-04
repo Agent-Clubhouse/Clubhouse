@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { PERSONA_TEMPLATES, type PersonaTemplate } from '../assistant/content/personas';
-import { AGENT_COLORS } from '../../../shared/name-generator';
+import { getAgentColorHex } from '../../../shared/name-generator';
 
 /** SVG icons for each persona — simple role-suggestive shapes */
 const PERSONA_ICONS: Record<string, ReactNode> = {
@@ -77,8 +77,7 @@ export function AgentGalleryDialog({ onClose, onCreate }: Props) {
   const [selected, setSelected] = useState<PersonaTemplate | null>(null);
 
   const getColorHex = (personaId: string): string => {
-    const colorId = PERSONA_COLORS[personaId] || 'indigo';
-    return AGENT_COLORS.find((c) => c.id === colorId)?.hex || '#6366f1';
+    return getAgentColorHex(PERSONA_COLORS[personaId] || 'indigo');
   };
 
   return (

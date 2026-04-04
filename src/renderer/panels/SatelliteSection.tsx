@@ -6,14 +6,10 @@
  * hosts render as compact single-row entries with a status dot.
  */
 import { useCallback } from 'react';
-import { AGENT_COLORS } from '../../shared/name-generator';
+import { getAgentColorHex } from '../../shared/name-generator';
 import type { SatelliteConnection } from '../stores/annexClientStore';
 import { useRemoteProjectStore, type RemoteProject } from '../stores/remoteProjectStore';
 
-function getColorHex(colorId: string): string {
-  const color = AGENT_COLORS.find((c) => c.id === colorId);
-  return color?.hex || '#6366f1';
-}
 
 // ---------------------------------------------------------------------------
 // LocalHostRow — collapsed machine icon for the local host
@@ -69,7 +65,7 @@ export function SatelliteHostRow({ satellite, expanded, isActive, onClick }: {
   isActive: boolean;
   onClick: () => void;
 }) {
-  const colorHex = getColorHex(satellite.color);
+  const colorHex = getAgentColorHex(satellite.color);
   const isOnline = satellite.state === 'connected';
 
   const handleRetry = useCallback((e: React.MouseEvent) => {
@@ -155,7 +151,7 @@ export function SatelliteProjectList({ satellite, projects, activeProjectId, exp
   onSelectProject: (projectId: string) => void;
 }) {
   const remoteProjectIcons = useRemoteProjectStore((s) => s.remoteProjectIcons);
-  const colorHex = getColorHex(satellite.color);
+  const colorHex = getAgentColorHex(satellite.color);
 
   if (projects.length === 0) {
     return expanded ? (

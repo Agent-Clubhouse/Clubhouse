@@ -97,3 +97,9 @@ export const AGENT_COLORS = [
 ] as const;
 
 export type AgentColorId = typeof AGENT_COLORS[number]['id'];
+
+/** Look up an agent color hex by id, falling back to the first color (indigo). */
+export function getAgentColorHex(colorId: string | undefined): string {
+  if (!colorId) return AGENT_COLORS[0].hex;
+  return AGENT_COLORS.find((c) => c.id === colorId)?.hex || AGENT_COLORS[0].hex;
+}
