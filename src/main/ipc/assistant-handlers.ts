@@ -71,21 +71,20 @@ async function prepareMcpInjection(
   return { nonce, mcpPort };
 }
 
-/** Get or create the assistant workspace directory. */
-function getAssistantWorkspace(): string {
+/** Get or create the assistant workspace directory (async to avoid blocking main thread). */
+async function getAssistantWorkspace(): Promise<string> {
   const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
   const workspace = path.join(home, '.clubhouse', 'assistant');
-  if (!fs.existsSync(workspace)) {
-    fs.mkdirSync(workspace, { recursive: true });
-    appLog(LOG_NS, 'info', 'Created assistant workspace', { meta: { path: workspace } });
-  }
+  await fs.promises.mkdir(workspace, { recursive: true });
   // Ensure .clubhouse/settings.json exists to suppress ENOENT warnings
   // from readProjectAgentDefaults which expects this file in every "project"
   const settingsDir = path.join(workspace, '.clubhouse');
   const settingsFile = path.join(settingsDir, 'settings.json');
-  if (!fs.existsSync(settingsFile)) {
-    fs.mkdirSync(settingsDir, { recursive: true });
-    fs.writeFileSync(settingsFile, '{}', 'utf-8');
+  try {
+    await fs.promises.access(settingsFile);
+  } catch {
+    await fs.promises.mkdir(settingsDir, { recursive: true });
+    await fs.promises.writeFile(settingsFile, '{}', 'utf-8');
   }
   return workspace;
 }
@@ -117,11 +116,11 @@ export function registerAssistantHandlers(): void {
         meta: { agentId, executionMode, orchestrator: orchestratorId || 'default', model: model || 'default' },
       });
 
-      const workspace = getAssistantWorkspace();
+      const workspace = await getAssistantWorkspace();
 
       // Write the system prompt as CLAUDE.md in the workspace
       try {
-        fs.writeFileSync(path.join(workspace, 'CLAUDE.md'), systemPrompt, 'utf-8');
+        await fs.promises.writeFile(path.join(workspace, 'CLAUDE.md'), systemPrompt, 'utf-8');
         appLog(LOG_NS, 'info', 'Wrote CLAUDE.md to workspace', { meta: { path: workspace, length: systemPrompt.length } });
       } catch (err) {
         appLog(LOG_NS, 'warn', 'Failed to write CLAUDE.md', { meta: { error: String(err) } });
@@ -144,8 +143,8 @@ export function registerAssistantHandlers(): void {
       if (localInstructions && localInstructions !== 'CLAUDE.md') {
         try {
           const instrPath = safeWorkspacePath(workspace, localInstructions);
-          fs.mkdirSync(path.dirname(instrPath), { recursive: true });
-          fs.writeFileSync(instrPath, systemPrompt, 'utf-8');
+          await fs.promises.mkdir(path.dirname(instrPath), { recursive: true });
+          await fs.promises.writeFile(instrPath, systemPrompt, 'utf-8');
           appLog(LOG_NS, 'info', `Wrote ${localInstructions} to workspace`, { meta: { path: instrPath } });
         } catch (err) {
           appLog(LOG_NS, 'warn', `Failed to write ${localInstructions}`, { meta: { error: String(err) } });
@@ -216,7 +215,7 @@ export function registerAssistantHandlers(): void {
       const orchestratorId = (params as AssistantFollowupParams).orchestrator;
 
       const agentId = `assistant_followup_${Date.now()}_${randomUUID().slice(0, 8)}`;
-      const workspace = getAssistantWorkspace();
+      const workspace = await getAssistantWorkspace();
 
       appLog(LOG_NS, 'info', 'Follow-up requested', {
         meta: { agentId, orchestrator: orchestratorId || 'default', messageLength: message.length },
@@ -309,7 +308,7 @@ export function registerAssistantHandlers(): void {
       const orchestratorId = (params as AssistantFollowupParams).orchestrator;
 
       const agentId = `assistant_followup_${Date.now()}_${randomUUID().slice(0, 8)}`;
-      const workspace = getAssistantWorkspace();
+      const workspace = await getAssistantWorkspace();
 
       appLog(LOG_NS, 'info', 'Structured follow-up requested', {
         meta: { agentId, orchestrator: orchestratorId || 'default', messageLength: message.length },
@@ -405,7 +404,7 @@ export function registerAssistantHandlers(): void {
     [objectArg<{ items: any[] }>()],
     async (_event, params) => {
       const { items } = params as { items: any[] };
-      const workspace = getAssistantWorkspace();
+      const workspace = await getAssistantWorkspace();
       const historyPath = path.join(workspace, 'chat-history.json');
       try {
         await fs.promises.writeFile(historyPath, JSON.stringify(items), 'utf-8');
@@ -419,7 +418,7 @@ export function registerAssistantHandlers(): void {
   // ── LOAD_HISTORY ──────────────────────────────────────────────────────────
   // Load chat history from the assistant workspace.
   ipcMain.handle(IPC.ASSISTANT.LOAD_HISTORY, async () => {
-    const workspace = getAssistantWorkspace();
+    const workspace = await getAssistantWorkspace();
     const historyPath = path.join(workspace, 'chat-history.json');
     try {
       const data = await fs.promises.readFile(historyPath, 'utf-8');
