@@ -7,6 +7,7 @@ import { AgentCanvasView } from './AgentCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType, generatePluginWidgetDisplayName, isWidgetPending, onRegistryChange, parsePluginWidgetType } from '../../canvas-widget-registry';
+import { usePluginStore } from '../../plugin-store';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { LinkDropdown } from './LinkDropdown';
@@ -439,6 +440,17 @@ export function CanvasViewComponent({
 
         const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
         if (!registered) {
+          // Check if the plugin is still known (e.g. briefly unregistered during project switch for dual-scoped plugins)
+          const widgetParts = parsePluginWidgetType(pluginView.pluginWidgetType);
+          const pluginKnown = widgetParts && !!usePluginStore.getState().plugins[widgetParts.pluginId];
+          if (pluginKnown) {
+            return (
+              <div className="flex flex-col items-center justify-center h-full gap-2 text-ctp-overlay0 text-xs p-4 text-center" data-testid="widget-loading">
+                <span className="inline-block w-4 h-4 border-2 border-ctp-overlay0 border-t-transparent rounded-full animate-spin" />
+                <span>Loading&hellip;</span>
+              </div>
+            );
+          }
           return (
             <div className="flex items-center justify-center h-full text-ctp-overlay0 text-xs p-4 text-center">
               Widget type &quot;{pluginView.pluginWidgetType}&quot; is not available.
