@@ -24,6 +24,17 @@ export async function optimisticUpdate<State>(
   try {
     await ipcCall();
   } catch {
-    set(snapshot);
+    // Only rollback keys that haven't been modified by a concurrent update.
+    // If another mutation changed a key since our optimistic set, preserve it.
+    const current = get();
+    const safeRollback: Partial<State> = {};
+    for (const key of Object.keys(snapshot) as (keyof State)[]) {
+      if (current[key] === update[key]) {
+        safeRollback[key] = snapshot[key];
+      }
+    }
+    if (Object.keys(safeRollback).length > 0) {
+      set(safeRollback);
+    }
   }
 }
