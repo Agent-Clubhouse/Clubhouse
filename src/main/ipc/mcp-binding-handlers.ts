@@ -6,6 +6,7 @@ import { BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
+import type { BindingTargetKind } from '../services/clubhouse-mcp';
 import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
 import { registerBrowserTools, registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
@@ -85,7 +86,7 @@ export function registerMcpBindingHandlers(): void {
       if (!agentRegistry.get(agentId as string)) {
         appLog('core:mcp', 'debug', 'Creating binding for sleeping agent', { meta: { agentId } });
       }
-      bindingManager.bind(agentId as string, target as { targetId: string; targetKind: 'browser' | 'agent' | 'terminal'; label: string; agentName?: string; targetName?: string; projectName?: string });
+      bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
       appLog('core:mcp', 'info', 'Binding created', {
         meta: {
           agentId,
