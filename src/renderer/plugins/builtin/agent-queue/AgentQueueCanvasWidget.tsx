@@ -313,12 +313,7 @@ function QueueSettings({
   const [autoWorktree, setAutoWorktree] = useState(!!queue.autoWorktree);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledIds = useOrchestratorStore((s) => s.enabled);
-  const loadOrchestratorSettings = useOrchestratorStore((s) => s.loadSettings);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabledIds.includes(o.id));
-
-  useEffect(() => {
-    loadOrchestratorSettings();
-  }, [loadOrchestratorSettings]);
 
   const handleSave = useCallback(async () => {
     await update(queueId, {
