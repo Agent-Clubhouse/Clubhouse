@@ -50,6 +50,8 @@ function makeTheme(overrides?: Partial<ThemeDefinition>): ThemeDefinition {
       error: '#f38ba8',
       info: '#89b4fa',
       success: '#a6e3a1',
+      accent2: '#74c7ec',
+      overlay: '#7f849c',
     },
     hljs: {
       keyword: '#cba6f7',
@@ -215,9 +217,9 @@ describe('applyTheme', () => {
   });
 
   describe('total variable count', () => {
-    it('sets exactly 34 CSS variables for a plain theme (15 colors + 16 hljs + 3 shadows)', () => {
+    it('sets exactly 36 CSS variables for a plain theme (17 colors + 16 hljs + 3 shadows)', () => {
       applyTheme(makeTheme());
-      expect(mockSetProperty).toHaveBeenCalledTimes(34);
+      expect(mockSetProperty).toHaveBeenCalledTimes(36);
     });
   });
 

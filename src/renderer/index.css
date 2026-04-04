@@ -17,6 +17,8 @@
   --color-ctp-error: rgb(var(--ctp-error));
   --color-ctp-info: rgb(var(--ctp-info));
   --color-ctp-success: rgb(var(--ctp-success));
+  --color-ctp-accent2: rgb(var(--ctp-accent2));
+  --color-ctp-overlay: rgb(var(--ctp-overlay));
 }
 
 @import '@xterm/xterm/css/xterm.css';
@@ -38,6 +40,8 @@
   --ctp-error: 243 139 168;
   --ctp-info: 137 180 250;
   --ctp-success: 166 227 161;
+  --ctp-accent2: 116 199 236;
+  --ctp-overlay: 127 132 156;
 
   /* highlight.js token colors */
   --hljs-keyword: #cba6f7;
