@@ -325,6 +325,30 @@ describe('CodexCliProvider', () => {
       expect(args).not.toContain('--yolo');
     });
 
+    it('reads customInstructionsPath file and injects contents into prompt', async () => {
+      const fsp = await import('fs/promises');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('You are a frontend expert');
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        customInstructionsPath: '/personas/frontend.md',
+        mission: 'Style the button',
+      });
+      const lastArg = args[args.length - 1];
+      expect(lastArg).toContain('You are a frontend expert');
+      expect(lastArg).toContain('Style the button');
+    });
+
+    it('gracefully handles missing customInstructionsPath file', async () => {
+      const fsp = await import('fs/promises');
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        customInstructionsPath: '/missing.md',
+        mission: 'Fix it',
+      });
+      expect(args[args.length - 1]).toBe('Fix it');
+    });
+
     it('does not add --allowedTools or --allow-tool (Codex uses sandbox, not per-tool)', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',

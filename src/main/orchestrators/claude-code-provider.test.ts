@@ -238,6 +238,31 @@ describe('ClaudeCodeProvider', () => {
       expect(args).toContain('--model');
       expect(args[args.length - 1]).toBe('Fix bug');
     });
+
+    it('adds --append-system-prompt-file when customInstructionsPath is set', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        customInstructionsPath: '/path/to/persona.md',
+      });
+      expect(args).toContain('--append-system-prompt-file');
+      expect(args[args.indexOf('--append-system-prompt-file') + 1]).toBe('/path/to/persona.md');
+    });
+
+    it('does not add --append-system-prompt-file when customInstructionsPath is undefined', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p' });
+      expect(args).not.toContain('--append-system-prompt-file');
+    });
+
+    it('places --append-system-prompt-file before mission', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        customInstructionsPath: '/persona.md',
+        mission: 'Do the thing',
+      });
+      const fileIdx = args.indexOf('--append-system-prompt-file');
+      expect(fileIdx).toBeGreaterThan(-1);
+      expect(args[args.length - 1]).toBe('Do the thing');
+    });
   });
 
   describe('getExitCommand', () => {

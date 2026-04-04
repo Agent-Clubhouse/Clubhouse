@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as fsp from 'fs/promises';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
@@ -189,8 +190,11 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
       args.push('--model', opts.model);
     }
 
-    if (opts.mission || opts.systemPrompt) {
+    if (opts.mission || opts.systemPrompt || opts.customInstructionsPath) {
       const parts: string[] = [];
+      if (opts.customInstructionsPath) {
+        try { parts.push(await fsp.readFile(opts.customInstructionsPath, 'utf-8')); } catch { /* file not found — skip */ }
+      }
       if (opts.systemPrompt) parts.push(opts.systemPrompt);
       if (opts.mission) parts.push(opts.mission);
       args.push(parts.join('\n\n'));
@@ -252,6 +256,9 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
 
     const binary = this.findBinary();
     const parts: string[] = [];
+    if (opts.customInstructionsPath) {
+      try { parts.push(await fsp.readFile(opts.customInstructionsPath, 'utf-8')); } catch { /* file not found — skip */ }
+    }
     if (opts.systemPrompt) parts.push(opts.systemPrompt);
     parts.push(opts.mission);
     const prompt = parts.join('\n\n');

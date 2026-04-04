@@ -19,6 +19,8 @@ export interface SpawnOpts {
   freeAgentMode?: boolean;
   /** Permission mode for autonomous execution: 'auto' uses Claude's auto-approve classifier, 'skip-all' bypasses all permissions */
   permissionMode?: 'auto' | 'skip-all';
+  /** Path to a custom instructions file appended to the system prompt */
+  customInstructionsPath?: string;
 }
 
 export interface HeadlessOpts extends SpawnOpts {
@@ -232,6 +234,8 @@ export interface StructuredSessionOpts {
   freeAgentMode?: boolean;
   /** Permission mode for autonomous execution: 'auto' uses Claude's auto-approve classifier, 'skip-all' bypasses all permissions */
   permissionMode?: 'auto' | 'skip-all';
+  /** Path to a custom instructions file appended to the system prompt */
+  customInstructionsPath?: string;
   /** Shell command prefix prepended before the CLI binary */
   commandPrefix?: string;
   /** Extra CLI args appended after generated args (e.g. MCP server config flags). */

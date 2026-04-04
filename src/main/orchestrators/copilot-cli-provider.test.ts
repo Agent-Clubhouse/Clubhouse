@@ -232,6 +232,31 @@ describe('CopilotCliProvider', () => {
       expect(result.args).toContain('--allow-tool');
       expect(result.args.filter(a => a === '--allow-tool')).toHaveLength(2);
     });
+
+    it('reads customInstructionsPath file and injects contents into prompt', async () => {
+      const fsp = await import('fs/promises');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('You are a backend specialist');
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        customInstructionsPath: '/personas/backend.md',
+        mission: 'Fix the API',
+      });
+      const promptIdx = result.args.indexOf('-p');
+      expect(result.args[promptIdx + 1]).toContain('You are a backend specialist');
+      expect(result.args[promptIdx + 1]).toContain('Fix the API');
+    });
+
+    it('gracefully handles missing customInstructionsPath file', async () => {
+      const fsp = await import('fs/promises');
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        customInstructionsPath: '/nonexistent.md',
+        mission: 'Fix it',
+      });
+      const promptIdx = result.args.indexOf('-p');
+      expect(result.args[promptIdx + 1]).toBe('Fix it');
+    });
   });
 
   describe('getExitCommand', () => {

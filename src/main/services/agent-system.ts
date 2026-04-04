@@ -50,6 +50,8 @@ export interface SpawnAgentParams {
   companionWorkspace?: string;
   /** Permission mode override for resume (preserves pre-restart mode) */
   permissionMode?: FreeAgentPermissionMode;
+  /** Path to a custom instructions file appended to the system prompt */
+  customInstructionsPath?: string;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -148,6 +150,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
           if (params.freeAgentMode === undefined) params = { ...params, freeAgentMode: durableConfig.freeAgentMode };
           if (params.structuredMode === undefined && durableConfig.structuredMode) params = { ...params, structuredMode: durableConfig.structuredMode };
           if (params.model === undefined && durableConfig.model) params = { ...params, model: durableConfig.model };
+          if (params.customInstructionsPath === undefined && durableConfig.customInstructionsPath) params = { ...params, customInstructionsPath: durableConfig.customInstructionsPath };
         }
       } catch { /* config not available — use caller-provided values */ }
     }
@@ -196,6 +199,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
         freeAgentMode: params.freeAgentMode,
         permissionMode,
         commandPrefix,
+        customInstructionsPath: params.customInstructionsPath,
       }, (exitAgentId) => {
         if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
         untrackAgent(exitAgentId);
@@ -215,6 +219,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
         noSessionPersistence: true,
         freeAgentMode: params.freeAgentMode,
         permissionMode,
+        customInstructionsPath: params.customInstructionsPath,
       });
 
       if (headlessResult) {
@@ -318,6 +323,7 @@ async function spawnPtyAgent(
       permissionMode,
       resume: params.resume,
       sessionId: params.sessionId,
+      customInstructionsPath: params.customInstructionsPath,
     }),
   ]);
 

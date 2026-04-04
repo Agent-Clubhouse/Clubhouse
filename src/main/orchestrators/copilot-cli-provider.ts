@@ -166,8 +166,11 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       }
     }
 
-    if (opts.mission || opts.systemPrompt) {
+    if (opts.mission || opts.systemPrompt || opts.customInstructionsPath) {
       const parts: string[] = [];
+      if (opts.customInstructionsPath) {
+        try { parts.push(await fsp.readFile(opts.customInstructionsPath, 'utf-8')); } catch { /* file not found — skip */ }
+      }
       if (opts.systemPrompt) parts.push(opts.systemPrompt);
       if (opts.mission) parts.push(opts.mission);
       args.push('-p', parts.join('\n\n'));
@@ -264,6 +267,9 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
     const binary = this.findBinary();
     const parts: string[] = [];
+    if (opts.customInstructionsPath) {
+      try { parts.push(await fsp.readFile(opts.customInstructionsPath, 'utf-8')); } catch { /* file not found — skip */ }
+    }
     if (opts.systemPrompt) parts.push(opts.systemPrompt);
     parts.push(opts.mission);
     const args = ['-p', parts.join('\n\n'), '--allow-all', '--silent'];
