@@ -2490,6 +2490,18 @@ export function start(): void {
       return;
     }
 
+    // Defense-in-depth: reject WebSocket upgrades from unexpected origins
+    // (DNS rebinding mitigation — complements mTLS + token auth)
+    const origin = req.headers.origin || '';
+    if (origin && !/^(file:\/\/|https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/.test(origin)) {
+      appLog('core:annex', 'warn', 'WebSocket upgrade rejected — invalid origin', {
+        meta: { origin, remoteAddress: req.socket.remoteAddress },
+      });
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     // Check auth: mTLS peer cert OR bearer token
     let authType: WsAuthType = 'bearer';
 
