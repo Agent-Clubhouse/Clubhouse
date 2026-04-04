@@ -416,14 +416,41 @@ function initAgentStateBroadcast(): () => void {
   // Skip in popout windows — only the main renderer broadcasts.
   if (window.clubhouse.window.isPopout()) return () => {};
 
+  // Throttle broadcasts to ~10/sec and only trigger on actual data changes.
+  let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingState: { agents: unknown; agentDetailedStatus: unknown; agentIcons: unknown } | null = null;
+  let prevAgents: unknown = undefined;
+  let prevDetailedStatus: unknown = undefined;
+  let prevIcons: unknown = undefined;
+
   const unsub = useAgentStore.subscribe((state) => {
-    window.clubhouse.window.broadcastAgentState({
+    // Skip if the fields we broadcast haven't changed (reference equality)
+    if (state.agents === prevAgents && state.agentDetailedStatus === prevDetailedStatus && state.agentIcons === prevIcons) {
+      return;
+    }
+    prevAgents = state.agents;
+    prevDetailedStatus = state.agentDetailedStatus;
+    prevIcons = state.agentIcons;
+
+    pendingState = {
       agents: state.agents,
       agentDetailedStatus: state.agentDetailedStatus,
       agentIcons: state.agentIcons,
-    });
+    };
+    if (!throttleTimer) {
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+        if (pendingState) {
+          window.clubhouse.window.broadcastAgentState(pendingState);
+          pendingState = null;
+        }
+      }, 100);
+    }
   });
-  return unsub;
+  return () => {
+    unsub();
+    if (throttleTimer) clearTimeout(throttleTimer);
+  };
 }
 
 // ─── Agent Status Change Emitter (plugin events) ───────────────────────────
