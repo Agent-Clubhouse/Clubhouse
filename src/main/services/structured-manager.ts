@@ -19,6 +19,7 @@ interface StructuredSession {
   logStream: fs.WriteStream;
   startedAt: number;
   abortController: AbortController;
+  cleanedUp: boolean;
 }
 
 const sessions = new Map<string, StructuredSession>();
@@ -61,6 +62,7 @@ export async function startStructuredSession(
     logStream,
     startedAt: Date.now(),
     abortController,
+    cleanedUp: false,
   };
   sessions.set(agentId, session);
 
@@ -206,7 +208,8 @@ export async function cancelSession(agentId: string): Promise<void> {
 
 function cleanupSession(agentId: string): void {
   const session = sessions.get(agentId);
-  if (!session) return;
+  if (!session || session.cleanedUp) return;
+  session.cleanedUp = true;
 
   try {
     session.adapter.dispose();
