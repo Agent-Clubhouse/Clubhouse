@@ -33,6 +33,14 @@ import { isSessionCapable, getProvider } from '../orchestrators';
 import { writeChunkedBracketedPaste, submitAfterPaste } from './clubhouse-mcp/tools/agent-tools';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, listSessions, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
+
+/**
+ * Check if an agent is currently running in any execution mode (PTY, headless, or structured).
+ * Centralises the compound check so new execution modes only need updating here.
+ */
+function isAgentRunning(agentId: string): boolean {
+  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId);
+}
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import { THEMES } from '../../renderer/themes';
@@ -374,7 +382,7 @@ function getOrchestratorsMap(): Record<string, { displayName: string; shortName:
 
 function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[number], projectId: string) {
   const agentId = d.id;
-  const isRunning = ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId);
+  const isRunning = isAgentRunning(agentId);
   const status = isRunning ? 'running' : 'sleeping';
 
   return {
@@ -551,7 +559,7 @@ async function buildSnapshot(): Promise<object> {
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
-          status: (ptyManager.isRunning(b.agentId) || isHeadlessAgent(b.agentId) || structuredManager.isStructuredSession(b.agentId)) ? 'connected' : 'sleeping',
+          status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
       if (members.length > 0) {
         groupProjectMembers[gp.id] = members;
@@ -703,7 +711,7 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
  */
 async function waitForAgentRunning(agentId: string, maxAttempts = 10, intervalMs = 100): Promise<void> {
   for (let i = 0; i < maxAttempts; i++) {
-    if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
+    if (isAgentRunning(agentId)) {
       return;
     }
     await new Promise((r) => setTimeout(r, intervalMs));
@@ -879,7 +887,7 @@ async function handleWakeAgent(
   }
 
   // Check if already running (process-level check)
-  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
+  if (isAgentRunning(agentId)) {
     sendJson(res, 409, { error: 'agent_already_running' });
     return;
   }
@@ -1785,7 +1793,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
-          status: (ptyManager.isRunning(b.agentId) || isHeadlessAgent(b.agentId) || structuredManager.isStructuredSession(b.agentId)) ? 'connected' : 'sleeping',
+          status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
     } catch { /* ignore */ }
     sendJson(res, 200, { ...project, members });
@@ -2022,7 +2030,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
-          status: (ptyManager.isRunning(b.agentId) || isHeadlessAgent(b.agentId) || structuredManager.isStructuredSession(b.agentId)) ? 'connected' : 'sleeping',
+          status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
     } catch { /* ignore */ }
     sendJson(res, 200, members);
@@ -2349,7 +2357,7 @@ async function handleWakeAgentWs(
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
     return;
   }
-  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
+  if (isAgentRunning(agentId)) {
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_already_running' } }));
     return;
   }
