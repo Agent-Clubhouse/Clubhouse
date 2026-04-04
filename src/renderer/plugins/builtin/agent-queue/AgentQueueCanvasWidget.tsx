@@ -167,10 +167,16 @@ function QueueView({
   }, [queueId, listTasks]);
 
   useEffect(() => {
+    // Clear any existing interval before setting a new one to prevent
+    // accumulated intervals on rapid remount (CQ-M03)
+    if (pollRef.current) clearInterval(pollRef.current);
     refreshTasks();
     pollRef.current = setInterval(refreshTasks, POLL_INTERVAL_MS);
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
     };
   }, [refreshTasks]);
 
