@@ -9,6 +9,7 @@ import type {
 import { SUPPORTED_REGISTRY_VERSION } from '../../../shared/marketplace-types';
 import { SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from '../../plugins/manifest-validator';
 import { usePluginStore } from '../../plugins/plugin-store';
+import { refreshCommunityPlugins } from '../../plugins/plugin-loader';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { PluginPermission, PermissionRiskLevel } from '../../../shared/plugin-types';
 
@@ -361,12 +362,8 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
       if (!result.success) {
         setInstallErrors((prev) => ({ ...prev, [plugin.id]: result.error || 'Install failed' }));
       } else {
-        // Re-discover community plugins so the store picks it up
-        const discovered = await window.clubhouse.plugin.discoverCommunity();
-        const match = discovered.find((d: { manifest: { id: string } }) => d.manifest.id === plugin.id);
-        if (match) {
-          usePluginStore.getState().registerPlugin(match.manifest, 'community', match.pluginPath, 'registered');
-        }
+        // Full re-discovery + activation so plugin list updates immediately
+        await refreshCommunityPlugins();
       }
     } catch (err: unknown) {
       setInstallErrors((prev) => ({
