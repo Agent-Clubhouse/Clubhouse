@@ -154,4 +154,34 @@ describe('panelStore', () => {
     expect(usePanelStore.getState().railPinned).toBe(true);
     expect(usePanelStore.getState().explorerCollapsed).toBe(true);
   });
+
+  // ── Debounced persist tests ──────────────────────────────────────────
+
+  describe('debounced persist', () => {
+    it('store state updates immediately despite debounced persist', () => {
+      // Rapid resizes should update store state synchronously
+      // even though localStorage writes are debounced
+      usePanelStore.getState().resizeExplorer(10);
+      expect(usePanelStore.getState().explorerWidth).toBe(210);
+      usePanelStore.getState().resizeExplorer(10);
+      expect(usePanelStore.getState().explorerWidth).toBe(220);
+      usePanelStore.getState().resizeExplorer(10);
+      expect(usePanelStore.getState().explorerWidth).toBe(230);
+    });
+
+    it('rapid accessory resizes all apply without blocking', () => {
+      for (let i = 0; i < 50; i++) {
+        usePanelStore.getState().resizeAccessory(2);
+      }
+      // All 50 increments should have applied (280 + 100 = 380, clamped at 400)
+      expect(usePanelStore.getState().accessoryWidth).toBe(380);
+    });
+
+    it('rapid rail resizes all apply without blocking', () => {
+      for (let i = 0; i < 50; i++) {
+        usePanelStore.getState().resizeRail(2);
+      }
+      expect(usePanelStore.getState().railWidth).toBe(300);
+    });
+  });
 });

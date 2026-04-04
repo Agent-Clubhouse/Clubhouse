@@ -365,10 +365,12 @@ function initHookEventListener(): () => void {
       // Headless agents exit on their own — skip the kill timer.
       if (event.kind === 'stop' && agent.kind === 'quick' && !agent.headless) {
         // Delay gives the agent time to write the summary file before we send /exit.
-        const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
+        // Re-fetch project inside the callback to avoid stale closure capture.
+        const projectId = agent.projectId;
         setTimeout(() => {
           const currentAgent = useAgentStore.getState().agents[agentId];
           if (currentAgent?.status !== 'running') return; // already exited
+          const project = useProjectStore.getState().projects.find((p) => p.id === projectId);
           if (project) {
             window.clubhouse.agent.killAgent(agentId, project.path).catch(() => {});
           } else {
@@ -416,14 +418,41 @@ function initAgentStateBroadcast(): () => void {
   // Skip in popout windows — only the main renderer broadcasts.
   if (window.clubhouse.window.isPopout()) return () => {};
 
+  // Throttle broadcasts to ~10/sec and only trigger on actual data changes.
+  let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingState: { agents: Record<string, unknown>; agentDetailedStatus: Record<string, unknown>; agentIcons: Record<string, string> } | null = null;
+  let prevAgents: Record<string, unknown> | undefined = undefined;
+  let prevDetailedStatus: Record<string, unknown> | undefined = undefined;
+  let prevIcons: Record<string, string> | undefined = undefined;
+
   const unsub = useAgentStore.subscribe((state) => {
-    window.clubhouse.window.broadcastAgentState({
+    // Skip if the fields we broadcast haven't changed (reference equality)
+    if (state.agents === prevAgents && state.agentDetailedStatus === prevDetailedStatus && state.agentIcons === prevIcons) {
+      return;
+    }
+    prevAgents = state.agents;
+    prevDetailedStatus = state.agentDetailedStatus;
+    prevIcons = state.agentIcons;
+
+    pendingState = {
       agents: state.agents,
       agentDetailedStatus: state.agentDetailedStatus,
       agentIcons: state.agentIcons,
-    });
+    };
+    if (!throttleTimer) {
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+        if (pendingState) {
+          window.clubhouse.window.broadcastAgentState(pendingState);
+          pendingState = null;
+        }
+      }, 100);
+    }
   });
-  return unsub;
+  return () => {
+    unsub();
+    if (throttleTimer) clearTimeout(throttleTimer);
+  };
 }
 
 // ─── Agent Status Change Emitter (plugin events) ───────────────────────────

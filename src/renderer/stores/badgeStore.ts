@@ -93,6 +93,19 @@ interface AppPluginBadgeCacheEntry {
   result: BadgeAggregate | null;
 }
 
+const MAX_BADGE_CACHE = 100;
+
+/** Set a cache entry with LRU eviction. Moves key to newest position. */
+function cacheSet<K, V>(map: Map<K, V>, key: K, value: V): void {
+  map.delete(key); // remove so re-insert puts it at end (newest)
+  map.set(key, value);
+  if (map.size > MAX_BADGE_CACHE) {
+    // Delete the oldest entry (first key in insertion order)
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+}
+
 const _tabBadgeCache = new Map<string, BadgeCacheEntry>();
 const _projectBadgeCache = new Map<string, BadgeCacheEntry>();
 const _appPluginBadgeCache = new Map<string, AppPluginBadgeCacheEntry>();
@@ -144,6 +157,11 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
       }
       return { badges: next };
     });
+    // Evict stale cache entries for this project
+    for (const key of [..._tabBadgeCache.keys()]) {
+      if (key.startsWith(`${projectId}:`)) _tabBadgeCache.delete(key);
+    }
+    _projectBadgeCache.delete(projectId);
   },
 
   clearAll() {
@@ -167,7 +185,7 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
       badges = badges.filter((b) => !b.source.startsWith('plugin:'));
     }
     const result = aggregateBadges(badges);
-    _tabBadgeCache.set(cacheKey, { badges: currentBadges, settings, result });
+    cacheSet(_tabBadgeCache, cacheKey, { badges: currentBadges, settings, result });
     return result;
   },
 
@@ -188,7 +206,7 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
       badges = badges.filter((b) => !b.source.startsWith('plugin:'));
     }
     const result = aggregateBadges(badges);
-    _projectBadgeCache.set(projectId, { badges: currentBadges, settings, result });
+    cacheSet(_projectBadgeCache, projectId, { badges: currentBadges, settings, result });
     return result;
   },
 
@@ -206,7 +224,7 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
       (b) => b.target.kind === 'app-plugin' && b.target.pluginId === pluginId,
     );
     const result = aggregateBadges(badges);
-    _appPluginBadgeCache.set(pluginId, { badges: currentBadges, enabled, pluginBadges, result });
+    cacheSet(_appPluginBadgeCache, pluginId, { badges: currentBadges, enabled, pluginBadges, result });
     return result;
   },
 

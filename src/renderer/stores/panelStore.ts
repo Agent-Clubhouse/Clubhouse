@@ -53,9 +53,23 @@ function persist(state: Pick<PanelState, 'explorerWidth' | 'explorerCollapsed' |
   } catch { /* ignore */ }
 }
 
+const PERSIST_DEBOUNCE_MS = 300;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
 const saved = loadPersistedState();
 
-export const usePanelStore = create<PanelState>((set, get) => ({
+export const usePanelStore = create<PanelState>((set, get) => {
+
+/** Debounce persist — reads latest state when the timer fires. */
+function schedulePersist(): void {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    persist(get());
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+return ({
   explorerWidth: saved.explorerWidth ?? EXPLORER_DEFAULT,
   explorerCollapsed: saved.explorerCollapsed ?? false,
   accessoryWidth: saved.accessoryWidth ?? ACCESSORY_DEFAULT,
@@ -69,11 +83,11 @@ export const usePanelStore = create<PanelState>((set, get) => ({
     const newWidth = explorerWidth + delta;
     if (newWidth < EXPLORER_SNAP) {
       set({ explorerCollapsed: true });
-      persist({ ...get(), explorerCollapsed: true });
+      schedulePersist();
     } else {
       const clamped = Math.max(EXPLORER_MIN, Math.min(newWidth, EXPLORER_MAX));
       set({ explorerWidth: clamped });
-      persist({ ...get(), explorerWidth: clamped });
+      schedulePersist();
     }
   },
 
@@ -83,30 +97,30 @@ export const usePanelStore = create<PanelState>((set, get) => ({
     const newWidth = accessoryWidth + delta;
     if (newWidth < ACCESSORY_SNAP) {
       set({ accessoryCollapsed: true });
-      persist({ ...get(), accessoryCollapsed: true });
+      schedulePersist();
     } else {
       const clamped = Math.max(ACCESSORY_MIN, Math.min(newWidth, ACCESSORY_MAX));
       set({ accessoryWidth: clamped });
-      persist({ ...get(), accessoryWidth: clamped });
+      schedulePersist();
     }
   },
 
   toggleExplorerCollapse: () => {
     const collapsed = !get().explorerCollapsed;
     set({ explorerCollapsed: collapsed });
-    persist({ ...get(), explorerCollapsed: collapsed });
+    schedulePersist();
   },
 
   toggleAccessoryCollapse: () => {
     const collapsed = !get().accessoryCollapsed;
     set({ accessoryCollapsed: collapsed });
-    persist({ ...get(), accessoryCollapsed: collapsed });
+    schedulePersist();
   },
 
   toggleRailPin: () => {
     const pinned = !get().railPinned;
     set({ railPinned: pinned });
-    persist({ ...get(), railPinned: pinned });
+    schedulePersist();
   },
 
   resizeRail: (delta) => {
@@ -114,6 +128,7 @@ export const usePanelStore = create<PanelState>((set, get) => ({
     const newWidth = railWidth + delta;
     const clamped = Math.max(RAIL_MIN, Math.min(newWidth, RAIL_MAX));
     set({ railWidth: clamped });
-    persist({ ...get(), railWidth: clamped });
+    schedulePersist();
   },
-}));
+});
+});

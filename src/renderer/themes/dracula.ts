@@ -20,6 +20,8 @@ export const dracula: ThemeDefinition = {
     error: '#ff6e6e',
     info: '#8be9fd',
     success: '#50fa7b',
+    accent2: '#ff79c6',
+    overlay: '#6272a4',
   },
   hljs: {
     keyword: '#ff79c6',

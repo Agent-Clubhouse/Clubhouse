@@ -118,7 +118,7 @@ function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onP
           onBlur={commitRename}
           onKeyDown={handleKeyDown}
           onClick={(e) => e.stopPropagation()}
-          className="bg-transparent border-none outline-none text-[11px] text-ctp-text w-full min-w-[40px] px-0"
+          className="bg-surface-0/50 border-b border-ctp-accent outline-none text-[11px] text-ctp-text w-full min-w-[40px] px-0.5 rounded-sm"
           data-testid="canvas-tab-rename-input"
         />
       ) : (

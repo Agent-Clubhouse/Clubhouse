@@ -114,8 +114,12 @@ function cleanupAll(): void {
 function handleStructuredEvent(_agentId: string, event: { type: string; timestamp: number; data: any }): void {
   if (_agentId !== state.agentId) return;
 
+  // LB-M01: Validate event structure — reject malformed events early
+  if (!event || typeof event.type !== 'string' || !event.data) return;
+
   switch (event.type) {
     case 'text_delta': {
+      if (typeof event.data.text !== 'string') break;
       state.pendingText += event.data.text;
       const lastItem = pendingItems[pendingItems.length - 1];
       if (lastItem?.type === 'message' && lastItem.message?.role === 'assistant' && lastItem.message.id.startsWith('streaming-')) {
@@ -132,6 +136,7 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
       break;
     }
     case 'text_done': {
+      if (typeof event.data.text !== 'string') break;
       const lastItem = pendingItems[pendingItems.length - 1];
       if (lastItem?.type === 'message' && lastItem.message?.role === 'assistant' && lastItem.message.id.startsWith('streaming-')) {
         lastItem.message.content = event.data.text;
@@ -143,6 +148,7 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
       break;
     }
     case 'tool_start': {
+      if (typeof event.data.name !== 'string' || typeof event.data.id !== 'string') break;
       const toolName = event.data.displayVerb || event.data.name;
       const groupId = event.data.groupId || undefined;
       const needsApproval = isMutatingTool(event.data.name);
@@ -219,14 +225,7 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
   }
 }
 
-/** Tools that modify state and should require user approval before execution. */
-const MUTATING_TOOLS = new Set([
-  'create_project', 'create_canvas', 'create_agent',
-  'add_card', 'add_zone', 'add_wire', 'update_card',
-  'delete_project', 'delete_canvas', 'delete_agent',
-  'write_file', 'run_command',
-  'update_project', 'update_agent', 'update_canvas',
-]);
+import { MUTATING_TOOLS } from '../../../shared/mutating-tools';
 
 function isMutatingTool(name: string): boolean {
   return MUTATING_TOOLS.has(name);
@@ -242,8 +241,8 @@ function getPrimaryInput(input: Record<string, unknown>): string {
 // ── Headless Result Handler ───────────────────────────────────────────────
 
 function handleHeadlessResult(result: { agentId: string; exitCode: number }): void {
-  // Match against our tracked agent or a follow-up agent
-  if (result.agentId !== state.agentId && !result.agentId.startsWith('assistant_followup_')) return;
+  // Only accept results from the currently tracked agent — reject stale follow-ups
+  if (result.agentId !== state.agentId) return;
 
   // Surface non-zero exit codes as errors
   if (result.exitCode !== 0) {
@@ -396,7 +395,7 @@ async function startAgent(firstMessage: string): Promise<void> {
     // For structured mode, register the event listener BEFORE spawning
     // so we don't miss any early events from the adapter.
     if (state.mode === 'structured') {
-      setupStructuredListener(agentId);
+      setupStructuredListener();
     }
 
     const systemPrompt = buildAssistantInstructions();
@@ -415,9 +414,15 @@ async function startAgent(firstMessage: string): Promise<void> {
     } else if (state.mode === 'structured') {
       // Listener already registered above — just set status and drain queue
       setStatus('responding');
+      // LB-M02: On send failure, retain remaining messages for retry
       while (messageQueue.length > 0) {
-        const queued = messageQueue.shift()!;
-        await window.clubhouse.agent.sendStructuredMessage(agentId, queued);
+        const queued = messageQueue[0];
+        try {
+          await window.clubhouse.agent.sendStructuredMessage(agentId, queued);
+          messageQueue.shift(); // Only remove on success
+        } catch {
+          break; // Stop draining — remaining messages stay queued for retry
+        }
       }
     } else {
       setupHeadless();
@@ -446,7 +451,7 @@ async function setupInteractive(): Promise<void> {
  * Register the structured event listener for the given agent.
  * Must be called BEFORE spawning so no early events are missed.
  */
-function setupStructuredListener(_agentId: string): void {
+function setupStructuredListener(): void {
   // Remove any previous structured listener to prevent accumulation
   // across follow-up sessions (each follow-up calls startAgent again).
   cleanupAll();
@@ -472,15 +477,14 @@ function setupHeadless(): void {
  * The new session resumes from the previous session in the same workspace.
  */
 async function structuredFollowup(message: string): Promise<void> {
-  const newAgentId = `assistant_followup_${Date.now()}_${globalThis.crypto.randomUUID().slice(0, 8)}`;
-  setAgentId(newAgentId);
-
-  // Re-register listener for the new agentId (before spawn to avoid race)
-  setupStructuredListener(newAgentId);
+  // Re-register listener before spawn so we don't miss early events
+  setupStructuredListener();
 
   setStatus('responding');
 
   try {
+    // Await the IPC call to get the server-assigned agentId.
+    // Do NOT generate a client-side ID — the server is authoritative.
     const result = await window.clubhouse.assistant.sendStructuredFollowup({
       message,
       orchestrator: state.orchestrator || undefined,
@@ -505,11 +509,13 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
  * Persist current feed items to disk (debounced).
  * Called after receiving responses and sending messages.
  */
+const MAX_HISTORY_ITEMS = 100;
+
 function persistHistory(): void {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     persistTimer = null;
-    const items = pendingItems.filter(
+    let items = pendingItems.filter(
       (item) =>
         // Only persist real messages, not placeholders
         !(item.type === 'message' &&
@@ -517,6 +523,10 @@ function persistHistory(): void {
           (item.message.content === '_Processing your request..._' ||
            item.message.content === '_Processing your follow-up..._')),
     );
+    // Cap to most recent entries to prevent unbounded storage growth
+    if (items.length > MAX_HISTORY_ITEMS) {
+      items = items.slice(-MAX_HISTORY_ITEMS);
+    }
     window.clubhouse.assistant.saveHistory(items).catch(() => {});
   }, 500);
 }
@@ -617,9 +627,9 @@ export function skipAction(actionId: string): void {
 export function reset(): void {
   if (state.agentId) {
     // Kill the running agent process
-    window.clubhouse.agent.killAgent(state.agentId, '').catch(() => {});
+    window.clubhouse.agent.killAgent(state.agentId, '').catch((err) => console.error('Agent kill failed:', err));
     // Clean up MCP bindings and agent registry in main process
-    window.clubhouse.assistant.reset(state.agentId).catch(() => {});
+    window.clubhouse.assistant.reset(state.agentId).catch((err) => console.error('Agent reset failed:', err));
   }
   cleanupAll();
   if (persistTimer) {

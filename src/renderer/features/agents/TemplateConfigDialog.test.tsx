@@ -2,14 +2,18 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { TemplateConfigDialog } from './TemplateConfigDialog';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
-vi.mock('../../../shared/name-generator', () => ({
-  generateDurableName: () => 'random-name',
-  AGENT_COLORS: [
+vi.mock('../../../shared/name-generator', () => {
+  const colors = [
     { id: 'indigo', hex: '#6366f1', label: 'Indigo' },
     { id: 'emerald', hex: '#10b981', label: 'Emerald' },
     { id: 'red', hex: '#ef4444', label: 'Red' },
-  ],
-}));
+  ];
+  return {
+    generateDurableName: () => 'random-name',
+    AGENT_COLORS: colors,
+    getAgentColorHex: (id: string) => colors.find((c) => c.id === id)?.hex || '#6366f1',
+  };
+});
 
 vi.mock('../../hooks/useModelOptions', () => ({
   useModelOptions: () => ({

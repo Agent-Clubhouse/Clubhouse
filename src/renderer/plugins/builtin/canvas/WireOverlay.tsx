@@ -26,10 +26,10 @@ const WIRE_GLOW_KEYFRAMES = `
 }
 `;
 
-/** Unidirectional wire color (accent/blue) */
+/** Unidirectional wire color (accent) */
 const UNI_COLOR = 'rgb(var(--ctp-accent, 137 180 250))';
-/** Bidirectional wire color (success/green) */
-const BIDIR_COLOR = 'rgb(var(--ctp-success, 166 227 161))';
+/** Bidirectional wire color (accent) */
+const BIDIR_COLOR = 'rgb(var(--ctp-accent, 137 180 250))';
 
 /** Check whether a reverse binding exists (agent→target has a matching target→agent). */
 function isBidirectional(binding: McpBindingEntry, allBindings: McpBindingEntry[]): boolean {
@@ -51,42 +51,47 @@ interface WireOverlayProps {
   forceBidirectional?: boolean;
 }
 
+/** Index maps for O(1) binding resolution instead of linear scans. */
+interface ViewIndex {
+  viewMap: Map<string, CanvasView>;
+  agentIdToView: Map<string, CanvasView>;
+  groupProjectIdToView: Map<string, CanvasView>;
+}
+
+function buildViewIndex(viewMap: Map<string, CanvasView>): ViewIndex {
+  const agentIdToView = new Map<string, CanvasView>();
+  const groupProjectIdToView = new Map<string, CanvasView>();
+  for (const v of viewMap.values()) {
+    if (v.type === 'agent') {
+      agentIdToView.set((v as AgentCanvasViewType).agentId, v);
+    }
+    if (v.type === 'plugin' && v.metadata?.groupProjectId) {
+      groupProjectIdToView.set(v.metadata.groupProjectId as string, v);
+    }
+  }
+  return { viewMap, agentIdToView, groupProjectIdToView };
+}
+
 /**
  * Resolve a binding to its source and target views.
  * Source is the agent view (by agentId), target is looked up by targetId = view.id.
  */
 function resolveBindingViews(
   binding: McpBindingEntry,
-  viewMap: Map<string, CanvasView>,
+  index: ViewIndex,
 ): { source: CanvasView; target: CanvasView } | null {
-  // Find agent view by agentId
-  let source: CanvasView | undefined;
-  for (const v of viewMap.values()) {
-    if (v.type === 'agent' && (v as AgentCanvasViewType).agentId === binding.agentId) {
-      source = v;
-      break;
-    }
-  }
+  // Find agent view by agentId — O(1) via index
+  const source = index.agentIdToView.get(binding.agentId);
   if (!source) return null;
 
   // Look up target by view id first, then by agentId for agent-to-agent bindings,
   // then by metadata.groupProjectId for group-project bindings.
-  let target = viewMap.get(binding.targetId);
+  let target = index.viewMap.get(binding.targetId);
   if (!target && binding.targetKind === 'agent') {
-    for (const v of viewMap.values()) {
-      if (v.type === 'agent' && (v as AgentCanvasViewType).agentId === binding.targetId) {
-        target = v;
-        break;
-      }
-    }
+    target = index.agentIdToView.get(binding.targetId);
   }
   if (!target && binding.targetKind === 'group-project') {
-    for (const v of viewMap.values()) {
-      if (v.type === 'plugin' && v.metadata?.groupProjectId === binding.targetId) {
-        target = v;
-        break;
-      }
-    }
+    target = index.groupProjectIdToView.get(binding.targetId);
   }
   if (!target) return null;
 
@@ -119,7 +124,7 @@ const WireGroup = React.memo(function WireGroup({
 
   const isActive = activity.startsWith('active');
   const wireColor = bidir ? BIDIR_COLOR : UNI_COLOR;
-  const wireColorVar = bidir ? 'var(--ctp-success, 166 227 161)' : 'var(--ctp-accent, 137 180 250)';
+  const wireColorVar = 'var(--ctp-accent, 137 180 250)';
   const fwdMarker = bidir ? 'url(#wire-arrow-fwd-bidir)' : 'url(#wire-arrow-fwd)';
   const revMarker = 'url(#wire-arrow-rev-bidir)';
 
@@ -145,13 +150,13 @@ const WireGroup = React.memo(function WireGroup({
       <path
         d={path}
         fill="none"
-        stroke={wireColor}
         strokeWidth={isActive ? 2.5 : 2}
         strokeLinecap="round"
         strokeDasharray={bidir ? undefined : '8 4'}
         markerEnd={fwdMarker}
         markerStart={bidir ? revMarker : undefined}
         style={{
+          stroke: wireColor,
           pointerEvents: 'none',
           animation: isDimmed ? 'none' : isActive ? 'wire-pulse-active 1.5s ease-in-out infinite' : 'wire-pulse 3s ease-in-out infinite',
           opacity: isDimmed ? 0.35 : 1,
@@ -173,10 +178,10 @@ export const WireOverlay = React.memo(function WireOverlay({
   onWireClick,
   forceBidirectional,
 }: WireOverlayProps) {
-  const viewMap = useMemo(() => {
+  const viewIndex = useMemo(() => {
     const m = new Map<string, CanvasView>();
     for (const v of views) m.set(v.id, v);
-    return m;
+    return buildViewIndex(m);
   }, [views]);
 
   const wires = useMemo(() => {
@@ -209,7 +214,7 @@ export const WireOverlay = React.memo(function WireOverlay({
         rendered.add(pairKey);
       }
 
-      const resolved = resolveBindingViews(binding, viewMap);
+      const resolved = resolveBindingViews(binding, viewIndex);
       if (!resolved) continue;
 
       const { source, target } = resolved;
@@ -236,7 +241,7 @@ export const WireOverlay = React.memo(function WireOverlay({
     }
 
     return result;
-  }, [bindings, viewMap, viewPositions, forceBidirectional]);
+  }, [bindings, viewIndex, viewPositions, forceBidirectional]);
 
   // Build wire specs for physics hook
   const wireSpecs = useMemo(
@@ -287,14 +292,14 @@ export const WireOverlay = React.memo(function WireOverlay({
         <WireFlowDotFilters />
         {/* Unidirectional arrowhead (accent color) */}
         <marker id="wire-arrow-fwd" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
-          <path d="M 1 1 L 7 4 L 1 7" fill="none" stroke={UNI_COLOR} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M 1 1 L 7 4 L 1 7" fill="none" style={{ stroke: UNI_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
         {/* Bidirectional arrowheads (success color) */}
         <marker id="wire-arrow-fwd-bidir" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
-          <path d="M 1 1 L 7 4 L 1 7" fill="none" stroke={BIDIR_COLOR} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M 1 1 L 7 4 L 1 7" fill="none" style={{ stroke: BIDIR_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
         <marker id="wire-arrow-rev-bidir" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto" markerUnits="userSpaceOnUse">
-          <path d="M 7 1 L 1 4 L 7 7" fill="none" stroke={BIDIR_COLOR} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M 7 1 L 1 4 L 7 7" fill="none" style={{ stroke: BIDIR_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
         {/* Wire path definitions (referenced by flow dots via <mpath>) */}
         {wires.map(({ key }) => (

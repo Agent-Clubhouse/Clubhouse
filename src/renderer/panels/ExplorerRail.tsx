@@ -1,4 +1,4 @@
-import { ReactNode, useState, useRef, useCallback, useMemo } from 'react';
+import React, { ReactNode, useState, useRef, useCallback, useMemo } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId, type PluginMatchResult } from '../stores/remoteProjectStore';
@@ -6,7 +6,7 @@ import { usePluginStore } from '../plugins/plugin-store';
 import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { Badge } from '../components/Badge';
-import { AGENT_COLORS } from '../../shared/name-generator';
+import { getAgentColorHex } from '../../shared/name-generator';
 import { sanitizeSvg } from '../utils/sanitize-svg';
 
 const EMPTY_STRING_ARRAY: string[] = [];
@@ -47,10 +47,6 @@ const CORE_TABS: TabEntry[] = [
   },
 ];
 
-function getSettingsColorHex(colorId?: string): string {
-  if (!colorId) return '#6366f1'; // indigo default
-  return AGENT_COLORS.find((c) => c.id === colorId)?.hex || '#6366f1';
-}
 
 function SettingsContextPicker() {
   const settingsContext = useUIStore((s) => s.settingsContext);
@@ -101,7 +97,7 @@ function SettingsContextPicker() {
           >
             <span
               className="w-[18px] h-[18px] rounded flex items-center justify-center text-[10px] font-bold flex-shrink-0 overflow-hidden"
-              style={p.icon && projectIcons[p.id] ? undefined : { backgroundColor: `${getSettingsColorHex(p.color)}20`, color: getSettingsColorHex(p.color) }}
+              style={p.icon && projectIcons[p.id] ? undefined : { backgroundColor: `${getAgentColorHex(p.color)}20`, color: getAgentColorHex(p.color) }}
             >
               {p.icon && projectIcons[p.id] ? (
                 <img src={projectIcons[p.id]} alt={(p.displayName || p.name)} className="w-full h-full object-cover" />
@@ -123,7 +119,7 @@ const PLUGIN_FALLBACK_ICON = (
   </svg>
 );
 
-function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isActive: boolean; projectId: string | null; onClick: () => void }) {
+const TabButton = React.memo(function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isActive: boolean; projectId: string | null; onClick: () => void }) {
   const isDisabled = tab.disabled === true;
   const badges = useBadgeStore((s) => s.badges);
   const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
@@ -165,7 +161,7 @@ function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isAct
       {tabBadge && !isDisabled && <Badge type={tabBadge.type} value={tabBadge.value} inline />}
     </button>
   );
-}
+});
 
 export function ExplorerRail() {
   const explorerTab = useUIStore((s) => s.explorerTab);

@@ -126,7 +126,7 @@ function findCanvasForView(viewId: string, projectIdHint?: string): { canvas_id:
   return null;
 }
 
-const MUTATING_COMMANDS = new Set(['add_canvas', 'add_view', 'move_view', 'resize_view', 'remove_view', 'rename_view', 'connect_views', 'disconnect_views', 'import_blueprint', 'create_from_blueprint']);
+import { MUTATING_CANVAS_COMMANDS } from '../../../shared/mutating-tools';
 
 const CANVAS_TAB = 'plugin:canvas';
 
@@ -807,7 +807,7 @@ export function initCanvasCommandHandler(): (() => void) | undefined {
       return;
     }
     try {
-      const result = handler(request.args);
+      const result = await handler(request.args);
       console.log('[assistant] Canvas command result:', request.command, result.success);
 
       // For create operations, persist BEFORE returning the result so the
@@ -819,7 +819,7 @@ export function initCanvasCommandHandler(): (() => void) | undefined {
       sendResult(request.callId, result);
 
       // Auto-save after other mutating commands (fire-and-forget is fine here)
-      if (MUTATING_COMMANDS.has(request.command) && result.success && request.command !== 'add_canvas') {
+      if (MUTATING_CANVAS_COMMANDS.has(request.command) && result.success && request.command !== 'add_canvas') {
         persistCanvas(request.args.project_id as string | undefined);
       }
     } catch (err) {

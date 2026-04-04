@@ -22,7 +22,7 @@ interface ZoneCardProps {
   onStartWireDrag: () => void;
 }
 
-export function ZoneCard({ zone, mcpEnabled, dragOffset, onRename, onThemeChange, onDelete, onDragStart, onStartWireDrag }: ZoneCardProps) {
+export const ZoneCard = React.memo(function ZoneCard({ zone, mcpEnabled, dragOffset, onRename, onThemeChange, onDelete, onDragStart, onStartWireDrag }: ZoneCardProps) {
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -131,7 +131,7 @@ export function ZoneCard({ zone, mcpEnabled, dragOffset, onRename, onThemeChange
       </button>
     </div>
   );
-}
+});
 
 // ── Theme Picker Dropdown ──────────────────────────────────────────
 

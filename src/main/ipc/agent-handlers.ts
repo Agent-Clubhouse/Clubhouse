@@ -109,7 +109,7 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle(IPC.AGENT.SAVE_ICON, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg()],
+    [stringArg(), stringArg(), stringArg({ maxLength: 5 * 1024 * 1024 })],
     async (_event, projectPath, agentId, dataUrl) => {
       return agentConfig.saveAgentIcon(projectPath, agentId, dataUrl);
     },

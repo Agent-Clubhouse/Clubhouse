@@ -4,8 +4,23 @@ import { useAgentStore } from './agentStore';
 import { useUIStore } from './uiStore';
 import { useProjectStore } from './projectStore';
 import { getProjectHubStore, hasProjectHubStore, useAppHubStore } from '../plugins/builtin/hub/main';
-import { collectLeaves } from '../plugins/builtin/hub/pane-tree';
+import { collectLeaves, type PaneNode, type LeafPane } from '../plugins/builtin/hub/pane-tree';
 import { useSoundStore, mapNotificationToSoundEvent, hasAnyCustomPack } from './soundStore';
+
+// ---------------------------------------------------------------------------
+// Cached collectLeaves — avoids full tree traversal on every notification check
+// ---------------------------------------------------------------------------
+
+const leavesCache = new WeakMap<PaneNode, LeafPane[]>();
+
+function cachedCollectLeaves(tree: PaneNode): LeafPane[] {
+  let cached = leavesCache.get(tree);
+  if (!cached) {
+    cached = collectLeaves(tree);
+    leavesCache.set(tree, cached);
+  }
+  return cached;
+}
 
 function isAgentVisible(agentId: string, projectId: string): boolean {
   if (!document.hasFocus()) return false;
@@ -22,12 +37,12 @@ function isAgentVisible(agentId: string, projectId: string): boolean {
   // Agent is in a visible hub pane
   if (explorerTab === 'plugin:hub' && activeProjectId === projectId) {
     if (hasProjectHubStore(projectId)) {
-      const leaves = collectLeaves(getProjectHubStore(projectId).getState().paneTree);
+      const leaves = cachedCollectLeaves(getProjectHubStore(projectId).getState().paneTree);
       if (leaves.some((l) => l.agentId === agentId)) return true;
     }
   }
   if (explorerTab === 'plugin:app:hub' || explorerTab.startsWith('plugin:app:hub')) {
-    const leaves = collectLeaves(useAppHubStore.getState().paneTree);
+    const leaves = cachedCollectLeaves(useAppHubStore.getState().paneTree);
     if (leaves.some((l) => l.agentId === agentId)) return true;
   }
 

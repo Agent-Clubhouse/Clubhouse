@@ -158,8 +158,13 @@ export async function initializePluginSystem(): Promise<void> {
               meta: { pluginPath, errors: result.errors },
             });
             // Register as incompatible so it appears in settings
+            const derivedId = (rawManifest as Record<string, unknown>)?.id as string || pluginPath.replace(/\/+$/, '').split('/').pop() || '';
+            if (!derivedId) {
+              rendererLog('core:plugins', 'warn', `Skipping plugin with empty ID: ${pluginPath}`, { meta: { pluginPath } });
+              continue;
+            }
             const partialManifest: PluginManifest = {
-              id: (rawManifest as Record<string, unknown>)?.id as string || pluginPath.split('/').pop() || 'unknown',
+              id: derivedId,
               name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
               version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
               engine: { api: 0 },
@@ -253,8 +258,9 @@ export async function initializePluginSystem(): Promise<void> {
       }
     }
 
-    // Write startup marker *before* activation so a crash during init
-    // will trigger safe mode on the next launch.
+    // Activate plugins — write startup marker after manifest pre-registration
+    // succeeds (above) but before activation, so a crash during init triggers
+    // safe mode on the next launch without false-positives from invalid manifests.
     await window.clubhouse.plugin.startupMarkerWrite(appEnabled);
 
     for (const pluginId of appEnabled) {
@@ -800,7 +806,7 @@ export async function discoverNewPlugins(): Promise<string[]> {
         meta: { pluginPath, errors: result.errors },
       });
       const partialManifest: PluginManifest = {
-        id: id || pluginPath.split('/').pop() || 'unknown',
+        id: id || pluginPath.replace(/\/+$/, '').split('/').pop() || 'unknown',
         name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
         version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
         engine: { api: 0 },

@@ -296,7 +296,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const restoredDefinitions: McpBindingEntry[] = [];
         for (const entry of saved) {
           if (!entry.agentId || !entry.targetId || !entry.label || !entry.targetKind) continue;
-          if (shouldReconcile && !validIds.has(entry.agentId) && !validIds.has(entry.targetId)) continue;
+          if (shouldReconcile && (!validIds.has(entry.agentId) || !validIds.has(entry.targetId))) continue;
           // Refresh projectName from the registry on cold start to catch renames.
           if (entry.targetKind === 'group-project') {
             try {
@@ -520,10 +520,26 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     },
 
     removeView: (viewId) => {
+      // Determine the ID used in wire definitions — agent views use agentId,
+      // other views use the view id directly (mirrors moveView logic).
+      const removedView = get().views.find((v) => v.id === viewId);
+      const wireId = (removedView?.type === 'agent' && (removedView as AgentCanvasView).agentId)
+        ? (removedView as AgentCanvasView).agentId!
+        : viewId;
+
       set(updateActiveCanvas(get(), (canvas) => ({
         views: recomputeZones(removeViewOp(canvas.views, viewId)),
         selectedViewId: canvas.selectedViewId === viewId ? null : canvas.selectedViewId,
+        // LB-M05: clear layoutCenterId if the removed view was the ELK layout center
+        layoutCenterId: canvas.layoutCenterId === viewId ? null : canvas.layoutCenterId,
       })));
+
+      // LB-M07: remove orphaned wire definitions referencing the removed view
+      const wires = get().wireDefinitions;
+      const filtered = wires.filter((w) => w.agentId !== wireId && w.targetId !== wireId);
+      if (filtered.length !== wires.length) {
+        set({ wireDefinitions: filtered });
+      }
     },
 
     moveView: (viewId, position) => {

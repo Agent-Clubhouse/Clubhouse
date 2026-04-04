@@ -17,6 +17,8 @@
   --color-ctp-error: rgb(var(--ctp-error));
   --color-ctp-info: rgb(var(--ctp-info));
   --color-ctp-success: rgb(var(--ctp-success));
+  --color-ctp-accent2: rgb(var(--ctp-accent2));
+  --color-ctp-overlay: rgb(var(--ctp-overlay));
 }
 
 @import '@xterm/xterm/css/xterm.css';
@@ -38,6 +40,19 @@
   --ctp-error: 243 139 168;
   --ctp-info: 137 180 250;
   --ctp-success: 166 227 161;
+
+  /* Orchestrator / model badge colors — space-separated RGB for alpha support.
+     Theme plugins can override these to customize badge appearance. */
+  --ctp-badge-orange: 249 115 22;
+  --ctp-badge-blue: 59 130 246;
+  --ctp-badge-grey: 148 163 184;
+  --ctp-badge-purple: 168 85 247;
+  --ctp-badge-teal: 20 184 166;
+  --ctp-badge-pink: 236 72 153;
+  --ctp-badge-green: 34 197 94;
+  --ctp-badge-amber: 251 191 36;
+  --ctp-badge-indigo: 99 102 241;
+  --ctp-badge-sky: 14 165 233;
 
   /* highlight.js token colors */
   --hljs-keyword: #cba6f7;
@@ -61,6 +76,12 @@
 @layer base {
   *, *::before, *::after {
     box-sizing: border-box;
+  }
+
+  /* WCAG 2.1 Level AA — visible keyboard focus indicator (2.4.7) */
+  *:focus-visible {
+    outline: 2px solid rgb(var(--ctp-accent));
+    outline-offset: 2px;
   }
 
   body {

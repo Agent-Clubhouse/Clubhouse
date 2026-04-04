@@ -14,9 +14,12 @@ function loadFromStorage(projectId: string): CompletedQuickAgent[] {
   }
 }
 
+const MAX_COMPLETED_AGENTS = 50;
+
 function saveToStorage(projectId: string, records: CompletedQuickAgent[]): void {
   try {
-    localStorage.setItem(storageKey(projectId), JSON.stringify(records));
+    const capped = records.length > MAX_COMPLETED_AGENTS ? records.slice(0, MAX_COMPLETED_AGENTS) : records;
+    localStorage.setItem(storageKey(projectId), JSON.stringify(capped));
   } catch {
     // Ignore quota errors
   }

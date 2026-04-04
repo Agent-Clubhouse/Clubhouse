@@ -91,6 +91,7 @@ interface SatelliteConnectionInternal {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
   bearerToken: string | null;
+  bearerTokenIssuedAt: number | null;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   pongTimeout: ReturnType<typeof setTimeout> | null;
 }
@@ -348,6 +349,16 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
 
   const identity = annexIdentity.getOrCreateIdentity();
 
+  // Check bearer token expiry — clear stale tokens (23h buffer on 24h TTL) to avoid retry loops
+  const TOKEN_CLIENT_TTL_MS = 23 * 60 * 60 * 1000;
+  if (sat.bearerToken && sat.bearerTokenIssuedAt && Date.now() - sat.bearerTokenIssuedAt > TOKEN_CLIENT_TTL_MS) {
+    appLog('core:annex-client', 'info', 'Bearer token expired, clearing for re-authentication', {
+      meta: { fingerprint: sat.fingerprint },
+    });
+    sat.bearerToken = null;
+    sat.bearerTokenIssuedAt = null;
+  }
+
   // Connect via WebSocket using mTLS (preferred) with optional bearer token fallback
   try {
     const tlsOptions = annexTls.createTlsClientOptions(identity);
@@ -399,7 +410,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       sat.ws = null;
       if (sat.state === 'connected') {
         setState(sat, 'disconnected', 'Connection closed');
-        scheduleReconnect(sat);
+        if (!sat.reconnectTimer) scheduleReconnect(sat);
       }
     });
 
@@ -411,7 +422,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       });
       sat.ws = null;
       setState(sat, 'disconnected', err.message);
-      scheduleReconnect(sat);
+      if (!sat.reconnectTimer) scheduleReconnect(sat);
     });
   } catch (err) {
     setState(sat, 'disconnected', err instanceof Error ? err.message : 'Connection failed');
@@ -506,7 +517,10 @@ function stopHeartbeat(sat: SatelliteConnectionInternal): void {
 }
 
 function scheduleReconnect(sat: SatelliteConnectionInternal): void {
-  if (sat.reconnectTimer) clearTimeout(sat.reconnectTimer);
+  if (sat.reconnectTimer) {
+    clearTimeout(sat.reconnectTimer);
+    sat.reconnectTimer = null;
+  }
 
   // Check if auto-reconnect is enabled
   const settings = annexSettings.getSettings();
@@ -616,6 +630,7 @@ function startDiscovery(): void {
           reconnectTimer: null,
           reconnectAttempt: 0,
           bearerToken: null,
+          bearerTokenIssuedAt: null,
           heartbeatInterval: null,
           pongTimeout: null,
         };
@@ -731,13 +746,17 @@ export function connect(fingerprint: string, bearerToken?: string): void {
       reconnectTimer: null,
       reconnectAttempt: 0,
       bearerToken: bearerToken || null,
+      bearerTokenIssuedAt: bearerToken ? Date.now() : null,
       heartbeatInterval: null,
       pongTimeout: null,
     };
     satellites.set(fingerprint, sat);
   }
 
-  if (bearerToken) sat.bearerToken = bearerToken;
+  if (bearerToken) {
+    sat.bearerToken = bearerToken;
+    sat.bearerTokenIssuedAt = Date.now();
+  }
 
   if (sat.state !== 'disconnected') {
     appLog('core:annex-client', 'info', 'Satellite already connecting/connected', { meta: { fingerprint } });
@@ -1348,6 +1367,7 @@ export async function pairWithService(fingerprint: string, pin: string): Promise
       reconnectTimer: null,
       reconnectAttempt: 0,
       bearerToken,
+      bearerTokenIssuedAt: Date.now(),
       heartbeatInterval: null,
       pongTimeout: null,
     };

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
@@ -11,7 +11,7 @@ import { usePanelStore } from '../stores/panelStore';
 import { Badge } from '../components/Badge';
 import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
-import { AGENT_COLORS } from '../../shared/name-generator';
+import { getAgentColorHex } from '../../shared/name-generator';
 import { sanitizeSvg } from '../utils/sanitize-svg';
 
 function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
@@ -80,12 +80,8 @@ function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
   );
 }
 
-function getColorHex(colorId?: string): string {
-  if (!colorId) return '#6366f1'; // indigo default
-  return AGENT_COLORS.find((c) => c.id === colorId)?.hex || '#6366f1';
-}
 
-function ProjectIcon({ project, isActive, onClick, expanded }: {
+const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick, expanded }: {
   project: Project;
   isActive: boolean;
   onClick: () => void;
@@ -93,7 +89,7 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
 }) {
   const projectIcons = useProjectStore((s) => s.projectIcons);
   const iconDataUrl = projectIcons[project.id];
-  const hex = getColorHex(project.color);
+  const hex = getAgentColorHex(project.color);
   const label = project.displayName || project.name;
   const letter = label.charAt(0).toUpperCase();
   const hasImage = !!project.icon && !!iconDataUrl;
@@ -168,7 +164,7 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
       </span>
     </button>
   );
-}
+});
 
 function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
   entry: PluginRegistryEntry;
@@ -803,7 +799,11 @@ export function ProjectRail() {
             setSettingsContext('project');
             setSettingsSubPage('project');
           }}
-          onCloseProject={() => removeProject(contextMenu.projectId)}
+          onCloseProject={() => {
+            if (window.confirm('Close this project? Project-specific settings may need to be reconfigured.')) {
+              removeProject(contextMenu.projectId);
+            }
+          }}
         />
       )}
     </div>

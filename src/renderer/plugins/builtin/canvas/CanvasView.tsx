@@ -746,7 +746,7 @@ export function CanvasViewComponent({
           )}
           {isAgentRunning && (
             <button
-              className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-blue-500/20 hover:text-blue-400 transition-colors"
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-accent/20 hover:text-ctp-accent transition-colors"
               onClick={(e) => { e.stopPropagation(); handleSleep(); }}
               title="Sleep agent"
               data-testid="canvas-view-sleep"

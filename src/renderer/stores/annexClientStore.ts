@@ -276,6 +276,53 @@ export const satellitePtyExitBus = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Event batching — reduces setState frequency from 100+/sec to ~10/sec
+// ---------------------------------------------------------------------------
+
+/** Batch PTY data events into 100ms windows to avoid per-keystroke setState. */
+const ptyDataBuffer: Array<{ satelliteId: string; agentId: string; data: string }> = [];
+let ptyDataFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushPtyData(): void {
+  ptyDataFlushTimer = null;
+  const batch = ptyDataBuffer.splice(0);
+  for (const { satelliteId, agentId, data } of batch) {
+    satellitePtyDataBus.emit(satelliteId, agentId, data);
+  }
+}
+
+function enqueuePtyData(satelliteId: string, agentId: string, data: string): void {
+  ptyDataBuffer.push({ satelliteId, agentId, data });
+  if (!ptyDataFlushTimer) {
+    ptyDataFlushTimer = setTimeout(flushPtyData, 100);
+  }
+}
+
+/** Throttle hook/structured status events to 50ms per agent. */
+const hookThrottleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const pendingHookPayloads = new Map<string, { satelliteId: string; agentId: string; detailedStatus: import('../../shared/types').AgentDetailedStatus }>();
+
+function throttledHookUpdate(
+  satelliteId: string, agentId: string,
+  detailedStatus: import('../../shared/types').AgentDetailedStatus,
+): void {
+  const key = `${satelliteId}:${agentId}`;
+  pendingHookPayloads.set(key, { satelliteId, agentId, detailedStatus });
+  if (!hookThrottleTimers.has(key)) {
+    hookThrottleTimers.set(key, setTimeout(() => {
+      hookThrottleTimers.delete(key);
+      const payload = pendingHookPayloads.get(key);
+      pendingHookPayloads.delete(key);
+      if (payload) {
+        useRemoteProjectStore.getState().updateRemoteAgentStatus(
+          payload.satelliteId, payload.agentId, payload.detailedStatus,
+        );
+      }
+    }, 50));
+  }
+}
+
 /** Listen for satellite updates pushed from main process. */
 export function initAnnexClientListener(): () => void {
   const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites: SatelliteConnection[]) => {
@@ -319,22 +366,18 @@ export function initAnnexClientListener(): () => void {
       }));
     } else if (type === 'pty:data') {
       const p = payload as { agentId: string; data: string };
-      satellitePtyDataBus.emit(satelliteId, p.agentId, p.data);
+      enqueuePtyData(satelliteId, p.agentId, p.data);
     } else if (type === 'hook:event') {
       // Agent detailed status update (pre_tool, post_tool, etc.)
       const p = payload as { agentId: string; event: unknown; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
       if (p.agentId && p.detailedStatus) {
-        useRemoteProjectStore.getState().updateRemoteAgentStatus(
-          satelliteId, p.agentId, p.detailedStatus,
-        );
+        throttledHookUpdate(satelliteId, p.agentId, p.detailedStatus);
       }
     } else if (type === 'structured:event') {
       // Structured-mode agent status update
       const p = payload as { agentId: string; event: unknown; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
       if (p.agentId && p.detailedStatus) {
-        useRemoteProjectStore.getState().updateRemoteAgentStatus(
-          satelliteId, p.agentId, p.detailedStatus,
-        );
+        throttledHookUpdate(satelliteId, p.agentId, p.detailedStatus);
       }
     } else if (type === 'agent:woken') {
       // Existing agent woken — update status to 'running'
@@ -433,12 +476,21 @@ export function initAnnexClientListener(): () => void {
           return patched;
         });
 
-        // Helper to route canvas data to the correct store based on scope
+        // Helper to route canvas data to the correct store based on scope.
+        // Deferred via requestIdleCallback to avoid blocking the event loop
+        // with deep object cloning during rapid canvas:state bursts.
         const commitCanvasData = (data: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }) => {
-          if (isAppLevel) {
-            useRemoteProjectStore.getState().updateRemoteAppCanvasState(satelliteId, data);
+          const commit = () => {
+            if (isAppLevel) {
+              useRemoteProjectStore.getState().updateRemoteAppCanvasState(satelliteId, data);
+            } else {
+              useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, data);
+            }
+          };
+          if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(commit);
           } else {
-            useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, data);
+            setTimeout(commit, 0);
           }
         };
 
@@ -535,5 +587,11 @@ export function initAnnexClientListener(): () => void {
     unsubSatellites();
     unsubDiscovered();
     unsubEvents();
+    // Flush pending PTY data and clear throttle timers
+    if (ptyDataFlushTimer) { clearTimeout(ptyDataFlushTimer); ptyDataFlushTimer = null; }
+    flushPtyData();
+    for (const timer of hookThrottleTimers.values()) clearTimeout(timer);
+    hookThrottleTimers.clear();
+    pendingHookPayloads.clear();
   };
 }

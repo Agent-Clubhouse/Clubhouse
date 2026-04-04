@@ -20,6 +20,8 @@ export const solarizedDark: ThemeDefinition = {
     error: '#ec6b63',
     info: '#4ea0db',
     success: '#859900',
+    accent2: '#2aa198',
+    overlay: '#586e75',
   },
   hljs: {
     keyword: '#859900',

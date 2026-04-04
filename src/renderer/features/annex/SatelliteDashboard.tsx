@@ -13,23 +13,14 @@ import {
   satellitePrefix,
 } from '../../stores/remoteProjectStore';
 import { useProjectStore } from '../../stores/projectStore';
-import { AGENT_COLORS } from '../../../shared/name-generator';
+import { getAgentColorHex } from '../../../shared/name-generator';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getColorHex(colorId: string): string {
-  const color = AGENT_COLORS.find((c) => c.id === colorId);
-  return color?.hex || '#6366f1';
-}
-
-const STATUS_RING_COLOR: Record<string, string> = {
-  running: '#22c55e',
-  sleeping: '#6c7086',
-  error: '#f87171',
-};
+import { STATUS_RING_COLORS as STATUS_RING_COLOR } from '../agents/status-colors';
 
 // ---------------------------------------------------------------------------
 // Remote Agent Avatar
@@ -55,8 +46,7 @@ function RemoteAgentAvatar({ agent, iconDataUrl, detailedStatus }: {
           </div>
         );
       }
-      const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
-      const bgHex = colorInfo?.hex || '#6366f1';
+      const bgHex = getAgentColorHex(agent.color);
       const initials = agent.name.slice(0, 2).toUpperCase();
       return (
         <div
@@ -215,7 +205,7 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
 
   const satellite = satellites.find((s) => s.id === activeHostId);
   const satelliteName = satellite?.alias || 'Remote';
-  const colorHex = satellite?.color ? getColorHex(satellite.color) : '#6366f1';
+  const colorHex = getAgentColorHex(satellite?.color);
 
   // Find projects for this satellite — applySatelliteSnapshot keys by satelliteId (= satellite.id)
   const projects = useMemo(() => {

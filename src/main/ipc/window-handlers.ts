@@ -3,6 +3,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { getSettings as getThemeSettings } from '../services/theme-service';
 import { getThemeColorsForTitleBar } from '../title-bar-colors';
 import { appLog } from '../services/log-service';
+import { applyWindowSecurityGuards } from '../window-security-guards';
 import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
@@ -197,6 +198,9 @@ export function registerWindowHandlers(): void {
     popoutWindows.set(windowId, { window: win, params });
 
     win.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+
+    // Apply the same security guards as the main window
+    applyWindowSecurityGuards(win);
 
     win.once('ready-to-show', () => {
       win.show();

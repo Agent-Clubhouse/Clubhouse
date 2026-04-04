@@ -140,8 +140,23 @@ describe('IPC Channel Sync', () => {
     }
   });
 
+  /**
+   * Channels that are deliberately NOT referenced in preload/index.ts.
+   * These are main→renderer channels whose preload references were removed
+   * as bug fixes (they were wired to the wrong listener channels).
+   */
+  const NOT_IN_PRELOAD = new Set([
+    // Fixed: onHubMutation/onCanvasMutation now correctly listen on
+    // HUB_MUTATION/CANVAS_MUTATION instead of the REQUEST_* variants.
+    // The REQUEST_* channels are used by broadcastToAllWindows in annex-server
+    // but do not need preload bridge listeners.
+    'IPC.WINDOW.REQUEST_HUB_MUTATION',
+    'IPC.WINDOW.REQUEST_CANVAS_MUTATION',
+  ]);
+
   describe('all channels defined in ipc-channels.ts are exposed in preload', () => {
     for (const [dottedPath, channelValue] of channelMap) {
+      if (NOT_IN_PRELOAD.has(dottedPath)) continue;
       it(`${dottedPath} ('${channelValue}') is referenced in src/preload/index.ts`, () => {
         // Preload references channels via IPC.GROUP.KEY constants
         const shortPath = dottedPath.replace('IPC.', '');

@@ -524,34 +524,40 @@ describe('hydrateFromRemote', () => {
       expect(mockMcpBinding.bind).toHaveBeenCalledWith('a1', expect.objectContaining({ targetId: 'a2' }));
     });
 
-    it('prunes stale bindings whose source and target views no longer exist', async () => {
-      // Set up a canvas with one agent view (agentId: 'agent-alive')
+    it('prunes stale bindings when either endpoint is missing', async () => {
+      // Set up a canvas with two agent views
       const canvasStorage = createMockStorage({
         'canvas-instances': [{
           id: 'c1', name: 'Canvas', views: [
-            { id: 'cv1', type: 'agent', agentId: 'agent-alive', position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0, displayName: 'Alive', metadata: {} },
-          ], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1,
+            { id: 'cv1', type: 'agent', agentId: 'agent-a', position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0, displayName: 'A', metadata: {} },
+            { id: 'cv2', type: 'agent', agentId: 'agent-b', position: { x: 400, y: 0 }, size: { width: 300, height: 200 }, zIndex: 1, displayName: 'B', metadata: {} },
+          ], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 2,
         }],
         'canvas-active-id': 'c1',
         'canvas-wires': [
-          // Valid: source agent exists on canvas
-          { agentId: 'agent-alive', targetId: 'some-target', targetKind: 'agent', label: 'Valid' },
-          // Stale: neither agentId nor targetId exist in any canvas view
-          { agentId: 'agent-gone', targetId: 'target-gone', targetKind: 'agent', label: 'Stale' },
+          // Valid: both endpoints exist on canvas
+          { agentId: 'agent-a', targetId: 'agent-b', targetKind: 'agent', label: 'Valid' },
+          // Stale: source exists but target is missing
+          { agentId: 'agent-a', targetId: 'target-gone', targetKind: 'agent', label: 'Half-stale-1' },
+          // Stale: target exists but source is missing
+          { agentId: 'agent-gone', targetId: 'agent-b', targetKind: 'agent', label: 'Half-stale-2' },
+          // Stale: neither endpoint exists
+          { agentId: 'agent-gone', targetId: 'target-gone', targetKind: 'agent', label: 'Fully-stale' },
         ],
       });
 
       await store.getState().loadCanvas(canvasStorage);
       await store.getState().loadWires(canvasStorage);
 
-      // Only the valid binding should be restored (both MCP bind and wireDefinitions)
+      // Only the wire with both endpoints present should be restored
       expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
-      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-alive', expect.objectContaining({ targetId: 'some-target' }));
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-a', expect.objectContaining({ targetId: 'agent-b' }));
       expect(store.getState().wireDefinitions).toHaveLength(1);
-      expect(store.getState().wireDefinitions[0].agentId).toBe('agent-alive');
+      expect(store.getState().wireDefinitions[0].agentId).toBe('agent-a');
+      expect(store.getState().wireDefinitions[0].targetId).toBe('agent-b');
     });
 
-    it('keeps bindings where only target exists on canvas', async () => {
+    it('prunes bindings where only one endpoint exists on canvas', async () => {
       const canvasStorage = createMockStorage({
         'canvas-instances': [{
           id: 'c1', name: 'Canvas', views: [
@@ -560,7 +566,7 @@ describe('hydrateFromRemote', () => {
         }],
         'canvas-active-id': 'c1',
         'canvas-wires': [
-          // Source not on canvas, but target agent IS on canvas — keep it
+          // Source not on canvas — wire should be pruned even though target exists
           { agentId: 'external-agent', targetId: 'agent-target', targetKind: 'agent', label: 'Cross-canvas' },
         ],
       });
@@ -568,7 +574,8 @@ describe('hydrateFromRemote', () => {
       await store.getState().loadCanvas(canvasStorage);
       await store.getState().loadWires(canvasStorage);
 
-      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
+      expect(mockMcpBinding.bind).not.toHaveBeenCalled();
+      expect(store.getState().wireDefinitions).toHaveLength(0);
     });
 
     it('loadWires populates wireDefinitions', async () => {
@@ -776,8 +783,7 @@ describe('hydrateFromRemote', () => {
         'canvas-active-id': 'c1',
         'canvas-wires': [
           { agentId: 'agent-1', targetId: 'gp_123', targetKind: 'group-project', label: 'GP' },
-          // This binding's source (agent-1) still exists, so it is kept even though
-          // gp_deleted is gone — reconciliation only drops fully orphaned bindings.
+          // Source exists but target GP is gone — pruned (either endpoint missing)
           { agentId: 'agent-1', targetId: 'gp_deleted', targetKind: 'group-project', label: 'Gone' },
           // Fully orphaned: neither source nor target exist on any canvas
           { agentId: 'agent-gone', targetId: 'gp_also_gone', targetKind: 'group-project', label: 'Orphan' },
@@ -787,10 +793,9 @@ describe('hydrateFromRemote', () => {
       await store.getState().loadCanvas(canvasStorage);
       await store.getState().loadWires(canvasStorage);
 
-      // Two bindings restored (agent-1 is valid), fully orphaned one is pruned
-      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(2);
+      // Only the binding where both endpoints exist is restored
+      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
       expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_123' }));
-      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_deleted' }));
     });
   });
 

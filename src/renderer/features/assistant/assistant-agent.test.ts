@@ -417,4 +417,117 @@ describe('assistant-agent', () => {
       }
     });
   });
+
+  describe('CQ-C01: structured follow-up uses server-returned agentId', () => {
+    it('sets agentId from server response, not client-generated ID', async () => {
+      agent.setMode('structured');
+      const serverFollowupId = 'server_assigned_followup_abc';
+      mockSendStructuredFollowup.mockResolvedValueOnce({ agentId: serverFollowupId });
+
+      await agent.sendMessage('Hello');
+
+      // Get to active state via 'end' event
+      const eventCb = mockOnStructuredEvent.mock.calls[0][0];
+      eventCb(agent.getAgentId(), { type: 'end', timestamp: Date.now(), data: { reason: 'complete' } });
+      expect(agent.getStatus()).toBe('active');
+
+      // Trigger follow-up (sendStructuredMessage throws → falls back to structured followup)
+      mockSendStructuredMessage.mockRejectedValueOnce(new Error('not supported'));
+      await agent.sendMessage('Follow up');
+
+      // agentId should be the server-returned one
+      expect(agent.getAgentId()).toBe(serverFollowupId);
+    });
+
+    it('receives events correctly when server assigns a different ID', async () => {
+      agent.setMode('structured');
+      const serverFollowupId = 'server_different_id_xyz';
+      mockSendStructuredFollowup.mockResolvedValueOnce({ agentId: serverFollowupId });
+
+      await agent.sendMessage('Hello');
+
+      // Get to active state
+      const eventCb = mockOnStructuredEvent.mock.calls[0][0];
+      eventCb(agent.getAgentId(), { type: 'end', timestamp: Date.now(), data: { reason: 'complete' } });
+
+      // Trigger structured follow-up
+      mockSendStructuredMessage.mockRejectedValueOnce(new Error('not supported'));
+      await agent.sendMessage('Follow up');
+
+      // The new event callback should accept events with the server-assigned ID
+      const followupEventCb = mockOnStructuredEvent.mock.calls[mockOnStructuredEvent.mock.calls.length - 1][0];
+      followupEventCb(serverFollowupId, { type: 'text_delta', timestamp: Date.now(), data: { text: 'Server response' } });
+
+      const items = agent.getFeedItems();
+      const responseMsg = items.find(i => i.message?.role === 'assistant' && i.message.content === 'Server response');
+      expect(responseMsg).toBeDefined();
+    });
+  });
+
+  describe('LB-H03: headless follow-up rejects stale results', () => {
+    it('rejects results from a previous follow-up agent', async () => {
+      agent.setMode('headless');
+      await agent.sendMessage('Hello');
+
+      // Simulate first follow-up completing to reach active state
+      const resultCb = mockOnResult.mock.calls[0]?.[0];
+      if (!resultCb) return;
+
+      mockReadTranscript.mockResolvedValueOnce('{"type":"result","result":"First response"}\n');
+      resultCb({ agentId: agent.getAgentId(), exitCode: 0 });
+      await vi.waitFor(() => expect(agent.getStatus()).toBe('active'));
+
+      // Send follow-up A
+      const followupIdA = 'assistant_followup_A';
+      mockSendFollowup.mockResolvedValueOnce({ agentId: followupIdA });
+      await agent.sendMessage('Follow-up A');
+      expect(agent.getAgentId()).toBe(followupIdA);
+
+      // Send follow-up B (supersedes A)
+      const followupIdB = 'assistant_followup_B';
+      mockSendFollowup.mockResolvedValueOnce({ agentId: followupIdB });
+
+      // Simulate reaching active again so we can send another follow-up
+      mockReadTranscript.mockResolvedValueOnce('{"type":"result","result":"Response A"}\n');
+      resultCb({ agentId: followupIdA, exitCode: 0 });
+      await vi.waitFor(() => expect(agent.getStatus()).toBe('active'));
+
+      await agent.sendMessage('Follow-up B');
+      expect(agent.getAgentId()).toBe(followupIdB);
+
+      // Now stale result from A arrives — should be rejected
+      const feedBefore = agent.getFeedItems().length;
+      resultCb({ agentId: followupIdA, exitCode: 0 });
+
+      // Feed should not have changed — stale result was rejected
+      expect(agent.getFeedItems().length).toBe(feedBefore);
+    });
+
+    it('accepts results from the current follow-up agent', async () => {
+      agent.setMode('headless');
+      await agent.sendMessage('Hello');
+
+      const resultCb = mockOnResult.mock.calls[0]?.[0];
+      if (!resultCb) return;
+
+      mockReadTranscript.mockResolvedValueOnce('{"type":"result","result":"First response"}\n');
+      resultCb({ agentId: agent.getAgentId(), exitCode: 0 });
+      await vi.waitFor(() => expect(agent.getStatus()).toBe('active'));
+
+      // Send follow-up
+      const followupId = 'assistant_followup_current';
+      mockSendFollowup.mockResolvedValueOnce({ agentId: followupId });
+      await agent.sendMessage('Current follow-up');
+      expect(agent.getAgentId()).toBe(followupId);
+
+      // Result from the current follow-up should be accepted
+      mockReadTranscript.mockResolvedValueOnce('{"type":"result","result":"Current response"}\n');
+      resultCb({ agentId: followupId, exitCode: 0 });
+
+      await vi.waitFor(() => {
+        const items = agent.getFeedItems();
+        return items.some(i => i.message?.content === 'Current response');
+      });
+    });
+  });
 });

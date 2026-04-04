@@ -308,11 +308,14 @@ describe('ProjectSettings', () => {
 
     it('clicking Close Project removes project and closes settings', () => {
       resetStores();
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
       render(<ProjectSettings />);
       fireEvent.click(screen.getByText('Close Project'));
 
+      expect(window.confirm).toHaveBeenCalled();
       expect(mockToggleSettings).toHaveBeenCalled();
       expect(mockRemoveProject).toHaveBeenCalledWith('proj-1');
+      vi.mocked(window.confirm).mockRestore();
     });
 
     it('clicking Reset Project shows confirmation dialog', () => {

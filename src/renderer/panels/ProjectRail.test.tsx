@@ -199,11 +199,13 @@ describe('ProjectRail context menu', () => {
       removeProject,
     });
 
+    window.confirm = vi.fn(() => true);
     render(<ProjectRail />);
     const projectButton = screen.getByTestId('project-p1');
     fireEvent.contextMenu(projectButton.parentElement!);
     fireEvent.click(screen.getByTestId('ctx-close-project'));
 
+    expect(window.confirm).toHaveBeenCalled();
     expect(removeProject).toHaveBeenCalledWith('p1');
   });
 

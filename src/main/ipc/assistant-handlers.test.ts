@@ -133,8 +133,10 @@ vi.mock('fs', async () => {
     mkdirSync: vi.fn(),
     writeFileSync: vi.fn(),
     promises: {
+      mkdir: vi.fn().mockResolvedValue(undefined),
       writeFile: vi.fn().mockResolvedValue(undefined),
       readFile: vi.fn().mockResolvedValue('[]'),
+      access: vi.fn().mockResolvedValue(undefined),
     },
   };
 });

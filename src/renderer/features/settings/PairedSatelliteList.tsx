@@ -1,16 +1,12 @@
 import { useState } from 'react';
 import type { SatelliteConnection } from '../../stores/annexClientStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
-import { AGENT_COLORS } from '../../../shared/name-generator';
+import { getAgentColorHex } from '../../../shared/name-generator';
 
 interface Props {
   satellites: SatelliteConnection[];
 }
 
-function getColorHex(colorId: string): string {
-  const color = AGENT_COLORS.find((c) => c.id === colorId);
-  return color?.hex || '#6366f1';
-}
 
 function StatusDot({ state }: { state: SatelliteConnection['state'] }) {
   const colors: Record<string, string> = {
@@ -54,7 +50,7 @@ export function PairedSatelliteList({ satellites }: Props) {
           <div className="flex items-center gap-3 min-w-0">
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-              style={{ backgroundColor: getColorHex(sat.color) }}
+              style={{ backgroundColor: getAgentColorHex(sat.color) }}
             >
               {sat.alias.slice(0, 2).toUpperCase()}
             </div>

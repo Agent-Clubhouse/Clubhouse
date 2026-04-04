@@ -102,7 +102,7 @@ export function registerProjectHandlers(): void {
     return `data:${mime};base64,${data.toString('base64')}`;
   });
 
-  ipcMain.handle(IPC.PROJECT.SAVE_CROPPED_ICON, withValidatedArgs([stringArg(), stringArg()], async (_event, projectId: string, dataUrl: string) => {
+  ipcMain.handle(IPC.PROJECT.SAVE_CROPPED_ICON, withValidatedArgs([stringArg(), stringArg({ maxLength: 5 * 1024 * 1024 })], async (_event, projectId: string, dataUrl: string) => {
     return projectStore.saveCroppedIcon(projectId, dataUrl);
   }));
 

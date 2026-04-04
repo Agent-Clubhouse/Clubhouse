@@ -302,6 +302,43 @@ describe('soundStore', () => {
     });
   });
 
+  describe('sound cache LRU eviction', () => {
+    it('evicts oldest entries when cache exceeds 50', async () => {
+      // Pre-fill cache with 50 entries
+      const initialCache: Record<string, string> = {};
+      for (let i = 0; i < 50; i++) {
+        initialCache[`pack-${i}:agent-done`] = `data:audio/mpeg;base64,sound${i}`;
+      }
+      useSoundStore.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          slotAssignments: { 'agent-done': { packId: 'new-pack' } },
+        },
+        soundCache: initialCache,
+      });
+      mockGetSoundData.mockResolvedValue('data:audio/mpeg;base64,new');
+
+      // Playing a sound should add a new entry and evict the oldest
+      await useSoundStore.getState().playSound('agent-done');
+
+      const cache = useSoundStore.getState().soundCache;
+      expect(Object.keys(cache).length).toBeLessThanOrEqual(50);
+      expect(cache['new-pack:agent-done']).toBe('data:audio/mpeg;base64,new');
+    });
+
+    it('clears cache when applying all from a new pack', async () => {
+      useSoundStore.setState({
+        settings: DEFAULT_SETTINGS,
+        soundCache: { 'old-pack:agent-done': 'data:audio/mpeg;base64,old' },
+      });
+      mockSaveSoundSettings.mockResolvedValue(undefined);
+
+      await useSoundStore.getState().applyAllFromPack('new-pack');
+
+      expect(useSoundStore.getState().soundCache).toEqual({});
+    });
+  });
+
   describe('applyAllFromPack', () => {
     it('sets all slots to the same pack', async () => {
       useSoundStore.setState({ settings: DEFAULT_SETTINGS });

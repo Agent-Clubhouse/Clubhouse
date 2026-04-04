@@ -35,21 +35,56 @@ import type { OrchestratorId } from '../orchestrators';
 const ASSISTANT_TARGET_ID = 'clubhouse_assistant';
 const LOG_NS = 'core:assistant';
 
-/** Get or create the assistant workspace directory. */
-function getAssistantWorkspace(): string {
+/** Resolve a convention path within a workspace, rejecting traversal attempts. */
+function safeWorkspacePath(workspace: string, relativePath: string): string {
+  const resolved = path.resolve(workspace, relativePath);
+  if (!resolved.startsWith(path.resolve(workspace) + path.sep) && resolved !== path.resolve(workspace)) {
+    throw new Error(`Path traversal detected: ${relativePath}`);
+  }
+  return resolved;
+}
+
+/**
+ * Shared MCP injection setup used by all 5 spawn/followup paths.
+ * Generates a nonce, snapshots the MCP config file, and injects the
+ * Clubhouse MCP server definition into the workspace.
+ */
+async function prepareMcpInjection(
+  agentId: string, workspace: string, conventions?: { mcpConfigFile?: string },
+): Promise<{ nonce: string; mcpPort: number }> {
+  const nonce = randomUUID();
+  agentRegistry.setNonce(agentId, nonce);
+
+  const mcpConfigFile = conventions?.mcpConfigFile || '.mcp.json';
+  const mcpJsonPath = safeWorkspacePath(workspace, mcpConfigFile);
+  configPipeline.snapshotFile(agentId, mcpJsonPath);
+
+  let mcpPort = 0;
+  try {
+    mcpPort = await waitMcpBridgeReady();
+    await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, conventions);
+    appLog(LOG_NS, 'info', 'MCP config injected', { meta: { agentId, mcpPort } });
+  } catch (err) {
+    appLog(LOG_NS, 'warn', 'MCP bridge not available', { meta: { agentId, error: String(err) } });
+  }
+
+  return { nonce, mcpPort };
+}
+
+/** Get or create the assistant workspace directory (async to avoid blocking main thread). */
+async function getAssistantWorkspace(): Promise<string> {
   const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
   const workspace = path.join(home, '.clubhouse', 'assistant');
-  if (!fs.existsSync(workspace)) {
-    fs.mkdirSync(workspace, { recursive: true });
-    appLog(LOG_NS, 'info', 'Created assistant workspace', { meta: { path: workspace } });
-  }
+  await fs.promises.mkdir(workspace, { recursive: true });
   // Ensure .clubhouse/settings.json exists to suppress ENOENT warnings
   // from readProjectAgentDefaults which expects this file in every "project"
   const settingsDir = path.join(workspace, '.clubhouse');
   const settingsFile = path.join(settingsDir, 'settings.json');
-  if (!fs.existsSync(settingsFile)) {
-    fs.mkdirSync(settingsDir, { recursive: true });
-    fs.writeFileSync(settingsFile, '{}', 'utf-8');
+  try {
+    await fs.promises.access(settingsFile);
+  } catch {
+    await fs.promises.mkdir(settingsDir, { recursive: true });
+    await fs.promises.writeFile(settingsFile, '{}', 'utf-8');
   }
   return workspace;
 }
@@ -81,11 +116,11 @@ export function registerAssistantHandlers(): void {
         meta: { agentId, executionMode, orchestrator: orchestratorId || 'default', model: model || 'default' },
       });
 
-      const workspace = getAssistantWorkspace();
+      const workspace = await getAssistantWorkspace();
 
       // Write the system prompt as CLAUDE.md in the workspace
       try {
-        fs.writeFileSync(path.join(workspace, 'CLAUDE.md'), systemPrompt, 'utf-8');
+        await fs.promises.writeFile(path.join(workspace, 'CLAUDE.md'), systemPrompt, 'utf-8');
         appLog(LOG_NS, 'info', 'Wrote CLAUDE.md to workspace', { meta: { path: workspace, length: systemPrompt.length } });
       } catch (err) {
         appLog(LOG_NS, 'warn', 'Failed to write CLAUDE.md', { meta: { error: String(err) } });
@@ -107,9 +142,9 @@ export function registerAssistantHandlers(): void {
       const localInstructions = provider.conventions?.localInstructionsFile;
       if (localInstructions && localInstructions !== 'CLAUDE.md') {
         try {
-          const instrPath = path.join(workspace, localInstructions);
-          fs.mkdirSync(path.dirname(instrPath), { recursive: true });
-          fs.writeFileSync(instrPath, systemPrompt, 'utf-8');
+          const instrPath = safeWorkspacePath(workspace, localInstructions);
+          await fs.promises.mkdir(path.dirname(instrPath), { recursive: true });
+          await fs.promises.writeFile(instrPath, systemPrompt, 'utf-8');
           appLog(LOG_NS, 'info', `Wrote ${localInstructions} to workspace`, { meta: { path: instrPath } });
         } catch (err) {
           appLog(LOG_NS, 'warn', `Failed to write ${localInstructions}`, { meta: { error: String(err) } });
@@ -180,7 +215,7 @@ export function registerAssistantHandlers(): void {
       const orchestratorId = (params as AssistantFollowupParams).orchestrator;
 
       const agentId = `assistant_followup_${Date.now()}_${randomUUID().slice(0, 8)}`;
-      const workspace = getAssistantWorkspace();
+      const workspace = await getAssistantWorkspace();
 
       appLog(LOG_NS, 'info', 'Follow-up requested', {
         meta: { agentId, orchestrator: orchestratorId || 'default', messageLength: message.length },
@@ -195,14 +230,12 @@ export function registerAssistantHandlers(): void {
       const profileEnv = await resolveProfileEnv(workspace, provider.id);
       const permissionMode = freeAgentSettings.getPermissionMode(workspace);
 
-      const nonce = randomUUID();
       // Register the follow-up agent (each follow-up gets its own agentId)
       agentRegistry.register(agentId, {
         projectPath: workspace,
         orchestrator: provider.id as OrchestratorId,
         runtime: 'headless',
       });
-      agentRegistry.setNonce(agentId, nonce);
 
       // Create MCP binding for this follow-up agent
       bindingManager.bind(agentId, {
@@ -212,18 +245,7 @@ export function registerAssistantHandlers(): void {
       });
       appLog(LOG_NS, 'info', 'Follow-up: registered agent and MCP binding', { meta: { agentId } });
 
-      // MCP injection
-      let mcpPort = 0;
-      const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
-      const mcpJsonPath = path.join(workspace, mcpConfigFile);
-      configPipeline.snapshotFile(agentId, mcpJsonPath);
-
-      try {
-        mcpPort = await waitMcpBridgeReady();
-        await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, provider.conventions);
-      } catch {
-        appLog(LOG_NS, 'warn', 'MCP bridge not available for follow-up', { meta: { agentId } });
-      }
+      const { nonce, mcpPort } = await prepareMcpInjection(agentId, workspace, provider.conventions);
 
       // Build headless command — session persists so --continue works
       const headlessResult = await provider.buildHeadlessCommand({
@@ -286,7 +308,7 @@ export function registerAssistantHandlers(): void {
       const orchestratorId = (params as AssistantFollowupParams).orchestrator;
 
       const agentId = `assistant_followup_${Date.now()}_${randomUUID().slice(0, 8)}`;
-      const workspace = getAssistantWorkspace();
+      const workspace = await getAssistantWorkspace();
 
       appLog(LOG_NS, 'info', 'Structured follow-up requested', {
         meta: { agentId, orchestrator: orchestratorId || 'default', messageLength: message.length },
@@ -301,13 +323,11 @@ export function registerAssistantHandlers(): void {
       const profileEnv = await resolveProfileEnv(workspace, provider.id);
       const permissionMode = freeAgentSettings.getPermissionMode(workspace);
 
-      const nonce = randomUUID();
       agentRegistry.register(agentId, {
         projectPath: workspace,
         orchestrator: provider.id as OrchestratorId,
         runtime: 'structured',
       });
-      agentRegistry.setNonce(agentId, nonce);
 
       // Create MCP binding for the follow-up
       bindingManager.bind(agentId, {
@@ -316,18 +336,7 @@ export function registerAssistantHandlers(): void {
         label: 'Clubhouse Assistant',
       });
 
-      // MCP injection
-      let mcpPort = 0;
-      const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
-      const mcpJsonPath = path.join(workspace, mcpConfigFile);
-      configPipeline.snapshotFile(agentId, mcpJsonPath);
-
-      try {
-        mcpPort = await waitMcpBridgeReady();
-        await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, provider.conventions);
-      } catch {
-        appLog(LOG_NS, 'warn', 'MCP bridge not available for structured follow-up', { meta: { agentId } });
-      }
+      const { nonce, mcpPort } = await prepareMcpInjection(agentId, workspace, provider.conventions);
 
       // Create adapter with resume flag → adds --continue to args
       const adapter = provider.createStructuredAdapter({ resume: true });
@@ -395,7 +404,7 @@ export function registerAssistantHandlers(): void {
     [objectArg<{ items: any[] }>()],
     async (_event, params) => {
       const { items } = params as { items: any[] };
-      const workspace = getAssistantWorkspace();
+      const workspace = await getAssistantWorkspace();
       const historyPath = path.join(workspace, 'chat-history.json');
       try {
         await fs.promises.writeFile(historyPath, JSON.stringify(items), 'utf-8');
@@ -409,7 +418,7 @@ export function registerAssistantHandlers(): void {
   // ── LOAD_HISTORY ──────────────────────────────────────────────────────────
   // Load chat history from the assistant workspace.
   ipcMain.handle(IPC.ASSISTANT.LOAD_HISTORY, async () => {
-    const workspace = getAssistantWorkspace();
+    const workspace = await getAssistantWorkspace();
     const historyPath = path.join(workspace, 'chat-history.json');
     try {
       const data = await fs.promises.readFile(historyPath, 'utf-8');
@@ -429,22 +438,14 @@ async function spawnInteractive(
   mission: string, systemPrompt: string, model: string | undefined,
   profileEnv: Record<string, string> | undefined, permissionMode: 'auto' | 'skip-all',
 ): Promise<void> {
-  const nonce = randomUUID();
-  agentRegistry.setNonce(agentId, nonce);
-
-  // Snapshot MCP config before injection
-  const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
-  const mcpJsonPath = path.join(workspace, mcpConfigFile);
-  configPipeline.snapshotFile(agentId, mcpJsonPath);
-
-  // Parallel: hook server + MCP bridge + spawn command
-  let mcpPort = 0;
   // Don't pass mission to buildSpawnCommand for providers that use -p (Copilot,
   // Codex) — -p enters one-shot prompt mode and exits, crashing the PTY session.
   // Claude Code handles positional args correctly for interactive mode.
   // The system prompt is never passed — it's in the instructions file.
   const interactiveMission = provider.id === 'claude-code' ? mission : undefined;
-  const [, , spawnCmd] = await Promise.all([
+
+  // Parallel: hook server + MCP injection + spawn command
+  const [, mcp, spawnCmd] = await Promise.all([
     waitHookServerReady().then(async (port) => {
       if (isHookCapable(provider)) {
         await provider.writeHooksConfig(workspace, `http://127.0.0.1:${port}/hook`);
@@ -453,18 +454,14 @@ async function spawnInteractive(
     }).catch((err) => {
       appLog(LOG_NS, 'warn', 'Hook server not available for interactive mode', { meta: { agentId, error: String(err) } });
     }),
-    waitMcpBridgeReady().then(async (port) => {
-      mcpPort = port;
-      await injectClubhouseMcp(workspace, agentId, port, nonce, provider.conventions);
-      appLog(LOG_NS, 'info', 'MCP config injected', { meta: { agentId, mcpPort: port } });
-    }).catch((err) => {
-      appLog(LOG_NS, 'warn', 'MCP bridge not available', { meta: { agentId, error: String(err) } });
-    }),
+    prepareMcpInjection(agentId, workspace, provider.conventions),
     provider.buildSpawnCommand({
       cwd: workspace, model, mission: interactiveMission,
       agentId, freeAgentMode: true, permissionMode,
     }),
   ]);
+
+  const { nonce, mcpPort } = mcp;
 
   const { binary } = spawnCmd;
   let { args } = spawnCmd;
@@ -503,23 +500,8 @@ async function spawnStructured(
     throw new Error(`${provider.displayName} does not support structured mode`);
   }
 
-  const nonce = randomUUID();
-  agentRegistry.setNonce(agentId, nonce);
   agentRegistry.setRuntime(agentId, 'structured');
-
-  // MCP injection — same as headless/interactive so assistant tools are visible
-  let mcpPort = 0;
-  const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
-  const mcpJsonPath = path.join(workspace, mcpConfigFile);
-  configPipeline.snapshotFile(agentId, mcpJsonPath);
-
-  try {
-    mcpPort = await waitMcpBridgeReady();
-    await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, provider.conventions);
-    appLog(LOG_NS, 'info', 'MCP config injected (structured)', { meta: { agentId, mcpPort } });
-  } catch {
-    appLog(LOG_NS, 'warn', 'MCP bridge not available for structured', { meta: { agentId } });
-  }
+  const { nonce, mcpPort } = await prepareMcpInjection(agentId, workspace, provider.conventions);
 
   const adapter = provider.createStructuredAdapter();
   appLog(LOG_NS, 'info', 'Structured adapter created', { meta: { agentId, orchestrator: provider.id } });
@@ -562,23 +544,8 @@ async function spawnHeadless(
     throw new Error(`${provider.displayName} does not support headless mode`);
   }
 
-  const nonce = randomUUID();
-  agentRegistry.setNonce(agentId, nonce);
   agentRegistry.setRuntime(agentId, 'headless');
-
-  // MCP injection for headless
-  let mcpPort = 0;
-  const mcpConfigFile = provider.conventions?.mcpConfigFile || '.mcp.json';
-  const mcpJsonPath = path.join(workspace, mcpConfigFile);
-  configPipeline.snapshotFile(agentId, mcpJsonPath);
-
-  try {
-    mcpPort = await waitMcpBridgeReady();
-    await injectClubhouseMcp(workspace, agentId, mcpPort, nonce, provider.conventions);
-    appLog(LOG_NS, 'info', 'MCP config injected (headless)', { meta: { agentId, mcpPort } });
-  } catch {
-    appLog(LOG_NS, 'warn', 'MCP bridge not available for headless', { meta: { agentId } });
-  }
+  const { nonce, mcpPort } = await prepareMcpInjection(agentId, workspace, provider.conventions);
 
   // Session persistence is enabled (no noSessionPersistence flag) so that
   // follow-up messages can use --continue to resume the conversation.

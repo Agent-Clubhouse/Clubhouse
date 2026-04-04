@@ -341,19 +341,29 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
 
     // Merge into store (replace this satellite's data, keep others)
     set((state) => {
-      // Remove old agents for this satellite, but remember which ones
-      // are currently "running" so we don't let a stale snapshot
-      // downgrade them.  The dedicated pty:exit / agent:completed events
-      // handle the running → sleeping transition authoritatively.
+      // Single-pass cleanup: iterate all namespaced keys once to remove
+      // entries belonging to this satellite, tracking running agents.
+      const prefix = satellitePrefix(satelliteId);
       const filteredAgents = { ...state.remoteAgents };
+      const filteredStatuses = { ...state.remoteAgentDetailedStatus };
+      const filteredProjectIcons = { ...state.remoteProjectIcons };
+      const filteredAgentIcons = { ...state.remoteAgentIcons };
       const runningAgentIds = new Set<string>();
+
       for (const key of Object.keys(filteredAgents)) {
-        if (key.startsWith(satellitePrefix(satelliteId))) {
-          if (filteredAgents[key].status === 'running') {
-            runningAgentIds.add(key);
-          }
+        if (key.startsWith(prefix)) {
+          if (filteredAgents[key].status === 'running') runningAgentIds.add(key);
           delete filteredAgents[key];
         }
+      }
+      for (const key of Object.keys(filteredStatuses)) {
+        if (key.startsWith(prefix)) delete filteredStatuses[key];
+      }
+      for (const key of Object.keys(filteredProjectIcons)) {
+        if (key.startsWith(prefix)) delete filteredProjectIcons[key];
+      }
+      for (const key of Object.keys(filteredAgentIcons)) {
+        if (key.startsWith(prefix)) delete filteredAgentIcons[key];
       }
 
       // Preserve "running" status for agents the controller already
@@ -363,24 +373,6 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         if (agent.status === 'sleeping' && runningAgentIds.has(nsId)) {
           newAgents[nsId] = { ...agent, status: 'running' };
         }
-      }
-
-      // Remove old detailed statuses for this satellite and merge new ones
-      const filteredStatuses = { ...state.remoteAgentDetailedStatus };
-      for (const key of Object.keys(filteredStatuses)) {
-        if (key.startsWith(satellitePrefix(satelliteId))) {
-          delete filteredStatuses[key];
-        }
-      }
-
-      // Remove old icons for this satellite
-      const filteredProjectIcons = { ...state.remoteProjectIcons };
-      const filteredAgentIcons = { ...state.remoteAgentIcons };
-      for (const key of Object.keys(filteredProjectIcons)) {
-        if (key.startsWith(satellitePrefix(satelliteId))) delete filteredProjectIcons[key];
-      }
-      for (const key of Object.keys(filteredAgentIcons)) {
-        if (key.startsWith(satellitePrefix(satelliteId))) delete filteredAgentIcons[key];
       }
 
       return {
@@ -442,50 +434,45 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
 
   removeSatellite: (satelliteId) => {
     set((state) => {
-      const newProjects = { ...state.satelliteProjects };
-      delete newProjects[satelliteId];
+      const prefix = satellitePrefix(satelliteId);
+      const compositePrefix = `${satelliteId}::`;
 
+      // Build filtered copies — single pass per map
       const newAgents = { ...state.remoteAgents };
       const newStatuses = { ...state.remoteAgentDetailedStatus };
       const newProjectIcons = { ...state.remoteProjectIcons };
       const newAgentIcons = { ...state.remoteAgentIcons };
-      for (const key of Object.keys(newAgents)) {
-        if (key.startsWith(satellitePrefix(satelliteId))) {
-          delete newAgents[key];
-          delete newStatuses[key];
-        }
-      }
-
-      const newPluginMatch = { ...state.pluginMatchState };
-      delete newPluginMatch[satelliteId];
-
-      for (const key of Object.keys(newProjectIcons)) {
-        if (key.startsWith(satellitePrefix(satelliteId))) delete newProjectIcons[key];
-      }
-      for (const key of Object.keys(newAgentIcons)) {
-        if (key.startsWith(satellitePrefix(satelliteId))) delete newAgentIcons[key];
-      }
-
       const newCanvasState = { ...state.remoteCanvasState };
-      for (const key of Object.keys(newCanvasState)) {
-        if (key.startsWith(satellitePrefix(satelliteId))) delete newCanvasState[key];
-      }
-
-      const newAppCanvasState = { ...state.remoteAppCanvasState };
-      delete newAppCanvasState[satelliteId];
-
-      const newGroupProjects = { ...state.remoteGroupProjects };
-      delete newGroupProjects[satelliteId];
-
       const newBulletinDigests = { ...state.remoteBulletinDigests };
       const newGroupProjectMembers = { ...state.remoteGroupProjectMembers };
-      const satPrefix = `${satelliteId}::`;
+
+      for (const key of Object.keys(newAgents)) {
+        if (key.startsWith(prefix)) { delete newAgents[key]; delete newStatuses[key]; }
+      }
+      for (const key of Object.keys(newProjectIcons)) {
+        if (key.startsWith(prefix)) delete newProjectIcons[key];
+      }
+      for (const key of Object.keys(newAgentIcons)) {
+        if (key.startsWith(prefix)) delete newAgentIcons[key];
+      }
+      for (const key of Object.keys(newCanvasState)) {
+        if (key.startsWith(prefix)) delete newCanvasState[key];
+      }
       for (const key of Object.keys(newBulletinDigests)) {
-        if (key.startsWith(satPrefix)) delete newBulletinDigests[key];
+        if (key.startsWith(compositePrefix)) delete newBulletinDigests[key];
       }
       for (const key of Object.keys(newGroupProjectMembers)) {
-        if (key.startsWith(satPrefix)) delete newGroupProjectMembers[key];
+        if (key.startsWith(compositePrefix)) delete newGroupProjectMembers[key];
       }
+
+      const newProjects = { ...state.satelliteProjects };
+      delete newProjects[satelliteId];
+      const newPluginMatch = { ...state.pluginMatchState };
+      delete newPluginMatch[satelliteId];
+      const newAppCanvasState = { ...state.remoteAppCanvasState };
+      delete newAppCanvasState[satelliteId];
+      const newGroupProjects = { ...state.remoteGroupProjects };
+      delete newGroupProjects[satelliteId];
 
       return {
         satelliteProjects: newProjects,

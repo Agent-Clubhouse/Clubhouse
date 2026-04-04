@@ -189,10 +189,12 @@ export function registerPluginHandlers(): void {
   ipcMain.handle(IPC.PLUGIN.LOAD_MODULE_SOURCE, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
     const pluginsDir = path.join(app.getPath('home'), '.clubhouse', 'plugins');
     const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(pluginsDir)) {
+    // Follow symlinks before checking — prevents symlink escape from plugins dir
+    const realPath = await fsp.realpath(resolved);
+    if (!realPath.startsWith(pluginsDir)) {
       throw new Error(`Access denied: path "${filePath}" is outside the plugins directory`);
     }
-    return fsp.readFile(resolved, 'utf-8');
+    return fsp.readFile(realPath, 'utf-8');
   }));
 
   // ── Manifest Registry ─────────────────────────────────────────────────

@@ -201,39 +201,36 @@ export function useCommandSource(): CommandItem[] {
     return () => { unsubs.forEach((u) => u()); };
   }, [projects, activeProjectId]);
 
-  return useMemo(() => {
+  // ── Category-specific memos ─────────────────────────────────────────
+  // Split into narrow dependency groups so changing one category (e.g.
+  // agents) doesn't rebuild the entire 400+ line command list.
+
+  const projectItems = useMemo((): CommandItem[] => {
+    return projects.map((p, i) => ({
+      id: `project:${p.id}`,
+      label: p.displayName || p.name,
+      category: 'Projects',
+      typeIndicator: '/',
+      keywords: [p.name, p.path],
+      detail: p.path,
+      shortcut: getShortcut(shortcuts, `switch-project-${i + 1}`),
+      execute: () => setActiveProject(p.id),
+    }));
+  }, [projects, shortcuts, setActiveProject]);
+
+  const agentItems = useMemo((): CommandItem[] => {
     const items: CommandItem[] = [];
-
-    // Projects
-    for (let i = 0; i < projects.length; i++) {
-      const p = projects[i];
-      items.push({
-        id: `project:${p.id}`,
-        label: p.displayName || p.name,
-        category: 'Projects',
-        typeIndicator: '/',
-        keywords: [p.name, p.path],
-        detail: p.path,
-        shortcut: getShortcut(shortcuts, `switch-project-${i + 1}`),
-        execute: () => setActiveProject(p.id),
-      });
-    }
-
-    // Agents — first 9 durable agents get switch-agent-N shortcuts
     let durableIdx = 0;
-
     for (const [agentId, agent] of Object.entries(agents)) {
       const project = projects.find((p) => p.id === agent.projectId);
       const isDurableInActive = agent.projectId === activeProjectId && agent.kind === 'durable';
       let agentShortcut: string | undefined;
-
       if (isDurableInActive) {
         durableIdx++;
         if (durableIdx <= 9) {
           agentShortcut = getShortcut(shortcuts, `switch-agent-${durableIdx}`);
         }
       }
-
       items.push({
         id: `agent:${agentId}`,
         label: agent.name,
@@ -249,14 +246,15 @@ export function useCommandSource(): CommandItem[] {
         },
       });
     }
+    return items;
+  }, [agents, projects, activeProjectId, shortcuts, setActiveProject, setExplorerTab, setActiveAgent]);
 
-    // Spaces — resolve ALL hubs and canvases across all projects + app
+  const spaceItems = useMemo((): CommandItem[] => {
+    const items: CommandItem[] = [];
     const activeProject = projects.find((p) => p.id === activeProjectId);
     const activeProjectLabel = activeProject?.displayName || activeProject?.name;
 
-    // Hub items — only shown when hub plugin is enabled
     if (hubPluginEnabled) {
-      // Project hubs (active project — from reactive store)
       if (activeProjectId) {
         for (const hub of projectHubs) {
           const context = hub.id === projectActiveHubId ? 'Active' : activeProjectLabel;
@@ -275,8 +273,6 @@ export function useCommandSource(): CommandItem[] {
           });
         }
       }
-
-      // Hubs from other (non-active) projects — loaded from storage
       for (const entry of otherProjectHubs) {
         items.push({
           id: `hub:project:${entry.projectId}:${entry.hubId}`,
@@ -286,7 +282,6 @@ export function useCommandSource(): CommandItem[] {
           keywords: ['hub', 'tab', 'workspace', 'space', entry.projectName],
           detail: `Hub · ${entry.projectName}`,
           execute: async () => {
-            // Pre-write the desired active hub to storage so loadHub picks it up
             await window.clubhouse.plugin.storageWrite({
               pluginId: 'hub',
               scope: 'project-local',
@@ -299,8 +294,6 @@ export function useCommandSource(): CommandItem[] {
           },
         });
       }
-
-      // App-level hubs
       for (const hub of appHubs) {
         const context = hub.id === appActiveHubId && !activeProjectId ? 'Active' : 'Home';
         items.push({
@@ -319,9 +312,7 @@ export function useCommandSource(): CommandItem[] {
       }
     }
 
-    // Canvas items — only shown when canvas plugin is enabled
     if (canvasPluginEnabled) {
-      // Project canvases (active project — from reactive store)
       if (activeProjectId) {
         for (const canvas of projectCanvases) {
           const context = canvas.id === projectActiveCanvasId ? 'Active' : activeProjectLabel;
@@ -340,8 +331,6 @@ export function useCommandSource(): CommandItem[] {
           });
         }
       }
-
-      // Canvases from other (non-active) projects — loaded from storage
       for (const entry of otherProjectCanvases) {
         items.push({
           id: `canvas:project:${entry.projectId}:${entry.canvasId}`,
@@ -363,8 +352,6 @@ export function useCommandSource(): CommandItem[] {
           },
         });
       }
-
-      // App-level canvases
       for (const canvas of appCanvases) {
         const context = canvas.id === appActiveCanvasId && !activeProjectId ? 'Active' : 'Home';
         items.push({
@@ -383,7 +370,17 @@ export function useCommandSource(): CommandItem[] {
       }
     }
 
-    // Navigation (plugin tabs for active project)
+    return items;
+  }, [
+    projects, activeProjectId, hubPluginEnabled, canvasPluginEnabled,
+    projectHubs, projectActiveHubId, appHubs, appActiveHubId, otherProjectHubs,
+    projectCanvases, projectActiveCanvasId, appCanvases, appActiveCanvasId, otherProjectCanvases,
+    setActiveProject, setExplorerTab,
+  ]);
+
+  const navigationItems = useMemo((): CommandItem[] => {
+    const items: CommandItem[] = [];
+
     if (activeProjectId) {
       const enabledPluginIds = projectEnabled[activeProjectId] || [];
       for (const pluginId of enabledPluginIds) {
@@ -401,16 +398,12 @@ export function useCommandSource(): CommandItem[] {
       }
     }
 
-    // Navigation: core tabs
     items.push({
       id: 'nav:agents',
       label: 'Go to Agents',
       category: 'Navigation',
-      execute: () => {
-        if (activeProjectId) setExplorerTab('agents', activeProjectId);
-      },
+      execute: () => { if (activeProjectId) setExplorerTab('agents', activeProjectId); },
     });
-
     items.push({
       id: 'nav:home',
       label: 'Go to Home',
@@ -418,7 +411,6 @@ export function useCommandSource(): CommandItem[] {
       shortcut: getShortcut(shortcuts, 'go-home'),
       execute: () => setActiveProject(null),
     });
-
     items.push({
       id: 'nav:help',
       label: 'Open Help',
@@ -426,7 +418,6 @@ export function useCommandSource(): CommandItem[] {
       shortcut: getShortcut(shortcuts, 'toggle-help'),
       execute: () => toggleHelp(),
     });
-
     items.push({
       id: 'nav:assistant',
       label: 'Open Assistant',
@@ -434,7 +425,6 @@ export function useCommandSource(): CommandItem[] {
       shortcut: getShortcut(shortcuts, 'toggle-assistant'),
       execute: () => useUIStore.getState().toggleAssistant(),
     });
-
     items.push({
       id: 'nav:about',
       label: 'Open About',
@@ -442,11 +432,14 @@ export function useCommandSource(): CommandItem[] {
       execute: () => openAbout(),
     });
 
-    // Settings pages
-    for (const sp of SETTINGS_PAGES) {
+    return items;
+  }, [activeProjectId, pluginsMap, projectEnabled, shortcuts, setExplorerTab, setActiveProject, toggleHelp, openAbout]);
+
+  const settingsItems = useMemo((): CommandItem[] =>
+    SETTINGS_PAGES.map((sp) => {
       const shortcutId = sp.page === 'display' ? 'toggle-settings' : undefined;
       const shortcutDef = shortcutId ? shortcuts[shortcutId] : undefined;
-      items.push({
+      return {
         id: `settings:${sp.page}`,
         label: sp.label,
         category: 'Settings',
@@ -454,16 +447,17 @@ export function useCommandSource(): CommandItem[] {
         shortcut: shortcutDef ? formatBinding(shortcutDef.currentBinding) : undefined,
         execute: () => {
           const uiState = useUIStore.getState();
-          if (uiState.explorerTab !== 'settings') {
-            toggleSettings();
-          }
+          if (uiState.explorerTab !== 'settings') toggleSettings();
           setSettingsContext('app');
           setSettingsSubPage(sp.page);
         },
-      });
-    }
+      };
+    }),
+  [shortcuts, toggleSettings, setSettingsContext, setSettingsSubPage]);
 
-    // Actions
+  const actionItems = useMemo((): CommandItem[] => {
+    const items: CommandItem[] = [];
+
     items.push({
       id: 'action:toggle-settings',
       label: 'Toggle Settings',
@@ -471,7 +465,6 @@ export function useCommandSource(): CommandItem[] {
       shortcut: getShortcut(shortcuts, 'toggle-settings'),
       execute: () => toggleSettings(),
     });
-
     items.push({
       id: 'action:toggle-sidebar',
       label: 'Toggle Sidebar',
@@ -479,7 +472,6 @@ export function useCommandSource(): CommandItem[] {
       shortcut: getShortcut(shortcuts, 'toggle-sidebar'),
       execute: () => toggleExplorerCollapse(),
     });
-
     items.push({
       id: 'action:toggle-accessory',
       label: 'Toggle Accessory Panel',
@@ -487,27 +479,21 @@ export function useCommandSource(): CommandItem[] {
       shortcut: getShortcut(shortcuts, 'toggle-accessory'),
       execute: () => toggleAccessoryCollapse(),
     });
-
     items.push({
       id: 'action:new-quick-agent',
       label: 'New Quick Agent',
       category: 'Actions',
       shortcut: getShortcut(shortcuts, 'new-quick-agent'),
       keywords: ['agent', 'mission', 'quick'],
-      execute: () => {
-        useUIStore.getState().openQuickAgentDialog();
-      },
+      execute: () => { useUIStore.getState().openQuickAgentDialog(); },
     });
-
     items.push({
       id: 'action:add-project',
       label: 'Add Project',
       category: 'Actions',
       shortcut: getShortcut(shortcuts, 'add-project'),
       keywords: ['new', 'open', 'folder'],
-      execute: () => {
-        useProjectStore.getState().pickAndAddProject();
-      },
+      execute: () => { useProjectStore.getState().pickAndAddProject(); },
     });
 
     if (activeProjectId) {
@@ -521,7 +507,6 @@ export function useCommandSource(): CommandItem[] {
       });
     }
 
-    // Annex actions (only when experimental flag is enabled)
     if (annexEnabled) {
       items.push({
         id: 'action:toggle-annex-server',
@@ -532,7 +517,6 @@ export function useCommandSource(): CommandItem[] {
           useAnnexStore.getState().saveSettings({ ...annexSettings, enableServer: !annexSettings.enableServer });
         },
       });
-
       items.push({
         id: 'action:toggle-annex-client',
         label: annexSettings.enableClient ? 'Disable Annex Client' : 'Enable Annex Client',
@@ -542,7 +526,6 @@ export function useCommandSource(): CommandItem[] {
           useAnnexStore.getState().saveSettings({ ...annexSettings, enableClient: !annexSettings.enableClient });
         },
       });
-
       items.push({
         id: 'action:annex-show-pin',
         label: 'Show Annex PIN',
@@ -551,16 +534,13 @@ export function useCommandSource(): CommandItem[] {
         detail: annexSettings.enableServer && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
         execute: () => {
           const uiState = useUIStore.getState();
-          if (uiState.explorerTab !== 'settings') {
-            toggleSettings();
-          }
+          if (uiState.explorerTab !== 'settings') toggleSettings();
           setSettingsContext('app');
           setSettingsSubPage('annex');
         },
       });
     }
 
-    // Clubhouse Mode / Agent Config shortcut
     items.push({
       id: 'action:agent-config',
       label: 'Agent Config',
@@ -568,40 +548,37 @@ export function useCommandSource(): CommandItem[] {
       keywords: ['clubhouse', 'mode', 'durable', 'agents', 'orchestrator', 'config'],
       execute: () => {
         const uiState = useUIStore.getState();
-        if (uiState.explorerTab !== 'settings') {
-          toggleSettings();
-        }
+        if (uiState.explorerTab !== 'settings') toggleSettings();
         setSettingsContext('app');
         setSettingsSubPage('orchestrators');
       },
     });
 
-    // Plugin commands (registered via commands.registerWithHotkey)
-    for (const shortcut of pluginHotkeyRegistry.getAll()) {
+    return items;
+  }, [
+    shortcuts, activeProjectId, annexEnabled, annexSettings, annexStatus,
+    toggleSettings, toggleExplorerCollapse, toggleAccessoryCollapse,
+    removeProject, setSettingsContext, setSettingsSubPage,
+  ]);
+
+  const pluginCommandItems = useMemo((): CommandItem[] =>
+    pluginHotkeyRegistry.getAll().map((shortcut) => {
       const pluginEntry = pluginsMap[shortcut.pluginId];
       const pluginName = pluginEntry?.manifest.name ?? shortcut.pluginId;
-      items.push({
+      return {
         id: `plugin-cmd:${shortcut.fullCommandId}`,
         label: shortcut.title,
         category: `Plugin: ${pluginName}`,
         keywords: [shortcut.pluginId, shortcut.commandId],
         shortcut: shortcut.currentBinding ? formatBinding(shortcut.currentBinding) : undefined,
-        execute: () => {
-          pluginCommandRegistry.execute(shortcut.fullCommandId).catch(() => {});
-        },
-      });
-    }
+        execute: () => { pluginCommandRegistry.execute(shortcut.fullCommandId).catch(() => {}); },
+      };
+    }),
+  [pluginsMap]);
 
-    return items;
-  }, [
-    projects, agents, activeProjectId, pluginsMap, projectEnabled, shortcuts,
-    annexSettings, annexStatus, annexEnabled, hubPluginEnabled, canvasPluginEnabled,
-    projectHubs, projectActiveHubId, appHubs, appActiveHubId,
-    otherProjectHubs,
-    projectCanvases, projectActiveCanvasId, appCanvases, appActiveCanvasId,
-    otherProjectCanvases,
-    setActiveProject, removeProject, setActiveAgent, setExplorerTab, toggleSettings,
-    setSettingsSubPage, setSettingsContext, toggleHelp, openAbout,
-    toggleExplorerCollapse, toggleAccessoryCollapse,
-  ]);
+  // Combine all category memos — only rebuilds when a sub-memo changes
+  return useMemo(
+    () => [...projectItems, ...agentItems, ...spaceItems, ...navigationItems, ...settingsItems, ...actionItems, ...pluginCommandItems],
+    [projectItems, agentItems, spaceItems, navigationItems, settingsItems, actionItems, pluginCommandItems],
+  );
 }

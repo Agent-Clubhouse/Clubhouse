@@ -33,6 +33,14 @@ import { isSessionCapable, getProvider } from '../orchestrators';
 import { writeChunkedBracketedPaste, submitAfterPaste } from './clubhouse-mcp/tools/agent-tools';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, listSessions, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
+
+/**
+ * Check if an agent is currently running in any execution mode (PTY, headless, or structured).
+ * Centralises the compound check so new execution modes only need updating here.
+ */
+function isAgentRunning(agentId: string): boolean {
+  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId);
+}
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import { THEMES } from '../../renderer/themes';
@@ -53,6 +61,18 @@ import type {
 // Server state
 // ---------------------------------------------------------------------------
 
+/** Check if a CORS origin is allowed (file:// or localhost). */
+function isAllowedCorsOrigin(origin: string): boolean {
+  if (!origin) return false;
+  if (origin === 'file://') return true;
+  try {
+    const parsed = new URL(origin);
+    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
 // Pairing port (plain HTTP): POST /pair, GET /api/v1/identity, OPTIONS
 let pairingServer: http.Server | null = null;
 let pairingPort = 0;
@@ -67,12 +87,16 @@ let serverPort = 0; // Main TLS port
 let currentPin = '';
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const sessionTokens = new Map<string, { issuedAt: number }>();
+/** Tokens revoked on peer removal — checked during validation, cleaned on TTL expiry. */
+const revokedTokens = new Set<string>();
 
 // Tag WebSocket connections with auth type for security gating
 type WsAuthType = 'bearer' | 'mtls';
 const wsAuthTypes = new WeakMap<WebSocket, WsAuthType>();
 // Track peer fingerprint per WebSocket connection (for mTLS connections)
 const wsPeerFingerprints = new WeakMap<WebSocket, string>();
+// Track bearer token per WebSocket connection (for revocation on peer removal)
+const wsBearerTokens = new WeakMap<WebSocket, string>();
 
 let unsubPtyData: (() => void) | null = null;
 let unsubHookEvent: (() => void) | null = null;
@@ -279,10 +303,12 @@ function generatePin(): string {
 
 function isValidToken(token: string | undefined): boolean {
   if (!token) return false;
+  if (revokedTokens.has(token)) return false;
   const entry = sessionTokens.get(token);
   if (!entry) return false;
   if (Date.now() - entry.issuedAt > TOKEN_TTL_MS) {
     sessionTokens.delete(token);
+    revokedTokens.delete(token);
     return false;
   }
   return true;
@@ -374,7 +400,7 @@ function getOrchestratorsMap(): Record<string, { displayName: string; shortName:
 
 function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[number], projectId: string) {
   const agentId = d.id;
-  const isRunning = ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId);
+  const isRunning = isAgentRunning(agentId);
   const status = isRunning ? 'running' : 'sleeping';
 
   return {
@@ -551,7 +577,7 @@ async function buildSnapshot(): Promise<object> {
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
-          status: (ptyManager.isRunning(b.agentId) || isHeadlessAgent(b.agentId) || structuredManager.isStructuredSession(b.agentId)) ? 'connected' : 'sleeping',
+          status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
       if (members.length > 0) {
         groupProjectMembers[gp.id] = members;
@@ -703,7 +729,7 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
  */
 async function waitForAgentRunning(agentId: string, maxAttempts = 10, intervalMs = 100): Promise<void> {
   for (let i = 0; i < maxAttempts; i++) {
-    if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
+    if (isAgentRunning(agentId)) {
       return;
     }
     await new Promise((r) => setTimeout(r, intervalMs));
@@ -879,7 +905,7 @@ async function handleWakeAgent(
   }
 
   // Check if already running (process-level check)
-  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
+  if (isAgentRunning(agentId)) {
     sendJson(res, 409, { error: 'agent_already_running' });
     return;
   }
@@ -1074,7 +1100,11 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
   const url = req.url || '/';
   const method = req.method || 'GET';
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '';
+  if (isAllowedCorsOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 
@@ -1188,8 +1218,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   const url = req.url || '/';
   const method = req.method || 'GET';
 
-  // CORS headers for local network
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS headers — restrict to local origins only
+  const origin = req.headers.origin || '';
+  if (isAllowedCorsOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 
@@ -1785,7 +1819,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
-          status: (ptyManager.isRunning(b.agentId) || isHeadlessAgent(b.agentId) || structuredManager.isStructuredSession(b.agentId)) ? 'connected' : 'sleeping',
+          status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
     } catch { /* ignore */ }
     sendJson(res, 200, { ...project, members });
@@ -2022,7 +2056,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         .map(b => ({
           agentId: b.agentId,
           agentName: b.agentName || b.agentId,
-          status: (ptyManager.isRunning(b.agentId) || isHeadlessAgent(b.agentId) || structuredManager.isStructuredSession(b.agentId)) ? 'connected' : 'sleeping',
+          status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
         }));
     } catch { /* ignore */ }
     sendJson(res, 200, members);
@@ -2073,6 +2107,15 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
 const MAX_PTY_INPUT_SIZE = 64 * 1024; // 64KB
 
+/** Send data over a WebSocket only if the connection is still open. */
+function safeSend(ws: WebSocket, data: string): boolean {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(data);
+    return true;
+  }
+  return false;
+}
+
 function handleWsMessage(ws: WebSocket, data: string): void {
   let msg: { type?: string; payload?: Record<string, unknown>; since?: number };
   try {
@@ -2091,7 +2134,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     const events = eventReplay.getEventsSince(msg.since);
 
     if (events === null) {
-      ws.send(JSON.stringify({
+      safeSend(ws, JSON.stringify({
         type: 'replay:gap',
         oldestAvailable: eventReplay.getOldestSeq(),
         lastSeq: eventReplay.getLastSeq(),
@@ -2099,7 +2142,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       return;
     }
 
-    ws.send(JSON.stringify({
+    safeSend(ws, JSON.stringify({
       type: 'replay:start',
       fromSeq: events.length > 0 ? events[0].seq : msg.since,
       toSeq: eventReplay.getLastSeq(),
@@ -2107,15 +2150,15 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     }));
 
     for (const event of events) {
-      ws.send(JSON.stringify({
+      if (!safeSend(ws, JSON.stringify({
         type: event.type,
         payload: event.payload,
         seq: event.seq,
         replayed: true,
-      }));
+      }))) break;
     }
 
-    ws.send(JSON.stringify({ type: 'replay:end' }));
+    safeSend(ws, JSON.stringify({ type: 'replay:end' }));
     return;
   }
 
@@ -2124,7 +2167,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const isMtls = authType === 'mtls';
 
   if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image')) {
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
   }
 
@@ -2136,7 +2179,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const inputData = payload.data as string;
       if (!agentId || typeof inputData !== 'string') break;
       if (inputData.length > MAX_PTY_INPUT_SIZE) {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'pty:input data exceeds 64KB limit' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'pty:input data exceeds 64KB limit' } }));
         break;
       }
       ptyManager.write(agentId, inputData);
@@ -2159,7 +2202,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       if (!agentId || !base64 || !mimeType) break;
       // Limit to 10MB of base64 data (~7.5MB raw image)
       if (base64.length > 10 * 1024 * 1024) {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } }));
         break;
       }
       handleClipboardImage(agentId, base64, mimeType);
@@ -2172,20 +2215,20 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       if (!sessionId || !projectId) break;
       findProjectById(projectId).then(async (project) => {
         if (!project) {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
         try {
           await ptyManager.spawnShell(sessionId, project.path);
-          ws.send(JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId } }));
+          safeSend(ws, JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId } }));
         } catch (err) {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));
         }
       }).catch((err) => {
         appLog('core:annex', 'error', 'pty:spawn-shell lookup failed', {
           meta: { projectId, error: err instanceof Error ? err.message : String(err) },
         });
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2197,7 +2240,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       // Reuse the quick agent spawn logic
       findProjectById(projectId).then((project) => {
         if (!project) {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
         handleSpawnQuickAgentWs(ws, project, payload);
@@ -2205,7 +2248,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         appLog('core:annex', 'error', 'agent:spawn lookup failed', {
           meta: { projectId, error: err instanceof Error ? err.message : String(err) },
         });
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2225,7 +2268,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const agentId = payload.agentId as string;
       if (!agentId) break;
       ptyManager.gracefulKill(agentId);
-      ws.send(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
+      safeSend(ws, JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
       break;
     }
 
@@ -2250,7 +2293,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         appLog('core:annex', 'error', 'Canvas mutation failed server-side', {
           meta: { projectId, canvasId, mutationType: mutation.type, error: message },
         });
-        ws.send(JSON.stringify({
+        safeSend(ws, JSON.stringify({
           type: 'canvas:mutation:error',
           payload: { projectId, canvasId, mutationType: mutation.type, message },
         }));
@@ -2264,20 +2307,20 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       if (!projectId || !Array.isArray(orderedIds)) break;
       findProjectById(projectId).then((project) => {
         if (!project) {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
         agentConfig.reorderDurable(project.path, orderedIds).then(() => {
           broadcastSnapshotRefresh();
-          ws.send(JSON.stringify({ type: 'agent:reorder:ack', payload: { projectId } }));
+          safeSend(ws, JSON.stringify({ type: 'agent:reorder:ack', payload: { projectId } }));
         }).catch(() => {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
         });
       }).catch((err) => {
         appLog('core:annex', 'error', 'agent:reorder lookup failed', {
           meta: { projectId, error: err instanceof Error ? err.message : String(err) },
         });
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2321,11 +2364,11 @@ async function handleSpawnQuickAgentWs(
       model: model || null, orchestrator, freeAgentMode,
       parentAgentId, projectId: project.id, headless: true,
     });
-    ws.send(JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
+    safeSend(ws, JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
   } catch {
     tracked.status = 'failed';
     trackedQuickAgents.delete(agentId);
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
   }
 }
 
@@ -2337,11 +2380,11 @@ async function handleWakeAgentWs(
 ): Promise<void> {
   const agentInfo = await findAgentAcrossProjects(agentId);
   if (!agentInfo) {
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
     return;
   }
-  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_already_running' } }));
+  if (isAgentRunning(agentId)) {
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_already_running' } }));
     return;
   }
 
@@ -2384,13 +2427,19 @@ async function handleWakeAgentWs(
     });
 
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-v2' });
+
+    // Wait for the agent to be registered as running before refreshing the
+    // snapshot.  Matches the HTTP handler pattern — without this, the snapshot
+    // arrives before the agent is registered, causing controllers to see
+    // agents stuck in "sleeping" state.
+    await waitForAgentRunning(config.id);
     broadcastSnapshotRefresh();
-    ws.send(JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
+    safeSend(ws, JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
   } catch (err) {
     appLog('core:annex', 'error', 'Failed to wake agent (WS)', {
       meta: { agentId, agentName: config.name, error: err instanceof Error ? err.message : String(err) },
     });
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));
   }
 }
 
@@ -2447,6 +2496,18 @@ export function start(): void {
       return;
     }
 
+    // Defense-in-depth: reject WebSocket upgrades from unexpected origins
+    // (DNS rebinding mitigation — complements mTLS + token auth)
+    const origin = req.headers.origin || '';
+    if (origin && !/^(file:\/\/|https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/.test(origin)) {
+      appLog('core:annex', 'warn', 'WebSocket upgrade rejected — invalid origin', {
+        meta: { origin, remoteAddress: req.socket.remoteAddress },
+      });
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     // Check auth: mTLS peer cert OR bearer token
     let authType: WsAuthType = 'bearer';
 
@@ -2486,6 +2547,10 @@ export function start(): void {
       if (peerFingerprintForWs) {
         wsPeerFingerprints.set(ws, peerFingerprintForWs);
       }
+      if (authType === 'bearer') {
+        const token = urlObj.searchParams.get('token');
+        if (token) wsBearerTokens.set(ws, token);
+      }
       wss!.emit('connection', ws, req);
     });
   });
@@ -2497,13 +2562,13 @@ export function start(): void {
 
     // Send snapshot on connect
     try {
-      ws.send(JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
+      safeSend(ws, JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
     } catch (err) {
       appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
       try {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
       } catch (sendErr) {
         appLog('core:annex', 'debug', 'Failed to send error to client (client likely disconnected)', {
           meta: { error: sendErr instanceof Error ? sendErr.message : String(sendErr) },
@@ -2635,6 +2700,7 @@ export function start(): void {
     for (const [token, entry] of sessionTokens) {
       if (now - entry.issuedAt > TOKEN_TTL_MS) {
         sessionTokens.delete(token);
+        revokedTokens.delete(token); // clean up expired revocations
       }
     }
   }, 60_000);
@@ -2790,6 +2856,7 @@ export function stop(): void {
   pairingPort = 0;
   currentPin = '';
   sessionTokens.clear();
+  revokedTokens.clear();
   detailedStatusCache.clear();
   trackedQuickAgents.clear();
   eventReplay.reset();
@@ -3122,6 +3189,7 @@ export function notifySessionPause(paused: boolean): void {
 export function regeneratePin(): void {
   currentPin = generatePin();
   sessionTokens.clear();
+  revokedTokens.clear();
   // Close all WS clients so they must re-pair
   if (wss) {
     for (const client of wss.clients) {
@@ -3134,12 +3202,18 @@ export function regeneratePin(): void {
   }
 }
 
-/** Disconnect a specific peer's WebSocket connection by fingerprint. */
+/** Disconnect a specific peer's WebSocket connection by fingerprint and revoke their tokens. */
 export function disconnectPeer(fingerprint: string): void {
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
   if (!wss) return;
   for (const client of wss.clients) {
     if (wsPeerFingerprints.get(client) === fingerprint) {
+      // Revoke the bearer token used by this connection
+      const token = wsBearerTokens.get(client);
+      if (token) {
+        revokedTokens.add(token);
+        sessionTokens.delete(token);
+      }
       try { client.close(1000, 'disconnected_by_satellite'); } catch (err) {
         appLog('core:annex', 'debug', 'Failed to close peer WebSocket connection', {
           meta: { fingerprint, error: err instanceof Error ? err.message : String(err) },

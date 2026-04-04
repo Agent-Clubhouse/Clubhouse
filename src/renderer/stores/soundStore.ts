@@ -33,6 +33,47 @@ interface SoundState {
   applyAllFromPack: (packId: string) => Promise<void>;
 }
 
+const MAX_SOUND_CACHE = 50;
+/** Tracks access order for LRU eviction of soundCache entries. */
+const soundCacheOrder: string[] = [];
+
+/**
+ * Add an entry to the sound cache with LRU eviction.
+ * Returns a new cache object (never mutates the input).
+ */
+function addToSoundCache(
+  currentCache: Record<string, string>,
+  key: string,
+  value: string,
+): Record<string, string> {
+  // Update access order (move to end)
+  const idx = soundCacheOrder.indexOf(key);
+  if (idx !== -1) soundCacheOrder.splice(idx, 1);
+  soundCacheOrder.push(key);
+
+  const cache = { ...currentCache, [key]: value };
+
+  // Evict from tracked order
+  while (soundCacheOrder.length > MAX_SOUND_CACHE) {
+    const oldest = soundCacheOrder.shift()!;
+    delete cache[oldest];
+  }
+
+  // Safety: evict untracked entries if cache is still over limit
+  // (entries added outside the tracking path, e.g. direct setState)
+  const tracked = new Set(soundCacheOrder);
+  const allKeys = Object.keys(cache);
+  let excess = allKeys.length - MAX_SOUND_CACHE;
+  for (let i = 0; excess > 0 && i < allKeys.length; i++) {
+    if (!tracked.has(allKeys[i])) {
+      delete cache[allKeys[i]];
+      excess--;
+    }
+  }
+
+  return cache;
+}
+
 /** Active Audio element for stopping previous playback */
 let activeAudio: HTMLAudioElement | null = null;
 
@@ -117,6 +158,8 @@ export const useSoundStore = create<SoundState>((set, get) => ({
       for (const key of Object.keys(cache)) {
         if (key.startsWith(`${packId}:`)) {
           delete cache[key];
+          const idx = soundCacheOrder.indexOf(key);
+          if (idx !== -1) soundCacheOrder.splice(idx, 1);
         }
       }
       set({ soundCache: cache });
@@ -143,8 +186,8 @@ export const useSoundStore = create<SoundState>((set, get) => ({
     const data = await loadSoundData(packId, event, soundCache);
     if (!data) return;
 
-    // Update cache in store
-    set({ soundCache: { ...get().soundCache, [`${packId}:${event}`]: data } });
+    // Update cache with LRU eviction
+    set({ soundCache: addToSoundCache(get().soundCache, `${packId}:${event}`, data) });
 
     stopActiveAudio();
     const audio = new Audio(data);
@@ -164,8 +207,8 @@ export const useSoundStore = create<SoundState>((set, get) => ({
     const data = await loadSoundData(packId, event, soundCache);
     if (!data) return;
 
-    // Update cache in store
-    set({ soundCache: { ...get().soundCache, [`${packId}:${event}`]: data } });
+    // Update cache with LRU eviction
+    set({ soundCache: addToSoundCache(get().soundCache, `${packId}:${event}`, data) });
 
     stopActiveAudio();
     const audio = new Audio(data);
@@ -181,6 +224,10 @@ export const useSoundStore = create<SoundState>((set, get) => ({
   applyAllFromPack: async (packId: string) => {
     const current = get().settings;
     if (!current) return;
+
+    // Clear cache — old pack sounds no longer needed
+    soundCacheOrder.length = 0;
+    set({ soundCache: {} });
 
     const slots: Partial<Record<SoundEvent, SlotAssignment>> = {};
     for (const event of ALL_SOUND_EVENTS) {

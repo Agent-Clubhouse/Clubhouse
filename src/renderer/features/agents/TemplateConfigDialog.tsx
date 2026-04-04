@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { generateDurableName, AGENT_COLORS } from '../../../shared/name-generator';
+import { generateDurableName, AGENT_COLORS, getAgentColorHex } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
@@ -84,7 +84,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
         <div className="flex items-center gap-2 mb-4">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ backgroundColor: `${AGENT_COLORS.find((c) => c.id === color)?.hex || '#6366f1'}20` }}
+            style={{ backgroundColor: `${getAgentColorHex(color)}20` }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
