@@ -627,6 +627,7 @@ function startDiscovery(): void {
           reconnectTimer: null,
           reconnectAttempt: 0,
           bearerToken: null,
+          bearerTokenIssuedAt: null,
           heartbeatInterval: null,
           pongTimeout: null,
         };
@@ -1363,6 +1364,7 @@ export async function pairWithService(fingerprint: string, pin: string): Promise
       reconnectTimer: null,
       reconnectAttempt: 0,
       bearerToken,
+      bearerTokenIssuedAt: Date.now(),
       heartbeatInterval: null,
       pongTimeout: null,
     };
