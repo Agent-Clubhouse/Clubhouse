@@ -772,7 +772,7 @@ export function PluginListSettings() {
     if (externalPluginsEnabled) {
       refreshCommunityPlugins().catch(() => {});
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const isAppContext = settingsContext === 'app';
   const projectId = isAppContext ? undefined : settingsContext;
