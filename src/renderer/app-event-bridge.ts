@@ -23,7 +23,7 @@ import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
 import { pluginEventBus } from './plugins/plugin-events';
 import { getProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
 import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
-import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore } from './plugins/builtin/canvas/main';
+import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore, getKnownProjectIds } from './plugins/builtin/canvas/main';
 import { applyCanvasMutation } from './plugins/builtin/canvas/canvas-sync';
 import type { AgentHookEvent, AgentStatus, HubMutation, CanvasMutation, SoundEvent } from '../shared/types';
 import { useSoundStore } from './stores/soundStore';
@@ -604,7 +604,13 @@ export function initAppEventBridge(): () => void {
 
   // MCP binding listener — load initial bindings and subscribe to changes
   useMcpBindingStore.getState().loadBindings();
-  cleanups.push(initMcpBindingListener());
+  cleanups.push(initMcpBindingListener((agentId, targetId, projectName) => {
+    // Propagate refreshed projectName to wire definitions in all canvas stores
+    useAppCanvasStore.getState().updateWireDefinition(agentId, targetId, { projectName });
+    for (const projectId of getKnownProjectIds()) {
+      getProjectCanvasStore(projectId).getState().updateWireDefinition(agentId, targetId, { projectName });
+    }
+  }));
   cleanups.push(initToolActivityListener());
 
   return () => {

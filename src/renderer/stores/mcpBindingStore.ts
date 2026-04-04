@@ -111,7 +111,9 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
 }));
 
 /** Initialize listener for binding changes from main process. */
-export function initMcpBindingListener(): () => void {
+export function initMcpBindingListener(
+  onProjectNameChanged?: (agentId: string, targetId: string, projectName: string) => void,
+): () => void {
   return window.clubhouse.mcpBinding.onBindingsChanged((bindings) => {
     const validated = (bindings || []).filter(
       (b): b is McpBindingEntry =>
@@ -121,6 +123,19 @@ export function initMcpBindingListener(): () => void {
         typeof b.label === 'string' &&
         (b.targetKind === 'browser' || b.targetKind === 'agent' || b.targetKind === 'terminal' || b.targetKind === 'group-project' || b.targetKind === 'agent-queue'),
     );
+
+    if (onProjectNameChanged) {
+      const prev = useMcpBindingStore.getState().bindings;
+      for (const b of validated) {
+        if (b.targetKind === 'group-project' && b.projectName) {
+          const prevBinding = prev.find(p => p.agentId === b.agentId && p.targetId === b.targetId);
+          if (prevBinding && prevBinding.projectName !== b.projectName) {
+            onProjectNameChanged(b.agentId, b.targetId, b.projectName);
+          }
+        }
+      }
+    }
+
     useMcpBindingStore.setState({ bindings: validated });
   });
 }

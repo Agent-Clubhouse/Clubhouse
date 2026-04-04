@@ -297,6 +297,17 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         for (const entry of saved) {
           if (!entry.agentId || !entry.targetId || !entry.label || !entry.targetKind) continue;
           if (shouldReconcile && !validIds.has(entry.agentId) && !validIds.has(entry.targetId)) continue;
+          // Refresh projectName from the registry on cold start to catch renames.
+          if (entry.targetKind === 'group-project') {
+            try {
+              const project = await window.clubhouse.groupProject.get(entry.targetId) as { name?: string } | null;
+              if (project?.name && project.name !== entry.projectName) {
+                entry.projectName = project.name;
+              }
+            } catch {
+              // keep cached name as fallback
+            }
+          }
           restoredDefinitions.push(entry);
           try {
             await window.clubhouse.mcpBinding.bind(entry.agentId, {

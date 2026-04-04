@@ -17,6 +17,36 @@ function resolveAgentStatus(agentId: string): 'connected' | 'sleeping' {
   return isAgentAlive(agentId) ? 'connected' : 'sleeping';
 }
 
+/**
+ * Resolve sender identity for a group-project tool call, performing a live
+ * registry lookup to catch renamed projects. Falls back to the cached
+ * binding.projectName if the registry is unavailable. Writes back a refreshed
+ * name to the binding so the renderer sees the update via BINDINGS_CHANGED.
+ */
+async function resolveSenderLabel(agentId: string, targetId: string): Promise<string> {
+  const agentBindings = bindingManager.getBindingsForAgent(agentId);
+  const binding = agentBindings.find(b => b.targetId === targetId && b.targetKind === 'group-project');
+
+  let projectName = binding?.projectName;
+  if (binding?.targetId) {
+    try {
+      const project = await groupProjectRegistry.get(binding.targetId);
+      if (project?.name) {
+        if (project.name !== binding.projectName) {
+          bindingManager.updateBinding(agentId, binding.targetId, { projectName: project.name });
+        }
+        projectName = project.name;
+      }
+    } catch {
+      // use cached fallback
+    }
+  }
+
+  return binding?.agentName
+    ? `${binding.agentName}${projectName ? '@' + projectName : ''}`
+    : agentId;
+}
+
 /** Register all group-project tool templates. */
 export function registerGroupProjectTools(): void {
   // group__<name>_<hash>__list_members
@@ -99,12 +129,7 @@ export function registerGroupProjectTools(): void {
         };
       }
 
-      // Resolve sender identity
-      const agentBindings = bindingManager.getBindingsForAgent(agentId);
-      const binding = agentBindings.find(b => b.targetId === targetId && b.targetKind === 'group-project');
-      const sender = binding?.agentName
-        ? `${binding.agentName}${binding.projectName ? '@' + binding.projectName : ''}`
-        : agentId;
+      const sender = await resolveSenderLabel(agentId, targetId);
 
       try {
         const board = getBulletinBoard(targetId);
@@ -297,12 +322,7 @@ export function registerGroupProjectTools(): void {
         return { content: [{ type: 'text', text: 'Both target_agent_id and message are required.' }], isError: true };
       }
 
-      // Resolve sender identity
-      const agentBindings = bindingManager.getBindingsForAgent(agentId);
-      const binding = agentBindings.find(b => b.targetId === targetId && b.targetKind === 'group-project');
-      const senderLabel = binding?.agentName
-        ? `${binding.agentName}${binding.projectName ? '@' + binding.projectName : ''}`
-        : agentId;
+      const senderLabel = await resolveSenderLabel(agentId, targetId);
 
       try {
         const result = await executeShoulderTap({
@@ -363,12 +383,7 @@ export function registerGroupProjectTools(): void {
         return { content: [{ type: 'text', text: 'message is required.' }], isError: true };
       }
 
-      // Resolve sender identity
-      const agentBindings = bindingManager.getBindingsForAgent(agentId);
-      const binding = agentBindings.find(b => b.targetId === targetId && b.targetKind === 'group-project');
-      const senderLabel = binding?.agentName
-        ? `${binding.agentName}${binding.projectName ? '@' + binding.projectName : ''}`
-        : agentId;
+      const senderLabel = await resolveSenderLabel(agentId, targetId);
 
       try {
         const result = await executeShoulderTap({
