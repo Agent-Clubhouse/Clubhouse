@@ -63,12 +63,12 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
   });
 
   const handleDisconnect = async () => {
-    await unbind(binding.agentId, binding.targetId);
     onRemoveWireDefinition?.(binding.agentId, binding.targetId);
+    await unbind(binding.agentId, binding.targetId);
     // Also remove reverse binding if bidirectional
     if (bidirectional && isAgentToAgent) {
-      await unbind(binding.targetId, binding.agentId);
       onRemoveWireDefinition?.(binding.targetId, binding.agentId);
+      await unbind(binding.targetId, binding.agentId);
     }
     onClose();
   };
@@ -76,8 +76,8 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
   const handleBidirectionalToggle = async (newValue: boolean) => {
     if (!newValue) {
       // Remove reverse binding
-      await unbind(binding.targetId, binding.agentId);
       onRemoveWireDefinition?.(binding.targetId, binding.agentId);
+      await unbind(binding.targetId, binding.agentId);
     } else {
       // Create reverse binding
       // Find the source agent's label from bindings
