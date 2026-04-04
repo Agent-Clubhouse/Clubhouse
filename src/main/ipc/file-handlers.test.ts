@@ -36,7 +36,7 @@ vi.mock('./settings-handlers', () => ({
 }));
 
 vi.mock('child_process', () => ({
-  execFile: vi.fn(),
+  execFile: vi.fn((_cmd: string, _args: string[], cb: (err: Error | null) => void) => { cb(null); }),
 }));
 
 import { execFile } from 'child_process';

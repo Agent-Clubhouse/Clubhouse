@@ -114,8 +114,12 @@ function cleanupAll(): void {
 function handleStructuredEvent(_agentId: string, event: { type: string; timestamp: number; data: any }): void {
   if (_agentId !== state.agentId) return;
 
+  // LB-M01: Validate event structure — reject malformed events early
+  if (!event || typeof event.type !== 'string' || !event.data) return;
+
   switch (event.type) {
     case 'text_delta': {
+      if (typeof event.data.text !== 'string') break;
       state.pendingText += event.data.text;
       const lastItem = pendingItems[pendingItems.length - 1];
       if (lastItem?.type === 'message' && lastItem.message?.role === 'assistant' && lastItem.message.id.startsWith('streaming-')) {
@@ -132,6 +136,7 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
       break;
     }
     case 'text_done': {
+      if (typeof event.data.text !== 'string') break;
       const lastItem = pendingItems[pendingItems.length - 1];
       if (lastItem?.type === 'message' && lastItem.message?.role === 'assistant' && lastItem.message.id.startsWith('streaming-')) {
         lastItem.message.content = event.data.text;
@@ -143,6 +148,7 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
       break;
     }
     case 'tool_start': {
+      if (typeof event.data.name !== 'string' || typeof event.data.id !== 'string') break;
       const toolName = event.data.displayVerb || event.data.name;
       const groupId = event.data.groupId || undefined;
       const needsApproval = isMutatingTool(event.data.name);
@@ -408,9 +414,15 @@ async function startAgent(firstMessage: string): Promise<void> {
     } else if (state.mode === 'structured') {
       // Listener already registered above — just set status and drain queue
       setStatus('responding');
+      // LB-M02: On send failure, retain remaining messages for retry
       while (messageQueue.length > 0) {
-        const queued = messageQueue.shift()!;
-        await window.clubhouse.agent.sendStructuredMessage(agentId, queued);
+        const queued = messageQueue[0];
+        try {
+          await window.clubhouse.agent.sendStructuredMessage(agentId, queued);
+          messageQueue.shift(); // Only remove on success
+        } catch {
+          break; // Stop draining — remaining messages stay queued for retry
+        }
       }
     } else {
       setupHeadless();

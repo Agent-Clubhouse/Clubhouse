@@ -174,12 +174,18 @@ export function registerFileHandlers(): void {
   ipcMain.handle(IPC.FILE.OPEN_IN_EDITOR, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
     await assertAllowedPath(filePath);
     const { editorCommand } = editorSettings.getSettings();
-    execFile(editorCommand, [filePath], (err) => {
-      if (err) {
-        appLog('core:file', 'error', 'Failed to open file in editor', {
-          meta: { filePath, editorCommand, error: err.message },
-        });
-      }
+    // LB-M15: Wait for process to complete before returning so errors are detected
+    return new Promise<void>((resolve, reject) => {
+      execFile(editorCommand, [filePath], (err) => {
+        if (err) {
+          appLog('core:file', 'error', 'Failed to open file in editor', {
+            meta: { filePath, editorCommand, error: err.message },
+          });
+          reject(new Error(`Failed to open in editor: ${err.message}`));
+        } else {
+          resolve();
+        }
+      });
     });
   }));
 }
