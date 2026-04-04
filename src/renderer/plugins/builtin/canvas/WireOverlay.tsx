@@ -26,10 +26,10 @@ const WIRE_GLOW_KEYFRAMES = `
 }
 `;
 
-/** Unidirectional wire color (accent/blue) */
+/** Unidirectional wire color (accent) */
 const UNI_COLOR = 'rgb(var(--ctp-accent, 137 180 250))';
-/** Bidirectional wire color (success/green) */
-const BIDIR_COLOR = 'rgb(var(--ctp-success, 166 227 161))';
+/** Bidirectional wire color (accent) */
+const BIDIR_COLOR = 'rgb(var(--ctp-accent, 137 180 250))';
 
 /** Check whether a reverse binding exists (agent→target has a matching target→agent). */
 function isBidirectional(binding: McpBindingEntry, allBindings: McpBindingEntry[]): boolean {
@@ -119,7 +119,7 @@ const WireGroup = React.memo(function WireGroup({
 
   const isActive = activity.startsWith('active');
   const wireColor = bidir ? BIDIR_COLOR : UNI_COLOR;
-  const wireColorVar = bidir ? 'var(--ctp-success, 166 227 161)' : 'var(--ctp-accent, 137 180 250)';
+  const wireColorVar = 'var(--ctp-accent, 137 180 250)';
   const fwdMarker = bidir ? 'url(#wire-arrow-fwd-bidir)' : 'url(#wire-arrow-fwd)';
   const revMarker = 'url(#wire-arrow-rev-bidir)';
 
