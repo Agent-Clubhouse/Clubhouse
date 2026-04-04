@@ -10,20 +10,20 @@ export const NOTE_COLORS: NoteColor[] = ['yellow', 'blue', 'green', 'pink'];
 // Full class names spelled out so Tailwind includes them in the build.
 export const TINTS: Record<NoteColor, Record<'dark' | 'light', string>> = {
   yellow: {
-    dark:  'bg-ctp-yellow/10 border-ctp-yellow/30',
-    light: 'bg-ctp-yellow/15 border-ctp-yellow/40',
+    dark:  'bg-ctp-warning/10 border-ctp-warning/30',
+    light: 'bg-ctp-warning/15 border-ctp-warning/40',
   },
   blue: {
-    dark:  'bg-ctp-blue/10 border-ctp-blue/30',
-    light: 'bg-ctp-blue/15 border-ctp-blue/40',
+    dark:  'bg-ctp-accent/10 border-ctp-accent/30',
+    light: 'bg-ctp-accent/15 border-ctp-accent/40',
   },
   green: {
-    dark:  'bg-ctp-green/10 border-ctp-green/30',
-    light: 'bg-ctp-green/15 border-ctp-green/40',
+    dark:  'bg-ctp-success/10 border-ctp-success/30',
+    light: 'bg-ctp-success/15 border-ctp-success/40',
   },
   pink: {
-    dark:  'bg-ctp-pink/10 border-ctp-pink/30',
-    light: 'bg-ctp-pink/15 border-ctp-pink/40',
+    dark:  'bg-ctp-error/10 border-ctp-error/30',
+    light: 'bg-ctp-error/15 border-ctp-error/40',
   },
 };
 
