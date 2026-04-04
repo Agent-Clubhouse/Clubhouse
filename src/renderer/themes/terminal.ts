@@ -21,6 +21,8 @@ export const terminalTheme: ThemeDefinition = {
     error: '#ff3333',
     info: '#00aaff',
     success: '#00ff00',
+    accent2: '#00ffff',
+    overlay: '#444444',
   },
   hljs: {
     keyword: '#00ff00',

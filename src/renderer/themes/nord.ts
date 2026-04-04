@@ -20,6 +20,8 @@ export const nord: ThemeDefinition = {
     error: '#d98a90',
     info: '#81a1c1',
     success: '#a3be8c',
+    accent2: '#5e81ac',
+    overlay: '#616e88',
   },
   hljs: {
     keyword: '#81a1c1',
