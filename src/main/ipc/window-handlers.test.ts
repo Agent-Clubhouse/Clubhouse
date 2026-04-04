@@ -87,6 +87,10 @@ vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
 
+vi.mock('../window-security-guards', () => ({
+  applyWindowSecurityGuards: vi.fn(),
+}));
+
 import { BrowserWindow, ipcMain } from 'electron';
 import { registerWindowHandlers, _resetForTesting } from './window-handlers';
 import { IPC } from '../../shared/ipc-channels';
