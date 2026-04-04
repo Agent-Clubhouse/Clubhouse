@@ -9,7 +9,7 @@ import type {
   ProjectInfo,
 } from '../../shared/plugin-types';
 import { useProjectStore } from '../stores/projectStore';
-import { isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 
 export function createProjectAPI(ctx: PluginContext): ProjectAPI {
   const { projectPath, projectId } = ctx;
@@ -56,11 +56,17 @@ export function createProjectAPI(ctx: PluginContext): ProjectAPI {
 export function createProjectsAPI(): ProjectsAPI {
   return {
     list(): ProjectInfo[] {
-      return useProjectStore.getState().projects.map((p) => ({
+      const local = useProjectStore.getState().projects.map((p) => ({
         id: p.id,
         name: p.displayName || p.name,
         path: p.path,
       }));
+      const remote = useRemoteProjectStore.getState().getAllRemoteProjects().map((p) => ({
+        id: p.id,
+        name: p.displayName || p.name,
+        path: p.path,
+      }));
+      return [...local, ...remote];
     },
     getActive(): ProjectInfo | null {
       const store = useProjectStore.getState();
