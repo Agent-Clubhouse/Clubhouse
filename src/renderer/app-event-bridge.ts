@@ -365,10 +365,12 @@ function initHookEventListener(): () => void {
       // Headless agents exit on their own — skip the kill timer.
       if (event.kind === 'stop' && agent.kind === 'quick' && !agent.headless) {
         // Delay gives the agent time to write the summary file before we send /exit.
-        const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
+        // Re-fetch project inside the callback to avoid stale closure capture.
+        const projectId = agent.projectId;
         setTimeout(() => {
           const currentAgent = useAgentStore.getState().agents[agentId];
           if (currentAgent?.status !== 'running') return; // already exited
+          const project = useProjectStore.getState().projects.find((p) => p.id === projectId);
           if (project) {
             window.clubhouse.agent.killAgent(agentId, project.path).catch(() => {});
           } else {

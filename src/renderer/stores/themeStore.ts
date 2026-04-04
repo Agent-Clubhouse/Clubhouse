@@ -89,6 +89,10 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
   const store = useThemeStore.getState();
   store.refreshAvailable();
 
+  // Invalidate flash-prevention cache — stale theme data causes flicker
+  // when plugin themes are added, removed, or updated
+  try { localStorage.removeItem('clubhouse-theme-vars'); } catch { /* ignore */ }
+
   // If the active theme was unregistered, fall back to default
   const currentTheme = getTheme(store.themeId);
   if (!currentTheme) {
