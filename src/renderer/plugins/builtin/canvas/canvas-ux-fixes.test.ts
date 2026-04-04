@@ -44,21 +44,18 @@ describe('ELK radial layout center fallback', () => {
 describe('View context menu positioning', () => {
   it('view context menu uses MenuPortal for correct fixed positioning', () => {
     // The view context menu must render through MenuPortal to bypass
-    // the canvas transform container's containing block
-    const menuBlock = workspaceSource.slice(
-      workspaceSource.indexOf('View context menu (right-click'),
-      workspaceSource.indexOf('View context menu (right-click') + 400,
-    );
+    // the canvas transform container's containing block.
+    // Search the JSX render section (second occurrence of the comment, near MenuPortal)
+    const renderIdx = workspaceSource.lastIndexOf('{/* View context menu (right-click');
+    const menuBlock = workspaceSource.slice(renderIdx, renderIdx + 500);
     expect(menuBlock).toContain('MenuPortal');
     expect(menuBlock).toContain('fixed');
   });
 
   it('view context menu has a ref for bounds clamping and dismissal', () => {
     // The menu div must have a ref for viewport bounds adjustment
-    const menuBlock = workspaceSource.slice(
-      workspaceSource.indexOf('View context menu (right-click'),
-      workspaceSource.indexOf('View context menu (right-click') + 400,
-    );
+    const renderIdx = workspaceSource.lastIndexOf('{/* View context menu (right-click');
+    const menuBlock = workspaceSource.slice(renderIdx, renderIdx + 500);
     expect(menuBlock).toContain('ref={viewMenuRef}');
   });
 
