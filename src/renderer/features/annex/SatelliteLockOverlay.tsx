@@ -4,6 +4,7 @@
  * Full-screen overlay shown when a remote controller is connected.
  * Displays the controller's identity and provides disconnect/pause/disable actions.
  */
+import React from 'react';
 import { getAgentColorHex } from '../../../shared/name-generator';
 
 interface LockState {
@@ -25,7 +26,7 @@ interface Props {
 }
 
 
-export function SatelliteLockOverlay({ lockState, onDisconnect, onPause, onDisableAndDisconnect, bannerOffset = 0 }: Props) {
+export const SatelliteLockOverlay = React.memo(function SatelliteLockOverlay({ lockState, onDisconnect, onPause, onDisableAndDisconnect, bannerOffset = 0 }: Props) {
   if (!lockState.locked) return null;
 
   const colorHex = getAgentColorHex(lockState.controllerColor);
@@ -109,4 +110,4 @@ export function SatelliteLockOverlay({ lockState, onDisconnect, onPause, onDisab
       )}
     </div>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
@@ -81,7 +81,7 @@ function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
 }
 
 
-function ProjectIcon({ project, isActive, onClick, expanded }: {
+const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick, expanded }: {
   project: Project;
   isActive: boolean;
   onClick: () => void;
@@ -164,7 +164,7 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
       </span>
     </button>
   );
-}
+});
 
 function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
   entry: PluginRegistryEntry;

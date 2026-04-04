@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { AssistantMessage } from './AssistantMessage';
 import { AssistantActionCard } from './AssistantActionCard';
 import type { FeedItem, ActionGroup } from './types';
@@ -251,7 +251,7 @@ interface ActionGroupCardProps {
   onSkip?: (actionId: string) => void;
 }
 
-function ActionGroupCard({ group, actions, onApprove, onSkip }: ActionGroupCardProps) {
+const ActionGroupCard = React.memo(function ActionGroupCard({ group, actions, onApprove, onSkip }: ActionGroupCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const statusColor =
@@ -299,4 +299,4 @@ function ActionGroupCard({ group, actions, onApprove, onSkip }: ActionGroupCardP
       )}
     </div>
   );
-}
+});

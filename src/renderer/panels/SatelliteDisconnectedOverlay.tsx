@@ -5,7 +5,7 @@
  * snapshot is faintly visible underneath, with a connection status message
  * and a retry button.
  */
-import { useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { useAnnexClientStore, type SatelliteState } from '../stores/annexClientStore';
 
 interface Props {
@@ -14,7 +14,7 @@ interface Props {
   satelliteState: SatelliteState;
 }
 
-export function SatelliteDisconnectedOverlay({ satelliteId, satelliteAlias, satelliteState }: Props) {
+export const SatelliteDisconnectedOverlay = React.memo(function SatelliteDisconnectedOverlay({ satelliteId, satelliteAlias, satelliteState }: Props) {
   const retry = useAnnexClientStore((s) => s.retry);
 
   const handleRetry = useCallback(() => {
@@ -61,4 +61,4 @@ export function SatelliteDisconnectedOverlay({ satelliteId, satelliteAlias, sate
       </div>
     </div>
   );
-}
+});
