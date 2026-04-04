@@ -20,6 +20,8 @@ export const tokyoNight: ThemeDefinition = {
     error: '#f7768e',
     info: '#7aa2f7',
     success: '#9ece6a',
+    accent2: '#bb9af7',
+    overlay: '#565f89',
   },
   hljs: {
     keyword: '#bb9af7',

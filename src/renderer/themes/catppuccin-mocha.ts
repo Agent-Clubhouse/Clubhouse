@@ -20,6 +20,8 @@ export const catppuccinMocha: ThemeDefinition = {
     error: '#f38ba8',
     info: '#89b4fa',
     success: '#a6e3a1',
+    accent2: '#74c7ec',
+    overlay: '#7f849c',
   },
   hljs: {
     keyword: '#cba6f7',

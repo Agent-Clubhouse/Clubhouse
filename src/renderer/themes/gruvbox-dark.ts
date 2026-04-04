@@ -20,6 +20,8 @@ export const gruvboxDark: ThemeDefinition = {
     error: '#fb6c5c',
     info: '#83a598',
     success: '#b8bb26',
+    accent2: '#d3869b',
+    overlay: '#928374',
   },
   hljs: {
     keyword: '#fb4934',
