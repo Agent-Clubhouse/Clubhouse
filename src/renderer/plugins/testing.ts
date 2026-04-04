@@ -175,6 +175,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       injectMcpServers: asyncNoop,
       removeMcpServers: asyncNoop,
       getInjectedMcpServers: async () => ({}),
+      registerAgentTemplate: () => ({ dispose: () => {} }),
       contributeWrapperPreset: asyncNoop,
     },
     sounds: {
