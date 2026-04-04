@@ -807,7 +807,7 @@ export function initCanvasCommandHandler(): (() => void) | undefined {
       return;
     }
     try {
-      const result = handler(request.args);
+      const result = await handler(request.args);
       console.log('[assistant] Canvas command result:', request.command, result.success);
 
       // For create operations, persist BEFORE returning the result so the

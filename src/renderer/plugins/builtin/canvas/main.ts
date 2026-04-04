@@ -232,6 +232,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   useEffect(() => {
     if (!loaded || !wiresLoaded) return;
     scheduleSave();
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
   }, [canvases, views, viewport, zoomedViewId, wireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave]);
 
   // ── Agent wake reconciliation ────────────────────────────────────

@@ -428,6 +428,11 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
   // instance even if the session is replaced by a new spawn.
   const proc = session.process;
 
+  // Clear any existing kill timers from a prior rapid kill call
+  if (session.eofTimer) { clearTimeout(session.eofTimer); session.eofTimer = undefined; }
+  if (session.termTimer) { clearTimeout(session.termTimer); session.termTimer = undefined; }
+  if (session.killTimer) { clearTimeout(session.killTimer); session.killTimer = undefined; }
+
   session.eofTimer = setTimeout(() => {
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
@@ -483,6 +488,7 @@ export function killAll(exitCommand: string = '/exit\r'): Promise<void> {
       for (const id of ids) {
         const session = sessions.get(id);
         if (session) {
+          console.warn(`[pty-manager] killAll: process ${id} did not exit within grace period, sending SIGKILL`);
           try { session.process.kill(); } catch { /* dead */ }
         }
         cleanupSession(id);
