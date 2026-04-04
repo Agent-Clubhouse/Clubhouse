@@ -621,9 +621,9 @@ export function skipAction(actionId: string): void {
 export function reset(): void {
   if (state.agentId) {
     // Kill the running agent process
-    window.clubhouse.agent.killAgent(state.agentId, '').catch(() => {});
+    window.clubhouse.agent.killAgent(state.agentId, '').catch((err) => console.error('Agent kill failed:', err));
     // Clean up MCP bindings and agent registry in main process
-    window.clubhouse.assistant.reset(state.agentId).catch(() => {});
+    window.clubhouse.assistant.reset(state.agentId).catch((err) => console.error('Agent reset failed:', err));
   }
   cleanupAll();
   if (persistTimer) {

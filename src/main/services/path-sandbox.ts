@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as fsp from 'fs/promises';
 import { app } from 'electron';
 import * as projectStore from './project-store';
 import { appLog } from './log-service';
@@ -41,7 +42,14 @@ export function isPathAllowed(targetPath: string, allowedRoots: string[]): boole
  */
 export async function assertAllowedPath(targetPath: string): Promise<void> {
   const roots = await getAllowedRoots();
-  if (!isPathAllowed(targetPath, roots)) {
+  // Resolve symlinks so a symlink pointing outside the sandbox is caught
+  let realTarget = targetPath;
+  try {
+    realTarget = await fsp.realpath(path.resolve(targetPath));
+  } catch {
+    // File may not exist yet (e.g. new file creation) — fall through to path.resolve check
+  }
+  if (!isPathAllowed(realTarget, roots)) {
     const resolved = path.resolve(targetPath);
     appLog('core:file', 'error', 'Path access denied: outside allowed directories', {
       meta: { targetPath, resolved },

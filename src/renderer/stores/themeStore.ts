@@ -83,8 +83,9 @@ function syncPluginThemesToMain(): void {
   }
 }
 
-// Auto-refresh available themes when the registry changes
-onRegistryChange(() => {
+// Auto-refresh available themes when the registry changes.
+// Store unsubscribe handle for cleanup (e.g. hot-reload, tests).
+export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
   const store = useThemeStore.getState();
   store.refreshAvailable();
 

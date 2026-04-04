@@ -258,8 +258,9 @@ export async function initializePluginSystem(): Promise<void> {
       }
     }
 
-    // Write startup marker *before* activation so a crash during init
-    // will trigger safe mode on the next launch.
+    // Activate plugins — write startup marker after manifest pre-registration
+    // succeeds (above) but before activation, so a crash during init triggers
+    // safe mode on the next launch without false-positives from invalid manifests.
     await window.clubhouse.plugin.startupMarkerWrite(appEnabled);
 
     for (const pluginId of appEnabled) {

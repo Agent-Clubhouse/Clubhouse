@@ -410,7 +410,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       sat.ws = null;
       if (sat.state === 'connected') {
         setState(sat, 'disconnected', 'Connection closed');
-        scheduleReconnect(sat);
+        if (!sat.reconnectTimer) scheduleReconnect(sat);
       }
     });
 
@@ -422,7 +422,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       });
       sat.ws = null;
       setState(sat, 'disconnected', err.message);
-      scheduleReconnect(sat);
+      if (!sat.reconnectTimer) scheduleReconnect(sat);
     });
   } catch (err) {
     setState(sat, 'disconnected', err instanceof Error ? err.message : 'Connection failed');
@@ -517,7 +517,10 @@ function stopHeartbeat(sat: SatelliteConnectionInternal): void {
 }
 
 function scheduleReconnect(sat: SatelliteConnectionInternal): void {
-  if (sat.reconnectTimer) clearTimeout(sat.reconnectTimer);
+  if (sat.reconnectTimer) {
+    clearTimeout(sat.reconnectTimer);
+    sat.reconnectTimer = null;
+  }
 
   // Check if auto-reconnect is enabled
   const settings = annexSettings.getSettings();

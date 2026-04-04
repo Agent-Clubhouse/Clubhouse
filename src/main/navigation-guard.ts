@@ -6,7 +6,7 @@ export function isAllowedNavigation(url: string): boolean {
   try {
     const parsed = new URL(url);
     if (parsed.protocol === 'file:') return true;
-    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') return true;
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1' || parsed.hostname === '[::1]') return true;
     return false;
   } catch {
     return false;
