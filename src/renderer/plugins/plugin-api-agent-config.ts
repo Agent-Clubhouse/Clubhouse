@@ -8,6 +8,7 @@ import type {
 import { hasPermission, handlePermissionViolation } from './plugin-api-shared';
 import { usePluginStore } from './plugin-store';
 import { useProjectStore } from '../stores/projectStore';
+import { registerPluginAgentTemplate } from './plugin-agent-template-registry';
 
 // ── Plugin instruction markers ──────────────────────────────────────────
 const PLUGIN_INSTRUCTION_START = (pluginId: string) => `\n\n<!-- plugin:${pluginId}:start -->`;
@@ -334,6 +335,21 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
       const storage = storageFor(projectPath);
       const data = await storage.read('injected-mcp');
       return (data as Record<string, unknown>) || {};
+    },
+
+    registerAgentTemplate(template: {
+      name: string;
+      description?: string;
+      icon?: string;
+      promptContent: string;
+      skills?: Record<string, string>;
+      mcpServers?: Record<string, unknown>;
+    }) {
+      const entry = usePluginStore.getState().plugins[pluginId];
+      const displayName = entry?.manifest?.name || pluginId;
+      const disposable = registerPluginAgentTemplate(pluginId, displayName, template);
+      ctx.subscriptions.push(disposable);
+      return disposable;
     },
 
     async contributeWrapperPreset(preset: {

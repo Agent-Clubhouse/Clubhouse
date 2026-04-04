@@ -990,6 +990,20 @@ export interface AgentConfigAPI {
   /** Get the MCP server configurations currently injected by this plugin. */
   getInjectedMcpServers(opts?: AgentConfigTargetOptions): Promise<Record<string, unknown>>;
   /**
+   * Register an agent template at runtime (v0.9+).
+   * The template appears in the agent template gallery alongside built-in templates,
+   * grouped under the plugin name. Returns a Disposable to unregister the template.
+   * Template creation injects the specified prompt content, skills, and MCP servers.
+   */
+  registerAgentTemplate(template: {
+    name: string;
+    description?: string;
+    icon?: string;
+    promptContent: string;
+    skills?: Record<string, string>;
+    mcpServers?: Record<string, unknown>;
+  }): Disposable;
+  /**
    * Register a launch wrapper preset for the current project.
    * Writes the wrapper config and MCP catalog to project settings.
    * The preset becomes active immediately.
