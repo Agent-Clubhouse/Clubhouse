@@ -175,6 +175,79 @@ describe('WireConfigPopover', () => {
     });
   });
 
+  it('calls onRemoveWireDefinition before unbind resolves in handleDisconnect', async () => {
+    let resolveUnbind!: () => void;
+    const unbindMock = vi.fn().mockImplementation(
+      () => new Promise<void>((resolve) => { resolveUnbind = resolve; }),
+    );
+    const onRemoveWireDefinition = vi.fn();
+    useMcpBindingStore.setState({ bindings: [browserBinding], unbind: unbindMock } as any);
+
+    const { getByTestId } = render(
+      <WireConfigPopover
+        binding={browserBinding}
+        x={100}
+        y={200}
+        onClose={vi.fn()}
+        onRemoveWireDefinition={onRemoveWireDefinition}
+      />,
+    );
+
+    fireEvent.click(getByTestId('wire-disconnect'));
+
+    // onRemoveWireDefinition must be called synchronously before unbind resolves
+    expect(onRemoveWireDefinition).toHaveBeenCalledTimes(1);
+    expect(onRemoveWireDefinition).toHaveBeenCalledWith('agent-1', 'browser-1');
+    expect(unbindMock).toHaveBeenCalledWith('agent-1', 'browser-1');
+
+    resolveUnbind();
+  });
+
+  it('calls onRemoveWireDefinition before unbind resolves in handleBidirectionalToggle (removing reverse)', async () => {
+    let resolveUnbind!: () => void;
+    const unbindMock = vi.fn().mockImplementation(
+      () => new Promise<void>((resolve) => { resolveUnbind = resolve; }),
+    );
+    const onRemoveWireDefinition = vi.fn();
+    const reverseBinding: McpBindingEntry = {
+      agentId: 'agent-2',
+      targetId: 'agent-1',
+      targetKind: 'agent',
+      label: 'Agent 1',
+    };
+    useMcpBindingStore.setState({
+      bindings: [agentBinding, reverseBinding],
+      unbind: unbindMock,
+    } as any);
+
+    const { getByTestId } = render(
+      <WireConfigPopover
+        binding={agentBinding}
+        x={100}
+        y={200}
+        onClose={vi.fn()}
+        onRemoveWireDefinition={onRemoveWireDefinition}
+      />,
+    );
+
+    // Wait for useEffect to detect reverse binding and set bidirectional=true
+    const toggleContainer = getByTestId('wire-bidirectional-toggle');
+    await waitFor(() => {
+      const toggleButton = toggleContainer.querySelector('button');
+      expect(toggleButton?.className).toContain('bg-ctp-accent');
+    });
+
+    // Toggle off — triggers handleBidirectionalToggle(false)
+    fireEvent.click(toggleContainer.querySelector('button')!);
+
+    // onRemoveWireDefinition must be called synchronously before unbind resolves
+    expect(onRemoveWireDefinition).toHaveBeenCalledTimes(1);
+    expect(onRemoveWireDefinition).toHaveBeenCalledWith('agent-2', 'agent-1');
+    expect(unbindMock).toHaveBeenCalledWith('agent-2', 'agent-1');
+
+    resolveUnbind();
+  });
+
   it('does not set instructions on reverse binding for unidirectional wires', async () => {
     const setInstructionsMock = vi.fn().mockResolvedValue(undefined);
     // Only forward binding, no reverse

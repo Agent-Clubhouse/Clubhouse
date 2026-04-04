@@ -26,10 +26,10 @@ const WIRE_GLOW_KEYFRAMES = `
 }
 `;
 
-/** Unidirectional wire color (accent/blue) */
+/** Unidirectional wire color (accent) */
 const UNI_COLOR = 'rgb(var(--ctp-accent, 137 180 250))';
-/** Bidirectional wire color (success/green) */
-const BIDIR_COLOR = 'rgb(var(--ctp-success, 166 227 161))';
+/** Bidirectional wire color (accent) */
+const BIDIR_COLOR = 'rgb(var(--ctp-accent, 137 180 250))';
 
 /** Check whether a reverse binding exists (agent→target has a matching target→agent). */
 function isBidirectional(binding: McpBindingEntry, allBindings: McpBindingEntry[]): boolean {
@@ -124,7 +124,7 @@ const WireGroup = React.memo(function WireGroup({
 
   const isActive = activity.startsWith('active');
   const wireColor = bidir ? BIDIR_COLOR : UNI_COLOR;
-  const wireColorVar = bidir ? 'var(--ctp-success, 166 227 161)' : 'var(--ctp-accent, 137 180 250)';
+  const wireColorVar = 'var(--ctp-accent, 137 180 250)';
   const fwdMarker = bidir ? 'url(#wire-arrow-fwd-bidir)' : 'url(#wire-arrow-fwd)';
   const revMarker = 'url(#wire-arrow-rev-bidir)';
 
@@ -150,13 +150,13 @@ const WireGroup = React.memo(function WireGroup({
       <path
         d={path}
         fill="none"
-        stroke={wireColor}
         strokeWidth={isActive ? 2.5 : 2}
         strokeLinecap="round"
         strokeDasharray={bidir ? undefined : '8 4'}
         markerEnd={fwdMarker}
         markerStart={bidir ? revMarker : undefined}
         style={{
+          stroke: wireColor,
           pointerEvents: 'none',
           animation: isDimmed ? 'none' : isActive ? 'wire-pulse-active 1.5s ease-in-out infinite' : 'wire-pulse 3s ease-in-out infinite',
           opacity: isDimmed ? 0.35 : 1,
@@ -292,14 +292,14 @@ export const WireOverlay = React.memo(function WireOverlay({
         <WireFlowDotFilters />
         {/* Unidirectional arrowhead (accent color) */}
         <marker id="wire-arrow-fwd" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
-          <path d="M 1 1 L 7 4 L 1 7" fill="none" stroke={UNI_COLOR} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M 1 1 L 7 4 L 1 7" fill="none" style={{ stroke: UNI_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
         {/* Bidirectional arrowheads (success color) */}
         <marker id="wire-arrow-fwd-bidir" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
-          <path d="M 1 1 L 7 4 L 1 7" fill="none" stroke={BIDIR_COLOR} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M 1 1 L 7 4 L 1 7" fill="none" style={{ stroke: BIDIR_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
         <marker id="wire-arrow-rev-bidir" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto" markerUnits="userSpaceOnUse">
-          <path d="M 7 1 L 1 4 L 7 7" fill="none" stroke={BIDIR_COLOR} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M 7 1 L 1 4 L 7 7" fill="none" style={{ stroke: BIDIR_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
         {/* Wire path definitions (referenced by flow dots via <mpath>) */}
         {wires.map(({ key }) => (
