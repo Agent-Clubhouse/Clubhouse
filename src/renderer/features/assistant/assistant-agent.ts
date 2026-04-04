@@ -219,14 +219,7 @@ function handleStructuredEvent(_agentId: string, event: { type: string; timestam
   }
 }
 
-/** Tools that modify state and should require user approval before execution. */
-const MUTATING_TOOLS = new Set([
-  'create_project', 'create_canvas', 'create_agent',
-  'add_card', 'add_zone', 'add_wire', 'update_card',
-  'delete_project', 'delete_canvas', 'delete_agent',
-  'write_file', 'run_command',
-  'update_project', 'update_agent', 'update_canvas',
-]);
+import { MUTATING_TOOLS } from '../../../shared/mutating-tools';
 
 function isMutatingTool(name: string): boolean {
   return MUTATING_TOOLS.has(name);

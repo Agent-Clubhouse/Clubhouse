@@ -7,11 +7,7 @@ interface Props {
   onSkip?: (actionId: string) => void;
 }
 
-/** Tool-name patterns that represent canvas/project/agent creation. */
-const CREATION_TOOLS = new Set([
-  'create_project', 'create_canvas', 'create_agent',
-  'add_card', 'add_zone', 'add_wire', 'update_card',
-]);
+import { CREATION_TOOLS } from '../../../shared/mutating-tools';
 
 /** Map raw tool names to human-friendly labels. */
 const TOOL_LABELS: Record<string, string> = {

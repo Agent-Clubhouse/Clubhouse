@@ -219,11 +219,16 @@ describe('annexClientStore', () => {
         received.push({ satId, agentId, data });
       });
 
+      vi.useFakeTimers();
       eventCallback!({ satelliteId: 'sat-1', type: 'pty:data', payload: { agentId: 'agent-1', data: 'hello world' } });
+
+      // PTY data is batched with a 100ms window
+      vi.advanceTimersByTime(100);
 
       expect(received).toHaveLength(1);
       expect(received[0]).toEqual({ satId: 'sat-1', agentId: 'agent-1', data: 'hello world' });
       unsub();
+      vi.useRealTimers();
     });
 
     it('forwards agent:woken events to updateRemoteAgentRunState', async () => {
@@ -272,10 +277,15 @@ describe('annexClientStore', () => {
 
       initAnnexClientListener();
       const detailedStatus = { state: 'working', message: 'Running Bash', timestamp: 1000 };
+      vi.useFakeTimers();
       eventCallback!({ satelliteId: 'sat-1', type: 'hook:event', payload: { agentId: 'agent-1', event: {}, detailedStatus } });
+
+      // Hook events are throttled to 50ms
+      vi.advanceTimersByTime(50);
 
       expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', detailedStatus);
       spy.mockRestore();
+      vi.useRealTimers();
     });
 
     it('ignores hook:event without detailedStatus', async () => {
@@ -307,10 +317,15 @@ describe('annexClientStore', () => {
 
       initAnnexClientListener();
       const detailedStatus = { state: 'working', message: 'Editing file', toolName: 'Edit', timestamp: 2000 };
+      vi.useFakeTimers();
       eventCallback!({ satelliteId: 'sat-1', type: 'structured:event', payload: { agentId: 'agent-1', event: {}, detailedStatus } });
+
+      // Structured events are throttled to 50ms
+      vi.advanceTimersByTime(50);
 
       expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', detailedStatus);
       spy.mockRestore();
+      vi.useRealTimers();
     });
   });
 
