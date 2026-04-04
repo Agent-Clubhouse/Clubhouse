@@ -454,6 +454,78 @@ describe('GroupProjectTools', () => {
     agentRegistry.untrack('agent-2');
   });
 
+  describe('resolveSenderLabel (via post_bulletin)', () => {
+    it('uses live registry name when project has been renamed', async () => {
+      const project = await groupProjectRegistry.create('OldName');
+      bindingManager.bind('agent-1', {
+        targetId: project.id,
+        targetKind: 'group-project',
+        label: 'GP',
+        agentName: 'robin',
+        projectName: 'OldName',
+      });
+
+      // Rename the project
+      await groupProjectRegistry.update(project.id, { name: 'NewName' });
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'GP' });
+      const toolName = buildToolName(binding, 'post_bulletin');
+      await callTool('agent-1', toolName, { topic: 'test', body: 'hello' });
+
+      // Message sender should reflect the updated project name
+      const board = (await import('../../group-project-bulletin')).getBulletinBoard(project.id);
+      const messages = await board.getTopicMessages('test');
+      expect(messages[0].sender).toContain('NewName');
+    });
+
+    it('writes updated projectName back to the binding', async () => {
+      const project = await groupProjectRegistry.create('OldName');
+      bindingManager.bind('agent-1', {
+        targetId: project.id,
+        targetKind: 'group-project',
+        label: 'GP',
+        agentName: 'robin',
+        projectName: 'OldName',
+      });
+
+      await groupProjectRegistry.update(project.id, { name: 'NewName' });
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'GP' });
+      const toolName = buildToolName(binding, 'post_bulletin');
+      await callTool('agent-1', toolName, { topic: 'test', body: 'hello' });
+
+      // bindingManager should have the refreshed name
+      const bindings = bindingManager.getBindingsForAgent('agent-1');
+      expect(bindings[0].projectName).toBe('NewName');
+    });
+
+    it('falls back to cached projectName when registry lookup throws', async () => {
+      const project = await groupProjectRegistry.create('StableName');
+      bindingManager.bind('agent-1', {
+        targetId: project.id,
+        targetKind: 'group-project',
+        label: 'GP',
+        agentName: 'robin',
+        projectName: 'StableName',
+      });
+
+      // Make registry.get throw for this call
+      const origGet = groupProjectRegistry.get.bind(groupProjectRegistry);
+      vi.spyOn(groupProjectRegistry, 'get').mockRejectedValueOnce(new Error('registry unavailable'));
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'GP' });
+      const toolName = buildToolName(binding, 'post_bulletin');
+      await callTool('agent-1', toolName, { topic: 'test', body: 'hello' });
+
+      vi.spyOn(groupProjectRegistry, 'get').mockImplementation(origGet);
+
+      const board = (await import('../../group-project-bulletin')).getBulletinBoard(project.id);
+      const messages = await board.getTopicMessages('test');
+      // Should still use cached name
+      expect(messages[0].sender).toContain('StableName');
+    });
+  });
+
   it('shoulder_tap returns error when target_agent_id is missing', async () => {
     const project = await groupProjectRegistry.create('ErrProj');
     await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
