@@ -87,12 +87,16 @@ let serverPort = 0; // Main TLS port
 let currentPin = '';
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const sessionTokens = new Map<string, { issuedAt: number }>();
+/** Tokens revoked on peer removal — checked during validation, cleaned on TTL expiry. */
+const revokedTokens = new Set<string>();
 
 // Tag WebSocket connections with auth type for security gating
 type WsAuthType = 'bearer' | 'mtls';
 const wsAuthTypes = new WeakMap<WebSocket, WsAuthType>();
 // Track peer fingerprint per WebSocket connection (for mTLS connections)
 const wsPeerFingerprints = new WeakMap<WebSocket, string>();
+// Track bearer token per WebSocket connection (for revocation on peer removal)
+const wsBearerTokens = new WeakMap<WebSocket, string>();
 
 let unsubPtyData: (() => void) | null = null;
 let unsubHookEvent: (() => void) | null = null;
@@ -299,10 +303,12 @@ function generatePin(): string {
 
 function isValidToken(token: string | undefined): boolean {
   if (!token) return false;
+  if (revokedTokens.has(token)) return false;
   const entry = sessionTokens.get(token);
   if (!entry) return false;
   if (Date.now() - entry.issuedAt > TOKEN_TTL_MS) {
     sessionTokens.delete(token);
+    revokedTokens.delete(token);
     return false;
   }
   return true;
@@ -2529,6 +2535,10 @@ export function start(): void {
       if (peerFingerprintForWs) {
         wsPeerFingerprints.set(ws, peerFingerprintForWs);
       }
+      if (authType === 'bearer') {
+        const token = urlObj.searchParams.get('token');
+        if (token) wsBearerTokens.set(ws, token);
+      }
       wss!.emit('connection', ws, req);
     });
   });
@@ -2678,6 +2688,7 @@ export function start(): void {
     for (const [token, entry] of sessionTokens) {
       if (now - entry.issuedAt > TOKEN_TTL_MS) {
         sessionTokens.delete(token);
+        revokedTokens.delete(token); // clean up expired revocations
       }
     }
   }, 60_000);
@@ -2833,6 +2844,7 @@ export function stop(): void {
   pairingPort = 0;
   currentPin = '';
   sessionTokens.clear();
+  revokedTokens.clear();
   detailedStatusCache.clear();
   trackedQuickAgents.clear();
   eventReplay.reset();
@@ -3165,6 +3177,7 @@ export function notifySessionPause(paused: boolean): void {
 export function regeneratePin(): void {
   currentPin = generatePin();
   sessionTokens.clear();
+  revokedTokens.clear();
   // Close all WS clients so they must re-pair
   if (wss) {
     for (const client of wss.clients) {
@@ -3177,12 +3190,18 @@ export function regeneratePin(): void {
   }
 }
 
-/** Disconnect a specific peer's WebSocket connection by fingerprint. */
+/** Disconnect a specific peer's WebSocket connection by fingerprint and revoke their tokens. */
 export function disconnectPeer(fingerprint: string): void {
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
   if (!wss) return;
   for (const client of wss.clients) {
     if (wsPeerFingerprints.get(client) === fingerprint) {
+      // Revoke the bearer token used by this connection
+      const token = wsBearerTokens.get(client);
+      if (token) {
+        revokedTokens.add(token);
+        sessionTokens.delete(token);
+      }
       try { client.close(1000, 'disconnected_by_satellite'); } catch (err) {
         appLog('core:annex', 'debug', 'Failed to close peer WebSocket connection', {
           meta: { fingerprint, error: err instanceof Error ? err.message : String(err) },
