@@ -119,4 +119,54 @@ describe('optimisticUpdate', () => {
     // Should revert to the original array reference
     expect(get().items).toBe(origItems);
   });
+
+  it('preserves concurrent mutations on rollback (CQ-C03)', async () => {
+    const { set, get } = createMockStore({ count: 0, name: 'original', items: [] });
+
+    // IPC that simulates a concurrent mutation during the await
+    const ipcCall = vi.fn().mockImplementation(async () => {
+      // While IPC is in flight, another mutation changes 'name'
+      set({ name: 'concurrently-changed' });
+      throw new Error('IPC failed');
+    });
+
+    await optimisticUpdate(set, get, { count: 99 }, ipcCall);
+
+    // count should revert (no concurrent change to this key)
+    expect(get().count).toBe(0);
+    // name should be preserved — it was changed by a concurrent mutation
+    expect(get().name).toBe('concurrently-changed');
+  });
+
+  it('skips rollback entirely when all keys were concurrently modified', async () => {
+    const { set, get } = createMockStore({ count: 0, name: 'a', items: [] });
+
+    const ipcCall = vi.fn().mockImplementation(async () => {
+      // Concurrent mutation overwrites the same key we optimistically set
+      set({ count: 42 });
+      throw new Error('IPC failed');
+    });
+
+    await optimisticUpdate(set, get, { count: 99 }, ipcCall);
+
+    // count was concurrently changed to 42 — rollback should NOT clobber it
+    expect(get().count).toBe(42);
+  });
+
+  it('partially rolls back when some keys were concurrently modified', async () => {
+    const { set, get } = createMockStore({ count: 0, name: 'old', items: [] });
+
+    const ipcCall = vi.fn().mockImplementation(async () => {
+      // Concurrent mutation changes 'name' but not 'count'
+      set({ name: 'concurrent' });
+      throw new Error('IPC failed');
+    });
+
+    await optimisticUpdate(set, get, { count: 10, name: 'optimistic' }, ipcCall);
+
+    // count should revert — no concurrent change
+    expect(get().count).toBe(0);
+    // name should keep the concurrent value — not reverted
+    expect(get().name).toBe('concurrent');
+  });
 });
