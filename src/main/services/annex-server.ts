@@ -2073,6 +2073,15 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
 const MAX_PTY_INPUT_SIZE = 64 * 1024; // 64KB
 
+/** Send data over a WebSocket only if the connection is still open. */
+function safeSend(ws: WebSocket, data: string): boolean {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(data);
+    return true;
+  }
+  return false;
+}
+
 function handleWsMessage(ws: WebSocket, data: string): void {
   let msg: { type?: string; payload?: Record<string, unknown>; since?: number };
   try {
@@ -2091,7 +2100,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     const events = eventReplay.getEventsSince(msg.since);
 
     if (events === null) {
-      ws.send(JSON.stringify({
+      safeSend(ws, JSON.stringify({
         type: 'replay:gap',
         oldestAvailable: eventReplay.getOldestSeq(),
         lastSeq: eventReplay.getLastSeq(),
@@ -2099,7 +2108,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       return;
     }
 
-    ws.send(JSON.stringify({
+    safeSend(ws, JSON.stringify({
       type: 'replay:start',
       fromSeq: events.length > 0 ? events[0].seq : msg.since,
       toSeq: eventReplay.getLastSeq(),
@@ -2107,15 +2116,15 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     }));
 
     for (const event of events) {
-      ws.send(JSON.stringify({
+      if (!safeSend(ws, JSON.stringify({
         type: event.type,
         payload: event.payload,
         seq: event.seq,
         replayed: true,
-      }));
+      }))) break;
     }
 
-    ws.send(JSON.stringify({ type: 'replay:end' }));
+    safeSend(ws, JSON.stringify({ type: 'replay:end' }));
     return;
   }
 
@@ -2124,7 +2133,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const isMtls = authType === 'mtls';
 
   if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image')) {
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
   }
 
@@ -2136,7 +2145,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const inputData = payload.data as string;
       if (!agentId || typeof inputData !== 'string') break;
       if (inputData.length > MAX_PTY_INPUT_SIZE) {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'pty:input data exceeds 64KB limit' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'pty:input data exceeds 64KB limit' } }));
         break;
       }
       ptyManager.write(agentId, inputData);
@@ -2159,7 +2168,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       if (!agentId || !base64 || !mimeType) break;
       // Limit to 10MB of base64 data (~7.5MB raw image)
       if (base64.length > 10 * 1024 * 1024) {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } }));
         break;
       }
       handleClipboardImage(agentId, base64, mimeType);
@@ -2172,20 +2181,20 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       if (!sessionId || !projectId) break;
       findProjectById(projectId).then(async (project) => {
         if (!project) {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
         try {
           await ptyManager.spawnShell(sessionId, project.path);
-          ws.send(JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId } }));
+          safeSend(ws, JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId } }));
         } catch (err) {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));
         }
       }).catch((err) => {
         appLog('core:annex', 'error', 'pty:spawn-shell lookup failed', {
           meta: { projectId, error: err instanceof Error ? err.message : String(err) },
         });
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2197,7 +2206,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       // Reuse the quick agent spawn logic
       findProjectById(projectId).then((project) => {
         if (!project) {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
         handleSpawnQuickAgentWs(ws, project, payload);
@@ -2205,7 +2214,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         appLog('core:annex', 'error', 'agent:spawn lookup failed', {
           meta: { projectId, error: err instanceof Error ? err.message : String(err) },
         });
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2225,7 +2234,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const agentId = payload.agentId as string;
       if (!agentId) break;
       ptyManager.gracefulKill(agentId);
-      ws.send(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
+      safeSend(ws, JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
       break;
     }
 
@@ -2250,7 +2259,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         appLog('core:annex', 'error', 'Canvas mutation failed server-side', {
           meta: { projectId, canvasId, mutationType: mutation.type, error: message },
         });
-        ws.send(JSON.stringify({
+        safeSend(ws, JSON.stringify({
           type: 'canvas:mutation:error',
           payload: { projectId, canvasId, mutationType: mutation.type, message },
         }));
@@ -2264,20 +2273,20 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       if (!projectId || !Array.isArray(orderedIds)) break;
       findProjectById(projectId).then((project) => {
         if (!project) {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
         agentConfig.reorderDurable(project.path, orderedIds).then(() => {
           broadcastSnapshotRefresh();
-          ws.send(JSON.stringify({ type: 'agent:reorder:ack', payload: { projectId } }));
+          safeSend(ws, JSON.stringify({ type: 'agent:reorder:ack', payload: { projectId } }));
         }).catch(() => {
-          ws.send(JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
+          safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
         });
       }).catch((err) => {
         appLog('core:annex', 'error', 'agent:reorder lookup failed', {
           meta: { projectId, error: err instanceof Error ? err.message : String(err) },
         });
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'internal_error' } }));
       });
       break;
     }
@@ -2321,11 +2330,11 @@ async function handleSpawnQuickAgentWs(
       model: model || null, orchestrator, freeAgentMode,
       parentAgentId, projectId: project.id, headless: true,
     });
-    ws.send(JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
+    safeSend(ws, JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
   } catch {
     tracked.status = 'failed';
     trackedQuickAgents.delete(agentId);
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
   }
 }
 
@@ -2337,11 +2346,11 @@ async function handleWakeAgentWs(
 ): Promise<void> {
   const agentInfo = await findAgentAcrossProjects(agentId);
   if (!agentInfo) {
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
     return;
   }
   if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_already_running' } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'agent_already_running' } }));
     return;
   }
 
@@ -2384,13 +2393,19 @@ async function handleWakeAgentWs(
     });
 
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-v2' });
+
+    // Wait for the agent to be registered as running before refreshing the
+    // snapshot.  Matches the HTTP handler pattern — without this, the snapshot
+    // arrives before the agent is registered, causing controllers to see
+    // agents stuck in "sleeping" state.
+    await waitForAgentRunning(config.id);
     broadcastSnapshotRefresh();
-    ws.send(JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
+    safeSend(ws, JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
   } catch (err) {
     appLog('core:annex', 'error', 'Failed to wake agent (WS)', {
       meta: { agentId, agentName: config.name, error: err instanceof Error ? err.message : String(err) },
     });
-    ws.send(JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));
+    safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));
   }
 }
 
@@ -2497,13 +2512,13 @@ export function start(): void {
 
     // Send snapshot on connect
     try {
-      ws.send(JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
+      safeSend(ws, JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
     } catch (err) {
       appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
       try {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
       } catch (sendErr) {
         appLog('core:annex', 'debug', 'Failed to send error to client (client likely disconnected)', {
           meta: { error: sendErr instanceof Error ? sendErr.message : String(sendErr) },

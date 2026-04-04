@@ -1109,8 +1109,8 @@ const api = {
     onHubMutation: (callback: (hubId: string, scope: string, mutation: unknown, projectId?: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, hubId: string, scope: string, mutation: unknown, projectId?: string) =>
         callback(hubId, scope, mutation, projectId);
-      ipcRenderer.on(IPC.WINDOW.REQUEST_HUB_MUTATION, listener);
-      return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_HUB_MUTATION, listener); };
+      ipcRenderer.on(IPC.WINDOW.HUB_MUTATION, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.HUB_MUTATION, listener); };
     },
 
     // Canvas state sync — leader/follower protocol
@@ -1164,8 +1164,8 @@ const api = {
     onCanvasMutation: (callback: (canvasId: string, scope: string, mutation: unknown, projectId?: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, canvasId: string, scope: string, mutation: unknown, projectId?: string) =>
         callback(canvasId, scope, mutation, projectId);
-      ipcRenderer.on(IPC.WINDOW.REQUEST_CANVAS_MUTATION, listener);
-      return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_CANVAS_MUTATION, listener); };
+      ipcRenderer.on(IPC.WINDOW.CANVAS_MUTATION, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.CANVAS_MUTATION, listener); };
     },
     setTitle: (title: string) =>
       ipcRenderer.invoke(IPC.WINDOW.SET_TITLE, title),
