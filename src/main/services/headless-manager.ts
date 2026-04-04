@@ -13,6 +13,7 @@ import * as annexEventBus from './annex-event-bus';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
+import { validateCommandPrefix } from './command-prefix-validation';
 import { validateSpawnCwd } from './pty-manager';
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
@@ -211,7 +212,7 @@ function spawnProcess(
 
   if (isWin) {
     const cmdLine = [binary, ...args].map(a => winQuoteArg(a)).join(' ');
-    const fullCmd = commandPrefix ? `${commandPrefix} & ${cmdLine}` : cmdLine;
+    const fullCmd = commandPrefix ? `${validateCommandPrefix(commandPrefix)} & ${cmdLine}` : cmdLine;
     return cpSpawn('cmd.exe', ['/d', '/s', '/c', `"${fullCmd}"`], {
       cwd,
       env,
@@ -221,7 +222,7 @@ function spawnProcess(
   }
 
   if (commandPrefix) {
-    return cpSpawn('sh', ['-c', `${commandPrefix} && exec "$@"`, '_', binary, ...args], {
+    return cpSpawn('sh', ['-c', `${validateCommandPrefix(commandPrefix)} && exec "$@"`, '_', binary, ...args], {
       cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

@@ -5,6 +5,7 @@ import { AsyncQueue } from './async-queue';
 import { JsonlParser, StreamJsonEvent } from '../../services/jsonl-parser';
 import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
 import { appLog } from '../../services/log-service';
+import { validateCommandPrefix } from '../../services/command-prefix-validation';
 
 export interface StreamJsonAdapterOpts {
   binary: string;
@@ -97,7 +98,7 @@ export class StreamJsonAdapter implements StructuredAdapter {
 
     const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
     const spawnArgs = sessionOpts.commandPrefix
-      ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
+      ? ['-c', `${validateCommandPrefix(sessionOpts.commandPrefix)} && exec "$@"`, '_', this.opts.binary, ...args]
       : args;
 
     appLog('core:structured', 'info', 'StreamJsonAdapter spawning', {

@@ -12,12 +12,34 @@ import {
 } from '../services/clubhouse-mcp/plugin-tool-registry';
 import { withValidatedArgs, stringArg, arrayArg, objectArg } from './validation';
 
+type PluginToolDef = { name: string; description: string; inputSchema: Record<string, unknown> };
+
+function pluginToolArrayArg(): (value: unknown, argName: string) => PluginToolDef[] {
+  const inner = arrayArg(
+    objectArg<PluginToolDef>({
+      validate: (tool, argName) => {
+        if (typeof tool.name !== 'string' || !tool.name) {
+          throw new Error(`${argName}.name must be a non-empty string`);
+        }
+        if (typeof tool.description !== 'string' || !tool.description) {
+          throw new Error(`${argName}.description must be a non-empty string`);
+        }
+        if (!tool.inputSchema || typeof tool.inputSchema !== 'object' || Array.isArray(tool.inputSchema)) {
+          throw new Error(`${argName}.inputSchema must be an object`);
+        }
+      },
+    }),
+  );
+  return inner;
+}
+
 export function registerPluginMcpHandlers(): void {
-  ipcMain.handle(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS,
-    async (_event: Electron.IpcMainInvokeEvent, pluginId: string, tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>) => {
+  ipcMain.handle(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS, withValidatedArgs(
+    [stringArg(), pluginToolArrayArg()],
+    async (_event, pluginId: string, tools: PluginToolDef[]) => {
       registerPluginTools(pluginId, tools);
     },
-  );
+  ));
 
   ipcMain.handle(IPC.PLUGIN_MCP.REMOVE_TOOLS, withValidatedArgs(
     [stringArg()],

@@ -4,6 +4,7 @@ import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
+import { validateCommandPrefix } from './command-prefix-validation';
 
 const LOG_NS = 'core:agent-settings';
 
@@ -549,6 +550,9 @@ export async function readProjectAgentDefaults(projectPath: string): Promise<Pro
  * Write project-level agent defaults to .clubhouse/settings.json.
  */
 export async function writeProjectAgentDefaults(projectPath: string, defaults: ProjectAgentDefaults): Promise<void> {
+  if (defaults.commandPrefix) {
+    validateCommandPrefix(defaults.commandPrefix);
+  }
   const settings = await readSettings(projectPath);
   settings.agentDefaults = defaults;
   await writeSettings(projectPath, settings);

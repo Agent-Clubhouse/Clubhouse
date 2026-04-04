@@ -10,6 +10,7 @@ import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
+import { validateCommandPrefix } from './command-prefix-validation';
 
 /** Monotonically increasing counter to detect stale session handlers. */
 let sessionGeneration = 0;
@@ -253,7 +254,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       // This avoids cmd.exe /c argument-quoting issues that cause the mission
       // text to be mangled or lost when passed directly in the args array.
       const shellCmd = [binary, ...args].map(a => winQuoteArg(a)).join(' ');
-      pendingCommand = commandPrefix ? `${commandPrefix} & ${shellCmd}` : shellCmd;
+      pendingCommand = commandPrefix ? `${validateCommandPrefix(commandPrefix)} & ${shellCmd}` : shellCmd;
 
       proc = pty.spawn('cmd.exe', [], {
         name: 'xterm-256color',
@@ -266,7 +267,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       const shellCmd = [binary, ...args].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
       const shell = process.env.SHELL || '/bin/zsh';
       pendingCommand = commandPrefix
-        ? `${commandPrefix} && exec ${shellCmd}`
+        ? `${validateCommandPrefix(commandPrefix)} && exec ${shellCmd}`
         : `exec ${shellCmd}`;
 
       proc = pty.spawn(shell, ['-il'], {

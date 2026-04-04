@@ -4,6 +4,7 @@ import { AsyncQueue } from './async-queue';
 import { CodexAppServerClient } from './codex-app-server-client';
 import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
 import { appLog } from '../../services/log-service';
+import { validateCommandPrefix } from '../../services/command-prefix-validation';
 
 export interface CodexAppServerAdapterOpts {
   binary: string;
@@ -51,7 +52,7 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     // When a command prefix is set, wrap via shell so the prefix runs first
     const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
     const spawnArgs = sessionOpts.commandPrefix
-      ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
+      ? ['-c', `${validateCommandPrefix(sessionOpts.commandPrefix)} && exec "$@"`, '_', this.opts.binary, ...args]
       : args;
 
     appLog('core:structured', 'info', 'CodexAppServerAdapter starting session', {
