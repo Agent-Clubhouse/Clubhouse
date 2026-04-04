@@ -1169,7 +1169,6 @@ describe('updateDurableConfig', () => {
     expect(result).not.toBeNull();
     expect(result!.lastSessionId).toBeUndefined();
   });
-});
 
   it('persists customInstructionsPath and round-trips', async () => {
     const agents = [
