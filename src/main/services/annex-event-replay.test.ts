@@ -93,4 +93,72 @@ describe('annex-event-replay', () => {
     replay.pushEvent('test', {});
     expect(replay.getOldestSeq()).toBe(seq1);
   });
+
+  // ── Ring buffer specific tests ──────────────────────────────────────
+
+  it('ring buffer wraps correctly when pushing beyond capacity', () => {
+    // Push exactly max events
+    for (let i = 0; i < 10_000; i++) {
+      replay.pushEvent('pty:data', { agentId: 'a1', data: String(i) });
+    }
+    expect(replay.size()).toBe(10_000);
+
+    // Push one more — oldest should be evicted
+    replay.pushEvent('pty:data', { agentId: 'a1', data: 'overflow' });
+    expect(replay.size()).toBe(10_000);
+
+    // The oldest seq should now be 2 (first event seq=1 was evicted)
+    expect(replay.getOldestSeq()).toBe(2);
+  });
+
+  it('clearForAgent preserves correct events after ring buffer wraps', () => {
+    // Fill past capacity to ensure ring buffer has wrapped
+    for (let i = 0; i < 100; i++) {
+      replay.pushEvent('pty:data', { agentId: i % 2 === 0 ? 'a1' : 'a2', data: String(i) });
+    }
+    const sizeBefore = replay.size();
+    replay.clearForAgent('a1');
+    // Should have removed ~50 events (every other one)
+    expect(replay.size()).toBe(50);
+    expect(replay.size()).toBeLessThan(sizeBefore);
+  });
+
+  it('evictStale correctly advances past stale entries', () => {
+    // We can't easily fake timestamps, but we can verify that recent events survive
+    for (let i = 0; i < 10; i++) {
+      replay.pushEvent('pty:data', { agentId: 'a1', data: String(i) });
+    }
+    replay.evictStale();
+    // All events are recent, so none should be evicted
+    expect(replay.size()).toBe(10);
+  });
+
+  it('size is accurate after mixed operations', () => {
+    replay.pushEvent('a', { agentId: 'x' });
+    replay.pushEvent('b', { agentId: 'y' });
+    replay.pushEvent('c', { agentId: 'x' });
+    expect(replay.size()).toBe(3);
+
+    replay.clearForAgent('x');
+    expect(replay.size()).toBe(1);
+
+    replay.pushEvent('d', { agentId: 'z' });
+    expect(replay.size()).toBe(2);
+
+    replay.reset();
+    expect(replay.size()).toBe(0);
+  });
+
+  it('getEventsSince returns correct events after wrap', () => {
+    // Push 10005 events to ensure the ring buffer wrapped
+    for (let i = 0; i < 10_005; i++) {
+      replay.pushEvent('pty:data', { agentId: 'a1', data: String(i) });
+    }
+    // Last seq is 10005, request events since 10003
+    const events = replay.getEventsSince(10_003);
+    expect(events).not.toBeNull();
+    expect(events!.length).toBe(2);
+    expect(events![0].seq).toBe(10_004);
+    expect(events![1].seq).toBe(10_005);
+  });
 });

@@ -1,11 +1,13 @@
 import { AgentDetailedStatus } from '../../../shared/types';
-import { AgentStatusSlice, GetAgentState, SetAgentState } from './types';
+import { AgentState, AgentStatusSlice, GetAgentState, SetAgentState } from './types';
 import {
   omitRecordKey,
+  omitRecordKeys,
   STALE_THRESHOLD_MS,
   COMPLETED_QUICK_AGENT_RETENTION_MS,
   MAX_COMPLETED_QUICK_AGENTS,
   ACTIVITY_UPDATE_THROTTLE_MS,
+  MAX_ACTIVITY_ENTRIES,
   protectedAgentIds,
   removeAgentsFromState,
 } from './agentUtils';
@@ -242,15 +244,54 @@ export function createStatusSlice(set: SetAgentState, get: GetAgentState): Agent
           quickIdsToRemove.add(agent.id);
         }
 
+        let result: Partial<AgentState>;
         if (quickIdsToRemove.size === 0) {
-          return changed ? { agentDetailedStatus: updated } : state;
+          result = changed ? { agentDetailedStatus: updated } : {};
+        } else {
+          for (const agentId of quickIdsToRemove) {
+            prunedQuickIds.add(agentId);
+          }
+          result = removeAgentsFromState(workingState, quickIdsToRemove) as Partial<AgentState>;
         }
 
-        for (const agentId of quickIdsToRemove) {
-          prunedQuickIds.add(agentId);
+        // Phase 3: Evict orphaned activity/spawn/terminal entries for agents
+        // that no longer exist, and cap agentActivity at MAX_ACTIVITY_ENTRIES.
+        const currentAgents = result.agents ?? state.agents;
+        const currentAgentIds = new Set(Object.keys(currentAgents));
+
+        const currentActivity = result.agentActivity ?? state.agentActivity;
+        const currentSpawnedAt = result.agentSpawnedAt ?? state.agentSpawnedAt;
+        const currentTerminalAt = result.agentTerminalAt ?? state.agentTerminalAt;
+
+        // Find orphaned IDs across all three maps
+        const orphanedIds = new Set<string>();
+        for (const id of Object.keys(currentActivity)) {
+          if (!currentAgentIds.has(id)) orphanedIds.add(id);
+        }
+        for (const id of Object.keys(currentSpawnedAt)) {
+          if (!currentAgentIds.has(id)) orphanedIds.add(id);
+        }
+        for (const id of Object.keys(currentTerminalAt)) {
+          if (!currentAgentIds.has(id)) orphanedIds.add(id);
         }
 
-        return removeAgentsFromState(workingState, quickIdsToRemove);
+        if (orphanedIds.size > 0) {
+          result.agentActivity = omitRecordKeys(currentActivity, orphanedIds);
+          result.agentSpawnedAt = omitRecordKeys(currentSpawnedAt, orphanedIds);
+          result.agentTerminalAt = omitRecordKeys(currentTerminalAt, orphanedIds);
+          for (const id of orphanedIds) prunedQuickIds.add(id);
+        }
+
+        // Cap agentActivity at MAX_ACTIVITY_ENTRIES (LRU by timestamp)
+        const activity = result.agentActivity ?? currentActivity;
+        const activityKeys = Object.keys(activity);
+        if (activityKeys.length > MAX_ACTIVITY_ENTRIES) {
+          const sorted = activityKeys.sort((a, b) => (activity[b] ?? 0) - (activity[a] ?? 0));
+          const toEvict = new Set(sorted.slice(MAX_ACTIVITY_ENTRIES));
+          result.agentActivity = omitRecordKeys(activity, toEvict);
+        }
+
+        return Object.keys(result).length > 0 ? result : state;
       });
       clearPendingActivityTimers(prunedQuickIds);
     },
