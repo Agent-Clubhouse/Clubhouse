@@ -1,5 +1,5 @@
 import { AgentDetailedStatus } from '../../../shared/types';
-import { AgentStatusSlice, GetAgentState, SetAgentState } from './types';
+import { AgentState, AgentStatusSlice, GetAgentState, SetAgentState } from './types';
 import {
   omitRecordKey,
   omitRecordKeys,

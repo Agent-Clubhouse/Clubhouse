@@ -53,10 +53,22 @@ function addToSoundCache(
 
   const cache = { ...currentCache, [key]: value };
 
-  // Evict oldest entries if over limit
+  // Evict from tracked order
   while (soundCacheOrder.length > MAX_SOUND_CACHE) {
     const oldest = soundCacheOrder.shift()!;
     delete cache[oldest];
+  }
+
+  // Safety: evict untracked entries if cache is still over limit
+  // (entries added outside the tracking path, e.g. direct setState)
+  const tracked = new Set(soundCacheOrder);
+  const allKeys = Object.keys(cache);
+  let excess = allKeys.length - MAX_SOUND_CACHE;
+  for (let i = 0; excess > 0 && i < allKeys.length; i++) {
+    if (!tracked.has(allKeys[i])) {
+      delete cache[allKeys[i]];
+      excess--;
+    }
   }
 
   return cache;

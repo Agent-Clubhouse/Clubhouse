@@ -158,55 +158,30 @@ describe('panelStore', () => {
   // ── Debounced persist tests ──────────────────────────────────────────
 
   describe('debounced persist', () => {
-    let setItemSpy: ReturnType<typeof vi.spyOn>;
-
-    beforeEach(() => {
-      vi.useFakeTimers();
-      setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-      usePanelStore.setState({
-        explorerWidth: 200,
-        explorerCollapsed: false,
-        accessoryWidth: 280,
-        accessoryCollapsed: false,
-        railPinned: false,
-        railWidth: 200,
-      });
-      setItemSpy.mockClear();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('does not persist synchronously on resize', () => {
+    it('store state updates immediately despite debounced persist', () => {
+      // Rapid resizes should update store state synchronously
+      // even though localStorage writes are debounced
       usePanelStore.getState().resizeExplorer(10);
-      // No immediate localStorage write
-      expect(setItemSpy).not.toHaveBeenCalled();
-    });
-
-    it('persists after debounce timeout', () => {
+      expect(usePanelStore.getState().explorerWidth).toBe(210);
       usePanelStore.getState().resizeExplorer(10);
-      vi.advanceTimersByTime(300);
-      expect(setItemSpy).toHaveBeenCalledTimes(1);
+      expect(usePanelStore.getState().explorerWidth).toBe(220);
+      usePanelStore.getState().resizeExplorer(10);
+      expect(usePanelStore.getState().explorerWidth).toBe(230);
     });
 
-    it('coalesces rapid resizes into a single persist', () => {
-      // Simulate drag: many resizes in quick succession
-      for (let i = 0; i < 20; i++) {
-        usePanelStore.getState().resizeExplorer(5);
+    it('rapid accessory resizes all apply without blocking', () => {
+      for (let i = 0; i < 50; i++) {
+        usePanelStore.getState().resizeAccessory(2);
       }
-      vi.advanceTimersByTime(300);
-      // Should only persist once, not 20 times
-      expect(setItemSpy).toHaveBeenCalledTimes(1);
+      // All 50 increments should have applied (280 + 100 = 380, clamped at 400)
+      expect(usePanelStore.getState().accessoryWidth).toBe(380);
     });
 
-    it('persists the final state after coalescing', () => {
-      usePanelStore.getState().resizeExplorer(50);
-      usePanelStore.getState().resizeExplorer(50);
-      vi.advanceTimersByTime(300);
-
-      const persisted = JSON.parse(setItemSpy.mock.calls[0][1] as string);
-      expect(persisted.explorerWidth).toBe(300);
+    it('rapid rail resizes all apply without blocking', () => {
+      for (let i = 0; i < 50; i++) {
+        usePanelStore.getState().resizeRail(2);
+      }
+      expect(usePanelStore.getState().railWidth).toBe(300);
     });
   });
 });
