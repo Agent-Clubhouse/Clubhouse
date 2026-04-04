@@ -45,7 +45,13 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
   const themeId = useThemeStore((s) => s.themeId);
+  const themeIdRef = useRef(themeId);
   const [loading, setLoading] = useState(true);
+
+  // Keep ref in sync so the async creation effect always uses the latest theme
+  useEffect(() => {
+    themeIdRef.current = themeId;
+  }, [themeId]);
 
   // Create editor once on mount
   useEffect(() => {
@@ -62,7 +68,7 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
 
       const editor = m.editor.create(containerRef.current, {
         model,
-        theme: `clubhouse-${themeId}`,
+        theme: `clubhouse-${themeIdRef.current}`,
         readOnly,
         fontSize: 12,
         fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
