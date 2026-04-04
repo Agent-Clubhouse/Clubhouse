@@ -234,9 +234,9 @@ test.describe('Rail Pin Feature', () => {
     await hoverRailUntilExpanded();
     const pinBtn = window.locator('[data-testid="rail-pin-button"]');
     await pinBtn.click();
-    await window.waitForTimeout(200);
+    await window.waitForTimeout(500);
 
-    // Check localStorage
+    // Check localStorage (persist is debounced to 300ms)
     const persisted = await window.evaluate(() => {
       const raw = localStorage.getItem('clubhouse_panel_sizes');
       return raw ? JSON.parse(raw) : null;
