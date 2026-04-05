@@ -173,4 +173,45 @@ describe('BlueprintGallery', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(mockCloseBlueprintGallery).toHaveBeenCalled();
   });
+
+  it('shows error when blueprint.read returns null', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([
+      { filePath: '/bad.json', name: 'Bad BP', viewCount: 0, agentCount: 0, wireCount: 0, version: 1, source: 'P' },
+    ]);
+    mockBlueprintRead.mockResolvedValue(null);
+
+    render(<BlueprintGallery />);
+    await waitFor(() => {
+      expect(screen.getByText('Bad BP')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByText('Bad BP'));
+    await waitFor(() => {
+      expect(screen.getByTestId('blueprint-gallery-error')).toBeDefined();
+    });
+    expect(mockInsertCanvas).not.toHaveBeenCalled();
+  });
+
+  it('shows error when validateBlueprint returns error string', async () => {
+    state.blueprintGalleryOpen = true;
+    const { validateBlueprint } = await import('../../plugins/builtin/canvas/canvas-blueprint');
+    vi.mocked(validateBlueprint).mockReturnValueOnce('Invalid blueprint: bad version');
+
+    mockBlueprintList.mockResolvedValue([
+      { filePath: '/invalid.json', name: 'Invalid', viewCount: 0, agentCount: 0, wireCount: 0, version: 99, source: 'P' },
+    ]);
+    mockBlueprintRead.mockResolvedValue({ version: 99, views: [] });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => {
+      expect(screen.getByText('Invalid')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByText('Invalid'));
+    await waitFor(() => {
+      expect(screen.getByTestId('blueprint-gallery-error')).toBeDefined();
+    });
+    expect(mockInsertCanvas).not.toHaveBeenCalled();
+  });
 });

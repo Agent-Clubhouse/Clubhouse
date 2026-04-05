@@ -14,6 +14,7 @@ const mockToggleExplorerCollapse = vi.fn();
 const mockToggleAccessoryCollapse = vi.fn();
 const mockSaveAnnexSettings = vi.fn();
 const mockOpenQuickAgentDialog = vi.fn();
+const mockOpenBlueprintGallery = vi.fn();
 const mockPickAndAddProject = vi.fn();
 
 const projectStoreState = {
@@ -48,6 +49,7 @@ const uiStoreState = {
   toggleHelp: mockToggleHelp,
   openAbout: mockOpenAbout,
   openQuickAgentDialog: mockOpenQuickAgentDialog,
+  openBlueprintGallery: mockOpenBlueprintGallery,
 };
 
 vi.mock('../../stores/uiStore', () => ({
@@ -636,5 +638,30 @@ describe('useCommandSource', () => {
     } finally {
       pluginStoreState.appEnabled = saved;
     }
+  });
+
+  // ── Blueprint command tests ────────────────────────────────────────
+
+  it('includes import-blueprint action', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const item = findItem(result.current, 'action:import-blueprint');
+    expect(item).toBeDefined();
+    expect(item.label).toBe('Import Blueprint');
+    expect(item.category).toBe('Actions');
+  });
+
+  it('import-blueprint calls openBlueprintGallery', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const item = findItem(result.current, 'action:import-blueprint');
+    item.execute();
+    expect(mockOpenBlueprintGallery).toHaveBeenCalled();
+  });
+
+  it('includes export-blueprint action', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const item = findItem(result.current, 'action:export-blueprint');
+    expect(item).toBeDefined();
+    expect(item.label).toBe('Export Canvas as Blueprint');
+    expect(item.category).toBe('Actions');
   });
 });
