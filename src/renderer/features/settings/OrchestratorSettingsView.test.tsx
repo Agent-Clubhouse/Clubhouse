@@ -278,7 +278,7 @@ describe('OrchestratorSettingsView', () => {
         enabled: ['claude-code', 'codex-cli'],
         allOrchestrators: [
           { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true } },
-          { id: 'codex-cli', displayName: 'Codex CLI', shortName: 'CX', capabilities: { headless: true, structuredOutput: false, hooks: false, sessionResume: false, permissions: false } },
+          { id: 'codex-cli', displayName: 'Codex CLI', shortName: 'CX', capabilities: { headless: true, structuredOutput: false, hooks: true, sessionResume: false, permissions: false } },
         ],
       });
       render(<OrchestratorSettingsView projectId="proj-1" />);
