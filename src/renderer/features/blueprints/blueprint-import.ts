@@ -22,7 +22,7 @@ import type {
   BlueprintAgentDef,
   BlueprintWire,
   BlueprintProjectRef,
-} from './types';
+} from '../../../shared/blueprint-types';
 
 // ── Match result types ──────────────────────────────────────────────
 

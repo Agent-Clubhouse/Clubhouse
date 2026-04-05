@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent } from '../../../shared/types';
-import type { BlueprintManifest, BlueprintAgentDef, BlueprintProjectRef } from './types';
+import type { BlueprintManifest, BlueprintAgentDef, BlueprintProjectRef } from '../../../shared/blueprint-types';
 import {
   validateManifest,
   matchAgent,
