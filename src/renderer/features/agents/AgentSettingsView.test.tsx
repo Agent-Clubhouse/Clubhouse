@@ -31,12 +31,43 @@ vi.mock('./SkillsSection', () => ({
   SkillsSection: (props: any) => <div data-testid="skills-section" data-disabled={String(props.disabled)} />,
 }));
 
+let capturedOnCreateFromPluginTemplate: ((entry: any) => void) | undefined;
 vi.mock('./AgentTemplatesSection', () => ({
-  AgentTemplatesSection: (props: any) => <div data-testid="agent-templates-section" data-disabled={String(props.disabled)} />,
+  AgentTemplatesSection: (props: any) => {
+    capturedOnCreateFromPluginTemplate = props.onCreateFromPluginTemplate;
+    return <div data-testid="agent-templates-section" data-disabled={String(props.disabled)} />;
+  },
 }));
 
 vi.mock('./McpJsonSection', () => ({
   McpJsonSection: (props: any) => <div data-testid="mcp-json-section" data-disabled={String(props.disabled)} />,
+}));
+
+let capturedTemplateOnCreate: ((config: any) => void) | undefined;
+let capturedTemplateOnClose: (() => void) | undefined;
+vi.mock('./TemplateConfigDialog', () => ({
+  TemplateConfigDialog: (props: any) => {
+    capturedTemplateOnCreate = props.onCreate;
+    capturedTemplateOnClose = props.onClose;
+    return (
+      <div data-testid="template-config-dialog">
+        <span data-testid="template-dialog-persona">{props.persona?.name}</span>
+        <button data-testid="template-dialog-create" onClick={() => props.onCreate({
+          persona: props.persona,
+          name: props.persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          color: 'indigo',
+          model: 'default',
+          orchestrator: 'claude-code',
+          useWorktree: true,
+          freeAgentMode: false,
+          structuredMode: false,
+        })}>
+          Create Agent
+        </button>
+        <button data-testid="template-dialog-close" onClick={props.onClose}>Cancel</button>
+      </div>
+    );
+  },
 }));
 
 vi.mock('../../hooks/useModelOptions', () => ({
@@ -449,6 +480,186 @@ describe('AgentSettingsView', () => {
       fireEvent.click(qadTab);
       await waitFor(() => {
         expect(screen.getByDisplayValue('exotic-model-7b')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('plugin template → TemplateConfigDialog flow', () => {
+    const mockPluginTemplate = {
+      pluginId: 'test-plugin',
+      pluginName: 'Test Plugin',
+      template: {
+        name: 'Code Reviewer',
+        description: 'Reviews pull requests',
+        promptContent: '# Code Reviewer\nYou review code.',
+        skills: { review: '# Review Skill\nDo reviews.' },
+        mcpServers: {
+          'review-server': { command: 'node', args: ['review-server.js'] },
+        },
+      },
+    };
+
+    beforeEach(() => {
+      capturedOnCreateFromPluginTemplate = undefined;
+      capturedTemplateOnCreate = undefined;
+      capturedTemplateOnClose = undefined;
+      (window.clubhouse.agent as any).createDurable = vi.fn().mockResolvedValue({
+        id: 'new-agent-1',
+        name: 'code-reviewer',
+        color: 'indigo',
+        worktreePath: '/project/.clubhouse/agents/code-reviewer',
+        createdAt: new Date().toISOString(),
+      });
+      window.clubhouse.agentSettings.saveInstructions = vi.fn().mockResolvedValue(undefined);
+      window.clubhouse.agentSettings.writeSkillContent = vi.fn().mockResolvedValue(undefined);
+      window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue('{"mcpServers":{}}');
+      window.clubhouse.agentSettings.writeMcpRawJson = vi.fn().mockResolvedValue({ ok: true });
+      useAgentStore.setState({
+        loadDurableAgents: vi.fn().mockResolvedValue(undefined),
+      });
+    });
+
+    it('opens TemplateConfigDialog when plugin template Create is clicked', async () => {
+      renderSettings();
+      await waitFor(() => {
+        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
+      });
+
+      // No dialog initially
+      expect(screen.queryByTestId('template-config-dialog')).not.toBeInTheDocument();
+
+      // Simulate clicking Create on a plugin template
+      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
+        expect(screen.getByTestId('template-dialog-persona')).toHaveTextContent('Code Reviewer');
+      });
+    });
+
+    it('closes dialog on cancel without creating agent', async () => {
+      renderSettings();
+      await waitFor(() => {
+        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
+      });
+
+      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
+      await waitFor(() => {
+        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('template-dialog-close'));
+      await waitFor(() => {
+        expect(screen.queryByTestId('template-config-dialog')).not.toBeInTheDocument();
+      });
+      expect((window.clubhouse.agent as any).createDurable).not.toHaveBeenCalled();
+    });
+
+    it('creates durable agent with config from dialog', async () => {
+      renderSettings();
+      await waitFor(() => {
+        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
+      });
+
+      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
+      await waitFor(() => {
+        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('template-dialog-create'));
+
+      await waitFor(() => {
+        expect((window.clubhouse.agent as any).createDurable).toHaveBeenCalledWith(
+          '/project', 'code-reviewer', 'indigo', undefined, true,
+          'claude-code', undefined, undefined, undefined,
+        );
+      });
+    });
+
+    it('writes plugin template instructions to new agent worktree', async () => {
+      renderSettings();
+      await waitFor(() => {
+        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
+      });
+
+      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
+      await waitFor(() => {
+        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('template-dialog-create'));
+
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.saveInstructions).toHaveBeenCalledWith(
+          '/project/.clubhouse/agents/code-reviewer',
+          '# Code Reviewer\nYou review code.',
+          '/project',
+        );
+      });
+    });
+
+    it('injects plugin template skills into new agent', async () => {
+      renderSettings();
+      await waitFor(() => {
+        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
+      });
+
+      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
+      await waitFor(() => {
+        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('template-dialog-create'));
+
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.writeSkillContent).toHaveBeenCalledWith(
+          '/project/.clubhouse/agents/code-reviewer',
+          'review',
+          '# Review Skill\nDo reviews.',
+          '/project',
+        );
+      });
+    });
+
+    it('injects plugin template MCP servers into new agent mcp.json', async () => {
+      renderSettings();
+      await waitFor(() => {
+        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
+      });
+
+      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
+      await waitFor(() => {
+        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('template-dialog-create'));
+
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledWith(
+          '/project/.clubhouse/agents/code-reviewer',
+          expect.stringContaining('"review-server"'),
+          '/project',
+        );
+      });
+    });
+
+    it('refreshes agent list after creating from plugin template', async () => {
+      const loadDurableAgents = vi.fn().mockResolvedValue(undefined);
+      useAgentStore.setState({ loadDurableAgents });
+      renderSettings();
+      await waitFor(() => {
+        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
+      });
+
+      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
+      await waitFor(() => {
+        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('template-dialog-create'));
+
+      await waitFor(() => {
+        expect(loadDurableAgents).toHaveBeenCalledWith('proj-1', '/project');
       });
     });
   });

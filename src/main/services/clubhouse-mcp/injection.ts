@@ -167,6 +167,60 @@ async function injectJsonMcp(
 }
 
 /**
+ * Inject arbitrary MCP server entries into an agent's .mcp.json.
+ * Used to wire plugin-template-contributed MCP servers during agent creation.
+ * Merges the provided servers into the existing config without overwriting
+ * other entries (except entries with the same name, which are replaced).
+ */
+export async function injectTemplateMcpServers(
+  cwd: string,
+  servers: Record<string, unknown>,
+  conventions?: Partial<SettingsConventions>,
+): Promise<void> {
+  // Queue behind any in-flight injection
+  const previousLock = injectionLock;
+  let releaseLock: () => void;
+  injectionLock = new Promise((resolve) => { releaseLock = resolve; });
+  await previousLock;
+  try {
+    const conv = { ...DEFAULT_CONVENTIONS, ...conventions };
+    const mcpConfigPath = path.join(cwd, conv.mcpConfigFile);
+
+    // Read existing config
+    let config: Record<string, unknown> = {};
+    try {
+      const raw = await fsp.readFile(mcpConfigPath, 'utf-8');
+      config = JSON.parse(raw);
+    } catch {
+      // File doesn't exist or invalid JSON — start fresh
+    }
+
+    if (!config.mcpServers || typeof config.mcpServers !== 'object') {
+      config.mcpServers = {};
+    }
+    const existing = config.mcpServers as Record<string, unknown>;
+    for (const [name, def] of Object.entries(servers)) {
+      existing[name] = def;
+    }
+
+    // Write atomically
+    const dir = path.dirname(mcpConfigPath);
+    if (!(await pathExists(dir))) {
+      await fsp.mkdir(dir, { recursive: true });
+    }
+    const tmpPath = mcpConfigPath + '.tmp.' + randomUUID().slice(0, 8);
+    await fsp.writeFile(tmpPath, JSON.stringify(config, null, 2), 'utf-8');
+    await fsp.rename(tmpPath, mcpConfigPath);
+
+    appLog('core:mcp', 'info', 'Injected template MCP servers into config', {
+      meta: { cwd, serverNames: Object.keys(servers), configPath: mcpConfigPath },
+    });
+  } finally {
+    releaseLock!();
+  }
+}
+
+/**
  * Check if a parsed MCP config entry is the Clubhouse bridge.
  */
 export function isClubhouseMcpEntry(entry: unknown): boolean {
