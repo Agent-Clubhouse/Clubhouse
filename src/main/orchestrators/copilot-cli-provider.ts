@@ -49,6 +49,9 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   postToolUse: 'post_tool',
   errorOccurred: 'tool_error',
   sessionEnd: 'stop',
+  permissionRequest: 'permission_request',
+  sessionStart: 'notification',
+  userPromptSubmitted: 'notification',
 };
 
 export class CopilotCliProvider extends BaseProvider implements HookCapable, HeadlessCapable, StructuredCapable {
@@ -128,7 +131,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   getCapabilities(): ProviderCapabilities {
     return {
       headless: true,
-      structuredOutput: false,
+      structuredOutput: true,
       hooks: true,
       sessionResume: true,
       permissions: true,
@@ -210,6 +213,10 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       preToolUse: [{ type: 'command', bash: makeCurl('preToolUse'), timeoutSec: 5 }],
       postToolUse: [{ type: 'command', bash: makeCurl('postToolUse'), timeoutSec: 5 }],
       errorOccurred: [{ type: 'command', bash: makeCurl('errorOccurred'), timeoutSec: 5 }],
+      // PermissionRequest uses a long timeout to allow for remote approval via Annex
+      permissionRequest: [{ type: 'command', bash: makeCurl('permissionRequest'), timeoutSec: 120 }],
+      sessionStart: [{ type: 'command', bash: makeCurl('sessionStart'), timeoutSec: 5 }],
+      userPromptSubmitted: [{ type: 'command', bash: makeCurl('userPromptSubmitted'), timeoutSec: 5 }],
     };
 
     const githubDir = path.join(cwd, '.github');
@@ -266,12 +273,12 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     const parts: string[] = [];
     if (opts.systemPrompt) parts.push(opts.systemPrompt);
     parts.push(opts.mission);
-    const args = ['-p', parts.join('\n\n'), '--allow-all', '--silent'];
+    const args = ['-p', parts.join('\n\n'), '--allow-all', '--output-format', 'json'];
 
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);
     }
 
-    return { binary, args, outputKind: 'text' };
+    return { binary, args, outputKind: 'stream-json' };
   }
 }
