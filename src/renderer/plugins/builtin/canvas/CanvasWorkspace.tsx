@@ -27,7 +27,8 @@ import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBin
 import type { AutolayoutOptions } from './CanvasControls';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
-import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
+import { useProjectStore } from '../../../stores/projectStore';
 import type { PluginCanvasView as PluginCanvasViewType } from './canvas-types';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
@@ -231,11 +232,16 @@ export function CanvasWorkspace({
   }, [api, agentTick, remoteAgents]);
 
   // ── Satellite pause detection (full canvas overlay) ───────────
+  // Only show pause overlay for remote canvases when their specific satellite is paused.
+  // Local canvases should never show the overlay.
   const satellitePaused = useAnnexClientStore((s) => s.satellitePaused);
-  const isAnySatellitePaused = useMemo(
-    () => Object.values(satellitePaused).some(Boolean),
-    [satellitePaused],
-  );
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const isAnySatellitePaused = useMemo(() => {
+    if (!activeProjectId || !isRemoteProjectId(activeProjectId)) return false;
+    const parsed = parseNamespacedId(activeProjectId);
+    if (!parsed) return false;
+    return !!satellitePaused[parsed.satelliteId];
+  }, [satellitePaused, activeProjectId]);
 
   const handleWireClick = useCallback((binding: McpBindingEntry, event: React.MouseEvent) => {
     setWirePopover({ binding, x: event.clientX, y: event.clientY });
