@@ -43,12 +43,12 @@ vi.mock('./McpJsonSection', () => ({
   McpJsonSection: (props: any) => <div data-testid="mcp-json-section" data-disabled={String(props.disabled)} />,
 }));
 
-let capturedTemplateOnCreate: ((config: any) => void) | undefined;
-let capturedTemplateOnClose: (() => void) | undefined;
+let _capturedTemplateOnCreate: ((config: any) => void) | undefined;
+let _capturedTemplateOnClose: (() => void) | undefined;
 vi.mock('./TemplateConfigDialog', () => ({
   TemplateConfigDialog: (props: any) => {
-    capturedTemplateOnCreate = props.onCreate;
-    capturedTemplateOnClose = props.onClose;
+    _capturedTemplateOnCreate = props.onCreate;
+    _capturedTemplateOnClose = props.onClose;
     return (
       <div data-testid="template-config-dialog">
         <span data-testid="template-dialog-persona">{props.persona?.name}</span>
@@ -501,8 +501,8 @@ describe('AgentSettingsView', () => {
 
     beforeEach(() => {
       capturedOnCreateFromPluginTemplate = undefined;
-      capturedTemplateOnCreate = undefined;
-      capturedTemplateOnClose = undefined;
+      _capturedTemplateOnCreate = undefined;
+      _capturedTemplateOnClose = undefined;
       (window.clubhouse.agent as any).createDurable = vi.fn().mockResolvedValue({
         id: 'new-agent-1',
         name: 'code-reviewer',
