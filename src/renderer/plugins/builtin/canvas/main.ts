@@ -360,15 +360,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     useUIStore.getState().openBlueprintGallery();
   }, []);
 
-  const handleExportBlueprint = useCallback((canvasId: string) => {
-    const canvas = store.getState().canvases.find((c) => c.id === canvasId);
-    if (!canvas) return;
-    import('./canvas-blueprint').then(({ exportBlueprint }) => {
-      const blueprint = exportBlueprint(canvas);
-      navigator.clipboard.writeText(JSON.stringify(blueprint, null, 2)).catch(() => {});
-    });
-  }, [store]);
-
   const handleRemoveCanvas = useCallback((canvasId: string) => {
     remoteForward({ type: 'removeCanvas', canvasId });
     // Unbind all MCP wires and remove wire definitions for views on this canvas

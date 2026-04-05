@@ -436,6 +436,8 @@ export const IPC = {
     TOOL_RESULT: 'plugin-mcp:tool-result',
   },
   BLUEPRINT: {
+    LIST: 'blueprint:list',
+    READ: 'blueprint:read',
     SAVE_DIALOG: 'blueprint:save-dialog',
   },
   AGENT_QUEUE: {
@@ -448,9 +450,5 @@ export const IPC = {
     GET_TASK: 'agent-queue:get-task',
     CHANGED: 'agent-queue:changed',
     TASK_CHANGED: 'agent-queue:task-changed',
-  },
-  BLUEPRINT: {
-    LIST: 'blueprint:list',
-    READ: 'blueprint:read',
   },
 } as const;

@@ -197,6 +197,8 @@ vi.stubGlobal('clubhouse', {
   },
   blueprint: {
     saveDialog: async () => ({ canceled: true }),
+    list: vi.fn(async () => []),
+    read: vi.fn(async () => null),
   },
   plugin: {
     discoverCommunity: async () => [],
@@ -442,10 +444,6 @@ vi.stubGlobal('clubhouse', {
     onCommand: () => noop,
     sendCommandResult: noop,
     layoutElk: vi.fn(async () => ({ nodes: [], edges: [] })),
-  },
-  blueprint: {
-    list: vi.fn(async () => []),
-    read: vi.fn(async () => null),
   },
   commandPalette: {
     onRequest: () => noop,
