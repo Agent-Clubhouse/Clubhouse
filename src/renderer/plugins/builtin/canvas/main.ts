@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from '../../../../shared/plugin-types';
 import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
@@ -13,6 +13,9 @@ import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remote
 import { useUIStore } from '../../../stores/uiStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { usePluginStore } from '../../plugin-store';
+import { useAgentStore } from '../../../stores/agentStore';
+import { useProjectStore } from '../../../stores/projectStore';
+import { ExportBlueprintDialog } from '../../../features/blueprints/ExportBlueprintDialog';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -381,6 +384,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().renameCanvas(canvasId, name);
   }, [store, remoteForward]);
 
+  // ── Blueprint export ──────────────────────────────────────────
+  const [exportCanvasId, setExportCanvasId] = useState<string | null>(null);
+
+  const handleExportBlueprint = useCallback((canvasId: string) => {
+    setExportCanvasId(canvasId);
+  }, []);
+
   // ── Workspace callbacks ────────────────────────────────────────
 
   // Viewport and selection are always local (controller navigation state)
@@ -513,6 +523,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onRemoveCanvas: handleRemoveCanvas,
       onRenameCanvas: handleRenameCanvas,
       onPopOutCanvas: handlePopOutCanvas,
+      onExportBlueprint: handleExportBlueprint,
     }),
     canvasPopout
       ? React.createElement('div', { className: 'flex-1 min-h-0' },
@@ -562,6 +573,21 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             createBidirectionalWires,
           }),
         ),
+    // Blueprint export dialog
+    exportCanvasId ? React.createElement(ExportBlueprintDialog, {
+      canvas: canvases.find((c) => c.id === exportCanvasId) ?? canvases[0],
+      agents: useAgentStore.getState().agents,
+      projects: Object.fromEntries(useProjectStore.getState().projects.map((p) => [p.id, p])),
+      wireDefinitions,
+      projectId: isAppMode ? undefined : api.context.projectId ?? undefined,
+      projectPath: (() => {
+        const pid = isAppMode ? undefined : api.context.projectId;
+        if (!pid) return undefined;
+        return useProjectStore.getState().projects.find((p) => p.id === pid)?.path;
+      })(),
+      appVersion: undefined, // Populated asynchronously if needed
+      onClose: () => setExportCanvasId(null),
+    }) : null,
   );
 }
 

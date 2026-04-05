@@ -39,6 +39,7 @@ const ALLOWED_FILES: Record<string, string> = {
   // dialog.showOpenDialog / dialog.showSaveDialog require a parent
   // BrowserWindow so the dialog is modal to the correct window.
   'ipc/agent-handlers.ts': 'getFocusedWindow used as dialog parent for showOpenDialog / showSaveDialog',
+  'ipc/blueprint-handlers.ts': 'getFocusedWindow used as dialog parent for showSaveDialog',
   'ipc/project-handlers.ts': 'getFocusedWindow used as dialog parent for showOpenDialog',
 
   // getAllWindows()[0] used as dialog parent for user confirmation before

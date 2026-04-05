@@ -494,6 +494,10 @@ const api = {
       contextLines?: number;
     }) => ipcRenderer.invoke(IPC.FILE.SEARCH, rootPath, query, options),
   },
+  blueprint: {
+    saveDialog: (defaultName: string) =>
+      ipcRenderer.invoke(IPC.BLUEPRINT.SAVE_DIALOG, defaultName) as Promise<{ canceled: boolean; filePath?: string }>,
+  },
   plugin: {
     discoverCommunity: () =>
       ipcRenderer.invoke(IPC.PLUGIN.DISCOVER_COMMUNITY),

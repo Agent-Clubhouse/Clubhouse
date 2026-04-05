@@ -435,6 +435,9 @@ export const IPC = {
     TOOL_CALL: 'plugin-mcp:tool-call',
     TOOL_RESULT: 'plugin-mcp:tool-result',
   },
+  BLUEPRINT: {
+    SAVE_DIALOG: 'blueprint:save-dialog',
+  },
   AGENT_QUEUE: {
     CREATE: 'agent-queue:create',
     GET: 'agent-queue:get',
