@@ -438,6 +438,7 @@ export const IPC = {
   BLUEPRINT: {
     LIST: 'blueprint:list',
     READ: 'blueprint:read',
+    DELETE: 'blueprint:delete',
     SAVE_DIALOG: 'blueprint:save-dialog',
   },
   AGENT_QUEUE: {

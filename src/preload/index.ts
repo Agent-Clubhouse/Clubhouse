@@ -501,10 +501,12 @@ const api = {
     list: () => ipcRenderer.invoke(IPC.BLUEPRINT.LIST) as Promise<Array<{
       filePath: string; name: string; description?: string;
       viewCount: number; agentCount: number; wireCount: number;
-      version: number; source: string;
+      version: number; source: string; createdAt?: string; agentNames: string[];
     }>>,
     /** Read and parse a single blueprint file by absolute path. */
     read: (filePath: string) => ipcRenderer.invoke(IPC.BLUEPRINT.READ, filePath) as Promise<Record<string, unknown> | null>,
+    /** Delete a blueprint file by absolute path. */
+    delete: (filePath: string) => ipcRenderer.invoke(IPC.BLUEPRINT.DELETE, filePath) as Promise<boolean>,
   },
   plugin: {
     discoverCommunity: () =>
