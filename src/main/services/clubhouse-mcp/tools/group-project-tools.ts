@@ -161,8 +161,7 @@ export function registerGroupProjectTools(): void {
         'what other agents are doing. When you see topics with new messages, use read_topic ' +
         'to get the full content.\n\n' +
         'Returns a JSON array of { topic, messageCount, newMessageCount, latestTimestamp }.\n\n' +
-        'Always check the "system" topic for join/leave lifecycle events.\n\n' +
-        'Check the "shoulder-tap" topic for direct messages to you.',
+        'Always check the "system" topic for join/leave lifecycle events.',
       inputSchema: {
         type: 'object',
         properties: {
