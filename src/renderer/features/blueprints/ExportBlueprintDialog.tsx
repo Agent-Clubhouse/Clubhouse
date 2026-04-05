@@ -63,6 +63,7 @@ export function ExportBlueprintDialog({
       projects,
       wireDefinitions,
       projectId,
+      exportProjectPath: projectPath,
       appVersion,
     };
 

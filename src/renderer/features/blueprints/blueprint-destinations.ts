@@ -5,7 +5,7 @@
 //   2. System clipboard
 //   3. Native save dialog (user picks location)
 
-import type { BlueprintManifest } from './blueprint-manifest-types';
+import type { BlueprintManifest } from '../../../shared/blueprint-types';
 import { serializeManifest, slugify } from './blueprint-export';
 
 export type ExportDestination = 'blueprints-dir' | 'clipboard' | 'file';

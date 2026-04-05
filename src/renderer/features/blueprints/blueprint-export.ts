@@ -12,7 +12,7 @@ import type {
   BlueprintWire,
   BlueprintAgentDef,
   BlueprintProjectRef,
-} from './blueprint-manifest-types';
+} from '../../../shared/blueprint-types';
 
 // ── RefId generation ────────────────────────────────────────────────
 
@@ -47,8 +47,38 @@ export interface ExportContext {
   wireDefinitions: McpBindingEntry[];
   /** The project ID this canvas belongs to (if project-scoped). */
   projectId?: string;
+  /** Absolute path of the exporting project (used to compute relative paths). */
+  exportProjectPath?: string;
   /** App version string. */
   appVersion?: string;
+}
+
+/**
+ * Compute a relative path from the export project root.
+ * Falls back to basename if no export project path is available.
+ */
+function toRelativePath(absolutePath: string, exportProjectPath?: string): string {
+  if (!exportProjectPath) {
+    // Fallback: extract the last path segment as the project name
+    const parts = absolutePath.replace(/\/$/, '').split('/');
+    return parts[parts.length - 1] || absolutePath;
+  }
+  // Simple relative path computation without Node's path module
+  // (renderer code — no access to Node path)
+  if (absolutePath === exportProjectPath) return '.';
+  if (absolutePath.startsWith(exportProjectPath + '/')) {
+    return absolutePath.slice(exportProjectPath.length + 1);
+  }
+  // Different roots — compute by going up from export path
+  const fromParts = exportProjectPath.split('/');
+  const toParts = absolutePath.split('/');
+  let common = 0;
+  while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
+    common++;
+  }
+  const ups = fromParts.length - common;
+  const remainder = toParts.slice(common);
+  return [...Array(ups).fill('..'), ...remainder].join('/');
 }
 
 /**
@@ -134,7 +164,7 @@ export function exportCanvasToBlueprint(
       projectRefs.push({
         refId: projRefId,
         name: project.displayName || project.name,
-        relativePath: project.path,
+        relativePath: toRelativePath(project.path, ctx.exportProjectPath),
         matchBy: {
           name: project.name,
           path: project.path,
@@ -157,7 +187,7 @@ export function exportCanvasToBlueprint(
     projectRefs.push({
       refId: projRefId,
       name: project.displayName || project.name,
-      relativePath: project.path,
+      relativePath: toRelativePath(project.path, ctx.exportProjectPath),
       matchBy: {
         name: project.name,
         path: project.path,
@@ -294,7 +324,22 @@ export function exportCanvasToBlueprint(
 
 // ── Serialization helper ────────────────────────────────────────────
 
-/** Serialize a BlueprintManifest to deterministic JSON (sorted keys). */
+/**
+ * JSON.stringify replacer that recursively sorts object keys for
+ * deterministic output at all nesting levels.
+ */
+function sortedReplacer(_key: string, value: unknown): unknown {
+  if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+    const sorted: Record<string, unknown> = {};
+    for (const k of Object.keys(value).sort()) {
+      sorted[k] = (value as Record<string, unknown>)[k];
+    }
+    return sorted;
+  }
+  return value;
+}
+
+/** Serialize a BlueprintManifest to deterministic JSON (sorted keys at all levels). */
 export function serializeManifest(manifest: BlueprintManifest): string {
-  return JSON.stringify(manifest, Object.keys(manifest).sort(), 2);
+  return JSON.stringify(manifest, sortedReplacer, 2);
 }

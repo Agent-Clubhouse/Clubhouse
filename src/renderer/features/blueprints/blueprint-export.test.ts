@@ -322,7 +322,7 @@ describe('exportCanvasToBlueprint', () => {
     expect(manifest.canvas.wires).toHaveLength(0);
   });
 
-  it('exports project references with path', () => {
+  it('exports project references with relative path', () => {
     const project = makeProject();
     const agentView = makeAgentView({ projectId: 'proj_1' });
     const canvas = makeCanvas([agentView]);
@@ -330,14 +330,32 @@ describe('exportCanvasToBlueprint', () => {
       agents: { durable_abc: makeAgent() },
       projects: { [project.id]: project },
       projectId: 'proj_1',
+      exportProjectPath: '/Users/test/source/test-project',
     });
 
     const manifest = exportCanvasToBlueprint(canvas, ctx);
 
     expect(manifest.projects).toHaveLength(1);
     expect(manifest.projects![0].name).toBe('test-project');
-    expect(manifest.projects![0].relativePath).toBe('/Users/test/source/test-project');
+    expect(manifest.projects![0].relativePath).toBe('.');
     expect(manifest.projects![0].matchBy?.name).toBe('test-project');
+  });
+
+  it('computes relative path for sibling projects', () => {
+    const project = makeProject({ path: '/Users/test/source/other-project' });
+    const agentView = makeAgentView({ projectId: 'proj_1' });
+    const canvas = makeCanvas([agentView]);
+    const ctx = makeContext({
+      agents: { durable_abc: makeAgent() },
+      projects: { [project.id]: project },
+      projectId: 'proj_1',
+      exportProjectPath: '/Users/test/source/test-project',
+    });
+
+    const manifest = exportCanvasToBlueprint(canvas, ctx);
+
+    expect(manifest.projects).toHaveLength(1);
+    expect(manifest.projects![0].relativePath).toBe('../other-project');
   });
 
   it('includes layout settings', () => {
@@ -397,7 +415,7 @@ describe('exportCanvasToBlueprint', () => {
 });
 
 describe('serializeManifest', () => {
-  it('produces valid JSON', () => {
+  it('produces valid JSON with all top-level fields', () => {
     const canvas = makeCanvas([makeAgentView()]);
     const ctx = makeContext({ agents: { durable_abc: makeAgent() } });
     const manifest = exportCanvasToBlueprint(canvas, ctx);
@@ -406,6 +424,39 @@ describe('serializeManifest', () => {
     const parsed = JSON.parse(json);
     expect(parsed.name).toBe('Test Canvas');
     expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it('preserves nested data at all levels', () => {
+    const agent1 = makeAgent({ id: 'durable_abc', name: 'Agent A' });
+    const agent2 = makeAgent({ id: 'durable_def', name: 'Agent B' });
+    const view1 = makeAgentView({ id: 'cv_1', agentId: 'durable_abc' });
+    const view2 = makeAgentView({
+      id: 'cv_2', agentId: 'durable_def', title: 'Agent B', displayName: 'Agent B',
+      metadata: { agentId: 'durable_def', agentName: 'Agent B' },
+    });
+    const wire = makeWire({ agentId: 'durable_abc', targetId: 'durable_def' });
+    const canvas = makeCanvas([view1, view2]);
+    const ctx = makeContext({
+      agents: { durable_abc: agent1, durable_def: agent2 },
+      wireDefinitions: [wire],
+    });
+
+    const manifest = exportCanvasToBlueprint(canvas, ctx);
+    const json = serializeManifest(manifest);
+    const parsed = JSON.parse(json);
+
+    // Verify nested data is present (not dropped by serializer)
+    expect(parsed.canvas).toBeDefined();
+    expect(parsed.canvas.views).toHaveLength(2);
+    expect(parsed.canvas.views[0].refId).toBeTruthy();
+    expect(parsed.canvas.views[0].position).toEqual({ x: 100, y: 200 });
+    expect(parsed.canvas.wires).toHaveLength(1);
+    expect(parsed.canvas.wires[0].sourceRef).toBeTruthy();
+    expect(parsed.canvas.wires[0].targetRef).toBeTruthy();
+    expect(parsed.agents).toHaveLength(2);
+    expect(parsed.agents[0].name).toBe('Agent A');
+    expect(parsed.agents[0].matchBy).toBeDefined();
+    expect(parsed.agents[0].matchBy.name).toBe('Agent A');
   });
 });
 
