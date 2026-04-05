@@ -198,6 +198,22 @@ describe('SEC-06: MCP binding IPC authorization', () => {
       expect(() => handler(fakeEvent, 'agent-1')).toThrow();
     });
 
+    it('allows bind with agent-queue targetKind', () => {
+      mockGet.mockReturnValue(undefined);
+      const handler = getHandler(IPC.MCP_BINDING.BIND);
+      const target = { targetId: 'aq_123', targetKind: 'agent-queue', label: 'My Queue' };
+      expect(() => handler(fakeEvent, 'agent-1', target)).not.toThrow();
+      expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', target);
+    });
+
+    it('allows bind with group-project targetKind', () => {
+      mockGet.mockReturnValue(undefined);
+      const handler = getHandler(IPC.MCP_BINDING.BIND);
+      const target = { targetId: 'gp_456', targetKind: 'group-project', label: 'My GP' };
+      expect(() => handler(fakeEvent, 'agent-1', target)).not.toThrow();
+      expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', target);
+    });
+
     it('rejects bind from non-app-window sender (webview)', () => {
       mockFromWebContents.mockReturnValue(null as any);
       mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);

@@ -4,6 +4,7 @@ import type { AgentQueueTaskSummary } from '../../../../shared/agent-queue-types
 import { useAgentQueueStore } from '../../../stores/agentQueueStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
+import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -302,22 +303,27 @@ function QueueSettings({
   queue,
 }: {
   queueId: string;
-  queue: { concurrency: number; model?: string; freeAgentMode?: boolean; autoWorktree?: boolean };
+  queue: { concurrency: number; orchestrator?: string; model?: string; freeAgentMode?: boolean; autoWorktree?: boolean };
 }) {
   const update = useAgentQueueStore((s) => s.update);
   const [concurrency, setConcurrency] = useState(String(queue.concurrency || 1));
+  const [orchestrator, setOrchestrator] = useState(queue.orchestrator || '');
   const [model, setModel] = useState(queue.model || '');
   const [freeAgent, setFreeAgent] = useState(!!queue.freeAgentMode);
   const [autoWorktree, setAutoWorktree] = useState(!!queue.autoWorktree);
+  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const enabledIds = useOrchestratorStore((s) => s.enabled);
+  const enabledOrchestrators = allOrchestrators.filter((o) => enabledIds.includes(o.id));
 
   const handleSave = useCallback(async () => {
     await update(queueId, {
       concurrency: Math.max(1, parseInt(concurrency, 10) || 1),
+      orchestrator: orchestrator || undefined,
       model: model || undefined,
       freeAgentMode: freeAgent || undefined,
       autoWorktree: autoWorktree || undefined,
     });
-  }, [queueId, concurrency, model, freeAgent, autoWorktree, update]);
+  }, [queueId, concurrency, orchestrator, model, freeAgent, autoWorktree, update]);
 
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -333,6 +339,24 @@ function QueueSettings({
           className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
         />
       </div>
+      {enabledOrchestrators.length > 0 && (
+        <div>
+          <label className="block text-[10px] text-ctp-overlay0 mb-1">Orchestrator</label>
+          <select
+            value={orchestrator || enabledOrchestrators[0]?.id || ''}
+            onChange={(e) => {
+              setOrchestrator(e.target.value);
+              setModel('');
+              void update(queueId, { orchestrator: e.target.value || undefined, model: undefined });
+            }}
+            className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+          >
+            {enabledOrchestrators.map((o) => (
+              <option key={o.id} value={o.id}>{o.displayName}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div>
         <label className="block text-[10px] text-ctp-overlay0 mb-1">Model (optional)</label>
         <input
