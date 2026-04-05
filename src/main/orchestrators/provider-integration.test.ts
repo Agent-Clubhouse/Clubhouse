@@ -535,9 +535,9 @@ describe('Provider integration tests', () => {
       );
     });
 
-    it('CodexCli: does not implement HookCapable (no writeHooksConfig)', () => {
+    it('CodexCli: implements HookCapable (writeHooksConfig)', () => {
       const provider = new CodexCliProvider();
-      expect((provider as any).writeHooksConfig).toBeUndefined();
+      expect(typeof (provider as any).writeHooksConfig).toBe('function');
     });
 
     it('CodexCli: implements buildMcpArgs for CLI-arg MCP injection', () => {
@@ -650,13 +650,19 @@ describe('Provider integration tests', () => {
       expect(event!.toolInput).toEqual({ path: '/foo' });
     });
 
-    it('CodexCli: does not implement HookCapable (no parseHookEvent)', () => {
+    it('CodexCli: implements HookCapable (parseHookEvent)', () => {
       const provider = new CodexCliProvider();
-      expect((provider as any).parseHookEvent).toBeUndefined();
+      expect(typeof (provider as any).parseHookEvent).toBe('function');
+      const event = provider.parseHookEvent({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'shell',
+      });
+      expect(event).not.toBeNull();
+      expect(event!.kind).toBe('pre_tool');
     });
 
     it('hook-capable providers return null for unknown event', () => {
-      const hookProviders = [new ClaudeCodeProvider(), new CopilotCliProvider()];
+      const hookProviders = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider()];
       for (const p of hookProviders) {
         expect(p.parseHookEvent(null)).toBeNull();
         expect(p.parseHookEvent('not-object')).toBeNull();
@@ -721,11 +727,11 @@ describe('Provider integration tests', () => {
       expect(caps.permissions).toBe(true);
     });
 
-    it('CodexCli: headless, permissions, and structuredMode, no hooks or structuredOutput', () => {
+    it('CodexCli: headless, hooks, permissions, and structuredMode, no structuredOutput', () => {
       const caps = new CodexCliProvider().getCapabilities();
       expect(caps.headless).toBe(true);
       expect(caps.structuredOutput).toBe(false);
-      expect(caps.hooks).toBe(false);
+      expect(caps.hooks).toBe(true);
       expect(caps.sessionResume).toBe(true);
       expect(caps.permissions).toBe(true);
       expect(caps.structuredMode).toBe(true);
@@ -1033,13 +1039,10 @@ describe('Provider integration tests', () => {
   });
 
   describe('type guards for capability sub-interfaces', () => {
-    it('isHookCapable returns true for ClaudeCode and CopilotCli', () => {
+    it('isHookCapable returns true for ClaudeCode, CopilotCli, and CodexCli', () => {
       expect(isHookCapable(new ClaudeCodeProvider())).toBe(true);
       expect(isHookCapable(new CopilotCliProvider())).toBe(true);
-    });
-
-    it('isHookCapable returns false for CodexCli', () => {
-      expect(isHookCapable(new CodexCliProvider())).toBe(false);
+      expect(isHookCapable(new CodexCliProvider())).toBe(true);
     });
 
     it('isHeadlessCapable returns true for all providers', () => {

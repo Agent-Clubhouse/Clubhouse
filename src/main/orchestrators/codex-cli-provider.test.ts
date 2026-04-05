@@ -115,8 +115,8 @@ describe('CodexCliProvider', () => {
       expect(provider.getCapabilities().structuredOutput).toBe(false);
     });
 
-    it('does not support hooks', () => {
-      expect(provider.getCapabilities().hooks).toBe(false);
+    it('supports hooks', () => {
+      expect(provider.getCapabilities().hooks).toBe(true);
     });
 
     it('supports session resume', () => {
@@ -426,12 +426,12 @@ describe('CodexCliProvider', () => {
       expect(args).toContain('--full-auto');
     });
 
-    it('returns text outputKind', async () => {
+    it('returns stream-json outputKind for JSONL parsing', async () => {
       const result = await provider.buildHeadlessCommand({
         cwd: '/p',
         mission: 'Fix bug',
       });
-      expect(result!.outputKind).toBe('text');
+      expect(result!.outputKind).toBe('stream-json');
     });
 
     it('adds --model for non-default model', async () => {
@@ -629,6 +629,176 @@ describe('CodexCliProvider', () => {
       expect(helpCall).toBeDefined();
       const opts = helpCall![2] as Record<string, unknown>;
       expect(opts.env).toEqual(mockEnv);
+    });
+  });
+
+  describe('writeHooksConfig', () => {
+    it('creates .codex dir and writes hooks.json', async () => {
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project', '.codex'),
+        { recursive: true },
+      );
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      expect(hookCall).toBeDefined();
+      const written = JSON.parse(hookCall![1] as string);
+      expect(written.hooks).toBeDefined();
+      expect(written.hooks.PreToolUse).toBeDefined();
+      expect(written.hooks.PostToolUse).toBeDefined();
+      expect(written.hooks.Stop).toBeDefined();
+      expect(written.hooks.PermissionRequest).toBeDefined();
+    });
+
+    it('curl command uses env var references for agent ID and nonce', async () => {
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      const written = JSON.parse(hookCall![1] as string);
+      const command = written.hooks.PreToolUse[0].hooks[0].command as string;
+      expect(command).toContain(
+        process.platform === 'win32' ? '%CLUBHOUSE_AGENT_ID%' : '${CLUBHOUSE_AGENT_ID}',
+      );
+      expect(command).toContain(
+        process.platform === 'win32' ? '%CLUBHOUSE_HOOK_NONCE%' : '${CLUBHOUSE_HOOK_NONCE}',
+      );
+    });
+
+    it('PermissionRequest has 120s timeout', async () => {
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      const written = JSON.parse(hookCall![1] as string);
+      const permHook = written.hooks.PermissionRequest[0].hooks[0];
+      expect(permHook.timeout).toBe(120);
+      expect(permHook.async).toBeUndefined(); // sync for permission approval
+    });
+
+    it('standard hooks have async: true and 5s timeout', async () => {
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      const written = JSON.parse(hookCall![1] as string);
+      const preToolHook = written.hooks.PreToolUse[0].hooks[0];
+      expect(preToolHook.async).toBe(true);
+      expect(preToolHook.timeout).toBe(5);
+    });
+
+    it('merges with existing hooks.json', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        customKey: 'preserved',
+        hooks: { PreToolUse: [{ type: 'custom', command: 'echo user' }] },
+      }));
+
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      const written = JSON.parse(hookCall![1] as string);
+      expect(written.customKey).toBe('preserved');
+      // User hook preserved + our hook added
+      expect(written.hooks.PreToolUse.length).toBe(2);
+    });
+
+    it('includes all 6 event types', async () => {
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      const written = JSON.parse(hookCall![1] as string);
+      const events = Object.keys(written.hooks);
+      expect(events).toContain('PreToolUse');
+      expect(events).toContain('PostToolUse');
+      expect(events).toContain('PostToolUseFailure');
+      expect(events).toContain('Stop');
+      expect(events).toContain('Notification');
+      expect(events).toContain('PermissionRequest');
+    });
+  });
+
+  describe('parseHookEvent', () => {
+    it('parses PreToolUse as pre_tool', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'shell',
+        tool_input: { command: 'ls' },
+      });
+      expect(result).toEqual({
+        kind: 'pre_tool',
+        toolName: 'shell',
+        toolInput: { command: 'ls' },
+        message: undefined,
+      });
+    });
+
+    it('parses PostToolUse as post_tool', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'PostToolUse',
+        tool_name: 'apply_patch',
+      });
+      expect(result).toEqual({
+        kind: 'post_tool',
+        toolName: 'apply_patch',
+        toolInput: undefined,
+        message: undefined,
+      });
+    });
+
+    it('parses PostToolUseFailure as tool_error', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'PostToolUseFailure',
+        tool_name: 'shell',
+        message: 'Command failed',
+      });
+      expect(result!.kind).toBe('tool_error');
+      expect(result!.message).toBe('Command failed');
+    });
+
+    it('parses Stop as stop', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'Stop',
+        message: 'Task complete',
+      });
+      expect(result).toEqual({
+        kind: 'stop',
+        toolName: undefined,
+        toolInput: undefined,
+        message: 'Task complete',
+      });
+    });
+
+    it('parses PermissionRequest as permission_request', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'shell',
+        tool_input: { command: 'rm -rf /' },
+      });
+      expect(result!.kind).toBe('permission_request');
+      expect(result!.toolName).toBe('shell');
+    });
+
+    it('parses Notification as notification', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'Notification',
+        message: 'Something happened',
+      });
+      expect(result!.kind).toBe('notification');
+      expect(result!.message).toBe('Something happened');
+    });
+
+    it('returns null for unknown event names', () => {
+      expect(provider.parseHookEvent({ hook_event_name: 'SomethingElse' })).toBeNull();
+    });
+
+    it('returns null for null input', () => {
+      expect(provider.parseHookEvent(null)).toBeNull();
+    });
+
+    it('returns null for non-object input', () => {
+      expect(provider.parseHookEvent('string')).toBeNull();
+    });
+
+    it('returns null when hook_event_name is missing', () => {
+      expect(provider.parseHookEvent({ tool_name: 'shell' })).toBeNull();
     });
   });
 

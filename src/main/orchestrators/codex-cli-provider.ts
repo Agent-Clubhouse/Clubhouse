@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import * as fsp from 'fs/promises';
 import {
   OrchestratorConventions,
   ProviderCapabilities,
@@ -11,12 +12,15 @@ import {
   HeadlessCapable,
   StructuredAdapter,
   StructuredCapable,
+  HookCapable,
+  NormalizedHookEvent,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
 import { CodexAppServerAdapter } from './adapters';
 import { homePath, parseModelChoicesFromHelp } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
+import { isClubhouseHookEntry } from '../services/config-pipeline';
 
 const execFileAsync = promisify(execFile);
 
@@ -54,7 +58,17 @@ const CODEX_MODEL_CHOICES_PATTERN = /--model\s+(?:<\w+>)?\s*.*?\(choices:\s*([\s
 const DEFAULT_DURABLE_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = [...DEFAULT_DURABLE_PERMISSIONS, 'shell(*)', 'apply_patch'];
 
-export class CodexCliProvider extends BaseProvider implements HeadlessCapable, StructuredCapable {
+/** Codex hook event names → normalised kinds (same semantics as Claude Code). */
+const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
+  PreToolUse: 'pre_tool',
+  PostToolUse: 'post_tool',
+  PostToolUseFailure: 'tool_error',
+  Stop: 'stop',
+  Notification: 'notification',
+  PermissionRequest: 'permission_request',
+};
+
+export class CodexCliProvider extends BaseProvider implements HeadlessCapable, StructuredCapable, HookCapable {
   readonly id = 'codex-cli' as const;
   readonly displayName = 'Codex CLI';
   readonly shortName = 'CX';
@@ -123,7 +137,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     return {
       headless: true,
       structuredOutput: false,
-      hooks: false,
+      hooks: true,
       sessionResume: true,
       permissions: true,
       structuredMode: true,
@@ -245,6 +259,62 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     });
   }
 
+  // ── HookCapable ─────────────────────────────────────────────────────────
+
+  async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
+    const curlBase = process.platform === 'win32'
+      ? `curl -s -X POST ${hookUrl}/%CLUBHOUSE_AGENT_ID% -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
+      : `cat | curl -s -X POST ${hookUrl}/\${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
+
+    const hooks: Record<string, unknown[]> = {
+      PreToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
+      PostToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
+      PostToolUseFailure: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
+      Stop: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
+      Notification: [{ matcher: '', hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
+      PermissionRequest: [{ hooks: [{ type: 'command', command: curlBase, timeout: 120 }] }],
+    };
+
+    const codexDir = path.join(cwd, '.codex');
+    await fsp.mkdir(codexDir, { recursive: true });
+
+    const hooksPath = path.join(codexDir, 'hooks.json');
+
+    let existing: Record<string, unknown> = {};
+    try {
+      existing = JSON.parse(await fsp.readFile(hooksPath, 'utf-8'));
+    } catch {
+      // No existing file — expected on first run
+    }
+
+    // Merge per-event key: preserve user hooks, replace stale Clubhouse entries
+    const existingHooks = (existing.hooks || {}) as Record<string, unknown[]>;
+    const mergedHooks: Record<string, unknown[]> = { ...existingHooks };
+
+    for (const [eventKey, ourEntries] of Object.entries(hooks)) {
+      const current = mergedHooks[eventKey] || [];
+      const userEntries = current.filter(e => !isClubhouseHookEntry(e));
+      mergedHooks[eventKey] = [...userEntries, ...ourEntries];
+    }
+
+    await fsp.writeFile(hooksPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
+  }
+
+  parseHookEvent(raw: unknown): NormalizedHookEvent | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const obj = raw as Record<string, unknown>;
+    const eventName = (obj.hook_event_name as string) || '';
+    const kind = EVENT_NAME_MAP[eventName];
+    if (!kind) return null;
+
+    return {
+      kind,
+      toolName: obj.tool_name as string | undefined,
+      toolInput: obj.tool_input as Record<string, unknown> | undefined,
+      message: obj.message as string | undefined,
+    };
+  }
+
   // ── HeadlessCapable ─────────────────────────────────────────────────────
 
   async buildHeadlessCommand(opts: HeadlessOpts): Promise<HeadlessCommandResult | null> {
@@ -267,6 +337,6 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     if (shellEnv.OPENAI_API_KEY) env.OPENAI_API_KEY = shellEnv.OPENAI_API_KEY;
     if (shellEnv.OPENAI_BASE_URL) env.OPENAI_BASE_URL = shellEnv.OPENAI_BASE_URL;
 
-    return { binary, args, env, outputKind: 'text' };
+    return { binary, args, env, outputKind: 'stream-json' };
   }
 }
