@@ -2084,9 +2084,29 @@ registerToolTemplate('assistant', 'list_commands', {
   },
 }, async (_t, _a, args) => {
   const { sendCommandPaletteRequest } = await import('../command-palette-bridge');
-  const result = await sendCommandPaletteRequest('list_commands', { category: args.category });
-  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to list commands' }], isError: true };
-  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  const { commandRegistry } = await import('../../../../shared/command-registry');
+
+  // Merge: palette commands from renderer + registry commands from main
+  const paletteResult = await sendCommandPaletteRequest('list_commands', { category: args.category });
+  const paletteItems = paletteResult.success ? (paletteResult.data as any[]) || [] : [];
+
+  // Add registry-only commands (not already in palette) for discoverability
+  const paletteIds = new Set(paletteItems.map((c: any) => c.id));
+  const registryCommands = commandRegistry.list(
+    args.category ? { category: args.category as string } : undefined,
+  );
+  const registryItems = registryCommands
+    .filter((c) => !c.palette?.hidden && !paletteIds.has(c.id))
+    .map((c) => ({
+      id: c.id,
+      label: c.label,
+      category: c.category,
+      keywords: c.palette?.keywords || [],
+      detail: c.description,
+    }));
+
+  const allItems = [...paletteItems, ...registryItems];
+  return { content: [{ type: 'text', text: JSON.stringify(allItems) }] };
 });
 
 registerToolTemplate('assistant', 'run_command', {
@@ -2107,8 +2127,20 @@ registerToolTemplate('assistant', 'run_command', {
     required: ['command_id'],
   },
 }, async (_t, _a, args) => {
+  const { commandRegistry } = await import('../../../../shared/command-registry');
+
+  // Try CommandRegistry first (handles canvas.* and future commands)
+  const commandId = args.command_id as string;
+  const registryDef = commandRegistry.get(commandId);
+  if (registryDef) {
+    const result = await commandRegistry.execute(commandId, { source: 'mcp' }, args);
+    if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to run command' }], isError: true };
+    return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  }
+
+  // Fall back to command palette bridge for palette-only commands
   const { sendCommandPaletteRequest } = await import('../command-palette-bridge');
-  const result = await sendCommandPaletteRequest('run_command', { command_id: args.command_id });
+  const result = await sendCommandPaletteRequest('run_command', { command_id: commandId });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to run command' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
 });
