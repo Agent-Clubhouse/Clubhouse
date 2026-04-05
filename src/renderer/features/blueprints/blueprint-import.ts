@@ -19,7 +19,6 @@ import { generateViewId, generateCanvasId, snapPosition } from '../../plugins/bu
 import type { McpBindingEntry } from '../../stores/mcpBindingStore';
 import type {
   BlueprintManifest,
-  BlueprintManifestView,
   BlueprintAgentDef,
   BlueprintWire,
   BlueprintProjectRef,
@@ -187,19 +186,6 @@ function globMatch(pattern: string, text: string): boolean {
   return regex.test(text);
 }
 
-/**
- * Simple string hash for instruction content comparison.
- * Not cryptographic — just for matching purposes.
- */
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash + char) | 0;
-  }
-  return hash.toString(36);
-}
-
 export function matchAgent(def: BlueprintAgentDef, existingAgents: Agent[]): AgentMatchResult {
   // 1. Exact name match via matchBy.name
   if (def.matchBy?.name) {
@@ -217,12 +203,9 @@ export function matchAgent(def: BlueprintAgentDef, existingAgents: Agent[]): Age
 
   // 3. Instruction hash match
   if (def.matchBy?.instructionHash && def.instructionContent) {
-    const matched = existingAgents.filter((a) => {
-      // We can't easily compare instruction hashes without reading agent files,
-      // so this is a placeholder — in practice the hash comparison would need
-      // the agent's instruction content loaded.
-      return false;
-    });
+    // Instruction hash matching requires reading agent files from disk,
+    // which is not available in the renderer. Skip to next matcher.
+    const matched: Agent[] = [];
     if (matched.length === 1) return { status: 'matched', agents: matched };
     if (matched.length > 1) return { status: 'ambiguous', agents: matched };
   }

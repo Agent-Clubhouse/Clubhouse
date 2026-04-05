@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent } from '../../../shared/types';
 import type { BlueprintManifest, BlueprintAgentDef, BlueprintProjectRef } from './types';
-import type { AgentCanvasView } from '../../plugins/builtin/canvas/canvas-types';
 import {
   validateManifest,
   matchAgent,
