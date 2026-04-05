@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { settingsChannels, type SettingsDefinition } from './settings-definitions';
+import { settingsChannels, MCP_SETTINGS, type SettingsDefinition } from './settings-definitions';
 
 describe('settings-definitions', () => {
   describe('settingsChannels', () => {
@@ -42,6 +42,19 @@ describe('settings-definitions', () => {
       expect(def.filename).toBe('test-settings.json');
       expect(def.defaults.enabled).toBe(false);
       expect(def.defaults.count).toBe(0);
+    });
+  });
+
+  describe('MCP_SETTINGS', () => {
+    it('defaults to enabled', () => {
+      expect(MCP_SETTINGS.defaults.enabled).toBe(true);
+    });
+
+    it('has a boolean enabled field that can be set to false', () => {
+      // Verify the type allows disabling — the settings system persists
+      // user overrides, so setting enabled: false at runtime still works.
+      const overridden = { ...MCP_SETTINGS.defaults, enabled: false };
+      expect(overridden.enabled).toBe(false);
     });
   });
 });

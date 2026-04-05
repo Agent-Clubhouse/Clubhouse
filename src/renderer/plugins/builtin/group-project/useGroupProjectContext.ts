@@ -131,6 +131,21 @@ export function useGroupProjectContext(
   const update = useCallback(async (gpId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => {
     if (isRemote && satelliteId) {
       await window.clubhouse.annexClient.gpUpdate(satelliteId, gpId, fields);
+      // Optimistically update local remote GP state so the UI reflects the change
+      // immediately rather than waiting for the next snapshot sync.
+      const satProjects = useRemoteProjectStore.getState().remoteGroupProjects[satelliteId] as GroupProject[] | undefined;
+      const bareId = gpId.startsWith('remote||') ? gpId.split('||').pop()! : gpId;
+      const existing = satProjects?.find((p) => p.id === bareId || p.id === gpId);
+      if (existing) {
+        const merged = {
+          ...existing,
+          ...(fields.name !== undefined ? { name: fields.name } : {}),
+          ...(fields.description !== undefined ? { description: fields.description } : {}),
+          ...(fields.instructions !== undefined ? { instructions: fields.instructions } : {}),
+          ...(fields.metadata ? { metadata: { ...((existing as any).metadata || {}), ...fields.metadata } } : {}),
+        };
+        useRemoteProjectStore.getState().updateRemoteGroupProject(satelliteId, 'updated', merged);
+      }
     } else {
       await localUpdate(gpId, fields as any);
     }

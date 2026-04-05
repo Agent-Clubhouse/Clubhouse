@@ -5,6 +5,7 @@ import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { Toggle } from '../../../components/Toggle';
@@ -225,9 +226,11 @@ function ProjectCard({
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } });
     onUpdateMetadata({ pollingEnabled: newVal });
     const name = project?.name || groupProjectId;
-    const agents = useAgentStore.getState().agents;
+    const localAgents = useAgentStore.getState().agents;
+    const remoteAgents = useRemoteProjectStore.getState().remoteAgents;
+    const allAgents = { ...localAgents, ...remoteAgents };
     for (const member of members) {
-      const orchestrator = agents[member.agentId]?.orchestrator;
+      const orchestrator = allAgents[member.agentId]?.orchestrator;
       const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
       void injectMessage(member.agentId, msg);
     }
@@ -422,9 +425,11 @@ function ExpandedProjectView({
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } });
     onUpdateMetadata({ pollingEnabled: newVal });
     const name = project?.name || groupProjectId;
-    const agents = useAgentStore.getState().agents;
+    const localAgents = useAgentStore.getState().agents;
+    const remoteAgents = useRemoteProjectStore.getState().remoteAgents;
+    const allAgents = { ...localAgents, ...remoteAgents };
     for (const member of members) {
-      const orchestrator = agents[member.agentId]?.orchestrator;
+      const orchestrator = allAgents[member.agentId]?.orchestrator;
       const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
       void injectMessage(member.agentId, msg);
     }

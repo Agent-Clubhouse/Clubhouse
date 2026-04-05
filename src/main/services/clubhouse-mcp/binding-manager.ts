@@ -67,6 +67,20 @@ class BindingManager {
     this.notifyChange(agentId);
   }
 
+  /** Update metadata on a binding (e.g. refreshed projectName from the registry). */
+  updateBinding(agentId: string, targetId: string, updates: { projectName?: string }): void {
+    const agentBindings = this.bindings.get(agentId);
+    if (!agentBindings) return;
+
+    const binding = agentBindings.find(b => b.targetId === targetId);
+    if (!binding) return;
+
+    if (updates.projectName !== undefined) {
+      binding.projectName = updates.projectName;
+    }
+    this.notifyChange(agentId);
+  }
+
   /** Set disabled tools on a binding. */
   setDisabledTools(agentId: string, targetId: string, disabledTools: string[]): void {
     const agentBindings = this.bindings.get(agentId);

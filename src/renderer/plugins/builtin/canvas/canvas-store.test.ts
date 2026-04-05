@@ -604,6 +604,55 @@ describe('hydrateFromRemote', () => {
       expect(store.getState().wireDefinitions[0].agentId).toBe('sleeping-agent');
     });
 
+    describe('loadWires — Layer 1 cold-start projectName refresh', () => {
+      beforeEach(() => {
+        // Reset groupProject mock to a working state before each sub-test
+        (globalThis as any).window.clubhouse.groupProject = {
+          get: vi.fn().mockResolvedValue(null),
+        };
+      });
+
+      it('patches a stale projectName from the registry on cold start', async () => {
+        (globalThis as any).window.clubhouse.groupProject.get = vi.fn().mockResolvedValue({ name: 'NewName' });
+
+        const storage = createMockStorage({
+          'canvas-wires': [
+            { agentId: 'a1', targetId: 'gp-1', targetKind: 'group-project', label: 'GP', projectName: 'OldName' },
+          ],
+        });
+        await store.getState().loadWires(storage);
+
+        expect(store.getState().wireDefinitions[0].projectName).toBe('NewName');
+      });
+
+      it('keeps cached projectName when registry lookup throws', async () => {
+        (globalThis as any).window.clubhouse.groupProject.get = vi.fn().mockRejectedValue(new Error('registry down'));
+
+        const storage = createMockStorage({
+          'canvas-wires': [
+            { agentId: 'a1', targetId: 'gp-1', targetKind: 'group-project', label: 'GP', projectName: 'CachedName' },
+          ],
+        });
+        await store.getState().loadWires(storage);
+
+        expect(store.getState().wireDefinitions[0].projectName).toBe('CachedName');
+      });
+
+      it('does not call groupProject.get for non-group-project wires', async () => {
+        const mockGet = vi.fn().mockResolvedValue({ name: 'SomeName' });
+        (globalThis as any).window.clubhouse.groupProject.get = mockGet;
+
+        const storage = createMockStorage({
+          'canvas-wires': [
+            { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+          ],
+        });
+        await store.getState().loadWires(storage);
+
+        expect(mockGet).not.toHaveBeenCalled();
+      });
+    });
+
     it('saveWires persists from wireDefinitions, not from external bindings', async () => {
       const storage = createMockStorage();
       // Add wire definitions directly

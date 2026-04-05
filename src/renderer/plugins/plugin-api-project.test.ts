@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createProjectAPI } from './plugin-api-project';
+import { createProjectAPI, createProjectsAPI } from './plugin-api-project';
 import type { PluginContext } from '../../shared/plugin-types';
+import { useProjectStore } from '../stores/projectStore';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 
 const mockRead = vi.fn();
 const mockWrite = vi.fn();
@@ -121,5 +123,109 @@ describe('createProjectAPI', () => {
       await api.listDirectory();
       expect(mockReadTree).toHaveBeenCalledWith('/project/root/.');
     });
+  });
+});
+
+describe('createProjectsAPI', () => {
+  beforeEach(() => {
+    useProjectStore.setState({ projects: [] });
+    useRemoteProjectStore.setState({
+      satelliteProjects: {},
+    });
+  });
+
+  it('returns local projects', () => {
+    useProjectStore.setState({
+      projects: [
+        { id: 'proj-1', name: 'LocalProject', displayName: 'Local Project', path: '/local/path' },
+      ] as any,
+    });
+
+    const api = createProjectsAPI();
+    const list = api.list();
+    expect(list).toEqual([
+      { id: 'proj-1', name: 'Local Project', path: '/local/path' },
+    ]);
+  });
+
+  it('includes remote satellite projects', () => {
+    useProjectStore.setState({ projects: [] });
+    useRemoteProjectStore.setState({
+      satelliteProjects: {
+        'sat-1': [
+          {
+            id: 'remote||sat-1||proj-r1',
+            name: 'RemoteProject',
+            displayName: 'Remote Project',
+            path: '__remote__',
+            remote: true,
+            satelliteId: 'sat-1',
+            satelliteName: 'MySatellite',
+          },
+        ] as any,
+      },
+    });
+
+    const api = createProjectsAPI();
+    const list = api.list();
+    expect(list).toEqual([
+      { id: 'remote||sat-1||proj-r1', name: 'Remote Project', path: '__remote__' },
+    ]);
+  });
+
+  it('merges local and remote projects', () => {
+    useProjectStore.setState({
+      projects: [
+        { id: 'proj-1', name: 'LocalA', displayName: '', path: '/local/a' },
+      ] as any,
+    });
+    useRemoteProjectStore.setState({
+      satelliteProjects: {
+        'sat-1': [
+          {
+            id: 'remote||sat-1||proj-r1',
+            name: 'RemoteB',
+            displayName: 'Remote B',
+            path: '__remote__',
+            remote: true,
+            satelliteId: 'sat-1',
+            satelliteName: 'Sat1',
+          },
+        ] as any,
+      },
+    });
+
+    const api = createProjectsAPI();
+    const list = api.list();
+    expect(list).toHaveLength(2);
+    expect(list[0].id).toBe('proj-1');
+    expect(list[0].name).toBe('LocalA');
+    expect(list[1].id).toBe('remote||sat-1||proj-r1');
+    expect(list[1].name).toBe('Remote B');
+  });
+
+  it('returns empty array when no projects exist', () => {
+    const api = createProjectsAPI();
+    const list = api.list();
+    expect(list).toEqual([]);
+  });
+
+  it('includes remote projects from multiple satellites', () => {
+    useRemoteProjectStore.setState({
+      satelliteProjects: {
+        'sat-1': [
+          { id: 'remote||sat-1||p1', name: 'P1', displayName: '', path: '__remote__', remote: true, satelliteId: 'sat-1', satelliteName: 'S1' },
+        ] as any,
+        'sat-2': [
+          { id: 'remote||sat-2||p2', name: 'P2', displayName: '', path: '__remote__', remote: true, satelliteId: 'sat-2', satelliteName: 'S2' },
+        ] as any,
+      },
+    });
+
+    const api = createProjectsAPI();
+    const list = api.list();
+    expect(list).toHaveLength(2);
+    expect(list.map((p) => p.id)).toContain('remote||sat-1||p1');
+    expect(list.map((p) => p.id)).toContain('remote||sat-2||p2');
   });
 });
