@@ -1785,6 +1785,34 @@ describe('annex-server', () => {
     });
   });
 
+  describe('canvas mutation triggers broadcastSnapshotRefresh', () => {
+    it('canvas:mutation handler calls broadcastSnapshotRefresh on success (structural)', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // Find the canvas:mutation case block
+      const mutationBlock = source.slice(
+        source.indexOf("case 'canvas:mutation':"),
+        source.indexOf("case 'agent:reorder':"),
+      );
+
+      // Must call broadcastSnapshotRefresh after successful mutation
+      expect(mutationBlock).toContain('broadcastSnapshotRefresh()');
+
+      // broadcastSnapshotRefresh must be in the .then() path (success), not .catch() (error)
+      const thenIdx = mutationBlock.indexOf('.then(');
+      const refreshIdx = mutationBlock.indexOf('broadcastSnapshotRefresh()');
+      const catchIdx = mutationBlock.indexOf('.catch(');
+      expect(thenIdx).toBeGreaterThan(-1);
+      expect(refreshIdx).toBeGreaterThan(thenIdx);
+      expect(refreshIdx).toBeLessThan(catchIdx);
+    });
+  });
+
   describe('canvas mutation selectView and namespace stripping (structural)', () => {
     let source: string;
 
