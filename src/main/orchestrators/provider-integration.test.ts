@@ -410,14 +410,15 @@ describe('Provider integration tests', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result!.outputKind).toBe('text');
+      expect(result!.outputKind).toBe('stream-json');
       const { args } = result!;
       expect(args).toContain('-p');
       const pIdx = args.indexOf('-p');
       expect(args[pIdx + 1]).toContain('Be thorough');
       expect(args[pIdx + 1]).toContain('Fix the bug');
       expect(args).toContain('--allow-all');
-      expect(args).toContain('--silent');
+      expect(args).toContain('--output-format');
+      expect(args).toContain('json');
       expect(args).toContain('--model');
       expect(args[args.indexOf('--model') + 1]).toBe('claude-sonnet-4-5');
     });
@@ -712,10 +713,10 @@ describe('Provider integration tests', () => {
       });
     });
 
-    it('CopilotCli: no structuredOutput', () => {
+    it('CopilotCli: has structuredOutput', () => {
       const caps = new CopilotCliProvider().getCapabilities();
       expect(caps.headless).toBe(true);
-      expect(caps.structuredOutput).toBe(false);
+      expect(caps.structuredOutput).toBe(true);
       expect(caps.hooks).toBe(true);
       expect(caps.sessionResume).toBe(true);
       expect(caps.permissions).toBe(true);
