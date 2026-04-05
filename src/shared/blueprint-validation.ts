@@ -1,11 +1,5 @@
-import type {
-  BlueprintManifest,
-  BlueprintView,
-  BlueprintWire,
-  BlueprintAgentDef,
-  BlueprintProjectRef,
-  BlueprintCanvas,
-} from './blueprint-types';
+// Types are validated at runtime via structural checks on `unknown` values.
+// See blueprint-types.ts for the canonical type definitions.
 
 // ---------------------------------------------------------------------------
 // Public API
