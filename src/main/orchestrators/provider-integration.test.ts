@@ -438,7 +438,7 @@ describe('Provider integration tests', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result!.outputKind).toBe('text');
+      expect(result!.outputKind).toBe('stream-json');
       const { args } = result!;
       expect(args[0]).toBe('exec');
       expect(args[1]).toBe('Be thorough\n\nFix the bug');
