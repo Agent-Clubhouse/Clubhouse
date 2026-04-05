@@ -168,6 +168,37 @@ export class CodexAppServerAdapter implements StructuredAdapter {
   private async startThread(sessionOpts: StructuredSessionOpts): Promise<void> {
     if (!this.client) return;
 
+    // Resume an existing thread if sessionId is provided
+    if (sessionOpts.sessionId) {
+      appLog('core:structured:codex', 'info', 'Resuming thread', {
+        meta: { threadId: sessionOpts.sessionId, cwd: sessionOpts.cwd },
+      });
+
+      const resumeResult = await this.client.request('thread/resume', {
+        threadId: sessionOpts.sessionId,
+        cwd: sessionOpts.cwd,
+      }) as { thread?: { id?: string } } | undefined;
+
+      this.threadId = resumeResult?.thread?.id ?? sessionOpts.sessionId;
+
+      appLog('core:structured:codex', 'info', 'Thread resumed', { meta: { threadId: this.threadId } });
+
+      // Start a new turn if there's a prompt
+      const parts: string[] = [];
+      if (sessionOpts.systemPrompt) parts.push(sessionOpts.systemPrompt);
+      if (sessionOpts.mission) parts.push(sessionOpts.mission);
+      const prompt = parts.join('\n\n');
+
+      if (prompt) {
+        await this.client.request('turn/start', {
+          threadId: this.threadId,
+          input: [{ type: 'text', text: prompt }],
+        });
+      }
+
+      return;
+    }
+
     appLog('core:structured:codex', 'info', 'Creating thread', {
       meta: { model: sessionOpts.model, cwd: sessionOpts.cwd, freeAgentMode: sessionOpts.freeAgentMode },
     });

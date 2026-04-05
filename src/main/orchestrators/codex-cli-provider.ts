@@ -13,14 +13,17 @@ import {
   StructuredAdapter,
   StructuredCapable,
   HookCapable,
+  SessionCapable,
   NormalizedHookEvent,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
+import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
 import { CodexAppServerAdapter } from './adapters';
 import { homePath, parseModelChoicesFromHelp } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { appLog } from '../services/log-service';
 
 const execFileAsync = promisify(execFile);
 
@@ -68,7 +71,7 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PermissionRequest: 'permission_request',
 };
 
-export class CodexCliProvider extends BaseProvider implements HeadlessCapable, StructuredCapable, HookCapable {
+export class CodexCliProvider extends BaseProvider implements HeadlessCapable, StructuredCapable, HookCapable, SessionCapable {
   readonly id = 'codex-cli' as const;
   readonly displayName = 'Codex CLI';
   readonly shortName = 'CX';
@@ -313,6 +316,157 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
       message: obj.message as string | undefined,
     };
+  }
+
+  // ── SessionCapable ──────────────────────────────────────────────────────
+
+  async listSessions(cwd: string, _profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+    const codexHome = homePath('.codex');
+    const threadDirs = [
+      path.join(codexHome, 'threads'),
+      path.join(codexHome, 'sessions'),
+      path.join(cwd, '.codex', 'threads'),
+      path.join(cwd, '.codex', 'sessions'),
+    ];
+
+    const sessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
+    const seenIds = new Set<string>();
+
+    for (const dir of threadDirs) {
+      try {
+        await fsp.access(dir);
+      } catch {
+        continue;
+      }
+
+      try {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const name = entry.isFile()
+            ? path.basename(entry.name, path.extname(entry.name))
+            : entry.name;
+          // Match UUID-like or OpenAI thread IDs (thread_xxx)
+          if (!/^[0-9a-f-]{8,}$/i.test(name) && !/^thread_[a-zA-Z0-9_-]+$/.test(name)) continue;
+          if (seenIds.has(name)) continue;
+          seenIds.add(name);
+
+          try {
+            const fullPath = path.join(dir, entry.name);
+            const stat = await fsp.stat(fullPath);
+            sessions.push({
+              sessionId: name,
+              startedAt: stat.birthtime.toISOString(),
+              lastActiveAt: stat.mtime.toISOString(),
+            });
+          } catch (err) {
+            appLog('core:orchestrator', 'warn', 'Failed to stat session file', {
+              meta: { file: entry.name, error: err instanceof Error ? err.message : String(err) },
+            });
+          }
+        }
+      } catch (err) {
+        appLog('core:orchestrator', 'warn', 'Failed to read session directory', {
+          meta: { dir, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
+
+    sessions.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
+    return sessions;
+  }
+
+  async readSessionTranscript(
+    sessionId: string,
+    cwd: string,
+    _profileEnv?: Record<string, string>,
+  ): Promise<StreamJsonEvent[] | null> {
+    const codexHome = homePath('.codex');
+
+    const searchPaths = [
+      path.join(codexHome, 'threads', `${sessionId}.jsonl`),
+      path.join(codexHome, 'sessions', `${sessionId}.jsonl`),
+      path.join(cwd, '.codex', 'threads', `${sessionId}.jsonl`),
+      path.join(cwd, '.codex', 'sessions', `${sessionId}.jsonl`),
+      path.join(codexHome, 'threads', `${sessionId}.json`),
+      path.join(codexHome, 'sessions', `${sessionId}.json`),
+      path.join(cwd, '.codex', 'threads', `${sessionId}.json`),
+      path.join(cwd, '.codex', 'sessions', `${sessionId}.json`),
+    ];
+
+    let filePath: string | null = null;
+    for (const p of searchPaths) {
+      try {
+        await fsp.access(p);
+        filePath = p;
+        break;
+      } catch {
+        continue;
+      }
+    }
+
+    // Check for directory-style thread storage
+    if (!filePath) {
+      const dirPaths = [
+        path.join(codexHome, 'threads', sessionId),
+        path.join(cwd, '.codex', 'threads', sessionId),
+      ];
+
+      for (const dir of dirPaths) {
+        try {
+          const stat = await fsp.stat(dir);
+          if (stat.isDirectory()) {
+            const entries = await fsp.readdir(dir);
+            const jsonlFile = entries.find((e) => e.endsWith('.jsonl'));
+            if (jsonlFile) {
+              filePath = path.join(dir, jsonlFile);
+              break;
+            }
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    if (!filePath) return null;
+
+    try {
+      const content = await fsp.readFile(filePath, 'utf-8');
+      const events: StreamJsonEvent[] = [];
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          events.push(JSON.parse(trimmed));
+        } catch {
+          // Skip malformed JSONL lines
+        }
+      }
+      return events.length > 0 ? events : null;
+    } catch (err) {
+      appLog('core:orchestrator', 'warn', 'Failed to read session transcript', {
+        meta: { filePath, error: err instanceof Error ? err.message : String(err) },
+      });
+      return null;
+    }
+  }
+
+  extractSessionId(ptyBuffer: string): string | null {
+    const patterns = [
+      // Codex thread IDs with thread_ prefix
+      /thread[_:]([a-zA-Z0-9_-]{16,})/,
+      // UUID-style thread/session IDs
+      /thread[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+      /session[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+      /resume[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = ptyBuffer.match(pattern);
+      if (match) return match[1];
+    }
+
+    return null;
   }
 
   // ── HeadlessCapable ─────────────────────────────────────────────────────

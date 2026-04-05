@@ -210,6 +210,119 @@ describe('CodexAppServerAdapter', () => {
     expect((events[1].data as { reason: string }).reason).toBe('error');
   });
 
+  // ── Thread resume tests ──────────────────────────────────────────────────
+
+  it('uses thread/resume instead of thread/start when sessionId is provided', async () => {
+    mockClient.request.mockImplementation((method: string) => {
+      if (method === 'thread/resume') {
+        return Promise.resolve({ thread: { id: 'resumed-thread-1' } });
+      }
+      return Promise.resolve({});
+    });
+
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start({ ...defaultSessionOpts, sessionId: 'existing-thread-42' });
+
+    await flushMicrotasks();
+
+    expect(mockClient.request).toHaveBeenCalledWith('thread/resume', {
+      threadId: 'existing-thread-42',
+      cwd: '/tmp/project',
+    });
+    expect(mockClient.request).not.toHaveBeenCalledWith('thread/start', expect.anything());
+  });
+
+  it('uses sessionId as fallback threadId when resume returns no id', async () => {
+    mockClient.request.mockImplementation((method: string) => {
+      if (method === 'thread/resume') {
+        return Promise.resolve({});
+      }
+      return Promise.resolve({});
+    });
+
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start({ ...defaultSessionOpts, sessionId: 'fallback-thread-id' });
+
+    await flushMicrotasks();
+
+    // Should use the provided sessionId for turn/start
+    expect(mockClient.request).toHaveBeenCalledWith('turn/start', {
+      threadId: 'fallback-thread-id',
+      input: [{ type: 'text', text: 'Fix the bug' }],
+    });
+  });
+
+  it('starts turn after thread/resume when mission is provided', async () => {
+    mockClient.request.mockImplementation((method: string) => {
+      if (method === 'thread/resume') {
+        return Promise.resolve({ thread: { id: 'resumed-thread-1' } });
+      }
+      return Promise.resolve({});
+    });
+
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start({
+      ...defaultSessionOpts,
+      sessionId: 'existing-thread',
+      mission: 'Continue fixing',
+      systemPrompt: 'Be concise',
+    });
+
+    await flushMicrotasks();
+
+    expect(mockClient.request).toHaveBeenCalledWith('turn/start', {
+      threadId: 'resumed-thread-1',
+      input: [{ type: 'text', text: 'Be concise\n\nContinue fixing' }],
+    });
+  });
+
+  it('skips turn/start after resume when no mission or systemPrompt', async () => {
+    mockClient.request.mockImplementation((method: string) => {
+      if (method === 'thread/resume') {
+        return Promise.resolve({ thread: { id: 'resumed-thread-1' } });
+      }
+      return Promise.resolve({});
+    });
+
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start({
+      cwd: '/tmp/project',
+      mission: '',
+      sessionId: 'existing-thread',
+    });
+
+    await flushMicrotasks();
+
+    expect(mockClient.request).toHaveBeenCalledWith('thread/resume', expect.anything());
+    expect(mockClient.request).not.toHaveBeenCalledWith('turn/start', expect.anything());
+  });
+
+  it('logs resume attempt with thread ID', async () => {
+    const mockAppLog = vi.mocked(appLog);
+    mockAppLog.mockClear();
+
+    mockClient.request.mockImplementation((method: string) => {
+      if (method === 'thread/resume') {
+        return Promise.resolve({ thread: { id: 'resumed-thread-1' } });
+      }
+      return Promise.resolve({});
+    });
+
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start({ ...defaultSessionOpts, sessionId: 'thread-to-resume' });
+
+    await flushMicrotasks();
+
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured:codex',
+      'info',
+      'Resuming thread',
+      expect.objectContaining({
+        meta: expect.objectContaining({ threadId: 'thread-to-resume' }),
+      }),
+    );
+  });
+
   // ── Notification mapping tests ────────────────────────────────────────────
 
   it('maps item/agentMessage/delta → text_delta', async () => {

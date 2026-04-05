@@ -13,8 +13,10 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
   writeFile: vi.fn(async () => {}),
   mkdir: vi.fn(async () => {}),
-  stat: vi.fn(async () => ({ isDirectory: () => true })),
+  stat: vi.fn(async () => ({ isDirectory: () => true, birthtime: new Date('2026-04-01T10:00:00Z'), mtime: new Date('2026-04-01T12:00:00Z') })),
   realpath: vi.fn(async (p: string) => p),
+  access: vi.fn(async () => { throw new Error('ENOENT'); }),
+  readdir: vi.fn(async () => []),
 }));
 
 vi.mock('child_process', () => ({
@@ -34,6 +36,10 @@ vi.mock('../util/shell', () => ({
     OPENAI_API_KEY: 'sk-test-key',
   })),
   invalidateShellEnvironmentCache: vi.fn(),
+}));
+
+vi.mock('../services/log-service', () => ({
+  appLog: vi.fn(),
 }));
 
 import * as fs from 'fs';
@@ -799,6 +805,196 @@ describe('CodexCliProvider', () => {
 
     it('returns null when hook_event_name is missing', () => {
       expect(provider.parseHookEvent({ tool_name: 'shell' })).toBeNull();
+    });
+  });
+
+  describe('listSessions', () => {
+    it('returns empty array when no session directories exist', async () => {
+      const sessions = await provider.listSessions('/project');
+      expect(sessions).toEqual([]);
+    });
+
+    it('lists sessions from accessible thread directory', async () => {
+      vi.mocked(fsp.access).mockImplementation(async (p) => {
+        if (String(p).includes('threads')) return;
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.readdir).mockResolvedValueOnce([
+        { name: 'thread_abc123def456ghij.jsonl', isFile: () => true, isDirectory: () => false },
+        { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false },
+        { name: 'config.toml', isFile: () => true, isDirectory: () => false },
+      ] as any);
+
+      const sessions = await provider.listSessions('/project');
+      expect(sessions).toHaveLength(2);
+      const ids = sessions.map(s => s.sessionId);
+      expect(ids).toContain('thread_abc123def456ghij');
+      expect(ids).toContain('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+    });
+
+    it('sorts sessions by most recently active first', async () => {
+      vi.mocked(fsp.access).mockImplementation(async (p) => {
+        if (String(p).includes('threads')) return;
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.readdir).mockResolvedValueOnce([
+        { name: 'a1b2c3d4-e5f6-7890-abcd-000000000001.jsonl', isFile: () => true, isDirectory: () => false },
+        { name: 'a1b2c3d4-e5f6-7890-abcd-000000000002.jsonl', isFile: () => true, isDirectory: () => false },
+      ] as any);
+      vi.mocked(fsp.stat)
+        .mockResolvedValueOnce({ isDirectory: () => false, birthtime: new Date('2026-04-01T10:00:00Z'), mtime: new Date('2026-04-01T11:00:00Z') } as any)
+        .mockResolvedValueOnce({ isDirectory: () => false, birthtime: new Date('2026-04-01T10:00:00Z'), mtime: new Date('2026-04-01T14:00:00Z') } as any);
+
+      const sessions = await provider.listSessions('/project');
+      expect(sessions[0].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-000000000002');
+      expect(sessions[1].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-000000000001');
+    });
+
+    it('deduplicates sessions across directories', async () => {
+      let accessCallCount = 0;
+      vi.mocked(fsp.access).mockImplementation(async () => {
+        accessCallCount++;
+        // Let first two dirs succeed
+        if (accessCallCount <= 2) return;
+        throw new Error('ENOENT');
+      });
+      const entry = { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false };
+      vi.mocked(fsp.readdir)
+        .mockResolvedValueOnce([entry] as any)
+        .mockResolvedValueOnce([entry] as any);
+
+      const sessions = await provider.listSessions('/project');
+      expect(sessions).toHaveLength(1);
+    });
+
+    it('skips non-UUID/non-thread filenames', async () => {
+      vi.mocked(fsp.access).mockImplementation(async (p) => {
+        if (String(p).includes('threads')) return;
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.readdir).mockResolvedValueOnce([
+        { name: 'README.md', isFile: () => true, isDirectory: () => false },
+        { name: 'config.json', isFile: () => true, isDirectory: () => false },
+      ] as any);
+
+      const sessions = await provider.listSessions('/project');
+      expect(sessions).toEqual([]);
+    });
+  });
+
+  describe('readSessionTranscript', () => {
+    it('returns null when no transcript file found', async () => {
+      const result = await provider.readSessionTranscript('nonexistent', '/project');
+      expect(result).toBeNull();
+    });
+
+    it('reads and parses JSONL transcript', async () => {
+      const jsonlContent = '{"type":"text","content":"hello"}\n{"type":"tool","name":"shell"}\n';
+      vi.mocked(fsp.access).mockImplementation(async (p) => {
+        if (String(p).endsWith('nonexistent.jsonl') && String(p).includes('threads')) return;
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(jsonlContent);
+
+      const result = await provider.readSessionTranscript('nonexistent', '/project');
+      expect(result).toHaveLength(2);
+      expect(result![0]).toEqual({ type: 'text', content: 'hello' });
+      expect(result![1]).toEqual({ type: 'tool', name: 'shell' });
+    });
+
+    it('skips malformed JSONL lines', async () => {
+      const jsonlContent = '{"type":"text"}\n{INVALID JSON}\n{"type":"tool"}\n';
+      vi.mocked(fsp.access).mockImplementation(async (p) => {
+        if (String(p).endsWith('.jsonl') && String(p).includes('threads')) return;
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(jsonlContent);
+
+      const result = await provider.readSessionTranscript('test-id', '/project');
+      expect(result).toHaveLength(2);
+    });
+
+    it('returns null for empty transcript', async () => {
+      vi.mocked(fsp.access).mockImplementation(async (p) => {
+        if (String(p).endsWith('.jsonl') && String(p).includes('threads')) return;
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('\n\n');
+
+      const result = await provider.readSessionTranscript('test-id', '/project');
+      expect(result).toBeNull();
+    });
+
+    it('checks directory-style thread storage', async () => {
+      // All direct file paths fail
+      vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
+      // But directory-style stat succeeds
+      vi.mocked(fsp.stat).mockImplementation(async (p) => {
+        if (String(p).includes('threads') && String(p).endsWith('my-thread-id')) {
+          return { isDirectory: () => true } as any;
+        }
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.readdir).mockResolvedValueOnce(['transcript.jsonl', 'meta.json']);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{"type":"text","content":"from dir"}\n');
+
+      const result = await provider.readSessionTranscript('my-thread-id', '/project');
+      expect(result).toHaveLength(1);
+      expect(result![0]).toEqual({ type: 'text', content: 'from dir' });
+    });
+  });
+
+  describe('extractSessionId', () => {
+    it('extracts thread_ prefixed IDs', () => {
+      const buffer = 'Starting session thread_abc123def456ghij in workspace...';
+      expect(provider.extractSessionId(buffer)).toBe('abc123def456ghij');
+    });
+
+    it('extracts UUID after thread: label', () => {
+      const buffer = 'thread: a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+      expect(provider.extractSessionId(buffer)).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+    });
+
+    it('extracts UUID after session: label', () => {
+      const buffer = 'session: a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+      expect(provider.extractSessionId(buffer)).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+    });
+
+    it('extracts UUID after resume: label', () => {
+      const buffer = 'resume: a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+      expect(provider.extractSessionId(buffer)).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+    });
+
+    it('returns null when no recognizable ID found', () => {
+      expect(provider.extractSessionId('Welcome to Codex CLI')).toBeNull();
+    });
+
+    it('returns null for empty string', () => {
+      expect(provider.extractSessionId('')).toBeNull();
+    });
+
+    it('prefers thread_ prefix over UUID patterns', () => {
+      const buffer = 'thread_longthreadidentifier session: a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+      expect(provider.extractSessionId(buffer)).toBe('longthreadidentifier');
+    });
+  });
+
+  describe('SessionCapable type guard', () => {
+    it('isSessionCapable returns true', async () => {
+      const { isSessionCapable } = await import('./types');
+      expect(isSessionCapable(provider)).toBe(true);
+    });
+
+    it('has listSessions method', () => {
+      expect(typeof provider.listSessions).toBe('function');
+    });
+
+    it('has readSessionTranscript method', () => {
+      expect(typeof provider.readSessionTranscript).toBe('function');
+    });
+
+    it('has extractSessionId method', () => {
+      expect(typeof provider.extractSessionId).toBe('function');
     });
   });
 
