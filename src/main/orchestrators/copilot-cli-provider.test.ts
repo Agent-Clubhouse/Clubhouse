@@ -869,7 +869,8 @@ describe('CopilotCliProvider', () => {
 
         await provider.listSessions('/project', { GH_COPILOT_CONFIG_DIR: '/custom-copilot' });
         // Should have checked the custom path, not ~/.copilot
-        expect(fs.existsSync).toHaveBeenCalledWith('/custom-copilot/session-state');
+        // Use path.join for cross-platform: Windows produces backslash paths
+        expect(fs.existsSync).toHaveBeenCalledWith(path.join('/custom-copilot', 'session-state'));
       });
     });
 
