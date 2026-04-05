@@ -585,3 +585,42 @@ export function recomputeZones(views: CanvasView[]): CanvasView[] {
 export function generateCanvasId(): string {
   return `canvas_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
 }
+
+// ── Context menu positioning ───────────────────────────────────────
+
+/**
+ * Clamp a context menu position so it stays within the viewport.
+ * Returns adjusted { x, y } if the menu would overflow; otherwise
+ * returns the original coordinates unchanged.
+ */
+export function clampMenuPosition(
+  clickX: number,
+  clickY: number,
+  menuWidth: number,
+  menuHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  padding = 8,
+): Position {
+  const overflowX = (clickX + menuWidth + padding) - viewportWidth;
+  const overflowY = (clickY + menuHeight + padding) - viewportHeight;
+  return {
+    x: overflowX > 0 ? clickX - overflowX : clickX,
+    y: overflowY > 0 ? clickY - overflowY : clickY,
+  };
+}
+
+// ── ELK radial root resolution ─────────────────────────────────────
+
+/**
+ * Resolve the root node ID for ELK radial layout.
+ * Priority: explicitly selected view > stored layout center > undefined (server auto-detects).
+ */
+export function resolveRadialRootId(
+  algorithm: string,
+  selectedViewId: string | null,
+  layoutCenterId: string | null,
+): string | undefined {
+  if (algorithm !== 'radial') return undefined;
+  return selectedViewId ?? layoutCenterId ?? undefined;
+}

@@ -1,8 +1,8 @@
-import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import type { CanvasView, CanvasViewType, ZoneCanvasView, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
 import type { ResizeDirection } from './CanvasView';
-import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect } from './canvas-operations';
+import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect, clampMenuPosition, resolveRadialRootId } from './canvas-operations';
 import { ZoneBackground } from './ZoneBackground';
 import { ZoneCard } from './ZoneCard';
 import { ZoneDeleteDialog } from './ZoneDeleteDialog';
@@ -13,6 +13,7 @@ import { AgentCanvasView } from './AgentCanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu, type ContextMenuSelection } from './CanvasContextMenu';
 import { MenuPortal } from './MenuPortal';
+import { useDismissibleLayer } from './useDismissibleLayer';
 import { CanvasAttentionIndicators } from './CanvasAttentionIndicators';
 import { useCanvasAttention, computeOffScreenIndicators } from './canvas-attention';
 import { WireOverlay } from './WireOverlay';
@@ -130,6 +131,7 @@ export function CanvasWorkspace({
   createBidirectionalWires,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewMenuRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null);
@@ -523,6 +525,30 @@ export function CanvasWorkspace({
     setViewContextMenu(null);
   }, [layoutCenterId, onSetLayoutCenterId]);
 
+  const handleDismissViewContextMenu = useCallback(() => {
+    setViewContextMenu(null);
+  }, []);
+
+  useDismissibleLayer({
+    layerRef: viewMenuRef,
+    onDismiss: handleDismissViewContextMenu,
+    enabled: !!viewContextMenu,
+  });
+
+  // Clamp view context menu to viewport bounds after render
+  useLayoutEffect(() => {
+    const el = viewMenuRef.current;
+    if (!el || !viewContextMenu) return;
+    const rect = el.getBoundingClientRect();
+    const clamped = clampMenuPosition(
+      viewContextMenu.x, viewContextMenu.y,
+      rect.width, rect.height,
+      window.innerWidth, window.innerHeight,
+    );
+    if (clamped.x !== viewContextMenu.x) el.style.left = `${clamped.x}px`;
+    if (clamped.y !== viewContextMenu.y) el.style.top = `${clamped.y}px`;
+  }, [viewContextMenu]);
+
   // ── Zoom controls ──────────────────────────────────────────────
 
   const handleZoomIn = useCallback(() => {
@@ -584,8 +610,8 @@ export function CanvasWorkspace({
       }
     }
 
-    // For radial layout, use selected view as root, falling back to stored center
-    const rootId = opts.algorithm === 'radial' && selectedViewId ? selectedViewId : undefined;
+    // For radial layout, determine root: selected card > stored center > auto-detect (server-side)
+    const rootId = resolveRadialRootId(opts.algorithm, selectedViewId, layoutCenterId);
 
     try {
       const result = await window.clubhouse.canvas.layoutElk({
@@ -1295,6 +1321,7 @@ export function CanvasWorkspace({
       {viewContextMenu && (
         <MenuPortal>
           <div
+            ref={viewMenuRef}
             className="fixed z-[9999] min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
             style={{ left: viewContextMenu.x, top: viewContextMenu.y }}
             data-testid="view-context-menu"
