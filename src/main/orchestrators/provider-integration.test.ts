@@ -1052,9 +1052,9 @@ describe('Provider integration tests', () => {
       expect(isHeadlessCapable(new CodexCliProvider())).toBe(true);
     });
 
-    it('isSessionCapable returns true for ClaudeCode and CodexCli', () => {
+    it('isSessionCapable returns true for all providers', () => {
       expect(isSessionCapable(new ClaudeCodeProvider())).toBe(true);
-      expect(isSessionCapable(new CopilotCliProvider())).toBe(false);
+      expect(isSessionCapable(new CopilotCliProvider())).toBe(true);
       expect(isSessionCapable(new CodexCliProvider())).toBe(true);
     });
 
