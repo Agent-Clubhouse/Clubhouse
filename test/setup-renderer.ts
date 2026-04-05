@@ -195,6 +195,9 @@ vi.stubGlobal('clubhouse', {
     offWatchEvent: noop,
     search: async () => [],
   },
+  blueprint: {
+    saveDialog: async () => ({ canceled: true }),
+  },
   plugin: {
     discoverCommunity: async () => [],
     storageRead: async () => undefined,
