@@ -745,6 +745,9 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('SessionCapable', () => {
+    /** Normalize path separators for cross-platform test matching */
+    const norm = (p: string | fs.PathLike) => String(p).replace(/\\/g, '/');
+
     describe('listSessions', () => {
       it('returns empty array when session directory does not exist', async () => {
         vi.mocked(fs.existsSync).mockReturnValue(false);
@@ -754,11 +757,11 @@ describe('CopilotCliProvider', () => {
 
       it('discovers JSONL session files in session-state directory', async () => {
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p).endsWith('/session-state');
+          return norm(p).endsWith('/session-state');
         });
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
           const d = String(dir);
-          if (d.endsWith('session-state')) {
+          if (norm(d).endsWith('/session-state')) {
             return [
               { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false },
               { name: 'f9e8d7c6-b5a4-3210-fedc-ba9876543210.json', isFile: () => true, isDirectory: () => false },
@@ -779,7 +782,7 @@ describe('CopilotCliProvider', () => {
 
       it('skips non-UUID filenames like config files', async () => {
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p).endsWith('/session-state');
+          return norm(p).endsWith('/session-state');
         });
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
           if (String(dir).endsWith('session-state')) {
@@ -802,7 +805,7 @@ describe('CopilotCliProvider', () => {
 
       it('sorts sessions by most recently active first', async () => {
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p).endsWith('/session-state');
+          return norm(p).endsWith('/session-state');
         });
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
           if (String(dir).endsWith('session-state')) {
@@ -832,17 +835,17 @@ describe('CopilotCliProvider', () => {
       it('deduplicates sessions found in multiple directories', async () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p).endsWith('/session-state');
+          return norm(p).endsWith('/session-state');
         });
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
           const d = String(dir);
-          if (d.endsWith('session-state')) {
+          if (norm(d).endsWith('/session-state')) {
             return [
               { name: `${sessionId}.jsonl`, isFile: () => true, isDirectory: () => false },
               { name: 'project-subdir', isFile: () => false, isDirectory: () => true },
             ] as any;
           }
-          if (d.endsWith('project-subdir')) {
+          if (norm(d).endsWith('/project-subdir')) {
             return [
               { name: `${sessionId}.jsonl`, isFile: () => true, isDirectory: () => false },
             ] as any;
@@ -860,7 +863,7 @@ describe('CopilotCliProvider', () => {
 
       it('uses custom config dir from profileEnv', async () => {
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p) === '/custom-copilot/session-state';
+          return norm(p) === '/custom-copilot/session-state';
         });
         vi.mocked(fsp.readdir).mockResolvedValue([]);
 
@@ -880,7 +883,7 @@ describe('CopilotCliProvider', () => {
       it('reads and parses JSONL session file', async () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          const s = String(p);
+          const s = norm(p);
           return s.endsWith('/session-state') || s.endsWith(`${sessionId}.jsonl`);
         });
         vi.mocked(fsp.readdir).mockResolvedValue([]);
@@ -901,7 +904,7 @@ describe('CopilotCliProvider', () => {
       it('skips malformed JSONL lines gracefully', async () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          const s = String(p);
+          const s = norm(p);
           return s.endsWith('/session-state') || s.endsWith(`${sessionId}.jsonl`);
         });
         vi.mocked(fsp.readdir).mockResolvedValue([]);
@@ -919,7 +922,7 @@ describe('CopilotCliProvider', () => {
 
       it('returns null when no session file found', async () => {
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p).endsWith('session-state');
+          return norm(p).endsWith('/session-state');
         });
         vi.mocked(fsp.readdir).mockResolvedValue([]);
 
@@ -930,7 +933,7 @@ describe('CopilotCliProvider', () => {
       it('returns null for empty session file', async () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          const s = String(p);
+          const s = norm(p);
           return s.endsWith('/session-state') || s.endsWith(`${sessionId}.jsonl`);
         });
         vi.mocked(fsp.readdir).mockResolvedValue([]);
@@ -946,13 +949,13 @@ describe('CopilotCliProvider', () => {
       it('checks directory-style sessions when no file match', async () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          const s = String(p);
+          const s = norm(p);
           return s.endsWith('/session-state') || s.endsWith(sessionId);
         });
         vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
           const d = String(dir);
-          if (d.endsWith(sessionId)) {
+          if (norm(d).endsWith(sessionId)) {
             return ['transcript.jsonl'] as any;
           }
           return [];
