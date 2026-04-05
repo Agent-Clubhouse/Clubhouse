@@ -13,6 +13,7 @@ import { SkillsSection } from './SkillsSection';
 import { AgentTemplatesSection } from './AgentTemplatesSection';
 import { McpJsonSection } from './McpJsonSection';
 import { AgentAvatar } from './AgentAvatar';
+import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialog';
 import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-template-registry';
 
 type SettingsTab = 'main' | 'quick';
@@ -23,7 +24,7 @@ interface Props {
 
 export function AgentSettingsView({ agent }: Props) {
   const isRunning = agent.status === 'running';
-  const { closeAgentSettings, updateAgent } = useAgentStore();
+  const { closeAgentSettings, updateAgent, loadDurableAgents } = useAgentStore();
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
@@ -292,18 +293,65 @@ export function AgentSettingsView({ agent }: Props) {
     setQadDirty(false);
   };
 
-  // Handle creating an agent definition from a plugin-contributed template
-  const handleCreateFromPluginTemplate = async (entry: RegisteredPluginAgentTemplate) => {
-    const name = entry.template.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
-    if (!name || !worktreePath) return;
+  // Plugin template → TemplateConfigDialog flow
+  const [pendingPluginTemplate, setPendingPluginTemplate] = useState<RegisteredPluginAgentTemplate | null>(null);
+
+  const handleCreateFromPluginTemplate = (entry: RegisteredPluginAgentTemplate) => {
+    setPendingPluginTemplate(entry);
+  };
+
+  const handlePluginTemplateCreate = async (templateConfig: TemplateConfig) => {
+    const entry = pendingPluginTemplate;
+    setPendingPluginTemplate(null);
+    if (!entry || !projectPath) return;
+
     try {
-      await window.clubhouse.agentSettings.writeAgentTemplateContent(worktreePath, name, entry.template.promptContent, projectPath);
-      // Inject skills if provided
+      const { name, color, model, orchestrator: orch, useWorktree, freeAgentMode, structuredMode, mcpIds } = templateConfig;
+
+      // Create durable agent with user-chosen config
+      const config = await window.clubhouse.agent.createDurable(
+        projectPath, name, color, model !== 'default' ? model : undefined, useWorktree,
+        orch, freeAgentMode || undefined, mcpIds, structuredMode || undefined,
+      );
+
+      const agentWorktree = config.worktreePath || worktreePath;
+
+      // Write plugin template prompt as the agent's instructions
+      if (entry.template.promptContent) {
+        await window.clubhouse.agentSettings.saveInstructions(agentWorktree, entry.template.promptContent, projectPath);
+      }
+
+      // Inject skills from the plugin template
       if (entry.template.skills) {
         for (const [skillName, content] of Object.entries(entry.template.skills)) {
-          await window.clubhouse.agentSettings.writeSourceSkillContent(worktreePath, `${name}-${skillName}`, content);
+          await window.clubhouse.agentSettings.writeSkillContent(agentWorktree, skillName, content, projectPath);
         }
       }
+
+      // Inject MCP servers from the plugin template into the agent's .mcp.json
+      if (entry.template.mcpServers && Object.keys(entry.template.mcpServers).length > 0) {
+        const rawJson = await window.clubhouse.agentSettings.readMcpRawJson(agentWorktree, projectPath);
+        let mcpConfig: Record<string, unknown>;
+        try {
+          mcpConfig = JSON.parse(rawJson);
+        } catch {
+          mcpConfig = {};
+        }
+        if (!mcpConfig.mcpServers || typeof mcpConfig.mcpServers !== 'object') {
+          mcpConfig.mcpServers = {};
+        }
+        const servers = mcpConfig.mcpServers as Record<string, unknown>;
+        for (const [serverName, serverDef] of Object.entries(entry.template.mcpServers)) {
+          servers[serverName] = serverDef;
+        }
+        await window.clubhouse.agentSettings.writeMcpRawJson(agentWorktree, JSON.stringify(mcpConfig, null, 2), projectPath);
+      }
+
+      // Refresh agent list so the new agent appears
+      if (activeProject) {
+        await loadDurableAgents(activeProject.id, projectPath);
+      }
+
       setRefreshKey((k) => k + 1);
     } catch (err) {
       console.error('Failed to create from plugin template:', err);
@@ -1109,6 +1157,22 @@ export function AgentSettingsView({ agent }: Props) {
           maskShape="circle"
           onConfirm={handleCropConfirm}
           onCancel={handleCropCancel}
+        />
+      )}
+
+      {/* Plugin template config dialog */}
+      {pendingPluginTemplate && (
+        <TemplateConfigDialog
+          persona={{
+            id: `plugin-${pendingPluginTemplate.pluginId}-${pendingPluginTemplate.template.name}`,
+            name: pendingPluginTemplate.template.name,
+            description: pendingPluginTemplate.template.description || '',
+            content: pendingPluginTemplate.template.promptContent,
+          }}
+          personaColor="indigo"
+          projectPath={projectPath}
+          onClose={() => setPendingPluginTemplate(null)}
+          onCreate={handlePluginTemplateCreate}
         />
       )}
     </div>

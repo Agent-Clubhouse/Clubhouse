@@ -35,7 +35,7 @@ vi.mock('../fs-utils', () => ({
   }),
 }));
 
-import { injectClubhouseMcp, isClubhouseMcpEntry, stripClubhouseMcp, stripClubhouseMcpToml, buildClubhouseMcpDef } from './injection';
+import { injectClubhouseMcp, injectTemplateMcpServers, isClubhouseMcpEntry, stripClubhouseMcp, stripClubhouseMcpToml, buildClubhouseMcpDef } from './injection';
 
 describe('MCP Injection', () => {
   let tmpDir: string;
@@ -332,6 +332,104 @@ describe('MCP Injection', () => {
         CLUBHOUSE_AGENT_ID: 'agent-1',
         CLUBHOUSE_HOOK_NONCE: 'nonce-1',
       });
+    });
+  });
+
+  describe('injectTemplateMcpServers', () => {
+    it('creates .mcp.json with template servers when no file exists', async () => {
+      const servers = {
+        'my-plugin-server': { command: 'python', args: ['server.py'] },
+      };
+      await injectTemplateMcpServers(tmpDir, servers);
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers['my-plugin-server']).toEqual({ command: 'python', args: ['server.py'] });
+    });
+
+    it('preserves existing MCP servers when merging', async () => {
+      const existing = {
+        mcpServers: {
+          'existing-server': { command: 'node', args: ['existing.js'] },
+        },
+      };
+      await fsp.writeFile(path.join(tmpDir, '.mcp.json'), JSON.stringify(existing), 'utf-8');
+
+      await injectTemplateMcpServers(tmpDir, {
+        'new-server': { command: 'python', args: ['new.py'] },
+      });
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers['existing-server']).toBeDefined();
+      expect(content.mcpServers['new-server']).toBeDefined();
+    });
+
+    it('overwrites server entries with the same name', async () => {
+      const existing = {
+        mcpServers: {
+          'my-server': { command: 'old', args: [] },
+        },
+      };
+      await fsp.writeFile(path.join(tmpDir, '.mcp.json'), JSON.stringify(existing), 'utf-8');
+
+      await injectTemplateMcpServers(tmpDir, {
+        'my-server': { command: 'new', args: ['--updated'] },
+      });
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers['my-server']).toEqual({ command: 'new', args: ['--updated'] });
+    });
+
+    it('injects multiple servers at once', async () => {
+      await injectTemplateMcpServers(tmpDir, {
+        'server-a': { command: 'a' },
+        'server-b': { command: 'b' },
+        'server-c': { command: 'c' },
+      });
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      expect(Object.keys(content.mcpServers)).toHaveLength(3);
+      expect(content.mcpServers['server-a'].command).toBe('a');
+      expect(content.mcpServers['server-b'].command).toBe('b');
+      expect(content.mcpServers['server-c'].command).toBe('c');
+    });
+
+    it('handles malformed existing JSON gracefully', async () => {
+      await fsp.writeFile(path.join(tmpDir, '.mcp.json'), 'not json!!!', 'utf-8');
+
+      await injectTemplateMcpServers(tmpDir, {
+        'my-server': { command: 'node', args: [] },
+      });
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers['my-server']).toBeDefined();
+    });
+
+    it('creates parent directory if it does not exist', async () => {
+      const nestedDir = path.join(tmpDir, 'nested', 'deep');
+
+      await injectTemplateMcpServers(nestedDir, {
+        'my-server': { command: 'node' },
+      });
+
+      const content = JSON.parse(await fsp.readFile(path.join(nestedDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers['my-server']).toBeDefined();
+    });
+
+    it('uses custom conventions for config file path', async () => {
+      await injectTemplateMcpServers(tmpDir, { 'my-server': { command: 'node' } }, {
+        mcpConfigFile: 'custom-mcp.json',
+      });
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, 'custom-mcp.json'), 'utf-8'));
+      expect(content.mcpServers['my-server']).toBeDefined();
+    });
+
+    it('no temp files left behind after injection', async () => {
+      await injectTemplateMcpServers(tmpDir, { 'my-server': { command: 'node' } });
+
+      const files = await fsp.readdir(tmpDir);
+      const tmpFiles = files.filter(f => f.includes('.tmp.'));
+      expect(tmpFiles).toHaveLength(0);
     });
   });
 });
