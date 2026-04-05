@@ -13,6 +13,7 @@ import { SkillsSection } from './SkillsSection';
 import { AgentTemplatesSection } from './AgentTemplatesSection';
 import { McpJsonSection } from './McpJsonSection';
 import { AgentAvatar } from './AgentAvatar';
+import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-template-registry';
 
 type SettingsTab = 'main' | 'quick';
 
@@ -289,6 +290,24 @@ export function AgentSettingsView({ agent }: Props) {
     setInstructionsDirty(false);
     setPermDirty(false);
     setQadDirty(false);
+  };
+
+  // Handle creating an agent definition from a plugin-contributed template
+  const handleCreateFromPluginTemplate = async (entry: RegisteredPluginAgentTemplate) => {
+    const name = entry.template.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
+    if (!name || !worktreePath) return;
+    try {
+      await window.clubhouse.agentSettings.writeAgentTemplateContent(worktreePath, name, entry.template.promptContent, projectPath);
+      // Inject skills if provided
+      if (entry.template.skills) {
+        for (const [skillName, content] of Object.entries(entry.template.skills)) {
+          await window.clubhouse.agentSettings.writeSourceSkillContent(worktreePath, `${name}-${skillName}`, content);
+        }
+      }
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      console.error('Failed to create from plugin template:', err);
+    }
   };
 
   // Load quick agent defaults and agent model from config
@@ -894,6 +913,7 @@ export function AgentSettingsView({ agent }: Props) {
                 disabled={isRunning}
                 refreshKey={refreshKey}
                 pathLabel={agentTemplatesPathLabel}
+                onCreateFromPluginTemplate={handleCreateFromPluginTemplate}
               />
             )}
 

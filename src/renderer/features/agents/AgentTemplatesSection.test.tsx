@@ -2,6 +2,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentTemplatesSection } from './AgentTemplatesSection';
 import type { AgentTemplateEntry } from '../../../shared/types';
+import {
+  registerPluginAgentTemplate,
+  _resetTemplateRegistryForTesting,
+} from '../../plugins/plugin-agent-template-registry';
 
 vi.mock('../../components/SettingsMonacoEditor', () => ({
   SettingsMonacoEditor: ({ value, onChange, readOnly }: any) => (
@@ -33,6 +37,7 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof AgentTempl
 describe('AgentTemplatesSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetTemplateRegistryForTesting();
     window.clubhouse.agentSettings.listAgentTemplateFiles = vi.fn().mockResolvedValue(mockTemplates);
     window.clubhouse.agentSettings.readAgentTemplateContent = vi.fn().mockResolvedValue('# Researcher\n\nDoes research.');
     window.clubhouse.agentSettings.writeAgentTemplateContent = vi.fn().mockResolvedValue(undefined);
@@ -192,6 +197,121 @@ describe('AgentTemplatesSection', () => {
       await screen.findByText('researcher');
       fireEvent.click(screen.getAllByTitle('Open in file manager')[0]);
       expect(window.clubhouse.file.showInFolder).toHaveBeenCalledWith('/project/.claude/agents/researcher.md');
+    });
+  });
+
+  describe('plugin template groups', () => {
+    it('shows plugin templates grouped by plugin name', async () => {
+      registerPluginAgentTemplate('my-plugin', 'My Plugin', {
+        name: 'Code Reviewer',
+        description: 'Reviews code',
+        promptContent: '# Code Reviewer',
+      });
+      registerPluginAgentTemplate('my-plugin', 'My Plugin', {
+        name: 'Test Writer',
+        promptContent: '# Test Writer',
+      });
+
+      renderSection();
+      await screen.findByText('researcher');
+
+      expect(screen.getByText('My Plugin')).toBeInTheDocument();
+      expect(screen.getByText('Code Reviewer')).toBeInTheDocument();
+      expect(screen.getByText('Test Writer')).toBeInTheDocument();
+    });
+
+    it('shows multiple plugin groups separately', async () => {
+      registerPluginAgentTemplate('plugin-a', 'Plugin A', {
+        name: 'Agent A',
+        promptContent: '# A',
+      });
+      registerPluginAgentTemplate('plugin-b', 'Plugin B', {
+        name: 'Agent B',
+        promptContent: '# B',
+      });
+
+      renderSection();
+      await screen.findByText('researcher');
+
+      expect(screen.getByTestId('plugin-template-group-plugin-a')).toBeInTheDocument();
+      expect(screen.getByTestId('plugin-template-group-plugin-b')).toBeInTheDocument();
+    });
+
+    it('shows description when provided', async () => {
+      registerPluginAgentTemplate('my-plugin', 'My Plugin', {
+        name: 'Debugger',
+        description: 'Finds and fixes bugs',
+        promptContent: '# Debugger',
+      });
+
+      renderSection();
+      await screen.findByText('researcher');
+
+      expect(screen.getByText('Finds and fixes bugs')).toBeInTheDocument();
+    });
+
+    it('shows Built-in label when both filesystem and plugin templates exist', async () => {
+      registerPluginAgentTemplate('my-plugin', 'My Plugin', {
+        name: 'Agent',
+        promptContent: '# Agent',
+      });
+
+      renderSection();
+      await screen.findByText('researcher');
+
+      expect(screen.getByText('Built-in')).toBeInTheDocument();
+    });
+
+    it('does not show Built-in label when no plugin templates exist', async () => {
+      renderSection();
+      await screen.findByText('researcher');
+
+      expect(screen.queryByText('Built-in')).not.toBeInTheDocument();
+    });
+
+    it('shows Create button on plugin templates', async () => {
+      registerPluginAgentTemplate('my-plugin', 'My Plugin', {
+        name: 'Agent',
+        promptContent: '# Agent',
+      });
+
+      renderSection();
+      await screen.findByText('researcher');
+
+      expect(screen.getByTitle('Create agent from this template')).toBeInTheDocument();
+    });
+
+    it('calls onCreateFromPluginTemplate when Create is clicked', async () => {
+      const handler = vi.fn();
+      registerPluginAgentTemplate('my-plugin', 'My Plugin', {
+        name: 'Agent',
+        promptContent: '# Agent',
+      });
+
+      renderSection({ onCreateFromPluginTemplate: handler });
+      await screen.findByText('researcher');
+
+      fireEvent.click(screen.getByTitle('Create agent from this template'));
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pluginId: 'my-plugin',
+          pluginName: 'My Plugin',
+          template: expect.objectContaining({ name: 'Agent' }),
+        }),
+      );
+    });
+
+    it('disables Create button when disabled', async () => {
+      registerPluginAgentTemplate('my-plugin', 'My Plugin', {
+        name: 'Agent',
+        promptContent: '# Agent',
+      });
+
+      renderSection({ disabled: true });
+      await screen.findByText('researcher');
+
+      expect(screen.getByTitle('Create agent from this template')).toBeDisabled();
     });
   });
 });

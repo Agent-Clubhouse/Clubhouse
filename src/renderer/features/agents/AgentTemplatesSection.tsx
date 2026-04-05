@@ -1,6 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AgentTemplateEntry } from '../../../shared/types';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
+import {
+  getPluginAgentTemplatesByPlugin,
+  onTemplateRegistryChange,
+  type RegisteredPluginAgentTemplate,
+} from '../../plugins/plugin-agent-template-registry';
 
 interface Props {
   worktreePath: string;
@@ -8,11 +13,12 @@ interface Props {
   disabled: boolean;
   refreshKey: number;
   pathLabel?: string;
+  onCreateFromPluginTemplate?: (template: RegisteredPluginAgentTemplate) => void;
 }
 
 type View = 'list' | 'create' | 'edit';
 
-export function AgentTemplatesSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel }: Props) {
+export function AgentTemplatesSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, onCreateFromPluginTemplate }: Props) {
   const [templates, setTemplates] = useState<AgentTemplateEntry[]>([]);
   const [view, setView] = useState<View>('list');
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
@@ -20,6 +26,11 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
   const [templateName, setTemplateName] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  // Plugin-contributed templates
+  const [pluginTemplateGroups, setPluginTemplateGroups] = useState<Map<string, RegisteredPluginAgentTemplate[]>>(
+    () => getPluginAgentTemplatesByPlugin(),
+  );
 
   const loadTemplates = useCallback(async () => {
     if (!worktreePath) return;
@@ -34,6 +45,14 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
   useEffect(() => {
     loadTemplates();
   }, [loadTemplates, refreshKey]);
+
+  // Subscribe to plugin template registry changes
+  useEffect(() => {
+    const disposable = onTemplateRegistryChange(() => {
+      setPluginTemplateGroups(getPluginAgentTemplatesByPlugin());
+    });
+    return () => disposable.dispose();
+  }, []);
 
   const handleCreate = () => {
     setView('create');
@@ -127,6 +146,8 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
     );
   }
 
+  const hasPluginTemplates = pluginTemplateGroups.size > 0;
+
   // List view
   return (
     <section>
@@ -148,7 +169,11 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
         </button>
       </div>
 
-      {templates.length === 0 ? (
+      {/* Built-in (filesystem) templates */}
+      {hasPluginTemplates && templates.length > 0 && (
+        <p className="text-[10px] text-ctp-subtext0/50 uppercase tracking-wider mb-1 mt-2">Built-in</p>
+      )}
+      {templates.length === 0 && !hasPluginTemplates ? (
         <p className="text-xs text-ctp-subtext0/60 py-2">No agent definitions found.</p>
       ) : (
         <div className="space-y-1">
@@ -195,6 +220,57 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
           ))}
         </div>
       )}
+
+      {/* Plugin-contributed templates, grouped by plugin */}
+      {[...pluginTemplateGroups.entries()].map(([pluginId, pluginTemplates]) => {
+        const groupName = pluginTemplates[0]?.pluginName || pluginId;
+        return (
+          <div key={pluginId} className="mt-3" data-testid={`plugin-template-group-${pluginId}`}>
+            <p className="text-[10px] text-ctp-subtext0/50 uppercase tracking-wider mb-1">
+              {groupName}
+            </p>
+            <div className="space-y-1">
+              {pluginTemplates.map((entry) => (
+                <div
+                  key={`${pluginId}:${entry.template.name}`}
+                  className="flex items-center justify-between py-1.5 px-2 rounded bg-surface-0 border border-surface-1"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {entry.template.icon && (
+                      <span
+                        className="flex-shrink-0 text-ctp-subtext0 w-4 h-4"
+                        dangerouslySetInnerHTML={{ __html: entry.template.icon }}
+                      />
+                    )}
+                    <div className="min-w-0">
+                      <span className="text-sm text-ctp-text font-mono truncate block">
+                        {entry.template.name}
+                      </span>
+                      {entry.template.description && (
+                        <span className="text-[10px] text-ctp-subtext0/60 truncate block">
+                          {entry.template.description}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onCreateFromPluginTemplate?.(entry)}
+                    disabled={disabled}
+                    className={`text-xs px-2 py-1 rounded transition-colors flex-shrink-0 ml-2 ${
+                      disabled
+                        ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
+                        : 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 cursor-pointer'
+                    }`}
+                    title="Create agent from this template"
+                  >
+                    Create
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
 
       {/* Delete confirmation dialog */}
       {deleteTarget && (
