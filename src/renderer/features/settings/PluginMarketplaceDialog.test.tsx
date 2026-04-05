@@ -290,7 +290,9 @@ describe('PluginMarketplaceDialog', () => {
     expect(screen.getByText('No plugins match your search.')).toBeInTheDocument();
   });
 
-  it('installs a plugin and registers it in the store', async () => {
+  it('installs a plugin and triggers full community plugin refresh', async () => {
+    // refreshCommunityPlugins requires externalPluginsEnabled to proceed
+    usePluginStore.setState({ externalPluginsEnabled: true });
     window.clubhouse.marketplace.fetchRegistry = vi.fn(async () => sampleResult);
     window.clubhouse.marketplace.installPlugin = vi.fn(async () => ({ success: true }));
     window.clubhouse.plugin.discoverCommunity = vi.fn(async () => [
@@ -325,7 +327,7 @@ describe('PluginMarketplaceDialog', () => {
       });
     });
 
-    // After install, should rediscover and register
+    // After install, refreshCommunityPlugins calls discoverCommunity
     await waitFor(() => {
       expect(window.clubhouse.plugin.discoverCommunity).toHaveBeenCalled();
     });

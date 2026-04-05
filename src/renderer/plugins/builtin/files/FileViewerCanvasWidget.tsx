@@ -9,8 +9,14 @@ import type { GitWorktreeEntry, FileNode } from '../../../../shared/types';
 import { useEditorSettingsStore } from '../../../../renderer/stores/editorSettingsStore';
 import { CanvasFileTree } from '../canvas/CanvasFileTree';
 import { ReadOnlyMonacoEditor } from '../canvas/ReadOnlyMonacoEditor';
+import { MarkdownPreview } from './MarkdownPreview';
 import { ResizableSidebar } from '../canvas/ResizableSidebar';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
+
+function isMarkdownFile(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith('.md') || lower.endsWith('.mdx');
+}
 
 function projectColor(name: string): string {
   let hash = 0;
@@ -44,6 +50,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(() => api.settings.get<boolean>('showHiddenFiles') ?? true);
   const [readOnly, setReadOnly] = useState(true);
+  const [previewMode, setPreviewMode] = useState<'preview' | 'source'>('preview');
   const [worktrees, setWorktrees] = useState<GitWorktreeEntry[]>([]);
 
   const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
@@ -120,6 +127,10 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
 
   const handleSelectFile = useCallback((fp: string) => {
     onUpdateMetadata({ filePath: fp, projectId: projectId ?? null });
+    // Default markdown files to preview mode
+    if (isMarkdownFile(fp)) {
+      setPreviewMode('preview');
+    }
   }, [onUpdateMetadata, projectId]);
 
   const handleSave = useCallback(async (content: string) => {
@@ -261,6 +272,22 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
             </button>
           </>
         )}
+        {filePath && isMarkdownFile(filePath) && fileContent !== null && (
+          <div className="flex items-center bg-surface-0 rounded text-[10px] ml-2">
+            <button
+              className={`px-2 py-0.5 rounded cursor-pointer ${previewMode === 'preview' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`}
+              onClick={() => setPreviewMode('preview')}
+            >
+              Preview
+            </button>
+            <button
+              className={`px-2 py-0.5 rounded cursor-pointer ${previewMode === 'source' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`}
+              onClick={() => setPreviewMode('source')}
+            >
+              Source
+            </button>
+          </div>
+        )}
         <label
           className="flex items-center gap-1 cursor-pointer select-none ml-2"
           title={remote.isRemote ? 'Read-only (remote)' : readOnly ? 'Read-only mode' : 'Edit mode'}
@@ -293,7 +320,9 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
         </ResizableSidebar>
 
         <div className="flex-1 min-w-0 flex flex-col">
-          {filePath && fileContent !== null ? (
+          {filePath && fileContent !== null && isMarkdownFile(filePath) && previewMode === 'preview' ? (
+            <MarkdownPreview content={fileContent} />
+          ) : filePath && fileContent !== null ? (
             <ReadOnlyMonacoEditor
               value={fileContent}
               filePath={filePath}

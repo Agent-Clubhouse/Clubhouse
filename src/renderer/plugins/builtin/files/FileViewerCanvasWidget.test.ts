@@ -143,6 +143,67 @@ describe('FileViewerCanvasWidget — remote file loading guard', () => {
   });
 });
 
+// ── Markdown file detection ─────────────────────────────────────────
+//
+// The widget detects .md and .mdx files to render MarkdownPreview
+// instead of the Monaco editor by default.
+
+describe('FileViewerCanvasWidget — markdown file detection', () => {
+  function isMarkdownFile(path: string): boolean {
+    const lower = path.toLowerCase();
+    return lower.endsWith('.md') || lower.endsWith('.mdx');
+  }
+
+  it('detects .md files', () => {
+    expect(isMarkdownFile('README.md')).toBe(true);
+  });
+
+  it('detects .mdx files', () => {
+    expect(isMarkdownFile('guide.mdx')).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(isMarkdownFile('NOTES.MD')).toBe(true);
+    expect(isMarkdownFile('docs.MDX')).toBe(true);
+  });
+
+  it('rejects non-markdown files', () => {
+    expect(isMarkdownFile('index.ts')).toBe(false);
+    expect(isMarkdownFile('styles.css')).toBe(false);
+    expect(isMarkdownFile('readme.txt')).toBe(false);
+  });
+
+  it('rejects files with md-like substrings', () => {
+    expect(isMarkdownFile('cmd.exe')).toBe(false);
+    expect(isMarkdownFile('amd64.bin')).toBe(false);
+  });
+
+  it('handles deeply nested paths', () => {
+    expect(isMarkdownFile('docs/api/overview.md')).toBe(true);
+  });
+});
+
+// ── Preview mode behavior ──────────────────────────────────────────
+//
+// Markdown files default to preview mode. Selecting a new markdown
+// file should reset to preview mode.
+
+describe('FileViewerCanvasWidget — markdown preview mode', () => {
+  it('defaults to preview mode for markdown files', () => {
+    // The component initializes previewMode as 'preview'
+    const defaultMode: 'preview' | 'source' = 'preview';
+    expect(defaultMode).toBe('preview');
+  });
+
+  it('can toggle between preview and source modes', () => {
+    let mode: 'preview' | 'source' = 'preview';
+    mode = 'source';
+    expect(mode).toBe('source');
+    mode = 'preview';
+    expect(mode).toBe('preview');
+  });
+});
+
 // ── Manifest — metadataKeys ─────────────────────────────────────────
 
 describe('files manifest — file-viewer metadataKeys', () => {

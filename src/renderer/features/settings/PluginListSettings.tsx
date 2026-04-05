@@ -767,6 +767,13 @@ export function PluginListSettings() {
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
 
+  // Auto-refresh community plugins on mount so the list is always current
+  useEffect(() => {
+    if (externalPluginsEnabled) {
+      refreshCommunityPlugins().catch(() => {});
+    }
+  }, []);
+
   const isAppContext = settingsContext === 'app';
   const projectId = isAppContext ? undefined : settingsContext;
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined;

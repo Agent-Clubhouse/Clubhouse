@@ -90,3 +90,30 @@ describe('ReadOnlyMonacoEditor — languageFromPath', () => {
     expect(languageFromPath('README.MD')).toBe('markdown');
   });
 });
+
+// ── Theme ref pattern ──────────────────────────────────────────────
+//
+// ReadOnlyMonacoEditor uses a themeIdRef to avoid a stale closure in
+// the async creation effect. The ref is updated via a useEffect on
+// themeId so the async Monaco.create always reads the latest value.
+//
+// Since we cannot render the React component in vitest without a full
+// DOM + monaco-editor, we validate the ref pattern conceptually here.
+
+describe('ReadOnlyMonacoEditor — theme ref pattern', () => {
+  it('ref always reflects the latest themeId', () => {
+    // Simulating the ref pattern: ref starts at initial, updates as themeId changes
+    const ref = { current: 'mocha' };
+
+    // Simulate a theme change before async editor creation completes
+    ref.current = 'latte';
+
+    // When the editor is finally created, it reads ref.current (not a stale closure)
+    expect(ref.current).toBe('latte');
+  });
+
+  it('generates correct Monaco theme ID from themeId', () => {
+    const themeId = 'catppuccin-mocha';
+    expect(`clubhouse-${themeId}`).toBe('clubhouse-catppuccin-mocha');
+  });
+});

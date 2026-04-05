@@ -230,6 +230,34 @@ describe('PluginListSettings', () => {
     await screen.findByText(/1 plugin\(s\) incompatible/);
   });
 
+  it('auto-refreshes community plugins on mount when external plugins are enabled', async () => {
+    mockRefreshCommunityPlugins.mockClear();
+    mockRefreshCommunityPlugins.mockResolvedValue({ discovered: [], refreshed: [], activated: [], incompatible: [] });
+    usePluginStore.setState({
+      externalPluginsEnabled: true,
+    } as any);
+
+    render(<PluginListSettings />);
+
+    // refreshCommunityPlugins should be called on mount without user interaction
+    await vi.waitFor(() => {
+      expect(mockRefreshCommunityPlugins).toHaveBeenCalled();
+    });
+  });
+
+  it('does not auto-refresh on mount when external plugins are disabled', async () => {
+    mockRefreshCommunityPlugins.mockClear();
+    usePluginStore.setState({
+      externalPluginsEnabled: false,
+    } as any);
+
+    render(<PluginListSettings />);
+
+    // Give effect time to run
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mockRefreshCommunityPlugins).not.toHaveBeenCalled();
+  });
+
   describe('check for updates UI', () => {
     it('renders "Check for Updates" button in app context with external plugins enabled', () => {
       usePluginStore.setState({
