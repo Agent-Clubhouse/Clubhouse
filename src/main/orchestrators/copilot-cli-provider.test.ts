@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
+  statSync: vi.fn(() => ({ isDirectory: () => false })),
   mkdirSync: vi.fn(),
   readFileSync: vi.fn(() => '# Instructions'),
   writeFileSync: vi.fn(),
@@ -12,6 +13,11 @@ vi.mock('fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
   readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
   writeFile: vi.fn(async () => undefined),
+  readdir: vi.fn(async () => []),
+  stat: vi.fn(async () => ({
+    birthtime: new Date('2026-04-01T10:00:00Z'),
+    mtime: new Date('2026-04-01T12:00:00Z'),
+  })),
 }));
 
 vi.mock('child_process', () => ({
@@ -33,6 +39,10 @@ vi.mock('./shared', () => ({
 
 vi.mock('../services/config-pipeline', () => ({
   isClubhouseHookEntry: vi.fn(() => false),
+}));
+
+vi.mock('../services/log-service', () => ({
+  appLog: vi.fn(),
 }));
 
 vi.mock('../util/shell', () => ({
@@ -731,6 +741,274 @@ describe('CopilotCliProvider', () => {
     it('produces valid JSON that can be parsed', () => {
       const args = provider.buildMcpArgs(mockServerDef);
       expect(() => JSON.parse(args[1])).not.toThrow();
+    });
+  });
+
+  describe('SessionCapable', () => {
+    describe('listSessions', () => {
+      it('returns empty array when session directory does not exist', async () => {
+        vi.mocked(fs.existsSync).mockReturnValue(false);
+        const sessions = await provider.listSessions('/project');
+        expect(sessions).toEqual([]);
+      });
+
+      it('discovers JSONL session files in session-state directory', async () => {
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          const s = String(p);
+          return s.includes('session-state');
+        });
+        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
+          const d = String(dir);
+          if (d.endsWith('session-state')) {
+            return [
+              { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false },
+              { name: 'f9e8d7c6-b5a4-3210-fedc-ba9876543210.json', isFile: () => true, isDirectory: () => false },
+            ] as any;
+          }
+          return [];
+        });
+        vi.mocked(fsp.stat).mockResolvedValue({
+          birthtime: new Date('2026-04-01T10:00:00Z'),
+          mtime: new Date('2026-04-01T12:00:00Z'),
+        } as any);
+
+        const sessions = await provider.listSessions('/project');
+        expect(sessions).toHaveLength(2);
+        expect(sessions[0].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+        expect(sessions[1].sessionId).toBe('f9e8d7c6-b5a4-3210-fedc-ba9876543210');
+      });
+
+      it('skips non-UUID filenames like config files', async () => {
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          return String(p).includes('session-state');
+        });
+        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
+          if (String(dir).endsWith('session-state')) {
+            return [
+              { name: 'config.json', isFile: () => true, isDirectory: () => false },
+              { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false },
+            ] as any;
+          }
+          return [];
+        });
+        vi.mocked(fsp.stat).mockResolvedValue({
+          birthtime: new Date('2026-04-01T10:00:00Z'),
+          mtime: new Date('2026-04-01T12:00:00Z'),
+        } as any);
+
+        const sessions = await provider.listSessions('/project');
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      });
+
+      it('sorts sessions by most recently active first', async () => {
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          return String(p).includes('session-state');
+        });
+        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
+          if (String(dir).endsWith('session-state')) {
+            return [
+              { name: 'aaaa1111-0000-0000-0000-000000000001.jsonl', isFile: () => true, isDirectory: () => false },
+              { name: 'bbbb2222-0000-0000-0000-000000000002.jsonl', isFile: () => true, isDirectory: () => false },
+            ] as any;
+          }
+          return [];
+        });
+        let callCount = 0;
+        vi.mocked(fsp.stat).mockImplementation(async () => {
+          callCount++;
+          if (callCount === 1) {
+            return { birthtime: new Date('2026-04-01T08:00:00Z'), mtime: new Date('2026-04-01T09:00:00Z') } as any;
+          }
+          return { birthtime: new Date('2026-04-02T08:00:00Z'), mtime: new Date('2026-04-02T15:00:00Z') } as any;
+        });
+
+        const sessions = await provider.listSessions('/project');
+        expect(sessions).toHaveLength(2);
+        // Most recently active first
+        expect(sessions[0].sessionId).toBe('bbbb2222-0000-0000-0000-000000000002');
+        expect(sessions[1].sessionId).toBe('aaaa1111-0000-0000-0000-000000000001');
+      });
+
+      it('deduplicates sessions found in multiple directories', async () => {
+        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          return String(p).includes('session-state');
+        });
+        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
+          const d = String(dir);
+          if (d.endsWith('session-state')) {
+            return [
+              { name: `${sessionId}.jsonl`, isFile: () => true, isDirectory: () => false },
+              { name: 'project-subdir', isFile: () => false, isDirectory: () => true },
+            ] as any;
+          }
+          if (d.endsWith('project-subdir')) {
+            return [
+              { name: `${sessionId}.jsonl`, isFile: () => true, isDirectory: () => false },
+            ] as any;
+          }
+          return [];
+        });
+        vi.mocked(fsp.stat).mockResolvedValue({
+          birthtime: new Date('2026-04-01T10:00:00Z'),
+          mtime: new Date('2026-04-01T12:00:00Z'),
+        } as any);
+
+        const sessions = await provider.listSessions('/project');
+        expect(sessions).toHaveLength(1);
+      });
+
+      it('uses custom config dir from profileEnv', async () => {
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          return String(p).includes('/custom-copilot/session-state');
+        });
+        vi.mocked(fsp.readdir).mockResolvedValue([]);
+
+        await provider.listSessions('/project', { GH_COPILOT_CONFIG_DIR: '/custom-copilot' });
+        // Should have checked the custom path, not ~/.copilot
+        expect(fs.existsSync).toHaveBeenCalledWith('/custom-copilot/session-state');
+      });
+    });
+
+    describe('readSessionTranscript', () => {
+      it('returns null when session directory does not exist', async () => {
+        vi.mocked(fs.existsSync).mockReturnValue(false);
+        const result = await provider.readSessionTranscript('some-id', '/project');
+        expect(result).toBeNull();
+      });
+
+      it('reads and parses JSONL session file', async () => {
+        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          const s = String(p);
+          return s.includes('session-state') || s.endsWith(`${sessionId}.jsonl`);
+        });
+        vi.mocked(fsp.readdir).mockResolvedValue([]);
+        vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+          if (String(p).endsWith('.jsonl')) {
+            return '{"type":"assistant","content_block":{"type":"text","text":"Hello"}}\n{"type":"result","result":"done"}\n';
+          }
+          throw new Error('ENOENT');
+        });
+
+        const events = await provider.readSessionTranscript(sessionId, '/project');
+        expect(events).not.toBeNull();
+        expect(events).toHaveLength(2);
+        expect(events![0].type).toBe('assistant');
+        expect(events![1].type).toBe('result');
+      });
+
+      it('skips malformed JSONL lines gracefully', async () => {
+        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          const s = String(p);
+          return s.includes('session-state') || s.endsWith(`${sessionId}.jsonl`);
+        });
+        vi.mocked(fsp.readdir).mockResolvedValue([]);
+        vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+          if (String(p).endsWith('.jsonl')) {
+            return '{"type":"assistant"}\nINVALID JSON LINE\n{"type":"result"}\n';
+          }
+          throw new Error('ENOENT');
+        });
+
+        const events = await provider.readSessionTranscript(sessionId, '/project');
+        expect(events).not.toBeNull();
+        expect(events).toHaveLength(2);
+      });
+
+      it('returns null when no session file found', async () => {
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          return String(p).endsWith('session-state');
+        });
+        vi.mocked(fsp.readdir).mockResolvedValue([]);
+
+        const result = await provider.readSessionTranscript('nonexistent-id', '/project');
+        expect(result).toBeNull();
+      });
+
+      it('returns null for empty session file', async () => {
+        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          const s = String(p);
+          return s.includes('session-state') || s.endsWith(`${sessionId}.jsonl`);
+        });
+        vi.mocked(fsp.readdir).mockResolvedValue([]);
+        vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+          if (String(p).endsWith('.jsonl')) return '\n\n';
+          throw new Error('ENOENT');
+        });
+
+        const events = await provider.readSessionTranscript(sessionId, '/project');
+        expect(events).toBeNull();
+      });
+
+      it('checks directory-style sessions when no file match', async () => {
+        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+          const s = String(p);
+          return s.includes('session-state') || s.endsWith(sessionId);
+        });
+        vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
+        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
+          const d = String(dir);
+          if (d.endsWith(sessionId)) {
+            return ['transcript.jsonl'] as any;
+          }
+          return [];
+        });
+        vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+          if (String(p).endsWith('transcript.jsonl')) {
+            return '{"type":"assistant","content_block":{"type":"text","text":"Hi"}}\n';
+          }
+          throw new Error('ENOENT');
+        });
+
+        const events = await provider.readSessionTranscript(sessionId, '/project');
+        expect(events).not.toBeNull();
+        expect(events).toHaveLength(1);
+      });
+    });
+
+    describe('extractSessionId', () => {
+      it('extracts UUID from "session: <uuid>" pattern', () => {
+        const id = provider.extractSessionId('Starting session: a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+        expect(id).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      });
+
+      it('extracts UUID from "conversation: <uuid>" pattern', () => {
+        const id = provider.extractSessionId('conversation: f9e8d7c6-b5a4-3210-fedc-ba9876543210');
+        expect(id).toBe('f9e8d7c6-b5a4-3210-fedc-ba9876543210');
+      });
+
+      it('extracts UUID from "thread: <uuid>" pattern', () => {
+        const id = provider.extractSessionId('Active thread: 12345678-1234-1234-1234-123456789abc');
+        expect(id).toBe('12345678-1234-1234-1234-123456789abc');
+      });
+
+      it('extracts UUID from "resume: <uuid>" pattern', () => {
+        const id = provider.extractSessionId('Resuming resume: a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+        expect(id).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      });
+
+      it('extracts UUID from "continuing: <uuid>" pattern', () => {
+        const id = provider.extractSessionId('continuing: a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+        expect(id).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      });
+
+      it('returns null when no session ID found', () => {
+        expect(provider.extractSessionId('Welcome to Copilot CLI')).toBeNull();
+      });
+
+      it('returns null for empty string', () => {
+        expect(provider.extractSessionId('')).toBeNull();
+      });
+
+      it('is case-insensitive', () => {
+        const id = provider.extractSessionId('SESSION: A1B2C3D4-E5F6-7890-ABCD-EF1234567890');
+        expect(id).toBe('A1B2C3D4-E5F6-7890-ABCD-EF1234567890');
+      });
     });
   });
 
