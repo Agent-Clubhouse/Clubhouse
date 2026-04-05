@@ -17,7 +17,6 @@ vi.mock('../log-service', () => ({
 }));
 
 import { ProcessBridge } from './process-bridge';
-import type { BridgeResult } from './process-bridge';
 
 describe('ProcessBridge', () => {
   let bridge: ProcessBridge;
@@ -98,7 +97,7 @@ describe('ProcessBridge', () => {
   });
 
   it('_resetForTesting clears pending calls', async () => {
-    const promise = bridge.send({ command: 'reset_test' });
+    bridge.send({ command: 'reset_test' });
     bridge._resetForTesting();
 
     // Should not resolve with timeout error after reset since timer was cleared

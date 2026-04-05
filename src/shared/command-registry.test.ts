@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CommandRegistry, commandRegistry } from './command-registry';
-import type { CommandDefinition, ExecutionContext, CommandResult } from './command-registry';
+import type { CommandDefinition, ExecutionContext } from './command-registry';
 
 function makeDef(overrides: Partial<CommandDefinition> & { id: string }): CommandDefinition {
   return {
