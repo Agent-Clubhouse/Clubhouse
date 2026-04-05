@@ -8,6 +8,16 @@ const EXPERIMENTAL_FEATURES: Array<{
   description: string;
 }> = [
   {
+    id: 'assistant',
+    label: 'Assistant',
+    description: 'Built-in interactive help agent that can configure the app, manage agents, and answer questions. Requires app restart.',
+  },
+  {
+    id: 'agentQueue',
+    label: 'Agent Queue',
+    description: 'Queue multiple agents on a canvas card for sequential or parallel execution. Requires app restart.',
+  },
+  {
     id: 'structuredMode',
     label: 'Structured Mode',
     description: 'Enable the structured agent execution mode for providers that support it (ACP protocol).',

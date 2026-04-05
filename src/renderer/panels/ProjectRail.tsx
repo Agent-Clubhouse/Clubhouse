@@ -273,6 +273,16 @@ export function ProjectRail() {
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
   const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
 
+  const [assistantEnabled, setAssistantEnabled] = useState(true);
+  useEffect(() => {
+    window.clubhouse.app.getExperimentalSettings().then((flags) => {
+      // Assistant is experimental: hidden unless explicitly enabled OR on preview-eligible builds
+      window.clubhouse.app.isPreviewEligible().then((isPreview) => {
+        setAssistantEnabled(!!flags.assistant || isPreview);
+      });
+    });
+  }, []);
+
   const inSettings = explorerTab === 'settings';
   const inHelp = explorerTab === 'help';
   const inAssistant = explorerTab === 'assistant';
@@ -731,7 +741,7 @@ export function ProjectRail() {
             Common footer: Help & Settings
             ================================================================ */}
         <div className="border-t border-surface-2 my-1 flex-shrink-0" />
-        <button
+        {assistantEnabled && <button
           onClick={toggleAssistant}
           title="Assistant"
           data-testid="nav-assistant"
@@ -760,7 +770,7 @@ export function ProjectRail() {
             </svg>
           </div>
           <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Assistant</span>
-        </button>
+        </button>}
         <button
           onClick={toggleSettings}
           title="Settings"

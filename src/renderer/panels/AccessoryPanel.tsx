@@ -1,8 +1,6 @@
-import { useEffect, useState } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useProjectStore } from '../stores/projectStore';
-import { useUpdateStore } from '../stores/updateStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { PluginAPIProvider } from '../plugins/plugin-context';
 import { createPluginAPI } from '../plugins/plugin-api-factory';
@@ -16,16 +14,8 @@ function SettingsCategoryNav() {
   const settingsContext = useUIStore((s) => s.settingsContext);
   const settingsSubPage = useUIStore((s) => s.settingsSubPage);
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
-  const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
-  const [showExperimental, setShowExperimental] = useState(false);
-  const [showAnnex, setShowAnnex] = useState(false);
-  useEffect(() => {
-    window.clubhouse.app.isPreviewEligible().then((isPreview) => {
-      setShowExperimental(isPreview);
-      // Annex is always available on preview-eligible builds
-      setShowAnnex(isPreview);
-    });
-  }, [previewChannel]);
+  // Experimental settings always visible — stable builds have experimental features (assistant, agent queue)
+  const showExperimental = true;
 
   const navButton = (label: string, page: SettingsSubPage) => (
     <button
@@ -60,8 +50,8 @@ function SettingsCategoryNav() {
             {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
             {navButton('Notifications & Alerts', 'notifications')}
             {navButton('Plugins', 'plugins')}
-            {showAnnex && navButton('Annex', 'annex')}
-            {showAnnex && navButton('Annex Control', 'annex-control')}
+            {navButton('Annex', 'annex')}
+            {navButton('Annex Control', 'annex-control')}
             {navButton('Clubhouse MCP', 'mcp')}
             {navButton('Updates', 'updates')}
             {navButton('Logging', 'logging')}

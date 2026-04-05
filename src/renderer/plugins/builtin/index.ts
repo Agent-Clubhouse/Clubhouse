@@ -49,9 +49,12 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: canvasManifest, module: canvasModule },
     { manifest: reviewManifest, module: reviewModule },
     { manifest: groupProjectManifest, module: groupProjectModule },
-    { manifest: agentQueueManifest, module: agentQueueModule },
     { manifest: stickyNoteManifest, module: stickyNoteModule },
   ];
+
+  if (experimentalFlags.agentQueue) {
+    plugins.push({ manifest: agentQueueManifest, module: agentQueueModule });
+  }
 
   if (experimentalFlags.sessions) {
     plugins.push({ manifest: sessionsManifest, module: sessionsModule });
