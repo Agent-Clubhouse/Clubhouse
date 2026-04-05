@@ -58,6 +58,9 @@ interface UIState {
   quickAgentDialogOpen: boolean;
   openQuickAgentDialog: () => void;
   closeQuickAgentDialog: () => void;
+  blueprintGalleryOpen: boolean;
+  openBlueprintGallery: () => void;
+  closeBlueprintGallery: () => void;
 }
 
 const initialPrefs = loadViewPrefs();
@@ -154,4 +157,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   quickAgentDialogOpen: false,
   openQuickAgentDialog: () => set({ quickAgentDialogOpen: true }),
   closeQuickAgentDialog: () => set({ quickAgentDialogOpen: false }),
+  blueprintGalleryOpen: false,
+  openBlueprintGallery: () => set({ blueprintGalleryOpen: true }),
+  closeBlueprintGallery: () => set({ blueprintGalleryOpen: false }),
 }));

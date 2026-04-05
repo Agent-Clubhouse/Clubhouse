@@ -356,6 +356,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().addCanvas();
   }, [store, remoteForward]);
 
+  const handleAddFromBlueprint = useCallback(() => {
+    useUIStore.getState().openBlueprintGallery();
+  }, []);
+
   const handleRemoveCanvas = useCallback((canvasId: string) => {
     remoteForward({ type: 'removeCanvas', canvasId });
     // Unbind all MCP wires and remove wire definitions for views on this canvas
@@ -520,6 +524,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       activeCanvasId,
       onSelectCanvas: handleSelectCanvas,
       onAddCanvas: handleAddCanvas,
+      onAddFromBlueprint: handleAddFromBlueprint,
       onRemoveCanvas: handleRemoveCanvas,
       onRenameCanvas: handleRenameCanvas,
       onPopOutCanvas: handlePopOutCanvas,

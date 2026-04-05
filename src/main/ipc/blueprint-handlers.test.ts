@@ -1,0 +1,181 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('electron', () => ({
+  ipcMain: {
+    handle: vi.fn(),
+  },
+}));
+
+vi.mock('../services/project-store', () => ({
+  list: vi.fn(async () => []),
+}));
+
+vi.mock('../services/log-service', () => ({
+  appLog: vi.fn(),
+}));
+
+vi.mock('fs/promises', () => ({
+  access: vi.fn(),
+  readdir: vi.fn(),
+  readFile: vi.fn(),
+}));
+
+import { ipcMain } from 'electron';
+import * as fsp from 'fs/promises';
+import * as projectStore from '../services/project-store';
+import { registerBlueprintHandlers } from './blueprint-handlers';
+
+// Extract registered handler from ipcMain.handle mock
+function getHandler(channel: string): (...args: unknown[]) => unknown {
+  const calls = (ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls;
+  const match = calls.find(([ch]: [string]) => ch === channel);
+  if (!match) throw new Error(`No handler registered for channel: ${channel}`);
+  return match[1] as (...args: unknown[]) => unknown;
+}
+
+describe('blueprint-handlers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    registerBlueprintHandlers();
+  });
+
+  describe('BLUEPRINT.LIST', () => {
+    it('registers both blueprint IPC handlers', () => {
+      const channels = (ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.map(([ch]: [string]) => ch);
+      expect(channels).toContain('blueprint:list');
+      expect(channels).toContain('blueprint:read');
+    });
+
+    it('returns empty array when no projects have blueprints directory', async () => {
+      vi.mocked(projectStore.list).mockResolvedValue([
+        { id: 'p1', name: 'test', path: '/tmp/test', displayName: 'Test' } as any,
+      ]);
+      vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
+
+      const handler = getHandler('blueprint:list');
+      const result = await handler({});
+      expect(result).toEqual([]);
+    });
+
+    it('scans and parses blueprint JSON files', async () => {
+      vi.mocked(projectStore.list).mockResolvedValue([
+        { id: 'p1', name: 'my-project', path: '/tmp/proj', displayName: 'My Project' } as any,
+      ]);
+      vi.mocked(fsp.access).mockResolvedValue(undefined);
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'squad.json', isFile: () => true } as any,
+        { name: 'not-json.txt', isFile: () => true } as any,
+        { name: 'subdir', isFile: () => false } as any,
+      ]);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
+        version: 1,
+        name: 'Squad Setup',
+        description: 'A team of agents',
+        views: [
+          { type: 'agent', title: 'Agent A', position: { x: 0, y: 0 }, size: { width: 480, height: 480 }, metadata: {} },
+          { type: 'anchor', title: 'Notes', position: { x: 500, y: 0 }, size: { width: 240, height: 50 }, metadata: {} },
+        ],
+      }));
+
+      const handler = getHandler('blueprint:list');
+      const result = await handler({}) as any[];
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('Squad Setup');
+      expect(result[0].description).toBe('A team of agents');
+      expect(result[0].viewCount).toBe(2);
+      expect(result[0].agentCount).toBe(1);
+      expect(result[0].wireCount).toBe(0);
+      expect(result[0].version).toBe(1);
+      expect(result[0].source).toBe('My Project');
+    });
+
+    it('handles BlueprintManifest format with nested canvas.views and canvas.wires', async () => {
+      vi.mocked(projectStore.list).mockResolvedValue([
+        { id: 'p1', name: 'proj', path: '/tmp/proj', displayName: 'Proj' } as any,
+      ]);
+      vi.mocked(fsp.access).mockResolvedValue(undefined);
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'manifest.json', isFile: () => true } as any,
+      ]);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
+        schemaVersion: 1,
+        name: 'Bake-off',
+        description: 'Competition blueprint',
+        canvas: {
+          views: [
+            { refId: 'v1', type: 'agent', displayName: 'Alpha' },
+            { refId: 'v2', type: 'agent', displayName: 'Beta' },
+            { refId: 'v3', type: 'anchor', displayName: 'Hub' },
+          ],
+          wires: [
+            { sourceRef: 'v1', targetRef: 'v3' },
+            { sourceRef: 'v2', targetRef: 'v3' },
+          ],
+        },
+        agents: [{ refId: 'a1', name: 'Alpha' }, { refId: 'a2', name: 'Beta' }],
+      }));
+
+      const handler = getHandler('blueprint:list');
+      const result = await handler({}) as any[];
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('Bake-off');
+      expect(result[0].viewCount).toBe(3);
+      expect(result[0].agentCount).toBe(2);
+      expect(result[0].wireCount).toBe(2);
+    });
+
+    it('skips invalid JSON files without crashing', async () => {
+      vi.mocked(projectStore.list).mockResolvedValue([
+        { id: 'p1', name: 'proj', path: '/tmp/proj', displayName: 'Proj' } as any,
+      ]);
+      vi.mocked(fsp.access).mockResolvedValue(undefined);
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'bad.json', isFile: () => true } as any,
+      ]);
+      vi.mocked(fsp.readFile).mockResolvedValue('not valid json {{{');
+
+      const handler = getHandler('blueprint:list');
+      const result = await handler({}) as any[];
+      expect(result).toEqual([]);
+    });
+
+    it('scans multiple projects', async () => {
+      vi.mocked(projectStore.list).mockResolvedValue([
+        { id: 'p1', name: 'proj-a', path: '/tmp/a', displayName: 'A' } as any,
+        { id: 'p2', name: 'proj-b', path: '/tmp/b', displayName: 'B' } as any,
+      ]);
+      vi.mocked(fsp.access).mockResolvedValue(undefined);
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'bp.json', isFile: () => true } as any,
+      ]);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
+        version: 1, name: 'Test', views: [],
+      }));
+
+      const handler = getHandler('blueprint:list');
+      const result = await handler({}) as any[];
+      expect(result).toHaveLength(2);
+      expect(result[0].source).toBe('A');
+      expect(result[1].source).toBe('B');
+    });
+  });
+
+  describe('BLUEPRINT.READ', () => {
+    it('reads and parses a blueprint file by path', async () => {
+      const data = { version: 1, name: 'Test', views: [] };
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(data));
+
+      const handler = getHandler('blueprint:read');
+      const result = await handler({}, '/tmp/test.json');
+      expect(result).toEqual(data);
+    });
+
+    it('returns null for missing files', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+
+      const handler = getHandler('blueprint:read');
+      const result = await handler({}, '/tmp/missing.json');
+      expect(result).toBeNull();
+    });
+  });
+});

@@ -554,6 +554,35 @@ export function useCommandSource(): CommandItem[] {
       },
     });
 
+    items.push({
+      id: 'action:import-blueprint',
+      label: 'Import Blueprint',
+      category: 'Actions',
+      keywords: ['blueprint', 'canvas', 'template', 'import', 'board', 'layout'],
+      execute: () => { useUIStore.getState().openBlueprintGallery(); },
+    });
+
+    items.push({
+      id: 'action:export-blueprint',
+      label: 'Export Canvas as Blueprint',
+      category: 'Actions',
+      keywords: ['blueprint', 'canvas', 'export', 'save', 'share', 'board'],
+      execute: () => {
+        // Export the currently active canvas as a blueprint to clipboard
+        const canvasStore = activeProjectId
+          ? getProjectCanvasStore(activeProjectId)
+          : useAppCanvasStore;
+        const { canvases, activeCanvasId } = canvasStore.getState();
+        const canvas = canvases.find((c) => c.id === activeCanvasId);
+        if (!canvas) return;
+        // Dynamic import to avoid circular deps at module level
+        import('../../plugins/builtin/canvas/canvas-blueprint').then(({ exportBlueprint }) => {
+          const blueprint = exportBlueprint(canvas);
+          navigator.clipboard.writeText(JSON.stringify(blueprint, null, 2)).catch(() => {});
+        });
+      },
+    });
+
     return items;
   }, [
     shortcuts, activeProjectId, annexEnabled, annexSettings, annexStatus,

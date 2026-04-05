@@ -197,6 +197,8 @@ vi.stubGlobal('clubhouse', {
   },
   blueprint: {
     saveDialog: async () => ({ canceled: true }),
+    list: vi.fn(async () => []),
+    read: vi.fn(async () => null),
   },
   plugin: {
     discoverCommunity: async () => [],
