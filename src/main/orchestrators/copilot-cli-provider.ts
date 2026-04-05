@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import {
@@ -12,6 +13,7 @@ import {
   StructuredAdapter,
   HookCapable,
   HeadlessCapable,
+  SessionCapable,
   StructuredCapable,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
@@ -19,6 +21,7 @@ import { BaseProvider } from './base-provider';
 import { AcpAdapter } from './adapters';
 import { homePath, parseModelChoicesFromHelp } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { appLog } from '../services/log-service';
 
 const TOOL_VERBS: Record<string, string> = {
   shell: 'Running command',
@@ -54,7 +57,7 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   userPromptSubmitted: 'notification',
 };
 
-export class CopilotCliProvider extends BaseProvider implements HookCapable, HeadlessCapable, StructuredCapable {
+export class CopilotCliProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable, StructuredCapable {
   readonly id = 'copilot-cli' as const;
   readonly displayName = 'GitHub Copilot CLI';
   readonly shortName = 'GHCP';
@@ -280,5 +283,198 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     }
 
     return { binary, args, outputKind: 'stream-json' };
+  }
+
+  // ── SessionCapable ──────────────────────────────────────────────────────
+
+  /**
+   * Resolve the Copilot CLI session directory for a given working directory.
+   *
+   * GitHub Copilot CLI stores session data under ~/.copilot/session-state/.
+   * Sessions may be organized by project path or stored flat.
+   */
+  private resolveSessionDir(cwd: string, profileEnv?: Record<string, string>): string | null {
+    const configDir = profileEnv?.GH_COPILOT_CONFIG_DIR || homePath('.copilot');
+    const sessionDir = path.join(configDir, 'session-state');
+
+    if (!fs.existsSync(sessionDir)) return null;
+
+    // Check for project-scoped subdirectory (path encoded with dashes)
+    const absCwd = path.resolve(cwd);
+    const encodedPath = absCwd.replace(/[/\\]/g, '-');
+    const candidates = [encodedPath, encodedPath.replace(/^-/, '')];
+
+    for (const candidate of candidates) {
+      const dir = path.join(sessionDir, candidate);
+      if (fs.existsSync(dir)) {
+        return dir;
+      }
+    }
+
+    // Fall back to the flat session-state directory
+    return sessionDir;
+  }
+
+  /**
+   * List available CLI sessions by scanning Copilot CLI's session storage.
+   */
+  async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+    const sessionDir = this.resolveSessionDir(cwd, profileEnv);
+    if (!sessionDir) return [];
+
+    const sessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
+    const seenIds = new Set<string>();
+
+    // Scan session directory and any project-scoped subdirectories
+    const dirsToScan = [sessionDir];
+
+    try {
+      const topEntries = await fsp.readdir(sessionDir, { withFileTypes: true });
+      for (const entry of topEntries) {
+        if (entry.isDirectory()) {
+          dirsToScan.push(path.join(sessionDir, entry.name));
+        }
+      }
+    } catch {
+      // Can't read top-level — just scan sessionDir itself
+    }
+
+    for (const dir of dirsToScan) {
+      try {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isFile() || (!entry.name.endsWith('.json') && !entry.name.endsWith('.jsonl'))) continue;
+
+          const ext = path.extname(entry.name);
+          const sessionId = path.basename(entry.name, ext);
+          // Accept UUID-like or hex-based session identifiers
+          if (!/^[0-9a-f-]{8,}$/i.test(sessionId)) continue;
+          if (seenIds.has(sessionId)) continue;
+          seenIds.add(sessionId);
+
+          try {
+            const stat = await fsp.stat(path.join(dir, entry.name));
+            sessions.push({
+              sessionId,
+              startedAt: stat.birthtime.toISOString(),
+              lastActiveAt: stat.mtime.toISOString(),
+            });
+          } catch (err) {
+            appLog('core:orchestrator', 'warn', 'Failed to stat GHCP session file', {
+              meta: { file: entry.name, error: err instanceof Error ? err.message : String(err) },
+            });
+          }
+        }
+      } catch (err) {
+        appLog('core:orchestrator', 'warn', 'Failed to read GHCP session directory', {
+          meta: { dir, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
+
+    // Sort by most recently active first
+    sessions.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
+    return sessions;
+  }
+
+  /**
+   * Read a historical session transcript from Copilot CLI's session storage.
+   * Returns raw StreamJsonEvent[] or null if session not found.
+   */
+  async readSessionTranscript(
+    sessionId: string,
+    cwd: string,
+    profileEnv?: Record<string, string>,
+  ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
+    const sessionDir = this.resolveSessionDir(cwd, profileEnv);
+    if (!sessionDir) return null;
+
+    // Search for session file in the session directory and subdirectories
+    const searchPaths = [
+      path.join(sessionDir, `${sessionId}.jsonl`),
+      path.join(sessionDir, `${sessionId}.json`),
+    ];
+
+    // Also check project-scoped subdirectories
+    try {
+      const topEntries = await fsp.readdir(sessionDir, { withFileTypes: true });
+      for (const entry of topEntries) {
+        if (entry.isDirectory()) {
+          searchPaths.push(
+            path.join(sessionDir, entry.name, `${sessionId}.jsonl`),
+            path.join(sessionDir, entry.name, `${sessionId}.json`),
+          );
+        }
+      }
+    } catch {
+      // Can't list subdirectories — just use top-level paths
+    }
+
+    let filePath: string | null = null;
+    for (const p of searchPaths) {
+      if (fs.existsSync(p)) {
+        filePath = p;
+        break;
+      }
+    }
+
+    // Check for directory-style sessions (session ID as folder name)
+    if (!filePath) {
+      const dirPath = path.join(sessionDir, sessionId);
+      if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
+        try {
+          const entries = await fsp.readdir(dirPath);
+          const jsonlFile = entries.find((e) => e.endsWith('.jsonl'));
+          if (jsonlFile) {
+            filePath = path.join(dirPath, jsonlFile);
+          }
+        } catch (err) {
+          appLog('core:orchestrator', 'warn', 'Failed to read GHCP session directory entries', {
+            meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
+          });
+        }
+      }
+    }
+
+    if (!filePath) return null;
+
+    try {
+      const content = await fsp.readFile(filePath, 'utf-8');
+      const events: import('../services/jsonl-parser').StreamJsonEvent[] = [];
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          events.push(JSON.parse(trimmed));
+        } catch {
+          // Skip malformed lines — expected in truncated sessions
+        }
+      }
+      return events.length > 0 ? events : null;
+    } catch (err) {
+      appLog('core:orchestrator', 'warn', 'Failed to read GHCP session transcript', {
+        meta: { filePath, error: err instanceof Error ? err.message : String(err) },
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Extract session ID from PTY buffer output.
+   * Looks for conversation/session UUID patterns in Copilot CLI output.
+   */
+  extractSessionId(ptyBuffer: string): string | null {
+    // Copilot CLI may emit session/conversation IDs as UUIDs in various contexts
+    const sessionPatterns = [
+      /(?:session|conversation|thread)[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+      /(?:resume|continuing)[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+    ];
+
+    for (const pattern of sessionPatterns) {
+      const match = ptyBuffer.match(pattern);
+      if (match) return match[1];
+    }
+
+    return null;
   }
 }
