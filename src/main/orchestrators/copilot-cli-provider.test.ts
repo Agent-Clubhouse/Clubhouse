@@ -754,8 +754,7 @@ describe('CopilotCliProvider', () => {
 
       it('discovers JSONL session files in session-state directory', async () => {
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          const s = String(p);
-          return s.includes('session-state');
+          return String(p).endsWith('/session-state');
         });
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
           const d = String(dir);
@@ -780,7 +779,7 @@ describe('CopilotCliProvider', () => {
 
       it('skips non-UUID filenames like config files', async () => {
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p).includes('session-state');
+          return String(p).endsWith('/session-state');
         });
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
           if (String(dir).endsWith('session-state')) {
@@ -803,7 +802,7 @@ describe('CopilotCliProvider', () => {
 
       it('sorts sessions by most recently active first', async () => {
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p).includes('session-state');
+          return String(p).endsWith('/session-state');
         });
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
           if (String(dir).endsWith('session-state')) {
@@ -833,7 +832,7 @@ describe('CopilotCliProvider', () => {
       it('deduplicates sessions found in multiple directories', async () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p).includes('session-state');
+          return String(p).endsWith('/session-state');
         });
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
           const d = String(dir);
@@ -861,7 +860,7 @@ describe('CopilotCliProvider', () => {
 
       it('uses custom config dir from profileEnv', async () => {
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return String(p).includes('/custom-copilot/session-state');
+          return String(p) === '/custom-copilot/session-state';
         });
         vi.mocked(fsp.readdir).mockResolvedValue([]);
 
@@ -882,7 +881,7 @@ describe('CopilotCliProvider', () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
           const s = String(p);
-          return s.includes('session-state') || s.endsWith(`${sessionId}.jsonl`);
+          return s.endsWith('/session-state') || s.endsWith(`${sessionId}.jsonl`);
         });
         vi.mocked(fsp.readdir).mockResolvedValue([]);
         vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
@@ -903,7 +902,7 @@ describe('CopilotCliProvider', () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
           const s = String(p);
-          return s.includes('session-state') || s.endsWith(`${sessionId}.jsonl`);
+          return s.endsWith('/session-state') || s.endsWith(`${sessionId}.jsonl`);
         });
         vi.mocked(fsp.readdir).mockResolvedValue([]);
         vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
@@ -932,7 +931,7 @@ describe('CopilotCliProvider', () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
           const s = String(p);
-          return s.includes('session-state') || s.endsWith(`${sessionId}.jsonl`);
+          return s.endsWith('/session-state') || s.endsWith(`${sessionId}.jsonl`);
         });
         vi.mocked(fsp.readdir).mockResolvedValue([]);
         vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
@@ -948,7 +947,7 @@ describe('CopilotCliProvider', () => {
         const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
         vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
           const s = String(p);
-          return s.includes('session-state') || s.endsWith(sessionId);
+          return s.endsWith('/session-state') || s.endsWith(sessionId);
         });
         vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
         vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
