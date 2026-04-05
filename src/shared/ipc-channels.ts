@@ -449,4 +449,8 @@ export const IPC = {
     CHANGED: 'agent-queue:changed',
     TASK_CHANGED: 'agent-queue:task-changed',
   },
+  BLUEPRINT: {
+    LIST: 'blueprint:list',
+    READ: 'blueprint:read',
+  },
 } as const;

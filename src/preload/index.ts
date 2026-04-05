@@ -1346,6 +1346,16 @@ const api = {
       edges: Array<{ id: string; path: string }>;
     }>,
   },
+  blueprint: {
+    /** Scan .clubhouse/blueprints/ across all projects and return summaries. */
+    list: () => ipcRenderer.invoke(IPC.BLUEPRINT.LIST) as Promise<Array<{
+      filePath: string; name: string; description?: string;
+      viewCount: number; agentCount: number; wireCount: number;
+      version: number; source: string;
+    }>>,
+    /** Read and parse a single blueprint file by absolute path. */
+    read: (filePath: string) => ipcRenderer.invoke(IPC.BLUEPRINT.READ, filePath) as Promise<Record<string, unknown> | null>,
+  },
   commandPalette: {
     /** Listen for command palette operations from the main process. */
     onRequest: (callback: (request: { callId: string; operation: string; args: Record<string, unknown> }) => void) => {

@@ -21,6 +21,7 @@ import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
 import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
+import { BlueprintGallery } from './features/blueprints/BlueprintGallery';
 import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
 import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
 import { initApp } from './app-initializer';
@@ -274,6 +275,7 @@ export function App() {
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
+        <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
@@ -325,6 +327,7 @@ export function App() {
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
+        <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
@@ -355,6 +358,7 @@ export function App() {
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
+        <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
@@ -385,6 +389,7 @@ export function App() {
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
+        <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
@@ -415,6 +420,7 @@ export function App() {
       </RailSection>
       <CommandPalette />
       <QuickAgentDialog />
+      <BlueprintGallery />
       <WhatsNewDialog />
       <OnboardingModal />
       <ConfigChangesDialog />

@@ -6,6 +6,7 @@ interface CanvasTabBarProps {
   activeCanvasId: string;
   onSelectCanvas: (canvasId: string) => void;
   onAddCanvas: () => void;
+  onAddFromBlueprint?: () => void;
   onRemoveCanvas: (canvasId: string) => void;
   onRenameCanvas: (canvasId: string, name: string) => void;
   onPopOutCanvas?: (canvasId: string, canvasName: string) => void;
@@ -17,11 +18,27 @@ export function CanvasTabBar({
   activeCanvasId,
   onSelectCanvas,
   onAddCanvas,
+  onAddFromBlueprint,
   onRemoveCanvas,
   onRenameCanvas,
   onPopOutCanvas,
   onExportBlueprint,
 }: CanvasTabBarProps) {
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close add menu on outside click
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setAddMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [addMenuOpen]);
+
   return (
     <div
       className="flex items-center gap-0.5 px-1.5 py-1 bg-ctp-mantle border-b border-surface-0 min-h-[32px] overflow-x-auto flex-shrink-0"
@@ -40,14 +57,43 @@ export function CanvasTabBar({
           onExportBlueprint={onExportBlueprint ? () => onExportBlueprint(canvas.id) : undefined}
         />
       ))}
-      <button
-        onClick={onAddCanvas}
-        className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors text-sm"
-        title="New canvas"
-        data-testid="canvas-add-button"
-      >
-        +
-      </button>
+      <div className="relative flex-shrink-0" ref={addMenuRef}>
+        <button
+          onClick={() => {
+            if (onAddFromBlueprint) {
+              setAddMenuOpen(!addMenuOpen);
+            } else {
+              onAddCanvas();
+            }
+          }}
+          className="w-6 h-6 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors text-sm"
+          title="New canvas"
+          data-testid="canvas-add-button"
+        >
+          +
+        </button>
+        {addMenuOpen && (
+          <div
+            className="absolute top-full left-0 mt-1 bg-ctp-base border border-surface-0 rounded-lg shadow-lg py-1 min-w-[160px] z-50"
+            data-testid="canvas-add-menu"
+          >
+            <button
+              onClick={() => { onAddCanvas(); setAddMenuOpen(false); }}
+              className="w-full px-3 py-1.5 text-xs text-ctp-text hover:bg-surface-0 text-left"
+              data-testid="canvas-add-new"
+            >
+              New Canvas
+            </button>
+            <button
+              onClick={() => { onAddFromBlueprint?.(); setAddMenuOpen(false); }}
+              className="w-full px-3 py-1.5 text-xs text-ctp-text hover:bg-surface-0 text-left"
+              data-testid="canvas-add-from-blueprint"
+            >
+              From Blueprint
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -102,7 +148,7 @@ function TabContextMenu({ x, y, onExportBlueprint, onClose }: TabContextMenuProp
       <button
         className="w-full text-left px-3 py-1.5 hover:bg-surface-1 text-ctp-text transition-colors flex items-center gap-2"
         onClick={() => { onExportBlueprint(); onClose(); }}
-        data-testid="canvas-ctx-export-blueprint"
+        data-testid="canvas-tab-export-blueprint"
       >
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M14 10v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3" />

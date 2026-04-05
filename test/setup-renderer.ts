@@ -443,6 +443,10 @@ vi.stubGlobal('clubhouse', {
     sendCommandResult: noop,
     layoutElk: vi.fn(async () => ({ nodes: [], edges: [] })),
   },
+  blueprint: {
+    list: vi.fn(async () => []),
+    read: vi.fn(async () => null),
+  },
   commandPalette: {
     onRequest: () => noop,
     sendResult: noop,
