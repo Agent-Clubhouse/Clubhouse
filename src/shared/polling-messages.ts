@@ -34,3 +34,18 @@ export function pollingStopMsg(projectName: string, orchestrator?: OrchestratorI
       return `Group Project notification: Stop periodic bulletin board polling for "${projectName}".`;
   }
 }
+
+export function pollingNudgeMsg(projectName: string, orchestrator?: OrchestratorId): string {
+  switch (orchestrator) {
+    case 'claude-code':
+      return (
+        `Group Project nudge: If you are NOT already polling the bulletin board for "${projectName}", ` +
+        'start now. Use /loop to automate: /loop 60s read_bulletin'
+      );
+    default:
+      return (
+        `Group Project nudge: If you are NOT already polling the bulletin board for "${projectName}", ` +
+        'start polling every 60 seconds now. Use read_bulletin to check for updates.'
+      );
+  }
+}

@@ -315,7 +315,7 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
   it('saves description, instructions, and shoulderTap together', () => {
     expect(source).toContain('description: editDesc');
     expect(source).toContain('instructions: editInstr');
-    expect(source).toContain('metadata: { shoulderTapEnabled }');
+    expect(source).toContain('metadata: { shoulderTapEnabled, agentControlEnabled }');
   });
 });
 
