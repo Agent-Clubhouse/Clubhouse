@@ -2088,10 +2088,12 @@ registerToolTemplate('assistant', 'list_commands', {
 
   // Merge: palette commands from renderer + registry commands from main
   const paletteResult = await sendCommandPaletteRequest('list_commands', { category: args.category });
-  const paletteItems = paletteResult.success ? (paletteResult.data as any[]) || [] : [];
+  const paletteFailed = !paletteResult.success;
+  const paletteItems: Array<{ id: string; label: string; category: string; keywords?: string[]; detail?: string }> =
+    paletteResult.success ? (paletteResult.data as any[]) || [] : [];
 
   // Add registry-only commands (not already in palette) for discoverability
-  const paletteIds = new Set(paletteItems.map((c: any) => c.id));
+  const paletteIds = new Set(paletteItems.map((c) => c.id));
   const registryCommands = commandRegistry.list(
     args.category ? { category: args.category as string } : undefined,
   );
@@ -2106,7 +2108,19 @@ registerToolTemplate('assistant', 'list_commands', {
     }));
 
   const allItems = [...paletteItems, ...registryItems];
-  return { content: [{ type: 'text', text: JSON.stringify(allItems) }] };
+
+  // If palette failed and registry is also empty, propagate the error
+  if (paletteFailed && allItems.length === 0) {
+    return { content: [{ type: 'text', text: paletteResult.error || 'Failed to list commands' }], isError: true };
+  }
+
+  // Include partial indicator when palette failed but registry had results
+  const result: Record<string, unknown> = { commands: allItems };
+  if (paletteFailed) {
+    result.partial = true;
+    result.warning = 'Command palette unavailable — showing registry commands only';
+  }
+  return { content: [{ type: 'text', text: JSON.stringify(paletteFailed ? result : allItems) }] };
 });
 
 registerToolTemplate('assistant', 'run_command', {
@@ -2133,7 +2147,8 @@ registerToolTemplate('assistant', 'run_command', {
   const commandId = args.command_id as string;
   const registryDef = commandRegistry.get(commandId);
   if (registryDef) {
-    const result = await commandRegistry.execute(commandId, { source: 'mcp' }, args);
+    const { command_id: _, ...commandArgs } = args;
+    const result = await commandRegistry.execute(commandId, { source: 'mcp' }, commandArgs);
     if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to run command' }], isError: true };
     return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
   }
