@@ -258,6 +258,38 @@ describe('BindingManager', () => {
     });
   });
 
+  describe('updateBinding', () => {
+    it('patches projectName on an existing binding', () => {
+      bindingManager.bind('agent-1', { targetId: 'gp-1', targetKind: 'group-project', label: 'GP', projectName: 'OldName' });
+      bindingManager.updateBinding('agent-1', 'gp-1', { projectName: 'NewName' });
+      expect(bindingManager.getBindingsForAgent('agent-1')[0].projectName).toBe('NewName');
+    });
+
+    it('notifies listeners after updating projectName', () => {
+      bindingManager.bind('agent-1', { targetId: 'gp-1', targetKind: 'group-project', label: 'GP', projectName: 'OldName' });
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.updateBinding('agent-1', 'gp-1', { projectName: 'NewName' });
+      expect(listener).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('is a no-op for non-existent agent', () => {
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.updateBinding('nonexistent', 'gp-1', { projectName: 'X' });
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op for non-existent target', () => {
+      bindingManager.bind('agent-1', { targetId: 'gp-1', targetKind: 'group-project', label: 'GP', projectName: 'OldName' });
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.updateBinding('agent-1', 'nonexistent', { projectName: 'X' });
+      expect(listener).not.toHaveBeenCalled();
+      expect(bindingManager.getBindingsForAgent('agent-1')[0].projectName).toBe('OldName');
+    });
+  });
+
   describe('complex scenarios', () => {
     it('handles bind + unbind + rebind cycle', () => {
       bindingManager.bind('agent-1', { targetId: 'w1', targetKind: 'browser', label: 'B' });

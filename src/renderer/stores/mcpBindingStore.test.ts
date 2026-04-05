@@ -173,6 +173,63 @@ describe('mcpBindingStore', () => {
       expect(useMcpBindingStore.getState().bindings).toEqual([]);
     });
 
+    describe('onProjectNameChanged callback', () => {
+      it('fires when a group-project binding has a new projectName', () => {
+        let capturedCallback: ((bindings: unknown[]) => void) | null = null;
+        mocks.onBindingsChanged.mockImplementation(
+          (cb: (bindings: unknown[]) => void) => { capturedCallback = cb; return () => {}; },
+        );
+
+        const onProjectNameChanged = vi.fn();
+        useMcpBindingStore.setState({
+          bindings: [{ agentId: 'a1', targetId: 'gp1', targetKind: 'group-project', label: 'GP', projectName: 'OldName' }],
+        });
+
+        initMcpBindingListener(onProjectNameChanged);
+        capturedCallback!([
+          { agentId: 'a1', targetId: 'gp1', targetKind: 'group-project', label: 'GP', projectName: 'NewName' },
+        ]);
+
+        expect(onProjectNameChanged).toHaveBeenCalledWith('a1', 'gp1', 'NewName');
+      });
+
+      it('does not fire when projectName is unchanged', () => {
+        let capturedCallback: ((bindings: unknown[]) => void) | null = null;
+        mocks.onBindingsChanged.mockImplementation(
+          (cb: (bindings: unknown[]) => void) => { capturedCallback = cb; return () => {}; },
+        );
+
+        const onProjectNameChanged = vi.fn();
+        useMcpBindingStore.setState({
+          bindings: [{ agentId: 'a1', targetId: 'gp1', targetKind: 'group-project', label: 'GP', projectName: 'SameName' }],
+        });
+
+        initMcpBindingListener(onProjectNameChanged);
+        capturedCallback!([
+          { agentId: 'a1', targetId: 'gp1', targetKind: 'group-project', label: 'GP', projectName: 'SameName' },
+        ]);
+
+        expect(onProjectNameChanged).not.toHaveBeenCalled();
+      });
+
+      it('does not fire for new bindings with no previous entry', () => {
+        let capturedCallback: ((bindings: unknown[]) => void) | null = null;
+        mocks.onBindingsChanged.mockImplementation(
+          (cb: (bindings: unknown[]) => void) => { capturedCallback = cb; return () => {}; },
+        );
+
+        const onProjectNameChanged = vi.fn();
+        useMcpBindingStore.setState({ bindings: [] });
+
+        initMcpBindingListener(onProjectNameChanged);
+        capturedCallback!([
+          { agentId: 'a1', targetId: 'gp1', targetKind: 'group-project', label: 'GP', projectName: 'SomeName' },
+        ]);
+
+        expect(onProjectNameChanged).not.toHaveBeenCalled();
+      });
+    });
+
     it('accepts all valid targetKind values', () => {
       let capturedCallback: ((bindings: unknown[]) => void) | null = null;
       mocks.onBindingsChanged.mockImplementation(
