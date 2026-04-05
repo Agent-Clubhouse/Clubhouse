@@ -104,7 +104,7 @@ describe('CopilotCliProvider', () => {
       expect(caps.hooks).toBe(true);
       expect(caps.sessionResume).toBe(true);
       expect(caps.permissions).toBe(true);
-      expect(caps.structuredOutput).toBe(false);
+      expect(caps.structuredOutput).toBe(true);
     });
 
     it('reports structuredMode enabled with acp protocol', () => {
@@ -314,11 +314,45 @@ describe('CopilotCliProvider', () => {
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
       const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
-      for (const eventKey of ['preToolUse', 'postToolUse', 'errorOccurred']) {
+      for (const eventKey of ['preToolUse', 'postToolUse', 'errorOccurred', 'sessionStart', 'userPromptSubmitted']) {
         const entry = written.hooks[eventKey][0];
         expect(entry.type).toBe('command');
         expect(entry.timeoutSec).toBe(5);
       }
+    });
+
+    it('includes permissionRequest hook with 120s timeout', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
+      expect(written.hooks.permissionRequest).toBeDefined();
+      expect(written.hooks.permissionRequest[0].type).toBe('command');
+      expect(written.hooks.permissionRequest[0].timeoutSec).toBe(120);
+    });
+
+    it('includes sessionStart and userPromptSubmitted hooks', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
+      expect(written.hooks.sessionStart).toBeDefined();
+      expect(written.hooks.userPromptSubmitted).toBeDefined();
+    });
+
+    it('writes all 6 hook events', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
+      const hookKeys = Object.keys(written.hooks);
+      expect(hookKeys).toContain('preToolUse');
+      expect(hookKeys).toContain('postToolUse');
+      expect(hookKeys).toContain('errorOccurred');
+      expect(hookKeys).toContain('permissionRequest');
+      expect(hookKeys).toContain('sessionStart');
+      expect(hookKeys).toContain('userPromptSubmitted');
+      expect(hookKeys).toHaveLength(6);
     });
   });
 
@@ -408,6 +442,34 @@ describe('CopilotCliProvider', () => {
       expect(result).toBeNull();
     });
 
+    it('parses permissionRequest event as permission_request', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'permissionRequest',
+        tool_name: 'shell',
+        tool_input: { command: 'rm -rf /' },
+      });
+      expect(result).toEqual({
+        kind: 'permission_request',
+        toolName: 'shell',
+        toolInput: { command: 'rm -rf /' },
+        message: undefined,
+      });
+    });
+
+    it('parses sessionStart event as notification', () => {
+      const result = provider.parseHookEvent({ hook_event_name: 'sessionStart' });
+      expect(result?.kind).toBe('notification');
+    });
+
+    it('parses userPromptSubmitted event as notification', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'userPromptSubmitted',
+        message: 'User submitted prompt',
+      });
+      expect(result?.kind).toBe('notification');
+      expect(result?.message).toBe('User submitted prompt');
+    });
+
     it('returns null for non-object input', () => {
       expect(provider.parseHookEvent(null)).toBeNull();
       expect(provider.parseHookEvent('string')).toBeNull();
@@ -465,7 +527,8 @@ describe('CopilotCliProvider', () => {
       expect(result!.binary).toBe('/usr/local/bin/copilot');
       expect(result!.args).toContain('-p');
       expect(result!.args).toContain('--allow-all');
-      expect(result!.args).toContain('--silent');
+      expect(result!.args).toContain('--output-format');
+      expect(result!.args).toContain('json');
     });
 
     it('adds model flag for non-default model', async () => {
@@ -487,12 +550,12 @@ describe('CopilotCliProvider', () => {
       expect(result!.args).not.toContain('--model');
     });
 
-    it('returns text outputKind', async () => {
+    it('returns stream-json outputKind', async () => {
       const result = await provider.buildHeadlessCommand({
         cwd: '/project',
         mission: 'Fix bug',
       });
-      expect(result!.outputKind).toBe('text');
+      expect(result!.outputKind).toBe('stream-json');
     });
 
     it('combines systemPrompt and mission', async () => {
