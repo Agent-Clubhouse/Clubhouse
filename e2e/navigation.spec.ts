@@ -66,6 +66,15 @@ async function getTitleBarText(): Promise<string> {
 test.beforeAll(async () => {
   ({ electronApp, window } = await launchApp());
 
+  // Enable experimental features needed by navigation tests
+  await window.evaluate(async () => {
+    const w = window as any;
+    if (w.clubhouse?.app?.getExperimentalSettings) {
+      const expSettings = await w.clubhouse.app.getExperimentalSettings();
+      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, assistant: true, agentQueue: true });
+    }
+  });
+
   // Expose Zustand stores globally so tests can inspect state via evaluate().
   await window.evaluate(() => {
     // A small shim: zustand stores are module-scoped, so we attach them.
