@@ -19,4 +19,8 @@ export interface BlueprintSummary {
   version: number;
   /** Project display name this blueprint was found in */
   source: string;
+  /** ISO 8601 creation timestamp (from manifest or file stat) */
+  createdAt?: string;
+  /** Agent names found in the blueprint (for search) */
+  agentNames: string[];
 }

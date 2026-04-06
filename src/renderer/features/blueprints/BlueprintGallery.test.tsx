@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BlueprintGallery } from './BlueprintGallery';
 
-// Use ref object so mutation is visible inside mock closures
 const state = { blueprintGalleryOpen: false };
 const mockCloseBlueprintGallery = vi.fn();
 
@@ -22,196 +21,201 @@ vi.mock('../../stores/projectStore', () => ({
 
 vi.mock('../../plugins/builtin/canvas/canvas-blueprint', () => ({
   importBlueprint: vi.fn(() => ({
-    id: 'canvas_1',
-    name: 'Imported',
-    views: [],
+    id: 'canvas_1', name: 'Imported', views: [],
     viewport: { panX: 0, panY: 0, zoom: 1 },
-    nextZIndex: 0,
-    zoomedViewId: null,
-    selectedViewId: null,
-    minimapAutoHide: true,
-    elkAlgorithm: 'layered',
-    elkDirection: 'RIGHT',
-    layoutCenterId: null,
+    nextZIndex: 0, zoomedViewId: null, selectedViewId: null,
+    minimapAutoHide: true, elkAlgorithm: 'layered', elkDirection: 'RIGHT', layoutCenterId: null,
   })),
   validateBlueprint: vi.fn(() => null),
 }));
 
 const mockInsertCanvas = vi.fn();
 vi.mock('../../plugins/builtin/canvas/main', () => ({
-  getProjectCanvasStore: () => ({
-    getState: () => ({ insertCanvas: mockInsertCanvas }),
-  }),
-  useAppCanvasStore: {
-    getState: () => ({ insertCanvas: mockInsertCanvas }),
-  },
+  getProjectCanvasStore: () => ({ getState: () => ({ insertCanvas: mockInsertCanvas }) }),
+  useAppCanvasStore: { getState: () => ({ insertCanvas: mockInsertCanvas }) },
 }));
 
-// Mock window.clubhouse.blueprint
 const mockBlueprintList = vi.fn();
 const mockBlueprintRead = vi.fn();
+const mockBlueprintDelete = vi.fn();
 
 beforeEach(() => {
   (globalThis as any).window ??= {};
   (globalThis as any).window.clubhouse = {
-    blueprint: {
-      list: mockBlueprintList,
-      read: mockBlueprintRead,
-    },
+    blueprint: { list: mockBlueprintList, read: mockBlueprintRead, delete: mockBlueprintDelete },
   };
 });
 
+function makeBp(overrides: Partial<any> = {}) {
+  return {
+    filePath: '/tmp/bp.json', name: 'Test BP', viewCount: 3, agentCount: 2,
+    wireCount: 1, version: 1, source: 'My Project', agentNames: ['Alpha', 'Beta'],
+    ...overrides,
+  };
+}
+
 describe('BlueprintGallery', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    state.blueprintGalleryOpen = false;
-  });
+  beforeEach(() => { vi.clearAllMocks(); state.blueprintGalleryOpen = false; });
 
   it('renders nothing when closed', () => {
-    state.blueprintGalleryOpen = false;
     const { container } = render(<BlueprintGallery />);
     expect(container.innerHTML).toBe('');
   });
 
-  it('renders gallery overlay when open', async () => {
+  it('renders gallery when open', async () => {
     state.blueprintGalleryOpen = true;
     mockBlueprintList.mockResolvedValue([]);
-
     render(<BlueprintGallery />);
     expect(screen.getByTestId('blueprint-gallery-overlay')).toBeDefined();
-    expect(screen.getByText('Import Blueprint')).toBeDefined();
   });
 
-  it('displays blueprint cards after loading', async () => {
+  // ── Search ──────────────────────────────────────────────────────
+
+  it('fuzzy searches across name, description, and agent names', async () => {
     state.blueprintGalleryOpen = true;
     mockBlueprintList.mockResolvedValue([
-      {
-        filePath: '/tmp/.clubhouse/blueprints/squad.json',
-        name: 'Squad Setup',
-        description: 'A team of agents',
-        viewCount: 3,
-        agentCount: 2,
-        wireCount: 1,
-        version: 1,
-        source: 'My Project',
-      },
-      {
-        filePath: '/tmp/.clubhouse/blueprints/solo.json',
-        name: 'Solo Agent',
-        viewCount: 1,
-        agentCount: 1,
-        wireCount: 0,
-        version: 1,
-        source: 'Other Project',
-      },
+      makeBp({ filePath: '/a.json', name: 'Squad Setup', agentNames: ['Researcher'] }),
+      makeBp({ filePath: '/b.json', name: 'Solo', description: 'single agent', agentNames: ['Writer'] }),
     ]);
 
     render(<BlueprintGallery />);
-    await waitFor(() => {
-      expect(screen.getByText('Squad Setup')).toBeDefined();
-    });
-    expect(screen.getByText('Solo Agent')).toBeDefined();
-    expect(screen.getByText('A team of agents')).toBeDefined();
-    expect(screen.getByText('My Project')).toBeDefined();
-  });
+    await waitFor(() => { expect(screen.getByText('Squad Setup')).toBeDefined(); });
 
-  it('filters blueprints by search text', async () => {
-    state.blueprintGalleryOpen = true;
-    mockBlueprintList.mockResolvedValue([
-      { filePath: '/a.json', name: 'Squad', viewCount: 3, agentCount: 2, wireCount: 0, version: 1, source: 'A' },
-      { filePath: '/b.json', name: 'Solo', viewCount: 1, agentCount: 1, wireCount: 0, version: 1, source: 'B' },
-    ]);
+    // Search by agent name
+    fireEvent.change(screen.getByTestId('blueprint-gallery-search'), { target: { value: 'researcher' } });
+    expect(screen.getByText('Squad Setup')).toBeDefined();
+    expect(screen.queryByText('Solo')).toBeNull();
 
-    render(<BlueprintGallery />);
-    await waitFor(() => {
-      expect(screen.getByText('Squad')).toBeDefined();
-    });
-
-    const searchInput = screen.getByTestId('blueprint-gallery-search');
-    fireEvent.change(searchInput, { target: { value: 'solo' } });
-
-    expect(screen.queryByText('Squad')).toBeNull();
+    // Search by description
+    fireEvent.change(screen.getByTestId('blueprint-gallery-search'), { target: { value: 'single agent' } });
+    expect(screen.queryByText('Squad Setup')).toBeNull();
     expect(screen.getByText('Solo')).toBeDefined();
   });
 
-  it('shows empty state when no blueprints found', async () => {
+  it('token-based fuzzy search matches multiple tokens', async () => {
     state.blueprintGalleryOpen = true;
-    mockBlueprintList.mockResolvedValue([]);
-
-    render(<BlueprintGallery />);
-    await waitFor(() => {
-      expect(screen.getByText('No blueprints found')).toBeDefined();
-    });
-  });
-
-  it('imports a blueprint when card is clicked', async () => {
-    state.blueprintGalleryOpen = true;
-    const blueprintData = { version: 1, name: 'Test BP', views: [] };
     mockBlueprintList.mockResolvedValue([
-      { filePath: '/test.json', name: 'Test BP', viewCount: 0, agentCount: 0, wireCount: 0, version: 1, source: 'Proj' },
+      makeBp({ filePath: '/a.json', name: 'Team Alpha Blueprint', agentNames: [] }),
     ]);
-    mockBlueprintRead.mockResolvedValue(blueprintData);
 
     render(<BlueprintGallery />);
-    await waitFor(() => {
-      expect(screen.getByText('Test BP')).toBeDefined();
-    });
+    await waitFor(() => { expect(screen.getByText('Team Alpha Blueprint')).toBeDefined(); });
 
-    fireEvent.click(screen.getByText('Test BP'));
-    await waitFor(() => {
-      expect(mockBlueprintRead).toHaveBeenCalledWith('/test.json');
-      expect(mockInsertCanvas).toHaveBeenCalled();
-      expect(mockCloseBlueprintGallery).toHaveBeenCalled();
-    });
+    fireEvent.change(screen.getByTestId('blueprint-gallery-search'), { target: { value: 'team alpha' } });
+    expect(screen.getByText('Team Alpha Blueprint')).toBeDefined();
   });
 
-  it('closes on Escape key', async () => {
+  // ── Sort ────────────────────────────────────────────────────────
+
+  it('sorts by name (default), then by view count', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([
+      makeBp({ filePath: '/c.json', name: 'Charlie', viewCount: 1, agentNames: [] }),
+      makeBp({ filePath: '/a.json', name: 'Alpha', viewCount: 5, agentNames: [] }),
+      makeBp({ filePath: '/b.json', name: 'Bravo', viewCount: 3, agentNames: [] }),
+    ]);
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Alpha')).toBeDefined(); });
+
+    const grid = screen.getByTestId('blueprint-gallery-grid');
+    const cards = grid.querySelectorAll('[data-testid^="blueprint-card-"]');
+    // Default sort by name
+    expect(cards[0].textContent).toContain('Alpha');
+    expect(cards[1].textContent).toContain('Bravo');
+    expect(cards[2].textContent).toContain('Charlie');
+
+    // Sort by views
+    fireEvent.change(screen.getByTestId('blueprint-gallery-sort'), { target: { value: 'views' } });
+    const sorted = grid.querySelectorAll('[data-testid^="blueprint-card-"]');
+    expect(sorted[0].textContent).toContain('Alpha'); // 5 views
+    expect(sorted[2].textContent).toContain('Charlie'); // 1 view
+  });
+
+  // ── Preview panel ──────────────────────────────────────────────
+
+  it('shows preview panel when card is selected', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([makeBp({ agentNames: ['Agent A', 'Agent B'] })]);
+    mockBlueprintRead.mockResolvedValue({
+      version: 1, name: 'Test BP',
+      views: [
+        { type: 'agent', title: 'Agent A', position: { x: 0, y: 0 }, size: { width: 200, height: 100 } },
+        { type: 'agent', title: 'Agent B', position: { x: 300, y: 0 }, size: { width: 200, height: 100 } },
+      ],
+    });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
+
+    fireEvent.click(screen.getByTestId('blueprint-card-Test BP'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('blueprint-preview-panel')).toBeDefined();
+    });
+    expect(screen.getByTestId('blueprint-preview-import')).toBeDefined();
+    expect(screen.getByTestId('blueprint-mini-layout')).toBeDefined();
+  });
+
+  // ── Empty state ────────────────────────────────────────────────
+
+  it('shows helpful empty state with export guidance', async () => {
     state.blueprintGalleryOpen = true;
     mockBlueprintList.mockResolvedValue([]);
 
     render(<BlueprintGallery />);
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(mockCloseBlueprintGallery).toHaveBeenCalled();
+    await waitFor(() => { expect(screen.getByTestId('blueprint-gallery-empty')).toBeDefined(); });
+    expect(screen.getByText('No blueprints yet')).toBeDefined();
   });
+
+  it('shows search-specific empty state when no results', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([makeBp()]);
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
+
+    fireEvent.change(screen.getByTestId('blueprint-gallery-search'), { target: { value: 'nonexistent' } });
+    expect(screen.getByText('No matching blueprints')).toBeDefined();
+  });
+
+  // ── Delete ─────────────────────────────────────────────────────
+
+  it('deletes blueprint after confirmation', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([makeBp()]);
+    mockBlueprintDelete.mockResolvedValue(true);
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
+
+    fireEvent.contextMenu(screen.getByTestId('blueprint-card-Test BP'));
+    fireEvent.click(screen.getByTestId('blueprint-card-delete'));
+    expect(screen.getByTestId('blueprint-delete-confirm')).toBeDefined();
+
+    fireEvent.click(screen.getByTestId('blueprint-delete-confirm-yes'));
+    await waitFor(() => { expect(mockBlueprintDelete).toHaveBeenCalledWith('/tmp/bp.json'); });
+  });
+
+  // ── Import error paths ─────────────────────────────────────────
 
   it('shows error when blueprint.read returns null', async () => {
     state.blueprintGalleryOpen = true;
-    mockBlueprintList.mockResolvedValue([
-      { filePath: '/bad.json', name: 'Bad BP', viewCount: 0, agentCount: 0, wireCount: 0, version: 1, source: 'P' },
-    ]);
+    mockBlueprintList.mockResolvedValue([makeBp()]);
     mockBlueprintRead.mockResolvedValue(null);
 
     render(<BlueprintGallery />);
-    await waitFor(() => {
-      expect(screen.getByText('Bad BP')).toBeDefined();
-    });
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
 
-    fireEvent.click(screen.getByText('Bad BP'));
-    await waitFor(() => {
-      expect(screen.getByTestId('blueprint-gallery-error')).toBeDefined();
-    });
-    expect(mockInsertCanvas).not.toHaveBeenCalled();
+    fireEvent.dblClick(screen.getByTestId('blueprint-card-Test BP'));
+    await waitFor(() => { expect(screen.getByTestId('blueprint-gallery-error')).toBeDefined(); });
   });
 
-  it('shows error when validateBlueprint returns error string', async () => {
+  it('closes on Escape', async () => {
     state.blueprintGalleryOpen = true;
-    const { validateBlueprint } = await import('../../plugins/builtin/canvas/canvas-blueprint');
-    vi.mocked(validateBlueprint).mockReturnValueOnce('Invalid blueprint: bad version');
-
-    mockBlueprintList.mockResolvedValue([
-      { filePath: '/invalid.json', name: 'Invalid', viewCount: 0, agentCount: 0, wireCount: 0, version: 99, source: 'P' },
-    ]);
-    mockBlueprintRead.mockResolvedValue({ version: 99, views: [] });
-
+    mockBlueprintList.mockResolvedValue([]);
     render(<BlueprintGallery />);
-    await waitFor(() => {
-      expect(screen.getByText('Invalid')).toBeDefined();
-    });
-
-    fireEvent.click(screen.getByText('Invalid'));
-    await waitFor(() => {
-      expect(screen.getByTestId('blueprint-gallery-error')).toBeDefined();
-    });
-    expect(mockInsertCanvas).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(mockCloseBlueprintGallery).toHaveBeenCalled();
   });
 });

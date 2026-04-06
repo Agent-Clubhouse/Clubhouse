@@ -32,7 +32,25 @@ function extractSummary(filePath: string, data: Record<string, unknown>, source:
   ).length;
 
   // Also count agents array if present (BlueprintManifest)
-  const agentDefs = Array.isArray(data.agents) ? data.agents.length : 0;
+  const agents = Array.isArray(data.agents) ? data.agents as Record<string, unknown>[] : [];
+  const agentDefs = agents.length;
+
+  // Extract agent names for search
+  const agentNames: string[] = agents
+    .map((a) => typeof a.name === 'string' ? a.name : '')
+    .filter(Boolean);
+  // Also extract from agent-type views if no agents array
+  if (agentNames.length === 0) {
+    for (const v of views) {
+      if (typeof v === 'object' && v !== null) {
+        const title = (v as Record<string, unknown>).title;
+        const type = (v as Record<string, unknown>).type;
+        if (type === 'agent' && typeof title === 'string') agentNames.push(title);
+      }
+    }
+  }
+
+  const createdAt = typeof data.createdAt === 'string' ? data.createdAt : undefined;
 
   return {
     filePath,
@@ -43,6 +61,8 @@ function extractSummary(filePath: string, data: Record<string, unknown>, source:
     wireCount: wires.length,
     version,
     source,
+    createdAt,
+    agentNames,
   };
 }
 
@@ -121,6 +141,30 @@ export function registerBlueprintHandlers(): void {
         meta: { filePath, error: err instanceof Error ? err.message : String(err) },
       });
       return null;
+    }
+  }));
+
+  /**
+   * BLUEPRINT.DELETE — Delete a blueprint file by absolute path.
+   * Returns true if deleted, false if not found or error.
+   */
+  ipcMain.handle(IPC.BLUEPRINT.DELETE, withValidatedArgs([stringArg()], async (_event, filePath: string): Promise<boolean> => {
+    // Safety: only delete .json files inside a .clubhouse/blueprints/ directory
+    const normalized = path.normalize(filePath);
+    if (!normalized.includes(path.join(CLUBHOUSE_DIR, BLUEPRINTS_DIR)) || !normalized.endsWith('.json')) {
+      appLog('core:blueprint', 'warn', 'Refusing to delete file outside blueprints directory', {
+        meta: { filePath },
+      });
+      return false;
+    }
+    try {
+      await fsp.unlink(normalized);
+      return true;
+    } catch (err) {
+      appLog('core:blueprint', 'error', 'Failed to delete blueprint file', {
+        meta: { filePath, error: err instanceof Error ? err.message : String(err) },
+      });
+      return false;
     }
   }));
 }
