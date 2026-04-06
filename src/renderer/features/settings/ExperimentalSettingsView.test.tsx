@@ -56,20 +56,20 @@ describe('ExperimentalSettingsView', () => {
   });
 
   it('toggles a feature and saves', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({ structuredMode: false });
+    mockGetExperimentalSettings.mockResolvedValue({ assistant: false });
     const { container } = render(<ExperimentalSettingsView />);
 
     await waitFor(() => {
-      expect(screen.getByText('Structured Mode')).toBeInTheDocument();
+      expect(screen.getByText('Assistant')).toBeInTheDocument();
     });
 
-    // The Toggle component renders a button with a rounded-full class
+    // The Toggle component renders a button with a rounded-full class — first one is "Assistant"
     const toggleBtn = container.querySelector('button.rounded-full') as HTMLElement;
     expect(toggleBtn).toBeInTheDocument();
     fireEvent.click(toggleBtn);
 
     await waitFor(() => {
-      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ structuredMode: true });
+      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ assistant: true });
     });
   });
 

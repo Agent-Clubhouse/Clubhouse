@@ -42,41 +42,15 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     expect(nav!.className).toContain('min-h-0');
   });
 
-  it('shows Experimental nav item when isPreviewEligible returns true', async () => {
-    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
-    const { unmount } = render(<AccessoryPanel />);
-    await waitFor(() => {
-      expect(screen.getByText('Experimental')).toBeInTheDocument();
-    });
-    unmount();
+  it('always shows Experimental nav item (stable builds have experimental features)', () => {
+    render(<AccessoryPanel />);
+    expect(screen.getByText('Experimental')).toBeInTheDocument();
   });
 
-  it('hides Experimental nav item when isPreviewEligible returns false', async () => {
-    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
-    const { unmount } = render(<AccessoryPanel />);
-    await waitFor(() => {
-      expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalled();
-    });
-    expect(screen.queryByText('Experimental')).not.toBeInTheDocument();
-    unmount();
-  });
-
-  it('re-evaluates preview eligibility when previewChannel changes', async () => {
-    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
-    const { unmount, rerender } = render(<AccessoryPanel />);
-    await waitFor(() => {
-      expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalledTimes(1);
-    });
-    expect(screen.queryByText('Experimental')).not.toBeInTheDocument();
-
-    // Simulate preview channel being enabled
-    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
-    resetStores({ previewChannel: true });
-    rerender(<AccessoryPanel />);
-    await waitFor(() => {
-      expect(screen.getByText('Experimental')).toBeInTheDocument();
-    });
-    unmount();
+  it('always shows Annex nav item (promoted to stable)', () => {
+    render(<AccessoryPanel />);
+    expect(screen.getByText('Annex')).toBeInTheDocument();
+    expect(screen.getByText('Annex Control')).toBeInTheDocument();
   });
 
   it('shows External Editor nav item in app settings', async () => {

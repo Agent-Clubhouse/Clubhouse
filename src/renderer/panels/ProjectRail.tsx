@@ -275,11 +275,12 @@ export function ProjectRail() {
 
   const [assistantEnabled, setAssistantEnabled] = useState(true);
   useEffect(() => {
-    window.clubhouse.app.getExperimentalSettings().then((flags) => {
+    Promise.all([
+      window.clubhouse?.app?.getExperimentalSettings?.() ?? Promise.resolve({}),
+      window.clubhouse?.app?.isPreviewEligible?.() ?? Promise.resolve(false),
+    ]).then(([flags, isPreview]) => {
       // Assistant is experimental: hidden unless explicitly enabled OR on preview-eligible builds
-      window.clubhouse.app.isPreviewEligible().then((isPreview) => {
-        setAssistantEnabled(!!flags.assistant || isPreview);
-      });
+      setAssistantEnabled(!!(flags as Record<string, boolean>).assistant || isPreview);
     });
   }, []);
 

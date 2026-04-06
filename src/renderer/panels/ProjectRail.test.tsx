@@ -17,10 +17,10 @@ const mockAnnexClient = {
   retry: vi.fn(),
 };
 
-vi.stubGlobal('window', {
-  ...globalThis.window,
-  clubhouse: { annexClient: mockAnnexClient },
-});
+// Add annexClient and ensure app mocks exist for ProjectRail's assistant gating
+window.clubhouse.annexClient = mockAnnexClient as any;
+window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({}) as any;
+window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false) as any;
 
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
