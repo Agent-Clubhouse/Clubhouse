@@ -32,6 +32,8 @@ import { useProjectStore } from '../../../stores/projectStore';
 import type { PluginCanvasView as PluginCanvasViewType } from './canvas-types';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
+import { useBlueprintDrop } from './useBlueprintDrop';
+import { getProjectCanvasStore, useAppCanvasStore } from './main';
 
 /** Pixels to pan per arrow key press (2 grid units). */
 const ARROW_PAN_STEP = 40;
@@ -203,6 +205,32 @@ export function CanvasWorkspace({
   const zones = useMemo(() => views.filter((v): v is ZoneCanvasView => v.type === 'zone'), [views]);
   const nonZoneViews = useMemo(() => views.filter((v) => v.type !== 'zone'), [views]);
   const [zoneDeleteDialog, setZoneDeleteDialog] = useState<{ zoneId: string; zoneName: string; containedCount: number } | null>(null);
+
+  // ── Blueprint drag-drop + clipboard paste ────────────────────────
+  const [blueprintError, setBlueprintError] = useState<string | null>(null);
+  const projectId = api.context.projectId ?? null;
+
+  const handleBlueprintImport = useCallback((canvas: import('./canvas-types').CanvasInstance) => {
+    const store = projectId ? getProjectCanvasStore(projectId) : useAppCanvasStore;
+    store.getState().insertCanvas(canvas);
+  }, [projectId]);
+
+  const handleBlueprintError = useCallback((message: string) => {
+    setBlueprintError(message);
+  }, []);
+
+  const { isDragOver: isBlueprintDragOver } = useBlueprintDrop({
+    containerRef,
+    onImport: handleBlueprintImport,
+    onError: handleBlueprintError,
+  });
+
+  // Auto-dismiss blueprint error toast after 4 seconds
+  useEffect(() => {
+    if (!blueprintError) return;
+    const timer = setTimeout(() => setBlueprintError(null), 4000);
+    return () => clearTimeout(timer);
+  }, [blueprintError]);
 
   // ── Sleeping agent tracking (for wire dimming) ─────────────────
   const [agentTick, setAgentTick] = useState(0);
@@ -1085,6 +1113,35 @@ export function CanvasWorkspace({
             <p className="text-sm text-ctp-subtext0 font-medium">Session paused</p>
             <p className="text-xs text-ctp-overlay0 mt-1">The satellite has paused remote control</p>
           </div>
+        </div>
+      )}
+
+      {/* Blueprint drag-drop overlay */}
+      {isBlueprintDragOver && (
+        <div
+          className="absolute inset-0 z-[9997] flex items-center justify-center bg-ctp-blue/10 border-2 border-dashed border-ctp-blue/50 pointer-events-none"
+          data-testid="canvas-blueprint-drop-overlay"
+        >
+          <div className="text-center">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-ctp-blue/20 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ctp-blue">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </div>
+            <p className="text-sm text-ctp-blue font-medium">Drop blueprint to import</p>
+          </div>
+        </div>
+      )}
+
+      {/* Blueprint error toast */}
+      {blueprintError && (
+        <div
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 bg-ctp-red/90 text-ctp-base text-sm rounded-lg shadow-lg"
+          data-testid="canvas-blueprint-error-toast"
+        >
+          {blueprintError}
         </div>
       )}
 
