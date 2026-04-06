@@ -5,7 +5,8 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
-import { registerToolTemplate, buildToolName } from '../tool-registry';
+import { buildToolName } from '../tool-registry';
+import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
 import * as ptyManager from '../../pty-manager';
@@ -126,50 +127,50 @@ export function scheduleMessageCleanup(filePath: string, delayMs = 5 * 60 * 1000
 /** Register all agent-to-agent tool templates. */
 export function registerAgentTools(): void {
   // clubhouse__<project>_<name>_<hash>__send_message
-  registerToolTemplate(
-    'agent',
-    'send_message',
-    {
-      description:
-        'Send a message to the linked agent. The message is injected as terminal input and submitted.\n\n' +
-        'IMPORTANT — this is asynchronous. The target agent will process the message on its own timeline ' +
-        'and may be in the middle of other work. There is no inline response.\n\n' +
-        'Your identity (name and project) is automatically included in the message so the target ' +
-        'knows who sent the request. If the connection is bidirectional, reply instructions ' +
-        '(including the exact tool name to respond back) are also appended automatically.\n\n' +
-        'To get a response:\n' +
-        '1. Include a task_id so the target can tag its reply (e.g. "TASK_RESULT:<task_id>: …").\n' +
-        '2. If BIDIRECTIONAL: the target agent can send_message back to you directly with the task_id. ' +
-        'Reply instructions are included in the message automatically.\n' +
-        '3. If UNIDIRECTIONAL: poll read_output and search for your task_id marker. Output may contain ' +
-        'unrelated content — filter by the marker. Allow time for the agent to process.\n\n' +
-        'Use check_connectivity to determine the link direction if unsure.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          message: {
-            type: 'string',
-            description: 'The message to send to the agent.',
-          },
-          task_id: {
-            type: 'string',
-            description:
-              'Optional correlation ID. If provided, the message is prefixed with [TASK:<task_id>] ' +
-              'so the target agent knows to tag its response with TASK_RESULT:<task_id>. ' +
-              'If omitted, one is auto-generated and returned.',
-          },
-          force_submit: {
-            type: 'boolean',
-            description:
-              'Whether to send a delayed Enter keystroke after the message to force submission. ' +
-              'Defaults to true. Set to false to inject text into the terminal without submitting ' +
-              '(useful for building up multi-part inputs).',
-          },
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.sendMessage',
+    category: 'agent',
+    label: 'Send Message',
+    mcp: { targetKind: 'agent', nameSuffix: 'send_message' },
+    description:
+      'Send a message to the linked agent. The message is injected as terminal input and submitted.\n\n' +
+      'IMPORTANT — this is asynchronous. The target agent will process the message on its own timeline ' +
+      'and may be in the middle of other work. There is no inline response.\n\n' +
+      'Your identity (name and project) is automatically included in the message so the target ' +
+      'knows who sent the request. If the connection is bidirectional, reply instructions ' +
+      '(including the exact tool name to respond back) are also appended automatically.\n\n' +
+      'To get a response:\n' +
+      '1. Include a task_id so the target can tag its reply (e.g. "TASK_RESULT:<task_id>: …").\n' +
+      '2. If BIDIRECTIONAL: the target agent can send_message back to you directly with the task_id. ' +
+      'Reply instructions are included in the message automatically.\n' +
+      '3. If UNIDIRECTIONAL: poll read_output and search for your task_id marker. Output may contain ' +
+      'unrelated content — filter by the marker. Allow time for the agent to process.\n\n' +
+      'Use check_connectivity to determine the link direction if unsure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          description: 'The message to send to the agent.',
         },
-        required: ['message'],
+        task_id: {
+          type: 'string',
+          description:
+            'Optional correlation ID. If provided, the message is prefixed with [TASK:<task_id>] ' +
+            'so the target agent knows to tag its response with TASK_RESULT:<task_id>. ' +
+            'If omitted, one is auto-generated and returned.',
+        },
+        force_submit: {
+          type: 'boolean',
+          description:
+            'Whether to send a delayed Enter keystroke after the message to force submission. ' +
+            'Defaults to true. Set to false to inject text into the terminal without submitting ' +
+            '(useful for building up multi-part inputs).',
+        },
       },
+      required: ['message'],
     },
-    async (targetId, agentId, args): Promise<McpToolResult> => {
+    handler: async (targetId, agentId, args): Promise<McpToolResult> => {
       const message = args.message as string;
       if (!message) {
         return { content: [{ type: 'text', text: 'Missing required argument: message' }], isError: true };
@@ -268,20 +269,20 @@ export function registerAgentTools(): void {
         return { content: [{ type: 'text', text: `Failed to send message: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     },
-  );
+  });
 
   // clubhouse__<project>_<name>_<hash>__get_status
-  registerToolTemplate(
-    'agent',
-    'get_status',
-    {
-      description: 'Get the current status of the linked agent.',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      },
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.getStatus',
+    category: 'agent',
+    label: 'Get Agent Status',
+    mcp: { targetKind: 'agent', nameSuffix: 'get_status' },
+    description: 'Get the current status of the linked agent.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
-    async (targetId, agentId, _args): Promise<McpToolResult> => {
+    handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       const running = !!reg;
 
@@ -300,14 +301,15 @@ export function registerAgentTools(): void {
 
       return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
     },
-  );
+  });
 
   // clubhouse__<project>_<name>_<hash>__read_output
-  registerToolTemplate(
-    'agent',
-    'read_output',
-    {
-      description:
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.readOutput',
+    category: 'agent',
+    label: 'Read Agent Output',
+    mcp: { targetKind: 'agent', nameSuffix: 'read_output' },
+    description:
         'Read recent terminal output from the linked agent.\n\n' +
         'Use this to poll for responses after send_message. The output is a raw terminal buffer ' +
         'and will contain ALL agent output — tool calls, reasoning, status messages, and any replies.\n\n' +
@@ -317,17 +319,16 @@ export function registerAgentTools(): void {
         'depending on task complexity.\n\n' +
         'Tip: start with fewer lines (50) and increase if needed. The buffer is circular so very ' +
         'old output may have been evicted.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          lines: {
-            type: 'number',
-            description: 'Number of lines to read (default 50, max 500).',
-          },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        lines: {
+          type: 'number',
+          description: 'Number of lines to read (default 50, max 500).',
         },
       },
     },
-    async (targetId, agentId, args): Promise<McpToolResult> => {
+    handler: async (targetId, agentId, args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
         appLog('core:mcp', 'warn', 'read_output: target agent not found in registry', {
@@ -356,14 +357,15 @@ export function registerAgentTools(): void {
         return { content: [{ type: 'text', text: `Failed to read output: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     },
-  );
+  });
 
   // clubhouse__<project>_<name>_<hash>__check_connectivity
-  registerToolTemplate(
-    'agent',
-    'check_connectivity',
-    {
-      description:
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.checkConnectivity',
+    category: 'agent',
+    label: 'Check Connectivity',
+    mcp: { targetKind: 'agent', nameSuffix: 'check_connectivity' },
+    description:
         'Check whether communication with the linked agent is bidirectional or unidirectional.\n\n' +
         'Returns a JSON object with:\n' +
         '- direction: "bidirectional" or "unidirectional"\n' +
@@ -375,12 +377,11 @@ export function registerAgentTools(): void {
         'read_output to find responses. Always include a task_id in your send_message and instruct ' +
         'the target to output "TASK_RESULT:<task_id>: <response>" so you can locate it in the ' +
         'output buffer. The buffer contains all terminal output so filter carefully by the marker.',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      },
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
-    async (targetId, agentId, _args): Promise<McpToolResult> => {
+    handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
         return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
@@ -424,14 +425,15 @@ export function registerAgentTools(): void {
         }],
       };
     },
-  );
+  });
 
   // clubhouse__<project>_<name>_<hash>__send_file
-  registerToolTemplate(
-    'agent',
-    'send_file',
-    {
-      description:
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.sendFile',
+    category: 'agent',
+    label: 'Send File',
+    mcp: { targetKind: 'agent', nameSuffix: 'send_file' },
+    description:
         'Send a message to the linked agent via a temp file.\n\n' +
         'The message content is written to a temporary file on disk and the agent receives a ' +
         'single-line notification with the file path. The target agent reads the file with its ' +
@@ -441,29 +443,28 @@ export function registerAgentTools(): void {
         '- send_message paste injection is unreliable for the target CLI\n' +
         '- You want to send structured data (JSON, code, etc.) without terminal mangling\n\n' +
         'The temp file is automatically cleaned up after 5 minutes.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          content: {
-            type: 'string',
-            description: 'The content to write to the file and deliver to the agent.',
-          },
-          task_id: {
-            type: 'string',
-            description:
-              'Optional correlation ID. Works the same as send_message task_id.',
-          },
-          filename: {
-            type: 'string',
-            description:
-              'Optional filename hint (e.g. "plan.md", "data.json"). ' +
-              'Defaults to <task_id>.md.',
-          },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: 'The content to write to the file and deliver to the agent.',
         },
-        required: ['content'],
+        task_id: {
+          type: 'string',
+          description:
+            'Optional correlation ID. Works the same as send_message task_id.',
+        },
+        filename: {
+          type: 'string',
+          description:
+            'Optional filename hint (e.g. "plan.md", "data.json"). ' +
+            'Defaults to <task_id>.md.',
+        },
       },
+      required: ['content'],
     },
-    async (targetId, agentId, args): Promise<McpToolResult> => {
+    handler: async (targetId, agentId, args): Promise<McpToolResult> => {
       const content = args.content as string;
       if (!content) {
         return { content: [{ type: 'text', text: 'Missing required argument: content' }], isError: true };
@@ -529,33 +530,33 @@ export function registerAgentTools(): void {
         return { content: [{ type: 'text', text: `Failed to send file: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     },
-  );
+  });
 
   // clubhouse__<project>_<name>_<hash>__wake
-  registerToolTemplate(
-    'agent',
-    'wake',
-    {
-      description:
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.wake',
+    category: 'agent',
+    label: 'Wake Agent',
+    mcp: { targetKind: 'agent', nameSuffix: 'wake' },
+    description:
         'Wake up a sleeping agent by spawning it in its PTY.\n\n' +
         'Use this when the linked agent is not running (sleeping) and you need it to be alive ' +
         'to send it messages or collaborate. This uses the same mechanism as the "Wake Up" button ' +
         'in the Clubhouse UI — it reads the agent\'s durable config and spawns a fresh session.\n\n' +
         'If the agent is already running, this returns immediately without re-spawning.\n\n' +
         'Set resume=true to resume the agent\'s previous CLI session instead of starting fresh.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          resume: {
-            type: 'boolean',
-            description:
-              'Whether to resume the agent\'s previous CLI session. ' +
-              'Defaults to false (fresh session).',
-          },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        resume: {
+          type: 'boolean',
+          description:
+            'Whether to resume the agent\'s previous CLI session. ' +
+            'Defaults to false (fresh session).',
         },
       },
     },
-    async (targetId, agentId, args): Promise<McpToolResult> => {
+    handler: async (targetId, agentId, args): Promise<McpToolResult> => {
       const resume = args.resume === true;
 
       // If already running, nothing to do
@@ -628,5 +629,5 @@ export function registerAgentTools(): void {
         };
       }
     },
-  );
+  });
 }

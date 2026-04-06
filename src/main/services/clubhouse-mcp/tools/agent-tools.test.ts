@@ -55,6 +55,7 @@ vi.mock('../../../orchestrators', () => ({
 
 import { registerAgentTools, writeChunkedBracketedPaste } from './agent-tools';
 import { getScopedToolList, callTool, buildToolName, _resetForTesting as resetTools } from '../tool-registry';
+import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import type { McpBinding } from '../types';
 
@@ -94,6 +95,7 @@ describe('AgentTools', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     resetTools();
+    mcpAdapter._resetForTesting();
     bindingManager._resetForTesting();
     mockAgentRegistryGet.mockReset();
     mockPtyWrite.mockReset();
@@ -360,6 +362,7 @@ describe('AgentTools', () => {
     it('includes sender name without project when project not set', async () => {
       bindingManager._resetForTesting();
       resetTools();
+      mcpAdapter._resetForTesting();
       registerAgentTools();
       bindingManager.bind('agent-1', {
         targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
