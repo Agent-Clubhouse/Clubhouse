@@ -74,6 +74,8 @@ import {
   _resetForTesting as resetToolRegistry,
 } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
+import { mcpAdapter } from '../mcp-adapter';
+import { commandRegistry } from '../../../../shared/command-registry';
 import type { McpBinding } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -119,6 +121,8 @@ describe('AgentQueueTools', () => {
   beforeEach(() => {
     // Reset registries
     resetToolRegistry();
+    mcpAdapter._resetForTesting();
+    commandRegistry.clear();
     bindingManager._resetForTesting();
 
     // Re-register templates each test
