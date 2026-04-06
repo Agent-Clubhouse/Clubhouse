@@ -111,8 +111,8 @@ class McpCommandAdapter {
     return disposable;
   }
 
-  /** Dispose all registered commands (for testing). */
-  disposeAll(): void {
+  /** Dispose all registered commands and clear the registry (for testing). */
+  _resetForTesting(): void {
     for (const d of this.disposables) {
       d.dispose();
     }
