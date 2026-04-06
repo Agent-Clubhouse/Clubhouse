@@ -101,6 +101,14 @@ export function App() {
 
   // Annex is now a stable feature — no need to clear stale activeHostId based on experimental flag
 
+  // ── Experimental feature flags (for gating assistant) ──────────────────
+  const [assistantEnabled, setAssistantEnabled] = useState(false);
+  useEffect(() => {
+    window.clubhouse.app.getExperimentalSettings().then((flags) => {
+      setAssistantEnabled(!!flags.assistant);
+    }).catch(() => {});
+  }, []);
+
   // ── Reactive effects (depend on state already subscribed for routing) ───
 
   // Load durable agents for all projects so the dashboard shows them
@@ -384,9 +392,11 @@ export function App() {
           />
           <PluginUpdateBanner />
         </div>
-        <RailSection>
-          <AssistantView />
-        </RailSection>
+        {assistantEnabled && (
+          <RailSection>
+            <AssistantView />
+          </RailSection>
+        )}
         <CommandPalette />
         <QuickAgentDialog />
         <BlueprintGallery />

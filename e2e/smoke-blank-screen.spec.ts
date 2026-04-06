@@ -28,6 +28,15 @@ const consoleErrors: string[] = [];
 test.beforeAll(async () => {
   ({ electronApp, window } = await launchApp());
 
+  // Enable experimental features needed by smoke tests (assistant is gated)
+  await window.evaluate(async () => {
+    const w = window as any;
+    if (w.clubhouse?.app?.getExperimentalSettings) {
+      const expSettings = await w.clubhouse.app.getExperimentalSettings();
+      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, assistant: true, agentQueue: true });
+    }
+  });
+
   window.on('console', (msg) => {
     if (msg.type() === 'error') {
       consoleErrors.push(msg.text());

@@ -92,6 +92,15 @@ export async function launchAssistantInstance(): Promise<AssistantInstance> {
     // Onboarding already completed
   }
 
+  // Enable assistant experimental flag (assistant is gated behind it in stable builds)
+  await window.evaluate(async () => {
+    const w = window as any;
+    if (w.clubhouse?.app?.getExperimentalSettings) {
+      const expSettings = await w.clubhouse.app.getExperimentalSettings();
+      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, assistant: true });
+    }
+  });
+
   return { electronApp, window, userDataDir };
 }
 
