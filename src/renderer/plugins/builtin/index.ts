@@ -30,6 +30,7 @@ export interface BuiltinPlugin {
 /** Experimental feature flags that gate conditional built-in plugins. */
 export interface ExperimentalFlags {
   sessions?: boolean;
+  agentQueue?: boolean;
   [key: string]: boolean | undefined;
 }
 
@@ -38,6 +39,9 @@ const BASE_DEFAULT_IDS = ['terminal', 'files', 'git', 'browser', 'review', 'canv
 
 /** Canvas sub-plugin IDs — hidden from the plugin list unless canvas is enabled. */
 export const CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'agent-queue', 'sticky-note']);
+
+/** Canvas sub-plugin IDs that are always loaded (not behind experimental flags). */
+export const STABLE_CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'sticky-note']);
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
@@ -49,9 +53,12 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: canvasManifest, module: canvasModule },
     { manifest: reviewManifest, module: reviewModule },
     { manifest: groupProjectManifest, module: groupProjectModule },
-    { manifest: agentQueueManifest, module: agentQueueModule },
     { manifest: stickyNoteManifest, module: stickyNoteModule },
   ];
+
+  if (experimentalFlags.agentQueue) {
+    plugins.push({ manifest: agentQueueManifest, module: agentQueueModule });
+  }
 
   if (experimentalFlags.sessions) {
     plugins.push({ manifest: sessionsManifest, module: sessionsModule });

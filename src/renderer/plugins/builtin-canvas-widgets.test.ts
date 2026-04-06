@@ -58,7 +58,8 @@ describe('built-in plugin canvas widget declarations', () => {
     'sticky-note': ['note'],
   };
 
-  const allPlugins = getBuiltinPlugins();
+  // Include all experimental plugins for comprehensive widget testing
+  const allPlugins = getBuiltinPlugins({ agentQueue: true });
 
   for (const [pluginId, expectedWidgetIds] of Object.entries(EXPECTED_CANVAS_WIDGETS)) {
     describe(`${pluginId} plugin`, () => {
@@ -115,7 +116,7 @@ describe('getBuiltinProjectPluginIds', () => {
   });
 
   it('includes all project/dual-scoped builtins (app-first gate controls activation)', () => {
-    const ids = getBuiltinProjectPluginIds();
+    const ids = getBuiltinProjectPluginIds({ agentQueue: true });
     // All project/dual-scoped builtins should be present
     expect(ids).toContain('browser');
     expect(ids).toContain('canvas');
@@ -125,7 +126,7 @@ describe('getBuiltinProjectPluginIds', () => {
   });
 
   it('excludes app-scoped builtins', () => {
-    const allPlugins = getBuiltinPlugins();
+    const allPlugins = getBuiltinPlugins({ agentQueue: true });
     const ids = getBuiltinProjectPluginIds();
     const appOnly = allPlugins.filter((p) => p.manifest.scope === 'app');
     for (const p of appOnly) {
@@ -134,8 +135,8 @@ describe('getBuiltinProjectPluginIds', () => {
   });
 
   it('all builtins with canvas widgets and project/dual scope are in the returned list', () => {
-    const allPlugins = getBuiltinPlugins();
-    const projectIds = getBuiltinProjectPluginIds();
+    const allPlugins = getBuiltinPlugins({ agentQueue: true });
+    const projectIds = getBuiltinProjectPluginIds({ agentQueue: true });
 
     const pluginsWithWidgets = allPlugins.filter(
       (p) =>
@@ -252,7 +253,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
   });
 
   it('pre-registering all built-in canvas widgets populates the registry', () => {
-    const allPlugins = getBuiltinPlugins();
+    const allPlugins = getBuiltinPlugins({ agentQueue: true });
 
     for (const { manifest } of allPlugins) {
       if (manifest.contributes?.canvasWidgets) {
@@ -280,7 +281,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
   });
 
   it('only pre-registers widgets for plugins in the enabled set', () => {
-    const allPlugins = getBuiltinPlugins();
+    const allPlugins = getBuiltinPlugins({ agentQueue: true });
     // Simulate only enabling terminal and files — not group-project or browser
     const enabledSet = new Set(['terminal', 'files']);
 
@@ -302,7 +303,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
   });
 
   it('pre-registered widgets have correct labels from manifests', () => {
-    const allPlugins = getBuiltinPlugins();
+    const allPlugins = getBuiltinPlugins({ agentQueue: true });
     for (const { manifest } of allPlugins) {
       if (manifest.contributes?.canvasWidgets) {
         for (const widgetDecl of manifest.contributes.canvasWidgets) {
@@ -327,7 +328,7 @@ describe('pre-registered widgets without activation do not crash renderer', () =
   });
 
   it('all pre-registered placeholders have null component (verifies guard is needed)', () => {
-    const allPlugins = getBuiltinPlugins();
+    const allPlugins = getBuiltinPlugins({ agentQueue: true });
     for (const { manifest } of allPlugins) {
       if (manifest.contributes?.canvasWidgets) {
         for (const widgetDecl of manifest.contributes.canvasWidgets) {
@@ -366,7 +367,7 @@ describe('pre-registered widgets without activation do not crash renderer', () =
   });
 
   it('group-project manifest declares requiresMcp: true', () => {
-    const allPlugins = getBuiltinPlugins();
+    const allPlugins = getBuiltinPlugins({ agentQueue: true });
     const groupProject = allPlugins.find((p) => p.manifest.id === 'group-project');
     expect(groupProject).toBeDefined();
     expect(groupProject!.manifest.requiresMcp).toBe(true);
@@ -422,7 +423,7 @@ describe('CanvasContextMenu filters widgets by enabled state and MCP', () => {
 // ── Built-in plugin activate() registers canvas widgets ─────────────────
 
 describe('built-in plugin activate() canvas widget registration', () => {
-  const allPlugins = getBuiltinPlugins();
+  const allPlugins = getBuiltinPlugins({ agentQueue: true });
   const pluginsWithWidgets = allPlugins.filter(
     (p) => p.manifest.contributes?.canvasWidgets && p.manifest.contributes.canvasWidgets.length > 0,
   );
