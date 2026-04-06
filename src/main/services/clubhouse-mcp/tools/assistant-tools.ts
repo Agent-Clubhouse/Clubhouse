@@ -12,7 +12,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app, BrowserWindow } from 'electron';
-import { registerToolTemplate } from '../tool-registry';
+import { registerMcpCommand, toCommandId } from '../mcp-command-adapter';
 import * as projectStore from '../../project-store';
 import { listDurable, createDurable, updateDurable, updateDurableConfig, deleteDurable } from '../../agent-config';
 import { getAvailableOrchestrators, checkAvailability, resolveOrchestrator } from '../../agent-system';
@@ -44,29 +44,30 @@ export function registerAssistantTools(): void {
 
 // ── Filesystem Tools ───────────────────────────────────────────────────────
 
-registerToolTemplate(
-  'assistant',
-  'find_git_repos',
-  {
-    description:
-      'Scan a directory for git repositories. Returns paths where a .git directory exists. ' +
-      'Useful for helping users find their projects on disk. Max depth 2 for safety.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        directory: {
-          type: 'string',
-          description: 'The directory to scan (e.g. ~/code, ~/projects).',
-        },
-        depth: {
-          type: 'number',
-          description: 'Max depth to search. Defaults to 2, max 2.',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'find_git_repos'),
+  category: 'assistant',
+  label: 'Find Git Repos',
+  description:
+    'Scan a directory for git repositories. Returns paths where a .git directory exists. ' +
+    'Useful for helping users find their projects on disk. Max depth 2 for safety.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      directory: {
+        type: 'string',
+        description: 'The directory to scan (e.g. ~/code, ~/projects).',
       },
-      required: ['directory'],
+      depth: {
+        type: 'number',
+        description: 'Max depth to search. Defaults to 2, max 2.',
+      },
     },
+    required: ['directory'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'find_git_repos',
+  handler: async (_targetId, _agentId, args) => {
     const dir = args.directory as string;
     const maxDepth = Math.min((args.depth as number) || 2, 2);
     const repos: string[] = [];
@@ -102,25 +103,26 @@ registerToolTemplate(
       }],
     };
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'check_path',
-  {
-    description: 'Check if a path exists and whether it is a file or directory.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'The path to check.',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'check_path'),
+  category: 'assistant',
+  label: 'Check Path',
+  description: 'Check if a path exists and whether it is a file or directory.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'The path to check.',
       },
-      required: ['path'],
     },
+    required: ['path'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'check_path',
+  handler: async (_targetId, _agentId, args) => {
     const targetPath = (args.path as string).replace(/^~/, process.env.HOME || '/tmp');
     try {
       const stat = await fsp.stat(targetPath);
@@ -134,25 +136,26 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'list_directory',
-  {
-    description: 'List the contents of a directory with file types.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'The directory path to list.',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'list_directory'),
+  category: 'assistant',
+  label: 'List Directory',
+  description: 'List the contents of a directory with file types.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'The directory path to list.',
       },
-      required: ['path'],
     },
+    required: ['path'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'list_directory',
+  handler: async (_targetId, _agentId, args) => {
     const targetPath = (args.path as string).replace(/^~/, process.env.HOME || '/tmp');
     try {
       const entries = await fsp.readdir(targetPath, { withFileTypes: true });
@@ -173,21 +176,22 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
 // ── App State Tools ────────────────────────────────────────────────────────
 
-registerToolTemplate(
-  'assistant',
-  'list_projects',
-  {
-    description: 'List all projects configured in Clubhouse with their paths and git status.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+registerMcpCommand({
+  id: toCommandId('assistant', 'list_projects'),
+  category: 'assistant',
+  label: 'List Projects',
+  description: 'List all projects configured in Clubhouse with their paths and git status.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
   },
-  async (_targetId, _agentId, _args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'list_projects',
+  handler: async (_targetId, _agentId, _args) => {
     try {
       const projects = await projectStore.list();
       const result = projects.map(p => ({
@@ -205,25 +209,26 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'list_agents',
-  {
-    description: 'List durable agents configured in a specific project.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project_path: {
-          type: 'string',
-          description: 'The project directory path.',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'list_agents'),
+  category: 'assistant',
+  label: 'List Agents',
+  description: 'List durable agents configured in a specific project.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      project_path: {
+        type: 'string',
+        description: 'The project directory path.',
       },
-      required: ['project_path'],
     },
+    required: ['project_path'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'list_agents',
+  handler: async (_targetId, _agentId, args) => {
     const projectPath = args.project_path as string;
     try {
       const agents = await listDurable(projectPath);
@@ -246,20 +251,21 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'get_app_state',
-  {
-    description:
-      'Get a summary of the current Clubhouse app state including project count and orchestrator info.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+registerMcpCommand({
+  id: toCommandId('assistant', 'get_app_state'),
+  category: 'assistant',
+  label: 'Get App State',
+  description:
+    'Get a summary of the current Clubhouse app state including project count and orchestrator info.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
   },
-  async (_targetId, _agentId, _args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'get_app_state',
+  handler: async (_targetId, _agentId, _args) => {
     try {
       const projects = await projectStore.list();
       const orchestrators = getAvailableOrchestrators();
@@ -283,19 +289,20 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'get_orchestrators',
-  {
-    description: 'List available orchestrators and their status.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+registerMcpCommand({
+  id: toCommandId('assistant', 'get_orchestrators'),
+  category: 'assistant',
+  label: 'Get Orchestrators',
+  description: 'List available orchestrators and their status.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
   },
-  async (_targetId, _agentId, _args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'get_orchestrators',
+  handler: async (_targetId, _agentId, _args) => {
     try {
       const orchestrators = getAvailableOrchestrators();
       const results = [];
@@ -318,7 +325,7 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
 // ── Help Content Tools ─────────────────────────────────────────────────────
 
@@ -326,26 +333,27 @@ registerToolTemplate(
 // of this file. The markdown files are bundled as asset/source by webpack, and
 // the search function is a pure TS module with no renderer dependencies.
 
-registerToolTemplate(
-  'assistant',
-  'search_help',
-  {
-    description:
-      'Search Clubhouse help content by keyword. Returns matching topics with full content. ' +
-      'Use this to retrieve detailed information about any Clubhouse feature. ' +
-      'Your system prompt lists available topics — call this tool to get the full article.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'The search query (e.g. "canvas", "durable agents", "keyboard shortcuts").',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'search_help'),
+  category: 'assistant',
+  label: 'Search Help',
+  description:
+    'Search Clubhouse help content by keyword. Returns matching topics with full content. ' +
+    'Use this to retrieve detailed information about any Clubhouse feature. ' +
+    'Your system prompt lists available topics — call this tool to get the full article.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'The search query (e.g. "canvas", "durable agents", "keyboard shortcuts").',
       },
-      required: ['query'],
     },
+    required: ['query'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'search_help',
+  handler: async (_targetId, _agentId, args) => {
     const query = args.query as string;
     const results = searchHelpTopics(HELP_SECTIONS, query);
 
@@ -377,21 +385,22 @@ registerToolTemplate(
       content: [{ type: 'text', text: output }],
     };
   },
-);
+});
 
 // ── Plugin & Settings Tools ────────────────────────────────────────────────
 
-registerToolTemplate(
-  'assistant',
-  'get_settings',
-  {
-    description: 'Get current Clubhouse app settings (theme, notifications, etc.).',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+registerMcpCommand({
+  id: toCommandId('assistant', 'get_settings'),
+  category: 'assistant',
+  label: 'Get Settings',
+  description: 'Get current Clubhouse app settings (theme, notifications, etc.).',
+  inputSchema: {
+    type: 'object',
+    properties: {},
   },
-  async (_targetId, _agentId, _args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'get_settings',
+  handler: async (_targetId, _agentId, _args) => {
     // Settings are managed via renderer stores. For the main process,
     // read the settings file from the standard location.
     try {
@@ -406,21 +415,22 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'list_themes',
-  {
-    description:
-      'List all available themes with their IDs, names, and types (dark/light). ' +
-      'Use the theme ID with update_settings(key: "theme", value: "<id>") to change the theme.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+registerMcpCommand({
+  id: toCommandId('assistant', 'list_themes'),
+  category: 'assistant',
+  label: 'List Themes',
+  description:
+    'List all available themes with their IDs, names, and types (dark/light). ' +
+    'Use the theme ID with update_settings(key: "theme", value: "<id>") to change the theme.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
   },
-  async () => {
+  targetKind: 'assistant',
+  nameSuffix: 'list_themes',
+  handler: async () => {
     const currentSettings = themeService.getSettings() || { themeId: 'catppuccin-mocha' };
 
     // Combine builtin themes (available directly in main) with plugin-contributed
@@ -443,7 +453,7 @@ registerToolTemplate(
       }],
     };
   },
-);
+});
 
 // ══════════════════════════════════════════════════════════════════════════
 // WRITE TOOLS (Phase 4)
@@ -451,25 +461,26 @@ registerToolTemplate(
 
 // ── Project Write Tools ────────────────────────────────────────────────────
 
-registerToolTemplate(
-  'assistant',
-  'add_project',
-  {
-    description:
-      'Add a directory as a Clubhouse project. The directory should exist on disk. ' +
-      'After adding, the project appears in the sidebar and agents can be created for it.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'Absolute path to the project directory.',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'add_project'),
+  category: 'assistant',
+  label: 'Add Project',
+  description:
+    'Add a directory as a Clubhouse project. The directory should exist on disk. ' +
+    'After adding, the project appears in the sidebar and agents can be created for it.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'Absolute path to the project directory.',
       },
-      required: ['path'],
     },
+    required: ['path'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'add_project',
+  handler: async (_targetId, _agentId, args) => {
     const dirPath = (args.path as string).replace(/^~/, process.env.HOME || '/tmp');
     try {
       const stat = await fsp.stat(dirPath);
@@ -487,27 +498,28 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'remove_project',
-  {
-    description:
-      'Remove a project from Clubhouse. This does NOT delete any files on disk — ' +
-      'it only removes the project from Clubhouse\'s tracking.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project_id: {
-          type: 'string',
-          description: 'The project ID (from list_projects).',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'remove_project'),
+  category: 'assistant',
+  label: 'Remove Project',
+  description:
+    'Remove a project from Clubhouse. This does NOT delete any files on disk — ' +
+    'it only removes the project from Clubhouse\'s tracking.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      project_id: {
+        type: 'string',
+        description: 'The project ID (from list_projects).',
       },
-      required: ['project_id'],
     },
+    required: ['project_id'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'remove_project',
+  handler: async (_targetId, _agentId, args) => {
     const projectId = args.project_id as string;
     try {
       await projectStore.remove(projectId);
@@ -521,33 +533,34 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'update_project',
-  {
-    description: 'Update a project\'s display name or color.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project_id: {
-          type: 'string',
-          description: 'The project ID.',
-        },
-        display_name: {
-          type: 'string',
-          description: 'New display name for the project.',
-        },
-        color: {
-          type: 'string',
-          description: 'New color for the project.',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'update_project'),
+  category: 'assistant',
+  label: 'Update Project',
+  description: 'Update a project\'s display name or color.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      project_id: {
+        type: 'string',
+        description: 'The project ID.',
       },
-      required: ['project_id'],
+      display_name: {
+        type: 'string',
+        description: 'New display name for the project.',
+      },
+      color: {
+        type: 'string',
+        description: 'New color for the project.',
+      },
     },
+    required: ['project_id'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'update_project',
+  handler: async (_targetId, _agentId, args) => {
     const projectId = args.project_id as string;
     const updates: Record<string, string> = {};
     if (args.display_name) updates.displayName = args.display_name as string;
@@ -564,63 +577,64 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
 // ── Agent Write Tools ──────────────────────────────────────────────────────
 
-registerToolTemplate(
-  'assistant',
-  'create_agent',
-  {
-    description:
-      'Create a new durable agent in a project. Has full parity with the Create Agent dialog. ' +
-      'Returns the created agent\'s ID and configuration.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project_path: {
-          type: 'string',
-          description: 'The project directory path.',
-        },
-        name: {
-          type: 'string',
-          description: 'Agent name. Auto-generated if omitted.',
-        },
-        color: {
-          type: 'string',
-          description: `Agent color ID. Options: ${AGENT_COLORS.map(c => c.id).join(', ')}. Defaults to "${AGENT_COLORS[0]?.id || 'emerald'}".`,
-        },
-        model: {
-          type: 'string',
-          description: 'Model identifier (e.g. "claude-opus", "claude-sonnet"). Falls back to orchestrator default if omitted.',
-        },
-        orchestrator: {
-          type: 'string',
-          description: 'Orchestrator ID (e.g. "claude-code", "copilot-cli", "codex-cli"). Falls back to project/app default if omitted.',
-        },
-        use_worktree: {
-          type: 'boolean',
-          description: 'Whether to create an isolated git worktree. Defaults to true.',
-        },
-        free_agent_mode: {
-          type: 'boolean',
-          description: 'Whether to enable free agent mode (skip all permission prompts). Defaults to project default.',
-        },
-        mcp_ids: {
-          type: 'string',
-          description: 'Comma-separated list of MCP server IDs to attach to this agent.',
-        },
-        persona: {
-          type: 'string',
-          description:
-            `Persona template ID. Auto-injects role-specific instructions into the agent's CLAUDE.md. ` +
-            `Options: ${getPersonaIds().join(', ')}.`,
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'create_agent'),
+  category: 'assistant',
+  label: 'Create Agent',
+  description:
+    'Create a new durable agent in a project. Has full parity with the Create Agent dialog. ' +
+    'Returns the created agent\'s ID and configuration.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      project_path: {
+        type: 'string',
+        description: 'The project directory path.',
       },
-      required: ['project_path'],
+      name: {
+        type: 'string',
+        description: 'Agent name. Auto-generated if omitted.',
+      },
+      color: {
+        type: 'string',
+        description: `Agent color ID. Options: ${AGENT_COLORS.map(c => c.id).join(', ')}. Defaults to "${AGENT_COLORS[0]?.id || 'emerald'}".`,
+      },
+      model: {
+        type: 'string',
+        description: 'Model identifier (e.g. "claude-opus", "claude-sonnet"). Falls back to orchestrator default if omitted.',
+      },
+      orchestrator: {
+        type: 'string',
+        description: 'Orchestrator ID (e.g. "claude-code", "copilot-cli", "codex-cli"). Falls back to project/app default if omitted.',
+      },
+      use_worktree: {
+        type: 'boolean',
+        description: 'Whether to create an isolated git worktree. Defaults to true.',
+      },
+      free_agent_mode: {
+        type: 'boolean',
+        description: 'Whether to enable free agent mode (skip all permission prompts). Defaults to project default.',
+      },
+      mcp_ids: {
+        type: 'string',
+        description: 'Comma-separated list of MCP server IDs to attach to this agent.',
+      },
+      persona: {
+        type: 'string',
+        description:
+          `Persona template ID. Auto-injects role-specific instructions into the agent's CLAUDE.md. ` +
+          `Options: ${getPersonaIds().join(', ')}.`,
+      },
     },
+    required: ['project_path'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'create_agent',
+  handler: async (_targetId, _agentId, args) => {
     const projectPath = args.project_path as string;
     const name = (args.name as string) || `agent-${Date.now().toString(36).slice(-4)}`;
     const color = (args.color as string) || AGENT_COLORS[0]?.id || 'emerald';
@@ -714,60 +728,61 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'update_agent',
-  {
-    description:
-      'Update a durable agent\'s configuration. Can change model, orchestrator, ' +
-      'free agent mode, clubhouse mode override, name, color, and icon. ' +
-      'IMPORTANT: Do NOT clear an agent\'s icon unless the user explicitly asks — custom icons are user-set.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project_path: {
-          type: 'string',
-          description: 'The project directory path.',
-        },
-        agent_id: {
-          type: 'string',
-          description: 'The agent ID.',
-        },
-        name: {
-          type: 'string',
-          description: 'New agent name.',
-        },
-        color: {
-          type: 'string',
-          description: 'New agent color.',
-        },
-        icon: {
-          type: 'string',
-          description: 'Agent icon filename. Set to "" to remove a custom icon. Omit to leave unchanged.',
-        },
-        model: {
-          type: 'string',
-          description: 'New model identifier.',
-        },
-        orchestrator: {
-          type: 'string',
-          description: 'New orchestrator ID.',
-        },
-        free_agent_mode: {
-          type: 'boolean',
-          description: 'Enable or disable free agent mode.',
-        },
-        clubhouse_mode_override: {
-          type: 'boolean',
-          description: 'Override for Clubhouse mode behavior.',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'update_agent'),
+  category: 'assistant',
+  label: 'Update Agent',
+  description:
+    'Update a durable agent\'s configuration. Can change model, orchestrator, ' +
+    'free agent mode, clubhouse mode override, name, color, and icon. ' +
+    'IMPORTANT: Do NOT clear an agent\'s icon unless the user explicitly asks — custom icons are user-set.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      project_path: {
+        type: 'string',
+        description: 'The project directory path.',
       },
-      required: ['project_path', 'agent_id'],
+      agent_id: {
+        type: 'string',
+        description: 'The agent ID.',
+      },
+      name: {
+        type: 'string',
+        description: 'New agent name.',
+      },
+      color: {
+        type: 'string',
+        description: 'New agent color.',
+      },
+      icon: {
+        type: 'string',
+        description: 'Agent icon filename. Set to "" to remove a custom icon. Omit to leave unchanged.',
+      },
+      model: {
+        type: 'string',
+        description: 'New model identifier.',
+      },
+      orchestrator: {
+        type: 'string',
+        description: 'New orchestrator ID.',
+      },
+      free_agent_mode: {
+        type: 'boolean',
+        description: 'Enable or disable free agent mode.',
+      },
+      clubhouse_mode_override: {
+        type: 'boolean',
+        description: 'Override for Clubhouse mode behavior.',
+      },
     },
+    required: ['project_path', 'agent_id'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'update_agent',
+  handler: async (_targetId, _agentId, args) => {
     const projectPath = args.project_path as string;
     const agentId = args.agent_id as string;
     try {
@@ -803,31 +818,32 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'delete_agent',
-  {
-    description:
-      'Delete a durable agent from a project. This removes the agent\'s configuration ' +
-      'and worktree (if any). This action cannot be undone.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project_path: {
-          type: 'string',
-          description: 'The project directory path.',
-        },
-        agent_id: {
-          type: 'string',
-          description: 'The agent ID to delete.',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'delete_agent'),
+  category: 'assistant',
+  label: 'Delete Agent',
+  description:
+    'Delete a durable agent from a project. This removes the agent\'s configuration ' +
+    'and worktree (if any). This action cannot be undone.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      project_path: {
+        type: 'string',
+        description: 'The project directory path.',
       },
-      required: ['project_path', 'agent_id'],
+      agent_id: {
+        type: 'string',
+        description: 'The agent ID to delete.',
+      },
     },
+    required: ['project_path', 'agent_id'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'delete_agent',
+  handler: async (_targetId, _agentId, args) => {
     const projectPath = args.project_path as string;
     const agentId = args.agent_id as string;
     try {
@@ -842,35 +858,36 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
-registerToolTemplate(
-  'assistant',
-  'write_agent_instructions',
-  {
-    description:
-      'Write or update the CLAUDE.md (or equivalent) instructions file for an agent. ' +
-      'Uses the correct file path for the agent\'s orchestrator.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project_path: {
-          type: 'string',
-          description: 'The project directory path (or agent worktree path).',
-        },
-        content: {
-          type: 'string',
-          description: 'The full markdown content to write as the agent\'s instructions.',
-        },
-        orchestrator: {
-          type: 'string',
-          description: 'Orchestrator ID to determine file path. Defaults to project default.',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'write_agent_instructions'),
+  category: 'assistant',
+  label: 'Write Agent Instructions',
+  description:
+    'Write or update the CLAUDE.md (or equivalent) instructions file for an agent. ' +
+    'Uses the correct file path for the agent\'s orchestrator.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      project_path: {
+        type: 'string',
+        description: 'The project directory path (or agent worktree path).',
       },
-      required: ['project_path', 'content'],
+      content: {
+        type: 'string',
+        description: 'The full markdown content to write as the agent\'s instructions.',
+      },
+      orchestrator: {
+        type: 'string',
+        description: 'Orchestrator ID to determine file path. Defaults to project default.',
+      },
     },
+    required: ['project_path', 'content'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'write_agent_instructions',
+  handler: async (_targetId, _agentId, args) => {
     const projectPath = args.project_path as string;
     const content = args.content as string;
     const orchestratorId = args.orchestrator as string | undefined;
@@ -887,7 +904,7 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
 // ── Settings Write Tool ────────────────────────────────────────────────────
 
@@ -908,28 +925,29 @@ const SETTINGS_ALLOWLIST = new Set([
   'telemetryEnabled',
 ]);
 
-registerToolTemplate(
-  'assistant',
-  'update_settings',
-  {
-    description:
-      'Update a Clubhouse app setting. Reads the current settings, merges the update, and writes back.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        key: {
-          type: 'string',
-          description: `The settings key to update. Allowed keys: ${[...SETTINGS_ALLOWLIST].join(', ')}.`,
-        },
-        value: {
-          type: 'string',
-          description: 'The new value (as a JSON string for non-string values, e.g. "true", "42", or \'"dark"\').',
-        },
+registerMcpCommand({
+  id: toCommandId('assistant', 'update_settings'),
+  category: 'assistant',
+  label: 'Update Settings',
+  description:
+    'Update a Clubhouse app setting. Reads the current settings, merges the update, and writes back.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      key: {
+        type: 'string',
+        description: `The settings key to update. Allowed keys: ${[...SETTINGS_ALLOWLIST].join(', ')}.`,
       },
-      required: ['key', 'value'],
+      value: {
+        type: 'string',
+        description: 'The new value (as a JSON string for non-string values, e.g. "true", "42", or \'"dark"\').',
+      },
     },
+    required: ['key', 'value'],
   },
-  async (_targetId, _agentId, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'update_settings',
+  handler: async (_targetId, _agentId, args) => {
     const key = args.key as string;
     const rawValue = args.value as string;
 
@@ -983,7 +1001,7 @@ registerToolTemplate(
       };
     }
   },
-);
+});
 
 // ══════════════════════════════════════════════════════════════════════════
 // CANVAS TOOLS (Phase 5)
@@ -1017,27 +1035,39 @@ async function resolveCanvasId(args: Record<string, unknown>, ...viewIdKeys: str
   return providedCanvasId || null;
 }
 
-registerToolTemplate('assistant', 'create_canvas', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'create_canvas'),
+  category: 'assistant',
+  label: 'Create Canvas',
   description: 'Create a new canvas tab. Provide project_id to create in a specific project, otherwise creates at app level.',
   inputSchema: { type: 'object', properties: {
     name: { type: 'string', description: 'Canvas name. Auto-generated if omitted.' },
     project_id: { type: 'string', description: 'Project ID to create canvas in. Omit for app-level.' },
   } },
-}, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('add_canvas', { name: args.name, project_id: args.project_id });
-  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to create canvas' }], isError: true };
-  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  targetKind: 'assistant',
+  nameSuffix: 'create_canvas',
+  handler: async (_t, _a, args) => {
+    const result = await sendCanvasCommand('add_canvas', { name: args.name, project_id: args.project_id });
+    if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to create canvas' }], isError: true };
+    return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  },
 });
 
-registerToolTemplate('assistant', 'list_canvases', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'list_canvases'),
+  category: 'assistant',
+  label: 'List Canvases',
   description: 'List all canvases with their IDs, names, and card counts.',
   inputSchema: { type: 'object', properties: {
     project_id: { type: 'string', description: 'Project ID to list canvases for. Omit for app-level.' },
   } },
-}, async (_t, _a, args) => {
-  const result = await sendCanvasCommand('list_canvases', { project_id: args.project_id });
-  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to list canvases' }], isError: true };
-  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  targetKind: 'assistant',
+  nameSuffix: 'list_canvases',
+  handler: async (_t, _a, args) => {
+    const result = await sendCanvasCommand('list_canvases', { project_id: args.project_id });
+    if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to list canvases' }], isError: true };
+    return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  },
 });
 
 // Track card count per canvas for auto-staggering default positions.
@@ -1046,7 +1076,10 @@ registerToolTemplate('assistant', 'list_canvases', {
 // cards) resets the counter and re-arranges all cards.
 const canvasCardCounters = new Map<string, number>();
 
-registerToolTemplate('assistant', 'add_card', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'add_card'),
+  category: 'assistant',
+  label: 'Add Card',
   description:
     'Add a card to a canvas. Types: "agent" (for durable agents), "zone" (visual grouping container), "anchor" (text-only label), "sticky-note" (note with text and color). ' +
     'For agent cards, ALWAYS provide agent_id and project_id to bind a real agent. ' +
@@ -1076,7 +1109,9 @@ registerToolTemplate('assistant', 'add_card', {
     },
     required: ['canvas_id', 'type'],
   },
-}, async (_t, _a, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'add_card',
+  handler: async (_t, _a, args) => {
   const canvasId = args.canvas_id as string;
   const cardType = (args.type as string) || 'agent';
   const cmdArgs: Record<string, unknown> = {
@@ -1169,9 +1204,13 @@ registerToolTemplate('assistant', 'add_card', {
   // Include canvas_id in response for LLM context reinforcement
   const responseData = { ...(result!.data as Record<string, unknown>), canvas_id: canvasId };
   return { content: [{ type: 'text', text: JSON.stringify(responseData) }] };
+  },
 });
 
-registerToolTemplate('assistant', 'move_card', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'move_card'),
+  category: 'assistant',
+  label: 'Move Card',
   description: 'Move a card to a new position on the canvas. Parameters are x and y (numbers). ' +
     'canvas_id is optional — it will be inferred from the view_id. ' +
     'To place a card inside a zone, set zone_id — the card will be centered in the zone. ' +
@@ -1193,7 +1232,9 @@ registerToolTemplate('assistant', 'move_card', {
     },
     required: ['view_id'],
   },
-}, async (_t, _a, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'move_card',
+  handler: async (_t, _a, args) => {
   const canvasId = await resolveCanvasId(args, 'view_id');
   if (!canvasId) {
     return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
@@ -1243,9 +1284,13 @@ registerToolTemplate('assistant', 'move_card', {
   const result = await sendCanvasCommand('move_view', { canvas_id: canvasId, view_id: args.view_id, position, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to move card' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card moved.', canvas_id: canvasId, view_id: args.view_id }) }] };
+  },
 });
 
-registerToolTemplate('assistant', 'resize_card', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'resize_card'),
+  category: 'assistant',
+  label: 'Resize Card',
   description: 'Resize a card on the canvas. canvas_id is optional — inferred from view_id.',
   inputSchema: {
     type: 'object',
@@ -1257,7 +1302,9 @@ registerToolTemplate('assistant', 'resize_card', {
     },
     required: ['view_id', 'width', 'height'],
   },
-}, async (_t, _a, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'resize_card',
+  handler: async (_t, _a, args) => {
   const canvasId = await resolveCanvasId(args, 'view_id');
   if (!canvasId) {
     return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
@@ -1265,9 +1312,13 @@ registerToolTemplate('assistant', 'resize_card', {
   const result = await sendCanvasCommand('resize_view', { canvas_id: canvasId, view_id: args.view_id, size: { w: args.width, h: args.height }, project_id: args.project_id });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to resize card' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card resized.', canvas_id: canvasId, view_id: args.view_id }) }] };
+  },
 });
 
-registerToolTemplate('assistant', 'remove_card', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'remove_card'),
+  category: 'assistant',
+  label: 'Remove Card',
   description: 'Remove a card from the canvas. canvas_id is optional — inferred from view_id.',
   inputSchema: {
     type: 'object',
@@ -1277,17 +1328,23 @@ registerToolTemplate('assistant', 'remove_card', {
     },
     required: ['view_id'],
   },
-}, async (_t, _a, args) => {
-  const canvasId = await resolveCanvasId(args, 'view_id');
-  if (!canvasId) {
-    return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
-  }
-  const result = await sendCanvasCommand('remove_view', { canvas_id: canvasId, view_id: args.view_id, project_id: args.project_id });
-  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to remove card' }], isError: true };
-  return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card removed.', canvas_id: canvasId, view_id: args.view_id }) }] };
+  targetKind: 'assistant',
+  nameSuffix: 'remove_card',
+  handler: async (_t, _a, args) => {
+    const canvasId = await resolveCanvasId(args, 'view_id');
+    if (!canvasId) {
+      return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
+    }
+    const result = await sendCanvasCommand('remove_view', { canvas_id: canvasId, view_id: args.view_id, project_id: args.project_id });
+    if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to remove card' }], isError: true };
+    return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card removed.', canvas_id: canvasId, view_id: args.view_id }) }] };
+  },
 });
 
-registerToolTemplate('assistant', 'rename_card', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'rename_card'),
+  category: 'assistant',
+  label: 'Rename Card',
   description: 'Rename a card on the canvas. canvas_id is optional — inferred from view_id.',
   inputSchema: {
     type: 'object',
@@ -1298,17 +1355,23 @@ registerToolTemplate('assistant', 'rename_card', {
     },
     required: ['view_id', 'name'],
   },
-}, async (_t, _a, args) => {
-  const canvasId = await resolveCanvasId(args, 'view_id');
-  if (!canvasId) {
-    return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
-  }
-  const result = await sendCanvasCommand('rename_view', { canvas_id: canvasId, view_id: args.view_id, name: args.name, project_id: args.project_id });
-  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to rename card' }], isError: true };
-  return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card renamed.', canvas_id: canvasId, view_id: args.view_id }) }] };
+  targetKind: 'assistant',
+  nameSuffix: 'rename_card',
+  handler: async (_t, _a, args) => {
+    const canvasId = await resolveCanvasId(args, 'view_id');
+    if (!canvasId) {
+      return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the view_id exists on a canvas.' }], isError: true };
+    }
+    const result = await sendCanvasCommand('rename_view', { canvas_id: canvasId, view_id: args.view_id, name: args.name, project_id: args.project_id });
+    if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to rename card' }], isError: true };
+    return { content: [{ type: 'text', text: JSON.stringify({ message: 'Card renamed.', canvas_id: canvasId, view_id: args.view_id }) }] };
+  },
 });
 
-registerToolTemplate('assistant', 'connect_cards', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'connect_cards'),
+  category: 'assistant',
+  label: 'Connect Cards',
   description: 'Create a wire (MCP binding) between two cards. ' +
     'Source must be an agent card with agent_id set. Target must be another agent card (NOT an anchor). ' +
     'canvas_id is optional — it will be inferred from the card view IDs. ' +
@@ -1327,29 +1390,35 @@ registerToolTemplate('assistant', 'connect_cards', {
     },
     required: [],
   },
-}, async (_t, _a, args) => {
-  // Accept from_card_id/to_card_id as aliases
-  const sourceViewId = args.source_view_id ?? args.from_card_id;
-  const targetViewId = args.target_view_id ?? args.to_card_id;
-  if (!sourceViewId || !targetViewId) {
-    return { content: [{ type: 'text', text: 'Missing required argument: source_view_id (or from_card_id) and target_view_id (or to_card_id)' }], isError: true };
-  }
-  const canvasId = await resolveCanvasId({ ...args, source_view_id: sourceViewId, target_view_id: targetViewId }, 'source_view_id', 'target_view_id');
-  if (!canvasId) {
-    return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the card view IDs exist on a canvas.' }], isError: true };
-  }
-  const result = await sendCanvasCommand('connect_views', {
-    canvas_id: canvasId,
-    source_view_id: sourceViewId,
-    target_view_id: targetViewId,
-    project_id: args.project_id,
-    bidirectional: args.bidirectional,
-  });
-  if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to connect cards' }], isError: true };
-  return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  targetKind: 'assistant',
+  nameSuffix: 'connect_cards',
+  handler: async (_t, _a, args) => {
+    // Accept from_card_id/to_card_id as aliases
+    const sourceViewId = args.source_view_id ?? args.from_card_id;
+    const targetViewId = args.target_view_id ?? args.to_card_id;
+    if (!sourceViewId || !targetViewId) {
+      return { content: [{ type: 'text', text: 'Missing required argument: source_view_id (or from_card_id) and target_view_id (or to_card_id)' }], isError: true };
+    }
+    const canvasId = await resolveCanvasId({ ...args, source_view_id: sourceViewId, target_view_id: targetViewId }, 'source_view_id', 'target_view_id');
+    if (!canvasId) {
+      return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id or ensure the card view IDs exist on a canvas.' }], isError: true };
+    }
+    const result = await sendCanvasCommand('connect_views', {
+      canvas_id: canvasId,
+      source_view_id: sourceViewId,
+      target_view_id: targetViewId,
+      project_id: args.project_id,
+      bidirectional: args.bidirectional,
+    });
+    if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to connect cards' }], isError: true };
+    return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  },
 });
 
-registerToolTemplate('assistant', 'layout_canvas', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'layout_canvas'),
+  category: 'assistant',
+  label: 'Layout Canvas',
   description: 'Auto-arrange cards using ELK layout algorithms. Algorithms: "layered" (hierarchical with spline wire routing — best default), "radial" (concentric circles from a root node), "force" (physics-based spreading), "mrtree" (compact tree hierarchy). ' +
     'canvas_id is optional — auto-selects when only one canvas exists. ' +
     'Zone-aware: cards inside zones are grouped and arranged within their zone bounds. ' +
@@ -1366,7 +1435,9 @@ registerToolTemplate('assistant', 'layout_canvas', {
     },
     required: ['algorithm'],
   },
-}, async (_t, _a, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'layout_canvas',
+  handler: async (_t, _a, args) => {
   let canvasId = args.canvas_id as string | undefined;
   if (!canvasId) {
     const listResult = await sendCanvasCommand('list_canvases', { project_id: args.project_id });
@@ -1461,12 +1532,18 @@ registerToolTemplate('assistant', 'layout_canvas', {
     }
     return { content: [{ type: 'text', text: JSON.stringify({ message: `Layout failed (${err.message}), fell back to grid.`, canvas_id: canvasId }) }] };
   }
+  },
 });
 
-registerToolTemplate('assistant', 'get_card_defaults', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'get_card_defaults'),
+  category: 'assistant',
+  label: 'Get Card Defaults',
   description: 'Get default card sizes, spacing values, and layout info. Use this to know card dimensions before positioning.',
   inputSchema: { type: 'object', properties: {} },
-}, async () => {
+  targetKind: 'assistant',
+  nameSuffix: 'get_card_defaults',
+  handler: async () => {
   const data = {
     card_sizes: DEFAULT_CARD_SIZES,
     spacing: {
@@ -1486,11 +1563,17 @@ registerToolTemplate('assistant', 'get_card_defaults', {
     ],
   };
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  },
 });
 
 // ── create_canvas_from_blueprint ──────────────────────────────────────────
 
-registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'create_canvas_from_blueprint'),
+  category: 'assistant',
+  label: 'Create Canvas from Blueprint',
+  targetKind: 'assistant',
+  nameSuffix: 'create_canvas_from_blueprint',
   description:
     'Create a complete canvas from a JSON blueprint in one atomic call. ' +
     'Supports zones (named, colored), agent cards, group-project cards, sticky notes, anchors, and wires. ' +
@@ -1557,7 +1640,7 @@ registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
     },
     required: ['blueprint'],
   },
-}, async (_t, _a, args) => {
+  handler: async (_t, _a, args) => {
   const blueprint = args.blueprint as Record<string, unknown>;
   if (!blueprint) {
     return { content: [{ type: 'text', text: 'blueprint is required' }], isError: true };
@@ -1658,11 +1741,15 @@ registerToolTemplate('assistant', 'create_canvas_from_blueprint', {
   }
 
   return { content: [{ type: 'text', text: JSON.stringify(response, null, 2) }] };
+  },
 });
 
 // ── disconnect_cards ──────────────────────────────────────────────────────
 
-registerToolTemplate('assistant', 'disconnect_cards', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'disconnect_cards'),
+  category: 'assistant',
+  label: 'Disconnect Cards',
   description: 'Remove a wire (MCP binding) between two cards. ' +
     'Parameters: canvas_id, source_view_id, target_view_id. ' +
     'If the wire was bidirectional, both directions are removed automatically.',
@@ -1677,7 +1764,9 @@ registerToolTemplate('assistant', 'disconnect_cards', {
     },
     required: ['canvas_id'],
   },
-}, async (_t, _a, args) => {
+  targetKind: 'assistant',
+  nameSuffix: 'disconnect_cards',
+  handler: async (_t, _a, args) => {
   const sourceViewId = args.source_view_id ?? args.from_card_id;
   const targetViewId = args.target_view_id ?? args.to_card_id;
   if (!sourceViewId || !targetViewId) {
@@ -1691,14 +1780,20 @@ registerToolTemplate('assistant', 'disconnect_cards', {
   });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to disconnect cards' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  },
 });
 
 // ── list_card_types ──────────────────────────────────────────────────────
 
-registerToolTemplate('assistant', 'list_card_types', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'list_card_types'),
+  category: 'assistant',
+  label: 'List Card Types',
   description: 'List all available canvas card types with descriptions and default sizes.',
   inputSchema: { type: 'object', properties: {} },
-}, async () => {
+  targetKind: 'assistant',
+  nameSuffix: 'list_card_types',
+  handler: async () => {
   const cardTypes = [
     { type: 'agent', description: 'Durable agent card. Bind to a real agent with agent_id + project_id.', defaultSize: { width: 300, height: 200 } },
     { type: 'zone', description: 'Visual container that groups other cards. Containment is spatial (>50% overlap).', defaultSize: { width: 600, height: 400 } },
@@ -1707,16 +1802,22 @@ registerToolTemplate('assistant', 'list_card_types', {
     { type: 'plugin', description: 'Plugin-provided widget (browser, terminal, file viewer, group project, etc.). Created by plugins, not directly via add_card.', defaultSize: { width: 480, height: 480 } },
   ];
   return { content: [{ type: 'text', text: JSON.stringify(cardTypes, null, 2) }] };
+  },
 });
 
 // ── Plugin Tools ───────────────────────────────────────────────────────────
 
-registerToolTemplate('assistant', 'list_plugins', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'list_plugins'),
+  category: 'assistant',
+  label: 'List Plugins',
   description:
     'List installed plugins with their name, description, version, and status. ' +
     'Shows both builtin and community (user-installed) plugins.',
   inputSchema: { type: 'object', properties: {} },
-}, async () => {
+  targetKind: 'assistant',
+  nameSuffix: 'list_plugins',
+  handler: async () => {
   try {
     const discovered = await discoverCommunityPlugins();
     const plugins = discovered.map(p => ({
@@ -1745,9 +1846,15 @@ registerToolTemplate('assistant', 'list_plugins', {
       isError: true,
     };
   }
+  },
 });
 
-registerToolTemplate('assistant', 'install_plugin', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'install_plugin'),
+  category: 'assistant',
+  label: 'Install Plugin',
+  targetKind: 'assistant',
+  nameSuffix: 'install_plugin',
   description:
     'Install a plugin from a local path. Copies the plugin directory to ~/.clubhouse/plugins/. ' +
     'IMPORTANT: This only installs the plugin — the user must enable it manually in Settings > Plugins. ' +
@@ -1766,7 +1873,7 @@ registerToolTemplate('assistant', 'install_plugin', {
     },
     required: ['source_path'],
   },
-}, async (_t, _a, args) => {
+  handler: async (_t, _a, args) => {
   const sourcePath = (args.source_path as string).replace(/^~/, process.env.HOME || '/tmp');
   try {
     // Validate source path exists and has manifest.json
@@ -1810,11 +1917,17 @@ registerToolTemplate('assistant', 'install_plugin', {
       isError: true,
     };
   }
+  },
 });
 
 // ── Marketplace Tools ──────────────────────────────────────────────────────
 
-registerToolTemplate('assistant', 'list_marketplace_plugins', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'list_marketplace_plugins'),
+  category: 'assistant',
+  label: 'List Marketplace Plugins',
+  targetKind: 'assistant',
+  nameSuffix: 'list_marketplace_plugins',
   description:
     'List plugins available in the Clubhouse marketplace. Returns name, description, author, tags, ' +
     'latest version, permissions, and whether each plugin is already installed locally. ' +
@@ -1838,7 +1951,7 @@ registerToolTemplate('assistant', 'list_marketplace_plugins', {
       },
     },
   },
-}, async (_targetId, _agentId, args) => {
+  handler: async (_targetId, _agentId, args) => {
   try {
     const search = (args.search as string || '').toLowerCase().trim();
     const tagFilter = (args.tag as string || '').toLowerCase().trim();
@@ -1868,8 +1981,6 @@ registerToolTemplate('assistant', 'list_marketplace_plugins', {
         p.tags.some(t => t.toLowerCase().includes(search)),
       );
     }
-
-    const latestApiVersion = Math.max(...SUPPORTED_PLUGIN_API_VERSIONS);
 
     const plugins = filtered.map(p => {
       const latestRelease = p.releases[p.latest];
@@ -1910,9 +2021,15 @@ registerToolTemplate('assistant', 'list_marketplace_plugins', {
       isError: true,
     };
   }
+  },
 });
 
-registerToolTemplate('assistant', 'download_marketplace_plugin', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'download_marketplace_plugin'),
+  category: 'assistant',
+  label: 'Download Marketplace Plugin',
+  targetKind: 'assistant',
+  nameSuffix: 'download_marketplace_plugin',
   description:
     'Download and install a plugin from the Clubhouse marketplace. This downloads the plugin but does NOT ' +
     'enable it — the user must enable it manually in Settings > Plugins. This is a security boundary: ' +
@@ -1933,7 +2050,7 @@ registerToolTemplate('assistant', 'download_marketplace_plugin', {
     },
     required: ['plugin_id'],
   },
-}, async (_targetId, _agentId, args) => {
+  handler: async (_targetId, _agentId, args) => {
   try {
     const pluginId = args.plugin_id as string;
     const requestedVersion = args.version as string | undefined;
@@ -2031,9 +2148,15 @@ registerToolTemplate('assistant', 'download_marketplace_plugin', {
       isError: true,
     };
   }
+  },
 });
 
-registerToolTemplate('assistant', 'open_plugin_settings', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'open_plugin_settings'),
+  category: 'assistant',
+  label: 'Open Plugin Settings',
+  targetKind: 'assistant',
+  nameSuffix: 'open_plugin_settings',
   description:
     'Navigate the user to the Plugins settings view. Optionally opens the detail page for a specific plugin. ' +
     'Use this after downloading a plugin to help the user enable it, or when the user asks about plugin configuration.',
@@ -2046,7 +2169,7 @@ registerToolTemplate('assistant', 'open_plugin_settings', {
       },
     },
   },
-}, async (_targetId, _agentId, args) => {
+  handler: async (_targetId, _agentId, args) => {
   const pluginId = args.plugin_id as string | undefined;
 
   // Send navigation IPC to all windows
@@ -2063,11 +2186,17 @@ registerToolTemplate('assistant', 'open_plugin_settings', {
         : 'Opened the Plugins settings view. The user can browse, enable, and configure plugins there.',
     }],
   };
+  },
 });
 
 // ── Command Palette Access ────────────────────────────────────────────────────
 
-registerToolTemplate('assistant', 'list_commands', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'list_commands'),
+  category: 'assistant',
+  label: 'List Commands',
+  targetKind: 'assistant',
+  nameSuffix: 'list_commands',
   description:
     'List all available command palette commands. Returns an array of { id, label, category, keywords, detail }. ' +
     'Use this to discover what navigation and action commands are available, then use run_command to execute them. ' +
@@ -2082,7 +2211,7 @@ registerToolTemplate('assistant', 'list_commands', {
       },
     },
   },
-}, async (_t, _a, args) => {
+  handler: async (_t, _a, args) => {
   const { sendCommandPaletteRequest } = await import('../command-palette-bridge');
   const { commandRegistry } = await import('../../../../shared/command-registry');
 
@@ -2121,9 +2250,15 @@ registerToolTemplate('assistant', 'list_commands', {
     result.warning = 'Command palette unavailable — showing registry commands only';
   }
   return { content: [{ type: 'text', text: JSON.stringify(paletteFailed ? result : allItems) }] };
+  },
 });
 
-registerToolTemplate('assistant', 'run_command', {
+registerMcpCommand({
+  id: toCommandId('assistant', 'run_command'),
+  category: 'assistant',
+  label: 'Run Command',
+  targetKind: 'assistant',
+  nameSuffix: 'run_command',
   description:
     'Execute a command palette command by its ID. Use list_commands first to discover available commands. ' +
     'This gives you full app navigation and control: open projects, switch to canvases/hubs, ' +
@@ -2140,7 +2275,7 @@ registerToolTemplate('assistant', 'run_command', {
     },
     required: ['command_id'],
   },
-}, async (_t, _a, args) => {
+  handler: async (_t, _a, args) => {
   const { commandRegistry } = await import('../../../../shared/command-registry');
 
   // Try CommandRegistry first (handles canvas.* and future commands)
@@ -2158,6 +2293,7 @@ registerToolTemplate('assistant', 'run_command', {
   const result = await sendCommandPaletteRequest('run_command', { command_id: commandId });
   if (!result.success) return { content: [{ type: 'text', text: result.error || 'Failed to run command' }], isError: true };
   return { content: [{ type: 'text', text: JSON.stringify(result.data) }] };
+  },
 });
 
 } // end registerAssistantTools
