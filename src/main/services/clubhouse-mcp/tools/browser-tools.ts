@@ -4,8 +4,8 @@
  */
 
 import { BrowserWindow, dialog, webContents } from 'electron';
-import { registerToolTemplate } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
+import { mcpAdapter } from '../mcp-adapter';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 
@@ -166,7 +166,11 @@ export function _resetForTesting(): void {
 /** Register all browser widget tool templates. */
 export function registerBrowserTools(): void {
   // browser__<id>__navigate
-  registerToolTemplate('browser', 'navigate', {
+  mcpAdapter.registerMcpCommand({
+    id: 'browser.navigate',
+    category: 'browser',
+    label: 'Navigate',
+    mcp: { targetKind: 'browser', nameSuffix: 'navigate' },
     description: 'Navigate the browser widget to a URL.',
     inputSchema: {
       type: 'object',
@@ -175,7 +179,7 @@ export function registerBrowserTools(): void {
       },
       required: ['url'],
     },
-  }, async (targetId, agentId, args) => {
+    handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
     const url = args.url as string;
     if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
@@ -190,13 +194,18 @@ export function registerBrowserTools(): void {
     } catch (err) {
       return errorResult(`Navigation failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    },
   });
 
   // browser__<id>__screenshot
-  registerToolTemplate('browser', 'screenshot', {
+  mcpAdapter.registerMcpCommand({
+    id: 'browser.screenshot',
+    category: 'browser',
+    label: 'Screenshot',
+    mcp: { targetKind: 'browser', nameSuffix: 'screenshot' },
     description: 'Take a screenshot of the browser widget.',
     inputSchema: { type: 'object', properties: {} },
-  }, async (targetId, agentId) => {
+    handler: async (targetId, agentId) => {
     assertAgentBoundToWidget(agentId, targetId);
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
@@ -218,10 +227,15 @@ export function registerBrowserTools(): void {
     } catch (err) {
       return errorResult(`Screenshot failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    },
   });
 
   // browser__<id>__get_console
-  registerToolTemplate('browser', 'get_console', {
+  mcpAdapter.registerMcpCommand({
+    id: 'browser.get_console',
+    category: 'browser',
+    label: 'Get Console',
+    mcp: { targetKind: 'browser', nameSuffix: 'get_console' },
     description: 'Get recent console log messages from the browser widget.',
     inputSchema: {
       type: 'object',
@@ -229,7 +243,7 @@ export function registerBrowserTools(): void {
         limit: { type: 'number', description: 'Number of entries to return (default 50).' },
       },
     },
-  }, async (targetId, agentId, args) => {
+    handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
@@ -239,10 +253,15 @@ export function registerBrowserTools(): void {
     const limit = Math.min(Math.max(Math.floor((args.limit as number) || 50), 1), 500);
     const entries = buffer.slice(-limit);
     return textResult(JSON.stringify(entries, null, 2));
+    },
   });
 
   // browser__<id>__click
-  registerToolTemplate('browser', 'click', {
+  mcpAdapter.registerMcpCommand({
+    id: 'browser.click',
+    category: 'browser',
+    label: 'Click',
+    mcp: { targetKind: 'browser', nameSuffix: 'click' },
     description: 'Click an element in the browser widget by CSS selector.',
     inputSchema: {
       type: 'object',
@@ -251,7 +270,7 @@ export function registerBrowserTools(): void {
       },
       required: ['selector'],
     },
-  }, async (targetId, agentId, args) => {
+    handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
     const selector = args.selector as string;
     const wc = getWebContents(targetId);
@@ -281,10 +300,15 @@ export function registerBrowserTools(): void {
     } catch (err) {
       return errorResult(`Click failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    },
   });
 
   // browser__<id>__type
-  registerToolTemplate('browser', 'type', {
+  mcpAdapter.registerMcpCommand({
+    id: 'browser.type',
+    category: 'browser',
+    label: 'Type',
+    mcp: { targetKind: 'browser', nameSuffix: 'type' },
     description: 'Type text into a focused element in the browser widget.',
     inputSchema: {
       type: 'object',
@@ -294,7 +318,7 @@ export function registerBrowserTools(): void {
       },
       required: ['selector', 'text'],
     },
-  }, async (targetId, agentId, args) => {
+    handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
     const selector = args.selector as string;
     const text = args.text as string;
@@ -324,10 +348,15 @@ export function registerBrowserTools(): void {
     } catch (err) {
       return errorResult(`Type failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    },
   });
 
   // browser__<id>__evaluate
-  registerToolTemplate('browser', 'evaluate', {
+  mcpAdapter.registerMcpCommand({
+    id: 'browser.evaluate',
+    category: 'browser',
+    label: 'Evaluate JavaScript',
+    mcp: { targetKind: 'browser', nameSuffix: 'evaluate' },
     description: 'Evaluate a JavaScript expression in the browser widget page context.',
     inputSchema: {
       type: 'object',
@@ -336,7 +365,7 @@ export function registerBrowserTools(): void {
       },
       required: ['expression'],
     },
-  }, async (targetId, agentId, args) => {
+    handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
     const expression = args.expression as string;
     const wc = getWebContents(targetId);
@@ -384,10 +413,15 @@ export function registerBrowserTools(): void {
     } catch (err) {
       return errorResult(`Evaluate failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    },
   });
 
   // browser__<id>__get_page_content
-  registerToolTemplate('browser', 'get_page_content', {
+  mcpAdapter.registerMcpCommand({
+    id: 'browser.get_page_content',
+    category: 'browser',
+    label: 'Get Page Content',
+    mcp: { targetKind: 'browser', nameSuffix: 'get_page_content' },
     description: 'Get the HTML content of the page or a specific element.',
     inputSchema: {
       type: 'object',
@@ -395,7 +429,7 @@ export function registerBrowserTools(): void {
         selector: { type: 'string', description: 'CSS selector (optional, defaults to document body).' },
       },
     },
-  }, async (targetId, agentId, args) => {
+    handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
     const selector = (args.selector as string) || 'body';
     const wc = getWebContents(targetId);
@@ -421,10 +455,15 @@ export function registerBrowserTools(): void {
     } catch (err) {
       return errorResult(`Failed to get content: ${err instanceof Error ? err.message : String(err)}`);
     }
+    },
   });
 
   // browser__<id>__get_accessibility_tree
-  registerToolTemplate('browser', 'get_accessibility_tree', {
+  mcpAdapter.registerMcpCommand({
+    id: 'browser.get_accessibility_tree',
+    category: 'browser',
+    label: 'Get Accessibility Tree',
+    mcp: { targetKind: 'browser', nameSuffix: 'get_accessibility_tree' },
     description: 'Get the accessibility tree of the browser widget page.',
     inputSchema: {
       type: 'object',
@@ -432,7 +471,7 @@ export function registerBrowserTools(): void {
         depth: { type: 'number', description: 'Maximum depth to traverse (default 5).' },
       },
     },
-  }, async (targetId, agentId, args) => {
+    handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
     const depth = Math.min(Math.max(Math.floor((args.depth as number) || 5), 1), 10);
     const wc = getWebContents(targetId);
@@ -451,5 +490,6 @@ export function registerBrowserTools(): void {
     } catch (err) {
       return errorResult(`Failed to get accessibility tree: ${err instanceof Error ? err.message : String(err)}`);
     }
+    },
   });
 }

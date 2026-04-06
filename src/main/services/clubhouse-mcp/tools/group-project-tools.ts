@@ -3,8 +3,8 @@
  * to coordinate via a shared bulletin board.
  */
 
-import { registerToolTemplate } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
+import { mcpAdapter } from '../mcp-adapter';
 import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
@@ -56,11 +56,12 @@ async function resolveSenderLabel(agentId: string, targetId: string): Promise<st
 /** Register all group-project tool templates. */
 export function registerGroupProjectTools(): void {
   // group__<name>_<hash>__list_members
-  registerToolTemplate(
-    'group-project',
-    'list_members',
-    {
-      description:
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.list_members',
+    category: 'group-project',
+    label: 'List Members',
+    mcp: { targetKind: 'group-project', nameSuffix: 'list_members' },
+    description:
         'List all agents currently connected to this group project.\n\n' +
         'Returns a JSON array of { agentId, agentName, status } objects. Use this to discover ' +
         'who is collaborating with you in this group project.\n\n' +
@@ -72,8 +73,7 @@ export function registerGroupProjectTools(): void {
         type: 'object',
         properties: {},
       },
-    },
-    async (targetId: string, _agentId: string, _args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, _args: Record<string, unknown>): Promise<McpToolResult> => {
       // Find all bindings where targetKind is group-project and targetId matches
       const allBindings = bindingManager.getAllBindings();
       const members = allBindings
@@ -88,14 +88,15 @@ export function registerGroupProjectTools(): void {
         content: [{ type: 'text', text: JSON.stringify(members, null, 2) }],
       };
     },
-  );
+  });
 
   // group__<name>_<hash>__post_bulletin
-  registerToolTemplate(
-    'group-project',
-    'post_bulletin',
-    {
-      description:
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.post_bulletin',
+    category: 'group-project',
+    label: 'Post Bulletin',
+    mcp: { targetKind: 'group-project', nameSuffix: 'post_bulletin' },
+    description:
         'Post a message to the group project bulletin board.\n\n' +
         'The bulletin board is the PRIMARY communication channel for group coordination. ' +
         'Post regular progress updates, questions, decisions, and status changes.\n\n' +
@@ -116,8 +117,7 @@ export function registerGroupProjectTools(): void {
         },
         required: ['topic', 'body'],
       },
-    },
-    async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const topic = args.topic as string;
       const body = args.body as string;
 
@@ -154,13 +154,14 @@ export function registerGroupProjectTools(): void {
         };
       }
     },
-  );
+  });
 
   // group__<name>_<hash>__read_bulletin
-  registerToolTemplate(
-    'group-project',
-    'read_bulletin',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.read_bulletin',
+    category: 'group-project',
+    label: 'Read Bulletin',
+    mcp: { targetKind: 'group-project', nameSuffix: 'read_bulletin' },
       description:
         'Read the bulletin board digest — shows all topics with message counts.\n\n' +
         'This is the key coordination primitive. Poll every 10-30 seconds to stay aware of ' +
@@ -177,8 +178,7 @@ export function registerGroupProjectTools(): void {
           },
         },
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const since = args.since as string | undefined;
       const board = getBulletinBoard(targetId);
       const digest = await board.getDigest(since);
@@ -186,13 +186,14 @@ export function registerGroupProjectTools(): void {
         content: [{ type: 'text', text: JSON.stringify(digest, null, 2) }],
       };
     },
-  );
+  });
 
   // group__<name>_<hash>__read_topic
-  registerToolTemplate(
-    'group-project',
-    'read_topic',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.read_topic',
+    category: 'group-project',
+    label: 'Read Topic',
+    mcp: { targetKind: 'group-project', nameSuffix: 'read_topic' },
       description:
         'Read full messages from a specific bulletin board topic.\n\n' +
         'Always expand the "system" topic for lifecycle awareness (agent joins/leaves). ' +
@@ -216,8 +217,7 @@ export function registerGroupProjectTools(): void {
         },
         required: ['topic'],
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const topic = args.topic as string;
       if (!topic) {
         return {
@@ -233,13 +233,14 @@ export function registerGroupProjectTools(): void {
         content: [{ type: 'text', text: JSON.stringify(messages, null, 2) }],
       };
     },
-  );
+  });
 
   // group__<name>_<hash>__get_project_info
-  registerToolTemplate(
-    'group-project',
-    'get_project_info',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.get_project_info',
+    category: 'group-project',
+    label: 'Get Project Info',
+    mcp: { targetKind: 'group-project', nameSuffix: 'get_project_info' },
       description:
         'Get full project information including name, description, instructions, and members.\n\n' +
         'Call this when you first join a group project. The instructions field contains ' +
@@ -254,8 +255,7 @@ export function registerGroupProjectTools(): void {
           },
         },
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const project = await groupProjectRegistry.get(targetId);
       if (!project) {
         return {
@@ -288,13 +288,14 @@ export function registerGroupProjectTools(): void {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       };
     },
-  );
+  });
 
   // group__<name>_<hash>__shoulder_tap
-  registerToolTemplate(
-    'group-project',
-    'shoulder_tap',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.shoulder_tap',
+    category: 'group-project',
+    label: 'Shoulder Tap',
+    mcp: { targetKind: 'group-project', nameSuffix: 'shoulder_tap' },
       description:
         'Send an urgent direct message to a specific agent in this group project.\n\n' +
         'WARNING: This tool is NOT for normal communication. Use the bulletin board ' +
@@ -319,8 +320,7 @@ export function registerGroupProjectTools(): void {
         },
         required: ['target_agent_id', 'message'],
       },
-    },
-    async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const targetAgentId = args.target_agent_id as string;
       const message = args.message as string;
       if (!targetAgentId || !message) {
@@ -355,13 +355,14 @@ export function registerGroupProjectTools(): void {
         };
       }
     },
-  );
+  });
 
   // group__<name>_<hash>__broadcast
-  registerToolTemplate(
-    'group-project',
-    'broadcast',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.broadcast',
+    category: 'group-project',
+    label: 'Broadcast',
+    mcp: { targetKind: 'group-project', nameSuffix: 'broadcast' },
       description:
         'Broadcast an urgent message to ALL agents in this group project.\n\n' +
         'WARNING: This tool is NOT for normal communication. Use the bulletin board ' +
@@ -381,8 +382,7 @@ export function registerGroupProjectTools(): void {
         },
         required: ['message'],
       },
-    },
-    async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const message = args.message as string;
       if (!message) {
         return { content: [{ type: 'text', text: 'message is required.' }], isError: true };
@@ -416,13 +416,14 @@ export function registerGroupProjectTools(): void {
         };
       }
     },
-  );
+  });
 
   // group__<name>_<hash>__wake_agent
-  registerToolTemplate(
-    'group-project',
-    'wake_agent',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.wake_agent',
+    category: 'group-project',
+    label: 'Wake Agent',
+    mcp: { targetKind: 'group-project', nameSuffix: 'wake_agent' },
       description:
         'Wake a sleeping agent connected to this group project.\n\n' +
         'Use list_members to find agents with status "sleeping", then call this tool ' +
@@ -443,8 +444,7 @@ export function registerGroupProjectTools(): void {
         },
         required: ['target_agent_id'],
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const targetAgentId = args.target_agent_id as string;
       const message = args.message as string | undefined;
 
@@ -531,13 +531,14 @@ export function registerGroupProjectTools(): void {
         };
       }
     },
-  );
+  });
 
   // group__<name>_<hash>__start_polling
-  registerToolTemplate(
-    'group-project',
-    'start_polling',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.start_polling',
+    category: 'group-project',
+    label: 'Start Polling',
+    mcp: { targetKind: 'group-project', nameSuffix: 'start_polling' },
       description:
         'Send a polling start instruction to a specific connected agent.\n\n' +
         'Injects a message into the agent\'s terminal instructing it to begin polling ' +
@@ -554,8 +555,7 @@ export function registerGroupProjectTools(): void {
         },
         required: ['target_agent_id'],
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const targetAgentId = args.target_agent_id as string;
       if (!targetAgentId) {
         return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
@@ -599,13 +599,14 @@ export function registerGroupProjectTools(): void {
         }],
       };
     },
-  );
+  });
 
   // group__<name>_<hash>__stop_polling
-  registerToolTemplate(
-    'group-project',
-    'stop_polling',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.stop_polling',
+    category: 'group-project',
+    label: 'Stop Polling',
+    mcp: { targetKind: 'group-project', nameSuffix: 'stop_polling' },
       description:
         'Send a polling stop instruction to a specific connected agent.\n\n' +
         'Injects a message into the agent\'s terminal instructing it to stop polling ' +
@@ -621,8 +622,7 @@ export function registerGroupProjectTools(): void {
         },
         required: ['target_agent_id'],
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const targetAgentId = args.target_agent_id as string;
       if (!targetAgentId) {
         return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
@@ -666,6 +666,6 @@ export function registerGroupProjectTools(): void {
         }],
       };
     },
-  );
+  });
 
 }

@@ -3,7 +3,7 @@
  * to invoke tasks, poll output, and list task status.
  */
 
-import { registerToolTemplate } from '../tool-registry';
+import { mcpAdapter } from '../mcp-adapter';
 import { agentQueueRegistry } from '../../agent-queue-registry';
 import { agentQueueTaskStore } from '../../agent-queue-task-store';
 import { enqueueTask, cancelTask } from '../../agent-queue-runner';
@@ -12,10 +12,11 @@ import type { McpToolResult } from '../types';
 /** Register all agent-queue tool templates. */
 export function registerAgentQueueTools(): void {
   // queue__<name>_<hash>__invoke
-  registerToolTemplate(
-    'agent-queue',
-    'invoke',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'agent-queue.invoke',
+    category: 'agent-queue',
+    label: 'Invoke',
+    mcp: { targetKind: 'agent-queue', nameSuffix: 'invoke' },
       description:
         'Submit a new task to this agent queue. A quick agent will be spawned to execute the mission.\n\n' +
         'Returns a task ID that you can use with get_output to poll for results.\n\n' +
@@ -33,8 +34,7 @@ export function registerAgentQueueTools(): void {
         },
         required: ['mission'],
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const mission = args.mission as string;
       if (!mission) {
         return {
@@ -71,13 +71,14 @@ export function registerAgentQueueTools(): void {
         };
       }
     },
-  );
+  });
 
   // queue__<name>_<hash>__get_output
-  registerToolTemplate(
-    'agent-queue',
-    'get_output',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'agent-queue.get_output',
+    category: 'agent-queue',
+    label: 'Get Output',
+    mcp: { targetKind: 'agent-queue', nameSuffix: 'get_output' },
       description:
         'Get the current status and output for a task by ID.\n\n' +
         'Returns the task state, and if completed, the summary and detailed output.\n\n' +
@@ -102,8 +103,7 @@ export function registerAgentQueueTools(): void {
         },
         required: ['task_id'],
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const taskId = args.task_id as string;
       if (!taskId) {
         return {
@@ -151,13 +151,14 @@ export function registerAgentQueueTools(): void {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       };
     },
-  );
+  });
 
   // queue__<name>_<hash>__list
-  registerToolTemplate(
-    'agent-queue',
-    'list',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'agent-queue.list',
+    category: 'agent-queue',
+    label: 'List Tasks',
+    mcp: { targetKind: 'agent-queue', nameSuffix: 'list' },
       description:
         'List all tasks in this agent queue with their current status.\n\n' +
         'Returns a JSON object with task summaries and status counts.\n' +
@@ -171,8 +172,7 @@ export function registerAgentQueueTools(): void {
           },
         },
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const statusFilter = args.status_filter as string | undefined;
 
       let summaries = await agentQueueTaskStore.listTaskSummaries(targetId);
@@ -192,13 +192,14 @@ export function registerAgentQueueTools(): void {
         }],
       };
     },
-  );
+  });
 
   // queue__<name>_<hash>__cancel
-  registerToolTemplate(
-    'agent-queue',
-    'cancel',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'agent-queue.cancel',
+    category: 'agent-queue',
+    label: 'Cancel Task',
+    mcp: { targetKind: 'agent-queue', nameSuffix: 'cancel' },
       description:
         'Cancel a pending task. Only tasks with status "pending" can be cancelled.\n' +
         'Running tasks cannot be cancelled through this tool.',
@@ -212,8 +213,7 @@ export function registerAgentQueueTools(): void {
         },
         required: ['task_id'],
       },
-    },
-    async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const taskId = args.task_id as string;
       if (!taskId) {
         return {
@@ -234,13 +234,14 @@ export function registerAgentQueueTools(): void {
         content: [{ type: 'text', text: JSON.stringify({ cancelled: true, taskId }) }],
       };
     },
-  );
+  });
 
   // queue__<name>_<hash>__get_queue_info
-  registerToolTemplate(
-    'agent-queue',
-    'get_queue_info',
-    {
+  mcpAdapter.registerMcpCommand({
+    id: 'agent-queue.get_queue_info',
+    category: 'agent-queue',
+    label: 'Get Queue Info',
+    mcp: { targetKind: 'agent-queue', nameSuffix: 'get_queue_info' },
       description:
         'Get information about this agent queue including its configuration and current status counts.\n\n' +
         'Returns queue name, concurrency setting, project info, and task status breakdown.',
@@ -248,8 +249,7 @@ export function registerAgentQueueTools(): void {
         type: 'object',
         properties: {},
       },
-    },
-    async (targetId: string, _agentId: string, _args: Record<string, unknown>): Promise<McpToolResult> => {
+    handler: async (targetId: string, _agentId: string, _args: Record<string, unknown>): Promise<McpToolResult> => {
       const queue = await agentQueueRegistry.get(targetId);
       if (!queue) {
         return {
@@ -277,5 +277,5 @@ export function registerAgentQueueTools(): void {
         }],
       };
     },
-  );
+  });
 }
