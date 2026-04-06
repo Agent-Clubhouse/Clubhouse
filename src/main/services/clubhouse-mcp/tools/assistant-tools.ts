@@ -1982,8 +1982,6 @@ registerMcpCommand({
       );
     }
 
-    const latestApiVersion = Math.max(...SUPPORTED_PLUGIN_API_VERSIONS);
-
     const plugins = filtered.map(p => {
       const latestRelease = p.releases[p.latest];
       const compatible = latestRelease

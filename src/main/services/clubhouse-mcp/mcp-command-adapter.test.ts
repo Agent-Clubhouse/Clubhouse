@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { registerMcpCommand, toCommandId, _resetAdapterForTesting } from './mcp-command-adapter';
 import { commandRegistry } from '../../../shared/command-registry';
-import { _resetForTesting as resetToolRegistry } from './tool-registry';
+// tool-registry is mocked — no need to import _resetForTesting
 
 // Mock tool-registry to capture registrations without side effects
 const registeredTemplates: Array<{ targetKind: string; nameSuffix: string }> = [];
