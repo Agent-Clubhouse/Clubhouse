@@ -23,4 +23,6 @@ export interface BlueprintSummary {
   createdAt?: string;
   /** Agent names found in the blueprint (for search) */
   agentNames: string[];
+  /** True if this blueprint represents a single-agent template */
+  isAgentTemplate?: boolean;
 }
