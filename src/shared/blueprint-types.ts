@@ -158,3 +158,42 @@ export interface BlueprintProjectMatchBy {
   /** Filesystem path to match. */
   path?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Blueprint Bundle — project-level multi-canvas export
+// ---------------------------------------------------------------------------
+
+/** A bundle wrapping multiple BlueprintManifests for project-level export/import. */
+export interface BlueprintBundle {
+  /** Unique identifier (UUID v4). */
+  id: string;
+  /** Bundle name (typically the project name). */
+  name: string;
+  /** Optional description. */
+  description?: string;
+  /** Semver string. */
+  version: string;
+  /** Must be 1 for the initial schema. */
+  schemaVersion: 1;
+  /** ISO 8601 creation timestamp. */
+  createdAt: string;
+  /** App version used to export the bundle. */
+  exportedFrom?: string;
+  /** The individual canvas blueprints in this bundle. */
+  blueprints: BlueprintManifest[];
+  /** Summary metadata for display purposes. */
+  metadata?: BlueprintBundleMetadata;
+}
+
+export interface BlueprintBundleMetadata {
+  /** Name of the source project. */
+  projectName?: string;
+  /** Number of canvases in the bundle. */
+  canvasCount: number;
+  /** Total view count across all canvases. */
+  totalViews: number;
+  /** Total wire count across all canvases. */
+  totalWires: number;
+  /** Total unique agent definitions across all canvases. */
+  totalAgents: number;
+}

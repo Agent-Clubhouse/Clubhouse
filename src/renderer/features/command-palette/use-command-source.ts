@@ -583,6 +583,30 @@ export function useCommandSource(): CommandItem[] {
       },
     });
 
+    if (activeProjectId) {
+      items.push({
+        id: 'action:export-project-blueprints',
+        label: 'Export Project as Blueprint Bundle',
+        category: 'Actions',
+        keywords: ['blueprint', 'bundle', 'project', 'export', 'all', 'canvases', 'backup'],
+        execute: () => {
+          // Open project settings which has the export bundle button
+          setSettingsContext('project');
+        },
+      });
+    }
+
+    items.push({
+      id: 'action:import-blueprint-bundle',
+      label: 'Import Blueprint Bundle',
+      category: 'Actions',
+      keywords: ['blueprint', 'bundle', 'import', 'project', 'canvases', 'restore'],
+      execute: () => {
+        // Open the blueprint gallery which handles both single and bundle imports
+        useUIStore.getState().openBlueprintGallery();
+      },
+    });
+
     return items;
   }, [
     shortcuts, activeProjectId, annexEnabled, annexSettings, annexStatus,

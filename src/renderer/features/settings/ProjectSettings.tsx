@@ -301,6 +301,86 @@ function LaunchWrapperSection({ projectPath }: { projectPath: string }) {
   );
 }
 
+function BlueprintBundleSection({ projectId, projectPath, projectName }: { projectId: string; projectPath: string; projectName: string }) {
+  const [showExportDialog, setShowExportDialog] = useState(false);
+
+  return (
+    <>
+      <div className="mb-6 rounded-lg border border-surface-0 p-4 space-y-3">
+        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Blueprint Bundle</h3>
+        <p className="text-xs text-ctp-subtext0">Export all canvases in this project as a single blueprint bundle for sharing or backup.</p>
+        <button
+          onClick={() => setShowExportDialog(true)}
+          className="px-4 py-2 text-sm rounded-lg bg-surface-1 border border-surface-2 text-ctp-text hover:bg-surface-2 cursor-pointer transition-colors"
+          data-testid="export-bundle-button"
+        >
+          Export All Canvases as Bundle
+        </button>
+      </div>
+
+      {showExportDialog && (
+        <BlueprintBundleExportDialogLoader
+          projectId={projectId}
+          projectPath={projectPath}
+          projectName={projectName}
+          onClose={() => setShowExportDialog(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/** Lazy-loads stores and renders the ExportBundleDialog. */
+function BlueprintBundleExportDialogLoader({
+  projectId,
+  projectPath,
+  projectName,
+  onClose,
+}: {
+  projectId: string;
+  projectPath: string;
+  projectName: string;
+  onClose: () => void;
+}) {
+  const [DialogComponent, setDialogComponent] = useState<any>(null);
+  const [canvases, setCanvases] = useState<any[]>([]);
+  const [agents, setAgents] = useState<Record<string, any>>({});
+  const [projects, setProjects] = useState<Record<string, any>>({});
+  const [wireDefinitions, setWireDefinitions] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Dynamic imports to avoid circular dependencies
+    Promise.all([
+      import('../blueprints/ExportBundleDialog'),
+      import('../../plugins/builtin/canvas/main'),
+      import('../../stores/agentStore'),
+      import('../../stores/projectStore'),
+    ]).then(([dialogMod, canvasMod, agentMod, projMod]) => {
+      const store = canvasMod.getProjectCanvasStore(projectId);
+      setCanvases(store.getState().canvases);
+      setWireDefinitions(store.getState().wireDefinitions);
+      setAgents(agentMod.useAgentStore.getState().agents);
+      setProjects(Object.fromEntries(projMod.useProjectStore.getState().projects.map((p: any) => [p.id, p])));
+      setDialogComponent(() => dialogMod.ExportBundleDialog);
+    });
+  }, [projectId]);
+
+  if (!DialogComponent) return null;
+
+  return (
+    <DialogComponent
+      canvases={canvases}
+      agents={agents}
+      projects={projects}
+      wireDefinitions={wireDefinitions}
+      projectId={projectId}
+      projectPath={projectPath}
+      projectName={projectName}
+      onClose={onClose}
+    />
+  );
+}
+
 function DangerZone({ projectId, projectPath, projectName }: { projectId: string; projectPath: string; projectName: string }) {
   const removeProject = useProjectStore((s) => s.removeProject);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
@@ -371,6 +451,7 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
         <NameAndPathSection projectId={project.id} />
         <AppearanceSection projectId={project.id} />
         <LaunchWrapperSection projectPath={project.path} />
+        <BlueprintBundleSection projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
         <DangerZone projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
       </div>
     </div>
