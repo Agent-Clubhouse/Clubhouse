@@ -255,6 +255,7 @@ function setupCanvasCommandDefault(): void {
 
 import { registerAssistantTools } from '../src/main/services/clubhouse-mcp/tools/assistant-tools';
 import { _resetForTesting, callTool, getScopedToolList } from '../src/main/services/clubhouse-mcp/tool-registry';
+import { _resetAdapterForTesting } from '../src/main/services/clubhouse-mcp/mcp-command-adapter';
 import { bindingManager } from '../src/main/services/clubhouse-mcp';
 import { ALL_TOOL_SUFFIXES } from '../src/main/services/clubhouse-mcp/assistant-api-contract';
 
@@ -284,6 +285,7 @@ function parseJson(result: any): any {
 describe('Assistant Tools Integration Tests', () => {
   beforeEach(() => {
     _resetForTesting();
+    _resetAdapterForTesting();
     setupMockDefaults();
     resetCanvasState();
     setupCanvasCommandDefault();

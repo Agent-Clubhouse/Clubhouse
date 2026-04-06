@@ -134,6 +134,7 @@ vi.mock('../../plugin-theme-store', () => ({
 
 import { registerAssistantTools } from './assistant-tools';
 import { _resetForTesting, callTool, getScopedToolList } from '../tool-registry';
+import { _resetAdapterForTesting } from '../mcp-command-adapter';
 import { bindingManager } from '..';
 import { discoverCommunityPlugins } from '../../plugin-discovery';
 
@@ -158,6 +159,7 @@ async function callAssistantTool(suffix: string, args: Record<string, unknown> =
 describe('assistant-tools', () => {
   beforeEach(() => {
     _resetForTesting();
+    _resetAdapterForTesting();
     registerAssistantTools();
     createAssistantBinding();
   });

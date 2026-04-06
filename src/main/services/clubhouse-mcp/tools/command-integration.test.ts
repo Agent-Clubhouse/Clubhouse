@@ -170,18 +170,25 @@ describe('list_commands + run_command integration', () => {
       expect(ids).toContain('canvas.add_canvas');
     });
 
-    it('returns error when palette fails and registry is empty', async () => {
+    it('returns partial indicator with registry commands when palette fails', async () => {
+      // With assistant tools migrated to the registry, the registry is never
+      // empty after registerAssistantTools() — so palette failure always returns
+      // partial results rather than an error.
       mockSendCommandPaletteRequest.mockResolvedValue({
         success: false,
         error: 'No renderer window available',
       });
 
       const result = await callAssistantTool('list_commands', {});
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('No renderer window available');
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.partial).toBe(true);
+      expect(parsed.warning).toContain('registry commands only');
+      // Should include all assistant commands from the registry
+      expect(parsed.commands.length).toBeGreaterThanOrEqual(38);
     });
 
-    it('returns registry commands with partial indicator when palette fails', async () => {
+    it('includes additional registry commands alongside assistant commands when palette fails', async () => {
       mockSendCommandPaletteRequest.mockResolvedValue({
         success: false,
         error: 'No renderer window available',
@@ -200,9 +207,10 @@ describe('list_commands + run_command integration', () => {
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.partial).toBe(true);
-      expect(parsed.warning).toContain('registry commands only');
-      expect(parsed.commands).toHaveLength(1);
-      expect(parsed.commands[0].id).toBe('canvas.list_canvases');
+      // 38 assistant + 1 canvas = 39 minimum
+      expect(parsed.commands.length).toBeGreaterThanOrEqual(39);
+      const ids = parsed.commands.map((c: any) => c.id);
+      expect(ids).toContain('canvas.list_canvases');
     });
   });
 
