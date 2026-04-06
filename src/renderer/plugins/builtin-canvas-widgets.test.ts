@@ -58,7 +58,7 @@ describe('built-in plugin canvas widget declarations', () => {
     'sticky-note': ['note'],
   };
 
-  const allPlugins = getBuiltinPlugins();
+  const allPlugins = getBuiltinPlugins({ agentQueue: true });
 
   for (const [pluginId, expectedWidgetIds] of Object.entries(EXPECTED_CANVAS_WIDGETS)) {
     describe(`${pluginId} plugin`, () => {
@@ -115,7 +115,7 @@ describe('getBuiltinProjectPluginIds', () => {
   });
 
   it('includes all project/dual-scoped builtins (app-first gate controls activation)', () => {
-    const ids = getBuiltinProjectPluginIds();
+    const ids = getBuiltinProjectPluginIds({ agentQueue: true });
     // All project/dual-scoped builtins should be present
     expect(ids).toContain('browser');
     expect(ids).toContain('canvas');

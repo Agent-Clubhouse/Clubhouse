@@ -96,4 +96,36 @@ describe('ExperimentalSettingsView', () => {
       expect(screen.getByText(/Restart Clubhouse to apply/)).toBeInTheDocument();
     });
   });
+
+  it('renders Assistant as experimental feature', async () => {
+    render(<ExperimentalSettingsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Assistant')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Built-in interactive help agent/)).toBeInTheDocument();
+  });
+
+  it('renders Agent Queue as experimental feature', async () => {
+    render(<ExperimentalSettingsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Agent Queue')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Queue multiple agents/)).toBeInTheDocument();
+  });
+
+  it('does not list Canvas as experimental (promoted)', async () => {
+    render(<ExperimentalSettingsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Assistant')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Canvas')).not.toBeInTheDocument();
+  });
+
+  it('does not list Annex as experimental (promoted)', async () => {
+    render(<ExperimentalSettingsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Assistant')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Annex')).not.toBeInTheDocument();
+  });
 });

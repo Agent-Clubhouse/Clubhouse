@@ -8,12 +8,23 @@ describe('canvas feature gating', () => {
     expect(ids).toContain('canvas');
   });
 
-  it('canvas sub-plugins (group-project, agent-queue, sticky-note) are always loaded alongside canvas', () => {
+  it('canvas sub-plugins (group-project, sticky-note) are always loaded alongside canvas', () => {
     const plugins = getBuiltinPlugins({});
     const ids = plugins.map((p) => p.manifest.id);
     expect(ids).toContain('group-project');
-    expect(ids).toContain('agent-queue');
     expect(ids).toContain('sticky-note');
+  });
+
+  it('agent-queue is NOT loaded without experimental flag', () => {
+    const plugins = getBuiltinPlugins({});
+    const ids = plugins.map((p) => p.manifest.id);
+    expect(ids).not.toContain('agent-queue');
+  });
+
+  it('agent-queue IS loaded when agentQueue experimental flag is true', () => {
+    const plugins = getBuiltinPlugins({ agentQueue: true });
+    const ids = plugins.map((p) => p.manifest.id);
+    expect(ids).toContain('agent-queue');
   });
 
   it('canvas IS in default enabled IDs', () => {
@@ -97,7 +108,7 @@ describe('canvas feature gating', () => {
   });
 
   it('agent-queue manifest declares requiresMcp', () => {
-    const plugins = getBuiltinPlugins({});
+    const plugins = getBuiltinPlugins({ agentQueue: true });
     const agentQueue = plugins.find((p) => p.manifest.id === 'agent-queue');
     expect(agentQueue).toBeDefined();
     expect(agentQueue!.manifest.requiresMcp).toBe(true);
@@ -115,5 +126,36 @@ describe('canvas feature gating', () => {
     const stickyNote = plugins.find((p) => p.manifest.id === 'sticky-note');
     expect(stickyNote).toBeDefined();
     expect(stickyNote!.manifest.requiresMcp).toBeUndefined();
+  });
+
+  describe('stable release feature flags', () => {
+    it('canvas is always loaded (non-experimental)', () => {
+      const plugins = getBuiltinPlugins({});
+      expect(plugins.map((p) => p.manifest.id)).toContain('canvas');
+    });
+
+    it('group-project is always loaded (non-experimental)', () => {
+      const plugins = getBuiltinPlugins({});
+      expect(plugins.map((p) => p.manifest.id)).toContain('group-project');
+    });
+
+    it('review is always loaded (non-experimental)', () => {
+      const plugins = getBuiltinPlugins({});
+      expect(plugins.map((p) => p.manifest.id)).toContain('review');
+    });
+
+    it('agent-queue requires experimental flag (not in stable by default)', () => {
+      const withoutFlag = getBuiltinPlugins({});
+      const withFlag = getBuiltinPlugins({ agentQueue: true });
+      expect(withoutFlag.map((p) => p.manifest.id)).not.toContain('agent-queue');
+      expect(withFlag.map((p) => p.manifest.id)).toContain('agent-queue');
+    });
+
+    it('sessions requires experimental flag (not in stable by default)', () => {
+      const withoutFlag = getBuiltinPlugins({});
+      const withFlag = getBuiltinPlugins({ sessions: true });
+      expect(withoutFlag.map((p) => p.manifest.id)).not.toContain('sessions');
+      expect(withFlag.map((p) => p.manifest.id)).toContain('sessions');
+    });
   });
 });
