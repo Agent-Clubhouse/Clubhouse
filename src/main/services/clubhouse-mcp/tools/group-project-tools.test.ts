@@ -58,6 +58,8 @@ vi.mock('../../project-store', () => ({
 
 import { _resetForTesting as resetToolRegistry } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
+import { mcpAdapter } from '../mcp-adapter';
+import { commandRegistry } from '../../../../shared/command-registry';
 import { _resetAllBoardsForTesting } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { agentRegistry } from '../../agent-registry';
@@ -81,6 +83,8 @@ describe('GroupProjectTools', () => {
     mockProjectList.mockReset();
     mockProjectList.mockResolvedValue([]);
     resetToolRegistry();
+    mcpAdapter._resetForTesting();
+    commandRegistry.clear();
     bindingManager._resetForTesting();
     _resetAllBoardsForTesting();
     groupProjectRegistry._resetForTesting();

@@ -50,6 +50,8 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { _resetAllBoardsForTesting, getBulletinBoard } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import { _resetForTesting as resetToolRegistry } from './clubhouse-mcp/tool-registry';
+import { mcpAdapter } from './clubhouse-mcp/mcp-adapter';
+import { commandRegistry } from '../../shared/command-registry';
 import { registerGroupProjectTools } from './clubhouse-mcp/tools/group-project-tools';
 import { executeShoulderTap } from './group-project-shoulder-tap';
 
@@ -63,6 +65,8 @@ describe('executeShoulderTap', () => {
     _resetAllBoardsForTesting();
     groupProjectRegistry._resetForTesting();
     resetToolRegistry();
+    mcpAdapter._resetForTesting();
+    commandRegistry.clear();
     registerGroupProjectTools();
   });
 

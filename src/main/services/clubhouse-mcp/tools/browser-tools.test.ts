@@ -44,6 +44,8 @@ import {
 } from './browser-tools';
 import { getScopedToolList, callTool, _resetForTesting as resetTools } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
+import { mcpAdapter } from '../mcp-adapter';
+import { commandRegistry } from '../../../../shared/command-registry';
 
 function getMockWc() {
   return (webContents.fromId as any)(42);
@@ -57,6 +59,8 @@ describe('BrowserTools', () => {
   beforeEach(() => {
     resetTools();
     resetBrowserTools();
+    mcpAdapter._resetForTesting();
+    commandRegistry.clear();
     bindingManager._resetForTesting();
 
     const mockWc = getMockWc();
@@ -807,6 +811,8 @@ describe('BrowserTools', () => {
       // Simulate the bug scenario: binding exists but webview not yet registered
       resetBrowserTools();
       resetTools();
+      mcpAdapter._resetForTesting();
+      commandRegistry.clear();
       bindingManager._resetForTesting();
       registerBrowserTools();
       bindingManager.bind('agent-1', { targetId: 'widget-late', targetKind: 'browser', label: 'Browser' });
