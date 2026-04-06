@@ -6,7 +6,6 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
 import { getBulletinBoard, destroyBulletinBoard } from '../services/group-project-bulletin';
-import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
@@ -40,8 +39,7 @@ export function registerGroupProjectHandlers(): void {
 
   handlersRegistered = true;
 
-  // Register tool templates and lifecycle hooks
-  registerGroupProjectTools();
+  // Tool registration is handled centrally in registerMcpBindingHandlers().
   initGroupProjectLifecycle();
 
   appLog('core:group-project', 'info', 'Group project handlers registered');
