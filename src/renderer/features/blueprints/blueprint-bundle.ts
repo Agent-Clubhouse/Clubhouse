@@ -12,7 +12,8 @@ import type {
   BlueprintManifest,
 } from '../../../shared/blueprint-types';
 import { exportCanvasToBlueprint, slugify, type ExportContext } from './blueprint-export';
-import { importBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
+import { importBlueprint, type BlueprintView as CanvasBlueprintView } from '../../plugins/builtin/canvas/canvas-blueprint';
+import type { CanvasWidgetMetadata } from '../../../shared/plugin-types';
 
 // ── Bundle export ───────────────────────────────────────────────────
 
@@ -153,20 +154,31 @@ export function importBundle(bundle: BlueprintBundle): BundleImportResult {
       const canvasBlueprint = {
         version: 1,
         name: manifest.name,
-        views: manifest.canvas.views.map((v) => ({
-          type: v.type as 'agent' | 'anchor' | 'plugin' | 'sticky-note' | 'zone',
-          title: v.displayName,
-          position: v.position,
-          size: v.size ?? { width: 480, height: 480 },
-          metadata: (v.metadata ?? {}) as Record<string, unknown>,
-          projectId: v.projectRef,
-          content: v.content,
-          color: v.color,
-          pluginWidgetType: v.metadata?.pluginWidgetType as string | undefined,
-          pluginId: v.metadata?.pluginId as string | undefined,
-          themeId: v.metadata?.themeId as string | undefined,
-          label: v.displayName,
-        })),
+        views: manifest.canvas.views.map((v): CanvasBlueprintView => {
+          // Convert Record<string, unknown> to CanvasWidgetMetadata (string|number|boolean values)
+          const metadata: CanvasWidgetMetadata = {};
+          if (v.metadata) {
+            for (const [key, val] of Object.entries(v.metadata)) {
+              if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+                metadata[key] = val;
+              }
+            }
+          }
+          return {
+            type: v.type as 'agent' | 'anchor' | 'plugin' | 'sticky-note' | 'zone',
+            title: v.displayName,
+            position: v.position,
+            size: v.size ?? { width: 480, height: 480 },
+            metadata,
+            projectId: v.projectRef,
+            content: v.content,
+            color: v.color,
+            pluginWidgetType: v.metadata?.pluginWidgetType as string | undefined,
+            pluginId: v.metadata?.pluginId as string | undefined,
+            themeId: v.metadata?.themeId as string | undefined,
+            label: v.displayName,
+          };
+        }),
       };
       const canvas = importBlueprint(canvasBlueprint);
       canvases.push(canvas);
