@@ -141,7 +141,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
           <div className="flex items-center gap-0.5" data-testid="canvas-attention-cycler">
             <button
               onClick={goPrev}
-              className="w-5 h-5 flex items-center justify-center rounded text-ctp-warning hover:bg-yellow-500/20 transition-colors"
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-warning hover:bg-ctp-warning/20 transition-colors"
               title="Previous attention item"
               data-testid="canvas-attention-prev"
             >
@@ -172,7 +172,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
             </div>
             <button
               onClick={goNext}
-              className="w-5 h-5 flex items-center justify-center rounded text-ctp-warning hover:bg-yellow-500/20 transition-colors"
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-warning hover:bg-ctp-warning/20 transition-colors"
               title="Next attention item"
               data-testid="canvas-attention-next"
             >

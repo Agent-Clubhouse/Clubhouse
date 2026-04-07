@@ -51,8 +51,8 @@ function NameAndPathSection({ projectId }: { projectId: string }) {
         {dirty && (
           <button
             onClick={save}
-            className="px-3 py-1.5 text-xs rounded-lg bg-indigo-500/20 border border-indigo-500/40
-              text-indigo-400 hover:bg-indigo-500/30 cursor-pointer transition-colors"
+            className="px-3 py-1.5 text-xs rounded-lg bg-ctp-accent/20 border border-ctp-accent/40
+              text-ctp-accent hover:bg-ctp-accent/30 cursor-pointer transition-colors"
           >
             Save
           </button>
@@ -285,7 +285,7 @@ function LaunchWrapperSection({ projectPath }: { projectPath: string }) {
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleMcp(entry.id)}
-                      className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+                      className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
                     />
                     <span className="text-xs text-ctp-text truncate" title={entry.description}>
                       {entry.name}

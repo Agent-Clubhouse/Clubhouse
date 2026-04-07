@@ -291,7 +291,7 @@ export function HubPane({
 
       {/* Drag-over shadow overlay */}
       {isDragOver && (
-        <div className="absolute inset-0 z-30 bg-indigo-500/10 border-2 border-dashed border-indigo-500/40 rounded-sm pointer-events-none" />
+        <div className="absolute inset-0 z-30 bg-ctp-accent/10 border-2 border-dashed border-ctp-accent/40 rounded-sm pointer-events-none" />
       )}
 
       {/* Edge split indicators */}

@@ -452,14 +452,14 @@ export function AgentList() {
           placeholder="What should this quick agent do?"
           className="w-full px-2 py-1.5 text-xs rounded border border-surface-0
             bg-ctp-base text-ctp-text placeholder:text-ctp-overlay0
-            focus:outline-none focus:border-indigo-500"
+            focus:outline-none focus:border-ctp-accent"
         />
         <div className="flex gap-1.5">
           <select
             value={quickModel}
             onChange={(e) => setQuickModel(e.target.value)}
             className="flex-1 min-w-0 px-1.5 py-1 text-[10px] rounded bg-surface-0 border border-surface-2
-              text-ctp-text focus:outline-none focus:border-indigo-500"
+              text-ctp-text focus:outline-none focus:border-ctp-accent"
           >
             {MODEL_OPTIONS.map((opt) => (
               <option key={opt.id} value={opt.id}>{opt.label}</option>
@@ -470,7 +470,7 @@ export function AgentList() {
               value={quickOrchestrator || enabledOrchestrators[0]?.id}
               onChange={(e) => setQuickOrchestrator(e.target.value)}
               className="flex-1 min-w-0 px-1.5 py-1 text-[10px] rounded bg-surface-0 border border-surface-2
-                text-ctp-text focus:outline-none focus:border-indigo-500"
+                text-ctp-text focus:outline-none focus:border-ctp-accent"
             >
               {enabledOrchestrators.map((o) => (
                 <option key={o.id} value={o.id}>{o.displayName}</option>
@@ -499,8 +499,8 @@ export function AgentList() {
           <button
             onClick={handleMissionSubmit}
             disabled={!mission.trim()}
-            className="flex-1 px-2 py-1 text-[10px] rounded bg-indigo-500/20 text-indigo-300
-              hover:bg-indigo-500/30 transition-colors cursor-pointer
+            className="flex-1 px-2 py-1 text-[10px] rounded bg-ctp-accent/20 text-ctp-accent
+              hover:bg-ctp-accent/30 transition-colors cursor-pointer
               disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Start
@@ -535,15 +535,15 @@ export function AgentList() {
         <div ref={dropdownBtnRef} className="relative flex">
           <button
             onClick={() => setShowDialog(true)}
-            className="px-2 py-1 text-xs rounded-l bg-indigo-500/20 text-indigo-300
-              hover:bg-indigo-500/30 transition-colors cursor-pointer"
+            className="px-2 py-1 text-xs rounded-l bg-ctp-accent/20 text-ctp-accent
+              hover:bg-ctp-accent/30 transition-colors cursor-pointer"
           >
             + Agent
           </button>
           <button
             onClick={() => setShowDropdown(!showDropdown)}
-            className="px-1.5 py-1 text-xs rounded-r bg-indigo-500/20 text-indigo-300
-              hover:bg-indigo-500/30 transition-colors cursor-pointer border-l border-indigo-500/30"
+            className="px-1.5 py-1 text-xs rounded-r bg-ctp-accent/20 text-ctp-accent
+              hover:bg-ctp-accent/30 transition-colors cursor-pointer border-l border-ctp-accent/30"
           >
             {'\u25BE'}
           </button>
@@ -623,7 +623,7 @@ export function AgentList() {
                   data-agent-id={durable.id}
                 >
                   {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
-                    <div data-testid="drag-indicator" className="absolute -top-px left-3 right-3 h-0.5 bg-indigo-500 rounded-full z-10" />
+                    <div data-testid="drag-indicator" className="absolute -top-px left-3 right-3 h-0.5 bg-ctp-accent rounded-full z-10" />
                   )}
                   <div className="relative">
                     <AgentListItem
@@ -696,7 +696,7 @@ export function AgentList() {
         {durableAgents.length === 0 && quickAgents.length === 0 && completedAgents.length === 0 && (
           <div className="p-4 text-ctp-subtext0 text-xs text-center">
             <p className="mb-2">No agents yet</p>
-            <p>Click <span className="text-indigo-300">+ Agent</span> to create a durable agent, or use the dropdown for a quick session.</p>
+            <p>Click <span className="text-ctp-accent">+ Agent</span> to create a durable agent, or use the dropdown for a quick session.</p>
           </div>
         )}
       </div>

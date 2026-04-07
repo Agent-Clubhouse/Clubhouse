@@ -493,11 +493,11 @@ export function CanvasViewComponent({
   // ── Selection & drag highlight ──────────────────────────────────
   const isDragActive = dragPos !== null || !!dragOffset;
   const selectionShadow = isDragActive
-    ? `var(--shadow-elevation), 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--ctp-blue, #89b4fa)`
+    ? `var(--shadow-elevation), 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px rgb(var(--ctp-accent))`
     : isSelected
-      ? `var(--shadow-depth), 0 0 0 2px var(--ctp-blue, #89b4fa)`
+      ? `var(--shadow-depth), 0 0 0 2px rgb(var(--ctp-accent))`
       : isMultiSelected
-        ? `var(--shadow-depth), 0 0 0 2px var(--ctp-blue, #89b4fa)`
+        ? `var(--shadow-depth), 0 0 0 2px rgb(var(--ctp-accent))`
         : `var(--shadow-depth), 0 0 0 1px var(--ctp-surface2)`;
 
   // ── Compact anchor strip ──────────────────────────────────────

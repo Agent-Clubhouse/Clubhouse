@@ -778,7 +778,7 @@ export function AgentSettingsView({ agent }: Props) {
                     checked={structuredMode}
                     onChange={(e) => handleStructuredModeChange(e.target.checked)}
                     disabled={isRunning || !(capabilities?.structuredMode ?? false)}
-                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
                   />
                   <span className="text-sm text-ctp-text">Structured Mode</span>
                 </label>

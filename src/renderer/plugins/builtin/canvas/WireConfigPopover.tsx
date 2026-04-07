@@ -223,7 +223,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
           {/* Wake Agent (only when target is sleeping) */}
           {isTargetSleeping && (
             <button
-              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-amber-400 hover:bg-amber-500/10 rounded transition-colors"
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-ctp-warning hover:bg-ctp-warning/10 rounded transition-colors"
               onClick={handleWake}
               data-testid="wire-wake-agent"
             >
@@ -236,7 +236,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
 
           {/* Disconnect */}
           <button
-            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-ctp-red hover:bg-red-500/10 rounded transition-colors"
+            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-ctp-error hover:bg-ctp-error/10 rounded transition-colors"
             onClick={handleDisconnect}
             data-testid="wire-disconnect"
           >

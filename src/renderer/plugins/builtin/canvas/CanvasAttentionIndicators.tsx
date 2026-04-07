@@ -50,8 +50,8 @@ export function CanvasAttentionIndicators({ indicators, onNavigate }: CanvasAtte
                 shadow-lg cursor-pointer transition-transform
                 group-hover:scale-110
                 ${isError
-                  ? 'bg-red-500/90 hover:bg-red-500'
-                  : 'bg-yellow-500/90 hover:bg-yellow-500'
+                  ? 'bg-ctp-error/90 hover:bg-ctp-error'
+                  : 'bg-ctp-warning/90 hover:bg-ctp-warning'
                 }
               `}
             >

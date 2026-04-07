@@ -596,7 +596,7 @@ export function ProjectRail() {
                   className="relative flex-shrink-0"
                 >
                   {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
-                    <div className="absolute -top-1.5 left-1 right-1 h-0.5 bg-indigo-500 rounded-full" />
+                    <div className="absolute -top-1.5 left-1 right-1 h-0.5 bg-ctp-accent rounded-full" />
                   )}
                   <ProjectIcon
                     project={p}

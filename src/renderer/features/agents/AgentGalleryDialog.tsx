@@ -109,7 +109,7 @@ export function AgentGalleryDialog({ onClose, onCreate }: Props) {
                   onClick={() => setSelected(persona)}
                   className={`text-left p-3 rounded-lg border-2 transition-all cursor-pointer ${
                     isSelected
-                      ? 'border-indigo-500 bg-indigo-500/10'
+                      ? 'border-ctp-accent bg-ctp-accent/10'
                       : 'border-surface-0 hover:border-surface-0/80 hover:bg-surface-0/30'
                   }`}
                 >
@@ -154,7 +154,7 @@ export function AgentGalleryDialog({ onClose, onCreate }: Props) {
             disabled={!selected}
             className={`px-4 py-1.5 text-xs rounded font-medium transition-colors cursor-pointer ${
               selected
-                ? 'bg-indigo-500 text-white hover:bg-indigo-600'
+                ? 'bg-ctp-accent text-white hover:bg-ctp-accent/80'
                 : 'bg-surface-0 text-ctp-subtext0 cursor-not-allowed'
             }`}
           >

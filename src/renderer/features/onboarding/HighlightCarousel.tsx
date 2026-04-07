@@ -125,7 +125,7 @@ export function HighlightCarousel({ cohort, currentIndex, onNext, onPrev }: High
         </button>
         <button
           onClick={onNext}
-          className="px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer"
+          className="px-4 py-2 text-sm rounded-lg bg-ctp-accent hover:bg-ctp-accent/80 text-white transition-colors cursor-pointer"
           data-testid="carousel-next"
         >
           {currentIndex === slides.length - 1 ? 'Continue' : 'Next'}
