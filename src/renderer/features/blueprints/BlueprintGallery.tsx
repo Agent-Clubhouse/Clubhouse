@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useUIStore } from '../../stores/uiStore';
 import type { BlueprintSummary } from '../../../shared/blueprint-summary';
-import { importBlueprint, validateBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
+import { importBlueprint as legacyImportBlueprint, validateBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
+import { importBlueprint as manifestImportBlueprint } from './blueprint-import';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../plugins/builtin/canvas/main';
 import { useProjectStore } from '../../stores/projectStore';
+import { useAgentStore } from '../../stores/agentStore';
 
 // ── Fuzzy search ─────────────────────────────────────────────────────
 
@@ -90,16 +92,52 @@ export function BlueprintGallery() {
       const data = await window.clubhouse.blueprint.read(bp.filePath);
       if (!data) throw new Error('Failed to read blueprint file');
 
-      const validationError = validateBlueprint(data);
-      if (validationError) throw new Error(validationError);
-
-      const canvas = importBlueprint(data as any);
-
       const store = activeProjectId
         ? getProjectCanvasStore(activeProjectId)
         : useAppCanvasStore;
 
-      store.getState().insertCanvas(canvas);
+      // Use manifest-aware import for BlueprintManifest files (preserves agent bindings/wires)
+      if (data && typeof data === 'object' && 'schemaVersion' in data) {
+        const agents = Object.values(useAgentStore.getState().agents);
+        const projects = useProjectStore.getState().projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          path: p.path,
+        }));
+        const result = manifestImportBlueprint(data as any, agents, projects, activeProjectId ?? undefined);
+        store.getState().insertCanvas(result.canvas);
+        // Restore wire definitions from the import
+        for (const wire of result.pendingWires) {
+          const sourceViewId = result.refIdToViewId.get(wire.sourceRef);
+          const targetViewId = result.refIdToViewId.get(wire.targetRef);
+          if (sourceViewId && targetViewId) {
+            const sourceView = result.canvas.views.find((v) => v.id === sourceViewId);
+            const targetView = result.canvas.views.find((v) => v.id === targetViewId);
+            if (sourceView && targetView && sourceView.type === 'agent') {
+              const agentView = sourceView as any;
+              if (agentView.agentId) {
+                const targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue' =
+                  targetView.type === 'agent' ? 'agent' : 'browser';
+                store.getState().addWireDefinition({
+                  agentId: agentView.agentId,
+                  targetId: targetViewId,
+                  targetKind,
+                  label: `${wire.sourceRef} → ${wire.targetRef}`,
+                  agentName: wire.sourceRef,
+                  targetName: wire.targetRef,
+                });
+              }
+            }
+          }
+        }
+      } else {
+        // Legacy blueprint format (no agent bindings)
+        const validationError = validateBlueprint(data);
+        if (validationError) throw new Error(validationError);
+        const canvas = legacyImportBlueprint(data as any);
+        store.getState().insertCanvas(canvas);
+      }
+
       close();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

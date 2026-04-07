@@ -16,23 +16,48 @@ vi.mock('../../stores/uiStore', () => ({
 }));
 
 vi.mock('../../stores/projectStore', () => ({
-  useProjectStore: (selector: any) => selector({ activeProjectId: 'p1' }),
+  useProjectStore: Object.assign(
+    (selector: any) => selector({ activeProjectId: 'p1', projects: [{ id: 'p1', name: 'Project', path: '/tmp/proj' }] }),
+    { getState: () => ({ projects: [{ id: 'p1', name: 'Project', path: '/tmp/proj' }] }) },
+  ),
 }));
 
+vi.mock('../../stores/agentStore', () => ({
+  useAgentStore: { getState: () => ({ agents: {} }) },
+}));
+
+const mockLegacyImport = vi.fn(() => ({
+  id: 'canvas_1', name: 'Imported', views: [],
+  viewport: { panX: 0, panY: 0, zoom: 1 },
+  nextZIndex: 0, zoomedViewId: null, selectedViewId: null,
+  minimapAutoHide: true, elkAlgorithm: 'layered', elkDirection: 'RIGHT', layoutCenterId: null,
+}));
 vi.mock('../../plugins/builtin/canvas/canvas-blueprint', () => ({
-  importBlueprint: vi.fn(() => ({
-    id: 'canvas_1', name: 'Imported', views: [],
-    viewport: { panX: 0, panY: 0, zoom: 1 },
-    nextZIndex: 0, zoomedViewId: null, selectedViewId: null,
-    minimapAutoHide: true, elkAlgorithm: 'layered', elkDirection: 'RIGHT', layoutCenterId: null,
-  })),
+  importBlueprint: (...args: any[]) => mockLegacyImport(...args),
   validateBlueprint: vi.fn(() => null),
 }));
 
+const mockManifestImport = vi.fn(() => ({
+  canvas: {
+    id: 'canvas_m', name: 'Manifest Imported', views: [],
+    viewport: { panX: 0, panY: 0, zoom: 1 },
+    nextZIndex: 0, zoomedViewId: null, selectedViewId: null,
+    minimapAutoHide: true, elkAlgorithm: 'layered', elkDirection: 'RIGHT', layoutCenterId: null,
+  },
+  stubs: [],
+  projectMatches: [],
+  pendingWires: [],
+  refIdToViewId: new Map(),
+}));
+vi.mock('./blueprint-import', () => ({
+  importBlueprint: (...args: any[]) => mockManifestImport(...args),
+}));
+
 const mockInsertCanvas = vi.fn();
+const mockAddWireDefinition = vi.fn();
 vi.mock('../../plugins/builtin/canvas/main', () => ({
-  getProjectCanvasStore: () => ({ getState: () => ({ insertCanvas: mockInsertCanvas }) }),
-  useAppCanvasStore: { getState: () => ({ insertCanvas: mockInsertCanvas }) },
+  getProjectCanvasStore: () => ({ getState: () => ({ insertCanvas: mockInsertCanvas, addWireDefinition: mockAddWireDefinition }) }),
+  useAppCanvasStore: { getState: () => ({ insertCanvas: mockInsertCanvas, addWireDefinition: mockAddWireDefinition }) },
 }));
 
 const mockBlueprintList = vi.fn();
@@ -217,5 +242,53 @@ describe('BlueprintGallery', () => {
     render(<BlueprintGallery />);
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(mockCloseBlueprintGallery).toHaveBeenCalled();
+  });
+
+  // ── Manifest-aware import (LB-CRIT-01) ────────────────────────
+
+  it('uses manifest-aware import for BlueprintManifest files', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([makeBp()]);
+    mockBlueprintRead.mockResolvedValue({
+      schemaVersion: 1,
+      id: 'bp-123',
+      name: 'Manifest BP',
+      version: '1.0.0',
+      createdAt: '2026-01-01',
+      canvas: { views: [], wires: [] },
+      agents: [{ refId: 'a1', name: 'Agent A' }],
+    });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
+
+    fireEvent.dblClick(screen.getByTestId('blueprint-card-Test BP'));
+    await waitFor(() => {
+      expect(mockManifestImport).toHaveBeenCalled();
+      expect(mockInsertCanvas).toHaveBeenCalled();
+    });
+    // Legacy import should NOT have been called
+    expect(mockLegacyImport).not.toHaveBeenCalled();
+  });
+
+  it('uses legacy import for non-manifest blueprint files', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([makeBp()]);
+    mockBlueprintRead.mockResolvedValue({
+      version: 1,
+      name: 'Legacy BP',
+      views: [{ type: 'agent', position: { x: 0, y: 0 } }],
+    });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
+
+    fireEvent.dblClick(screen.getByTestId('blueprint-card-Test BP'));
+    await waitFor(() => {
+      expect(mockLegacyImport).toHaveBeenCalled();
+      expect(mockInsertCanvas).toHaveBeenCalled();
+    });
+    // Manifest import should NOT have been called
+    expect(mockManifestImport).not.toHaveBeenCalled();
   });
 });
