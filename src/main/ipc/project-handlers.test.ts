@@ -672,7 +672,7 @@ describe('project-handlers', () => {
       const handler = handlers.get(channel)!;
       // Provide minimal valid args for each handler
       const extraArgs: Record<string, unknown[]> = {
-        WRITE_LAUNCH_WRAPPER: [null],
+        WRITE_LAUNCH_WRAPPER: [undefined],
         WRITE_MCP_CATALOG: [[{}]],
         WRITE_DEFAULT_MCPS: [['mcp-1']],
       };
