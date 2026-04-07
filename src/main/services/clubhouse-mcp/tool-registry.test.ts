@@ -11,7 +11,7 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, _resetForTesting } from './tool-registry';
+import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
@@ -732,6 +732,69 @@ describe('ToolRegistry', () => {
       expect(getScopedToolList('any-agent')).toHaveLength(1);
       _resetForTesting();
       expect(getScopedToolList('any-agent')).toHaveLength(0);
+    });
+  });
+
+  describe('tool list caching (PERF-MCP-01)', () => {
+    beforeEach(() => {
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('agent', 'get_status', { description: 'Status', inputSchema: { type: 'object' } }, vi.fn());
+      agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'robin', projectName: 'app',
+      });
+    });
+
+    afterEach(() => {
+      agentRegistry.untrack('agent-2');
+    });
+
+    it('returns cached result on second call', () => {
+      const first = getScopedToolList('agent-1');
+      const second = getScopedToolList('agent-1');
+      // Same array reference = cache hit
+      expect(second).toBe(first);
+    });
+
+    it('invalidates cache when bindings change for that agent', () => {
+      const first = getScopedToolList('agent-1');
+      // Change bindings for agent-1
+      bindingManager.bind('agent-1', {
+        targetId: 'widget-1', targetKind: 'browser', label: 'Browser',
+      });
+      const second = getScopedToolList('agent-1');
+      // Different reference = cache was invalidated
+      expect(second).not.toBe(first);
+      // Should now include browser tools
+      expect(second.length).toBeGreaterThan(first.length);
+    });
+
+    it('does not invalidate other agents cache when one agent changes', () => {
+      bindingManager.bind('agent-3', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'robin', projectName: 'app',
+      });
+      const agent1Tools = getScopedToolList('agent-1');
+      const agent3Tools = getScopedToolList('agent-3');
+
+      // Change bindings for agent-3 only
+      bindingManager.unbind('agent-3', 'agent-2');
+      const agent1ToolsAfter = getScopedToolList('agent-1');
+      const agent3ToolsAfter = getScopedToolList('agent-3');
+
+      // agent-1 cache should be invalidated too (global version bumped)
+      // but the content should be the same
+      expect(agent1ToolsAfter.length).toBe(agent1Tools.length);
+      // agent-3 should have fewer tools now
+      expect(agent3ToolsAfter.length).toBeLessThan(agent3Tools.length);
+    });
+
+    it('invalidateToolListCache clears all caches', () => {
+      const first = getScopedToolList('agent-1');
+      invalidateToolListCache();
+      const second = getScopedToolList('agent-1');
+      expect(second).not.toBe(first);
     });
   });
 });

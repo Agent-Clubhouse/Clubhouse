@@ -349,4 +349,7 @@ export async function callTool(
 export function _resetForTesting(): void {
   toolTemplates.clear();
   globalTools.clear();
+  toolListCache.clear();
+  agentCacheVersions.clear();
+  cacheVersion = 0;
 }
