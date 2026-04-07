@@ -1,9 +1,14 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProjectSettings } from './ProjectSettings';
+import { showConfirmDialog } from '../../plugins/PluginDialog';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
 import type { Project } from '../../../shared/types';
+
+vi.mock('../../plugins/PluginDialog', () => ({
+  showConfirmDialog: vi.fn(() => ({ promise: Promise.resolve(true), cleanup: vi.fn() })),
+}));
 
 vi.mock('./ResetProjectDialog', () => ({
   ResetProjectDialog: ({ projectName, onConfirm, onCancel }: any) => (
@@ -306,16 +311,16 @@ describe('ProjectSettings', () => {
       expect(screen.getByText('Reset Project')).toBeInTheDocument();
     });
 
-    it('clicking Close Project removes project and closes settings', () => {
+    it('clicking Close Project removes project and closes settings', async () => {
       resetStores();
-      vi.spyOn(window, 'confirm').mockReturnValue(true);
       render(<ProjectSettings />);
       fireEvent.click(screen.getByText('Close Project'));
 
-      expect(window.confirm).toHaveBeenCalled();
-      expect(mockToggleSettings).toHaveBeenCalled();
-      expect(mockRemoveProject).toHaveBeenCalledWith('proj-1');
-      vi.mocked(window.confirm).mockRestore();
+      await waitFor(() => {
+        expect(showConfirmDialog).toHaveBeenCalled();
+        expect(mockToggleSettings).toHaveBeenCalled();
+        expect(mockRemoveProject).toHaveBeenCalledWith('proj-1');
+      });
     });
 
     it('clicking Reset Project shows confirmation dialog', () => {

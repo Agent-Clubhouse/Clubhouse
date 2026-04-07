@@ -75,7 +75,7 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
             disabled
               ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
               : dirty && !error
-                ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
+                ? 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
                 : 'bg-surface-1 text-ctp-subtext0 cursor-default'
           }`}
         >

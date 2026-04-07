@@ -296,7 +296,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
             type="checkbox"
             checked={remote.isRemote || readOnly}
             onChange={(e) => { if (!remote.isRemote) setReadOnly(e.target.checked); }}
-            className="accent-ctp-blue w-3 h-3"
+            className="accent-ctp-accent w-3 h-3"
             disabled={remote.isRemote}
           />
           <span className={remote.isRemote ? 'text-ctp-overlay0' : readOnly ? 'text-ctp-subtext0' : 'text-ctp-peach'}>

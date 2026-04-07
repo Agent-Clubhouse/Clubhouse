@@ -553,7 +553,7 @@ export function CanvasViewComponent({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="text-ctp-blue"
+            className="text-ctp-accent"
           >
             <circle cx="12" cy="5" r="3" />
             <line x1="12" y1="8" x2="12" y2="22" />
@@ -588,7 +588,7 @@ export function CanvasViewComponent({
               <button
                 className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
                   anchorView.autoCollapse
-                    ? 'text-ctp-blue bg-ctp-blue/10'
+                    ? 'text-ctp-accent bg-ctp-accent/10'
                     : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
                 }`}
                 onClick={(e) => {
@@ -715,7 +715,7 @@ export function CanvasViewComponent({
               <button
                 className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
                   linkDropdownOpen
-                    ? 'text-ctp-blue bg-ctp-blue/10'
+                    ? 'text-ctp-accent bg-ctp-accent/10'
                     : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
                 }`}
                 onClick={(e) => { e.stopPropagation(); setLinkDropdownOpen(!linkDropdownOpen); }}
@@ -785,7 +785,7 @@ export function CanvasViewComponent({
           <button
             className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
               isZoomed
-                ? 'text-ctp-blue bg-surface-1'
+                ? 'text-ctp-accent bg-surface-1'
                 : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
             }`}
             onClick={(e) => { e.stopPropagation(); onZoomView(); }}
@@ -818,7 +818,7 @@ export function CanvasViewComponent({
               <button
                 className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
                   isPinned
-                    ? 'text-ctp-blue bg-surface-1'
+                    ? 'text-ctp-accent bg-surface-1'
                     : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
                 }`}
                 onClick={(e) => { e.stopPropagation(); handleUpdateMetadata({ __pinnedToControls: !isPinned }); }}

@@ -294,7 +294,7 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
 
   it('lights up the save button with blue styling when there are unsaved changes', () => {
     // Active state: blue bg with shadow
-    expect(source).toContain("'bg-ctp-blue text-white shadow-md hover:opacity-90'");
+    expect(source).toContain("'bg-ctp-accent text-white shadow-md hover:opacity-90'");
     // Inactive state: muted
     expect(source).toContain("'bg-surface-0 text-ctp-overlay0 cursor-default'");
   });

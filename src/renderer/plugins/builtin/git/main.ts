@@ -17,7 +17,7 @@ interface StatusInfo {
 
 function statusInfo(code: string): StatusInfo {
   const c = code.trim();
-  if (c === '??' || c === '?') return { label: 'Untracked', color: 'text-ctp-blue', short: 'U' };
+  if (c === '??' || c === '?') return { label: 'Untracked', color: 'text-ctp-accent', short: 'U' };
   if (c.startsWith('A') || c === 'A') return { label: 'Added', color: 'text-ctp-green', short: 'A' };
   if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-red', short: 'D' };
   if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-yellow', short: 'M' };
@@ -229,7 +229,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     // Commit box
     staged.length > 0 && h('div', { className: 'px-3 py-2 border-b border-surface-0' },
       h('textarea', {
-        className: 'w-full bg-ctp-base text-ctp-text text-[11px] rounded p-1.5 border border-surface-0 resize-none focus:outline-none focus:border-ctp-blue',
+        className: 'w-full bg-ctp-base text-ctp-text text-[11px] rounded p-1.5 border border-surface-0 resize-none focus:outline-none focus:border-ctp-accent',
         rows: 3,
         placeholder: 'Commit message...',
         value: commitMessage,
@@ -237,7 +237,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
         'data-testid': 'git-commit-message',
       }),
       h('button', {
-        className: 'mt-1 w-full text-[11px] px-2 py-1 rounded bg-ctp-blue/20 text-ctp-blue hover:bg-ctp-blue/30 transition-colors disabled:opacity-40',
+        className: 'mt-1 w-full text-[11px] px-2 py-1 rounded bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 transition-colors disabled:opacity-40',
         onClick: handleCommit,
         disabled: !commitMessage.trim(),
         'data-testid': 'git-commit-btn',

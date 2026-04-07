@@ -130,14 +130,14 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
               onKeyDown={handlePinKeyDown}
               placeholder="000000"
               className="flex-1 px-3 py-2 text-sm rounded bg-surface-1 border border-surface-2
-                text-ctp-text placeholder-ctp-overlay0 outline-none focus:border-ctp-blue
+                text-ctp-text placeholder-ctp-overlay0 outline-none focus:border-ctp-accent
                 tracking-widest text-center font-mono"
             />
             <button
               onClick={handlePair}
               disabled={pairing || pin.length < 4}
-              className="px-4 py-2 text-xs rounded bg-ctp-blue text-white font-medium
-                hover:bg-ctp-blue/80 transition-colors cursor-pointer
+              className="px-4 py-2 text-xs rounded bg-ctp-accent text-white font-medium
+                hover:bg-ctp-accent/80 transition-colors cursor-pointer
                 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {pairing ? 'Pairing...' : 'Pair'}

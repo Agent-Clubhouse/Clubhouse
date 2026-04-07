@@ -109,7 +109,7 @@ export function SatelliteHostRow({ satellite, expanded, isActive, onClick }: {
         <div
           data-testid={`host-status-${satellite.id}`}
           className={`absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-ctp-mantle ${
-            isOnline ? 'bg-emerald-500' : 'bg-surface-2'
+            isOnline ? 'bg-ctp-success' : 'bg-surface-2'
           }`}
         />
       </div>

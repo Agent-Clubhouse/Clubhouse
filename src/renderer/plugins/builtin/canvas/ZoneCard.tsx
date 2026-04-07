@@ -104,7 +104,7 @@ export const ZoneCard = React.memo(function ZoneCard({ zone, mcpEnabled, dragOff
       {/* Wire handle — only when MCP enabled */}
       {mcpEnabled && (
         <button
-          className="w-6 h-6 flex items-center justify-center rounded text-ctp-blue hover:bg-ctp-blue/20 transition-colors flex-shrink-0"
+          className="w-6 h-6 flex items-center justify-center rounded text-ctp-accent hover:bg-ctp-accent/20 transition-colors flex-shrink-0"
           onClick={(e) => { e.stopPropagation(); onStartWireDrag(); }}
           onMouseDown={(e) => e.stopPropagation()}
           title="Connect zone"

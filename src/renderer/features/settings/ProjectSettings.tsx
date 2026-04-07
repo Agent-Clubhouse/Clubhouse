@@ -6,6 +6,7 @@ import { ResetProjectDialog } from './ResetProjectDialog';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { EmojiPicker } from '../../components/EmojiPicker';
 import type { LaunchWrapperConfig, McpCatalogEntry } from '../../../shared/types';
+import { showConfirmDialog } from '../../plugins/PluginDialog';
 
 function NameAndPathSection({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
@@ -386,8 +387,9 @@ function DangerZone({ projectId, projectPath, projectName }: { projectId: string
   const toggleSettings = useUIStore((s) => s.toggleSettings);
   const [showResetDialog, setShowResetDialog] = useState(false);
 
-  const handleClose = () => {
-    if (!window.confirm('Close this project? Project-specific settings may need to be reconfigured.')) return;
+  const handleClose = async () => {
+    const { promise } = showConfirmDialog('Close this project? Project-specific settings may need to be reconfigured.');
+    if (!(await promise)) return;
     toggleSettings();
     removeProject(projectId);
   };

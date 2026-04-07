@@ -13,6 +13,7 @@ import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { getAgentColorHex } from '../../shared/name-generator';
 import { sanitizeSvg } from '../utils/sanitize-svg';
+import { showConfirmDialog } from '../plugins/PluginDialog';
 
 function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
   position: { x: number; y: number };
@@ -66,7 +67,7 @@ function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
         <span>Project Settings</span>
       </button>
       <button
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-surface-1 hover:text-red-300 transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ctp-error hover:bg-surface-1 hover:text-ctp-error/80 transition-colors cursor-pointer"
         onClick={(e) => { e.stopPropagation(); onCloseProject(); onClose(); }}
         data-testid="ctx-close-project"
       >
@@ -799,8 +800,9 @@ export function ProjectRail() {
             setSettingsContext('project');
             setSettingsSubPage('project');
           }}
-          onCloseProject={() => {
-            if (window.confirm('Close this project? Project-specific settings may need to be reconfigured.')) {
+          onCloseProject={async () => {
+            const { promise } = showConfirmDialog('Close this project? Project-specific settings may need to be reconfigured.');
+            if (await promise) {
               removeProject(contextMenu.projectId);
             }
           }}

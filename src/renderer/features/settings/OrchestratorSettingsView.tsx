@@ -178,7 +178,7 @@ function AppAgentSettings() {
               </button>
               <button
                 onClick={confirmEnable}
-                className="px-3 py-1.5 text-xs rounded-lg bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer transition-colors"
+                className="px-3 py-1.5 text-xs rounded-lg bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer transition-colors"
               >
                 Enable
               </button>

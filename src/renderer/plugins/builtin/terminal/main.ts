@@ -113,7 +113,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
           React.createElement('div', { className: 'flex items-center gap-3' },
             React.createElement('span', {
               className: `w-2 h-2 rounded-full flex-shrink-0 ${
-                target.kind === 'project' ? 'bg-ctp-blue' : 'bg-ctp-green'
+                target.kind === 'project' ? 'bg-ctp-accent' : 'bg-ctp-green'
               }`,
             }),
             React.createElement('span', { className: 'truncate' }, target.label),

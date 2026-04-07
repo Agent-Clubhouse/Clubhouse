@@ -32,7 +32,7 @@ function ProvenanceBadge({ item, isOrphan }: { item: ProvenancedConfigItem; isOr
   if (p.source === 'user') return null;
   if (p.source === 'built-in') {
     return (
-      <span className="text-[9px] px-1.5 py-0.5 rounded bg-ctp-blue/15 text-ctp-blue border border-ctp-blue/20">
+      <span className="text-[9px] px-1.5 py-0.5 rounded bg-ctp-accent/15 text-ctp-accent border border-ctp-accent/20">
         built-in
       </span>
     );
@@ -458,7 +458,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             disabled={!dirty || saving}
             className={`text-xs px-3 py-1 rounded transition-colors ${
               dirty
-                ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
+                ? 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
                 : 'bg-surface-1 text-ctp-subtext0 cursor-default'
             }`}
           >
@@ -581,7 +581,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             value={commandPrefix}
             onChange={(e) => { setCommandPrefix(e.target.value); setDirty(true); }}
             placeholder=". ./init.sh"
-            className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-blue"
+            className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-accent"
             spellCheck={false}
           />
           <p className="text-[10px] text-ctp-subtext0/60 mt-1">
@@ -602,7 +602,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
                 value={buildCommand}
                 onChange={(e) => { setBuildCommand(e.target.value); setDirty(true); }}
                 placeholder="npm run build"
-                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-blue"
+                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-accent"
                 spellCheck={false}
               />
             </div>
@@ -612,7 +612,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
                 value={testCommand}
                 onChange={(e) => { setTestCommand(e.target.value); setDirty(true); }}
                 placeholder="npm test"
-                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-blue"
+                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-accent"
                 spellCheck={false}
               />
             </div>
@@ -622,7 +622,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
                 value={lintCommand}
                 onChange={(e) => { setLintCommand(e.target.value); setDirty(true); }}
                 placeholder="npm run lint"
-                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-blue"
+                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-accent"
                 spellCheck={false}
               />
             </div>
@@ -658,7 +658,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               setDirty(true);
             }}
             placeholder="Default CLAUDE.md content for new agents..."
-            className="w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
+            className="w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none"
             spellCheck={false}
           />
         </div>
@@ -708,7 +708,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               value={userAllowRules}
               onChange={(e) => { setPermAllow(e.target.value); setDirty(true); }}
               placeholder={"Bash(git checkout:*)\nBash(git pull:*)\nBash(npm run:*)"}
-              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
+              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none"
               spellCheck={false}
             />
           </div>
@@ -718,7 +718,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               value={userDenyRules}
               onChange={(e) => { setPermDeny(e.target.value); setDirty(true); }}
               placeholder={"WebFetch\nBash(curl *)"}
-              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
+              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none"
               spellCheck={false}
             />
           </div>
@@ -760,7 +760,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             value={userMcpJson}
             onChange={(e) => { setMcpJson(e.target.value); setDirty(true); }}
             placeholder='{\n  "mcpServers": {}\n}'
-            className="w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
+            className="w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none"
             spellCheck={false}
           />
         </div>

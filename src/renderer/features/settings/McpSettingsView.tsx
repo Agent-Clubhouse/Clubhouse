@@ -23,8 +23,8 @@ export function McpSettingsView() {
         </p>
 
         {/* Info banner */}
-        <div className="rounded-lg border border-ctp-blue/30 bg-ctp-blue/5 px-4 py-3 mb-6">
-          <p className="text-sm text-ctp-blue font-medium mb-1">How it works</p>
+        <div className="rounded-lg border border-ctp-accent/30 bg-ctp-accent/5 px-4 py-3 mb-6">
+          <p className="text-sm text-ctp-accent font-medium mb-1">How it works</p>
           <p className="text-xs text-ctp-subtext1">
             When MCP is enabled, a local bridge server starts automatically. Agents receive
             scoped tool lists based on their bindings — connect agents to browser widgets or

@@ -20,7 +20,7 @@ interface StatusInfo {
 
 function statusInfo(code: string): StatusInfo {
   const c = code.trim();
-  if (c === '??' || c === '?') return { label: 'Untracked', color: 'text-ctp-blue', short: 'U' };
+  if (c === '??' || c === '?') return { label: 'Untracked', color: 'text-ctp-accent', short: 'U' };
   if (c.startsWith('A') || c === 'A') return { label: 'Added', color: 'text-ctp-green', short: 'A' };
   if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-red', short: 'D' };
   if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-yellow', short: 'M' };
@@ -177,7 +177,7 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
         <span className="flex-1" />
         {staged.length > 0 && <span className="text-[9px] text-ctp-green">{staged.length} staged</span>}
         {unstaged.length > 0 && <span className="text-[9px] text-ctp-yellow">{unstaged.length} changed</span>}
-        {untracked.length > 0 && <span className="text-[9px] text-ctp-blue">{untracked.length} untracked</span>}
+        {untracked.length > 0 && <span className="text-[9px] text-ctp-accent">{untracked.length} untracked</span>}
       </div>
 
       {totalChanges === 0 ? (

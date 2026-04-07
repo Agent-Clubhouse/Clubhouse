@@ -13,7 +13,7 @@ interface StatusInfo {
 
 function statusInfo(code: string): StatusInfo {
   const c = code.trim();
-  if (c === '??' || c === '?') return { label: 'Untracked', color: 'text-ctp-blue', short: 'U' };
+  if (c === '??' || c === '?') return { label: 'Untracked', color: 'text-ctp-accent', short: 'U' };
   if (c.startsWith('A') || c === 'A') return { label: 'Added', color: 'text-ctp-green', short: 'A' };
   if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-red', short: 'D' };
   if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-yellow', short: 'M' };
@@ -25,7 +25,7 @@ function statusInfo(code: string): StatusInfo {
 describe('GitCanvasWidget — statusInfo mapping', () => {
   it('maps ?? to Untracked (blue, U)', () => {
     const info = statusInfo('??');
-    expect(info).toEqual({ label: 'Untracked', color: 'text-ctp-blue', short: 'U' });
+    expect(info).toEqual({ label: 'Untracked', color: 'text-ctp-accent', short: 'U' });
   });
 
   it('maps ? to Untracked (blue, U)', () => {

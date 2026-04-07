@@ -24,7 +24,7 @@ export function Badge({ type, value, className = '', inline = false }: BadgeProp
         data-testid="badge-dot"
         className={`
           ${inline ? 'w-2 h-2' : 'w-2.5 h-2.5'}
-          rounded-full bg-red-500 inline-block flex-shrink-0
+          rounded-full bg-ctp-error inline-block flex-shrink-0
           ${className}
         `}
       />
@@ -38,7 +38,7 @@ export function Badge({ type, value, className = '', inline = false }: BadgeProp
         data-testid="badge-count"
         className={`
           ${inline ? 'min-w-[16px] h-4 text-[9px] px-1' : 'min-w-[18px] h-[18px] text-[10px] px-1'}
-          rounded-full bg-red-500 text-white font-bold
+          rounded-full bg-ctp-error text-white font-bold
           inline-flex items-center justify-center flex-shrink-0 leading-none
           ${className}
         `}
