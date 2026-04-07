@@ -1138,7 +1138,7 @@ export function CanvasWorkspace({
       {/* Blueprint error toast */}
       {blueprintError && (
         <div
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 bg-ctp-red/90 text-ctp-base text-sm rounded-lg shadow-lg"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 bg-ctp-error text-ctp-text text-sm rounded-lg shadow-lg"
           data-testid="canvas-blueprint-error-toast"
         >
           {blueprintError}
