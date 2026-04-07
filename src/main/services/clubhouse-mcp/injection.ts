@@ -36,30 +36,38 @@ function validateBridgeScript(): void {
   bridgeScriptValidated = true;
 }
 
-/** Serialize concurrent config writes to prevent read-modify-write races. */
-let injectionLock: Promise<void> = Promise.resolve();
+/**
+ * Async mutex for serializing concurrent config writes.
+ * Each caller appends to the tail of a single promise chain,
+ * ensuring strictly sequential execution even if multiple calls
+ * arrive in the same microtask.
+ */
+let lockTail: Promise<void> = Promise.resolve();
+
+function withInjectionLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = lockTail;
+  let resolve: () => void;
+  lockTail = new Promise<void>((r) => { resolve = r; });
+  return prev.then(async () => {
+    try { return await fn(); }
+    finally { resolve!(); }
+  });
+}
 
 /**
  * Inject the Clubhouse MCP server entry into the agent's MCP config.
  * The bridge script path is resolved relative to the app bundle.
  */
-export async function injectClubhouseMcp(
+export function injectClubhouseMcp(
   cwd: string,
   agentId: string,
   mcpPort: number,
   nonce: string,
   conventions?: Partial<SettingsConventions>,
 ): Promise<void> {
-  // Queue behind any in-flight injection
-  const previousLock = injectionLock;
-  let releaseLock: () => void;
-  injectionLock = new Promise((resolve) => { releaseLock = resolve; });
-  await previousLock;
-  try {
-    await injectClubhouseMcpImpl(cwd, agentId, mcpPort, nonce, conventions);
-  } finally {
-    releaseLock!();
-  }
+  return withInjectionLock(() =>
+    injectClubhouseMcpImpl(cwd, agentId, mcpPort, nonce, conventions),
+  );
 }
 
 async function injectClubhouseMcpImpl(
@@ -172,17 +180,12 @@ async function injectJsonMcp(
  * Merges the provided servers into the existing config without overwriting
  * other entries (except entries with the same name, which are replaced).
  */
-export async function injectTemplateMcpServers(
+export function injectTemplateMcpServers(
   cwd: string,
   servers: Record<string, unknown>,
   conventions?: Partial<SettingsConventions>,
 ): Promise<void> {
-  // Queue behind any in-flight injection
-  const previousLock = injectionLock;
-  let releaseLock: () => void;
-  injectionLock = new Promise((resolve) => { releaseLock = resolve; });
-  await previousLock;
-  try {
+  return withInjectionLock(async () => {
     const conv = { ...DEFAULT_CONVENTIONS, ...conventions };
     const mcpConfigPath = path.join(cwd, conv.mcpConfigFile);
 
@@ -215,9 +218,7 @@ export async function injectTemplateMcpServers(
     appLog('core:mcp', 'info', 'Injected template MCP servers into config', {
       meta: { cwd, serverNames: Object.keys(servers), configPath: mcpConfigPath },
     });
-  } finally {
-    releaseLock!();
-  }
+  });
 }
 
 /**

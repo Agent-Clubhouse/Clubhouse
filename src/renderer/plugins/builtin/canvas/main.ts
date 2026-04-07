@@ -249,56 +249,74 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // But when a previously-sleeping agent's bindings were cleaned up by the
   // main process, we recreate them from wire definitions so wires reconnect.
   // Uses exponential backoff per wire to avoid spamming failed bind attempts.
+  //
+  // Wire definitions and bindings are read from refs to avoid resetting
+  // timers on every state change (which would prevent reconnection).
+  const wireDefsRef = useRef(wireDefinitions);
+  wireDefsRef.current = wireDefinitions;
   const wireBackoffRef = useRef<Map<string, number>>(new Map());
   const wireBackoffTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   useEffect(() => {
-    if (!loaded || wireDefinitions.length === 0) return;
-    const liveKeys = new Set(bindings.map((b) => `${b.agentId}\0${b.targetId}`));
-    const backoff = wireBackoffRef.current;
-    const timers = wireBackoffTimerRef.current;
+    if (!loaded) return;
 
-    for (const def of wireDefinitions) {
-      const key = `${def.agentId}\0${def.targetId}`;
-      if (liveKeys.has(key)) {
-        // Binding exists — clear any backoff state
-        backoff.delete(key);
-        const timer = timers.get(key);
-        if (timer) { clearTimeout(timer); timers.delete(key); }
-        continue;
+    const reconcile = () => {
+      const defs = wireDefsRef.current;
+      const currentBindings = bindingsRef.current;
+      if (defs.length === 0) return;
+
+      const liveKeys = new Set(currentBindings.map((b) => `${b.agentId}\0${b.targetId}`));
+      const backoff = wireBackoffRef.current;
+      const timers = wireBackoffTimerRef.current;
+
+      for (const def of defs) {
+        const key = `${def.agentId}\0${def.targetId}`;
+        if (liveKeys.has(key)) {
+          // Binding exists — clear any backoff state
+          backoff.delete(key);
+          const timer = timers.get(key);
+          if (timer) { clearTimeout(timer); timers.delete(key); }
+          continue;
+        }
+        // Already has a pending retry timer — skip
+        if (timers.has(key)) continue;
+
+        const delay = backoff.get(key) || 0;
+        const attempt = () => {
+          timers.delete(key);
+          window.clubhouse.mcpBinding.bind(def.agentId, {
+            targetId: def.targetId,
+            targetKind: def.targetKind,
+            label: def.label,
+            agentName: def.agentName,
+            targetName: def.targetName,
+            projectName: def.projectName,
+          }).catch(() => {
+            // Exponential backoff: 1s → 2s → 4s → 8s → ... cap at 60s
+            const next = Math.min((delay || 1000) * 2, 60_000);
+            backoff.set(key, next);
+          });
+        };
+
+        if (delay === 0) {
+          attempt();
+          backoff.set(key, 1000);
+        } else {
+          timers.set(key, setTimeout(attempt, delay));
+        }
       }
-      // Already has a pending retry timer — skip
-      if (timers.has(key)) continue;
+    };
 
-      const delay = backoff.get(key) || 0;
-      const attempt = () => {
-        timers.delete(key);
-        window.clubhouse.mcpBinding.bind(def.agentId, {
-          targetId: def.targetId,
-          targetKind: def.targetKind,
-          label: def.label,
-          agentName: def.agentName,
-          targetName: def.targetName,
-          projectName: def.projectName,
-        }).catch(() => {
-          // Exponential backoff: 1s → 2s → 4s → 8s → ... cap at 60s
-          const next = Math.min((delay || 1000) * 2, 60_000);
-          backoff.set(key, next);
-        });
-      };
-
-      if (delay === 0) {
-        attempt();
-        backoff.set(key, 1000);
-      } else {
-        timers.set(key, setTimeout(attempt, delay));
-      }
-    }
+    // Initial reconciliation + periodic re-check (avoids resetting timers
+    // on every wireDefinitions/bindings state change)
+    reconcile();
+    const interval = setInterval(reconcile, 2000);
 
     return () => {
-      for (const timer of timers.values()) clearTimeout(timer);
-      timers.clear();
+      clearInterval(interval);
+      for (const timer of wireBackoffTimerRef.current.values()) clearTimeout(timer);
+      wireBackoffTimerRef.current.clear();
     };
-  }, [loaded, wireDefinitions, bindings]);
+  }, [loaded]);
 
   // Broadcast canvas state changes to pop-out windows and annex clients
   // (skip for remote projects/app — the satellite broadcasts its own state)

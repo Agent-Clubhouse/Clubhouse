@@ -242,12 +242,14 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
 
 // ── Side effects (auto-clear on navigate, dock sync) ───────────────────
 // These are initialized lazily to avoid circular imports.
+// Tracks unsubscribe functions so re-initialization (e.g. HMR) is safe.
 
-let sideEffectsInitialized = false;
+let sideEffectUnsubs: Array<() => void> = [];
 
 export function initBadgeSideEffects(): void {
-  if (sideEffectsInitialized) return;
-  sideEffectsInitialized = true;
+  // Tear down previous subscriptions (idempotency for HMR)
+  for (const unsub of sideEffectUnsubs) unsub();
+  sideEffectUnsubs = [];
 
   // Lazy imports to avoid circular dependencies
   const { useUIStore } = require('./uiStore');
@@ -255,17 +257,17 @@ export function initBadgeSideEffects(): void {
 
   // Auto-clear on project switch
   let prevProjectId: string | null = useProjectStore.getState().activeProjectId;
-  useProjectStore.subscribe((state: { activeProjectId: string | null }) => {
+  sideEffectUnsubs.push(useProjectStore.subscribe((state: { activeProjectId: string | null }) => {
     const nextProjectId = state.activeProjectId;
     if (nextProjectId && nextProjectId !== prevProjectId) {
       useBadgeStore.getState().clearProjectBadges(nextProjectId);
     }
     prevProjectId = nextProjectId;
-  });
+  }));
 
   // Auto-clear on explorer tab switch
   let prevTab: string = useUIStore.getState().explorerTab;
-  useUIStore.subscribe((state: { explorerTab: string }) => {
+  sideEffectUnsubs.push(useUIStore.subscribe((state: { explorerTab: string }) => {
     const nextTab = state.explorerTab;
     if (nextTab !== prevTab) {
       const projectId = useProjectStore.getState().activeProjectId;
@@ -282,7 +284,7 @@ export function initBadgeSideEffects(): void {
       }
     }
     prevTab = nextTab;
-  });
+  }));
 
   // Dock badge sync — recalculate when badges OR badge settings change
   const syncDockBadge = () => {
@@ -293,12 +295,12 @@ export function initBadgeSideEffects(): void {
       // Preload bridge may not be available in tests
     }
   };
-  useBadgeStore.subscribe(syncDockBadge);
-  useBadgeSettingsStore.subscribe(syncDockBadge);
+  sideEffectUnsubs.push(useBadgeStore.subscribe(syncDockBadge));
+  sideEffectUnsubs.push(useBadgeSettingsStore.subscribe(syncDockBadge));
 
   // Core agent badge: show dot on Agents tab when any agent needs attention
   const { useAgentStore } = require('./agentStore');
-  useAgentStore.subscribe((state: {
+  sideEffectUnsubs.push(useAgentStore.subscribe((state: {
     agents: Record<string, { projectId: string; status: string }>;
     agentDetailedStatus: Record<string, { state: string }>;
   }) => {
@@ -333,5 +335,11 @@ export function initBadgeSideEffects(): void {
         useBadgeStore.getState().clearBadge(`core:agents::explorer-tab:${projectId}:agents`);
       }
     }
-  });
+  }));
+}
+
+/** Tear down badge side effects (for testing or cleanup). */
+export function teardownBadgeSideEffects(): void {
+  for (const unsub of sideEffectUnsubs) unsub();
+  sideEffectUnsubs = [];
 }
