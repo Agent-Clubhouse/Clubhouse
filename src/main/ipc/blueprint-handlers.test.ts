@@ -18,11 +18,18 @@ vi.mock('fs/promises', () => ({
   access: vi.fn(),
   readdir: vi.fn(),
   readFile: vi.fn(),
+  realpath: vi.fn((p: string) => Promise.resolve(p)),
+  unlink: vi.fn(),
+}));
+
+vi.mock('../services/path-sandbox', () => ({
+  assertAllowedPath: vi.fn(async () => undefined),
 }));
 
 import { ipcMain } from 'electron';
 import * as fsp from 'fs/promises';
 import * as projectStore from '../services/project-store';
+import { assertAllowedPath } from '../services/path-sandbox';
 import { registerBlueprintHandlers } from './blueprint-handlers';
 
 // Extract registered handler from ipcMain.handle mock
@@ -176,6 +183,63 @@ describe('blueprint-handlers', () => {
       const handler = getHandler('blueprint:read');
       const result = await handler({}, '/tmp/missing.json');
       expect(result).toBeNull();
+    });
+
+    it('calls assertAllowedPath before reading file', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('{}');
+      const handler = getHandler('blueprint:read');
+      await handler({}, '/tmp/proj/.clubhouse/blueprints/bp.json');
+      expect(assertAllowedPath).toHaveBeenCalledWith('/tmp/proj/.clubhouse/blueprints/bp.json');
+    });
+
+    it('rejects reads outside allowed directories', async () => {
+      vi.mocked(assertAllowedPath).mockRejectedValueOnce(new Error('Access denied'));
+
+      const handler = getHandler('blueprint:read');
+      const result = await handler({}, '/etc/passwd');
+      expect(result).toBeNull();
+      expect(fsp.readFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('BLUEPRINT.DELETE', () => {
+    it('calls assertAllowedPath before deleting', async () => {
+      const bp = '/tmp/proj/.clubhouse/blueprints/old.json';
+      vi.mocked(fsp.realpath).mockResolvedValueOnce(bp);
+      vi.mocked(fsp.unlink).mockResolvedValue(undefined);
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, bp);
+      expect(assertAllowedPath).toHaveBeenCalledWith(bp);
+      expect(result).toBe(true);
+    });
+
+    it('rejects deletion outside allowed directories', async () => {
+      vi.mocked(assertAllowedPath).mockRejectedValueOnce(new Error('Access denied'));
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, '/etc/important.json');
+      expect(result).toBe(false);
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('rejects path traversal attempts that resolve outside blueprints dir', async () => {
+      vi.mocked(fsp.realpath).mockResolvedValueOnce('/tmp/proj/secret.json');
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, '/tmp/proj/.clubhouse/blueprints/../../secret.json');
+      expect(result).toBe(false);
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-JSON files', async () => {
+      const bp = '/tmp/proj/.clubhouse/blueprints/file.txt';
+      vi.mocked(fsp.realpath).mockResolvedValueOnce(bp);
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, bp);
+      expect(result).toBe(false);
+      expect(fsp.unlink).not.toHaveBeenCalled();
     });
   });
 });

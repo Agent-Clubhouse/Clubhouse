@@ -6,6 +6,7 @@ import type { BlueprintSummary } from '../../shared/blueprint-summary';
 import * as projectStore from '../services/project-store';
 import { appLog } from '../services/log-service';
 import { stringArg, withValidatedArgs } from './validation';
+import { assertAllowedPath } from '../services/path-sandbox';
 
 const BLUEPRINTS_DIR = 'blueprints';
 const CLUBHOUSE_DIR = '.clubhouse';
@@ -134,6 +135,7 @@ export function registerBlueprintHandlers(): void {
    */
   ipcMain.handle(IPC.BLUEPRINT.READ, withValidatedArgs([stringArg()], async (_event, filePath: string): Promise<Record<string, unknown> | null> => {
     try {
+      await assertAllowedPath(filePath);
       const raw = await fsp.readFile(filePath, 'utf-8');
       return JSON.parse(raw) as Record<string, unknown>;
     } catch (err) {
@@ -150,15 +152,31 @@ export function registerBlueprintHandlers(): void {
    */
   ipcMain.handle(IPC.BLUEPRINT.DELETE, withValidatedArgs([stringArg()], async (_event, filePath: string): Promise<boolean> => {
     // Safety: only delete .json files inside a .clubhouse/blueprints/ directory
-    const normalized = path.normalize(filePath);
-    if (!normalized.includes(path.join(CLUBHOUSE_DIR, BLUEPRINTS_DIR)) || !normalized.endsWith('.json')) {
-      appLog('core:blueprint', 'warn', 'Refusing to delete file outside blueprints directory', {
+    // Use assertAllowedPath + realpath to prevent traversal via symlinks or ../
+    try {
+      await assertAllowedPath(filePath);
+    } catch {
+      appLog('core:blueprint', 'warn', 'Refusing to delete file outside allowed directories', {
         meta: { filePath },
       });
       return false;
     }
+    let resolved: string;
     try {
-      await fsp.unlink(normalized);
+      resolved = await fsp.realpath(path.resolve(filePath));
+    } catch {
+      // File doesn't exist
+      return false;
+    }
+    const blueprintsSuffix = path.join(CLUBHOUSE_DIR, BLUEPRINTS_DIR) + path.sep;
+    if (!resolved.includes(blueprintsSuffix) || !resolved.endsWith('.json')) {
+      appLog('core:blueprint', 'warn', 'Refusing to delete file outside blueprints directory', {
+        meta: { filePath, resolved },
+      });
+      return false;
+    }
+    try {
+      await fsp.unlink(resolved);
       return true;
     } catch (err) {
       appLog('core:blueprint', 'error', 'Failed to delete blueprint file', {

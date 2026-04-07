@@ -68,6 +68,10 @@ vi.mock('fs/promises', () => ({
   rm: vi.fn(() => Promise.resolve(undefined)),
 }));
 
+vi.mock('../services/path-sandbox', () => ({
+  assertAllowedPath: vi.fn(async () => undefined),
+}));
+
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import * as fsp from 'fs/promises';
 import { IPC } from '../../shared/ipc-channels';
@@ -75,6 +79,7 @@ import * as projectStore from '../services/project-store';
 import { ensureGitignore } from '../services/agent-config';
 import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
+import { assertAllowedPath } from '../services/path-sandbox';
 import { registerProjectHandlers } from './project-handlers';
 
 describe('project-handlers', () => {
@@ -644,5 +649,55 @@ describe('project-handlers', () => {
   it('WRITE_DEFAULT_MCPS rejects non-array mcpIds', () => {
     const handler = handlers.get(IPC.PROJECT.WRITE_DEFAULT_MCPS)!;
     expect(() => handler({}, '/tmp/project', 'not-an-array')).toThrow('must be an array');
+  });
+
+  // --- Path validation (SEC-M09) ---
+
+  describe('assertAllowedPath enforcement', () => {
+    const projectPathHandlers = [
+      'LIST_CLUBHOUSE_FILES',
+      'RESET_PROJECT',
+      'READ_LAUNCH_WRAPPER',
+      'WRITE_LAUNCH_WRAPPER',
+      'READ_MCP_CATALOG',
+      'WRITE_MCP_CATALOG',
+      'READ_DEFAULT_MCPS',
+      'WRITE_DEFAULT_MCPS',
+    ] as const;
+
+    it.each(projectPathHandlers)('%s calls assertAllowedPath with projectPath', async (name) => {
+      vi.mocked(assertAllowedPath).mockResolvedValue(undefined);
+
+      const channel = IPC.PROJECT[name];
+      const handler = handlers.get(channel)!;
+      // Provide minimal valid args for each handler
+      const extraArgs: Record<string, unknown[]> = {
+        WRITE_LAUNCH_WRAPPER: [undefined],
+        WRITE_MCP_CATALOG: [[{}]],
+        WRITE_DEFAULT_MCPS: [['mcp-1']],
+      };
+      try {
+        await handler({}, '/tmp/allowed-project', ...(extraArgs[name] || []));
+      } catch {
+        // Some handlers may throw for other reasons; we just check assertAllowedPath was called
+      }
+      expect(assertAllowedPath).toHaveBeenCalledWith('/tmp/allowed-project');
+    });
+
+    it('RESET_PROJECT rejects paths outside allowed directories', async () => {
+      vi.mocked(assertAllowedPath).mockRejectedValueOnce(new Error('Access denied: path "/etc" is outside allowed project directories'));
+
+      const handler = handlers.get(IPC.PROJECT.RESET_PROJECT)!;
+      await expect(handler({}, '/etc')).rejects.toThrow('Access denied');
+      expect(fsp.rm).not.toHaveBeenCalled();
+    });
+
+    it('LIST_CLUBHOUSE_FILES rejects paths outside allowed directories', async () => {
+      vi.mocked(assertAllowedPath).mockRejectedValueOnce(new Error('Access denied'));
+
+      const handler = handlers.get(IPC.PROJECT.LIST_CLUBHOUSE_FILES)!;
+      await expect(handler({}, '/etc')).rejects.toThrow('Access denied');
+      expect(fsp.readdir).not.toHaveBeenCalled();
+    });
   });
 });
