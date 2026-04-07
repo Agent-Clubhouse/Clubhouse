@@ -48,7 +48,14 @@ export async function sendCanvasCommand(
   if (def) {
     return commandRegistry.execute(commandId, { source: 'mcp' }, args);
   }
-  // Fallback: direct bridge call for any unregistered commands
+  // Only allow commands that are in the CANVAS_COMMANDS allowlist
+  if (!CANVAS_COMMANDS[command]) {
+    return {
+      success: false,
+      error: `Unknown canvas command "${command}". Allowed commands: ${Object.keys(CANVAS_COMMANDS).join(', ')}`,
+    };
+  }
+  // Fallback: direct bridge call for allowlisted but unregistered commands
   return bridge.send({ command, args });
 }
 

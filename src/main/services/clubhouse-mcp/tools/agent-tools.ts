@@ -19,6 +19,7 @@ import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
 import { IPC } from '../../../../shared/ipc-channels';
 import { getProvider } from '../../../orchestrators';
 import type { PasteSubmitTiming } from '../../../orchestrators';
+import { requireString, optionalString, numberWithDefault } from './validation';
 
 // ── Chunked bracketed paste ─────────────────────────────────────────────────
 
@@ -171,12 +172,12 @@ export function registerAgentTools(): void {
       required: ['message'],
     },
     handler: async (targetId, agentId, args): Promise<McpToolResult> => {
-      const message = args.message as string;
+      const message = requireString(args, 'message');
       if (!message) {
         return { content: [{ type: 'text', text: 'Missing required argument: message' }], isError: true };
       }
 
-      const taskId = (args.task_id as string) || `t_${Date.now().toString(36)}`;
+      const taskId = optionalString(args, 'task_id') || `t_${Date.now().toString(36)}`;
       const forceSubmit = args.force_submit !== false; // default true
 
       const reg = agentRegistry.get(targetId);
@@ -337,7 +338,7 @@ export function registerAgentTools(): void {
         return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
       }
 
-      let lines = (args.lines as number) || 50;
+      let lines = numberWithDefault(args, 'lines', 50);
       lines = Math.min(lines, 500);
 
       try {
@@ -465,13 +466,13 @@ export function registerAgentTools(): void {
       required: ['content'],
     },
     handler: async (targetId, agentId, args): Promise<McpToolResult> => {
-      const content = args.content as string;
+      const content = requireString(args, 'content');
       if (!content) {
         return { content: [{ type: 'text', text: 'Missing required argument: content' }], isError: true };
       }
 
-      const taskId = (args.task_id as string) || `t_${Date.now().toString(36)}`;
-      const rawFilename = (args.filename as string) || `${taskId}.md`;
+      const taskId = optionalString(args, 'task_id') || `t_${Date.now().toString(36)}`;
+      const rawFilename = optionalString(args, 'filename') || `${taskId}.md`;
       const filename = path.basename(rawFilename);
 
       const reg = agentRegistry.get(targetId);
