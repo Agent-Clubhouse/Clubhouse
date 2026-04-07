@@ -9,6 +9,7 @@ import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog,
 import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
 import { arrayArg, objectArg, stringArg, withValidatedArgs } from './validation';
+import { assertAllowedPath } from '../services/path-sandbox';
 
 export function registerProjectHandlers(): void {
   ipcMain.handle(IPC.PROJECT.LIST, async () => {
@@ -107,6 +108,7 @@ export function registerProjectHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PROJECT.LIST_CLUBHOUSE_FILES, withValidatedArgs([stringArg()], async (_event, projectPath: string): Promise<string[]> => {
+    await assertAllowedPath(projectPath);
     const clubhouseDir = path.join(projectPath, '.clubhouse');
     try {
       await fsp.access(clubhouseDir);
@@ -138,6 +140,7 @@ export function registerProjectHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PROJECT.RESET_PROJECT, withValidatedArgs([stringArg()], async (_event, projectPath: string): Promise<boolean> => {
+    await assertAllowedPath(projectPath);
     const clubhouseDir = path.join(projectPath, '.clubhouse');
     try {
       await fsp.access(clubhouseDir);
@@ -159,6 +162,7 @@ export function registerProjectHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PROJECT.READ_LAUNCH_WRAPPER, withValidatedArgs([stringArg()], async (_event, projectPath: string) => {
+    await assertAllowedPath(projectPath);
     try {
       return await readLaunchWrapper(projectPath);
     } catch (err) {
@@ -170,6 +174,7 @@ export function registerProjectHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PROJECT.WRITE_LAUNCH_WRAPPER, withValidatedArgs([stringArg(), objectArg({ optional: true })], async (_event, projectPath: string, wrapper: unknown) => {
+    await assertAllowedPath(projectPath);
     try {
       if (wrapper && (typeof wrapper !== 'object' || !('binary' in wrapper) || !('orchestratorMap' in wrapper))) {
         throw new Error('Invalid launch wrapper config: must have binary and orchestratorMap');
@@ -184,6 +189,7 @@ export function registerProjectHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PROJECT.READ_MCP_CATALOG, withValidatedArgs([stringArg()], async (_event, projectPath: string) => {
+    await assertAllowedPath(projectPath);
     try {
       return await readMcpCatalog(projectPath);
     } catch (err) {
@@ -195,6 +201,7 @@ export function registerProjectHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PROJECT.WRITE_MCP_CATALOG, withValidatedArgs([stringArg(), arrayArg(objectArg())], async (_event, projectPath: string, catalog: unknown[]) => {
+    await assertAllowedPath(projectPath);
     try {
       await writeMcpCatalog(projectPath, catalog as any[]);
     } catch (err) {
@@ -206,6 +213,7 @@ export function registerProjectHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PROJECT.READ_DEFAULT_MCPS, withValidatedArgs([stringArg()], async (_event, projectPath: string) => {
+    await assertAllowedPath(projectPath);
     try {
       return await readDefaultMcps(projectPath);
     } catch (err) {
@@ -217,6 +225,7 @@ export function registerProjectHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PROJECT.WRITE_DEFAULT_MCPS, withValidatedArgs([stringArg(), arrayArg(stringArg())], async (_event, projectPath: string, mcpIds: string[]) => {
+    await assertAllowedPath(projectPath);
     try {
       await writeDefaultMcps(projectPath, mcpIds);
     } catch (err) {
