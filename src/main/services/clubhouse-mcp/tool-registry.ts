@@ -126,10 +126,27 @@ export function parseToolName(name: string): { prefix: string; toolKey: string; 
   return { prefix: match[1], toolKey: match[2], suffix: match[3] };
 }
 
+// ── Tool list cache ─────────────────────────────────────────────────
+// Caches getScopedToolList() results per agent. Uses the binding manager's
+// internal version to detect when the cache is stale.
+
+const toolListCache = new Map<string, { tools: McpToolDefinition[]; bindingVersion: number }>();
+
+/** Invalidate all cached tool lists. */
+export function invalidateToolListCache(): void {
+  toolListCache.clear();
+}
+
 /**
  * Get the scoped tool list for an agent based on its current bindings.
+ * Results are cached and invalidated when bindings change.
  */
 export function getScopedToolList(agentId: string): McpToolDefinition[] {
+  const currentVersion = bindingManager.getVersion();
+  const cached = toolListCache.get(agentId);
+  if (cached && cached.bindingVersion === currentVersion) {
+    return cached.tools;
+  }
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const tools: McpToolDefinition[] = [];
 
@@ -198,6 +215,9 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   for (const [, tool] of globalTools) {
     tools.push(tool.definition);
   }
+
+  // Cache the result
+  toolListCache.set(agentId, { tools, bindingVersion: currentVersion });
 
   return tools;
 }
@@ -318,4 +338,5 @@ export async function callTool(
 export function _resetForTesting(): void {
   toolTemplates.clear();
   globalTools.clear();
+  toolListCache.clear();
 }

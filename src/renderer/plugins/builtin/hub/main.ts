@@ -101,6 +101,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   useEffect(() => {
     if (!loaded) return;
     scheduleSave();
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
   }, [hubs, paneTree, loaded, scheduleSave]);
 
   // Broadcast hub state changes to pop-out windows (immediate, not debounced)
