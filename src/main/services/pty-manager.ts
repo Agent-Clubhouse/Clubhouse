@@ -12,6 +12,20 @@ import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
 
+/** Pattern matching common API key environment variable names. */
+const API_KEY_ENV_PATTERN = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AZURE_OPENAI_API_KEY|MISTRAL_API_KEY|COHERE_API_KEY|HUGGING_FACE_TOKEN|HF_TOKEN)$/;
+
+/** Strip API key environment variables from an env object. */
+function stripApiKeyEnvVars(env: Record<string, string>): Record<string, string> {
+  const filtered: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!API_KEY_ENV_PATTERN.test(key)) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+
 /** Monotonically increasing counter to detect stale session handlers. */
 let sessionGeneration = 0;
 
@@ -343,7 +357,7 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
     proc = pty.spawn(shellPath, shellArgs, {
       name: 'xterm-256color',
       cwd: projectPath,
-      env: getShellEnvironment(),
+      env: stripApiKeyEnvVars(getShellEnvironment()),
       cols: 120,
       rows: 30,
     });

@@ -34,6 +34,7 @@ export function createSettingsStore<T>(
   filename: string,
   defaults: T,
   migrate?: (raw: Record<string, unknown>) => T,
+  options?: { mode?: number },
 ): SettingsStore<T> {
   const filePath = path.join(app.getPath('userData'), filename);
   let cachedSettings: T | null = null;
@@ -73,7 +74,7 @@ export function createSettingsStore<T>(
     const serialized = JSON.stringify(snapshot, null, 2);
     const writeTask = pendingWrite
       .catch((_err): void => {})
-      .then(() => fs.promises.writeFile(filePath, serialized, 'utf-8'));
+      .then(() => fs.promises.writeFile(filePath, serialized, { encoding: 'utf-8', mode: options?.mode }));
     pendingWrite = writeTask;
     return writeTask;
   }

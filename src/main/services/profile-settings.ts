@@ -7,7 +7,7 @@ const DEFAULT_SETTINGS: ProfilesSettings = {
   profiles: [],
 };
 
-const store = createSettingsStore<ProfilesSettings>('profiles.json', DEFAULT_SETTINGS);
+const store = createSettingsStore<ProfilesSettings>('profiles.json', DEFAULT_SETTINGS, undefined, { mode: 0o600 });
 
 export function getSettings(): ProfilesSettings {
   return store.get();

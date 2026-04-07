@@ -5,7 +5,7 @@
  * when the prefix is interpolated into `sh -c` invocations.
  */
 
-const DISALLOWED_PATTERN = /[;&|$`()<>!]/;
+const DISALLOWED_PATTERN = /[;&|$`()<>!\n\r\0]/;
 
 export function validateCommandPrefix(prefix: string): string {
   if (DISALLOWED_PATTERN.test(prefix)) {
