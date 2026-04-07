@@ -116,6 +116,8 @@ const wsAlive = new WeakMap<WebSocket, boolean>();
 
 /** Whether the satellite session is currently paused (tracks across reconnects). */
 let sessionPaused = false;
+/** Fingerprint of the controller that owns the current session pause (lock). */
+let sessionPauseOwner: string | null = null;
 
 /** Unsubscribe all event bus listeners to prevent accumulation on restart cycles. */
 function unsubscribeEventBus(): void {
@@ -2583,6 +2585,8 @@ export function start(): void {
     if (authType === 'mtls') {
       const fingerprint = wsPeerFingerprints.get(ws);
       const peer = fingerprint ? annexPeers.getPeer(fingerprint) : null;
+      // Track lock owner so only the owning controller's disconnect releases it
+      sessionPauseOwner = fingerprint || null;
       broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
         locked: true,
         controllerAlias: peer?.alias || 'Remote Controller',
@@ -2604,12 +2608,23 @@ export function start(): void {
         meta: { authType, code, reason: reason?.toString() || '' },
       });
       if (authType === 'mtls') {
+        const disconnectedFingerprint = wsPeerFingerprints.get(ws);
         // Check if any other mTLS connections are still open
         const hasMtlsClient = Array.from(wss?.clients || []).some(
           (client) => client !== ws && client.readyState === WebSocket.OPEN && wsAuthTypes.get(client) === 'mtls',
         );
+        // Release lock if no mTLS clients remain, or if the lock owner disconnected
+        const isLockOwner = !sessionPauseOwner || sessionPauseOwner === disconnectedFingerprint;
         if (!hasMtlsClient) {
           sessionPaused = false;
+          sessionPauseOwner = null;
+          broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
+            locked: false,
+            remainingMs: 0,
+          });
+        } else if (isLockOwner) {
+          sessionPaused = false;
+          sessionPauseOwner = null;
           broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
             locked: false,
             remainingMs: 0,
@@ -3185,6 +3200,7 @@ export function broadcastAppCanvasStateToClients(state: unknown): void {
 /** Broadcast session pause/resume to all connected WS clients. */
 export function notifySessionPause(paused: boolean): void {
   sessionPaused = paused;
+  if (!paused) sessionPauseOwner = null;
   broadcastWs({ type: paused ? 'session:paused' : 'session:resumed', payload: { paused } });
 }
 

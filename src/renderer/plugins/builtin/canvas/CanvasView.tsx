@@ -148,6 +148,8 @@ export function CanvasViewComponent({
   const dragPosRef = useRef<Position | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const viewIdRef = useRef(view.id);
+  viewIdRef.current = view.id;
 
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -229,7 +231,7 @@ export function CanvasViewComponent({
       };
       dragPosRef.current = newPos;
       setDragPos(newPos);
-      onDragMoveRef.current?.(view.id, newPos);
+      onDragMoveRef.current?.(viewIdRef.current, newPos);
     };
 
     const handleMouseUp = () => {

@@ -349,8 +349,8 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
 
   const identity = annexIdentity.getOrCreateIdentity();
 
-  // Check bearer token expiry — clear stale tokens (23h buffer on 24h TTL) to avoid retry loops
-  const TOKEN_CLIENT_TTL_MS = 23 * 60 * 60 * 1000;
+  // Check bearer token expiry — refresh well before server's 24h TTL to avoid session drops
+  const TOKEN_CLIENT_TTL_MS = 22 * 60 * 60 * 1000;
   if (sat.bearerToken && sat.bearerTokenIssuedAt && Date.now() - sat.bearerTokenIssuedAt > TOKEN_CLIENT_TTL_MS) {
     appLog('core:annex-client', 'info', 'Bearer token expired, clearing for re-authentication', {
       meta: { fingerprint: sat.fingerprint },
@@ -529,8 +529,10 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
     return;
   }
 
-  // Exponential backoff: 1s, 2s, 4s, 8s, 30s cap
-  const delay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
+  // Exponential backoff with jitter: 1s, 2s, 4s, 8s, 30s cap
+  // Jitter (0.5–1.5x) prevents thundering herd when multiple satellites reconnect
+  const baseDelay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
+  const delay = Math.round(baseDelay * (0.5 + Math.random()));
   sat.reconnectAttempt++;
   appLog('core:annex-client', 'info', `Scheduling reconnect in ${delay}ms (attempt ${sat.reconnectAttempt})`, {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias },

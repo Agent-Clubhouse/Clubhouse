@@ -744,11 +744,17 @@ export function CanvasWorkspace({
 
   // ── Zone handlers ────────────────────────────────────────────────
 
+  // Track zone drag listeners for cleanup on unmount/focus loss
+  const zoneDragCleanupRef = useRef<(() => void) | null>(null);
+
   const handleZoneDragStart = useCallback((zoneId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const zone = zones.find((z) => z.id === zoneId);
     if (!zone) return;
+
+    // Clean up any stale listeners from a previous drag
+    zoneDragCleanupRef.current?.();
 
     setZoneDrag({ zoneId, containedViewIds: [...zone.containedViewIds] });
     setZoneDragDelta({ dx: 0, dy: 0 });
@@ -761,6 +767,13 @@ export function CanvasWorkspace({
       const view = views.find((v) => v.id === viewId);
       if (view) startPositions.set(viewId, view.position);
     }
+
+    const cleanup = () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('blur', handleBlur);
+      zoneDragCleanupRef.current = null;
+    };
 
     const handleMove = (ev: MouseEvent) => {
       const dx = (ev.clientX - startMouseX) / viewport.zoom;
@@ -785,13 +798,27 @@ export function CanvasWorkspace({
       setSingleDragPos(new Map());
       setZoneDrag(null);
       setZoneDragDelta({ dx: 0, dy: 0 });
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
+      cleanup();
     };
 
+    const handleBlur = () => {
+      // Focus loss during drag — commit current positions and clean up
+      setSingleDragPos(new Map());
+      setZoneDrag(null);
+      setZoneDragDelta({ dx: 0, dy: 0 });
+      cleanup();
+    };
+
+    zoneDragCleanupRef.current = cleanup;
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('mouseup', handleUp);
+    window.addEventListener('blur', handleBlur);
   }, [zones, views, viewport.zoom, onMoveViews]);
+
+  // Clean up zone drag listeners on unmount
+  useEffect(() => {
+    return () => { zoneDragCleanupRef.current?.(); };
+  }, []);
 
   const handleZoneResizeStart = useCallback((zoneId: string, direction: ResizeDirection, e: React.MouseEvent) => {
     e.preventDefault();
