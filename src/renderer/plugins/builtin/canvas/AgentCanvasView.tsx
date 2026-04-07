@@ -96,7 +96,6 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
   ) => {
     const project = activeProjectForCreate;
     if (!project) return;
-    setShowCreateDialog(false);
     try {
       const agentId = await api.agents.createDurable({
         projectId: project.id,
@@ -108,6 +107,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
         freeAgentMode,
         mcpIds,
       });
+      setShowCreateDialog(false);
       // Auto-assign the newly created agent to this canvas view
       const newAgent = api.agents.list().find((a) => a.id === agentId);
       if (newAgent) {
@@ -115,6 +115,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
       }
     } catch (err) {
       console.error('Failed to create durable agent:', err);
+      // Keep dialog open so user can see the failure context and retry
     }
   }, [activeProjectForCreate, api.agents, handlePickAgent]);
 
