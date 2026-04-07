@@ -127,24 +127,14 @@ export function parseToolName(name: string): { prefix: string; toolKey: string; 
 }
 
 // ── Tool list cache ─────────────────────────────────────────────────
-// Caches getScopedToolList() results per agent. Invalidated when bindings
-// change for that agent, or globally when templates/globals change.
+// Caches getScopedToolList() results per agent. Uses the binding manager's
+// internal version to detect when the cache is stale.
 
-const toolListCache = new Map<string, McpToolDefinition[]>();
-let cacheVersion = 0;
-const agentCacheVersions = new Map<string, number>();
+const toolListCache = new Map<string, { tools: McpToolDefinition[]; bindingVersion: number }>();
 
-// Invalidate cache for the affected agent when bindings change
-bindingManager.onChange((agentId: string) => {
-  cacheVersion++;
-  agentCacheVersions.delete(agentId);
-});
-
-/** Invalidate all cached tool lists (call after registering new templates/globals). */
+/** Invalidate all cached tool lists. */
 export function invalidateToolListCache(): void {
-  cacheVersion++;
   toolListCache.clear();
-  agentCacheVersions.clear();
 }
 
 /**
@@ -152,10 +142,10 @@ export function invalidateToolListCache(): void {
  * Results are cached and invalidated when bindings change.
  */
 export function getScopedToolList(agentId: string): McpToolDefinition[] {
-  const agentVersion = agentCacheVersions.get(agentId);
-  if (agentVersion === cacheVersion) {
-    const cached = toolListCache.get(agentId);
-    if (cached) return cached;
+  const currentVersion = bindingManager.getVersion();
+  const cached = toolListCache.get(agentId);
+  if (cached && cached.bindingVersion === currentVersion) {
+    return cached.tools;
   }
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const tools: McpToolDefinition[] = [];
@@ -227,8 +217,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   }
 
   // Cache the result
-  toolListCache.set(agentId, tools);
-  agentCacheVersions.set(agentId, cacheVersion);
+  toolListCache.set(agentId, { tools, bindingVersion: currentVersion });
 
   return tools;
 }
@@ -350,6 +339,4 @@ export function _resetForTesting(): void {
   toolTemplates.clear();
   globalTools.clear();
   toolListCache.clear();
-  agentCacheVersions.clear();
-  cacheVersion = 0;
 }

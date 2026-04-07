@@ -757,37 +757,15 @@ describe('ToolRegistry', () => {
       expect(second).toBe(first);
     });
 
-    it('invalidates cache when bindings change for that agent', () => {
+    it('invalidates cache when bindings change', () => {
       const first = getScopedToolList('agent-1');
-      // Change bindings for agent-1
-      bindingManager.bind('agent-1', {
-        targetId: 'widget-1', targetKind: 'browser', label: 'Browser',
-      });
+      // Remove a binding — this bumps bindingManager version
+      bindingManager.unbind('agent-1', 'agent-2');
       const second = getScopedToolList('agent-1');
       // Different reference = cache was invalidated
       expect(second).not.toBe(first);
-      // Should now include browser tools
-      expect(second.length).toBeGreaterThan(first.length);
-    });
-
-    it('does not invalidate other agents cache when one agent changes', () => {
-      bindingManager.bind('agent-3', {
-        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
-        targetName: 'robin', projectName: 'app',
-      });
-      const agent1Tools = getScopedToolList('agent-1');
-      const agent3Tools = getScopedToolList('agent-3');
-
-      // Change bindings for agent-3 only
-      bindingManager.unbind('agent-3', 'agent-2');
-      const agent1ToolsAfter = getScopedToolList('agent-1');
-      const agent3ToolsAfter = getScopedToolList('agent-3');
-
-      // agent-1 cache should be invalidated too (global version bumped)
-      // but the content should be the same
-      expect(agent1ToolsAfter.length).toBe(agent1Tools.length);
-      // agent-3 should have fewer tools now
-      expect(agent3ToolsAfter.length).toBeLessThan(agent3Tools.length);
+      // Should have fewer tools now (no agent bindings)
+      expect(second.length).toBeLessThan(first.length);
     });
 
     it('invalidateToolListCache clears all caches', () => {

@@ -11,6 +11,7 @@ class BindingManager {
   /** agentId → array of bindings */
   private bindings = new Map<string, McpBinding[]>();
   private listeners = new Set<BindingChangeListener>();
+  private version = 0;
 
   /** Add a binding for an agent. */
   bind(agentId: string, target: { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string }): void {
@@ -127,6 +128,11 @@ class BindingManager {
     return all;
   }
 
+  /** Monotonically increasing version counter, bumped on every change. */
+  getVersion(): number {
+    return this.version;
+  }
+
   /** Register a listener for binding changes. Returns unsubscribe function. */
   onChange(listener: BindingChangeListener): () => void {
     this.listeners.add(listener);
@@ -134,6 +140,7 @@ class BindingManager {
   }
 
   private notifyChange(agentId: string): void {
+    this.version++;
     for (const listener of this.listeners) {
       try {
         listener(agentId);
