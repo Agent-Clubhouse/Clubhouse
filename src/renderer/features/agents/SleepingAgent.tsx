@@ -126,8 +126,8 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
               <button
                 onClick={handleWake}
                 data-testid="wake-button"
-                className="px-5 py-2 text-sm rounded-l-lg bg-indigo-500 text-white
-                  hover:bg-indigo-600 cursor-pointer font-medium transition-colors"
+                className="px-5 py-2 text-sm rounded-l-lg bg-ctp-accent text-white
+                  hover:bg-ctp-accent/80 cursor-pointer font-medium transition-colors"
               >
                 {agent.status === 'error' ? 'Retry' : 'Wake Up'}
               </button>
@@ -135,8 +135,8 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
               <button
                 onClick={() => setDropdownOpen((v) => !v)}
                 data-testid="wake-dropdown-toggle"
-                className="px-2 py-2 text-sm rounded-r-lg bg-indigo-500 text-white
-                  hover:bg-indigo-600 cursor-pointer transition-colors border-l border-indigo-400"
+                className="px-2 py-2 text-sm rounded-r-lg bg-ctp-accent text-white
+                  hover:bg-ctp-accent/80 cursor-pointer transition-colors border-l border-ctp-accent"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="6 9 12 15 18 9" />

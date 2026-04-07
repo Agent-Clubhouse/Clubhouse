@@ -75,7 +75,7 @@ export function SessionNamePromptDialog({ agentId, projectPath, onDone }: Sessio
             placeholder="e.g. Bug fix for login flow"
             data-testid="session-name-input"
             className="w-full bg-surface-1 border border-surface-2 rounded-lg px-3 py-2 text-sm text-ctp-text
-              placeholder:text-ctp-subtext0 focus:outline-none focus:border-indigo-500"
+              placeholder:text-ctp-subtext0 focus:outline-none focus:border-ctp-accent"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleSave();
               if (e.key === 'Escape') handleSkip();
@@ -97,7 +97,7 @@ export function SessionNamePromptDialog({ agentId, projectPath, onDone }: Sessio
             onClick={handleSave}
             disabled={saving || !name.trim()}
             data-testid="session-name-save"
-            className="px-4 py-1.5 text-xs rounded-lg bg-indigo-500 text-white hover:bg-indigo-600
+            className="px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-white hover:bg-ctp-accent/80
               cursor-pointer transition-colors font-medium disabled:opacity-40 disabled:cursor-default"
           >
             Save

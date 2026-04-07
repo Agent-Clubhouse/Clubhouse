@@ -67,7 +67,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="flex-1 bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                  text-ctp-text focus:outline-none focus:border-indigo-500"
+                  text-ctp-text focus:outline-none focus:border-ctp-accent"
                 autoFocus
               />
               <button
@@ -115,7 +115,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                  text-ctp-text focus:outline-none focus:border-indigo-500"
+                  text-ctp-text focus:outline-none focus:border-ctp-accent"
               >
                 {MODEL_OPTIONS.map((opt) => (
                   <option key={opt.id} value={opt.id}>{opt.label}</option>
@@ -131,7 +131,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
               value={orchestrator}
               onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }}
               className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                text-ctp-text focus:outline-none focus:border-indigo-500"
+                text-ctp-text focus:outline-none focus:border-ctp-accent"
             >
               {enabledOrchestrators.map((o) => {
                 const avail = availability[o.id];
@@ -152,7 +152,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
               type="checkbox"
               checked={useWorktree}
               onChange={(e) => setUseWorktree(e.target.checked)}
-              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
             />
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use git worktree</span>
             <span className="text-[10px] text-ctp-subtext0/70 ml-1">
@@ -170,7 +170,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
               checked={structuredMode}
               onChange={(e) => setStructuredMode(e.target.checked)}
               disabled={!supportsStructured}
-              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
             />
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use Structured Mode</span>
             <span className="text-[10px] text-ctp-subtext0/70 ml-1">
@@ -211,7 +211,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
                           prev.includes(entry.id) ? prev.filter((m) => m !== entry.id) : [...prev, entry.id]
                         );
                       }}
-                      className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+                      className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
                     />
                     <span className="text-xs text-ctp-text truncate" title={entry.description}>
                       {entry.name}
@@ -234,8 +234,8 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 text-xs rounded bg-indigo-500 text-white
-                hover:bg-indigo-600 cursor-pointer font-medium"
+              className="px-4 py-1.5 text-xs rounded bg-ctp-accent text-white
+                hover:bg-ctp-accent/80 cursor-pointer font-medium"
             >
               Create Agent
             </button>

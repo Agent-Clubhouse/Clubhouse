@@ -423,7 +423,7 @@ export function HeadlessAgentView({ agent }: Props) {
         {/* Agent info */}
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 mb-1">
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-400">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-accent/20 text-ctp-accent">
               Headless
             </span>
             <span className="text-xs text-ctp-subtext0 font-mono tabular-nums">

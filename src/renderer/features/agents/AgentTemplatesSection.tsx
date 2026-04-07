@@ -260,7 +260,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
                     className={`text-xs px-2 py-1 rounded transition-colors flex-shrink-0 ml-2 ${
                       disabled
                         ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
-                        : 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 cursor-pointer'
+                        : 'bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 cursor-pointer'
                     }`}
                     title="Create agent from this template"
                   >

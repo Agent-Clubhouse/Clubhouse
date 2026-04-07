@@ -366,7 +366,7 @@ export function ExplorerRail() {
             className="relative"
           >
             {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
-              <div className="absolute -top-0.5 left-3 right-3 h-0.5 bg-indigo-500 rounded-full" />
+              <div className="absolute -top-0.5 left-3 right-3 h-0.5 bg-ctp-accent rounded-full" />
             )}
             <TabButton tab={tab} isActive={explorerTab === tab.id} projectId={activeProjectId} onClick={() => setExplorerTab(tab.id, activeProjectId ?? undefined)} />
           </div>

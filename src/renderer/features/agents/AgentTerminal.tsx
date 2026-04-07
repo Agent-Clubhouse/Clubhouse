@@ -568,7 +568,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           data-testid="resume-overlay"
           className="absolute inset-0 flex flex-col items-center justify-center bg-ctp-base/90 z-10"
         >
-          <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mb-3" />
+          <div className="w-6 h-6 border-2 border-ctp-accent border-t-transparent rounded-full animate-spin mb-3" />
           <span className="text-sm text-ctp-subtext0">Resuming session...</span>
         </div>
       )}

@@ -178,7 +178,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
                 value={mission}
                 onChange={(e) => setMission(e.target.value)}
                 placeholder="What should the quick agent do?"
-                className="w-full px-3 py-2 bg-surface-0 border border-surface-2 rounded-lg text-xs text-ctp-text placeholder-ctp-overlay0 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full px-3 py-2 bg-surface-0 border border-surface-2 rounded-lg text-xs text-ctp-text placeholder-ctp-overlay0 resize-none focus:outline-none focus:ring-1 focus:ring-ctp-accent"
                 rows={3}
                 autoFocus
                 onKeyDown={(e) => {
@@ -198,7 +198,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
                 <button
                   onClick={handleSpawnQuick}
                   disabled={!mission.trim() || spawning}
-                  className="px-3 py-1.5 rounded bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1.5 rounded bg-ctp-accent text-white text-xs font-medium hover:bg-ctp-accent/80 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {spawning ? 'Starting...' : 'Start'}
                 </button>

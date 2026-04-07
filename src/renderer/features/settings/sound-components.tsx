@@ -20,7 +20,7 @@ export function VolumeSlider({ value, onChange, disabled }: { value: number; onC
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         disabled={disabled}
-        className="w-24 h-1 accent-indigo-500 cursor-pointer"
+        className="w-24 h-1 accent-ctp-accent cursor-pointer"
       />
       <span className="text-xs text-ctp-subtext0 w-8 text-right">{value}%</span>
     </div>
@@ -176,7 +176,7 @@ export function SoundPackCard({
           <button
             type="button"
             onClick={onApplyAll}
-            className="px-2 py-1 text-xs font-medium rounded-md bg-indigo-500 text-white hover:bg-indigo-600 transition-colors cursor-pointer"
+            className="px-2 py-1 text-xs font-medium rounded-md bg-ctp-accent text-white hover:bg-ctp-accent/80 transition-colors cursor-pointer"
           >
             Apply All
           </button>
@@ -243,7 +243,7 @@ export function ProjectSoundOverrideSection({ projectId, packs }: { projectId: s
           type="button"
           onClick={clearOverrides}
           className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer
-            ${!hasOverrides ? 'bg-indigo-500 text-white' : 'bg-surface-2 text-ctp-text hover:bg-surface-1'}`}
+            ${!hasOverrides ? 'bg-ctp-accent text-white' : 'bg-surface-2 text-ctp-text hover:bg-surface-1'}`}
         >
           Use Global Default
         </button>

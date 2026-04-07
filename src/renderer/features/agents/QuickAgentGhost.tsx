@@ -81,7 +81,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
           <div className="flex items-center gap-2 flex-wrap">
             <ExitBadge exitCode={completed.exitCode} cancelled={completed.cancelled} />
             {completed.headless && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-400">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-accent/20 text-ctp-accent">
                 Headless
               </span>
             )}
@@ -156,7 +156,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
               {showToggle && (
                 <button
                   onClick={() => setFilesExpanded(!filesExpanded)}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 mt-1 cursor-pointer"
+                  className="text-xs text-ctp-accent hover:text-ctp-accent mt-1 cursor-pointer"
                 >
                   {filesExpanded ? 'Show less' : `+${completed.filesModified.length - 3} more`}
                 </button>
@@ -169,7 +169,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
             <div>
               <button
                 onClick={() => setTranscriptOpen(!transcriptOpen)}
-                className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer flex items-center gap-1"
+                className="text-xs text-ctp-accent hover:text-ctp-accent cursor-pointer flex items-center gap-1"
               >
                 <svg
                   width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"

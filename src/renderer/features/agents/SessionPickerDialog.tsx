@@ -66,7 +66,7 @@ function SessionRow({
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               placeholder="Enter a name..."
-              className="flex-1 bg-surface-1 border border-surface-2 rounded px-2 py-1 text-xs text-ctp-text focus:outline-none focus:border-indigo-500"
+              className="flex-1 bg-surface-1 border border-surface-2 rounded px-2 py-1 text-xs text-ctp-text focus:outline-none focus:border-ctp-accent"
               onBlur={() => handleRename(session.sessionId)}
               onKeyDown={(e) => { if (e.key === 'Escape') { setEditingId(null); } }}
             />
@@ -78,7 +78,7 @@ function SessionRow({
                 {session.friendlyName || `Session ${session.sessionId.slice(0, 8)}`}
               </span>
               {isLatest && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 shrink-0">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-ctp-accent/20 text-ctp-accent shrink-0">
                   latest
                 </span>
               )}
@@ -106,7 +106,7 @@ function SessionRow({
           <button
             onClick={() => onResume(session.sessionId)}
             data-testid={`resume-session-${idx}`}
-            className="px-2.5 py-1 text-xs rounded bg-indigo-500 text-white hover:bg-indigo-600 cursor-pointer transition-colors font-medium"
+            className="px-2.5 py-1 text-xs rounded bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer transition-colors font-medium"
           >
             Resume
           </button>
@@ -213,7 +213,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
               <p>No sessions found</p>
               <button
                 onClick={() => setShowManual(true)}
-                className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                className="text-xs text-ctp-accent hover:text-ctp-accent cursor-pointer"
               >
                 Enter a session ID manually
               </button>
@@ -280,7 +280,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
                 placeholder="Or enter a session ID..."
-                className="flex-1 bg-surface-1 border border-surface-2 rounded px-2.5 py-1.5 text-xs text-ctp-text placeholder:text-ctp-subtext0 focus:outline-none focus:border-indigo-500"
+                className="flex-1 bg-surface-1 border border-surface-2 rounded px-2.5 py-1.5 text-xs text-ctp-text placeholder:text-ctp-subtext0 focus:outline-none focus:border-ctp-accent"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && manualId.trim()) {
                     onResume(manualId.trim());
