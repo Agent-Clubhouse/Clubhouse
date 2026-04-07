@@ -193,19 +193,19 @@ describe('buildMacUpdateScript', () => {
 
   it('moves the new app to the old bundle path', () => {
     const script = buildMacUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, scriptPath);
-    expect(script).toContain(`mv "${newAppPath}" "${appBundlePath}"`);
+    expect(script).toContain(`mv '${newAppPath}' '${appBundlePath}'`);
   });
 
   it('relaunches the app via open', () => {
     const script = buildMacUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, scriptPath);
-    expect(script).toContain(`open "${appBundlePath}"`);
+    expect(script).toContain(`open '${appBundlePath}'`);
   });
 
   it('cleans up the extract dir, download, and self-deletes', () => {
     const script = buildMacUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, scriptPath);
-    expect(script).toContain(`rm -rf "${tmpExtract}"`);
-    expect(script).toContain(`rm -f "${downloadPath}"`);
-    expect(script).toContain(`rm -f "${scriptPath}"`);
+    expect(script).toContain(`rm -rf '${tmpExtract}'`);
+    expect(script).toContain(`rm -f '${downloadPath}'`);
+    expect(script).toContain(`rm -f '${scriptPath}'`);
   });
 
   it('uses LF line endings', () => {
@@ -223,9 +223,9 @@ describe('buildMacUpdateScript', () => {
     expect(lines[2]).toContain(appBundlePath);
     expect(lines[3]).toContain('mv');
     expect(lines[4]).toContain('open');
-    expect(lines[5]).toContain(`rm -rf "${tmpExtract}"`);
-    expect(lines[6]).toContain(`rm -f "${downloadPath}"`);
-    expect(lines[7]).toContain(`rm -f "${scriptPath}"`);
+    expect(lines[5]).toContain(`rm -rf '${tmpExtract}'`);
+    expect(lines[6]).toContain(`rm -f '${downloadPath}'`);
+    expect(lines[7]).toContain(`rm -f '${scriptPath}'`);
   });
 });
 
@@ -242,7 +242,7 @@ describe('buildMacQuitUpdateScript', () => {
 
   it('extracts the update archive via unzip', () => {
     const script = buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, scriptPath);
-    expect(script).toContain(`unzip -o -q "${downloadPath}" -d "${tmpExtract}"`);
+    expect(script).toContain(`unzip -o -q '${downloadPath}' -d '${tmpExtract}'`);
   });
 
   it('finds the .app bundle in the extract directory', () => {
@@ -260,9 +260,9 @@ describe('buildMacQuitUpdateScript', () => {
   it('still performs the full replacement and cleanup sequence', () => {
     const script = buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, scriptPath);
     expect(script).toContain('sleep 1');
-    expect(script).toContain(`rm -rf "${appBundlePath}"`);
-    expect(script).toContain(`rm -rf "${tmpExtract}"`);
-    expect(script).toContain(`rm -f "${downloadPath}"`);
-    expect(script).toContain(`rm -f "${scriptPath}"`);
+    expect(script).toContain(`rm -rf '${appBundlePath}'`);
+    expect(script).toContain(`rm -rf '${tmpExtract}'`);
+    expect(script).toContain(`rm -f '${downloadPath}'`);
+    expect(script).toContain(`rm -f '${scriptPath}'`);
   });
 });

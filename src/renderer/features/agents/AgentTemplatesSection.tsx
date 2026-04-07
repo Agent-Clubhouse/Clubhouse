@@ -6,6 +6,7 @@ import {
   onTemplateRegistryChange,
   type RegisteredPluginAgentTemplate,
 } from '../../plugins/plugin-agent-template-registry';
+import { sanitizeSvg } from '../../utils/sanitize-svg';
 
 interface Props {
   worktreePath: string;
@@ -239,7 +240,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
                     {entry.template.icon && (
                       <span
                         className="flex-shrink-0 text-ctp-subtext0 w-4 h-4"
-                        dangerouslySetInnerHTML={{ __html: entry.template.icon }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeSvg(entry.template.icon) }}
                       />
                     )}
                     <div className="min-w-0">

