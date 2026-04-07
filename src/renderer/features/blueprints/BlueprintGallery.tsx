@@ -116,11 +116,13 @@ export function BlueprintGallery() {
             if (sourceView && targetView && sourceView.type === 'agent') {
               const agentView = sourceView as any;
               if (agentView.agentId) {
+                const targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue' =
+                  targetView.type === 'agent' ? 'agent' : 'browser';
                 store.getState().addWireDefinition({
                   agentId: agentView.agentId,
                   targetId: targetViewId,
-                  targetKind: wire.targetKind || 'view',
-                  label: wire.label,
+                  targetKind,
+                  label: `${wire.sourceRef} → ${wire.targetRef}`,
                   agentName: wire.sourceRef,
                   targetName: wire.targetRef,
                 });
