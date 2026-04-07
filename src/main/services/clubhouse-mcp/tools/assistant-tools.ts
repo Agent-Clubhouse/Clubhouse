@@ -31,6 +31,7 @@ import { IPC } from '../../../../shared/ipc-channels';
 import { BUILTIN_THEMES } from '../../../../renderer/themes';
 import { getPluginThemes } from '../../plugin-theme-store';
 import { discoverCommunityPlugins } from '../../plugin-discovery';
+import { requireString, optionalString, stringWithDefault, numberWithDefault, optionalBoolean, booleanWithDefault } from './validation';
 import { fetchAllRegistries, installPlugin as marketplaceInstallPlugin } from '../../marketplace-service';
 import { listCustomMarketplaces } from '../../custom-marketplace-service';
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../../../shared/marketplace-types';
@@ -68,8 +69,8 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'find_git_repos',
   handler: async (_targetId, _agentId, args) => {
-    const dir = args.directory as string;
-    const maxDepth = Math.min((args.depth as number) || 2, 2);
+    const dir = requireString(args, 'directory');
+    const maxDepth = Math.min(numberWithDefault(args, 'depth', 2), 2);
     const repos: string[] = [];
 
     async function scan(currentDir: string, depth: number): Promise<void> {
@@ -123,7 +124,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'check_path',
   handler: async (_targetId, _agentId, args) => {
-    const targetPath = (args.path as string).replace(/^~/, process.env.HOME || '/tmp');
+    const targetPath = requireString(args, 'path').replace(/^~/, process.env.HOME || '/tmp');
     try {
       const stat = await fsp.stat(targetPath);
       const type = stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'unknown';
@@ -156,7 +157,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'list_directory',
   handler: async (_targetId, _agentId, args) => {
-    const targetPath = (args.path as string).replace(/^~/, process.env.HOME || '/tmp');
+    const targetPath = requireString(args, 'path').replace(/^~/, process.env.HOME || '/tmp');
     try {
       const entries = await fsp.readdir(targetPath, { withFileTypes: true });
       const items = entries
@@ -229,7 +230,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'list_agents',
   handler: async (_targetId, _agentId, args) => {
-    const projectPath = args.project_path as string;
+    const projectPath = requireString(args, 'project_path');
     try {
       const agents = await listDurable(projectPath);
       const result = agents.map(a => ({
@@ -354,7 +355,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'search_help',
   handler: async (_targetId, _agentId, args) => {
-    const query = args.query as string;
+    const query = requireString(args, 'query');
     const results = searchHelpTopics(HELP_SECTIONS, query);
 
     if (results.length === 0) {
@@ -481,7 +482,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'add_project',
   handler: async (_targetId, _agentId, args) => {
-    const dirPath = (args.path as string).replace(/^~/, process.env.HOME || '/tmp');
+    const dirPath = requireString(args, 'path').replace(/^~/, process.env.HOME || '/tmp');
     try {
       const stat = await fsp.stat(dirPath);
       if (!stat.isDirectory()) {
@@ -520,7 +521,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'remove_project',
   handler: async (_targetId, _agentId, args) => {
-    const projectId = args.project_id as string;
+    const projectId = requireString(args, 'project_id');
     try {
       await projectStore.remove(projectId);
       return {
@@ -561,10 +562,10 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'update_project',
   handler: async (_targetId, _agentId, args) => {
-    const projectId = args.project_id as string;
+    const projectId = requireString(args, 'project_id');
     const updates: Record<string, string> = {};
-    if (args.display_name) updates.displayName = args.display_name as string;
-    if (args.color) updates.color = args.color as string;
+    if (args.display_name) updates.displayName = requireString(args, 'display_name');
+    if (args.color) updates.color = requireString(args, 'color');
     try {
       await projectStore.update(projectId, updates);
       return {
@@ -635,15 +636,16 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'create_agent',
   handler: async (_targetId, _agentId, args) => {
-    const projectPath = args.project_path as string;
-    const name = (args.name as string) || `agent-${Date.now().toString(36).slice(-4)}`;
-    const color = (args.color as string) || AGENT_COLORS[0]?.id || 'emerald';
-    const model = args.model as string | undefined;
+    const projectPath = requireString(args, 'project_path');
+    const name = stringWithDefault(args, 'name', `agent-${Date.now().toString(36).slice(-4)}`);
+    const color = stringWithDefault(args, 'color', AGENT_COLORS[0]?.id || 'emerald');
+    const model = optionalString(args, 'model');
     const useWorktree = args.use_worktree !== false; // default true
-    const orchestratorArg = args.orchestrator as string | undefined;
-    const freeAgentMode = args.free_agent_mode as boolean | undefined;
-    const mcpIds = args.mcp_ids ? (args.mcp_ids as string).split(',').map(s => s.trim()).filter(Boolean) : undefined;
-    const personaId = args.persona as string | undefined;
+    const orchestratorArg = optionalString(args, 'orchestrator');
+    const freeAgentMode = optionalBoolean(args, 'free_agent_mode');
+    const mcpIdsRaw = optionalString(args, 'mcp_ids');
+    const mcpIds = mcpIdsRaw ? mcpIdsRaw.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+    const personaId = optionalString(args, 'persona');
 
     // Resolve orchestrator — default to project/app default so avatar always renders
     let orchestrator = orchestratorArg;
@@ -783,16 +785,17 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'update_agent',
   handler: async (_targetId, _agentId, args) => {
-    const projectPath = args.project_path as string;
-    const agentId = args.agent_id as string;
+    const projectPath = requireString(args, 'project_path');
+    const agentId = requireString(args, 'agent_id');
     try {
       // Update basic fields (name, color, icon) via updateDurable
       const basicUpdates: Record<string, string | null | undefined> = {};
-      if (args.name !== undefined) basicUpdates.name = args.name as string;
-      if (args.color !== undefined) basicUpdates.color = args.color as string;
+      if (args.name !== undefined) basicUpdates.name = requireString(args, 'name');
+      if (args.color !== undefined) basicUpdates.color = requireString(args, 'color');
       if (args.icon !== undefined) {
         // Explicit icon update: empty string means remove
-        basicUpdates.icon = (args.icon as string) === '' ? null : (args.icon as string);
+        const iconVal = optionalString(args, 'icon');
+        basicUpdates.icon = iconVal === '' ? null : iconVal;
       }
       if (Object.keys(basicUpdates).length > 0) {
         await updateDurable(projectPath, agentId, basicUpdates as any);
@@ -800,10 +803,10 @@ registerMcpCommand({
 
       // Update config fields (model, orchestrator, freeAgentMode, etc.) via updateDurableConfig
       const configUpdates: Record<string, unknown> = {};
-      if (args.model !== undefined) configUpdates.model = args.model as string;
-      if (args.orchestrator !== undefined) configUpdates.orchestrator = args.orchestrator as string;
-      if (args.free_agent_mode !== undefined) configUpdates.freeAgentMode = args.free_agent_mode as boolean;
-      if (args.clubhouse_mode_override !== undefined) configUpdates.clubhouseModeOverride = args.clubhouse_mode_override as boolean;
+      if (args.model !== undefined) configUpdates.model = requireString(args, 'model');
+      if (args.orchestrator !== undefined) configUpdates.orchestrator = requireString(args, 'orchestrator');
+      if (args.free_agent_mode !== undefined) configUpdates.freeAgentMode = optionalBoolean(args, 'free_agent_mode');
+      if (args.clubhouse_mode_override !== undefined) configUpdates.clubhouseModeOverride = optionalBoolean(args, 'clubhouse_mode_override');
       if (Object.keys(configUpdates).length > 0) {
         await updateDurableConfig(projectPath, agentId, configUpdates as any);
       }
@@ -844,8 +847,8 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'delete_agent',
   handler: async (_targetId, _agentId, args) => {
-    const projectPath = args.project_path as string;
-    const agentId = args.agent_id as string;
+    const projectPath = requireString(args, 'project_path');
+    const agentId = requireString(args, 'agent_id');
     try {
       await deleteDurable(projectPath, agentId);
       return {
@@ -888,9 +891,9 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'write_agent_instructions',
   handler: async (_targetId, _agentId, args) => {
-    const projectPath = args.project_path as string;
-    const content = args.content as string;
-    const orchestratorId = args.orchestrator as string | undefined;
+    const projectPath = requireString(args, 'project_path');
+    const content = requireString(args, 'content');
+    const orchestratorId = optionalString(args, 'orchestrator');
     try {
       const provider = await resolveOrchestrator(projectPath, orchestratorId);
       await provider.writeInstructions(projectPath, content);
@@ -948,8 +951,8 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'update_settings',
   handler: async (_targetId, _agentId, args) => {
-    const key = args.key as string;
-    const rawValue = args.value as string;
+    const key = requireString(args, 'key');
+    const rawValue = requireString(args, 'value');
 
     if (!SETTINGS_ALLOWLIST.has(key)) {
       return {
@@ -1014,11 +1017,11 @@ registerMcpCommand({
  * disagrees, overrides with the inferred value and logs a warning.
  */
 async function resolveCanvasId(args: Record<string, unknown>, ...viewIdKeys: string[]): Promise<string | null> {
-  const providedCanvasId = args.canvas_id as string | undefined;
+  const providedCanvasId = optionalString(args, 'canvas_id');
 
   // Try to infer canvas_id from view IDs
   for (const key of viewIdKeys) {
-    const viewId = args[key] as string | undefined;
+    const viewId = optionalString(args, key);
     if (!viewId) continue;
     const result = await sendCanvasCommand('find_canvas_for_view', { view_id: viewId, project_id: args.project_id });
     if (result.success && result.data) {
@@ -1112,8 +1115,8 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'add_card',
   handler: async (_t, _a, args) => {
-  const canvasId = args.canvas_id as string;
-  const cardType = (args.type as string) || 'agent';
+  const canvasId = requireString(args, 'canvas_id');
+  const cardType = stringWithDefault(args, 'type', 'agent');
   const cmdArgs: Record<string, unknown> = {
     canvas_id: canvasId, type: args.type, display_name: args.display_name,
     agent_id: args.agent_id, project_id: args.project_id,
@@ -1438,7 +1441,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'layout_canvas',
   handler: async (_t, _a, args) => {
-  let canvasId = args.canvas_id as string | undefined;
+  let canvasId = optionalString(args, 'canvas_id');
   if (!canvasId) {
     const listResult = await sendCanvasCommand('list_canvases', { project_id: args.project_id });
     if (listResult.success) {
@@ -1454,9 +1457,9 @@ registerMcpCommand({
     return { content: [{ type: 'text', text: 'Could not determine canvas_id. Provide canvas_id.' }], isError: true };
   }
 
-  const algorithm = (args.algorithm as ElkAlgorithm) || 'layered';
-  const direction = args.direction as LayeredDirection | undefined;
-  const rootId = args.root_id as string | undefined;
+  const algorithm = (stringWithDefault(args, 'algorithm', 'layered')) as ElkAlgorithm;
+  const direction = optionalString(args, 'direction') as LayeredDirection | undefined;
+  const rootId = optionalString(args, 'root_id');
 
   // Reset auto-stagger counter — layout_canvas re-arranges all cards
   canvasCardCounters.delete(canvasId);
@@ -1874,14 +1877,14 @@ registerMcpCommand({
     required: ['source_path'],
   },
   handler: async (_t, _a, args) => {
-  const sourcePath = (args.source_path as string).replace(/^~/, process.env.HOME || '/tmp');
+  const sourcePath = requireString(args, 'source_path').replace(/^~/, process.env.HOME || '/tmp');
   try {
     // Validate source path exists and has manifest.json
     const manifestPath = path.join(sourcePath, 'manifest.json');
     const manifestRaw = await fsp.readFile(manifestPath, 'utf-8');
     const manifest = JSON.parse(manifestRaw);
 
-    const pluginId = (args.plugin_id as string) || manifest.id;
+    const pluginId = optionalString(args, 'plugin_id') || manifest.id;
     if (!pluginId) {
       return { content: [{ type: 'text', text: 'Plugin manifest.json must have an "id" field.' }], isError: true };
     }
@@ -1953,9 +1956,9 @@ registerMcpCommand({
   },
   handler: async (_targetId, _agentId, args) => {
   try {
-    const search = (args.search as string || '').toLowerCase().trim();
-    const tagFilter = (args.tag as string || '').toLowerCase().trim();
-    const officialOnly = args.official_only as boolean || false;
+    const search = stringWithDefault(args, 'search', '').toLowerCase().trim();
+    const tagFilter = stringWithDefault(args, 'tag', '').toLowerCase().trim();
+    const officialOnly = booleanWithDefault(args, 'official_only', false);
 
     // Fetch registries (official + custom)
     const customMarketplaces = await listCustomMarketplaces();
@@ -2052,8 +2055,8 @@ registerMcpCommand({
   },
   handler: async (_targetId, _agentId, args) => {
   try {
-    const pluginId = args.plugin_id as string;
-    const requestedVersion = args.version as string | undefined;
+    const pluginId = requireString(args, 'plugin_id');
+    const requestedVersion = optionalString(args, 'version');
 
     // Fetch registry to get plugin details
     const customMarketplaces = await listCustomMarketplaces();
@@ -2170,7 +2173,7 @@ registerMcpCommand({
     },
   },
   handler: async (_targetId, _agentId, args) => {
-  const pluginId = args.plugin_id as string | undefined;
+  const pluginId = optionalString(args, 'plugin_id');
 
   // Send navigation IPC to all windows
   const windows = BrowserWindow.getAllWindows();
@@ -2224,7 +2227,7 @@ registerMcpCommand({
   // Add registry-only commands (not already in palette) for discoverability
   const paletteIds = new Set(paletteItems.map((c) => c.id));
   const registryCommands = commandRegistry.list(
-    args.category ? { category: args.category as string } : undefined,
+    args.category ? { category: requireString(args, 'category') } : undefined,
   );
   const registryItems = registryCommands
     .filter((c) => !c.palette?.hidden && !paletteIds.has(c.id))
@@ -2279,7 +2282,7 @@ registerMcpCommand({
   const { commandRegistry } = await import('../../../../shared/command-registry');
 
   // Try CommandRegistry first (handles canvas.* and future commands)
-  const commandId = args.command_id as string;
+  const commandId = requireString(args, 'command_id');
   const registryDef = commandRegistry.get(commandId);
   if (registryDef) {
     const { command_id: _, ...commandArgs } = args;
