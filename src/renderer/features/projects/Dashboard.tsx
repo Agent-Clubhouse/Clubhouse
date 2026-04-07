@@ -89,17 +89,18 @@ function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' 
 
 /* ─── Stat Card ─── */
 
-function StatCard({ label, value, icon, color }: {
+function StatCard({ label, value, icon, color, bgColor }: {
   label: string;
   value: number;
   icon: React.ReactNode;
   color?: string;
+  bgColor?: string;
 }) {
   return (
     <div className="flex-1 min-w-0 bg-ctp-mantle border border-surface-0 rounded-xl p-4 flex items-center gap-3">
       <div
         className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ backgroundColor: color ? `${color}15` : undefined, color: color || undefined }}
+        style={{ backgroundColor: bgColor || (color ? `${color}15` : undefined), color: color || undefined }}
       >
         {icon}
       </div>
@@ -150,7 +151,8 @@ function StatsOverview() {
       <StatCard
         label="Projects"
         value={stats.projects}
-        color="#a78bfa"
+        color="rgb(var(--ctp-accent2))"
+        bgColor="rgb(var(--ctp-accent2) / 0.08)"
         icon={
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
@@ -160,7 +162,8 @@ function StatsOverview() {
       <StatCard
         label="Working"
         value={stats.working}
-        color="#34d399"
+        color="rgb(var(--ctp-success))"
+        bgColor="rgb(var(--ctp-success) / 0.08)"
         icon={
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10" />
@@ -171,7 +174,8 @@ function StatsOverview() {
       <StatCard
         label="Attention"
         value={stats.attention}
-        color={stats.attention > 0 ? '#fb923c' : '#6c7086'}
+        color={stats.attention > 0 ? 'rgb(var(--ctp-warning))' : 'rgb(var(--ctp-overlay0))'}
+        bgColor={stats.attention > 0 ? 'rgb(var(--ctp-warning) / 0.08)' : 'rgb(var(--ctp-overlay0) / 0.08)'}
         icon={
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
@@ -183,7 +187,8 @@ function StatsOverview() {
       <StatCard
         label="Done today"
         value={stats.completedToday}
-        color="#60a5fa"
+        color="rgb(var(--ctp-accent))"
+        bgColor="rgb(var(--ctp-accent) / 0.08)"
         icon={
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
@@ -223,7 +228,7 @@ function NeedsAttentionBox() {
   return (
     <div className="border border-orange-400/30 bg-orange-400/5 rounded-xl overflow-hidden mb-6">
       <div className="px-4 py-3 flex items-center gap-2 border-b border-orange-400/15">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fb923c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--ctp-warning))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
           <line x1="12" y1="9" x2="12" y2="13" />
           <line x1="12" y1="17" x2="12.01" y2="17" />
