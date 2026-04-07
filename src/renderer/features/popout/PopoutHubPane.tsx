@@ -126,11 +126,11 @@ export function PopoutHubPane({
   }, []);
 
   const borderColor = isPermission
-    ? 'rgb(249,115,22)'
+    ? 'rgb(var(--ctp-warning))'
     : isToolError
-      ? 'rgb(234,179,8)'
+      ? 'rgb(var(--ctp-warning))'
       : focused
-        ? 'rgb(99,102,241)'
+        ? 'rgb(var(--ctp-accent))'
         : 'transparent';
   const borderWidth = (isPermission || isToolError || focused) ? 2 : 1;
   const borderFallback = (!isPermission && !isToolError && !focused) ? 'rgb(var(--ctp-surface2) / 1)' : undefined;

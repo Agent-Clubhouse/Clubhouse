@@ -142,13 +142,13 @@ export function HubPane({
     else setHoveredEdge(null);
   }, []);
 
-  // Border color: permission (orange), tool error (yellow), focused (indigo), default (subtle)
+  // Border color: permission (warning), tool error (warning), focused (accent), default (subtle)
   const borderColor = isPermission
-    ? 'rgb(249,115,22)'
+    ? 'rgb(var(--ctp-warning))'
     : isToolError
-      ? 'rgb(234,179,8)'
+      ? 'rgb(var(--ctp-warning))'
       : focused
-        ? 'rgb(99,102,241)'
+        ? 'rgb(var(--ctp-accent))'
         : 'transparent';
 
   const borderWidth = (isPermission || isToolError || focused) ? 2 : 1;
