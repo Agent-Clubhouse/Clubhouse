@@ -259,7 +259,7 @@ function SatelliteStats({ projects, agents, detailedStatuses }: {
   return (
     <div className="grid grid-cols-4 gap-3 mb-6">
       <div className="bg-ctp-mantle border border-surface-0 rounded-xl p-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#a78bfa15', color: '#a78bfa' }}>
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgb(var(--ctp-accent2) / 0.08)', color: 'rgb(var(--ctp-accent2))' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
@@ -270,7 +270,7 @@ function SatelliteStats({ projects, agents, detailedStatuses }: {
         </div>
       </div>
       <div className="bg-ctp-mantle border border-surface-0 rounded-xl p-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#34d39915', color: '#34d399' }}>
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgb(var(--ctp-success) / 0.08)', color: 'rgb(var(--ctp-success))' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10" />
             <polyline points="12 6 12 12 16 14" />
@@ -282,7 +282,7 @@ function SatelliteStats({ projects, agents, detailedStatuses }: {
         </div>
       </div>
       <div className="bg-ctp-mantle border border-surface-0 rounded-xl p-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: stats.attention > 0 ? '#fb923c15' : '#6c708615', color: stats.attention > 0 ? '#fb923c' : '#6c7086' }}>
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: stats.attention > 0 ? 'rgb(var(--ctp-warning) / 0.08)' : 'rgb(var(--ctp-overlay0) / 0.08)', color: stats.attention > 0 ? 'rgb(var(--ctp-warning))' : 'rgb(var(--ctp-overlay0))' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
             <line x1="12" y1="9" x2="12" y2="13" />
@@ -295,7 +295,7 @@ function SatelliteStats({ projects, agents, detailedStatuses }: {
         </div>
       </div>
       <div className="bg-ctp-mantle border border-surface-0 rounded-xl p-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#6c708615', color: '#6c7086' }}>
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgb(var(--ctp-overlay0) / 0.08)', color: 'rgb(var(--ctp-overlay0))' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />

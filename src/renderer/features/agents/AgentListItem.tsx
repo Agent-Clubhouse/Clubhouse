@@ -419,7 +419,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
               const modelLabel = formatModelLabel(agent.model);
               const c = agent.model && agent.model !== 'default'
                 ? getModelColor(agent.model)
-                : { bg: 'rgba(148,163,184,0.15)', text: '#94a3b8' };
+                : { bg: 'rgb(var(--ctp-overlay1) / 0.15)', text: 'rgb(var(--ctp-overlay1))' };
               return (
                 <span className="text-[10px] px-1.5 py-0.5 rounded truncate font-mono"
                   style={{ backgroundColor: c.bg, color: c.text }}>
@@ -429,13 +429,13 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
             })()}
             {agent.freeAgentMode && (
               <span className="text-[10px] px-1.5 py-0.5 rounded truncate"
-                style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
+                style={{ backgroundColor: 'rgb(var(--ctp-error) / 0.15)', color: 'rgb(var(--ctp-error))' }}>
                 Free
               </span>
             )}
             {agent.mcpIds && agent.mcpIds.length > 0 && (
               <span className="text-[10px] px-1.5 py-0.5 rounded truncate"
-                style={{ backgroundColor: 'rgba(168,85,247,0.15)', color: '#d8b4fe' }}
+                style={{ backgroundColor: 'rgb(var(--ctp-accent2) / 0.15)', color: 'rgb(var(--ctp-accent2))' }}
                 title={agent.mcpIds.join(', ')}>
                 {agent.mcpIds.length} MCP{agent.mcpIds.length !== 1 ? 's' : ''}
               </span>

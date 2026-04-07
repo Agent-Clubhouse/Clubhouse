@@ -265,10 +265,10 @@
     from 0deg,
     transparent 0%,
     transparent 70%,
-    rgba(137, 180, 250, 0.3) 82%,
-    rgba(137, 180, 250, 0.7) 90%,
-    rgba(205, 214, 244, 0.8) 95%,
-    rgba(137, 180, 250, 0.7) 98%,
+    rgb(var(--ctp-accent) / 0.3) 82%,
+    rgb(var(--ctp-accent) / 0.7) 90%,
+    rgb(var(--ctp-text) / 0.8) 95%,
+    rgb(var(--ctp-accent) / 0.7) 98%,
     transparent 100%
   );
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), black calc(100% - 3px));
@@ -291,13 +291,13 @@
 }
 
 .attention-border-orange {
-  --attention-color: #f97316;
-  border: 1.5px solid #f97316;
+  --attention-color: rgb(var(--ctp-warning));
+  border: 1.5px solid rgb(var(--ctp-warning));
 }
 
 .attention-border-yellow {
-  --attention-color: #facc15;
-  border: 1.5px solid #facc15;
+  --attention-color: rgb(var(--ctp-warning));
+  border: 1.5px solid rgb(var(--ctp-warning));
 }
 
 .animate-attention-border {
@@ -307,34 +307,34 @@
 /* Canvas: attention flash border — outside the card, never clips inner content */
 @keyframes canvas-attention-flash {
   0%, 100% {
-    outline-color: rgba(250, 204, 21, 0.9);
-    box-shadow: 0 0 12px 3px rgba(250, 204, 21, 0.35), 0 4px 24px rgba(0, 0, 0, 0.5);
+    outline-color: rgb(var(--ctp-warning) / 0.9);
+    box-shadow: 0 0 12px 3px rgb(var(--ctp-warning) / 0.35), 0 4px 24px rgba(0, 0, 0, 0.5);
   }
   50% {
-    outline-color: rgba(250, 204, 21, 0.35);
-    box-shadow: 0 0 4px 1px rgba(250, 204, 21, 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
+    outline-color: rgb(var(--ctp-warning) / 0.35);
+    box-shadow: 0 0 4px 1px rgb(var(--ctp-warning) / 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
   }
 }
 
 @keyframes canvas-error-flash {
   0%, 100% {
-    outline-color: rgba(248, 113, 113, 0.9);
-    box-shadow: 0 0 12px 3px rgba(248, 113, 113, 0.35), 0 4px 24px rgba(0, 0, 0, 0.5);
+    outline-color: rgb(var(--ctp-error) / 0.9);
+    box-shadow: 0 0 12px 3px rgb(var(--ctp-error) / 0.35), 0 4px 24px rgba(0, 0, 0, 0.5);
   }
   50% {
-    outline-color: rgba(248, 113, 113, 0.35);
-    box-shadow: 0 0 4px 1px rgba(248, 113, 113, 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
+    outline-color: rgb(var(--ctp-error) / 0.35);
+    box-shadow: 0 0 4px 1px rgb(var(--ctp-error) / 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
   }
 }
 
 .canvas-attention-warning {
-  outline: 2.5px solid rgba(250, 204, 21, 0.9);
+  outline: 2.5px solid rgb(var(--ctp-warning) / 0.9);
   outline-offset: 2px;
   animation: canvas-attention-flash 1.5s ease-in-out infinite;
 }
 
 .canvas-attention-error {
-  outline: 2.5px solid rgba(248, 113, 113, 0.9);
+  outline: 2.5px solid rgb(var(--ctp-error) / 0.9);
   outline-offset: 2px;
   animation: canvas-error-flash 1.5s ease-in-out infinite;
 }

@@ -586,22 +586,22 @@ function MiniLayoutPreview({ views }: { views: { x: number; y: number; w: number
 
 function rectFill(type: string): string {
   switch (type) {
-    case 'agent': return '#89b4fa20';
-    case 'anchor': return '#f5a62320';
-    case 'plugin': return '#22c55e20';
-    case 'sticky-note': return '#f9e2af30';
-    case 'zone': return '#cba6f720';
+    case 'agent': return 'rgb(var(--ctp-accent) / 0.12)';
+    case 'anchor': return 'rgb(var(--ctp-warning) / 0.12)';
+    case 'plugin': return 'rgb(var(--ctp-success) / 0.12)';
+    case 'sticky-note': return 'rgb(var(--ctp-warning) / 0.19)';
+    case 'zone': return 'rgb(var(--ctp-accent2) / 0.12)';
     default: return '#31324440';
   }
 }
 
 function rectStroke(type: string): string {
   switch (type) {
-    case 'agent': return '#89b4fa';
-    case 'anchor': return '#f5a623';
-    case 'plugin': return '#22c55e';
-    case 'sticky-note': return '#f9e2af';
-    case 'zone': return '#cba6f7';
+    case 'agent': return 'rgb(var(--ctp-accent))';
+    case 'anchor': return 'rgb(var(--ctp-warning))';
+    case 'plugin': return 'rgb(var(--ctp-success))';
+    case 'sticky-note': return 'rgb(var(--ctp-warning))';
+    case 'zone': return 'rgb(var(--ctp-accent2))';
     default: return '#45475a';
   }
 }
