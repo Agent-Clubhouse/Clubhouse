@@ -867,21 +867,26 @@ function ShoulderTapModal({
     if (sending) return;
     setSending(true);
 
-    const parts: string[] = [];
-    if (includeInstructions && projectInstructions.trim()) {
-      parts.push(`Project Instructions:\n${projectInstructions.trim()}`);
+    try {
+      const parts: string[] = [];
+      if (includeInstructions && projectInstructions.trim()) {
+        parts.push(`Project Instructions:\n${projectInstructions.trim()}`);
+      }
+      if (msg) parts.push(msg);
+      const fullMessage = parts.join('\n\n');
+
+      const targets = target === 'all'
+        ? members
+        : members.filter((m) => m.agentId === target);
+
+      await Promise.all(targets.map((member) => injectMessage(member.agentId, fullMessage)));
+
+      onClose();
+    } catch (err) {
+      console.error('Broadcast message failed:', err);
+    } finally {
+      setSending(false);
     }
-    if (msg) parts.push(msg);
-    const fullMessage = parts.join('\n\n');
-
-    const targets = target === 'all'
-      ? members
-      : members.filter((m) => m.agentId === target);
-
-    await Promise.all(targets.map((member) => injectMessage(member.agentId, fullMessage)));
-
-    setSending(false);
-    onClose();
   }, [message, includeInstructions, projectInstructions, sending, target, members, onClose, injectMessage]);
 
   return (

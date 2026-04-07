@@ -606,7 +606,14 @@ export function approveAction(actionId: string): void {
     // Notify the orchestrator that the tool execution is approved
     // The IPC method may not exist yet — guarded by optional chaining on the untyped cast
     if (state.agentId && state.mode === 'structured') {
-      (window.clubhouse.agent as any).approveToolExecution?.(state.agentId, actionId)?.catch?.(() => {});
+      (window.clubhouse.agent as any).approveToolExecution?.(state.agentId, actionId)?.catch?.((err: unknown) => {
+        console.error('Failed to approve action:', err);
+        if (item.action) {
+          item.action.status = 'error';
+          item.action.error = err instanceof Error ? err.message : 'IPC call failed';
+        }
+        notifyFeedListeners();
+      });
     }
   }
 }
@@ -619,7 +626,14 @@ export function skipAction(actionId: string): void {
     // Notify the orchestrator to skip this tool execution
     // The IPC method may not exist yet — guarded by optional chaining on the untyped cast
     if (state.agentId && state.mode === 'structured') {
-      (window.clubhouse.agent as any).skipToolExecution?.(state.agentId, actionId)?.catch?.(() => {});
+      (window.clubhouse.agent as any).skipToolExecution?.(state.agentId, actionId)?.catch?.((err: unknown) => {
+        console.error('Failed to skip action:', err);
+        if (item.action) {
+          item.action.status = 'error';
+          item.action.error = err instanceof Error ? err.message : 'IPC call failed';
+        }
+        notifyFeedListeners();
+      });
     }
   }
 }

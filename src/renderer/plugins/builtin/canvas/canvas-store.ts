@@ -527,40 +527,51 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         ? (removedView as AgentCanvasView).agentId!
         : viewId;
 
-      set(updateActiveCanvas(get(), (canvas) => ({
+      // LB-CV-H01: atomic update — remove view and clean up orphaned wires in a single set()
+      const canvasUpdate = updateActiveCanvas(get(), (canvas) => ({
         views: recomputeZones(removeViewOp(canvas.views, viewId)),
         selectedViewId: canvas.selectedViewId === viewId ? null : canvas.selectedViewId,
         // LB-M05: clear layoutCenterId if the removed view was the ELK layout center
         layoutCenterId: canvas.layoutCenterId === viewId ? null : canvas.layoutCenterId,
-      })));
+      }));
 
       // LB-M07: remove orphaned wire definitions referencing the removed view
       const wires = get().wireDefinitions;
       const filtered = wires.filter((w) => w.agentId !== wireId && w.targetId !== wireId);
-      if (filtered.length !== wires.length) {
-        set({ wireDefinitions: filtered });
-      }
+
+      set({
+        ...canvasUpdate,
+        wireDefinitions: filtered,
+      });
     },
 
     moveView: (viewId, position) => {
-      set(updateActiveCanvas(get(), (canvas) => ({
-        views: recomputeZones(updateViewPosOp(canvas.views, viewId, position)),
-      })));
-      // Invalidate ELK-routed paths for wires connected to the moved view
+      // LB-CV-H02: atomic update — move view and invalidate wire paths in a single set()
       const movedView = get().views.find((v) => v.id === viewId);
       const affectedId = (movedView?.type === 'agent' && (movedView as AgentCanvasView).agentId)
         ? (movedView as AgentCanvasView).agentId!
         : viewId;
+
+      const canvasUpdate = updateActiveCanvas(get(), (canvas) => ({
+        views: recomputeZones(updateViewPosOp(canvas.views, viewId, position)),
+      }));
+
+      // Invalidate ELK-routed paths for wires connected to the moved view
       const wires = get().wireDefinitions;
-      if (wires.some((w) => w.routedPath && (w.agentId === affectedId || w.targetId === affectedId))) {
-        set({
-          wireDefinitions: wires.map((w) =>
-            (w.agentId === affectedId || w.targetId === affectedId)
-              ? { ...w, routedPath: undefined }
-              : w,
-          ),
-        });
-      }
+      const needsInvalidation = wires.some((w) => w.routedPath && (w.agentId === affectedId || w.targetId === affectedId));
+
+      set({
+        ...canvasUpdate,
+        ...(needsInvalidation
+          ? {
+              wireDefinitions: wires.map((w) =>
+                (w.agentId === affectedId || w.targetId === affectedId)
+                  ? { ...w, routedPath: undefined }
+                  : w,
+              ),
+            }
+          : {}),
+      });
     },
 
     resizeView: (viewId, size) => {
