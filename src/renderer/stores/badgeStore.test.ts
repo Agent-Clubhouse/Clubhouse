@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { useBadgeStore, BadgeTarget } from './badgeStore';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { useBadgeStore, BadgeTarget, initBadgeSideEffects, teardownBadgeSideEffects } from './badgeStore';
 import { useBadgeSettingsStore } from './badgeSettingsStore';
 
 function getState() {
@@ -342,6 +342,44 @@ describe('badgeStore', () => {
         getState().setBadge('core:agents', 'count', 3, { kind: 'explorer-tab', projectId: 'p1', tabId: 'agents' });
         expect(getState().getProjectBadge('p1')).toBeNull();
       });
+    });
+  });
+
+  describe('initBadgeSideEffects idempotency (CQ-RL-01)', () => {
+    afterEach(() => {
+      teardownBadgeSideEffects();
+    });
+
+    it('calling initBadgeSideEffects twice does not duplicate subscriptions', () => {
+      // Track how many times the dock badge sync fires
+      const setDockBadge = vi.fn();
+      (globalThis as any).window ??= {};
+      (globalThis as any).window.clubhouse = { app: { setDockBadge } };
+
+      initBadgeSideEffects();
+      initBadgeSideEffects(); // Second call should tear down first, not duplicate
+
+      // Trigger a badge change — should only fire the dock sync once per subscription
+      const callCountBefore = setDockBadge.mock.calls.length;
+      getState().setBadge('core:agents', 'count', 1, { kind: 'explorer-tab', projectId: 'p1', tabId: 'agents' });
+      const callCountAfter = setDockBadge.mock.calls.length;
+
+      // Should have fired exactly once (not twice from duplicate subscriptions)
+      expect(callCountAfter - callCountBefore).toBe(1);
+    });
+
+    it('teardownBadgeSideEffects cleans up all subscriptions', () => {
+      const setDockBadge = vi.fn();
+      (globalThis as any).window ??= {};
+      (globalThis as any).window.clubhouse = { app: { setDockBadge } };
+
+      initBadgeSideEffects();
+      teardownBadgeSideEffects();
+
+      const callCountBefore = setDockBadge.mock.calls.length;
+      getState().setBadge('core:agents', 'count', 1, { kind: 'explorer-tab', projectId: 'p1', tabId: 'agents' });
+      // After teardown, no subscription should fire
+      expect(setDockBadge.mock.calls.length).toBe(callCountBefore);
     });
   });
 

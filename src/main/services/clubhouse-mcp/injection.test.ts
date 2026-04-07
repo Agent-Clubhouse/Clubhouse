@@ -138,6 +138,26 @@ describe('MCP Injection', () => {
       expect(content.mcpServers.clubhouse.command).toBe('node');
     });
 
+    it('serializes mixed inject + template calls via shared mutex', async () => {
+      mockIsMcpEnabled.mockReturnValue(true);
+
+      // Fire both injectClubhouseMcp and injectTemplateMcpServers concurrently.
+      // Without a proper mutex, file corruption can occur.
+      await Promise.all([
+        injectClubhouseMcp(tmpDir, 'agent-A', 10001, 'nonce-a'),
+        injectTemplateMcpServers(tmpDir, { 'plugin-server': { command: 'python', args: ['serve.py'] } }),
+        injectClubhouseMcp(tmpDir, 'agent-B', 10002, 'nonce-b'),
+      ]);
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers).toBeDefined();
+      // Both clubhouse and plugin-server entries should exist (last clubhouse wins)
+      expect(content.mcpServers.clubhouse).toBeDefined();
+      expect(content.mcpServers.clubhouse.command).toBe('node');
+      expect(content.mcpServers['plugin-server']).toBeDefined();
+      expect(content.mcpServers['plugin-server'].command).toBe('python');
+    });
+
     it('creates parent directory if it does not exist', async () => {
       mockIsMcpEnabled.mockReturnValue(true);
       const nestedDir = path.join(tmpDir, 'nested', 'deep');
