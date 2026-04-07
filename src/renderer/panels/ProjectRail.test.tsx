@@ -9,7 +9,12 @@ import { usePluginStore } from '../plugins/plugin-store';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { ProjectRail } from './ProjectRail';
+import { showConfirmDialog } from '../plugins/PluginDialog';
 import type { Project } from '../../shared/types';
+
+vi.mock('../plugins/PluginDialog', () => ({
+  showConfirmDialog: vi.fn(() => ({ promise: Promise.resolve(true), cleanup: vi.fn() })),
+}));
 import type { SatelliteConnection } from '../stores/annexClientStore';
 
 // Mock window.clubhouse.annexClient for SatelliteHostRow retry
@@ -191,7 +196,7 @@ describe('ProjectRail context menu', () => {
     expect(screen.getByTestId('ctx-close-project')).toBeInTheDocument();
   });
 
-  it('closes project when Close Project is clicked', () => {
+  it('closes project when Close Project is clicked', async () => {
     const removeProject = vi.fn();
     useProjectStore.setState({
       projects: [makeProject({ id: 'p1', name: 'Alpha' })],
@@ -199,14 +204,15 @@ describe('ProjectRail context menu', () => {
       removeProject,
     });
 
-    window.confirm = vi.fn(() => true);
     render(<ProjectRail />);
     const projectButton = screen.getByTestId('project-p1');
     fireEvent.contextMenu(projectButton.parentElement!);
     fireEvent.click(screen.getByTestId('ctx-close-project'));
 
-    expect(window.confirm).toHaveBeenCalled();
-    expect(removeProject).toHaveBeenCalledWith('p1');
+    await vi.waitFor(() => {
+      expect(showConfirmDialog).toHaveBeenCalled();
+      expect(removeProject).toHaveBeenCalledWith('p1');
+    });
   });
 
   it('does not show context menu initially', () => {
