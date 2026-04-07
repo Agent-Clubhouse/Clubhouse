@@ -734,6 +734,8 @@ export interface ThemeColors {
   success: string;
   accent2: string;
   overlay: string;
+  overlay0: string;
+  overlay1: string;
 }
 
 export interface HljsColors {

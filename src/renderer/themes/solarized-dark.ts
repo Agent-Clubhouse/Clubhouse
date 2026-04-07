@@ -22,6 +22,8 @@ export const solarizedDark: ThemeDefinition = {
     success: '#859900',
     accent2: '#2aa198',
     overlay: '#586e75',
+    overlay0: '#475b62',
+    overlay1: '#586e75',
   },
   hljs: {
     keyword: '#859900',

@@ -423,26 +423,26 @@ describe('PopoutHubPane', () => {
   });
 
   describe('border styles', () => {
-    it('applies orange border for needs_permission status', () => {
+    it('applies warning border for needs_permission status', () => {
       const { container } = renderPane({
         detailedStatuses: { 'agent-1': { state: 'needs_permission', message: 'Allow?' } },
       });
       const pane = container.firstElementChild as HTMLElement;
-      expect(pane.style.boxShadow).toContain('rgb(249,115,22)');
+      expect(pane.style.boxShadow).toContain('rgb(var(--ctp-warning))');
     });
 
-    it('applies yellow border for tool_error status', () => {
+    it('applies warning border for tool_error status', () => {
       const { container } = renderPane({
         detailedStatuses: { 'agent-1': { state: 'tool_error', message: 'Error' } },
       });
       const pane = container.firstElementChild as HTMLElement;
-      expect(pane.style.boxShadow).toContain('rgb(234,179,8)');
+      expect(pane.style.boxShadow).toContain('rgb(var(--ctp-warning))');
     });
 
-    it('applies indigo border for focused pane', () => {
+    it('applies accent border for focused pane', () => {
       const { container } = renderPane({ focused: true });
       const pane = container.firstElementChild as HTMLElement;
-      expect(pane.style.boxShadow).toContain('rgb(99,102,241)');
+      expect(pane.style.boxShadow).toContain('rgb(var(--ctp-accent))');
     });
 
     it('adds animate-pulse class for needs_permission', () => {

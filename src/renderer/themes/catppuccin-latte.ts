@@ -22,6 +22,8 @@ export const catppuccinLatte: ThemeDefinition = {
     success: '#347d22',
     accent2: '#209fb5',
     overlay: '#8c8fa1',
+    overlay0: '#9ca0b0',
+    overlay1: '#8c8fa1',
   },
   hljs: {
     keyword: '#8839ef',

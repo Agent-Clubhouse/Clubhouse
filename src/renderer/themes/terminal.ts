@@ -23,6 +23,8 @@ export const terminalTheme: ThemeDefinition = {
     success: '#00ff00',
     accent2: '#00ffff',
     overlay: '#444444',
+    overlay0: '#333333',
+    overlay1: '#444444',
   },
   hljs: {
     keyword: '#00ff00',

@@ -22,6 +22,8 @@ export const dracula: ThemeDefinition = {
     success: '#50fa7b',
     accent2: '#ff79c6',
     overlay: '#6272a4',
+    overlay0: '#506090',
+    overlay1: '#6272a4',
   },
   hljs: {
     keyword: '#ff79c6',

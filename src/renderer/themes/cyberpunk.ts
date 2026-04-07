@@ -23,6 +23,8 @@ export const cyberpunk: ThemeDefinition = {
     success: '#39ff14',
     accent2: '#00ffff',
     overlay: '#6b5b95',
+    overlay0: '#574a7a',
+    overlay1: '#6b5b95',
   },
   hljs: {
     keyword: '#ff2d95',

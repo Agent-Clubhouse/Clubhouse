@@ -66,7 +66,7 @@ export function AgentPicker({ api, agents, onPick }: AgentPickerProps) {
                   <span className="text-xs text-ctp-text truncate flex-1">
                     {a.name}
                   </span>
-                  <span className={`text-[10px] ${a.status === 'running' ? 'text-green-400' : a.status === 'error' ? 'text-red-400' : 'text-ctp-overlay0'}`}>
+                  <span className={`text-[10px] ${a.status === 'running' ? 'text-ctp-success' : a.status === 'error' ? 'text-ctp-error' : 'text-ctp-overlay0'}`}>
                     {a.status}
                   </span>
                 </button>
@@ -85,7 +85,7 @@ export function AgentPicker({ api, agents, onPick }: AgentPickerProps) {
                 >
                   <AgentAvatar agentId={a.id} size="sm" showStatusRing />
                   <span className="text-xs text-ctp-text truncate flex-1">{a.name}</span>
-                  <span className="text-[10px] text-green-400">running</span>
+                  <span className="text-[10px] text-ctp-success">running</span>
                 </button>
               ))}
             </div>

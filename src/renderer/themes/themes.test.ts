@@ -79,7 +79,7 @@ describe('theme registry', () => {
     const requiredColorKeys = [
       'base', 'mantle', 'crust', 'text', 'subtext0', 'subtext1',
       'surface0', 'surface1', 'surface2', 'accent', 'link',
-      'warning', 'error', 'info', 'success', 'accent2', 'overlay',
+      'warning', 'error', 'info', 'success', 'accent2', 'overlay', 'overlay0', 'overlay1',
     ];
 
     for (const id of ['catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark', 'cyberpunk'] as ThemeId[]) {

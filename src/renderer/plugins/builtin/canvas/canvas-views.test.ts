@@ -250,18 +250,18 @@ describe('CanvasView — permission indicator', () => {
     const isPermission = state === 'needs_permission';
     const isToolError = state === 'tool_error';
     return isPermission
-      ? 'rgb(249,115,22)'
+      ? 'rgb(var(--ctp-warning))'
       : isToolError
-        ? 'rgb(234,179,8)'
+        ? 'rgb(var(--ctp-warning))'
         : 'transparent';
   };
 
-  it('returns orange for needs_permission state', () => {
-    expect(borderColorForState('needs_permission')).toBe('rgb(249,115,22)');
+  it('returns warning color for needs_permission state', () => {
+    expect(borderColorForState('needs_permission')).toBe('rgb(var(--ctp-warning))');
   });
 
-  it('returns yellow for tool_error state', () => {
-    expect(borderColorForState('tool_error')).toBe('rgb(234,179,8)');
+  it('returns warning color for tool_error state', () => {
+    expect(borderColorForState('tool_error')).toBe('rgb(var(--ctp-warning))');
   });
 
   it('returns transparent for idle state', () => {
