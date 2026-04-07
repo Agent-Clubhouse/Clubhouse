@@ -269,7 +269,7 @@ export function HubPane({
                   {agent.status === 'running' && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleKill(); }}
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30"
                       title="Stop agent"
                     >
                       Stop
@@ -277,7 +277,7 @@ export function HubPane({
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleUnassign(); }}
-                    className="text-[10px] px-1 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-red-500/20 hover:text-red-400"
+                    className="text-[10px] px-1 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-ctp-error/20 hover:text-ctp-error"
                     title="Remove from pane"
                   >
                     &times;
