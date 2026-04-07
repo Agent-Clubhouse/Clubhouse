@@ -11,6 +11,7 @@ import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
 import { DEPRECATED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
+import { showConfirmDialog } from '../../plugins/PluginDialog';
 
 const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
 
@@ -594,7 +595,8 @@ function CustomMarketplaceManager() {
   const handleRemove = async (id: string) => {
     const m = marketplaces.find((x) => x.id === id);
     if (!m) return;
-    const confirmed = window.confirm(`Remove custom marketplace "${m.name}"?`);
+    const { promise } = showConfirmDialog(`Remove custom marketplace "${m.name}"?`);
+    const confirmed = await promise;
     if (!confirmed) return;
     try {
       await window.clubhouse.marketplace.removeCustomMarketplace({ id });
@@ -903,7 +905,8 @@ export function PluginListSettings() {
   const handleUninstall = async (pluginId: string) => {
     const entry = usePluginStore.getState().plugins[pluginId];
     if (!entry || entry.source === 'builtin') return;
-    const confirmed = window.confirm(`Uninstall "${entry.manifest.name}"? This will delete the plugin and clean up all its project injections.`);
+    const { promise } = showConfirmDialog(`Uninstall "${entry.manifest.name}"? This will delete the plugin and clean up all its project injections.`);
+    const confirmed = await promise;
     if (!confirmed) return;
     // Deactivate first if active
     await deactivatePlugin(pluginId);
@@ -935,7 +938,8 @@ export function PluginListSettings() {
 
   const handleUninstallAll = async () => {
     if (externalPlugins.length === 0) return;
-    const confirmed = window.confirm(`Uninstall all ${externalPlugins.length} external plugin(s)? This will delete them from disk and clean up their project injections.`);
+    const { promise } = showConfirmDialog(`Uninstall all ${externalPlugins.length} external plugin(s)? This will delete them from disk and clean up their project injections.`);
+    const confirmed = await promise;
     if (!confirmed) return;
     const allProjects = useProjectStore.getState().projects;
     for (const entry of externalPlugins) {

@@ -13,6 +13,7 @@ import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { getAgentColorHex } from '../../shared/name-generator';
 import { sanitizeSvg } from '../utils/sanitize-svg';
+import { showConfirmDialog } from '../plugins/PluginDialog';
 
 function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
   position: { x: number; y: number };
@@ -799,8 +800,9 @@ export function ProjectRail() {
             setSettingsContext('project');
             setSettingsSubPage('project');
           }}
-          onCloseProject={() => {
-            if (window.confirm('Close this project? Project-specific settings may need to be reconfigured.')) {
+          onCloseProject={async () => {
+            const { promise } = showConfirmDialog('Close this project? Project-specific settings may need to be reconfigured.');
+            if (await promise) {
               removeProject(contextMenu.projectId);
             }
           }}

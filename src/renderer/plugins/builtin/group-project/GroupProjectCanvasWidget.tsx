@@ -11,6 +11,7 @@ import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { Toggle } from '../../../components/Toggle';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 import { useUIStore } from '../../../stores/uiStore';
+import { showConfirmDialog } from '../../PluginDialog';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
@@ -465,7 +466,8 @@ function ExpandedProjectView({
   }, [members, project, groupProjectId, injectMessage]);
 
   const handleDeleteMessage = useCallback(async (topic: string, messageId: string) => {
-    if (!window.confirm('Delete this message?')) return;
+    const { promise } = showConfirmDialog('Delete this message?');
+    if (!(await promise)) return;
     await deleteMessage(groupProjectId, topic, messageId);
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
     if (selectedMessageId === messageId) setSelectedMessageId(null);
