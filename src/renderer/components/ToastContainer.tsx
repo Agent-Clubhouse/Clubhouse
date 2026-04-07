@@ -12,8 +12,8 @@ function ToastItem({ toast }: { toast: Toast }) {
     return () => clearTimeout(timerRef.current);
   }, [toast.id, removeToast]);
 
-  const borderClass = toast.type === 'error' ? 'border-ctp-red/30' : 'border-ctp-blue/30';
-  const textClass = toast.type === 'error' ? 'text-ctp-red' : 'text-ctp-blue';
+  const borderClass = toast.type === 'error' ? 'border-ctp-error/30' : 'border-ctp-accent/30';
+  const textClass = toast.type === 'error' ? 'text-ctp-error' : 'text-ctp-accent';
 
   return (
     <div
