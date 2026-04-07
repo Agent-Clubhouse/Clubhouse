@@ -22,6 +22,8 @@ export const gruvboxDark: ThemeDefinition = {
     success: '#b8bb26',
     accent2: '#d3869b',
     overlay: '#928374',
+    overlay0: '#7c6f64',
+    overlay1: '#928374',
   },
   hljs: {
     keyword: '#fb4934',

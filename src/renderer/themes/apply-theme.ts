@@ -37,6 +37,8 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
     '--ctp-success': theme.colors.success,
     '--ctp-accent2': theme.colors.accent2,
     '--ctp-overlay': theme.colors.overlay,
+    '--ctp-overlay0': theme.colors.overlay0,
+    '--ctp-overlay1': theme.colors.overlay1,
   };
 
   for (const [varName, hex] of Object.entries(colorMap)) {
@@ -180,6 +182,8 @@ export function themeToStyleVars(theme: ThemeDefinition): Record<string, string>
     '--ctp-success': theme.colors.success,
     '--ctp-accent2': theme.colors.accent2,
     '--ctp-overlay': theme.colors.overlay,
+    '--ctp-overlay0': theme.colors.overlay0,
+    '--ctp-overlay1': theme.colors.overlay1,
   };
 
   for (const [varName, hex] of Object.entries(colorMap)) {

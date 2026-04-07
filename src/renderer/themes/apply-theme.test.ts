@@ -52,6 +52,8 @@ function makeTheme(overrides?: Partial<ThemeDefinition>): ThemeDefinition {
       success: '#a6e3a1',
       accent2: '#74c7ec',
       overlay: '#7f849c',
+      overlay0: '#6c7086',
+      overlay1: '#7f849c',
     },
     hljs: {
       keyword: '#cba6f7',

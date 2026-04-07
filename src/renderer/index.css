@@ -19,6 +19,16 @@
   --color-ctp-success: rgb(var(--ctp-success));
   --color-ctp-accent2: rgb(var(--ctp-accent2));
   --color-ctp-overlay: rgb(var(--ctp-overlay));
+  --color-ctp-overlay0: rgb(var(--ctp-overlay0));
+  --color-ctp-overlay1: rgb(var(--ctp-overlay1));
+
+  /* Catppuccin palette aliases — map raw color names to semantic tokens */
+  --color-ctp-blue: rgb(var(--ctp-accent));
+  --color-ctp-red: rgb(var(--ctp-error));
+  --color-ctp-green: rgb(var(--ctp-success));
+  --color-ctp-peach: rgb(var(--ctp-warning));
+  --color-ctp-mauve: rgb(var(--ctp-accent2));
+  --color-ctp-yellow: rgb(var(--ctp-warning));
 }
 
 @import '@xterm/xterm/css/xterm.css';
@@ -40,6 +50,8 @@
   --ctp-error: 243 139 168;
   --ctp-info: 137 180 250;
   --ctp-success: 166 227 161;
+  --ctp-overlay0: 108 112 134;
+  --ctp-overlay1: 127 132 156;
 
   /* Orchestrator / model badge colors — space-separated RGB for alpha support.
      Theme plugins can override these to customize badge appearance. */

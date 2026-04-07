@@ -22,6 +22,8 @@ export const nord: ThemeDefinition = {
     success: '#a3be8c',
     accent2: '#5e81ac',
     overlay: '#616e88',
+    overlay0: '#4c566a',
+    overlay1: '#616e88',
   },
   hljs: {
     keyword: '#81a1c1',
