@@ -241,5 +241,24 @@ describe('blueprint-handlers', () => {
       expect(result).toBe(false);
       expect(fsp.unlink).not.toHaveBeenCalled();
     });
+
+    it('returns false when file does not exist (realpath fails)', async () => {
+      vi.mocked(fsp.realpath).mockRejectedValueOnce(new Error('ENOENT'));
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, '/tmp/proj/.clubhouse/blueprints/gone.json');
+      expect(result).toBe(false);
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('rejects symlink resolving outside blueprints dir', async () => {
+      // Symlink inside blueprints dir that resolves to outside
+      vi.mocked(fsp.realpath).mockResolvedValueOnce('/etc/shadow');
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, '/tmp/proj/.clubhouse/blueprints/symlink.json');
+      expect(result).toBe(false);
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
   });
 });
