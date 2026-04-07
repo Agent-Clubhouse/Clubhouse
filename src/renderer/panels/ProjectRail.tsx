@@ -66,7 +66,7 @@ function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
         <span>Project Settings</span>
       </button>
       <button
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-surface-1 hover:text-red-300 transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ctp-error hover:bg-surface-1 hover:text-ctp-error/80 transition-colors cursor-pointer"
         onClick={(e) => { e.stopPropagation(); onCloseProject(); onClose(); }}
         data-testid="ctx-close-project"
       >

@@ -459,7 +459,7 @@ describe('ProjectRail host switching', () => {
     render(<ProjectRail />);
     const onlineDot = screen.getByTestId('host-status-sat-1');
     const offlineDot = screen.getByTestId('host-status-sat-2');
-    expect(onlineDot.className).toContain('bg-emerald-500');
+    expect(onlineDot.className).toContain('bg-ctp-success');
     expect(offlineDot.className).toContain('bg-surface-2');
   });
 

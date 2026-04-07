@@ -54,7 +54,7 @@ export const SatelliteDisconnectedOverlay = React.memo(function SatelliteDisconn
           </button>
         ) : (
           <div className="mt-3 flex items-center justify-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <div className="w-1.5 h-1.5 rounded-full bg-ctp-warning animate-pulse" />
             <span className="text-xs text-ctp-overlay0">Reconnecting</span>
           </div>
         )}

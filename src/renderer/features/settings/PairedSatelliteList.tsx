@@ -10,9 +10,9 @@ interface Props {
 
 function StatusDot({ state }: { state: SatelliteConnection['state'] }) {
   const colors: Record<string, string> = {
-    connected: 'bg-emerald-500',
-    connecting: 'bg-amber-500 animate-pulse',
-    discovering: 'bg-cyan-500 animate-pulse',
+    connected: 'bg-ctp-success',
+    connecting: 'bg-ctp-warning animate-pulse',
+    discovering: 'bg-ctp-info animate-pulse',
     disconnected: 'bg-surface-2',
   };
   return <span className={`w-2 h-2 rounded-full ${colors[state] || 'bg-surface-2'}`} />;
