@@ -47,4 +47,16 @@ describe('validateCommandPrefix', () => {
   it('rejects exclamation marks', () => {
     expect(() => validateCommandPrefix('!history')).toThrow('disallowed shell metacharacters');
   });
+
+  it('rejects newlines', () => {
+    expect(() => validateCommandPrefix('cmd\nrm -rf /')).toThrow('disallowed shell metacharacters');
+  });
+
+  it('rejects carriage returns', () => {
+    expect(() => validateCommandPrefix('cmd\r\nrm -rf /')).toThrow('disallowed shell metacharacters');
+  });
+
+  it('rejects null bytes', () => {
+    expect(() => validateCommandPrefix('cmd\0evil')).toThrow('disallowed shell metacharacters');
+  });
 });

@@ -16,6 +16,7 @@ vi.mock('fs/promises', () => ({
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
+  execFileSync: vi.fn(() => { throw new Error('not found'); }),
   execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb?: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
     if (cb) cb(new Error('not found'), { stdout: '', stderr: '' });
     return { stdout: '', stderr: '' };
@@ -28,7 +29,7 @@ vi.mock('../util/shell', () => ({
 }));
 
 import * as fs from 'fs';
-import { execSync, execFile } from 'child_process';
+import { execSync, execFileSync, execFile } from 'child_process';
 import * as fsp from 'fs/promises';
 import { ClaudeCodeProvider } from './claude-code-provider';
 import { CopilotCliProvider } from './copilot-cli-provider';
@@ -982,7 +983,11 @@ describe('Provider integration tests', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
       // But shell `which` finds it
-      vi.mocked(execSync).mockReturnValue('/custom/path/claude\n');
+      if (process.platform === 'win32') {
+        vi.mocked(execSync).mockReturnValue('/custom/path/claude\n');
+      } else {
+        vi.mocked(execFileSync).mockReturnValue('/custom/path/claude\n');
+      }
       // existsSync needs to return true for the which result
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         return String(p) === '/custom/path/claude';
@@ -991,7 +996,6 @@ describe('Provider integration tests', () => {
       const provider = new ClaudeCodeProvider();
       const { binary } = await provider.buildSpawnCommand({ cwd: '/p' });
       expect(binary).toBe('/custom/path/claude');
-      expect(vi.mocked(execSync)).toHaveBeenCalled();
     });
   });
 

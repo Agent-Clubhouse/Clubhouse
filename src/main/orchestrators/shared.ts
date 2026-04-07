@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { app } from 'electron';
 import { getShellEnvironment } from '../util/shell';
 import type { LaunchWrapperConfig } from '../../shared/types';
@@ -95,7 +95,7 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
         if (result && fs.existsSync(result)) return cacheHit(result);
       } else {
         const shell = process.env.SHELL || '/bin/zsh';
-        const raw = execSync(`${shell} -ilc 'which ${name}'`, {
+        const raw = execFileSync(shell, ['-ilc', `which ${name}`], {
           encoding: 'utf-8',
           timeout: 5000,
         }).trim();
