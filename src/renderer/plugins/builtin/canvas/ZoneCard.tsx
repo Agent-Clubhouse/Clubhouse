@@ -62,7 +62,7 @@ export const ZoneCard = React.memo(function ZoneCard({ zone, mcpEnabled, dragOff
         ...(dragOffset && {
           transform: `translate(${dragOffset.dx}px, ${dragOffset.dy}px)`,
           willChange: 'transform',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--ctp-blue, #89b4fa)',
+          boxShadow: 'var(--shadow-elevation), 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px rgb(var(--ctp-accent))',
         }),
       }}
       data-testid={`zone-card-${zone.id}`}

@@ -53,7 +53,7 @@ export function WireDragOverlay({ wireDrag, views }: WireDragOverlayProps) {
       <path
         d={pathStr}
         fill="none"
-        stroke={hoveredValid ? 'var(--ctp-green, #a6e3a1)' : 'var(--ctp-overlay1, #7f849c)'}
+        stroke={hoveredValid ? 'rgb(var(--ctp-success))' : 'rgb(var(--ctp-overlay1))'}
         strokeWidth={2}
         strokeDasharray={hoveredValid ? 'none' : '6 4'}
         strokeLinecap="round"
@@ -63,7 +63,7 @@ export function WireDragOverlay({ wireDrag, views }: WireDragOverlayProps) {
         cx={toX}
         cy={toY}
         r={4}
-        fill={hoveredValid ? 'var(--ctp-green, #a6e3a1)' : 'var(--ctp-overlay1, #7f849c)'}
+        fill={hoveredValid ? 'rgb(var(--ctp-success))' : 'rgb(var(--ctp-overlay1))'}
       />
 
       {/* Target highlights */}
@@ -80,7 +80,7 @@ export function WireDragOverlay({ wireDrag, views }: WireDragOverlayProps) {
             height={v.size.height + 4}
             rx={10}
             fill="none"
-            stroke={hoveredValid ? 'var(--ctp-green, #a6e3a1)' : 'var(--ctp-red, #f38ba8)'}
+            stroke={hoveredValid ? 'rgb(var(--ctp-success))' : 'rgb(var(--ctp-error))'}
             strokeWidth={2}
             opacity={0.8}
           />
