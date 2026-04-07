@@ -270,7 +270,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
             // Quick agent avatar (lightning icon)
             React.createElement('div', {
               className: 'w-8 h-8 rounded-full flex items-center justify-center border-2 flex-shrink-0',
-              style: { borderColor: '#6c7086' },
+              style: { borderColor: 'rgb(var(--ctp-overlay0))' },
             },
               React.createElement('div', {
                 className: 'w-6 h-6 rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0 text-[10px]',
@@ -691,11 +691,11 @@ function TimelineSection({ events, playback }: {
         const left = events.length > 1
           ? (idx / (events.length - 1)) * 100
           : 50;
-        const color = event.type === 'tool_use' ? '#fab387' // peach
-          : event.type === 'assistant_message' ? '#89b4fa' // blue
-          : event.type === 'user_message' ? '#a6e3a1' // green
-          : event.type === 'result' ? '#cba6f7' // mauve
-          : '#585b70'; // surface2
+        const color = event.type === 'tool_use' ? 'rgb(var(--ctp-warning))' // peach/warning
+          : event.type === 'assistant_message' ? 'rgb(var(--ctp-accent))' // accent
+          : event.type === 'user_message' ? 'rgb(var(--ctp-success))' // success
+          : event.type === 'result' ? 'rgb(var(--ctp-accent2))' // accent2
+          : 'rgb(var(--ctp-surface2))'; // surface2
         return React.createElement('div', {
           key: event.id,
           className: 'absolute top-1 w-1 h-2 rounded-full',
