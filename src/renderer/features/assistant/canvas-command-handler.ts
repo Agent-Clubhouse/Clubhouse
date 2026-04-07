@@ -818,9 +818,9 @@ export function initCanvasCommandHandler(): (() => void) | undefined {
 
       sendResult(request.callId, result);
 
-      // Auto-save after other mutating commands (fire-and-forget is fine here)
+      // Auto-save after other mutating commands
       if (MUTATING_CANVAS_COMMANDS.has(request.command) && result.success && request.command !== 'add_canvas') {
-        persistCanvas(request.args.project_id as string | undefined);
+        await persistCanvas(request.args.project_id as string | undefined);
       }
     } catch (err) {
       console.error('[assistant] Canvas command error:', request.command, err);
