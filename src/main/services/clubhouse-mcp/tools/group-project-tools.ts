@@ -17,6 +17,7 @@ import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-mess
 import * as annexEventBus from '../../annex-event-bus';
 import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
+import { requireString, optionalString, optionalNumber } from './validation';
 
 /** Resolve agent status for a member entry. */
 function resolveAgentStatus(agentId: string): 'connected' | 'sleeping' {
@@ -118,8 +119,8 @@ export function registerGroupProjectTools(): void {
         required: ['topic', 'body'],
       },
     handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const topic = args.topic as string;
-      const body = args.body as string;
+      const topic = requireString(args, 'topic');
+      const body = requireString(args, 'body');
 
       if (!topic || !body) {
         return {
@@ -179,7 +180,7 @@ export function registerGroupProjectTools(): void {
         },
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const since = args.since as string | undefined;
+      const since = optionalString(args, 'since');
       const board = getBulletinBoard(targetId);
       const digest = await board.getDigest(since);
       return {
@@ -218,15 +219,15 @@ export function registerGroupProjectTools(): void {
         required: ['topic'],
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const topic = args.topic as string;
+      const topic = requireString(args, 'topic');
       if (!topic) {
         return {
           content: [{ type: 'text', text: 'topic is required.' }],
           isError: true,
         };
       }
-      const since = args.since as string | undefined;
-      const limit = args.limit as number | undefined;
+      const since = optionalString(args, 'since');
+      const limit = optionalNumber(args, 'limit');
       const board = getBulletinBoard(targetId);
       const messages = await board.getTopicMessages(topic, since, limit);
       return {
@@ -321,8 +322,8 @@ export function registerGroupProjectTools(): void {
         required: ['target_agent_id', 'message'],
       },
     handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const targetAgentId = args.target_agent_id as string;
-      const message = args.message as string;
+      const targetAgentId = requireString(args, 'target_agent_id');
+      const message = requireString(args, 'message');
       if (!targetAgentId || !message) {
         return { content: [{ type: 'text', text: 'Both target_agent_id and message are required.' }], isError: true };
       }
@@ -383,7 +384,7 @@ export function registerGroupProjectTools(): void {
         required: ['message'],
       },
     handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const message = args.message as string;
+      const message = requireString(args, 'message');
       if (!message) {
         return { content: [{ type: 'text', text: 'message is required.' }], isError: true };
       }
@@ -445,8 +446,8 @@ export function registerGroupProjectTools(): void {
         required: ['target_agent_id'],
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const targetAgentId = args.target_agent_id as string;
-      const message = args.message as string | undefined;
+      const targetAgentId = requireString(args, 'target_agent_id');
+      const message = optionalString(args, 'message');
 
       if (!targetAgentId) {
         return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
@@ -556,7 +557,7 @@ export function registerGroupProjectTools(): void {
         required: ['target_agent_id'],
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const targetAgentId = args.target_agent_id as string;
+      const targetAgentId = requireString(args, 'target_agent_id');
       if (!targetAgentId) {
         return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
       }
@@ -623,7 +624,7 @@ export function registerGroupProjectTools(): void {
         required: ['target_agent_id'],
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const targetAgentId = args.target_agent_id as string;
+      const targetAgentId = requireString(args, 'target_agent_id');
       if (!targetAgentId) {
         return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
       }

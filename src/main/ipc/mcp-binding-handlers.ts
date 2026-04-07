@@ -27,6 +27,18 @@ function assertAgentRegistered(agentId: string): void {
   }
 }
 
+/** Valid values for BindingTargetKind. */
+const VALID_TARGET_KINDS = new Set<BindingTargetKind>([
+  'browser', 'agent', 'terminal', 'group-project', 'agent-queue', 'plugin', 'assistant',
+]);
+
+/** Validate that a targetKind string is a known BindingTargetKind. */
+function assertValidTargetKind(kind: string): asserts kind is BindingTargetKind {
+  if (!VALID_TARGET_KINDS.has(kind as BindingTargetKind)) {
+    throw new Error(`Invalid targetKind "${kind}". Must be one of: ${[...VALID_TARGET_KINDS].join(', ')}`);
+  }
+}
+
 /**
  * Verify the IPC caller is an application window, not a webview or detached WebContents.
  * Prevents webview-hosted content (e.g. browser plugin pages) from calling binding APIs.
@@ -84,6 +96,7 @@ export function registerMcpBindingHandlers(): void {
       if (!agentRegistry.get(agentId as string)) {
         appLog('core:mcp', 'debug', 'Creating binding for sleeping agent', { meta: { agentId } });
       }
+      assertValidTargetKind(target.targetKind);
       bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
       appLog('core:mcp', 'info', 'Binding created', {
         meta: {

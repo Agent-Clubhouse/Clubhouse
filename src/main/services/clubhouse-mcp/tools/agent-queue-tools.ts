@@ -8,6 +8,7 @@ import { agentQueueRegistry } from '../../agent-queue-registry';
 import { agentQueueTaskStore } from '../../agent-queue-task-store';
 import { enqueueTask, cancelTask } from '../../agent-queue-runner';
 import type { McpToolResult } from '../types';
+import { requireString, optionalString } from './validation';
 
 /** Register all agent-queue tool templates. */
 export function registerAgentQueueTools(): void {
@@ -35,7 +36,7 @@ export function registerAgentQueueTools(): void {
         required: ['mission'],
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const mission = args.mission as string;
+      const mission = requireString(args, 'mission');
       if (!mission) {
         return {
           content: [{ type: 'text', text: 'mission is required.' }],
@@ -104,7 +105,7 @@ export function registerAgentQueueTools(): void {
         required: ['task_id'],
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const taskId = args.task_id as string;
+      const taskId = requireString(args, 'task_id');
       if (!taskId) {
         return {
           content: [{ type: 'text', text: 'task_id is required.' }],
@@ -173,7 +174,7 @@ export function registerAgentQueueTools(): void {
         },
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const statusFilter = args.status_filter as string | undefined;
+      const statusFilter = optionalString(args, 'status_filter');
 
       let summaries = await agentQueueTaskStore.listTaskSummaries(targetId);
       if (statusFilter) {
@@ -214,7 +215,7 @@ export function registerAgentQueueTools(): void {
         required: ['task_id'],
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const taskId = args.task_id as string;
+      const taskId = requireString(args, 'task_id');
       if (!taskId) {
         return {
           content: [{ type: 'text', text: 'task_id is required.' }],

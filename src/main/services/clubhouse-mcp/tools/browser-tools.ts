@@ -8,6 +8,7 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
+import { requireString, optionalString, numberWithDefault, stringWithDefault } from './validation';
 
 /**
  * Read-only expressions that are safe to auto-allow without user confirmation.
@@ -98,7 +99,7 @@ async function ensureDebuggerAttached(wc: Electron.WebContents): Promise<void> {
         const args = (params.args as Array<{ type: string; value?: unknown; description?: string }>) || [];
         const text = args.map(a => a.description || String(a.value ?? '')).join(' ');
         buffer.push({
-          level: params.type as string,
+          level: typeof params.type === 'string' ? params.type : String(params.type ?? 'unknown'),
           text,
           timestamp: Date.now(),
         });
@@ -181,7 +182,7 @@ export function registerBrowserTools(): void {
     },
     handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
-    const url = args.url as string;
+    const url = requireString(args, 'url');
     if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
       return errorResult('URL must start with http:// or https://');
     }
@@ -250,7 +251,7 @@ export function registerBrowserTools(): void {
 
     await ensureDebuggerAttached(wc);
     const buffer = consoleBuffers.get(wc.id) || [];
-    const limit = Math.min(Math.max(Math.floor((args.limit as number) || 50), 1), 500);
+    const limit = Math.min(Math.max(Math.floor(numberWithDefault(args, 'limit', 50)), 1), 500);
     const entries = buffer.slice(-limit);
     return textResult(JSON.stringify(entries, null, 2));
     },
@@ -272,7 +273,7 @@ export function registerBrowserTools(): void {
     },
     handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
-    const selector = args.selector as string;
+    const selector = requireString(args, 'selector');
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
 
@@ -320,8 +321,8 @@ export function registerBrowserTools(): void {
     },
     handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
-    const selector = args.selector as string;
-    const text = args.text as string;
+    const selector = requireString(args, 'selector');
+    const text = requireString(args, 'text');
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
 
@@ -367,7 +368,7 @@ export function registerBrowserTools(): void {
     },
     handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
-    const expression = args.expression as string;
+    const expression = requireString(args, 'expression');
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
 
@@ -431,7 +432,7 @@ export function registerBrowserTools(): void {
     },
     handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
-    const selector = (args.selector as string) || 'body';
+    const selector = stringWithDefault(args, 'selector', 'body');
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
 
@@ -473,7 +474,7 @@ export function registerBrowserTools(): void {
     },
     handler: async (targetId, agentId, args) => {
     assertAgentBoundToWidget(agentId, targetId);
-    const depth = Math.min(Math.max(Math.floor((args.depth as number) || 5), 1), 10);
+    const depth = Math.min(Math.max(Math.floor(numberWithDefault(args, 'depth', 5)), 1), 10);
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
 

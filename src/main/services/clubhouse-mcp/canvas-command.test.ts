@@ -109,24 +109,24 @@ describe('canvas-command (with CommandRegistry)', () => {
       expect(result).toEqual({ success: true, data: { canvas_id: 'c1' } });
     });
 
-    it('falls back to direct bridge call for unregistered commands', async () => {
-      // Register handler but don't register the custom command
+    it('rejects unknown commands not in the allowlist', async () => {
       registerCanvasCommandHandler();
 
-      const promise = sendCanvasCommand('custom_command', { foo: 'bar' });
+      const result = await sendCanvasCommand('malicious_command', { foo: 'bar' });
 
-      expect(mockSend).toHaveBeenCalledTimes(1);
-      const [, payload] = mockSend.mock.calls[0];
-      expect(payload.command).toBe('custom_command');
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Unknown canvas command');
+      expect(result.error).toContain('malicious_command');
+      expect(mockSend).not.toHaveBeenCalled();
+    });
 
-      // Resolve via IPC
-      resultListener!(null, {
-        callId: payload.callId,
-        result: { success: true },
-      });
+    it('lists allowed commands in the error message for unknown commands', async () => {
+      registerCanvasCommandHandler();
 
-      const result = await promise;
-      expect(result.success).toBe(true);
+      const result = await sendCanvasCommand('drop_tables', {});
+
+      expect(result.error).toContain('add_canvas');
+      expect(result.error).toContain('remove_view');
     });
   });
 

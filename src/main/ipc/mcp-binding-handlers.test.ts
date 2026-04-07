@@ -214,6 +214,22 @@ describe('SEC-06: MCP binding IPC authorization', () => {
       expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', target);
     });
 
+    it('rejects bind with invalid targetKind', () => {
+      mockGet.mockReturnValue(undefined);
+      const handler = getHandler(IPC.MCP_BINDING.BIND);
+      const target = { targetId: 'w1', targetKind: 'malicious-kind', label: 'Widget' };
+      expect(() => handler(fakeEvent, 'agent-1', target)).toThrow(/Invalid targetKind/);
+      expect(bindingManager.bind).not.toHaveBeenCalled();
+    });
+
+    it('rejects bind with empty targetKind', () => {
+      mockGet.mockReturnValue(undefined);
+      const handler = getHandler(IPC.MCP_BINDING.BIND);
+      const target = { targetId: 'w1', targetKind: '', label: 'Widget' };
+      expect(() => handler(fakeEvent, 'agent-1', target)).toThrow(/Invalid targetKind/);
+      expect(bindingManager.bind).not.toHaveBeenCalled();
+    });
+
     it('rejects bind from non-app-window sender (webview)', () => {
       mockFromWebContents.mockReturnValue(null as any);
       mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
