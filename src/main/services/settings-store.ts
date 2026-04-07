@@ -74,7 +74,7 @@ export function createSettingsStore<T>(
     const serialized = JSON.stringify(snapshot, null, 2);
     const writeTask = pendingWrite
       .catch((_err): void => {})
-      .then(() => fs.promises.writeFile(filePath, serialized, { encoding: 'utf-8', mode: options?.mode }));
+      .then(() => fs.promises.writeFile(filePath, serialized, options?.mode != null ? { encoding: 'utf-8', mode: options.mode } : 'utf-8'));
     pendingWrite = writeTask;
     return writeTask;
   }

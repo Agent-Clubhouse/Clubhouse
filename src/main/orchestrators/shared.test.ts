@@ -13,6 +13,7 @@ vi.mock('fs', () => ({
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
+  execFileSync: vi.fn(() => { throw new Error('not found'); }),
 }));
 
 vi.mock('../util/shell', () => ({
@@ -20,7 +21,7 @@ vi.mock('../util/shell', () => ({
 }));
 
 import * as fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { findBinaryInPath, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper } from './shared';
 import type { LaunchWrapperConfig } from '../../shared/types';
 
@@ -31,6 +32,7 @@ describe('shared orchestrator utilities', () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
     vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
+    vi.mocked(execFileSync).mockImplementation(() => { throw new Error('not found'); });
   });
 
   describe('findBinaryInPath', () => {
@@ -39,7 +41,11 @@ describe('shared orchestrator utilities', () => {
         ? 'C:\\Program Files\\cli\\claude.exe\r\n'
         : '/usr/local/bin/claude\n';
       const expected = shellResult.trim().split(/\r?\n/)[0].trim();
-      vi.mocked(execSync).mockReturnValue(shellResult);
+      if (process.platform === 'win32') {
+        vi.mocked(execSync).mockReturnValue(shellResult);
+      } else {
+        vi.mocked(execFileSync).mockReturnValue(shellResult);
+      }
       vi.mocked(fs.existsSync).mockImplementation((p) => p === expected);
       const result = findBinaryInPath(['claude'], []);
       expect(result).toBe(expected);
@@ -49,7 +55,7 @@ describe('shared orchestrator utilities', () => {
       if (process.platform === 'win32') return; // Unix-only test
       // Simulates shell startup messages (e.g., nvm loading) appearing before `which` output
       const shellOutput = 'Loading nvm...\nnvm loaded\n/home/user/.nvm/versions/node/v20/bin/codex\n';
-      vi.mocked(execSync).mockReturnValue(shellOutput);
+      vi.mocked(execFileSync).mockReturnValue(shellOutput);
       vi.mocked(fs.existsSync).mockImplementation(
         (p) => p === '/home/user/.nvm/versions/node/v20/bin/codex',
       );
