@@ -609,11 +609,19 @@ function initAnnexLockStateListener(): () => void {
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
+// Track previous cleanup for idempotent re-initialization (HMR safety)
+let previousCleanup: (() => void) | null = null;
+
 /**
  * Initialize all IPC listeners and event handlers.
  * Returns a single cleanup function that tears everything down.
+ * Safe to call multiple times — previous subscriptions are torn down first.
  */
 export function initAppEventBridge(): () => void {
+  // Tear down previous subscriptions to prevent accumulation on re-init
+  previousCleanup?.();
+  previousCleanup = null;
+
   const cleanups: (() => void)[] = [];
 
   cleanups.push(...initWindowListeners());
@@ -642,9 +650,12 @@ export function initAppEventBridge(): () => void {
   }));
   cleanups.push(initToolActivityListener());
 
-  return () => {
+  const teardown = () => {
     for (const cleanup of cleanups) {
       cleanup();
     }
+    previousCleanup = null;
   };
+  previousCleanup = teardown;
+  return teardown;
 }
