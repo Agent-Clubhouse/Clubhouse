@@ -1147,7 +1147,7 @@ describe('FileTree — accessibility', () => {
 
     const treeContainer = container.querySelector('[role="tree"]');
     expect(treeContainer?.className).toContain('focus:ring-1');
-    expect(treeContainer?.className).toContain('focus:ring-ctp-blue/50');
+    expect(treeContainer?.className).toContain('focus:ring-ctp-accent/50');
   });
 
   it('tree items have role="treeitem" and aria attributes', async () => {
@@ -1546,7 +1546,7 @@ describe('FileTree — multi-select', () => {
     await waitFor(() => {
       const pkgNode = container.querySelector('[data-path="/project/package.json"]');
       // Multi-selected items get the blue highlight
-      expect(pkgNode?.className).toMatch(/bg-ctp-blue/);
+      expect(pkgNode?.className).toMatch(/bg-ctp-accent/);
     });
   });
 
@@ -1561,7 +1561,7 @@ describe('FileTree — multi-select', () => {
 
     await waitFor(() => {
       const pkgNode = container.querySelector('[data-path="/project/package.json"]');
-      expect(pkgNode?.className).toMatch(/bg-ctp-blue/);
+      expect(pkgNode?.className).toMatch(/bg-ctp-accent/);
     });
   });
 
@@ -1599,7 +1599,7 @@ describe('FileTree — multi-select', () => {
     await waitFor(() => {
       expect(screen.queryByTitle('2 items selected')).not.toBeInTheDocument();
       const pkgNode = container.querySelector('[data-path="/project/package.json"]');
-      expect(pkgNode?.className).not.toMatch(/bg-ctp-blue/);
+      expect(pkgNode?.className).not.toMatch(/bg-ctp-accent/);
     });
   });
 

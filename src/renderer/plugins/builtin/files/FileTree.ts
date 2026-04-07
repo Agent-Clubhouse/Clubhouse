@@ -300,11 +300,11 @@ const TreeNode = React.memo(function TreeNodeInner({
   const filterMatches = filterMatchInfo.get(node.path);
 
   const bgClass = isDropTarget
-    ? 'bg-ctp-blue/20 text-ctp-text ring-1 ring-inset ring-ctp-blue/50'
+    ? 'bg-ctp-accent/20 text-ctp-text ring-1 ring-inset ring-ctp-accent/50'
     : isSelected
       ? 'bg-surface-1 text-ctp-text font-medium'
       : isMultiSelected
-        ? 'bg-ctp-blue/15 text-ctp-text'
+        ? 'bg-ctp-accent/15 text-ctp-text'
         : isFocused
           ? 'bg-surface-1 text-ctp-text'
           : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text';
@@ -1212,7 +1212,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
 
   return React.createElement('div', {
     ref: containerRef,
-    className: 'flex flex-col h-full bg-ctp-mantle text-ctp-text select-none focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ctp-blue/50',
+    className: 'flex flex-col h-full bg-ctp-mantle text-ctp-text select-none focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ctp-accent/50',
     tabIndex: 0,
     role: 'tree',
     onKeyDown: handleKeyDown,
@@ -1265,7 +1265,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         // Selection count badge
         selectionCount > 1
           ? React.createElement('span', {
-              className: 'text-[10px] text-ctp-blue font-medium mr-auto pl-1',
+              className: 'text-[10px] text-ctp-accent font-medium mr-auto pl-1',
               title: `${selectionCount} items selected`,
             }, `${selectionCount} selected`)
           : null,
@@ -1324,7 +1324,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
             value: filterText,
             onChange: (e: React.ChangeEvent<HTMLInputElement>) => setFilterText(e.target.value),
             onKeyDown: (e: React.KeyboardEvent) => e.stopPropagation(), // prevent tree keyboard nav while typing
-            className: 'w-full bg-surface-0 text-ctp-text placeholder-ctp-subtext0 text-xs rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-ctp-blue/50 pr-5',
+            className: 'w-full bg-surface-0 text-ctp-text placeholder-ctp-subtext0 text-xs rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-ctp-accent/50 pr-5',
             'aria-label': 'Filter files',
           }),
           filterText

@@ -109,14 +109,14 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
                 key={target.id}
                 className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
                   bound
-                    ? 'text-ctp-blue bg-ctp-blue/10 hover:bg-ctp-blue/20'
+                    ? 'text-ctp-accent bg-ctp-accent/10 hover:bg-ctp-accent/20'
                     : 'text-ctp-text hover:bg-surface-1'
                 }`}
                 onClick={() => handleToggle(target)}
                 data-testid={`link-target-${target.id}`}
               >
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  bound ? 'bg-ctp-blue' : 'bg-ctp-overlay0'
+                  bound ? 'bg-ctp-accent' : 'bg-ctp-overlay0'
                 }`} />
                 <span className="truncate">{targetLabel(target)}</span>
                 <span className="text-[10px] text-ctp-overlay0 flex-shrink-0 ml-auto">

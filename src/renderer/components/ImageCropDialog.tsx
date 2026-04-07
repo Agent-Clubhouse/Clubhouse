@@ -249,7 +249,7 @@ export function ImageCropDialog({
             step={ZOOM_STEP}
             value={zoom}
             onChange={handleZoomChange}
-            className="flex-1 accent-ctp-blue h-1"
+            className="flex-1 accent-ctp-accent h-1"
           />
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-ctp-subtext0 flex-shrink-0">
             <circle cx="11" cy="11" r="8" />
@@ -271,8 +271,8 @@ export function ImageCropDialog({
           <button
             onClick={handleConfirm}
             disabled={!image}
-            className="flex-1 px-4 py-2 text-sm rounded-lg bg-ctp-blue text-white
-              hover:bg-ctp-blue/80 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-4 py-2 text-sm rounded-lg bg-ctp-accent text-white
+              hover:bg-ctp-accent/80 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Apply
           </button>

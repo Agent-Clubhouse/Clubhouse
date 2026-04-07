@@ -117,14 +117,14 @@ function CreationForm({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Queue name..."
-        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
+        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
         autoFocus
       />
       {projects.length > 0 && (
         <select
           value={selectedProjectId}
           onChange={(e) => setSelectedProjectId(e.target.value)}
-          className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text focus:outline-none focus:border-ctp-blue"
+          className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text focus:outline-none focus:border-ctp-accent"
         >
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
@@ -136,7 +136,7 @@ function CreationForm({
       <button
         onClick={handleCreate}
         disabled={!name.trim() || creating}
-        className="px-4 py-1.5 text-xs font-medium bg-ctp-blue text-ctp-base rounded-md hover:opacity-90 disabled:opacity-40 transition-opacity"
+        className="px-4 py-1.5 text-xs font-medium bg-ctp-accent text-ctp-base rounded-md hover:opacity-90 disabled:opacity-40 transition-opacity"
       >
         {creating ? 'Creating...' : 'Create Queue'}
       </button>
@@ -265,7 +265,7 @@ function QueueView({
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-ctp-yellow',
   running: 'bg-ctp-green',
-  completed: 'bg-ctp-blue',
+  completed: 'bg-ctp-accent',
   failed: 'bg-ctp-red',
   cancelled: 'bg-ctp-overlay0',
 };
@@ -336,7 +336,7 @@ function QueueSettings({
           value={concurrency}
           onChange={(e) => setConcurrency(e.target.value)}
           onBlur={handleSave}
-          className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+          className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
         />
       </div>
       {enabledOrchestrators.length > 0 && (
@@ -349,7 +349,7 @@ function QueueSettings({
               setModel('');
               void update(queueId, { orchestrator: e.target.value || undefined, model: undefined });
             }}
-            className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+            className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
           >
             {enabledOrchestrators.map((o) => (
               <option key={o.id} value={o.id}>{o.displayName}</option>
@@ -365,7 +365,7 @@ function QueueSettings({
           onChange={(e) => setModel(e.target.value)}
           onBlur={handleSave}
           placeholder="default"
-          className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
+          className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
         />
       </div>
       <div className="flex items-center justify-between">

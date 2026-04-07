@@ -1064,7 +1064,7 @@ export function CanvasWorkspace({
         {/* Selection rectangle (lasso) */}
         {selectionRect && (
           <div
-            className="absolute border-2 border-ctp-blue/60 bg-ctp-blue/10 rounded-sm pointer-events-none"
+            className="absolute border-2 border-ctp-accent/60 bg-ctp-accent/10 rounded-sm pointer-events-none"
             style={{
               left: Math.min(selectionRect.startX, selectionRect.currentX),
               top: Math.min(selectionRect.startY, selectionRect.currentY),
@@ -1087,7 +1087,7 @@ export function CanvasWorkspace({
           const badgeY = primaryView.position.y + multiDragDelta.dy - 8;
           return (
             <div
-              className="absolute pointer-events-none bg-ctp-blue text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
+              className="absolute pointer-events-none bg-ctp-accent text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
               style={{ left: badgeX, top: badgeY, zIndex: 99997 }}
               data-testid="canvas-multi-drag-badge"
             >
@@ -1119,18 +1119,18 @@ export function CanvasWorkspace({
       {/* Blueprint drag-drop overlay */}
       {isBlueprintDragOver && (
         <div
-          className="absolute inset-0 z-[9997] flex items-center justify-center bg-ctp-blue/10 border-2 border-dashed border-ctp-blue/50 pointer-events-none"
+          className="absolute inset-0 z-[9997] flex items-center justify-center bg-ctp-accent/10 border-2 border-dashed border-ctp-accent/50 pointer-events-none"
           data-testid="canvas-blueprint-drop-overlay"
         >
           <div className="text-center">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-ctp-blue/20 flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ctp-blue">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-ctp-accent/20 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ctp-accent">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
             </div>
-            <p className="text-sm text-ctp-blue font-medium">Drop blueprint to import</p>
+            <p className="text-sm text-ctp-accent font-medium">Drop blueprint to import</p>
           </div>
         </div>
       )}
@@ -1351,7 +1351,7 @@ export function CanvasWorkspace({
                       </div>
                       <button
                         onClick={() => item.onUpdateMetadata({ __pinnedToControls: false })}
-                        className="w-4 h-4 flex items-center justify-center rounded text-ctp-blue hover:bg-surface-1 transition-colors flex-shrink-0"
+                        className="w-4 h-4 flex items-center justify-center rounded text-ctp-accent hover:bg-surface-1 transition-colors flex-shrink-0"
                         title="Unpin from toolbar"
                         data-testid={`canvas-unpin-${item.view.id}`}
                       >

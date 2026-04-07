@@ -61,7 +61,7 @@ export function InlineRename({ value, onCommit }: InlineRenameProps) {
         onBlur={handleCommit}
         onKeyDown={handleKeyDown}
         onMouseDown={(e) => e.stopPropagation()}
-        className="text-xs text-ctp-text bg-surface-0 border border-ctp-blue/40 rounded px-1 py-0 outline-none flex-1 min-w-0"
+        className="text-xs text-ctp-text bg-surface-0 border border-ctp-accent/40 rounded px-1 py-0 outline-none flex-1 min-w-0"
         data-testid="inline-rename-input"
       />
     );

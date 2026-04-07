@@ -125,13 +125,13 @@ function CreationForm({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Project name..."
-        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
+        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
         autoFocus
       />
       <button
         onClick={handleCreate}
         disabled={!name.trim() || creating}
-        className="px-4 py-1.5 text-xs font-medium bg-ctp-blue text-ctp-base rounded-md hover:opacity-90 disabled:opacity-40 transition-opacity"
+        className="px-4 py-1.5 text-xs font-medium bg-ctp-accent text-ctp-base rounded-md hover:opacity-90 disabled:opacity-40 transition-opacity"
       >
         {creating ? 'Creating...' : 'Create'}
       </button>
@@ -261,7 +261,7 @@ function ProjectCard({
         {/* Megaphone button */}
         <button
           onClick={() => setShowTapModal(true)}
-          className="p-1 text-ctp-overlay1 hover:text-ctp-blue transition-colors flex-shrink-0"
+          className="p-1 text-ctp-overlay1 hover:text-ctp-accent transition-colors flex-shrink-0"
           title="Broadcast message"
         >
           <MegaphoneIcon size={14} />
@@ -517,7 +517,7 @@ function ExpandedProjectView({
             onChange={(e) => setEditDesc(e.target.value)}
             placeholder="Purpose of this group project..."
             rows={5}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent resize-none"
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -527,7 +527,7 @@ function ExpandedProjectView({
             onChange={(e) => setEditInstr(e.target.value)}
             placeholder="Rules agents must follow..."
             rows={5}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent resize-none"
           />
         </div>
         <div className="flex flex-col justify-between flex-shrink-0 gap-1.5">
@@ -544,7 +544,7 @@ function ExpandedProjectView({
             disabled={!hasUnsavedChanges || saving}
             className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
               hasUnsavedChanges
-                ? 'bg-ctp-blue text-white shadow-md hover:opacity-90'
+                ? 'bg-ctp-accent text-white shadow-md hover:opacity-90'
                 : 'bg-surface-0 text-ctp-overlay0 cursor-default'
             }`}
           >
@@ -557,7 +557,7 @@ function ExpandedProjectView({
       <div className="flex flex-1 min-h-0 border-t border-surface-1">
         {/* Topic Sidebar */}
         <div className="w-36 flex-shrink-0 border-r border-surface-1 overflow-y-auto">
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-ctp-blue/10 text-ctp-blue">
+          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-ctp-accent/10 text-ctp-accent">
             Topics
           </div>
           {/* All virtual topic */}
@@ -565,7 +565,7 @@ function ExpandedProjectView({
             onClick={() => handleTopicClick(ALL_TOPICS_KEY)}
             className={`w-full text-left px-3 py-2 text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
               selectedTopic === ALL_TOPICS_KEY
-                ? 'bg-surface-0 text-ctp-blue border-l-2 border-l-ctp-blue'
+                ? 'bg-surface-0 text-ctp-accent border-l-2 border-l-ctp-accent'
                 : 'text-ctp-subtext1'
             }`}
           >
@@ -579,7 +579,7 @@ function ExpandedProjectView({
               key={t.topic}
               className={`group relative text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
                 selectedTopic === t.topic
-                  ? 'bg-surface-0 text-ctp-blue border-l-2 border-l-ctp-blue'
+                  ? 'bg-surface-0 text-ctp-accent border-l-2 border-l-ctp-accent'
                   : 'text-ctp-subtext1'
               }`}
             >
@@ -650,7 +650,7 @@ function ExpandedProjectView({
                   className="w-full text-left px-3 py-2"
                 >
                   <div className="flex items-center gap-1.5 text-xs">
-                    <span className="bg-ctp-blue/15 text-ctp-blue rounded px-1 py-0.5 text-[10px] font-medium truncate max-w-[80px]">
+                    <span className="bg-ctp-accent/15 text-ctp-accent rounded px-1 py-0.5 text-[10px] font-medium truncate max-w-[80px]">
                       {senderShort(m.sender)}
                     </span>
                     <span className="ml-auto text-[10px] text-ctp-overlay0 flex-shrink-0">
@@ -679,7 +679,7 @@ function ExpandedProjectView({
           {selectedMessage ? (
             <div className="text-xs space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="bg-ctp-blue/15 text-ctp-blue rounded px-1.5 py-0.5 text-[10px] font-medium">
+                <span className="bg-ctp-accent/15 text-ctp-accent rounded px-1.5 py-0.5 text-[10px] font-medium">
                   {selectedMessage.sender}
                 </span>
                 <span className="text-ctp-overlay0">
@@ -781,7 +781,7 @@ function ExpandedHeader({
   );
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-ctp-mantle border-b-2 border-ctp-blue/30">
+    <div className="flex items-center gap-2 px-3 py-2 bg-ctp-mantle border-b-2 border-ctp-accent/30">
       {editing ? (
         <input
           type="text"
@@ -789,13 +789,13 @@ function ExpandedHeader({
           onChange={(e) => setEditName(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleSaveEdit}
-          className="px-2 py-0.5 text-sm font-semibold bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+          className="px-2 py-0.5 text-sm font-semibold bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
           autoFocus
         />
       ) : (
         <button
           onClick={handleStartEdit}
-          className="text-sm font-semibold text-ctp-text hover:text-ctp-blue transition-colors truncate"
+          className="text-sm font-semibold text-ctp-text hover:text-ctp-accent transition-colors truncate"
           title="Click to rename"
         >
           {displayName}
@@ -805,7 +805,7 @@ function ExpandedHeader({
       {/* Retention settings */}
       <button
         onClick={onToggleRetention}
-        className={`p-1 transition-colors flex-shrink-0 ${showRetentionSettings ? 'text-ctp-blue' : 'text-ctp-overlay1 hover:text-ctp-blue'}`}
+        className={`p-1 transition-colors flex-shrink-0 ${showRetentionSettings ? 'text-ctp-accent' : 'text-ctp-overlay1 hover:text-ctp-accent'}`}
         title="Retention settings"
       >
         <GearIcon size={14} />
@@ -813,7 +813,7 @@ function ExpandedHeader({
       {/* Megaphone broadcast */}
       <button
         onClick={onShowTapModal}
-        className="p-1 text-ctp-overlay1 hover:text-ctp-blue transition-colors flex-shrink-0"
+        className="p-1 text-ctp-overlay1 hover:text-ctp-accent transition-colors flex-shrink-0"
         title="Broadcast message"
       >
         <MegaphoneIcon size={14} />
@@ -906,7 +906,7 @@ function ShoulderTapModal({
           <select
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
           >
             <option value="all">Broadcast to all</option>
             {members.map((m) => (
@@ -922,7 +922,7 @@ function ShoulderTapModal({
             type="checkbox"
             checked={includeInstructions}
             onChange={(e) => setIncludeInstructions(e.target.checked)}
-            className="accent-ctp-blue"
+            className="accent-ctp-accent"
             disabled={!projectInstructions.trim()}
           />
           <span className={`text-xs ${projectInstructions.trim() ? 'text-ctp-subtext1' : 'text-ctp-overlay0'}`}>
@@ -937,7 +937,7 @@ function ShoulderTapModal({
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type your message..."
             rows={4}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent resize-none"
             autoFocus
           />
         </div>
@@ -952,7 +952,7 @@ function ShoulderTapModal({
           <button
             onClick={handleSend}
             disabled={(!message.trim() && !includeInstructions) || sending}
-            className="px-3 py-1.5 text-xs font-medium bg-ctp-blue text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
+            className="px-3 py-1.5 text-xs font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             {sending ? 'Sending...' : 'Send'}
           </button>
@@ -999,7 +999,7 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
           min={1}
           value={maxPerTopic}
           onChange={(e) => setMaxPerTopic(Math.max(1, parseInt(e.target.value) || 1))}
-          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
         />
       </label>
       <label className="flex items-center gap-1.5 text-xs text-ctp-subtext1">
@@ -1009,13 +1009,13 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
           min={1}
           value={maxTotal}
           onChange={(e) => setMaxTotal(Math.max(1, parseInt(e.target.value) || 1))}
-          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
         />
       </label>
       <button
         onClick={handleSave}
         disabled={saving}
-        className="px-2 py-0.5 text-[10px] font-medium bg-ctp-blue text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
+        className="px-2 py-0.5 text-[10px] font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
       >
         {saving ? 'Saving...' : 'Save'}
       </button>

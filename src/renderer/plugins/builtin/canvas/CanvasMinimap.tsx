@@ -294,7 +294,7 @@ export function CanvasMinimap({
           return (
             <div
               key={view.id}
-              className="absolute flex items-center justify-center text-ctp-blue pointer-events-none"
+              className="absolute flex items-center justify-center text-ctp-accent pointer-events-none"
               style={{
                 left: rect.x,
                 top: rect.y,
@@ -366,7 +366,7 @@ export function CanvasMinimap({
             onAutoHideChange(e.target.checked);
             if (!e.target.checked) setVisible(true);
           }}
-          className="w-2.5 h-2.5 accent-ctp-blue cursor-pointer"
+          className="w-2.5 h-2.5 accent-ctp-accent cursor-pointer"
           data-testid="minimap-autohide-checkbox"
         />
         <span className="text-[8px] text-ctp-overlay0 leading-none select-none">Auto hide</span>

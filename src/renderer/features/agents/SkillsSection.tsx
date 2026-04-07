@@ -100,7 +100,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
               className={`text-xs px-3 py-1 rounded transition-colors ${
                 saving || (isCreate && !skillName.trim())
                   ? 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                  : 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
+                  : 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
               }`}
             >
               {saving ? 'Saving...' : 'Save'}
@@ -112,7 +112,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
             value={skillName}
             onChange={(e) => setSkillName(e.target.value)}
             placeholder="skill-name (lowercase, hyphens)"
-            className="w-full mb-2 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-blue"
+            className="w-full mb-2 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-accent"
             spellCheck={false}
           />
         )}
@@ -141,7 +141,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
           className={`text-xs px-2 py-1 rounded transition-colors ${
             disabled
               ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
-              : 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
+              : 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
           }`}
         >
           + Skill
@@ -159,7 +159,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
             >
               <button
                 onClick={() => handleEdit(skill.name)}
-                className="text-sm text-ctp-text font-mono truncate hover:text-ctp-blue cursor-pointer transition-colors text-left"
+                className="text-sm text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
                 title="Click to edit"
               >
                 {skill.name}
@@ -171,7 +171,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
                   className={`p-1 transition-colors ${
                     disabled
                       ? 'text-ctp-subtext0/30 cursor-not-allowed'
-                      : 'text-ctp-subtext0 hover:text-ctp-blue cursor-pointer'
+                      : 'text-ctp-subtext0 hover:text-ctp-accent cursor-pointer'
                   }`}
                   title="Edit skill"
                 >

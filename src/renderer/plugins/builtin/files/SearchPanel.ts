@@ -60,7 +60,7 @@ function ToggleButton({ label, active, onClick, title }: {
   return React.createElement('button', {
     className: `px-1 py-0 text-[10px] font-mono rounded border transition-colors ${
       active
-        ? 'bg-surface-1 border-ctp-blue text-ctp-blue'
+        ? 'bg-surface-1 border-ctp-accent text-ctp-accent'
         : 'bg-transparent border-surface-0 text-ctp-subtext0 hover:text-ctp-text hover:border-surface-1'
     }`,
     onClick,
@@ -272,7 +272,7 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
         className: 'flex items-center gap-1 px-2 pb-1',
       },
         React.createElement('div', {
-          className: 'flex-1 flex items-center bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 focus-within:border-ctp-blue transition-colors',
+          className: 'flex-1 flex items-center bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 focus-within:border-ctp-accent transition-colors',
         },
           React.createElement('span', { className: 'text-ctp-subtext0 mr-1 flex-shrink-0' }, SearchIcon),
           React.createElement('input', {
@@ -318,7 +318,7 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
         React.createElement('button', {
           className: `text-[10px] px-1 rounded transition-colors ${
             showFilters
-              ? 'text-ctp-blue'
+              ? 'text-ctp-accent'
               : 'text-ctp-subtext0 hover:text-ctp-text'
           }`,
           onClick: () => setShowFilters(!showFilters),
@@ -332,14 +332,14 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
       },
         React.createElement('input', {
           type: 'text',
-          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-blue transition-colors',
+          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-accent transition-colors',
           placeholder: 'Include (e.g. src/**/*.ts)',
           value: includePattern,
           onChange: (e: React.ChangeEvent<HTMLInputElement>) => setIncludePattern(e.target.value),
         }),
         React.createElement('input', {
           type: 'text',
-          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-blue transition-colors',
+          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-accent transition-colors',
           placeholder: 'Exclude (e.g. dist,*.min.js)',
           value: excludePattern,
           onChange: (e: React.ChangeEvent<HTMLInputElement>) => setExcludePattern(e.target.value),

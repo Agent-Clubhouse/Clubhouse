@@ -96,7 +96,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
               className={`text-xs px-3 py-1 rounded transition-colors ${
                 saving || (isCreate && !skillName.trim())
                   ? 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                  : 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
+                  : 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
               }`}
             >
               {saving ? 'Saving...' : 'Save'}
@@ -108,7 +108,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
             value={skillName}
             onChange={(e) => setSkillName(e.target.value)}
             placeholder="skill-name (lowercase, hyphens)"
-            className="w-full mb-2 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-blue"
+            className="w-full mb-2 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-accent"
             spellCheck={false}
           />
         )}
@@ -133,7 +133,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
         </div>
         <button
           onClick={handleCreate}
-          className="text-xs px-2 py-1 rounded transition-colors bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer"
+          className="text-xs px-2 py-1 rounded transition-colors bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer"
         >
           + Skill
         </button>
@@ -150,7 +150,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
             >
               <button
                 onClick={() => handleEdit(skill.name)}
-                className="text-sm text-ctp-text font-mono truncate hover:text-ctp-blue cursor-pointer transition-colors text-left"
+                className="text-sm text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
                 title="Click to edit"
               >
                 {skill.name}
@@ -158,7 +158,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
               <div className="flex gap-1 flex-shrink-0 ml-2">
                 <button
                   onClick={() => handleEdit(skill.name)}
-                  className="text-ctp-subtext0 hover:text-ctp-blue p-1 cursor-pointer transition-colors"
+                  className="text-ctp-subtext0 hover:text-ctp-accent p-1 cursor-pointer transition-colors"
                   title="Edit skill"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

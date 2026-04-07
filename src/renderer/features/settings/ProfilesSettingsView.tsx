@@ -250,8 +250,8 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
         <button
           onClick={handleSave}
           disabled={!name.trim()}
-          className="px-3 py-1.5 text-xs rounded-lg bg-ctp-blue text-white
-            hover:bg-ctp-blue/80 cursor-pointer transition-colors disabled:opacity-50"
+          className="px-3 py-1.5 text-xs rounded-lg bg-ctp-accent text-white
+            hover:bg-ctp-accent/80 cursor-pointer transition-colors disabled:opacity-50"
         >
           Save
         </button>
@@ -375,8 +375,8 @@ export function ProfilesSettingsView() {
         <button
           onClick={handleCreate}
           disabled={editingId !== null}
-          className="px-4 py-2 text-sm rounded-lg bg-ctp-blue text-white
-            hover:bg-ctp-blue/80 cursor-pointer transition-colors disabled:opacity-50"
+          className="px-4 py-2 text-sm rounded-lg bg-ctp-accent text-white
+            hover:bg-ctp-accent/80 cursor-pointer transition-colors disabled:opacity-50"
         >
           + New Profile
         </button>

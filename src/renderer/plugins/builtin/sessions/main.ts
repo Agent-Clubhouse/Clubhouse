@@ -240,7 +240,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
                       ),
                     ),
                     idx === 0 && React.createElement('span', {
-                      className: 'text-[9px] text-ctp-blue',
+                      className: 'text-[9px] text-ctp-accent',
                     }, 'latest'),
                   ),
                 ),
@@ -667,7 +667,7 @@ function TimelineSection({ events, playback }: {
           key: speed,
           className: `px-1.5 py-0.5 text-[10px] rounded cursor-pointer transition-colors ${
             playback.speed === speed
-              ? 'bg-ctp-blue text-ctp-base font-medium'
+              ? 'bg-ctp-accent text-ctp-base font-medium'
               : 'bg-surface-0 text-ctp-subtext0 hover:bg-surface-1'
           }`,
           onClick: () => sessionsState.setPlaybackSpeed(speed),
@@ -782,7 +782,7 @@ function EventList({ events, totalEvents, playback, onLoadMore, listRef }: {
         'data-event-index': idx,
         className: `w-full text-left px-2 py-1.5 text-xs rounded cursor-pointer transition-colors mb-0.5 ${
           isActive
-            ? 'bg-surface-1 border-l-2 border-ctp-blue'
+            ? 'bg-surface-1 border-l-2 border-ctp-accent'
             : 'hover:bg-surface-0'
         }`,
         onClick: () => sessionsState.setPlaybackIndex(idx),

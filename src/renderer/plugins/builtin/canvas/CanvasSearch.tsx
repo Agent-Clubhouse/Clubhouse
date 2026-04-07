@@ -181,7 +181,7 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search cards…"
-            className="w-48 h-6 pl-6 pr-2 text-xs bg-surface-0 border border-surface-1 rounded text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:border-ctp-blue/50"
+            className="w-48 h-6 pl-6 pr-2 text-xs bg-surface-0 border border-surface-1 rounded text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:border-ctp-accent/50"
             data-testid="canvas-search-input"
           />
           <svg

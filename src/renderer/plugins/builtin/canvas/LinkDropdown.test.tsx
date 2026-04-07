@@ -98,7 +98,7 @@ describe('LinkDropdown', () => {
     );
 
     const target = getByTestId('link-target-b1');
-    expect(target.className).toContain('text-ctp-blue');
+    expect(target.className).toContain('text-ctp-accent');
   });
 
   it('calls bind when clicking unbound target', async () => {
