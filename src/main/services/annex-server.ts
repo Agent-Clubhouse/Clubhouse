@@ -2609,13 +2609,20 @@ export function start(): void {
       });
       if (authType === 'mtls') {
         const disconnectedFingerprint = wsPeerFingerprints.get(ws);
-        // Only release lock if the disconnecting controller is the lock owner
-        // (or if no other mTLS connections remain as a safety fallback)
+        // Check if any other mTLS connections are still open
         const hasMtlsClient = Array.from(wss?.clients || []).some(
           (client) => client !== ws && client.readyState === WebSocket.OPEN && wsAuthTypes.get(client) === 'mtls',
         );
+        // Release lock if no mTLS clients remain, or if the lock owner disconnected
         const isLockOwner = !sessionPauseOwner || sessionPauseOwner === disconnectedFingerprint;
-        if (!hasMtlsClient || isLockOwner) {
+        if (!hasMtlsClient) {
+          sessionPaused = false;
+          sessionPauseOwner = null;
+          broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
+            locked: false,
+            remainingMs: 0,
+          });
+        } else if (isLockOwner) {
           sessionPaused = false;
           sessionPauseOwner = null;
           broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
