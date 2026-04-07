@@ -527,7 +527,9 @@ function persistHistory(): void {
     if (items.length > MAX_HISTORY_ITEMS) {
       items = items.slice(-MAX_HISTORY_ITEMS);
     }
-    window.clubhouse.assistant.saveHistory(items).catch(() => {});
+    window.clubhouse.assistant.saveHistory(items).catch((err) => {
+      console.error('Failed to persist assistant history:', err);
+    });
   }, 500);
 }
 
@@ -659,5 +661,7 @@ export function reset(): void {
   setAgentId(null);
   setStatus('idle');
   // Clear persisted history on explicit reset
-  window.clubhouse.assistant.saveHistory([]).catch(() => {});
+  window.clubhouse.assistant.saveHistory([]).catch((err) => {
+    console.error('Failed to clear assistant history:', err);
+  });
 }

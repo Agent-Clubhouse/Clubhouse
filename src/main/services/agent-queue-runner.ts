@@ -96,10 +96,21 @@ async function drainQueue(queueId: string): Promise<void> {
       if (slotsAvailable <= 0) break;
       slotsAvailable--;
       // Fire and forget — don't await to avoid blocking other tasks
-      void startTask(queue.id, task).catch((err) => {
+      void startTask(queue.id, task).catch(async (err) => {
+        const errorMsg = err instanceof Error ? err.message : String(err);
         appLog('core:agent-queue', 'error', 'Failed to start task', {
-          meta: { queueId, taskId: task.id, error: err instanceof Error ? err.message : String(err) },
+          meta: { queueId, taskId: task.id, error: errorMsg },
         });
+        // Mark task as failed so it doesn't block the queue
+        try {
+          await agentQueueTaskStore.updateTask(queueId, task.id, {
+            status: 'failed',
+            errorMessage: errorMsg,
+            completedAt: new Date().toISOString(),
+          });
+        } catch {
+          // Best effort — don't let update failure crash the drain loop
+        }
       });
     }
   } finally {

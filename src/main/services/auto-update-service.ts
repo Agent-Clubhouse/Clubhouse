@@ -408,8 +408,18 @@ async function fetchBestManifest(previewChannel: boolean): Promise<ManifestResul
   // Fetch both in parallel; either may be missing (e.g. v2/latest.json
   // didn't exist until the first stable release after the v2 migration).
   const [stable, preview] = await Promise.all([
-    fetchJSON(appendTelemetryParams(UPDATE_URL)).catch(() => null as UpdateManifest | null),
-    fetchJSON(appendTelemetryParams(PREVIEW_UPDATE_URL)).catch(() => null as UpdateManifest | null),
+    fetchJSON(appendTelemetryParams(UPDATE_URL)).catch((err) => {
+      appLog('update:check', 'warn', 'Stable manifest fetch failed', {
+        meta: { url: UPDATE_URL, error: err instanceof Error ? err.message : String(err) },
+      });
+      return null as UpdateManifest | null;
+    }),
+    fetchJSON(appendTelemetryParams(PREVIEW_UPDATE_URL)).catch((err) => {
+      appLog('update:check', 'warn', 'Preview manifest fetch failed', {
+        meta: { url: PREVIEW_UPDATE_URL, error: err instanceof Error ? err.message : String(err) },
+      });
+      return null as UpdateManifest | null;
+    }),
   ]);
 
   if (!stable && !preview) {
