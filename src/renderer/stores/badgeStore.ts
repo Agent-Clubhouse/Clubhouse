@@ -110,6 +110,13 @@ const _tabBadgeCache = new Map<string, BadgeCacheEntry>();
 const _projectBadgeCache = new Map<string, BadgeCacheEntry>();
 const _appPluginBadgeCache = new Map<string, AppPluginBadgeCacheEntry>();
 
+/** Invalidate all badge caches. Call on every badge mutation. */
+function invalidateBadgeCaches(): void {
+  _tabBadgeCache.clear();
+  _projectBadgeCache.clear();
+  _appPluginBadgeCache.clear();
+}
+
 // ── Store ──────────────────────────────────────────────────────────────
 
 export const useBadgeStore = create<BadgeState>((set, get) => ({
@@ -119,6 +126,7 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
     const id = badgeId(source, target);
     const badge: Badge = { id, source, type, value, target };
     set((s) => ({ badges: { ...s.badges, [id]: badge } }));
+    invalidateBadgeCaches();
   },
 
   clearBadge(id) {
@@ -126,6 +134,7 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
       const { [id]: _, ...rest } = s.badges;
       return { badges: rest };
     });
+    invalidateBadgeCaches();
   },
 
   clearBySource(source) {
@@ -136,6 +145,7 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
       }
       return { badges: next };
     });
+    invalidateBadgeCaches();
   },
 
   clearByTarget(target) {
@@ -146,6 +156,7 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
       }
       return { badges: next };
     });
+    invalidateBadgeCaches();
   },
 
   clearProjectBadges(projectId) {
@@ -157,15 +168,12 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
       }
       return { badges: next };
     });
-    // Evict stale cache entries for this project
-    for (const key of [..._tabBadgeCache.keys()]) {
-      if (key.startsWith(`${projectId}:`)) _tabBadgeCache.delete(key);
-    }
-    _projectBadgeCache.delete(projectId);
+    invalidateBadgeCaches();
   },
 
   clearAll() {
     set({ badges: {} });
+    invalidateBadgeCaches();
   },
 
   getTabBadge(projectId, tabId) {

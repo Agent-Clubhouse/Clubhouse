@@ -126,25 +126,23 @@ export function recordActivity(event: ToolActivityEvent): void {
 
   const existing = activityMap.get(key) ?? { lastForward: 0, lastReverse: 0 };
 
-  if (event.direction === 'forward') {
-    existing.lastForward = event.timestamp;
-  } else {
-    existing.lastReverse = event.timestamp;
-  }
-
-  activityMap.set(key, existing);
+  // Create new object (immutable update) so consumers detect the change
+  const updated = {
+    lastForward: event.direction === 'forward' ? event.timestamp : existing.lastForward,
+    lastReverse: event.direction === 'reverse' ? event.timestamp : existing.lastReverse,
+  };
+  activityMap.set(key, updated);
 
   // For bidirectional wires, the reverse key might also exist
   const reverseKey = wireKeyFromActivity(event.targetId, event.sourceAgentId);
   if (activityMap.has(reverseKey) || reverseKey !== key) {
-    // Also update the reverse key with swapped direction
     const reverseExisting = activityMap.get(reverseKey) ?? { lastForward: 0, lastReverse: 0 };
-    if (event.direction === 'forward') {
-      reverseExisting.lastReverse = event.timestamp;
-    } else {
-      reverseExisting.lastForward = event.timestamp;
-    }
-    activityMap.set(reverseKey, reverseExisting);
+    // Create new object for the reverse key too
+    const reverseUpdated = {
+      lastForward: event.direction === 'reverse' ? event.timestamp : reverseExisting.lastForward,
+      lastReverse: event.direction === 'forward' ? event.timestamp : reverseExisting.lastReverse,
+    };
+    activityMap.set(reverseKey, reverseUpdated);
   }
 
   notifyListeners();

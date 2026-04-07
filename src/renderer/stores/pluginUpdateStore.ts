@@ -163,7 +163,7 @@ export function resetDismissTimer(): void {
 
 /** Listen for plugin update status changes from the main process. */
 export function initPluginUpdateListener(): () => void {
-  return window.clubhouse.marketplace.onPluginUpdatesChanged((status) => {
+  const unsubIpc = window.clubhouse.marketplace.onPluginUpdatesChanged((status) => {
     const store = usePluginUpdateStore.getState();
 
     // Don't overwrite local `updating` state while the renderer is actively
@@ -183,4 +183,8 @@ export function initPluginUpdateListener(): () => void {
       usePluginUpdateStore.setState({ dismissed: false });
     }
   });
+  return () => {
+    unsubIpc();
+    resetDismissTimer();
+  };
 }
