@@ -608,8 +608,10 @@ describe('plugin-loader', () => {
 
       const { appEnabled } = usePluginStore.getState();
       expect(appEnabled).toContain('canvas');
-      // Sub-plugins (group-project, agent-queue) depend on MCP (still
-      // experimental) — they must be enabled manually by the user.
+      // The canvas-flag migration only enables canvas. Sub-plugin defaults are
+      // owned by BASE_DEFAULT_IDS in builtin/index.ts (group-project + sticky-note
+      // are now default-enabled there for fresh installs); the migration path
+      // itself does not add them.
       expect(appEnabled).not.toContain('group-project');
       expect(appEnabled).not.toContain('agent-queue');
     });
