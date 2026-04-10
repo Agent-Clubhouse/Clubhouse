@@ -50,12 +50,25 @@ export const useAppCanvasStore = createCanvasStore();
 // Project-mode canvas stores: one per project, keyed by projectId
 const projectCanvasStores = new Map<string, ReturnType<typeof createCanvasStore>>();
 
+// Stable singleton fallback for callers that resolve a project store with a
+// null/undefined projectId (e.g. transient states during project switching,
+// command palette lookups when no project is active, or pop-out windows that
+// haven't received their context yet). Mission 71: prior to this fix the
+// fallback was `return createCanvasStore()` per call, which made every
+// re-render observe a fresh store with the initial canvas — addCanvas() on
+// the previous resolution was discarded, surfacing as the "+ button does
+// nothing" bug Mason reported.
+let nullProjectFallbackStore: ReturnType<typeof createCanvasStore> | null = null;
+
 export function hasProjectCanvasStore(projectId: string | null): boolean {
   return projectId !== null && projectCanvasStores.has(projectId);
 }
 
 export function getProjectCanvasStore(projectId: string | null): ReturnType<typeof createCanvasStore> {
-  if (!projectId) return createCanvasStore(); // transient fallback
+  if (!projectId) {
+    if (!nullProjectFallbackStore) nullProjectFallbackStore = createCanvasStore();
+    return nullProjectFallbackStore;
+  }
   let store = projectCanvasStores.get(projectId);
   if (!store) {
     store = createCanvasStore();
