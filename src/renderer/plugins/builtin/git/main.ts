@@ -304,6 +304,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const git = useMemo(() => createGitOps(projectPath, projectId), [projectPath, projectId]);
   const [diffData, setDiffData] = useState<{ original: string; modified: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  // Tracks which (file, staged) combo is currently displayed. Used to distinguish
+  // a real file switch (show "Loading diff...") from a background poll refresh
+  // (silently update so the diff doesn't flash).
+  const diffFetchKeyRef = useRef<string | null>(null);
 
   // Dynamic title
   useEffect(() => {
@@ -318,18 +322,44 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     return () => api.window.resetTitle();
   }, [api, selectedFile, selectedCommit]);
 
-  // Fetch diff when file selected from working changes
+  // Fetch diff when file selected from working changes.
+  //
+  // Note: gitInfo is in the deps because we need to read the file's staged
+  // status from it. Each git status poll (every GIT_POLL_INTERVAL_MS) creates
+  // a new gitInfo object and re-runs this effect. To prevent the "Loading
+  // diff..." flash on every poll, we only show the loading state when the
+  // (file, staged) combo actually changes — background refreshes update
+  // diffData silently.
   useEffect(() => {
     if (!selectedFile || (!projectPath && !projectId)) {
       setDiffData(null);
+      setLoading(false);
+      diffFetchKeyRef.current = null;
       return;
     }
-    setLoading(true);
     const file = gitInfo?.status.find((f) => f.path === selectedFile);
     const staged = file?.staged ?? false;
+    const fetchKey = `${selectedFile}|${staged}`;
+    const isFileSwitch = diffFetchKeyRef.current !== fetchKey;
+    diffFetchKeyRef.current = fetchKey;
+    if (isFileSwitch) {
+      setLoading(true);
+      setDiffData(null);
+    }
+    let cancelled = false;
     git.diff(selectedFile, staged)
-      .then((data: { original: string; modified: string }) => { setDiffData(data); setLoading(false); })
-      .catch(() => { setDiffData(null); setLoading(false); });
+      .then((data: { original: string; modified: string }) => {
+        if (cancelled) return;
+        // Only update diffData if it actually changed, to avoid Monaco re-renders.
+        setDiffData((prev) => (prev && prev.original === data.original && prev.modified === data.modified ? prev : data));
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        if (isFileSwitch) setDiffData(null);
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [selectedFile, git, projectPath, projectId, gitInfo]);
 
   // Fetch diff when file selected from commit detail
