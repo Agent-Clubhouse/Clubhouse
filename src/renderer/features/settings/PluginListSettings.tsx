@@ -771,7 +771,8 @@ export function PluginListSettings() {
 
   // Auto-refresh community plugins on mount so the list is always current.
   // Pass active project context so project-scoped plugins re-activate
-  // for the current project (Mission 69).
+  // for the current project (Mission 69). Mount-only effect — capturing
+  // initial activeProjectId is intentional.
   useEffect(() => {
     if (externalPluginsEnabled) {
       const activeProj = activeProjectId
@@ -782,7 +783,6 @@ export function PluginListSettings() {
         activeProjectPath: activeProj?.path,
       }).catch(() => {});
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const isAppContext = settingsContext === 'app';

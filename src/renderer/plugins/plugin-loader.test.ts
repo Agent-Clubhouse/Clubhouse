@@ -2201,13 +2201,6 @@ describe('plugin-loader', () => {
       });
     });
 
-    function simulateRestart(): void {
-      // Drop in-memory plugin state but keep fake storage intact
-      resetPluginStore();
-      _resetActiveContexts();
-      _resetPluginSystemReady();
-    }
-
     /**
      * Mimic what App.tsx does on a project switch: read the per-project
      * enabled list from storage, seed with built-in project IDs only on
