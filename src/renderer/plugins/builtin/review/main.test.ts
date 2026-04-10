@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import React from 'react';
 import { validateBuiltinPlugin } from '../builtin-plugin-testing';
 import { manifest } from './manifest';
 import * as reviewModule from './main';
 import { createMockContext, createMockAPI } from '../../testing';
-import type { AgentInfo, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
+import type { AgentInfo, PluginAgentDetailedStatus, PluginAPI } from '../../../../shared/plugin-types';
 
 function makeAgent(overrides: Partial<AgentInfo> = {}): AgentInfo {
   return {
@@ -253,5 +253,253 @@ describe('FloatingBar layout', () => {
     const agentInfo = container.querySelector('span.flex.items-center.gap-1\\.5');
     expect(agentInfo).not.toBeNull();
     expect(agentInfo!.className).toContain('whitespace-nowrap');
+  });
+
+  // ── Mission 66: arrow positions must NOT shift with agent name length ──
+  //
+  // Strategy: jsdom does not compute layout (offsetLeft/getBoundingClientRect
+  // are 0), so we can't measure actual pixel positions. Instead we verify the
+  // *mechanism* — the agent-info wrapper and the sleep slot must each declare
+  // a fixed inline width that does NOT depend on the variable-width content.
+  // If those slots have stable widths, the arrows around them are pinned.
+  describe('fixed nav slot widths (Mission 66)', () => {
+    function findAgentInfoSlot(container: HTMLElement): HTMLElement {
+      const slot = container.querySelector<HTMLElement>('[data-testid="review-agent-info-slot"]');
+      if (!slot) throw new Error('agent info slot not found');
+      return slot;
+    }
+
+    function findSleepSlot(container: HTMLElement): HTMLElement {
+      const slot = container.querySelector<HTMLElement>('[data-testid="review-sleep-slot"]');
+      if (!slot) throw new Error('sleep slot not found');
+      return slot;
+    }
+
+    function findArrowOrder(container: HTMLElement): string[] {
+      // Walk every focusable button in DOM order and emit a token per type so
+      // we can compare structural ordering without relying on class strings.
+      const buttons = Array.from(container.querySelectorAll('button'));
+      return buttons.map((btn) => {
+        const label = btn.getAttribute('aria-label') ?? '';
+        if (label === 'Previous agent') return 'prev';
+        if (label === 'Next agent') return 'next';
+        if (label === 'Sleep agent') return 'sleep';
+        if (label === 'Agent list') return 'jump';
+        return 'other';
+      });
+    }
+
+    it('agent info slot has identical width regardless of name length', () => {
+      const short = renderBar({ agentName: 'a' });
+      const longName = 'a-very-long-agent-name-that-changes-width';
+      const long = renderBar({ agentName: longName });
+
+      const w1 = findAgentInfoSlot(short.container).style.width;
+      const w2 = findAgentInfoSlot(long.container).style.width;
+
+      // Width must be set (not empty — a real fixed dimension)
+      expect(w1).not.toBe('');
+      // And it must be identical between the two renders
+      expect(w1).toBe(w2);
+
+      short.unmount();
+      long.unmount();
+    });
+
+    it('sleep slot reserves identical width whether agent is running or not', () => {
+      const running = renderBar({ isRunning: true });
+      const notRunning = renderBar({ isRunning: false });
+
+      const w1 = findSleepSlot(running.container).style.width;
+      const w2 = findSleepSlot(notRunning.container).style.width;
+
+      expect(w1).not.toBe('');
+      expect(w1).toBe(w2);
+
+      running.unmount();
+      notRunning.unmount();
+    });
+
+    it('prev arrow appears before agent info, next arrow appears after agent info+sleep slot', () => {
+      const { container } = renderBar({ isRunning: true });
+      const order = findArrowOrder(container);
+
+      // Structural assertion: prev → (no sleep yet) → next → sleep slot is
+      // either between info and next OR adjacent to next, but the prev arrow
+      // is always the first nav button and the next arrow is always before
+      // any non-nav buttons (jump-list).
+      const prevIdx = order.indexOf('prev');
+      const nextIdx = order.indexOf('next');
+      const jumpIdx = order.indexOf('jump');
+
+      expect(prevIdx).toBeGreaterThanOrEqual(0);
+      expect(nextIdx).toBeGreaterThan(prevIdx);
+      expect(jumpIdx).toBeGreaterThan(nextIdx);
+    });
+
+    it('button order is identical for short and long agent names', () => {
+      const short = renderBar({ agentName: 'a' });
+      const long = renderBar({ agentName: 'a-very-long-agent-name-that-changes-width' });
+
+      expect(findArrowOrder(short.container)).toEqual(findArrowOrder(long.container));
+
+      short.unmount();
+      long.unmount();
+    });
+  });
+});
+
+// ── Mission 66: index clamping for the case where the current agent is
+// filtered out (e.g. user sleeps the last visible running agent). The bug
+// was that `agents[currentIndex]` could be undefined for one render before
+// a clamp useEffect ran, leading to a TypeError reading `.id`.
+describe('clampIndex (Mission 66)', () => {
+  it('returns 0 for an empty list', () => {
+    expect(reviewModule.clampIndex(0, 0)).toBe(0);
+    expect(reviewModule.clampIndex(5, 0)).toBe(0);
+  });
+
+  it('returns the index unchanged when within bounds', () => {
+    expect(reviewModule.clampIndex(0, 5)).toBe(0);
+    expect(reviewModule.clampIndex(2, 5)).toBe(2);
+    expect(reviewModule.clampIndex(4, 5)).toBe(4);
+  });
+
+  it('clamps to length-1 when index is out of bounds high', () => {
+    expect(reviewModule.clampIndex(5, 5)).toBe(4);
+    expect(reviewModule.clampIndex(99, 3)).toBe(2);
+  });
+
+  it('clamps a negative index to 0', () => {
+    expect(reviewModule.clampIndex(-1, 5)).toBe(0);
+    expect(reviewModule.clampIndex(-10, 5)).toBe(0);
+  });
+});
+
+describe('MainPanel sleep-last crash (Mission 66)', () => {
+  function StubTerminal({ agentId }: { agentId: string }) {
+    return React.createElement('div', { 'data-testid': `terminal-${agentId}` }, agentId);
+  }
+  function StubSleeping({ agentId }: { agentId: string }) {
+    return React.createElement('div', { 'data-testid': `sleeping-${agentId}` }, agentId);
+  }
+  function StubAvatar({ agentId }: { agentId: string }) {
+    return React.createElement('span', { 'data-testid': `avatar-${agentId}` }, agentId);
+  }
+
+  function makeStatefulApi(initial: AgentInfo[]): {
+    api: PluginAPI;
+    setList: (next: AgentInfo[]) => void;
+  } {
+    let list: AgentInfo[] = initial;
+    const listeners = new Set<() => void>();
+
+    const api = createMockAPI({
+      context: { mode: 'app', projectId: 'p1', projectPath: '/tmp/p1' },
+      agents: {
+        list: () => list,
+        createDurable: async () => '',
+        runQuick: async () => '',
+        kill: async () => {},
+        resume: async () => {},
+        listCompleted: () => [],
+        dismissCompleted: () => {},
+        getDetailedStatus: () => null,
+        getModelOptions: async () => [{ id: 'default', label: 'Default' }],
+        listOrchestrators: () => [],
+        checkOrchestratorAvailability: async () => ({ available: false }),
+        onStatusChange: () => ({ dispose: () => {} }),
+        onAnyChange: (cb: () => void) => {
+          listeners.add(cb);
+          return { dispose: () => listeners.delete(cb) };
+        },
+        listSessions: async () => [],
+        readSessionTranscript: async () => null,
+        getSessionSummary: async () => null,
+        spawnCompanion: (async () => {}) as unknown as PluginAPI['agents']['spawnCompanion'],
+        getCompanionStatus: async () => 'none' as const,
+        getCompanionWorkspace: (async () => {}) as unknown as PluginAPI['agents']['getCompanionWorkspace'],
+      },
+      widgets: {
+        AgentTerminal: StubTerminal,
+        SleepingAgent: StubSleeping,
+        AgentAvatar: StubAvatar,
+        QuickAgentGhost: (() => null) as unknown as PluginAPI['widgets']['QuickAgentGhost'],
+      },
+      settings: {
+        get: <T>(key: string): T | undefined => {
+          if (key === 'include-sleeping') return false as unknown as T;
+          if (key === 'include-remote') return true as unknown as T;
+          if (key === 'needs-attention-only') return false as unknown as T;
+          return undefined;
+        },
+        getAll: () => ({}),
+        set: () => {},
+        onChange: () => ({ dispose: () => {} }),
+      },
+    });
+
+    return {
+      api,
+      setList: (next: AgentInfo[]) => {
+        list = next;
+        listeners.forEach((cb) => cb());
+      },
+    };
+  }
+
+  it('does not crash when the currently selected last agent is filtered out', () => {
+    const a1 = makeAgent({ id: 'a1', name: 'one', status: 'running' });
+    const a2 = makeAgent({ id: 'a2', name: 'two', status: 'running' });
+    const a3 = makeAgent({ id: 'a3', name: 'three', status: 'running' });
+    const { api, setList } = makeStatefulApi([a1, a2, a3]);
+
+    const { container, getAllByLabelText } = render(
+      React.createElement(reviewModule.MainPanel, { api }),
+    );
+
+    // Navigate to the last visible agent (index 2). MainPanel renders two
+    // "Next agent" buttons (the floating-bar chevron and the side arrow);
+    // either one drives the same goNext callback.
+    const nextBtn = getAllByLabelText('Next agent')[0];
+    fireEvent.click(nextBtn);
+    fireEvent.click(nextBtn);
+
+    expect(container.querySelector('[data-testid="terminal-a3"]')).not.toBeNull();
+
+    // Sleep the last agent: it transitions to sleeping. With include-sleeping
+    // off, the filter removes it → length goes 3 → 2. Without the safeIndex
+    // fix, the next render would read agents[2] = undefined and throw.
+    expect(() => {
+      act(() => {
+        setList([a1, a2, { ...a3, status: 'sleeping' }]);
+      });
+    }).not.toThrow();
+
+    // After clamping, render lands on the new last agent (a2)
+    expect(container.querySelector('[data-testid="terminal-a2"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="terminal-a3"]')).toBeNull();
+  });
+
+  it('renders EmptyState when the only visible agent is filtered out', () => {
+    const a1 = makeAgent({ id: 'a1', name: 'only', status: 'running' });
+    const { api, setList } = makeStatefulApi([a1]);
+
+    const { container } = render(
+      React.createElement(reviewModule.MainPanel, { api }),
+    );
+
+    expect(container.querySelector('[data-testid="terminal-a1"]')).not.toBeNull();
+
+    expect(() => {
+      act(() => {
+        setList([{ ...a1, status: 'sleeping' }]);
+      });
+    }).not.toThrow();
+
+    // Empty state has no agent terminal
+    expect(container.querySelector('[data-testid="terminal-a1"]')).toBeNull();
+    // The EmptyState text appears
+    expect(container.textContent).toContain('No active agents');
   });
 });

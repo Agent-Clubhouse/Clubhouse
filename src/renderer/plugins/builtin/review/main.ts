@@ -46,6 +46,18 @@ export function resolveIndex(current: number, length: number, delta: -1 | 1): nu
   return (current + delta + length) % length;
 }
 
+/**
+ * Synchronously clamp an index into the bounds of a list of given length.
+ * Used by MainPanel so that a render which happens *between* the agent list
+ * shrinking and the clamp `useEffect` running cannot read past the array end.
+ */
+export function clampIndex(index: number, length: number): number {
+  if (length <= 0) return 0;
+  if (index < 0) return 0;
+  if (index >= length) return length - 1;
+  return index;
+}
+
 // ── Arrow Button ───────────────────────────────────────────────────────
 
 function ArrowButton({ direction, onClick }: { direction: 'left' | 'right'; onClick: () => void }) {
@@ -211,7 +223,7 @@ export function FloatingBar({
     React.createElement('button', {
       onClick: handler,
       'aria-label': label,
-      className: 'p-1 rounded hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer',
+      className: 'p-1 rounded hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer flex-none',
     },
       React.createElement('svg', {
         width: 14, height: 14, viewBox: '0 0 24 24',
@@ -222,6 +234,13 @@ export function FloatingBar({
 
   const statusText = detailedState ?? agentStatus;
 
+  // Mission 66: nav slot widths must be stable so the prev/next arrow X
+  // positions never shift when agents are navigated through. The agent info
+  // slot has a fixed width and truncates overflow; the sleep slot reserves
+  // the same width whether or not the moon button is rendered.
+  const AGENT_INFO_SLOT_WIDTH = '15rem';
+  const SLEEP_SLOT_WIDTH = '1.75rem';
+
   return React.createElement('div', {
     className: [
       'absolute top-3 left-1/2 -translate-x-1/2 z-20',
@@ -230,41 +249,53 @@ export function FloatingBar({
       'text-xs text-ctp-text select-none whitespace-nowrap',
     ].join(' '),
   },
-    // Left arrow
+    // Left arrow (pinned — flex-none keeps it from shrinking)
     makeMiniArrow(chevronLeft, 'Previous agent', onPrev),
 
-    // Agent info with avatar
-    React.createElement('span', { className: 'flex items-center gap-1.5 whitespace-nowrap' },
+    // Agent info with avatar — fixed-width slot so variable-length names
+    // never push the surrounding arrows. Content centers and truncates.
+    React.createElement('span', {
+      className: 'flex items-center gap-1.5 whitespace-nowrap overflow-hidden flex-none',
+      style: { width: AGENT_INFO_SLOT_WIDTH, justifyContent: 'center' },
+      'data-testid': 'review-agent-info-slot',
+    },
       agentId
         ? React.createElement(AgentAvatar, { agentId, size: 'sm', showStatusRing: true })
         : null,
-      React.createElement('span', { className: 'font-medium' }, agentName),
-      React.createElement('span', { className: 'text-ctp-subtext0' },
+      React.createElement('span', { className: 'font-medium truncate' }, agentName),
+      React.createElement('span', { className: 'text-ctp-subtext0 flex-none' },
         `(${statusText})`,
       ),
-      React.createElement('span', { className: 'text-ctp-subtext0' },
+      React.createElement('span', { className: 'text-ctp-subtext0 flex-none' },
         `${total > 0 ? currentIndex + 1 : 0} of ${total}`,
       ),
     ),
 
-    // Sleep button (moon icon) — only visible when agent is running
-    isRunning && React.createElement('button', {
-      onClick: onSleep,
-      title: 'Sleep agent',
-      'aria-label': 'Sleep agent',
-      'data-testid': 'review-sleep-button',
-      className: 'p-1 rounded hover:bg-blue-500/20 text-ctp-subtext0 hover:text-blue-400 transition-colors cursor-pointer',
+    // Sleep slot — reserves a fixed width whether or not the moon button is
+    // visible, so the right arrow never shifts when isRunning toggles.
+    React.createElement('span', {
+      className: 'flex items-center justify-center flex-none',
+      style: { width: SLEEP_SLOT_WIDTH },
+      'data-testid': 'review-sleep-slot',
     },
-      React.createElement('svg', {
-        width: 14, height: 14, viewBox: '0 0 24 24',
-        fill: 'none', stroke: 'currentColor', strokeWidth: 2,
-        strokeLinecap: 'round',
+      isRunning ? React.createElement('button', {
+        onClick: onSleep,
+        title: 'Sleep agent',
+        'aria-label': 'Sleep agent',
+        'data-testid': 'review-sleep-button',
+        className: 'p-1 rounded hover:bg-blue-500/20 text-ctp-subtext0 hover:text-blue-400 transition-colors cursor-pointer',
       },
-        React.createElement('path', { d: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z' }),
-      ),
+        React.createElement('svg', {
+          width: 14, height: 14, viewBox: '0 0 24 24',
+          fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+          strokeLinecap: 'round',
+        },
+          React.createElement('path', { d: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z' }),
+        ),
+      ) : null,
     ),
 
-    // Right arrow
+    // Right arrow (pinned — flex-none keeps it from shrinking)
     makeMiniArrow(chevronRight, 'Next agent', onNext),
 
     // Separator
@@ -485,8 +516,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const clearSlide = useCallback(() => setSlideDirection(null), []);
 
+  // Synchronously clamp before any render reads — guards against the window
+  // between `agents.length` shrinking and the clamp `useEffect` above firing.
+  const safeIndex = clampIndex(currentIndex, agents.length);
+
   // Dynamic title
-  const currentAgent = agents[currentIndex] ?? null;
+  const currentAgent = agents[safeIndex] ?? null;
   useEffect(() => {
     if (currentAgent) {
       api.window.setTitle(`Review — ${currentAgent.name}`);
@@ -521,7 +556,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [agents.length]);
 
   const handleSleep = useCallback(() => {
-    const agent = agents[currentIndex];
+    const agent = agents[clampIndex(currentIndex, agents.length)];
     if (agent) api.agents.kill(agent.id);
   }, [agents, currentIndex, api]);
 
@@ -553,7 +588,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     );
   }
 
-  const agent = agents[currentIndex];
+  const agent = agents[safeIndex];
   const AgentTerminal = api.widgets.AgentTerminal;
   const SleepingAgent = api.widgets.SleepingAgent;
   const currentDetailedStatus = detailedStatuses.get(agent.id) ?? null;
@@ -570,7 +605,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   return React.createElement('div', { className: 'relative h-full w-full overflow-hidden' },
     // Floating top bar
     React.createElement(FloatingBar, {
-      currentIndex,
+      currentIndex: safeIndex,
       total: agents.length,
       agentId: agent.id,
       agentName: agent.name,
