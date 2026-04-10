@@ -220,6 +220,88 @@ describe('Mission 70 — git MainPanel diff flash', () => {
       expect(screen.queryByText('Loading diff...')).not.toBeInTheDocument();
     });
   });
+
+  it('coalesces rapid same-file refetches: only the latest in-flight fetch wins', async () => {
+    const api = createMockAPI({
+      context: { mode: 'project', projectId: 'p1', projectPath: '/proj' },
+    });
+
+    // Build deferred promises so we can control resolution order. Each call
+    // to git.diff returns a new promise; we resolve them out of order to
+    // verify that a stale resolution does NOT overwrite the latest content.
+    const deferreds: Array<{
+      promise: Promise<{ original: string; modified: string }>;
+      resolve: (data: { original: string; modified: string }) => void;
+    }> = [];
+    vi.spyOn(window.clubhouse.git, 'diff').mockImplementation((() => {
+      let resolveFn!: (data: { original: string; modified: string }) => void;
+      const promise = new Promise<{ original: string; modified: string }>((res) => { resolveFn = res; });
+      deferreds.push({ promise, resolve: resolveFn });
+      return promise as unknown as Promise<string>;
+    }) as never);
+
+    gitState.setGitInfo(makeGitInfo({}, [
+      { path: 'foo.ts', status: 'M', staged: false },
+    ]));
+
+    render(React.createElement(MainPanel, { api }));
+
+    // Select the file → fetch #1 starts (loading state visible)
+    act(() => {
+      gitState.setSelectedFile('foo.ts');
+    });
+    expect(screen.getByText('Loading diff...')).toBeInTheDocument();
+    expect(deferreds).toHaveLength(1);
+
+    // Resolve fetch #1 → diff visible
+    await act(async () => {
+      deferreds[0].resolve({ original: 'rev1-old', modified: 'rev1-new' });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-monaco-diff')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('mock-monaco-diff').getAttribute('data-modified')).toBe('rev1-new');
+
+    // Two rapid poll-driven gitInfo updates while no fetch is in flight.
+    // Each one re-runs the effect → starts a new fetch (#2 and #3) and the
+    // cleanup function from the previous run cancels the older fetch.
+    act(() => {
+      gitState.setGitInfo(makeGitInfo({ behind: 1 }, [
+        { path: 'foo.ts', status: 'M', staged: false },
+      ]));
+    });
+    expect(deferreds).toHaveLength(2);
+
+    act(() => {
+      gitState.setGitInfo(makeGitInfo({ behind: 2 }, [
+        { path: 'foo.ts', status: 'M', staged: false },
+      ]));
+    });
+    expect(deferreds).toHaveLength(3);
+
+    // Resolve fetch #2 (the stale one) FIRST with old content. Because the
+    // effect's cleanup function ran when the next gitInfo update came in,
+    // its `cancelled` flag was set, so this resolution must NOT update the UI.
+    await act(async () => {
+      deferreds[1].resolve({ original: 'rev2-STALE', modified: 'rev2-STALE' });
+    });
+
+    // Diff still shows rev1 content (or the in-flight latest); not the stale rev2.
+    expect(screen.getByTestId('mock-monaco-diff').getAttribute('data-modified')).not.toBe('rev2-STALE');
+
+    // Now resolve fetch #3 (the latest) → diff updates to rev3 content.
+    await act(async () => {
+      deferreds[2].resolve({ original: 'rev3-old', modified: 'rev3-NEW' });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-monaco-diff').getAttribute('data-modified')).toBe('rev3-NEW');
+    });
+
+    // CRITICAL: throughout the rapid coalescing, no "Loading diff..." flash
+    // appeared (this assertion is implicit — every previous check verifies
+    // mock-monaco-diff is in the document, which excludes the loading state).
+    expect(screen.queryByText('Loading diff...')).not.toBeInTheDocument();
+  });
 });
 
 describe('Mission 70 — GitCanvasWidget diff flash', () => {
