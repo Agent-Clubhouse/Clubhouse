@@ -260,5 +260,53 @@ describe('blueprint-handlers', () => {
       expect(result).toBe(false);
       expect(fsp.unlink).not.toHaveBeenCalled();
     });
+
+    // ── Mission 74: cross-platform path handling ────────────────────────────
+    // The suffix check must work whether realpath returns forward-slash
+    // (POSIX) or backslash (Windows) paths. Tests below assert both styles
+    // succeed for in-bounds paths and both styles still reject out-of-bounds.
+
+    it('accepts a Windows-style backslash path inside blueprints dir', async () => {
+      const bp = 'C:\\Users\\foo\\proj\\.clubhouse\\blueprints\\old.json';
+      vi.mocked(fsp.realpath).mockResolvedValueOnce(bp);
+      vi.mocked(fsp.unlink).mockResolvedValue(undefined);
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, bp);
+      expect(result).toBe(true);
+      expect(fsp.unlink).toHaveBeenCalledWith(bp);
+    });
+
+    it('accepts a mixed-separator path inside blueprints dir', async () => {
+      // Some Windows APIs return paths with mixed separators
+      const bp = 'C:\\Users\\foo/proj/.clubhouse/blueprints\\old.json';
+      vi.mocked(fsp.realpath).mockResolvedValueOnce(bp);
+      vi.mocked(fsp.unlink).mockResolvedValue(undefined);
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, bp);
+      expect(result).toBe(true);
+    });
+
+    it('rejects a Windows backslash path OUTSIDE blueprints dir', async () => {
+      // Security: backslash paths must still be rejected when not in
+      // .clubhouse\blueprints\
+      vi.mocked(fsp.realpath).mockResolvedValueOnce('C:\\Users\\foo\\Documents\\important.json');
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, 'C:\\Users\\foo\\Documents\\important.json');
+      expect(result).toBe(false);
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('rejects a Windows backslash path with non-.json extension', async () => {
+      const bp = 'C:\\Users\\foo\\proj\\.clubhouse\\blueprints\\file.txt';
+      vi.mocked(fsp.realpath).mockResolvedValueOnce(bp);
+
+      const handler = getHandler('blueprint:delete');
+      const result = await handler({}, bp);
+      expect(result).toBe(false);
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
   });
 });
