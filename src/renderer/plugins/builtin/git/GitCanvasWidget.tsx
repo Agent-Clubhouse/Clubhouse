@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
 import type { GitInfo, GitStatusFile } from '../../../../shared/types';
 import { createGitOps } from './remote-git';
@@ -58,6 +58,10 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
   const [diffData, setDiffData] = useState<{ original: string; modified: string } | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  // Tracks which (file, staged) combo is currently displayed. Used to distinguish
+  // a real file switch (show "Loading diff…") from a background poll refresh
+  // (silently update so the diff doesn't flash).
+  const diffFetchKeyRef = useRef<string | null>(null);
 
   const git = useMemo(
     () => effectivePath ? createGitOps(effectivePath, projectId) : null,
@@ -88,18 +92,42 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
     }
   }, [gitInfo, selectedFile]);
 
-  // Fetch diff when file selected
+  // Fetch diff when file selected.
+  //
+  // Note: gitInfo is in the deps because we need the file's staged status.
+  // Each git status poll creates a new gitInfo object and re-runs this effect.
+  // To prevent the "Loading diff…" flash on every poll, we only show the
+  // loading state when the (file, staged) combo actually changes — background
+  // refreshes update diffData silently.
   useEffect(() => {
     if (!selectedFile || !git) {
       setDiffData(null);
+      setDiffLoading(false);
+      diffFetchKeyRef.current = null;
       return;
     }
     const file = gitInfo?.status.find((f) => f.path === selectedFile);
     if (!file) return;
-    setDiffLoading(true);
+    const fetchKey = `${selectedFile}|${file.staged}`;
+    const isFileSwitch = diffFetchKeyRef.current !== fetchKey;
+    diffFetchKeyRef.current = fetchKey;
+    if (isFileSwitch) {
+      setDiffLoading(true);
+      setDiffData(null);
+    }
+    let cancelled = false;
     git.diff(selectedFile, file.staged)
-      .then((data: { original: string; modified: string }) => { setDiffData(data); setDiffLoading(false); })
-      .catch(() => { setDiffData(null); setDiffLoading(false); });
+      .then((data: { original: string; modified: string }) => {
+        if (cancelled) return;
+        setDiffData((prev) => (prev && prev.original === data.original && prev.modified === data.modified ? prev : data));
+        setDiffLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        if (isFileSwitch) setDiffData(null);
+        setDiffLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [selectedFile, git, gitInfo]);
 
   const handleSelectProject = useCallback((pid: string) => {
