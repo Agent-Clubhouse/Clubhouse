@@ -2118,5 +2118,184 @@ describe('plugin-loader', () => {
       expect(result.activated).toEqual(['dormant-plug']);
       expect(result.incompatible).toEqual(['broken']);
     });
+
+    it('activates project-scoped plugins for the active project on refresh', async () => {
+      // Mason regression: After toggling external master flag from off→on,
+      // calling refreshCommunityPlugins should re-activate previously-enabled
+      // project-scope plugins for the active project, not just app/dual ones.
+      const projMod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(projMod);
+
+      // Existing persisted state: external master on, plugin previously
+      // enabled at app + project level for proj-1. Plugin is not yet
+      // registered (e.g. external master was off at startup).
+      usePluginStore.setState({
+        externalPluginsEnabled: true,
+        appEnabled: ['ext-proj-plug'],
+        projectEnabled: { 'proj-1': ['ext-proj-plug'] },
+      });
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'ext-proj-plug', scope: 'project' }), pluginPath: '/plugins/ext-proj-plug', fromMarketplace: false },
+      ]);
+
+      const result = await refreshCommunityPlugins({ activeProjectId: 'proj-1', activeProjectPath: '/p1' });
+
+      expect(result.refreshed).toContain('ext-proj-plug');
+      expect(result.activated).toContain('ext-proj-plug');
+      // Plugin should be active under the project context
+      expect(getActiveContext('ext-proj-plug', 'proj-1')).toBeDefined();
+      expect(projMod.activate).toHaveBeenCalledTimes(1);
+    });
+
+    it('activates dual-scoped plugins for the active project on refresh', async () => {
+      // Same scenario but for dual-scope: must activate at both app and
+      // project level when refreshing with active project context.
+      const dualMod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(dualMod);
+
+      usePluginStore.setState({
+        externalPluginsEnabled: true,
+        appEnabled: ['ext-dual'],
+        projectEnabled: { 'proj-2': ['ext-dual'] },
+      });
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'ext-dual', scope: 'dual' }), pluginPath: '/plugins/ext-dual', fromMarketplace: false },
+      ]);
+
+      const result = await refreshCommunityPlugins({ activeProjectId: 'proj-2', activeProjectPath: '/p2' });
+
+      expect(result.activated).toContain('ext-dual');
+      expect(getActiveContext('ext-dual')).toBeDefined();
+      expect(getActiveContext('ext-dual', 'proj-2')).toBeDefined();
+    });
+  });
+
+  // ── Persistence across simulated restart ─────────────────────────────
+  //
+  // Mason regression (Mission 69): "On app restart, external plugins toggle
+  // off; you have to retoggle and reload locals, then you need to toggle the
+  // ones you want to work in app and project level — extremely busted."
+  //
+  // These tests use a Map-backed fake storage so we can write enable state
+  // through the full code path (toggle handlers persist via storageWrite),
+  // then simulate restart by resetting the in-memory store and re-running
+  // `initializePluginSystem` against the same storage. The state should be
+  // restored as-is.
+
+  describe('persistence across restart', () => {
+    /** Map-backed fake storage shared across writes/reads. */
+    let fakeStorage: Map<string, unknown>;
+    const mockDynamicImport = dynamicImportModule as ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      fakeStorage = new Map<string, unknown>();
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        return fakeStorage.has(req.key) ? fakeStorage.get(req.key) : undefined;
+      });
+      mockPlugin.storageWrite.mockImplementation(async (req: { key: string; value: unknown }) => {
+        fakeStorage.set(req.key, req.value);
+      });
+    });
+
+    function simulateRestart(): void {
+      // Drop in-memory plugin state but keep fake storage intact
+      resetPluginStore();
+      _resetActiveContexts();
+      _resetPluginSystemReady();
+    }
+
+    /**
+     * Mimic what App.tsx does on a project switch: read the per-project
+     * enabled list from storage, merge with built-in project IDs, load into
+     * the store, then call handleProjectSwitch. The plugin-loader tests
+     * normally bypass this since handleProjectSwitch is called directly,
+     * but the bug we're chasing involves the storage round-trip.
+     */
+    async function simulateProjectSwitch(prevProjectId: string | null, newProjectId: string, newProjectPath: string): Promise<void> {
+      const saved = await window.clubhouse.plugin.storageRead({
+        pluginId: '_system',
+        scope: 'global',
+        key: `project-enabled-${newProjectId}`,
+      }) as string[] | undefined;
+      const builtinIds = getBuiltinProjectPluginIds({});
+      const base = Array.isArray(saved) ? saved : [];
+      const merged = [...new Set([...base, ...builtinIds])];
+      usePluginStore.getState().loadProjectPluginConfig(newProjectId, merged);
+      await handleProjectSwitch(prevProjectId, newProjectId, newProjectPath);
+    }
+
+    it('round-trips an external plugin enabled at app level only', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      // Pre-existing persisted state: master flag on, plugin enabled at app level
+      fakeStorage.set('external-plugins-enabled', true);
+      fakeStorage.set('app-enabled', ['ext-app-plug']);
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'ext-app-plug', scope: 'app' }), pluginPath: '/plugins/ext-app-plug', fromMarketplace: false },
+      ]);
+
+      // Cold start
+      await initializePluginSystem();
+
+      const store = usePluginStore.getState();
+      expect(store.externalPluginsEnabled).toBe(true);
+      expect(store.appEnabled).toContain('ext-app-plug');
+      expect(store.plugins['ext-app-plug']?.status).toBe('activated');
+      expect(getActiveContext('ext-app-plug')).toBeDefined();
+    });
+
+    it('round-trips an external plugin enabled at app + project level across restart', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      // Pre-existing persisted state: master flag on, plugin enabled at app
+      // and project level (the user explicitly enabled it for proj-1)
+      fakeStorage.set('external-plugins-enabled', true);
+      fakeStorage.set('app-enabled', ['ext-proj-plug']);
+      fakeStorage.set('project-enabled-proj-1', ['ext-proj-plug']);
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'ext-proj-plug', scope: 'project' }), pluginPath: '/plugins/ext-proj-plug', fromMarketplace: false },
+      ]);
+
+      await initializePluginSystem();
+      await simulateProjectSwitch(null, 'proj-1', '/p1');
+
+      const store = usePluginStore.getState();
+      expect(store.externalPluginsEnabled).toBe(true);
+      expect(store.appEnabled).toContain('ext-proj-plug');
+      expect(store.projectEnabled['proj-1']).toContain('ext-proj-plug');
+      // The actual symptom Mason reports: plugin should be ACTIVE after restart
+      expect(getActiveContext('ext-proj-plug', 'proj-1')).toBeDefined();
+    });
+
+    it('preserves per-project disabled state for built-in plugins across restart', async () => {
+      // User explicitly disabled `terminal` at project level for proj-1.
+      // After restart, terminal should remain disabled at proj-1 — the
+      // project switch must not silently re-merge it back from the builtin
+      // defaults list.
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: makeManifest({ id: 'terminal', scope: 'project' }), module: { activate: vi.fn() } },
+        { manifest: makeManifest({ id: 'files', scope: 'project' }), module: { activate: vi.fn() } },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(new Set(['terminal', 'files']));
+
+      // Persisted: terminal explicitly removed from proj-1's enabled list
+      fakeStorage.set('app-enabled', ['terminal', 'files']);
+      fakeStorage.set('project-enabled-proj-1', ['files']);
+
+      await initializePluginSystem();
+      await simulateProjectSwitch(null, 'proj-1', '/p1');
+
+      const store = usePluginStore.getState();
+      // Terminal should NOT be in projectEnabled for proj-1
+      expect(store.projectEnabled['proj-1']).not.toContain('terminal');
+      // Terminal should NOT be activated for proj-1
+      expect(getActiveContext('terminal', 'proj-1')).toBeUndefined();
+    });
   });
 });
