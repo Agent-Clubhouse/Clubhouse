@@ -1,6 +1,8 @@
+import React, { useState, useCallback } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CanvasTabBar } from './CanvasTabBar';
+import { createCanvasStore } from './canvas-store';
 import type { CanvasInstance } from './canvas-types';
 
 function makeCanvas(id: string, name: string): CanvasInstance {
@@ -93,5 +95,97 @@ describe('CanvasTabBar', () => {
     fireEvent.click(screen.getByTestId('canvas-tab-export-blueprint'));
 
     expect(onExportBlueprint).toHaveBeenCalledWith('c1');
+  });
+});
+
+// ── Integration: + button → real store → DOM update ────────────────────
+//
+// Mission 71 — Coverage gap: the tests above mock onAddCanvas with vi.fn(),
+// so they verify the wiring from button to handler but never exercise the
+// real store action behind it. A regression that broke handleAddCanvas or
+// store.addCanvas() would not surface here.
+//
+// These tests render CanvasTabBar wired to a real canvas store via a thin
+// wrapper that mirrors what main.ts MainPanel does, then assert the store
+// state actually changed and the new tab is rendered to the DOM.
+
+describe('CanvasTabBar — + button integration with real store', () => {
+  // Real canvas IDs from createCanvasInstance() are formatted as
+  // "canvas_xxxxxxxx" (see canvas-operations.ts:585), so the matching tab
+  // testid is "canvas-tab-canvas_xxxxxxxx". This selector is specific to
+  // actual tabs and excludes the wrapper ("canvas-tab-bar"), the close
+  // button ("canvas-tab-close"), the popout button ("canvas-tab-popout"),
+  // the rename input ("canvas-tab-rename-input"), and the context menu.
+  function getRenderedTabs(container: HTMLElement): NodeListOf<Element> {
+    return container.querySelectorAll('[data-testid^="canvas-tab-canvas_"]');
+  }
+
+  it('clicking + → New Canvas adds a canvas via the real store action', () => {
+    // Hoist the store outside React so re-renders don't recreate it and
+    // strict-mode double-effects can't influence the count we're asserting.
+    const store = createCanvasStore();
+    expect(store.getState().canvases).toHaveLength(1);
+
+    function Host() {
+      const [, force] = useState(0);
+      // Subscribe ONCE; strict-mode-safe via cleanup.
+      React.useEffect(() => store.subscribe(() => force((n) => n + 1)), []);
+      const state = store.getState();
+      return (
+        <CanvasTabBar
+          canvases={state.canvases}
+          activeCanvasId={state.activeCanvasId}
+          onSelectCanvas={() => undefined}
+          onAddCanvas={() => store.getState().addCanvas()}
+          onAddFromBlueprint={() => undefined}
+          onRemoveCanvas={() => undefined}
+          onRenameCanvas={() => undefined}
+        />
+      );
+    }
+
+    const { container } = render(<Host />);
+    expect(getRenderedTabs(container).length).toBe(1);
+
+    // Click + to open the dropdown (matches production: main.ts always
+    // wires both onAddCanvas and onAddFromBlueprint, so users always see
+    // the dropdown variant of the + button).
+    fireEvent.click(screen.getByTestId('canvas-add-button'));
+    expect(screen.getByTestId('canvas-add-menu')).toBeDefined();
+
+    // Click "New Canvas" — this is what real users click
+    fireEvent.click(screen.getByTestId('canvas-add-new'));
+
+    // The store action must have fired exactly once and added one canvas
+    expect(store.getState().canvases).toHaveLength(2);
+    // And the DOM must reflect the new canvas tab
+    expect(getRenderedTabs(container).length).toBe(2);
+  });
+
+  it('clicking + (no dropdown variant) adds a canvas via the real store action', () => {
+    const store = createCanvasStore();
+    expect(store.getState().canvases).toHaveLength(1);
+
+    function Host() {
+      const [, force] = useState(0);
+      React.useEffect(() => store.subscribe(() => force((n) => n + 1)), []);
+      const state = store.getState();
+      return (
+        <CanvasTabBar
+          canvases={state.canvases}
+          activeCanvasId={state.activeCanvasId}
+          onSelectCanvas={() => undefined}
+          onAddCanvas={() => store.getState().addCanvas()}
+          onRemoveCanvas={() => undefined}
+          onRenameCanvas={() => undefined}
+        />
+      );
+    }
+
+    const { container } = render(<Host />);
+    expect(getRenderedTabs(container).length).toBe(1);
+    fireEvent.click(screen.getByTestId('canvas-add-button'));
+    expect(store.getState().canvases).toHaveLength(2);
+    expect(getRenderedTabs(container).length).toBe(2);
   });
 });
