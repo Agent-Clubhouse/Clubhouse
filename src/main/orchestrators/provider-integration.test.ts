@@ -418,6 +418,7 @@ describe('Provider integration tests', () => {
       expect(args[pIdx + 1]).toContain('Be thorough');
       expect(args[pIdx + 1]).toContain('Fix the bug');
       expect(args).toContain('--allow-all');
+      expect(args).toContain('--autopilot');
       expect(args).toContain('--output-format');
       expect(args).toContain('json');
       expect(args).toContain('--model');

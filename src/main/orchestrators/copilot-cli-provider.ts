@@ -199,7 +199,11 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   createStructuredAdapter(_opts?: { resume?: boolean }): StructuredAdapter {
     return new AcpAdapter({
       binary: this.findBinary(),
-      args: ['--acp', '--stdio'],
+      // --autopilot lets Copilot CLI v1.0.23+ run autonomously without per-step
+      // approval round-trips. Structured (ACP) sessions are non-interactive by
+      // definition, so they always opt in. Interactive PTY sessions only opt in
+      // when freeAgentMode is set (see buildSpawnCommand).
+      args: ['--acp', '--stdio', '--autopilot'],
       toolVerbs: TOOL_VERBS,
     });
   }
@@ -276,7 +280,10 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     const parts: string[] = [];
     if (opts.systemPrompt) parts.push(opts.systemPrompt);
     parts.push(opts.mission);
-    const args = ['-p', parts.join('\n\n'), '--allow-all', '--output-format', 'json'];
+    // --autopilot lets Copilot CLI v1.0.23+ run autonomously without per-step
+    // approval round-trips. Headless mode is non-interactive by definition, so
+    // we always opt in here.
+    const args = ['-p', parts.join('\n\n'), '--allow-all', '--autopilot', '--output-format', 'json'];
 
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);

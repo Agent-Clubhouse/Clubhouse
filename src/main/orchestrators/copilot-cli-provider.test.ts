@@ -51,6 +51,10 @@ vi.mock('../util/shell', () => ({
 
 vi.mock('./adapters', () => ({
   AcpAdapter: class MockAcpAdapter {
+    public ctorOpts: any;
+    constructor(opts: any) {
+      this.ctorOpts = opts;
+    }
     start = vi.fn();
     sendMessage = vi.fn();
     respondToPermission = vi.fn();
@@ -133,6 +137,22 @@ describe('CopilotCliProvider', () => {
       expect(typeof adapter.respondToPermission).toBe('function');
       expect(typeof adapter.cancel).toBe('function');
       expect(typeof adapter.dispose).toBe('function');
+    });
+
+    it('passes --acp and --stdio in spawn args', () => {
+      const adapter = provider.createStructuredAdapter!() as any;
+      expect(adapter.ctorOpts.args).toContain('--acp');
+      expect(adapter.ctorOpts.args).toContain('--stdio');
+    });
+
+    it('passes --autopilot in spawn args (Mission 72: structured mode is autonomous)', () => {
+      const adapter = provider.createStructuredAdapter!() as any;
+      expect(adapter.ctorOpts.args).toContain('--autopilot');
+    });
+
+    it('uses the resolved binary path', () => {
+      const adapter = provider.createStructuredAdapter!() as any;
+      expect(adapter.ctorOpts.binary).toBe('/usr/local/bin/copilot');
     });
   });
 
@@ -539,6 +559,23 @@ describe('CopilotCliProvider', () => {
       expect(result!.args).toContain('--allow-all');
       expect(result!.args).toContain('--output-format');
       expect(result!.args).toContain('json');
+    });
+
+    it('passes --autopilot in args (Mission 72: headless mode is autonomous)', async () => {
+      const result = await provider.buildHeadlessCommand({
+        cwd: '/project',
+        mission: 'Fix bug',
+      });
+      expect(result!.args).toContain('--autopilot');
+    });
+
+    it('passes --autopilot regardless of model selection', async () => {
+      const result = await provider.buildHeadlessCommand({
+        cwd: '/project',
+        mission: 'Fix bug',
+        model: 'gpt-5',
+      });
+      expect(result!.args).toContain('--autopilot');
     });
 
     it('adds model flag for non-default model', async () => {
