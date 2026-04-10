@@ -168,8 +168,14 @@ export function registerBlueprintHandlers(): void {
       // File doesn't exist
       return false;
     }
-    const blueprintsSuffix = path.join(CLUBHOUSE_DIR, BLUEPRINTS_DIR) + path.sep;
-    if (!resolved.includes(blueprintsSuffix) || !resolved.endsWith('.json')) {
+    // Mission 74: normalize separators to forward slashes before the suffix
+    // check. Native realpath returns backslashes on Windows and forward slashes
+    // elsewhere, but the security invariant ("must be inside .clubhouse/blueprints/")
+    // is platform-independent. Comparing in a single canonical form avoids
+    // false rejections on Windows.
+    const resolvedFwd = resolved.replace(/\\/g, '/');
+    const blueprintsSuffix = `${CLUBHOUSE_DIR}/${BLUEPRINTS_DIR}/`;
+    if (!resolvedFwd.includes(blueprintsSuffix) || !resolvedFwd.endsWith('.json')) {
       appLog('core:blueprint', 'warn', 'Refusing to delete file outside blueprints directory', {
         meta: { filePath, resolved },
       });
