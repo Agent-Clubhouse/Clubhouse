@@ -53,6 +53,86 @@ describe('canvas-store', () => {
     expect(store2.getState().views[0].type).toBe('agent');
   });
 
+  // LB-M68: Mission 68 — sibling agent card from "+ New Agent" must survive
+  // a save/load round-trip with its position intact. This guards against
+  // regressions where addView + updateView produce a view whose position
+  // gets dropped on persistence.
+  it('addView + updateView (assign agent metadata) preserves position across save/load', async () => {
+    const storage = createMockStorage();
+    await store.getState().loadCanvas(storage);
+
+    // Simulate the create-from-card flow: addView at adjacent position,
+    // then updateView with agent metadata (mirroring main.ts handleCreateAgentCard).
+    const adjacentPos = { x: 840, y: 300 }; // grid-snapped slot to the right of a 480-wide parent at (300, 300)
+    const newViewId = store.getState().addView('agent', adjacentPos);
+    expect(newViewId).toBeTruthy();
+    store.getState().updateView(newViewId, {
+      agentId: 'agent-sibling-1',
+      projectId: 'proj-1',
+      title: 'Sibling',
+      displayName: 'Sibling',
+      metadata: {
+        agentId: 'agent-sibling-1',
+        projectId: 'proj-1',
+        agentName: 'Sibling',
+        projectName: null,
+        orchestrator: null,
+        model: null,
+      },
+    });
+
+    // Verify in-memory state has the right position + agent binding
+    const inMemView = store.getState().views.find(v => v.id === newViewId);
+    expect(inMemView).toBeDefined();
+    expect(inMemView!.position).toEqual(adjacentPos);
+    expect((inMemView as any).agentId).toBe('agent-sibling-1');
+
+    // Save and round-trip through a fresh store
+    await store.getState().saveCanvas(storage);
+    const store2 = createCanvasStore();
+    await store2.getState().loadCanvas(storage);
+
+    const restored = store2.getState().views.find(v => v.id === newViewId);
+    expect(restored).toBeDefined();
+    expect(restored!.type).toBe('agent');
+    expect(restored!.position).toEqual(adjacentPos); // ← key assertion: position survived
+    expect((restored as any).agentId).toBe('agent-sibling-1');
+    expect((restored as any).displayName).toBe('Sibling');
+  });
+
+  // LB-M68: Multiple sibling cards should not collapse onto one another.
+  // Two siblings created at distinct positions both survive a round-trip.
+  it('multiple sibling cards survive round-trip without position collisions', async () => {
+    const storage = createMockStorage();
+    await store.getState().loadCanvas(storage);
+
+    const id1 = store.getState().addView('agent', { x: 200, y: 200 });
+    store.getState().updateView(id1, { agentId: 'a1', displayName: 'A' });
+
+    const id2 = store.getState().addView('agent', { x: 560, y: 200 });
+    store.getState().updateView(id2, { agentId: 'a2', displayName: 'B' });
+
+    const id3 = store.getState().addView('agent', { x: 200, y: 460 });
+    store.getState().updateView(id3, { agentId: 'a3', displayName: 'C' });
+
+    await store.getState().saveCanvas(storage);
+    const store2 = createCanvasStore();
+    await store2.getState().loadCanvas(storage);
+
+    const restored = store2.getState().views;
+    expect(restored).toHaveLength(3);
+
+    const r1 = restored.find(v => v.id === id1)!;
+    const r2 = restored.find(v => v.id === id2)!;
+    const r3 = restored.find(v => v.id === id3)!;
+    expect(r1.position).toEqual({ x: 200, y: 200 });
+    expect(r2.position).toEqual({ x: 560, y: 200 });
+    expect(r3.position).toEqual({ x: 200, y: 460 });
+    expect((r1 as any).agentId).toBe('a1');
+    expect((r2 as any).agentId).toBe('a2');
+    expect((r3 as any).agentId).toBe('a3');
+  });
+
   // ── Canvas tab management ──────────────────────────────────────
 
   it('adds a new canvas', () => {

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
-import type { CanvasView, CanvasViewType, ZoneCanvasView, Viewport, Position, Size } from './canvas-types';
+import type { CanvasView, CanvasViewType, ZoneCanvasView, AgentCanvasView as AgentCanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
 import type { ResizeDirection } from './CanvasView';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect, clampMenuPosition, resolveRadialRootId } from './canvas-operations';
@@ -30,7 +30,7 @@ import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import type { PluginCanvasView as PluginCanvasViewType } from './canvas-types';
-import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
+import type { PluginAPI, CanvasWidgetMetadata, AgentInfo } from '../../../../shared/plugin-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 import { useBlueprintDrop } from './useBlueprintDrop';
 import { getProjectCanvasStore, useAppCanvasStore } from './main';
@@ -74,6 +74,12 @@ interface CanvasWorkspaceProps {
   onResizeView: (viewId: string, size: Size) => void;
   onFocusView: (viewId: string) => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
+  /**
+   * LB-M68: Spawn a new agent card adjacent to a parent agent card.
+   * Wired by the canvas plugin's main.ts so AgentCanvasView's "+ New Agent"
+   * picker creates a sibling card instead of overwriting the parent.
+   */
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
   onZoomView: (viewId: string | null) => void;
   onSelectView: (viewId: string | null) => void;
   onToggleSelectView: (viewId: string) => void;
@@ -115,6 +121,7 @@ export function CanvasWorkspace({
   onResizeView,
   onFocusView,
   onUpdateView,
+  onCreateAgentCard,
   onZoomView,
   onSelectView,
   onToggleSelectView,
@@ -1066,6 +1073,7 @@ export function CanvasWorkspace({
                 onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
                 onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
                 onUpdate={(updates) => onUpdateView(view.id, updates)}
+                onCreateAgentCard={onCreateAgentCard}
                 onViewContextMenu={(e) => handleViewContextMenu(view.id, e)}
                 isLayoutCenter={layoutCenterId === view.id}
               />
@@ -1214,7 +1222,14 @@ export function CanvasWorkspace({
               </button>
             </div>
             <div className="flex-1 min-h-0 overflow-auto" onWheel={(e) => e.stopPropagation()}>
-              {zoomedView.type === 'agent' && <AgentCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'agent' && (
+                <AgentCanvasView
+                  view={zoomedView as AgentCanvasViewType}
+                  api={api}
+                  onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)}
+                  onCreateAgentCard={onCreateAgentCard}
+                />
+              )}
               {zoomedView.type === 'plugin' && (() => {
                 const pluginView = zoomedView as PluginCanvasViewType;
                 const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
