@@ -26,6 +26,7 @@ import {
   computeZoneContainment,
   computeZoneBounds,
   recomputeZones,
+  computeAdjacentPosition,
 } from './canvas-operations';
 import type { CanvasView, AgentCanvasView, StickyNoteCanvasView, ZoneCanvasView } from './canvas-types';
 import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, MIN_ZOOM, MAX_ZOOM, CANVAS_SIZE, MIN_ZONE_WIDTH, MIN_ZONE_HEIGHT, ZONE_PADDING, DEFAULT_STICKY_WIDTH, DEFAULT_STICKY_HEIGHT } from './canvas-types';
@@ -649,6 +650,112 @@ describe('canvas-operations', () => {
       const updated = result[0] as ZoneCanvasView;
       expect(updated.size.width).toBeGreaterThanOrEqual(MIN_ZONE_WIDTH);
       expect(updated.size.height).toBeGreaterThanOrEqual(MIN_ZONE_HEIGHT);
+    });
+  });
+
+  // ── Adjacent placement (LB-M68) ────────────────────────────────────
+
+  describe('computeAdjacentPosition', () => {
+    const parentPos = { x: 200, y: 200 };
+    const parentSize = { width: 300, height: 200 };
+    const newSize = { width: 300, height: 200 };
+
+    it('places to the right of parent when no other views exist', () => {
+      const result = computeAdjacentPosition(parentPos, parentSize, newSize, []);
+      // right side: x = 200 + 300 + 60 = 560, y = 200
+      expect(result).toEqual({ x: 560, y: 200 });
+    });
+
+    it('returned position is grid-snapped', () => {
+      const result = computeAdjacentPosition(
+        { x: 213, y: 217 }, // unsnapped parent
+        parentSize,
+        newSize,
+        [],
+      );
+      expect(result.x % GRID_SIZE).toBe(0);
+      expect(result.y % GRID_SIZE).toBe(0);
+    });
+
+    it('falls back to below when right side is occupied', () => {
+      const blocker: CanvasView = {
+        id: 'blocker',
+        type: 'agent',
+        title: 'Blocker',
+        displayName: 'Blocker',
+        position: { x: 560, y: 200 }, // exactly the right-side slot
+        size: { width: 300, height: 200 },
+        zIndex: 0,
+        metadata: {},
+        agentId: null,
+      } as AgentCanvasView;
+      const result = computeAdjacentPosition(parentPos, parentSize, newSize, [blocker]);
+      // below: x = 200, y = 200 + 200 + 60 = 460
+      expect(result).toEqual({ x: 200, y: 460 });
+    });
+
+    it('falls back to left when right and below are occupied', () => {
+      const rightBlocker: CanvasView = {
+        id: 'right',
+        type: 'agent',
+        title: 'R',
+        displayName: 'R',
+        position: { x: 560, y: 200 },
+        size: { width: 300, height: 200 },
+        zIndex: 0,
+        metadata: {},
+        agentId: null,
+      } as AgentCanvasView;
+      const belowBlocker: CanvasView = {
+        id: 'below',
+        type: 'agent',
+        title: 'B',
+        displayName: 'B',
+        position: { x: 200, y: 460 },
+        size: { width: 300, height: 200 },
+        zIndex: 0,
+        metadata: {},
+        agentId: null,
+      } as AgentCanvasView;
+      const result = computeAdjacentPosition(parentPos, parentSize, newSize, [rightBlocker, belowBlocker]);
+      // left: x = 200 - 300 - 60 = -160, y = 200
+      expect(result).toEqual({ x: -160, y: 200 });
+    });
+
+    it('does not consider parent itself an overlap', () => {
+      const parent: CanvasView = {
+        id: 'parent',
+        type: 'agent',
+        title: 'P',
+        displayName: 'P',
+        position: parentPos,
+        size: parentSize,
+        zIndex: 0,
+        metadata: {},
+        agentId: null,
+      } as AgentCanvasView;
+      const result = computeAdjacentPosition(parentPos, parentSize, newSize, [parent]);
+      // The parent overlaps the slots that overlap parent's own bounds, but
+      // the right-side slot doesn't overlap parent itself, so it should be picked.
+      expect(result).toEqual({ x: 560, y: 200 });
+    });
+
+    it('returns right-side position even when all four sides are occupied (last resort)', () => {
+      const blockers: CanvasView[] = [
+        { id: 'r', type: 'agent', position: { x: 560, y: 200 }, size: { width: 300, height: 200 }, zIndex: 0, title: '', displayName: '', metadata: {}, agentId: null } as AgentCanvasView,
+        { id: 'b', type: 'agent', position: { x: 200, y: 460 }, size: { width: 300, height: 200 }, zIndex: 0, title: '', displayName: '', metadata: {}, agentId: null } as AgentCanvasView,
+        { id: 'l', type: 'agent', position: { x: -160, y: 200 }, size: { width: 300, height: 200 }, zIndex: 0, title: '', displayName: '', metadata: {}, agentId: null } as AgentCanvasView,
+        { id: 'a', type: 'agent', position: { x: 200, y: -60 }, size: { width: 300, height: 200 }, zIndex: 0, title: '', displayName: '', metadata: {}, agentId: null } as AgentCanvasView,
+      ];
+      const result = computeAdjacentPosition(parentPos, parentSize, newSize, blockers);
+      // All occupied → fall back to right side
+      expect(result).toEqual({ x: 560, y: 200 });
+    });
+
+    it('honors custom buffer', () => {
+      const result = computeAdjacentPosition(parentPos, parentSize, newSize, [], 100);
+      // right side with buffer 100: x = 200 + 300 + 100 = 600
+      expect(result).toEqual({ x: 600, y: 200 });
     });
   });
 });
