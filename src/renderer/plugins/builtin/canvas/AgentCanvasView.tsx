@@ -9,6 +9,15 @@ interface AgentCanvasViewProps {
   onUpdate: (updates: Partial<CanvasView>) => void;
   /** Zone theme ID — propagated to the terminal for PTY background updates. */
   zoneThemeId?: string;
+  /**
+   * LB-M68: Optional callback invoked when the user creates a new agent from
+   * inside this card's "+ New Agent" picker. When provided, a NEW sibling
+   * card is added to the canvas adjacent to this card with the new agent
+   * assigned, and this card stays in picker mode for rapid spawning.
+   * If absent, falls back to the legacy behavior of assigning the new agent
+   * to the current card.
+   */
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
 }
 
 function projectColor(name: string): string {
@@ -20,7 +29,7 @@ function projectColor(name: string): string {
   return `hsl(${hue}, 55%, 55%)`;
 }
 
-export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanvasViewProps) {
+export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgentCard }: AgentCanvasViewProps) {
   const isAppMode = api.context.mode === 'app';
   const [agentTick, setAgentTick] = useState(0);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -108,16 +117,22 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanva
         mcpIds,
       });
       setShowCreateDialog(false);
-      // Auto-assign the newly created agent to this canvas view
       const newAgent = api.agents.list().find((a) => a.id === agentId);
-      if (newAgent) {
+      if (!newAgent) return;
+      // LB-M68: prefer creating a sibling card adjacent to this card so the
+      // user can see the new agent next to its parent. This card stays in
+      // picker mode for rapid spawning. Fall back to assigning to the current
+      // card when no callback is wired (e.g. unit tests, popout view).
+      if (onCreateAgentCard) {
+        onCreateAgentCard(view, newAgent);
+      } else {
         handlePickAgent(newAgent);
       }
     } catch (err) {
       console.error('Failed to create durable agent:', err);
       // Keep dialog open so user can see the failure context and retry
     }
-  }, [activeProjectForCreate, api.agents, handlePickAgent]);
+  }, [activeProjectForCreate, api.agents, handlePickAgent, onCreateAgentCard, view]);
 
   // Agent assigned but not yet available in the store (e.g. sleeping durable
   // agent created by the assistant, or remote agent that hasn't synced yet).
