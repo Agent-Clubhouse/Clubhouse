@@ -84,6 +84,44 @@ describe('canvas main', () => {
     expect(storeA).not.toBe(storeB);
   });
 
+  // Mission 71 — Regression test for the new-canvas + button.
+  //
+  // MainPanel reads its store on every render via:
+  //   const store = isAppMode ? useAppCanvasStore
+  //                           : getProjectCanvasStore(api.context.projectId ?? null);
+  //
+  // If the projectId is ever null/undefined while mode is NOT 'app', the
+  // pre-fix `getProjectCanvasStore(null)` returned a brand-new transient
+  // store on every call (`return createCanvasStore()`). That made every
+  // re-render of MainPanel observe a fresh store with the initial canvas,
+  // so any addCanvas() the user triggered on the previous render's store
+  // was discarded — the "+ button does nothing" symptom Mason reported.
+  //
+  // The contract should be: same input → same store. Repeated calls with
+  // null must return the same instance, just like repeated calls with the
+  // same project id do.
+  it('getProjectCanvasStore returns a stable store for null projectId across calls', () => {
+    const store1 = canvasModule.getProjectCanvasStore(null);
+    const store2 = canvasModule.getProjectCanvasStore(null);
+    expect(store1).toBe(store2);
+  });
+
+  it('getProjectCanvasStore null fallback preserves state across calls (addCanvas survives re-resolution)', () => {
+    // Reproduces the + button bug at the store layer: if the fallback
+    // store is fresh on every call, an addCanvas mutation on the first
+    // resolution is invisible to the second resolution.
+    const storeA = canvasModule.getProjectCanvasStore(null);
+    const initialCount = storeA.getState().canvases.length;
+
+    storeA.getState().addCanvas();
+    expect(storeA.getState().canvases.length).toBe(initialCount + 1);
+
+    // Re-resolve as MainPanel does on its next render — this MUST observe
+    // the same canvases array, otherwise the click-add was visually a no-op.
+    const storeB = canvasModule.getProjectCanvasStore(null);
+    expect(storeB.getState().canvases.length).toBe(initialCount + 1);
+  });
+
   it('loadCanvas is awaited before loadWires in MainPanel (structural)', () => {
     // The loadCanvas/loadWires race condition caused auto-save to overwrite
     // persisted wire data with incomplete bindings. Verify the fix:
