@@ -2141,7 +2141,9 @@ describe('plugin-loader', () => {
 
       const result = await refreshCommunityPlugins({ activeProjectId: 'proj-1', activeProjectPath: '/p1' });
 
-      expect(result.refreshed).toContain('ext-proj-plug');
+      // Plugin is newly discovered (not previously registered) so it
+      // shows up in `discovered`, not `refreshed`.
+      expect(result.discovered).toContain('ext-proj-plug');
       expect(result.activated).toContain('ext-proj-plug');
       // Plugin should be active under the project context
       expect(getActiveContext('ext-proj-plug', 'proj-1')).toBeDefined();
@@ -2208,10 +2210,11 @@ describe('plugin-loader', () => {
 
     /**
      * Mimic what App.tsx does on a project switch: read the per-project
-     * enabled list from storage, merge with built-in project IDs, load into
-     * the store, then call handleProjectSwitch. The plugin-loader tests
-     * normally bypass this since handleProjectSwitch is called directly,
-     * but the bug we're chasing involves the storage round-trip.
+     * enabled list from storage, seed with built-in project IDs only on
+     * first load, load into the store, then call handleProjectSwitch.
+     * The plugin-loader tests normally bypass App.tsx and call
+     * handleProjectSwitch directly, but the bug we're chasing involves the
+     * storage round-trip.
      */
     async function simulateProjectSwitch(prevProjectId: string | null, newProjectId: string, newProjectPath: string): Promise<void> {
       const saved = await window.clubhouse.plugin.storageRead({
@@ -2219,9 +2222,9 @@ describe('plugin-loader', () => {
         scope: 'global',
         key: `project-enabled-${newProjectId}`,
       }) as string[] | undefined;
-      const builtinIds = getBuiltinProjectPluginIds({});
-      const base = Array.isArray(saved) ? saved : [];
-      const merged = [...new Set([...base, ...builtinIds])];
+      // First load: seed with built-in defaults. Subsequent loads: use
+      // saved as-is so user-disabled built-ins stay disabled (Mission 69).
+      const merged = Array.isArray(saved) ? saved : getBuiltinProjectPluginIds({});
       usePluginStore.getState().loadProjectPluginConfig(newProjectId, merged);
       await handleProjectSwitch(prevProjectId, newProjectId, newProjectPath);
     }

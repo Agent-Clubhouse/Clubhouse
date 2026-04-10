@@ -258,6 +258,91 @@ describe('PluginListSettings', () => {
     expect(mockRefreshCommunityPlugins).not.toHaveBeenCalled();
   });
 
+  // ── Mission 69: external master toggle should auto-discover ──────────
+  describe('Mission 69 — external master toggle persistence', () => {
+    it('auto-refreshes community plugins when toggling external from off→on', async () => {
+      mockRefreshCommunityPlugins.mockClear();
+      mockRefreshCommunityPlugins.mockResolvedValue({ discovered: [], refreshed: [], activated: [], incompatible: [] });
+      usePluginStore.setState({ externalPluginsEnabled: false } as any);
+      render(<PluginListSettings />);
+
+      // Reset call count after mount-time effects
+      mockRefreshCommunityPlugins.mockClear();
+
+      fireEvent.click(screen.getByTestId('external-plugins-toggle'));
+
+      await vi.waitFor(() => {
+        expect(mockRefreshCommunityPlugins).toHaveBeenCalled();
+      });
+    });
+
+    it('does NOT auto-refresh when toggling external from on→off', async () => {
+      mockRefreshCommunityPlugins.mockClear();
+      mockRefreshCommunityPlugins.mockResolvedValue({ discovered: [], refreshed: [], activated: [], incompatible: [] });
+      usePluginStore.setState({ externalPluginsEnabled: true } as any);
+      render(<PluginListSettings />);
+
+      // Wait for the on-mount auto-refresh, then clear
+      await vi.waitFor(() => {
+        expect(mockRefreshCommunityPlugins).toHaveBeenCalled();
+      });
+      mockRefreshCommunityPlugins.mockClear();
+
+      fireEvent.click(screen.getByTestId('external-plugins-toggle'));
+
+      // Give the handler time to run
+      await new Promise((r) => setTimeout(r, 50));
+      expect(mockRefreshCommunityPlugins).not.toHaveBeenCalled();
+    });
+
+    it('passes active project context to refreshCommunityPlugins on auto-discover', async () => {
+      mockRefreshCommunityPlugins.mockClear();
+      mockRefreshCommunityPlugins.mockResolvedValue({ discovered: [], refreshed: [], activated: [], incompatible: [] });
+      useProjectStore.setState({
+        activeProjectId: 'proj-99',
+        projects: [{ id: 'proj-99', name: 'Test Proj', path: '/path/to/proj-99' } as any],
+      } as any);
+      usePluginStore.setState({ externalPluginsEnabled: false } as any);
+      render(<PluginListSettings />);
+      mockRefreshCommunityPlugins.mockClear();
+
+      fireEvent.click(screen.getByTestId('external-plugins-toggle'));
+
+      await vi.waitFor(() => {
+        expect(mockRefreshCommunityPlugins).toHaveBeenCalledWith({
+          activeProjectId: 'proj-99',
+          activeProjectPath: '/path/to/proj-99',
+        });
+      });
+    });
+
+    it('persists external master flag value via storageWrite on toggle', async () => {
+      const mockStorageWrite = vi.fn().mockResolvedValue(undefined);
+      (window as any).clubhouse = {
+        ...(window as any).clubhouse,
+        plugin: {
+          ...(window as any).clubhouse?.plugin,
+          storageWrite: mockStorageWrite,
+        },
+      };
+      usePluginStore.setState({ externalPluginsEnabled: false } as any);
+      render(<PluginListSettings />);
+
+      fireEvent.click(screen.getByTestId('external-plugins-toggle'));
+
+      await vi.waitFor(() => {
+        expect(mockStorageWrite).toHaveBeenCalledWith(
+          expect.objectContaining({
+            pluginId: '_system',
+            scope: 'global',
+            key: 'external-plugins-enabled',
+            value: true,
+          }),
+        );
+      });
+    });
+  });
+
   describe('check for updates UI', () => {
     it('renders "Check for Updates" button in app context with external plugins enabled', () => {
       usePluginStore.setState({

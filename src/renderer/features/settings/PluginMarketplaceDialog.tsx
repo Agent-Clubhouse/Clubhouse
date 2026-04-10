@@ -9,6 +9,7 @@ import type {
 import { SUPPORTED_REGISTRY_VERSION } from '../../../shared/marketplace-types';
 import { SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from '../../plugins/manifest-validator';
 import { usePluginStore } from '../../plugins/plugin-store';
+import { useProjectStore } from '../../stores/projectStore';
 import { refreshCommunityPlugins } from '../../plugins/plugin-loader';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { PluginPermission, PermissionRiskLevel } from '../../../shared/plugin-types';
@@ -228,6 +229,15 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
 
   const plugins = usePluginStore((s) => s.plugins);
   const installedPluginIds = useMemo(() => Object.keys(plugins), [plugins]);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const projects = useProjectStore((s) => s.projects);
+  const refreshOpts = useMemo(() => {
+    const proj = activeProjectId ? projects.find((p) => p.id === activeProjectId) : undefined;
+    return {
+      activeProjectId: activeProjectId ?? undefined,
+      activeProjectPath: proj?.path,
+    };
+  }, [activeProjectId, projects]);
 
   useEffect(() => {
     let cancelled = false;
@@ -362,8 +372,10 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
       if (!result.success) {
         setInstallErrors((prev) => ({ ...prev, [plugin.id]: result.error || 'Install failed' }));
       } else {
-        // Full re-discovery + activation so plugin list updates immediately
-        await refreshCommunityPlugins();
+        // Full re-discovery + activation so plugin list updates immediately.
+        // Pass active project context so project-scope plugins activate
+        // for the current project (Mission 69).
+        await refreshCommunityPlugins(refreshOpts);
       }
     } catch (err: unknown) {
       setInstallErrors((prev) => ({

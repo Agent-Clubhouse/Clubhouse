@@ -838,11 +838,19 @@ export interface RefreshResult {
  * registered plugins, and activates any that are in the enabled list
  * but not currently active (e.g. after an app update or failed init).
  *
+ * When called with an `activeProject` context (Mission 69), also
+ * activates project-scoped plugins for that project. Without the
+ * context, project-scope plugins are only registered — they won't
+ * activate until the user navigates away from and back to the project.
+ *
  * Plugins whose API version is no longer supported are flagged as
  * incompatible with an explicit error message rather than silently
  * dropped.
  */
-export async function refreshCommunityPlugins(): Promise<RefreshResult> {
+export async function refreshCommunityPlugins(opts?: {
+  activeProjectId?: string;
+  activeProjectPath?: string;
+}): Promise<RefreshResult> {
   const store = usePluginStore.getState();
   const result: RefreshResult = { discovered: [], refreshed: [], activated: [], incompatible: [] };
 
@@ -887,11 +895,31 @@ export async function refreshCommunityPlugins(): Promise<RefreshResult> {
 
       // Activate if the plugin is in app-enabled but not yet active
       const appEnabled = usePluginStore.getState().appEnabled;
+      const scope = validation.manifest.scope;
       if (appEnabled.includes(id) && !isActive) {
-        const scope = validation.manifest.scope;
         if (scope === 'app' || scope === 'dual') {
           await activatePlugin(id);
           if (usePluginStore.getState().plugins[id]?.status === 'activated') {
+            result.activated.push(id);
+          }
+        }
+      }
+
+      // Mission 69: When called with an active project context, also
+      // activate project-scoped (and dual-scoped) plugins at project
+      // level if the user has them enabled for that project. Without
+      // this, after toggling the external master flag from off→on and
+      // running "Reload Local Plugins", project-scope plugins remain
+      // dormant until the user navigates away and back to the project.
+      if (opts?.activeProjectId && (scope === 'project' || scope === 'dual')) {
+        const fresh = usePluginStore.getState();
+        const inAppEnabled = fresh.appEnabled.includes(id);
+        const inProjectEnabled = (fresh.projectEnabled[opts.activeProjectId] ?? []).includes(id);
+        const projectKey = `${id}:${opts.activeProjectId}`;
+        const alreadyActiveAtProject = activeContexts.has(projectKey);
+        if (inAppEnabled && inProjectEnabled && !alreadyActiveAtProject) {
+          await activatePlugin(id, opts.activeProjectId, opts.activeProjectPath);
+          if (activeContexts.has(projectKey) && !result.activated.includes(id)) {
             result.activated.push(id);
           }
         }

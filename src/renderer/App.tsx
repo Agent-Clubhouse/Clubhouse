@@ -181,8 +181,16 @@ export function App() {
           } else {
             // Load persisted per-project plugin config. The storageRead may
             // fail (first launch, corrupt data, IPC error) — that's fine, we
-            // fall back to an empty list. But loadProjectPluginConfig MUST run
-            // unconditionally so built-in project plugins are always enabled.
+            // fall back to built-in defaults so loadProjectPluginConfig MUST
+            // run unconditionally.
+            //
+            // First load (saved is undefined): seed with built-in project IDs
+            // so a fresh project gets the default plugin set.
+            //
+            // Subsequent loads (saved is defined): use the persisted list
+            // AS-IS — do NOT re-merge built-in defaults. Re-merging would
+            // silently re-enable built-ins that the user has explicitly
+            // disabled at the project level (Mission 69).
             let saved: string[] | undefined;
             try {
               saved = await window.clubhouse.plugin.storageRead({
@@ -195,9 +203,9 @@ export function App() {
             let expFlags = {};
             try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
             if (cancelled) return;
-            const builtinIds = getBuiltinProjectPluginIds(expFlags);
-            const base = Array.isArray(saved) ? saved : [];
-            const merged = [...new Set([...base, ...builtinIds])];
+            const merged = Array.isArray(saved)
+              ? saved
+              : getBuiltinProjectPluginIds(expFlags);
             usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
             await handleProjectSwitch(prevId, activeProjectId, project!.path);
           }
