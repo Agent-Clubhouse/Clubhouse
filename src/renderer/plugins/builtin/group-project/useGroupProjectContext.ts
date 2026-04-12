@@ -56,6 +56,12 @@ export interface GroupProjectContextValue {
 
   /** Set topic protection (never expire). */
   setTopicProtection: (groupProjectId: string, topic: string, isProtected: boolean) => Promise<boolean>;
+
+  /** Clear ALL messages from the board (preserves project config). */
+  clearAllMessages: (groupProjectId: string) => Promise<{ removed: number }>;
+
+  /** Estimate how many messages would be removed by new retention limits. */
+  estimateTrim: (groupProjectId: string, maxPerTopic: number, maxTotal: number) => Promise<{ wouldRemove: number }>;
 }
 
 /** Deduplicate members by agentId. */
@@ -217,6 +223,16 @@ export function useGroupProjectContext(
     return window.clubhouse.groupProject.setTopicProtection(gpId, topic, isProtected);
   }, [isRemote, satelliteId]);
 
+  // --- Clear & trim operations ---
+  const clearAllMessages = useCallback(async (gpId: string): Promise<{ removed: number }> => {
+    // Remote not yet supported for clear-all — local only for now
+    return window.clubhouse.groupProject.clearAllMessages(gpId);
+  }, []);
+
+  const estimateTrim = useCallback(async (gpId: string, maxPerTopic: number, maxTotal: number): Promise<{ wouldRemove: number }> => {
+    return window.clubhouse.groupProject.estimateTrim(gpId, maxPerTopic, maxTotal);
+  }, []);
+
   return {
     isRemote,
     satelliteId,
@@ -232,5 +248,7 @@ export function useGroupProjectContext(
     deleteMessage,
     deleteTopic,
     setTopicProtection,
+    clearAllMessages,
+    estimateTrim,
   };
 }
