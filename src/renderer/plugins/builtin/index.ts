@@ -35,7 +35,7 @@ export interface ExperimentalFlags {
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
-const BASE_DEFAULT_IDS = ['terminal', 'files', 'git', 'browser', 'review', 'canvas'];
+const BASE_DEFAULT_IDS = ['terminal', 'files', 'git', 'browser', 'review', 'canvas', 'group-project', 'sticky-note'];
 
 /** Canvas sub-plugin IDs — hidden from the plugin list unless canvas is enabled. */
 export const CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'agent-queue', 'sticky-note']);

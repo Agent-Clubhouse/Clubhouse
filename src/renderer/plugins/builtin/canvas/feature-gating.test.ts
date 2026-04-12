@@ -32,11 +32,22 @@ describe('canvas feature gating', () => {
     expect(defaults.has('canvas')).toBe(true);
   });
 
-  it('canvas sub-plugins NOT in default enabled IDs', () => {
+  it('stable canvas sub-plugins (group-project, sticky-note) ARE in default enabled IDs', () => {
     const defaults = getDefaultEnabledIds({});
-    for (const id of CANVAS_SUB_PLUGIN_IDS) {
-      expect(defaults.has(id)).toBe(false);
-    }
+    expect(defaults.has('group-project')).toBe(true);
+    expect(defaults.has('sticky-note')).toBe(true);
+  });
+
+  it('agent-queue is NOT in default enabled IDs (correctly experimental-gated)', () => {
+    const defaults = getDefaultEnabledIds({});
+    expect(defaults.has('agent-queue')).toBe(false);
+  });
+
+  it('agent-queue stays out of defaults even when its experimental flag is set', () => {
+    // The experimental flag controls whether agent-queue is *loaded*, not whether
+    // it is auto-enabled. Users still opt in explicitly via the plugin list.
+    const defaults = getDefaultEnabledIds({ agentQueue: true });
+    expect(defaults.has('agent-queue')).toBe(false);
   });
 
   it('CANVAS_SUB_PLUGIN_IDS contains group-project, agent-queue, and sticky-note', () => {
@@ -53,7 +64,7 @@ describe('canvas feature gating', () => {
     }
   });
 
-  it('default enabled IDs include terminal, files, git, browser, review, canvas', () => {
+  it('default enabled IDs include terminal, files, git, browser, review, canvas, group-project, sticky-note', () => {
     const defaults = getDefaultEnabledIds({});
     expect(defaults.has('terminal')).toBe(true);
     expect(defaults.has('files')).toBe(true);
@@ -61,6 +72,8 @@ describe('canvas feature gating', () => {
     expect(defaults.has('browser')).toBe(true);
     expect(defaults.has('review')).toBe(true);
     expect(defaults.has('canvas')).toBe(true);
+    expect(defaults.has('group-project')).toBe(true);
+    expect(defaults.has('sticky-note')).toBe(true);
   });
 
   it('hub is NOT in default enabled IDs', () => {

@@ -196,3 +196,177 @@ describe('useGroupProjectContext — local mode', () => {
     expect(result.current.isRemote).toBe(false);
   });
 });
+
+describe('useGroupProjectContext — remote namespace stripping (Mission 67)', () => {
+  const SAT_ID = 'sat-abc';
+  const BARE_ID = 'gp-123';
+  const NAMESPACED_ID = `remote||${SAT_ID}||${BARE_ID}`;
+
+  function seedRemoteGP() {
+    useRemoteProjectStore.setState({
+      remoteGroupProjects: {
+        [SAT_ID]: [
+          {
+            id: BARE_ID,
+            name: 'Test GP',
+            description: 'desc',
+            instructions: 'instr',
+            metadata: {},
+          },
+        ],
+      },
+    });
+  }
+
+  // Canvas state on a remote canvas re-namespaces metadata.groupProjectId to
+  // `remote||satId||originalId`. The widget passes that to the context's fetch
+  // helpers, which previously forwarded it untouched to the annex client REST
+  // path. The satellite registry only knows the bare ID, so it 404'd and
+  // returned [] — the user saw an empty topic list with no history.
+  // The fix strips the prefix in every read/write helper before crossing the
+  // annex client boundary.
+
+  it('strips namespace from gpId before calling gpBulletinDigest', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+
+    await act(async () => {
+      await result.current.fetchDigest(NAMESPACED_ID);
+    });
+
+    expect(mockGpBulletinDigest).toHaveBeenCalledWith(SAT_ID, BARE_ID, undefined);
+    expect(mockGpBulletinDigest).not.toHaveBeenCalledWith(SAT_ID, NAMESPACED_ID, undefined);
+  });
+
+  it('strips namespace from gpId before calling gpBulletinAll', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+
+    await act(async () => {
+      await result.current.fetchAllMessages(NAMESPACED_ID);
+    });
+
+    expect(mockGpBulletinAll).toHaveBeenCalledWith(SAT_ID, BARE_ID, undefined, undefined);
+    expect(mockGpBulletinAll).not.toHaveBeenCalledWith(SAT_ID, NAMESPACED_ID, undefined, undefined);
+  });
+
+  it('strips namespace from gpId before calling gpBulletinTopic', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+
+    await act(async () => {
+      await result.current.fetchTopicMessages(NAMESPACED_ID, 'general');
+    });
+
+    expect(mockGpBulletinTopic).toHaveBeenCalledWith(SAT_ID, BARE_ID, 'general', undefined, undefined);
+  });
+
+  it('strips namespace from gpId before calling gpUpdate', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+
+    await act(async () => {
+      await result.current.update(NAMESPACED_ID, { description: 'new' });
+    });
+
+    expect(mockGpUpdate).toHaveBeenCalledWith(SAT_ID, BARE_ID, { description: 'new' });
+  });
+
+  it('strips namespace from gpId before calling gpDeleteMessage', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+
+    await act(async () => {
+      await result.current.deleteMessage(NAMESPACED_ID, 'general', 'msg-1');
+    });
+
+    expect(mockGpDeleteMessage).toHaveBeenCalledWith(SAT_ID, BARE_ID, 'general', 'msg-1');
+  });
+
+  it('strips namespace from gpId before calling gpDeleteTopic', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+
+    await act(async () => {
+      await result.current.deleteTopic(NAMESPACED_ID, 'general');
+    });
+
+    expect(mockGpDeleteTopic).toHaveBeenCalledWith(SAT_ID, BARE_ID, 'general');
+  });
+
+  it('strips namespace from gpId before calling gpSetTopicProtection', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+
+    await act(async () => {
+      await result.current.setTopicProtection(NAMESPACED_ID, 'general', true);
+    });
+
+    expect(mockGpSetTopicProtection).toHaveBeenCalledWith(SAT_ID, BARE_ID, 'general', true);
+  });
+
+  it('returns full topic history end-to-end when satellite serves multiple topics with messages', async () => {
+    // Acceptance criterion: 2 topics × 5 messages each, satellite joining via
+    // annex sees full topic history. Stub the satellite responses, drive the
+    // controller-side context, and verify history flows back into the widget.
+    const topic1Messages = Array.from({ length: 5 }, (_, i) => ({
+      id: `msg-t1-${i}`,
+      sender: `agent-${i}`,
+      topic: 'general',
+      body: `general message ${i}`,
+      timestamp: `2026-04-10T00:00:0${i}.000Z`,
+    }));
+    const topic2Messages = Array.from({ length: 5 }, (_, i) => ({
+      id: `msg-t2-${i}`,
+      sender: `agent-${i}`,
+      topic: 'shoulder-tap',
+      body: `shoulder-tap message ${i}`,
+      timestamp: `2026-04-10T00:00:1${i}.000Z`,
+    }));
+    const allMessages = [...topic1Messages, ...topic2Messages];
+
+    mockGpBulletinDigest.mockResolvedValue([
+      { topic: 'general', messageCount: 5, newMessageCount: 0, latestTimestamp: topic1Messages[4].timestamp, isProtected: false },
+      { topic: 'shoulder-tap', messageCount: 5, newMessageCount: 0, latestTimestamp: topic2Messages[4].timestamp, isProtected: false },
+    ]);
+    mockGpBulletinAll.mockResolvedValue(allMessages);
+
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+
+    let digest: any;
+    let messages: any;
+    await act(async () => {
+      digest = await result.current.fetchDigest(NAMESPACED_ID);
+      messages = await result.current.fetchAllMessages(NAMESPACED_ID);
+    });
+
+    // Both REST calls were made with the bare gpId, not the namespaced one.
+    expect(mockGpBulletinDigest).toHaveBeenCalledWith(SAT_ID, BARE_ID, undefined);
+    expect(mockGpBulletinAll).toHaveBeenCalledWith(SAT_ID, BARE_ID, undefined, undefined);
+
+    // Full history is returned to the widget.
+    expect(digest).toHaveLength(2);
+    expect(digest.find((d: any) => d.topic === 'general').messageCount).toBe(5);
+    expect(digest.find((d: any) => d.topic === 'shoulder-tap').messageCount).toBe(5);
+    expect(messages).toHaveLength(10);
+    expect(messages.filter((m: any) => m.topic === 'general')).toHaveLength(5);
+    expect(messages.filter((m: any) => m.topic === 'shoulder-tap')).toHaveLength(5);
+  });
+
+  it('still passes bare gpId through unchanged when used directly without namespacing', async () => {
+    // Defensive: if a caller already strips the prefix (or there's no prefix
+    // because the canvas hasn't applied the namespace step), the helpers
+    // must not break the bare ID.
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(BARE_ID, true, SAT_ID));
+
+    await act(async () => {
+      await result.current.fetchDigest(BARE_ID);
+      await result.current.fetchAllMessages(BARE_ID);
+    });
+
+    expect(mockGpBulletinDigest).toHaveBeenLastCalledWith(SAT_ID, BARE_ID, undefined);
+    expect(mockGpBulletinAll).toHaveBeenLastCalledWith(SAT_ID, BARE_ID, undefined, undefined);
+  });
+});
