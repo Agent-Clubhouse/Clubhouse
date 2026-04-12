@@ -750,7 +750,7 @@ export function PluginListSettings() {
   const setExternalPluginsEnabled = usePluginStore((s) => s.setExternalPluginsEnabled);
   const openPluginSettings = useUIStore((s) => s.openPluginSettings);
   const settingsContext = useUIStore((s) => s.settingsContext);
-  const _activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
 
@@ -769,10 +769,19 @@ export function PluginListSettings() {
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
 
-  // Auto-refresh community plugins on mount so the list is always current
+  // Auto-refresh community plugins on mount so the list is always current.
+  // Pass active project context so project-scoped plugins re-activate
+  // for the current project (Mission 69). Mount-only effect — capturing
+  // initial activeProjectId is intentional.
   useEffect(() => {
     if (externalPluginsEnabled) {
-      refreshCommunityPlugins().catch(() => {});
+      const activeProj = activeProjectId
+        ? projects.find((p) => p.id === activeProjectId)
+        : undefined;
+      refreshCommunityPlugins({
+        activeProjectId: activeProjectId ?? undefined,
+        activeProjectPath: activeProj?.path,
+      }).catch(() => {});
     }
   }, []);
 
@@ -892,6 +901,22 @@ export function PluginListSettings() {
         value: newValue,
       });
     } catch { /* ignore */ }
+    // Mission 69: When enabling the external master flag, immediately
+    // discover and re-activate any previously-enabled external plugins
+    // (including project-scope ones for the current project). Without
+    // this, users had to manually click "Reload Local Plugins" and then
+    // navigate away/back to a project to see their plugins return.
+    if (newValue) {
+      const activeProj = activeProjectId
+        ? projects.find((p) => p.id === activeProjectId)
+        : undefined;
+      try {
+        await refreshCommunityPlugins({
+          activeProjectId: activeProjectId ?? undefined,
+          activeProjectPath: activeProj?.path,
+        });
+      } catch { /* best effort */ }
+    }
   };
 
   const handleBetaPluginsToggle = async () => {
@@ -971,7 +996,13 @@ export function PluginListSettings() {
     setScanning(true);
     setScanResult(null);
     try {
-      const result = await refreshCommunityPlugins();
+      const activeProj = activeProjectId
+        ? projects.find((p) => p.id === activeProjectId)
+        : undefined;
+      const result = await refreshCommunityPlugins({
+        activeProjectId: activeProjectId ?? undefined,
+        activeProjectPath: activeProj?.path,
+      });
       const parts: string[] = [];
       if (result.discovered.length > 0) {
         parts.push(`${result.discovered.length} new plugin(s) found`);
@@ -1125,6 +1156,7 @@ export function PluginListSettings() {
                   <span className="text-xs text-ctp-subtext0">Enable External Plugins</span>
                   <button
                     onClick={handleExternalToggle}
+                    data-testid="external-plugins-toggle"
                     className={`
                       relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
                       ${externalPluginsEnabled ? 'bg-ctp-accent' : 'bg-surface-2'}
