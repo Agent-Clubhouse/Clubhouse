@@ -13,9 +13,9 @@ import { appLog } from './log-service';
 /** Default max message body size in bytes. */
 const MAX_BODY_BYTES = 100 * 1024;
 /** Default max messages per topic before pruning. */
-const DEFAULT_MAX_PER_TOPIC = 500;
+const DEFAULT_MAX_PER_TOPIC = 100;
 /** Default max messages per board before global pruning. */
-const DEFAULT_MAX_TOTAL = 2500;
+const DEFAULT_MAX_TOTAL = 500;
 
 const FLUSH_DELAY_MS = 500;
 
@@ -319,6 +319,100 @@ class BulletinBoard {
     this.dirty = true;
     this.scheduleFlush();
     return true;
+  }
+
+  // ── Clear & trim operations ─────────��───────────────────────────────
+
+  /** Clear ALL topics and messages from the board. Returns the number of messages removed. */
+  async clearAll(): Promise<number> {
+    await this.ensureLoaded();
+    let total = 0;
+    for (const messages of this.topics.values()) {
+      total += messages.length;
+    }
+    this.topics.clear();
+    this.protectedTopics.clear();
+    this.dirty = true;
+    this.scheduleFlush();
+    return total;
+  }
+
+  /**
+   * Immediately enforce current limits — prune per-topic and global.
+   * Returns the number of messages removed. Use after changing retention config
+   * to trim existing boards.
+   */
+  async trimToLimits(): Promise<number> {
+    await this.ensureLoaded();
+    const beforeCount = this.totalMessageCount();
+
+    // Per-topic trim (skip protected)
+    for (const [topic, messages] of this.topics) {
+      if (this.protectedTopics.has(topic)) continue;
+      if (messages.length > this.maxPerTopic) {
+        messages.splice(0, messages.length - this.maxPerTopic);
+      }
+    }
+
+    // Global trim
+    this.pruneGlobal();
+
+    const afterCount = this.totalMessageCount();
+    const removed = beforeCount - afterCount;
+    if (removed > 0) {
+      this.dirty = true;
+      this.scheduleFlush();
+    }
+    return removed;
+  }
+
+  /**
+   * Estimate how many messages would be removed if limits were changed
+   * to the given values. Does NOT mutate state.
+   */
+  estimateTrimCount(maxPerTopic: number, maxTotal: number): number {
+    let removed = 0;
+    let remainingTotal = 0;
+
+    // Estimate per-topic removals
+    for (const [topic, messages] of this.topics) {
+      if (this.protectedTopics.has(topic)) {
+        remainingTotal += messages.length;
+        continue;
+      }
+      if (messages.length > maxPerTopic) {
+        removed += messages.length - maxPerTopic;
+        remainingTotal += maxPerTopic;
+      } else {
+        remainingTotal += messages.length;
+      }
+    }
+
+    // Estimate global removals
+    if (remainingTotal > maxTotal) {
+      removed += remainingTotal - maxTotal;
+    }
+
+    return removed;
+  }
+
+  /** Get a single message by ID (searches all topics). Returns null if not found. */
+  async getMessageById(messageId: string): Promise<BulletinMessage | null> {
+    await this.ensureLoaded();
+    for (const messages of this.topics.values()) {
+      const msg = messages.find(m => m.id === messageId);
+      if (msg) return msg;
+    }
+    return null;
+  }
+
+  /** Total number of messages across all topics. */
+  totalMessageCount(): number {
+    let total = 0;
+    for (const messages of this.topics.values()) {
+      total += messages.length;
+    }
+    return total;
   }
 
   /** For testing: reset state. */
