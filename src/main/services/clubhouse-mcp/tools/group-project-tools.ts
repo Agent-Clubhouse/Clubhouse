@@ -86,7 +86,7 @@ export function registerGroupProjectTools(): void {
         }));
 
       return {
-        content: [{ type: 'text', text: JSON.stringify(members, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify(members) }],
       };
     },
   });
@@ -103,7 +103,10 @@ export function registerGroupProjectTools(): void {
         'Post regular progress updates, questions, decisions, and status changes.\n\n' +
         'Your identity is automatically included as the sender. The "system" topic is ' +
         'reserved for lifecycle events — use any other topic name freely.\n\n' +
-        'Suggested topics: "progress", "questions", "decisions", "blockers"',
+        'TOPIC HYGIENE: Use specific, distinct topic names to keep conversations organized. ' +
+        'Suggested topics: "progress", "questions", "decisions", "blockers". Avoid dumping ' +
+        'everything into a single topic — separate concerns make it easier to find and poll.\n\n' +
+        'Keep messages concise. Prefer plain text or short markdown over large JSON payloads.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -165,10 +168,12 @@ export function registerGroupProjectTools(): void {
     mcp: { targetKind: 'group-project', nameSuffix: 'read_bulletin' },
       description:
         'Read the bulletin board digest — shows all topics with message counts.\n\n' +
-        'This is the key coordination primitive. Poll every 10-30 seconds to stay aware of ' +
-        'what other agents are doing. When you see topics with new messages, use read_topic ' +
-        'to get the full content.\n\n' +
-        'Returns a JSON array of { topic, messageCount, newMessageCount, latestTimestamp }.\n\n' +
+        'This is the key coordination primitive. When you see topics with newMessageCount > 0, ' +
+        'use read_topic to get those new messages.\n\n' +
+        'IMPORTANT: Always pass the "since" parameter with the latestTimestamp from your last ' +
+        'read. This dramatically reduces response size and token cost. Only omit "since" on ' +
+        'your very first read.\n\n' +
+        'Returns a compact JSON array of {topic, messageCount, newMessageCount, latestTimestamp}.\n\n' +
         'Always check the "system" topic for join/leave lifecycle events.',
       inputSchema: {
         type: 'object',
@@ -184,7 +189,7 @@ export function registerGroupProjectTools(): void {
       const board = getBulletinBoard(targetId);
       const digest = await board.getDigest(since);
       return {
-        content: [{ type: 'text', text: JSON.stringify(digest, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify(digest) }],
       };
     },
   });
@@ -196,10 +201,12 @@ export function registerGroupProjectTools(): void {
     label: 'Read Topic',
     mcp: { targetKind: 'group-project', nameSuffix: 'read_topic' },
       description:
-        'Read full messages from a specific bulletin board topic.\n\n' +
-        'Always expand the "system" topic for lifecycle awareness (agent joins/leaves). ' +
-        'Use the since parameter to get only new messages since your last read.\n\n' +
-        'Returns a JSON array of { id, sender, topic, body, timestamp }.',
+        'Read messages from a specific bulletin board topic.\n\n' +
+        'IMPORTANT: Always pass the "since" parameter with the timestamp from your last ' +
+        'read to only fetch new messages. This saves significant tokens.\n\n' +
+        'Use summary=true to get truncated message bodies (~200 chars). If you need the ' +
+        'full content of a specific message, use read_message with its ID.\n\n' +
+        'Returns a compact JSON array of {id, sender, topic, body, timestamp}.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -215,6 +222,10 @@ export function registerGroupProjectTools(): void {
             type: 'number',
             description: 'Max messages to return (default 50).',
           },
+          summary: {
+            type: 'boolean',
+            description: 'If true, truncate message bodies to ~200 chars. Use read_message to get the full body of specific messages.',
+          },
         },
         required: ['topic'],
       },
@@ -228,10 +239,26 @@ export function registerGroupProjectTools(): void {
       }
       const since = optionalString(args, 'since');
       const limit = optionalNumber(args, 'limit');
+      const summary = args.summary === true;
       const board = getBulletinBoard(targetId);
       const messages = await board.getTopicMessages(topic, since, limit);
+
+      if (summary) {
+        const summarized = messages.map(m => ({
+          id: m.id,
+          sender: m.sender,
+          topic: m.topic,
+          body: m.body.length > 200 ? m.body.slice(0, 200) + '...' : m.body,
+          truncated: m.body.length > 200,
+          timestamp: m.timestamp,
+        }));
+        return {
+          content: [{ type: 'text', text: JSON.stringify(summarized) }],
+        };
+      }
+
       return {
-        content: [{ type: 'text', text: JSON.stringify(messages, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify(messages) }],
       };
     },
   });
@@ -271,7 +298,13 @@ export function registerGroupProjectTools(): void {
         name: project.name,
         description: project.description,
         instructions: project.instructions,
-        systemInstructions: 'Post messages in plain text or markdown format when possible for best readability.',
+        systemInstructions:
+          'EFFICIENT POLLING: Always pass "since" (the latestTimestamp from your last read) ' +
+          'to read_bulletin and read_topic. Only fetch topics where newMessageCount > 0. ' +
+          'Use summary=true on read_topic for large topics, then read_message for specific messages.\n\n' +
+          'TOPIC HYGIENE: Use specific, distinct topic names (e.g. "progress", "blockers", "decisions"). ' +
+          'Avoid dumping all communication into one topic.\n\n' +
+          'MESSAGE FORMAT: Post in plain text or short markdown. Avoid large JSON payloads in message bodies.',
       };
 
       if (includeMembersList) {
@@ -286,7 +319,7 @@ export function registerGroupProjectTools(): void {
       }
 
       return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify(result) }],
       };
     },
   });
@@ -346,7 +379,7 @@ export function registerGroupProjectTools(): void {
               delivered: result.delivered.length,
               failed: result.failed.length,
               details: [...result.delivered, ...result.failed],
-            }, null, 2),
+            }),
           }],
         };
       } catch (err) {
@@ -407,7 +440,7 @@ export function registerGroupProjectTools(): void {
               delivered: result.delivered.length,
               failed: result.failed.length,
               details: [...result.delivered, ...result.failed],
-            }, null, 2),
+            }),
           }],
         };
       } catch (err) {
@@ -522,7 +555,7 @@ export function registerGroupProjectTools(): void {
               agentName: memberBinding.agentName || targetAgentId,
               status: 'starting',
               message: message || null,
-            }, null, 2),
+            }),
           }],
         };
       } catch (err) {
@@ -596,7 +629,7 @@ export function registerGroupProjectTools(): void {
             agentName: memberBinding.agentName || targetAgentId,
             action: 'start_polling',
             delivered: true,
-          }, null, 2),
+          }),
         }],
       };
     },
@@ -663,8 +696,137 @@ export function registerGroupProjectTools(): void {
             agentName: memberBinding.agentName || targetAgentId,
             action: 'stop_polling',
             delivered: true,
-          }, null, 2),
+          }),
         }],
+      };
+    },
+  });
+
+  // ── Read single message (always available) ──────────────────────────
+
+  // group__<name>_<hash>__read_message
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.read_message',
+    category: 'group-project',
+    label: 'Read Message',
+    mcp: { targetKind: 'group-project', nameSuffix: 'read_message' },
+    description:
+      'Read the full content of a single message by ID.\n\n' +
+      'Use this after read_topic with summary=true to drill into specific messages ' +
+      'that need full content. This avoids fetching entire topic histories.\n\n' +
+      'Returns a single {id, sender, topic, body, timestamp} object, or null if not found.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message_id: {
+          type: 'string',
+          description: 'The message ID to fetch (from read_topic results).',
+        },
+      },
+      required: ['message_id'],
+    },
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const messageId = requireString(args, 'message_id');
+      if (!messageId) {
+        return { content: [{ type: 'text', text: 'message_id is required.' }], isError: true };
+      }
+
+      const board = getBulletinBoard(targetId);
+      const message = await board.getMessageById(messageId);
+      if (!message) {
+        return { content: [{ type: 'text', text: `Message ${messageId} not found.` }], isError: true };
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(message) }],
+      };
+    },
+  });
+
+  // ── Agent deletion tools (gated by agentDeletionEnabled) ────────────
+
+  // group__<name>_<hash>__clear_topic
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.clear_topic',
+    category: 'group-project',
+    label: 'Clear Topic',
+    mcp: { targetKind: 'group-project', nameSuffix: 'clear_topic' },
+    description:
+      'Delete an entire topic and all its messages from the bulletin board.\n\n' +
+      'Use this to clean up stale or completed topics that are no longer relevant. ' +
+      'This is a destructive operation — all messages in the topic will be permanently removed.\n\n' +
+      'Cannot delete the "system" topic.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: {
+          type: 'string',
+          description: 'Topic name to delete.',
+        },
+      },
+      required: ['topic'],
+    },
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const topic = requireString(args, 'topic');
+      if (!topic) {
+        return { content: [{ type: 'text', text: 'topic is required.' }], isError: true };
+      }
+
+      if (topic === 'system') {
+        return { content: [{ type: 'text', text: 'Cannot delete the "system" topic.' }], isError: true };
+      }
+
+      const board = getBulletinBoard(targetId);
+      const deleted = await board.deleteTopic(topic);
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ deleted, topic }) }],
+      };
+    },
+  });
+
+  // group__<name>_<hash>__delete_messages
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.delete_messages',
+    category: 'group-project',
+    label: 'Delete Messages',
+    mcp: { targetKind: 'group-project', nameSuffix: 'delete_messages' },
+    description:
+      'Delete specific messages by ID from the bulletin board.\n\n' +
+      'Use this to clean up outdated or irrelevant messages. Pass an array of message IDs ' +
+      'to delete. Returns the count of successfully deleted messages.\n\n' +
+      'Get message IDs from read_topic results.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: {
+          type: 'string',
+          description: 'Topic containing the messages.',
+        },
+        message_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of message IDs to delete.',
+        },
+      },
+      required: ['topic', 'message_ids'],
+    },
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const topic = requireString(args, 'topic');
+      const messageIds = args.message_ids as string[] | undefined;
+
+      if (!topic || !messageIds || !Array.isArray(messageIds)) {
+        return { content: [{ type: 'text', text: 'Both topic and message_ids (array) are required.' }], isError: true };
+      }
+
+      const board = getBulletinBoard(targetId);
+      let deletedCount = 0;
+      for (const id of messageIds) {
+        const ok = await board.deleteMessage(topic, id);
+        if (ok) deletedCount++;
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ deleted: deletedCount, requested: messageIds.length }) }],
       };
     },
   });
