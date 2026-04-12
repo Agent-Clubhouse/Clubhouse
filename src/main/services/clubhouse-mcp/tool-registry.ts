@@ -21,6 +21,13 @@ const AGENT_CONTROL_SUFFIXES = new Set(['wake_agent', 'start_polling', 'stop_pol
 /** Tool suffixes gated behind the group-project agentDeletionEnabled setting. */
 const AGENT_DELETION_SUFFIXES = new Set(['clear_topic', 'delete_messages']);
 
+/** Check if a value matches a JSON Schema type (handles array vs object correctly). */
+function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
+  if (schemaType === 'array') return Array.isArray(value);
+  if (schemaType === 'object') return typeof value === 'object' && !Array.isArray(value) && value !== null;
+  return typeof value === schemaType;
+}
+
 /**
  * Tool templates keyed by targetKind.
  * Each template generates tools for a specific bound target.
@@ -254,7 +261,7 @@ export async function callTool(
       }
       for (const [key, value] of Object.entries(args)) {
         const propSchema = properties[key];
-        if (propSchema?.type && typeof value !== propSchema.type) {
+        if (propSchema?.type && !matchesJsonSchemaType(value, propSchema.type)) {
           return { content: [{ type: 'text', text: `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}` }], isError: true };
         }
       }
@@ -332,7 +339,7 @@ export async function callTool(
     // Check types of provided fields
     for (const [key, value] of Object.entries(args)) {
       const propSchema = properties[key];
-      if (propSchema?.type && typeof value !== propSchema.type) {
+      if (propSchema?.type && !matchesJsonSchemaType(value, propSchema.type)) {
         return {
           content: [{ type: 'text', text: `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}` }],
           isError: true,

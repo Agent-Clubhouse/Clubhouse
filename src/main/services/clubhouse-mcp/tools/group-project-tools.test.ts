@@ -91,7 +91,7 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
-  it('registers 5 tools when shoulderTapEnabled is false (default)', () => {
+  it('registers 6 tools when no optional features enabled (default)', () => {
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -101,7 +101,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(5);
+    expect(tools).toHaveLength(6);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('list_members');
@@ -109,7 +109,10 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('read_bulletin');
     expect(suffixes).toContain('read_topic');
     expect(suffixes).toContain('get_project_info');
+    expect(suffixes).toContain('read_message');
     expect(suffixes).not.toContain('shoulder_tap');
+    expect(suffixes).not.toContain('clear_topic');
+    expect(suffixes).not.toContain('delete_messages');
   });
 
   it('tool names use group prefix', () => {
@@ -384,7 +387,7 @@ describe('GroupProjectTools', () => {
     agentRegistry.untrack('agent-1');
   });
 
-  it('registers 7 tools when shoulderTapEnabled is true', async () => {
+  it('registers 8 tools when shoulderTapEnabled is true', async () => {
     const project = await groupProjectRegistry.create('TapProj');
     await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
 
@@ -397,7 +400,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(7);
+    expect(tools).toHaveLength(8);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('shoulder_tap');
@@ -625,7 +628,7 @@ describe('GroupProjectTools', () => {
     expect(suffixes).not.toContain('stop_polling');
   });
 
-  it('registers 8 tools when agentControlEnabled is true (no shoulder tap)', async () => {
+  it('registers 9 tools when agentControlEnabled is true (no shoulder tap)', async () => {
     const project = await groupProjectRegistry.create('CtrlProj');
     await groupProjectRegistry.update(project.id, { metadata: { agentControlEnabled: true } });
 
@@ -638,7 +641,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(8);
+    expect(tools).toHaveLength(9);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('wake_agent');
@@ -649,7 +652,7 @@ describe('GroupProjectTools', () => {
     expect(suffixes).not.toContain('broadcast');
   });
 
-  it('registers 10 tools when both agentControlEnabled and shoulderTapEnabled are true', async () => {
+  it('registers 11 tools when both agentControlEnabled and shoulderTapEnabled are true', async () => {
     const project = await groupProjectRegistry.create('AllProj');
     await groupProjectRegistry.update(project.id, {
       metadata: { agentControlEnabled: true, shoulderTapEnabled: true },
@@ -664,7 +667,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(10);
+    expect(tools).toHaveLength(11);
   });
 
   it('wake_agent returns error for non-member agent', async () => {
@@ -903,6 +906,233 @@ describe('GroupProjectTools', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('sleeping');
+  });
+
+  /* ---------- read_message tool ---------- */
+
+  it('read_message returns a single message by ID', async () => {
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
+    const postName = buildToolName(binding, 'post_bulletin');
+    const postResult = await callTool('agent-1', postName, { topic: 'progress', body: 'Detailed update here' });
+    const { messageId } = JSON.parse(postResult.content[0].text!);
+
+    const readName = buildToolName(binding, 'read_message');
+    const result = await callTool('agent-1', readName, { message_id: messageId });
+
+    expect(result.isError).toBeFalsy();
+    const msg = JSON.parse(result.content[0].text!);
+    expect(msg.id).toBe(messageId);
+    expect(msg.body).toBe('Detailed update here');
+  });
+
+  it('read_message returns error for unknown ID', async () => {
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
+    const readName = buildToolName(binding, 'read_message');
+    const result = await callTool('agent-1', readName, { message_id: 'msg_nonexistent' });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('not found');
+  });
+
+  /* ---------- read_topic summary mode ---------- */
+
+  it('read_topic with summary=true truncates long bodies', async () => {
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
+    const postName = buildToolName(binding, 'post_bulletin');
+    const longBody = 'x'.repeat(500);
+    await callTool('agent-1', postName, { topic: 'verbose', body: longBody });
+    await callTool('agent-1', postName, { topic: 'verbose', body: 'short' });
+
+    const readName = buildToolName(binding, 'read_topic');
+    const result = await callTool('agent-1', readName, { topic: 'verbose', summary: true });
+
+    expect(result.isError).toBeFalsy();
+    const messages = JSON.parse(result.content[0].text!);
+    expect(messages).toHaveLength(2);
+
+    // Long message should be truncated
+    const longMsg = messages.find((m: any) => m.truncated === true);
+    expect(longMsg).toBeDefined();
+    expect(longMsg.body.length).toBeLessThanOrEqual(203); // 200 + '...'
+    expect(longMsg.body.endsWith('...')).toBe(true);
+
+    // Short message should be unchanged
+    const shortMsg = messages.find((m: any) => m.body === 'short');
+    expect(shortMsg).toBeDefined();
+    expect(shortMsg.truncated).toBe(false);
+  });
+
+  /* ---------- Compact JSON responses ---------- */
+
+  it('read_bulletin returns compact JSON (no pretty-printing)', async () => {
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
+    const postName = buildToolName(binding, 'post_bulletin');
+    await callTool('agent-1', postName, { topic: 'test', body: 'hello' });
+
+    const readName = buildToolName(binding, 'read_bulletin');
+    const result = await callTool('agent-1', readName, {});
+
+    expect(result.isError).toBeFalsy();
+    const text = result.content[0].text!;
+    // Compact JSON should NOT contain newlines
+    expect(text).not.toContain('\n');
+  });
+
+  /* ---------- Agent deletion tools (gated by agentDeletionEnabled) ---------- */
+
+  it('does not register clear_topic/delete_messages when agentDeletionEnabled is false', () => {
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+      targetName: 'GP',
+    });
+
+    const tools = getScopedToolList('agent-1');
+    const suffixes = tools.map(t => t.name.split('__').pop());
+    expect(suffixes).not.toContain('clear_topic');
+    expect(suffixes).not.toContain('delete_messages');
+  });
+
+  it('registers clear_topic/delete_messages when agentDeletionEnabled is true', async () => {
+    const project = await groupProjectRegistry.create('DelProj');
+    await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'DelProj',
+      agentName: 'robin',
+      targetName: 'DelProj',
+    });
+
+    const tools = getScopedToolList('agent-1');
+    const suffixes = tools.map(t => t.name.split('__').pop());
+    expect(suffixes).toContain('clear_topic');
+    expect(suffixes).toContain('delete_messages');
+  });
+
+  it('clear_topic deletes a topic and returns result', async () => {
+    const project = await groupProjectRegistry.create('ClearProj');
+    await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'CP',
+      agentName: 'robin',
+      targetName: 'ClearProj',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'ClearProj' });
+
+    // Post some messages first
+    const postName = buildToolName(binding, 'post_bulletin');
+    await callTool('agent-1', postName, { topic: 'old-stuff', body: 'msg1' });
+    await callTool('agent-1', postName, { topic: 'old-stuff', body: 'msg2' });
+
+    // Clear the topic
+    const clearName = buildToolName(binding, 'clear_topic');
+    const result = await callTool('agent-1', clearName, { topic: 'old-stuff' });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.deleted).toBe(true);
+
+    // Verify topic is gone
+    const readName = buildToolName(binding, 'read_topic');
+    const readResult = await callTool('agent-1', readName, { topic: 'old-stuff' });
+    const messages = JSON.parse(readResult.content[0].text!);
+    expect(messages).toHaveLength(0);
+  });
+
+  it('clear_topic rejects system topic', async () => {
+    const project = await groupProjectRegistry.create('SysProj');
+    await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'SP',
+      agentName: 'robin',
+      targetName: 'SysProj',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'SysProj' });
+    const clearName = buildToolName(binding, 'clear_topic');
+    const result = await callTool('agent-1', clearName, { topic: 'system' });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('system');
+  });
+
+  it('delete_messages removes specific messages by ID', async () => {
+    const project = await groupProjectRegistry.create('DelMsgProj');
+    await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'DM',
+      agentName: 'robin',
+      targetName: 'DelMsgProj',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'DelMsgProj' });
+    const postName = buildToolName(binding, 'post_bulletin');
+
+    const r1 = await callTool('agent-1', postName, { topic: 'cleanup', body: 'keep me' });
+    const r2 = await callTool('agent-1', postName, { topic: 'cleanup', body: 'delete me' });
+    const r3 = await callTool('agent-1', postName, { topic: 'cleanup', body: 'delete me too' });
+
+    const id2 = JSON.parse(r2.content[0].text!).messageId;
+    const id3 = JSON.parse(r3.content[0].text!).messageId;
+
+    const delName = buildToolName(binding, 'delete_messages');
+    const result = await callTool('agent-1', delName, {
+      topic: 'cleanup',
+      message_ids: [id2, id3],
+    });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.deleted).toBe(2);
+    expect(parsed.requested).toBe(2);
+
+    // Verify only first message remains
+    const readName = buildToolName(binding, 'read_topic');
+    const readResult = await callTool('agent-1', readName, { topic: 'cleanup' });
+    const remaining = JSON.parse(readResult.content[0].text!);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].body).toBe('keep me');
   });
 
 });
