@@ -341,7 +341,7 @@ function ExpandedProjectView({
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages, estimateTrim } = ctx;
+  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
 
   const [selectedTopic, setSelectedTopic] = useState<string>(ALL_TOPICS_KEY);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
