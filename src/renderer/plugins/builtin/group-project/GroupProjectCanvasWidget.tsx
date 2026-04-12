@@ -341,7 +341,7 @@ function ExpandedProjectView({
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage, deleteMessage, deleteTopic, setTopicProtection } = ctx;
+  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages, estimateTrim } = ctx;
 
   const [selectedTopic, setSelectedTopic] = useState<string>(ALL_TOPICS_KEY);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -350,6 +350,7 @@ function ExpandedProjectView({
   const [showTapModal, setShowTapModal] = useState(false);
   const [showRetentionSettings, setShowRetentionSettings] = useState(false);
   const [confirmDeleteTopic, setConfirmDeleteTopic] = useState<string | null>(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
 
   useEffect(() => {
     if (!loaded) loadProjects();
@@ -360,6 +361,7 @@ function ExpandedProjectView({
   const [editInstr, setEditInstr] = useState(project?.instructions || '');
   const [shoulderTapEnabled, setShoulderTapEnabled] = useState(!!(project?.metadata?.shoulderTapEnabled));
   const [agentControlEnabled, setAgentControlEnabled] = useState(!!(project?.metadata?.agentControlEnabled));
+  const [agentDeletionEnabled, setAgentDeletionEnabled] = useState(!!(project?.metadata?.agentDeletionEnabled));
   const [saving, setSaving] = useState(false);
 
   // Sync local state when project data loads or changes externally
@@ -369,14 +371,16 @@ function ExpandedProjectView({
       setEditInstr(project.instructions || '');
       setShoulderTapEnabled(!!(project.metadata?.shoulderTapEnabled));
       setAgentControlEnabled(!!(project.metadata?.agentControlEnabled));
+      setAgentDeletionEnabled(!!(project.metadata?.agentDeletionEnabled));
     }
-  }, [project?.description, project?.instructions, project?.metadata?.shoulderTapEnabled, project?.metadata?.agentControlEnabled]);
+  }, [project?.description, project?.instructions, project?.metadata?.shoulderTapEnabled, project?.metadata?.agentControlEnabled, project?.metadata?.agentDeletionEnabled]);
 
   const hasUnsavedChanges = project
     ? editDesc !== (project.description || '') ||
       editInstr !== (project.instructions || '') ||
       shoulderTapEnabled !== !!(project.metadata?.shoulderTapEnabled) ||
-      agentControlEnabled !== !!(project.metadata?.agentControlEnabled)
+      agentControlEnabled !== !!(project.metadata?.agentControlEnabled) ||
+      agentDeletionEnabled !== !!(project.metadata?.agentDeletionEnabled)
     : false;
 
   const handleSaveDescInstr = useCallback(async () => {
@@ -386,12 +390,12 @@ function ExpandedProjectView({
       await update(groupProjectId, {
         description: editDesc,
         instructions: editInstr,
-        metadata: { shoulderTapEnabled, agentControlEnabled },
+        metadata: { shoulderTapEnabled, agentControlEnabled, agentDeletionEnabled },
       });
     } finally {
       setSaving(false);
     }
-  }, [hasUnsavedChanges, saving, update, groupProjectId, editDesc, editInstr, shoulderTapEnabled, agentControlEnabled]);
+  }, [hasUnsavedChanges, saving, update, groupProjectId, editDesc, editInstr, shoulderTapEnabled, agentControlEnabled, agentDeletionEnabled]);
 
   const displayName = project?.name || 'Group Project';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
@@ -489,6 +493,15 @@ function ExpandedProjectView({
     setTopics((prev) => prev.map((t) => t.topic === topic ? { ...t, isProtected: !currentlyProtected } : t));
   }, [groupProjectId, setTopicProtection]);
 
+  const handleClearAll = useCallback(async () => {
+    await clearAllMessages(groupProjectId);
+    setTopics([]);
+    setMessages([]);
+    setSelectedTopic(ALL_TOPICS_KEY);
+    setSelectedMessageId(null);
+    setConfirmClearAll(false);
+  }, [groupProjectId, clearAllMessages]);
+
   return (
     <div className="flex flex-col h-full text-ctp-text">
       {/* Header */}
@@ -541,17 +554,39 @@ function ExpandedProjectView({
             <Toggle checked={agentControlEnabled} onChange={setAgentControlEnabled} />
             <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap" title="Allow agents to wake, start/stop polling for other agents">Agent Control</span>
           </div>
-          <button
-            onClick={handleSaveDescInstr}
-            disabled={!hasUnsavedChanges || saving}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
-              hasUnsavedChanges
-                ? 'bg-ctp-accent text-white shadow-md hover:opacity-90'
-                : 'bg-surface-0 text-ctp-overlay0 cursor-default'
-            }`}
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
+          <div className="flex items-center gap-2">
+            <Toggle checked={agentDeletionEnabled} onChange={setAgentDeletionEnabled} />
+            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap" title="Allow agents to clear topics and delete messages">Agent Cleanup</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSaveDescInstr}
+              disabled={!hasUnsavedChanges || saving}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
+                hasUnsavedChanges
+                  ? 'bg-ctp-accent text-white shadow-md hover:opacity-90'
+                  : 'bg-surface-0 text-ctp-overlay0 cursor-default'
+              }`}
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+            {confirmClearAll ? (
+              <button
+                onClick={handleClearAll}
+                className="px-2 py-1.5 text-[10px] font-medium bg-ctp-red text-white rounded hover:opacity-90 transition-opacity"
+              >
+                Confirm Clear
+              </button>
+            ) : (
+              <button
+                onClick={() => setConfirmClearAll(true)}
+                className="px-2 py-1.5 text-[10px] font-medium text-ctp-red bg-ctp-red/10 rounded hover:bg-ctp-red/20 transition-colors"
+                title="Clear all messages (keeps description, instructions, and wires)"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -972,10 +1007,12 @@ function ShoulderTapModal({
 /* ---------- Retention Settings ---------- */
 
 function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
-  const [maxPerTopic, setMaxPerTopic] = useState(500);
-  const [maxTotal, setMaxTotal] = useState(2500);
+  const [maxPerTopic, setMaxPerTopic] = useState(100);
+  const [maxTotal, setMaxTotal] = useState(500);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [trimEstimate, setTrimEstimate] = useState<number | null>(null);
+  const [confirmTrim, setConfirmTrim] = useState(false);
 
   useEffect(() => {
     window.clubhouse.groupProject.getRetentionConfig(groupProjectId).then((config) => {
@@ -985,14 +1022,28 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
     }).catch(() => setLoaded(true));
   }, [groupProjectId]);
 
+  // Estimate trim impact when values change
+  useEffect(() => {
+    if (!loaded) return;
+    window.clubhouse.groupProject.estimateTrim(groupProjectId, maxPerTopic, maxTotal)
+      .then(({ wouldRemove }) => setTrimEstimate(wouldRemove))
+      .catch(() => setTrimEstimate(null));
+  }, [loaded, groupProjectId, maxPerTopic, maxTotal]);
+
   const handleSave = useCallback(async () => {
+    // If trim estimate shows messages will be removed, require confirmation
+    if (trimEstimate && trimEstimate > 0 && !confirmTrim) {
+      setConfirmTrim(true);
+      return;
+    }
     setSaving(true);
     try {
       await window.clubhouse.groupProject.saveRetentionConfig(groupProjectId, maxPerTopic, maxTotal);
+      setConfirmTrim(false);
     } finally {
       setSaving(false);
     }
-  }, [groupProjectId, maxPerTopic, maxTotal]);
+  }, [groupProjectId, maxPerTopic, maxTotal, trimEstimate, confirmTrim]);
 
   if (!loaded) return null;
 
@@ -1005,7 +1056,7 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
           type="number"
           min={1}
           value={maxPerTopic}
-          onChange={(e) => setMaxPerTopic(Math.max(1, parseInt(e.target.value) || 1))}
+          onChange={(e) => { setMaxPerTopic(Math.max(1, parseInt(e.target.value) || 1)); setConfirmTrim(false); }}
           className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
         />
       </label>
@@ -1015,17 +1066,32 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
           type="number"
           min={1}
           value={maxTotal}
-          onChange={(e) => setMaxTotal(Math.max(1, parseInt(e.target.value) || 1))}
+          onChange={(e) => { setMaxTotal(Math.max(1, parseInt(e.target.value) || 1)); setConfirmTrim(false); }}
           className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
         />
       </label>
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="px-2 py-0.5 text-[10px] font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
-      >
-        {saving ? 'Saving...' : 'Save'}
-      </button>
+      {trimEstimate != null && trimEstimate > 0 && (
+        <span className="text-[10px] text-ctp-red font-medium">
+          {trimEstimate} msg{trimEstimate !== 1 ? 's' : ''} will be removed
+        </span>
+      )}
+      {confirmTrim ? (
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-2 py-0.5 text-[10px] font-medium bg-ctp-red text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
+        >
+          {saving ? 'Trimming...' : 'Confirm Trim'}
+        </button>
+      ) : (
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-2 py-0.5 text-[10px] font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      )}
     </div>
   );
 }
