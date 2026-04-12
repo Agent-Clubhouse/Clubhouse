@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react'
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, AnchorCanvasView as AnchorCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { InlineRename } from './InlineRename';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, ANCHOR_HEIGHT } from './canvas-types';
-import type { ProjectInfo } from '../../../../shared/plugin-types';
+import type { ProjectInfo, AgentInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
@@ -83,6 +83,12 @@ interface CanvasViewComponentProps {
   onDragEnd: (position: Position) => void;
   onResizeEnd: (size: Size, position: Position) => void;
   onUpdate: (updates: Partial<CanvasView>) => void;
+  /**
+   * LB-M68: Spawn a new agent card adjacent to a parent agent card. Used by
+   * AgentCanvasView's "+ New Agent" picker so the new agent lands in a sibling
+   * card instead of overwriting the parent.
+   */
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
   /** Right-click context menu handler for view-level actions. */
   onViewContextMenu?: (e: React.MouseEvent) => void;
   /** Whether this card is the radial layout center. */
@@ -113,6 +119,7 @@ export function CanvasViewComponent({
   onDragEnd,
   onResizeEnd,
   onUpdate,
+  onCreateAgentCard,
   onViewContextMenu,
   isLayoutCenter,
 }: CanvasViewComponentProps) {
@@ -413,7 +420,15 @@ export function CanvasViewComponent({
   const renderContent = () => {
     switch (view.type) {
       case 'agent':
-        return <AgentCanvasView view={view} api={api} onUpdate={onUpdate} zoneThemeId={zoneThemeId} />;
+        return (
+          <AgentCanvasView
+            view={view}
+            api={api}
+            onUpdate={onUpdate}
+            zoneThemeId={zoneThemeId}
+            onCreateAgentCard={onCreateAgentCard}
+          />
+        );
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
 

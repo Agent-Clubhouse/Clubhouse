@@ -1,14 +1,30 @@
 /**
  * Tests for AgentCanvasView — specifically the "connecting" pending state
  * shown when a remote agent card has an agentId but the agent isn't in the
- * store yet (timing issue during remote canvas hydration).
+ * store yet (timing issue during remote canvas hydration), and the create-
+ * from-card flow (LB-M68).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+
+// Mock AddAgentDialog with a minimal stub that auto-submits via a button so
+// we can drive handleCreateDurable without rendering the full form (which has
+// orchestrator/model store dependencies that would balloon test setup).
+vi.mock('../../../features/agents/AddAgentDialog', () => ({
+  AddAgentDialog: ({ onCreate }: { onCreate: (name: string, color: string, model: string, useWorktree: boolean) => void }) => (
+    <button
+      data-testid="stub-add-agent-submit"
+      onClick={() => onCreate('NewAgent', 'emerald', 'default', false)}
+    >
+      Submit
+    </button>
+  ),
+}));
+
 import { AgentCanvasView } from './AgentCanvasView';
 import type { AgentCanvasView as AgentCanvasViewType } from './canvas-types';
-import type { PluginAPI } from '../../../../shared/plugin-types';
+import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 
 const noop = () => {};
 
@@ -30,14 +46,32 @@ function makeView(overrides: Partial<AgentCanvasViewType> = {}): AgentCanvasView
 function stubApi(options: {
   agents?: Array<{ id: string; name: string; status: string; kind: string; projectId: string }>;
   mode?: string;
+  projects?: Array<{ id: string; name: string; path: string }>;
+  createDurable?: (opts: { projectId?: string; name: string; color: string }) => Promise<string>;
 } = {}): PluginAPI {
-  const agents = options.agents ?? [];
+  // Mutable agents list so newly-created agents become visible to subsequent .list() calls
+  const agentsList = [...(options.agents ?? [])];
+  const projects = options.projects ?? [];
   return {
     agents: {
-      list: () => agents,
+      list: () => agentsList,
       onAnyChange: () => ({ dispose: () => {} }),
+      createDurable: options.createDurable
+        ? async (opts: { projectId?: string; name: string; color: string }) => {
+            const id = await options.createDurable!(opts);
+            // Push the freshly-created agent into the list so the next .list() finds it.
+            agentsList.push({
+              id,
+              name: opts.name,
+              status: 'sleeping',
+              kind: 'durable',
+              projectId: opts.projectId ?? 'proj-1',
+            } as AgentInfo);
+            return id;
+          }
+        : async () => 'agent-new',
     },
-    projects: { list: () => [] },
+    projects: { list: () => projects },
     context: { mode: options.mode ?? 'project', projectId: 'proj-1' },
     widgets: {
       AgentAvatar: () => null,
@@ -117,5 +151,76 @@ describe('AgentCanvasView', () => {
 
     expect(screen.getByText('remote||sat-1||agent-1')).toBeTruthy();
     expect(screen.getByText('Connecting...')).toBeTruthy();
+  });
+
+  // ── LB-M68: create-from-card flow ─────────────────────────────────
+
+  describe('"+ New Agent" create-from-card flow', () => {
+    it('invokes onCreateAgentCard with the parent view and new agent when callback is provided', async () => {
+      const view = makeView({
+        agentId: null,
+        position: { x: 200, y: 300 },
+        size: { width: 480, height: 480 },
+      });
+      const onCreateAgentCard = vi.fn();
+      const onUpdate = vi.fn();
+      const api = stubApi({
+        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
+        createDurable: async () => 'agent-new-id',
+      });
+
+      render(
+        <AgentCanvasView
+          view={view}
+          api={api}
+          onUpdate={onUpdate}
+          onCreateAgentCard={onCreateAgentCard}
+        />
+      );
+
+      // Open the dialog (mocked to a single submit button)
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      // Trigger the dialog's onCreate via the mocked submit button
+      fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
+
+      await waitFor(() => expect(onCreateAgentCard).toHaveBeenCalled());
+      const [parentView, newAgent] = onCreateAgentCard.mock.calls[0];
+      expect(parentView.id).toBe('cv_agent_1');
+      expect(parentView.position).toEqual({ x: 200, y: 300 });
+      expect(parentView.size).toEqual({ width: 480, height: 480 });
+      expect(newAgent.id).toBe('agent-new-id');
+      expect(newAgent.name).toBe('NewAgent');
+
+      // The current card should NOT have been mutated (parent stays in picker mode)
+      expect(onUpdate).not.toHaveBeenCalled();
+    });
+
+    it('falls back to legacy assign-to-current behavior when onCreateAgentCard is not provided', async () => {
+      const view = makeView({ agentId: null });
+      const onUpdate = vi.fn();
+      const api = stubApi({
+        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
+        createDurable: async () => 'agent-legacy-id',
+      });
+
+      render(
+        <AgentCanvasView
+          view={view}
+          api={api}
+          onUpdate={onUpdate}
+        />
+      );
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
+
+      await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+      const updateArg = onUpdate.mock.calls[0][0];
+      expect(updateArg.agentId).toBe('agent-legacy-id');
+      expect(updateArg.title).toBe('NewAgent');
+      // No position field should be in the update — caller relies on existing
+      // store behavior of preserving position via spread merge.
+      expect(updateArg).not.toHaveProperty('position');
+    });
   });
 });

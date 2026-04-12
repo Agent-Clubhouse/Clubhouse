@@ -61,6 +61,48 @@ export function snapSize(size: Size): Size {
   };
 }
 
+// ── Adjacent placement ───────────────────────────────────────────────
+//
+// LB-M68: When a new card is created from inside an existing card (e.g.
+// AgentCanvasView's "+ New Agent" picker), it should land in a sensible
+// spot adjacent to the parent card rather than overwriting the parent or
+// landing at a hardcoded global default. We try the slot to the right of
+// the parent first, then fall back to below, left, or above to find a
+// position that doesn't overlap any existing view.
+
+const ADJACENT_BUFFER = 60;
+
+/**
+ * Compute a position adjacent to a parent card that does not overlap any
+ * existing card on the canvas. Tries right → below → left → above in order.
+ * As a last resort returns the right-side position even if it overlaps —
+ * the user can move it. The returned position is grid-snapped.
+ */
+export function computeAdjacentPosition(
+  parentPosition: Position,
+  parentSize: Size,
+  newSize: Size,
+  existingViews: CanvasView[],
+  buffer: number = ADJACENT_BUFFER,
+): Position {
+  const candidates: Position[] = [
+    { x: parentPosition.x + parentSize.width + buffer, y: parentPosition.y },
+    { x: parentPosition.x, y: parentPosition.y + parentSize.height + buffer },
+    { x: parentPosition.x - newSize.width - buffer, y: parentPosition.y },
+    { x: parentPosition.x, y: parentPosition.y - newSize.height - buffer },
+  ];
+
+  for (const cand of candidates) {
+    const candRect = { x: cand.x, y: cand.y, width: newSize.width, height: newSize.height };
+    if (!existingViews.some((v) => rectsOverlap(candRect, viewToRect(v)))) {
+      return snapPosition(cand);
+    }
+  }
+  // All four sides occupied — return the right-side candidate so the user
+  // can drag it. Snap to grid for consistency.
+  return snapPosition(candidates[0]);
+}
+
 // ── View CRUD ────────────────────────────────────────────────────────
 
 export function createView(

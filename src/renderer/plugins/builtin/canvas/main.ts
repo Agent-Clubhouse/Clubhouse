@@ -3,6 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from 
 import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
+import { computeAdjacentPosition } from './canvas-operations';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
@@ -482,6 +483,54 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().updateView(viewId, updates);
   }, [store, remoteForward]);
 
+  // LB-M68: Spawn a NEW agent card adjacent to a parent agent card. Used by
+  // AgentCanvasView's "+ New Agent" picker so the new agent lands as a sibling
+  // of the parent (instead of overwriting the parent). Position is computed
+  // from the parent's bounds and the existing canvas state, then snapped to
+  // grid. Persistence is handled by the existing scheduleSave debounce.
+  const handleCreateAgentCard = useCallback((
+    parentView: AgentCanvasView,
+    agent: { id: string; name: string; projectId?: string; orchestrator?: string; model?: string },
+  ) => {
+    const existingViews = store.getState().views;
+    const newSize = parentView.size; // mirror the parent dimensions for visual consistency
+    const position = computeAdjacentPosition(
+      parentView.position,
+      parentView.size,
+      newSize,
+      existingViews,
+    );
+
+    remoteForward({ type: 'addView', viewType: 'agent', position });
+    const newViewId = store.getState().addView('agent', position);
+    if (!newViewId) return;
+
+    const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
+    const displayName = agent.name || agent.id;
+    const updates: Partial<AgentCanvasView> = {
+      agentId: agent.id,
+      projectId: agent.projectId,
+      title: displayName,
+      displayName,
+      size: newSize,
+      metadata: {
+        agentId: agent.id,
+        projectId: agent.projectId ?? null,
+        agentName: agent.name ?? null,
+        projectName: project?.name ?? null,
+        orchestrator: agent.orchestrator ?? null,
+        model: agent.model ?? null,
+      },
+    };
+    remoteForward({ type: 'updateView', viewId: newViewId, updates: updates as Record<string, unknown> });
+    store.getState().updateView(newViewId, updates);
+    // Resize the new card to match the parent if the default differs.
+    if (newSize.width !== undefined && newSize.height !== undefined) {
+      remoteForward({ type: 'resizeView', viewId: newViewId, size: newSize });
+      store.getState().resizeView(newViewId, newSize);
+    }
+  }, [store, remoteForward]);
+
   const handleZoomView = useCallback((viewId: string | null) => {
     remoteForward({ type: 'zoomView', viewId });
     store.getState().zoomView(viewId);
@@ -590,6 +639,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onResizeView: handleResizeView,
             onFocusView: handleFocusView,
             onUpdateView: handleUpdateView,
+            onCreateAgentCard: handleCreateAgentCard,
             onZoomView: handleZoomView,
             onSelectView: handleSelectView,
             onToggleSelectView: handleToggleSelectView,
