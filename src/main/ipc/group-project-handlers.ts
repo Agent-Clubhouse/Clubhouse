@@ -193,8 +193,36 @@ export function registerGroupProjectHandlers(): void {
       });
       const board = getBulletinBoard(projectId as string);
       board.setLimits(maxPerTopic as number, maxTotal as number);
+      const trimmed = await board.trimToLimits();
       broadcastChanged();
-      return true;
+      return { saved: true, trimmed };
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.CLEAR_ALL_MESSAGES, withValidatedArgs(
+    [stringArg()],
+    async (_event, projectId) => {
+      const board = getBulletinBoard(projectId as string);
+      const removed = await board.clearAll();
+      appLog('core:group-project', 'info', 'Cleared all messages', { meta: { projectId, removed } });
+      return { removed };
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.ESTIMATE_TRIM, withValidatedArgs(
+    [stringArg(), numberArg({ integer: true, min: 1 }), numberArg({ integer: true, min: 1 })],
+    async (_event, projectId, maxPerTopic, maxTotal) => {
+      const board = getBulletinBoard(projectId as string);
+      const wouldRemove = board.estimateTrimCount(maxPerTopic as number, maxTotal as number);
+      return { wouldRemove };
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.GET_MESSAGE, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectId, messageId) => {
+      const board = getBulletinBoard(projectId as string);
+      return board.getMessageById(messageId as string);
     },
   ));
 

@@ -379,6 +379,9 @@ export const IPC = {
     SET_TOPIC_PROTECTION: 'group-project:set-topic-protection',
     GET_RETENTION_CONFIG: 'group-project:get-retention-config',
     SAVE_RETENTION_CONFIG: 'group-project:save-retention-config',
+    CLEAR_ALL_MESSAGES: 'group-project:clear-all-messages',
+    ESTIMATE_TRIM: 'group-project:estimate-trim',
+    GET_MESSAGE: 'group-project:get-message',
     INJECT_MESSAGE: 'group-project:inject-message',
   },
   MCP_BINDING: {
