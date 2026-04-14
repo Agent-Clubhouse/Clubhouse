@@ -15,7 +15,9 @@ interface GroupProjectStoreState {
   deleteTopic: (projectId: string, topic: string) => Promise<boolean>;
   setTopicProtection: (projectId: string, topic: string, isProtected: boolean) => Promise<boolean>;
   getRetentionConfig: (projectId: string) => Promise<{ maxPerTopic: number; maxTotal: number }>;
-  saveRetentionConfig: (projectId: string, maxPerTopic: number, maxTotal: number) => Promise<boolean>;
+  saveRetentionConfig: (projectId: string, maxPerTopic: number, maxTotal: number) => Promise<{ saved: boolean; trimmed: number }>;
+  clearAllMessages: (projectId: string) => Promise<{ removed: number }>;
+  estimateTrim: (projectId: string, maxPerTopic: number, maxTotal: number) => Promise<{ wouldRemove: number }>;
 }
 
 export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
@@ -88,6 +90,14 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
 
   saveRetentionConfig: async (projectId, maxPerTopic, maxTotal) => {
     return window.clubhouse.groupProject.saveRetentionConfig(projectId, maxPerTopic, maxTotal);
+  },
+
+  clearAllMessages: async (projectId) => {
+    return window.clubhouse.groupProject.clearAllMessages(projectId);
+  },
+
+  estimateTrim: async (projectId, maxPerTopic, maxTotal) => {
+    return window.clubhouse.groupProject.estimateTrim(projectId, maxPerTopic, maxTotal);
   },
 }));
 

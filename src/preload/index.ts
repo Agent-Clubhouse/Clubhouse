@@ -1248,8 +1248,14 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_TOPIC_PROTECTION, projectId, topic, isProtected),
     getRetentionConfig: (projectId: string): Promise<{ maxPerTopic: number; maxTotal: number }> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_RETENTION_CONFIG, projectId),
-    saveRetentionConfig: (projectId: string, maxPerTopic: number, maxTotal: number): Promise<boolean> =>
+    saveRetentionConfig: (projectId: string, maxPerTopic: number, maxTotal: number): Promise<{ saved: boolean; trimmed: number }> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG, projectId, maxPerTopic, maxTotal),
+    clearAllMessages: (projectId: string): Promise<{ removed: number }> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.CLEAR_ALL_MESSAGES, projectId),
+    estimateTrim: (projectId: string, maxPerTopic: number, maxTotal: number): Promise<{ wouldRemove: number }> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.ESTIMATE_TRIM, projectId, maxPerTopic, maxTotal),
+    getMessage: (projectId: string, messageId: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_MESSAGE, projectId, messageId),
     injectMessage: (agentId: string, message: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.INJECT_MESSAGE, agentId, message),
     onChanged: (callback: (projects: unknown[]) => void) => {

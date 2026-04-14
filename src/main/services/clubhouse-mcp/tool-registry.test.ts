@@ -642,6 +642,39 @@ describe('ToolRegistry', () => {
     });
   });
 
+  describe('agent deletion group project gating', () => {
+    beforeEach(() => {
+      registerToolTemplate('group-project', 'list_members', { description: 'List', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('group-project', 'clear_topic', { description: 'Clear Topic', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('group-project', 'delete_messages', { description: 'Delete Messages', inputSchema: { type: 'object' } }, vi.fn());
+    });
+
+    it('hides clear_topic and delete_messages when agentDeletionEnabled is false', async () => {
+      const project = await groupProjectRegistry.create('NoDel');
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'ND', targetName: 'NoDel',
+      });
+      const tools = getScopedToolList('agent-1');
+      const suffixes = tools.map(t => t.name.split('__').pop());
+      expect(suffixes).toContain('list_members');
+      expect(suffixes).not.toContain('clear_topic');
+      expect(suffixes).not.toContain('delete_messages');
+    });
+
+    it('shows clear_topic and delete_messages when agentDeletionEnabled is true', async () => {
+      const project = await groupProjectRegistry.create('YesDel');
+      await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'YD', targetName: 'YesDel',
+      });
+      const tools = getScopedToolList('agent-1');
+      const suffixes = tools.map(t => t.name.split('__').pop());
+      expect(suffixes).toContain('list_members');
+      expect(suffixes).toContain('clear_topic');
+      expect(suffixes).toContain('delete_messages');
+    });
+  });
+
   describe('global tools', () => {
     it('global tools appear for agents with no bindings', () => {
       registerGlobalTool('my_global_tool', {

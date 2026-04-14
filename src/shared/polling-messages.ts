@@ -12,13 +12,16 @@ export function pollingStartMsg(projectName: string, orchestrator?: Orchestrator
     case 'claude-code':
       return (
         `Group Project notification: Set up automatic polling for "${projectName}". ` +
-        'Schedule a recurring task to call read_bulletin every 60 seconds and act on any relevant updates. ' +
+        'Schedule a recurring task to call read_bulletin every 60 seconds. ' +
+        'IMPORTANT: Always pass the "since" parameter with the latestTimestamp from your previous read ' +
+        'to minimize token usage. Only fetch topics where newMessageCount > 0 using read_topic with since. ' +
         'Use /loop to automate: /loop 60s read_bulletin'
       );
     default:
       return (
         `Group Project notification: Poll the bulletin board for "${projectName}" every 60 seconds ` +
-        'when idle or between turns. Use read_bulletin to check for updates.'
+        'when idle or between turns. Use read_bulletin(since=<lastTimestamp>) to check for updates. ' +
+        'Always pass the "since" parameter to minimize token usage.'
       );
   }
 }

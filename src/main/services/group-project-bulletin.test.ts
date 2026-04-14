@@ -374,4 +374,116 @@ describe('BulletinBoard', () => {
       await expect(destroyBulletinBoard('gp_rmfail')).resolves.toBeUndefined();
     });
   });
+
+  describe('clearAll', () => {
+    it('removes all topics and messages', async () => {
+      const board = getBulletinBoard('gp_clear');
+      await board.postMessage('alice', 'topic-a', 'msg1');
+      await board.postMessage('bob', 'topic-b', 'msg2');
+      await board.postMessage('alice', 'topic-a', 'msg3');
+
+      const removed = await board.clearAll();
+      expect(removed).toBe(3);
+
+      const digest = await board.getDigest();
+      expect(digest).toHaveLength(0);
+    });
+
+    it('returns 0 for an empty board', async () => {
+      const board = getBulletinBoard('gp_clear_empty');
+      const removed = await board.clearAll();
+      expect(removed).toBe(0);
+    });
+  });
+
+  describe('trimToLimits', () => {
+    it('trims per-topic and global when limits are lowered', async () => {
+      const board = getBulletinBoard('gp_trim');
+      // Post 10 messages to a topic
+      for (let i = 0; i < 10; i++) {
+        await board.postMessage('alice', 'noisy', `msg${i}`);
+      }
+
+      board.setLimits(3, 5);
+      const removed = await board.trimToLimits();
+
+      expect(removed).toBe(7); // 10 - 3 = 7
+      const msgs = await board.getTopicMessages('noisy');
+      expect(msgs).toHaveLength(3);
+    });
+
+    it('skips protected topics', async () => {
+      const board = getBulletinBoard('gp_trim_prot');
+      for (let i = 0; i < 10; i++) {
+        await board.postMessage('alice', 'important', `msg${i}`);
+      }
+      board.setTopicProtected('important', true);
+
+      board.setLimits(3, 5);
+      const removed = await board.trimToLimits();
+
+      expect(removed).toBe(0); // protected topic is not trimmed
+      const msgs = await board.getTopicMessages('important');
+      expect(msgs).toHaveLength(10);
+    });
+
+    it('returns 0 when already within limits', async () => {
+      const board = getBulletinBoard('gp_trim_ok');
+      await board.postMessage('alice', 'small', 'msg1');
+      await board.postMessage('alice', 'small', 'msg2');
+
+      const removed = await board.trimToLimits();
+      expect(removed).toBe(0);
+    });
+  });
+
+  describe('estimateTrimCount', () => {
+    it('estimates messages that would be removed', async () => {
+      const board = getBulletinBoard('gp_est');
+      for (let i = 0; i < 10; i++) {
+        await board.postMessage('alice', 'chatty', `msg${i}`);
+      }
+
+      const estimate = board.estimateTrimCount(3, 5);
+      expect(estimate).toBe(7); // 10 - 3 per-topic
+    });
+
+    it('returns 0 when within proposed limits', async () => {
+      const board = getBulletinBoard('gp_est_ok');
+      await board.postMessage('alice', 'small', 'msg1');
+
+      const estimate = board.estimateTrimCount(100, 500);
+      expect(estimate).toBe(0);
+    });
+  });
+
+  describe('getMessageById', () => {
+    it('finds a message across topics', async () => {
+      const board = getBulletinBoard('gp_getmsg');
+      const msg1 = await board.postMessage('alice', 'topic-a', 'hello');
+      const msg2 = await board.postMessage('bob', 'topic-b', 'world');
+
+      const found = await board.getMessageById(msg2.id);
+      expect(found).not.toBeNull();
+      expect(found!.id).toBe(msg2.id);
+      expect(found!.body).toBe('world');
+    });
+
+    it('returns null for unknown ID', async () => {
+      const board = getBulletinBoard('gp_getmsg_404');
+      const found = await board.getMessageById('msg_nonexistent');
+      expect(found).toBeNull();
+    });
+  });
+
+  describe('totalMessageCount', () => {
+    it('counts all messages across topics', async () => {
+      const board = getBulletinBoard('gp_count');
+      await board.postMessage('alice', 'topic-a', 'msg1');
+      await board.postMessage('bob', 'topic-b', 'msg2');
+      await board.postMessage('alice', 'topic-a', 'msg3');
+
+      expect(board.totalMessageCount()).toBe(3);
+    });
+  });
 });

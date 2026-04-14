@@ -18,6 +18,16 @@ const SHOULDER_TAP_HINT = '\n\nCheck the "shoulder-tap" topic for direct message
 /** Tool suffixes gated behind the group-project agentControlEnabled setting. */
 const AGENT_CONTROL_SUFFIXES = new Set(['wake_agent', 'start_polling', 'stop_polling']);
 
+/** Tool suffixes gated behind the group-project agentDeletionEnabled setting. */
+const AGENT_DELETION_SUFFIXES = new Set(['clear_topic', 'delete_messages']);
+
+/** Check if a value matches a JSON Schema type (handles array vs object correctly). */
+function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
+  if (schemaType === 'array') return Array.isArray(value);
+  if (schemaType === 'object') return typeof value === 'object' && !Array.isArray(value) && value !== null;
+  return typeof value === schemaType;
+}
+
 /**
  * Tool templates keyed by targetKind.
  * Each template generates tools for a specific bound target.
@@ -160,10 +170,12 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     // For group-project bindings, check feature flags at the project level
     let shoulderTapEnabled = false;
     let agentControlEnabled = false;
+    let agentDeletionEnabled = false;
     if (binding.targetKind === 'group-project') {
       const project = groupProjectRegistry.getSync(binding.targetId);
       shoulderTapEnabled = !!(project?.metadata?.shoulderTapEnabled);
       agentControlEnabled = !!(project?.metadata?.agentControlEnabled);
+      agentDeletionEnabled = !!(project?.metadata?.agentDeletionEnabled);
     }
 
     for (const template of templates) {
@@ -183,6 +195,11 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
 
       // Skip agent control tools when not enabled at the group project level
       if (binding.targetKind === 'group-project' && AGENT_CONTROL_SUFFIXES.has(template.nameSuffix) && !agentControlEnabled) {
+        continue;
+      }
+
+      // Skip agent deletion tools when not enabled at the group project level
+      if (binding.targetKind === 'group-project' && AGENT_DELETION_SUFFIXES.has(template.nameSuffix) && !agentDeletionEnabled) {
         continue;
       }
 
@@ -244,7 +261,7 @@ export async function callTool(
       }
       for (const [key, value] of Object.entries(args)) {
         const propSchema = properties[key];
-        if (propSchema?.type && typeof value !== propSchema.type) {
+        if (propSchema?.type && !matchesJsonSchemaType(value, propSchema.type)) {
           return { content: [{ type: 'text', text: `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}` }], isError: true };
         }
       }
@@ -322,7 +339,7 @@ export async function callTool(
     // Check types of provided fields
     for (const [key, value] of Object.entries(args)) {
       const propSchema = properties[key];
-      if (propSchema?.type && typeof value !== propSchema.type) {
+      if (propSchema?.type && !matchesJsonSchemaType(value, propSchema.type)) {
         return {
           content: [{ type: 'text', text: `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}` }],
           isError: true,

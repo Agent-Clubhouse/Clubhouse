@@ -28,6 +28,10 @@ const mockBoard = {
   deleteTopic: vi.fn(async () => true),
   setTopicProtected: vi.fn(),
   setLimits: vi.fn(),
+  trimToLimits: vi.fn(async () => 0),
+  clearAll: vi.fn(async () => 0),
+  getMessageById: vi.fn(async () => null),
+  estimateTrimCount: vi.fn(() => 0),
 };
 
 vi.mock('../services/group-project-bulletin', () => ({
@@ -478,7 +482,8 @@ describe('group-project-handlers', () => {
         metadata: { maxPerTopic: 2000, maxTotal: 10000 },
       });
       expect(mockBoard.setLimits).toHaveBeenCalledWith(2000, 10000);
-      expect(result).toBe(true);
+      expect(mockBoard.trimToLimits).toHaveBeenCalled();
+      expect(result).toEqual({ saved: true, trimmed: 0 });
     });
 
     it('rejects non-integer values', () => {
