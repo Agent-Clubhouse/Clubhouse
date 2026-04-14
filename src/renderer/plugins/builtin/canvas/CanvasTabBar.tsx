@@ -40,24 +40,32 @@ export function CanvasTabBar({
   }, [addMenuOpen]);
 
   return (
+    // Outer chrome — no overflow so the + button dropdown is not clipped.
+    // Tabs scroll inside their own inner container; the + button stays pinned
+    // at the right as a sibling. (Bug: Mission 68 added the dropdown but left
+    // it inside overflow-x-auto, which CSS promotes to overflow: auto on both
+    // axes, clipping the absolutely-positioned dropdown below the tab bar.)
     <div
-      className="flex items-center gap-0.5 px-1.5 py-1 bg-ctp-mantle border-b border-surface-0 min-h-[32px] overflow-x-auto flex-shrink-0"
+      className="flex items-center bg-ctp-mantle border-b border-surface-0 min-h-[32px] flex-shrink-0"
       data-testid="canvas-tab-bar"
     >
-      {canvases.map((canvas) => (
-        <CanvasTab
-          key={canvas.id}
-          canvas={canvas}
-          active={canvas.id === activeCanvasId}
-          canClose={canvases.length > 1}
-          onSelect={() => onSelectCanvas(canvas.id)}
-          onRemove={() => onRemoveCanvas(canvas.id)}
-          onRename={(name) => onRenameCanvas(canvas.id, name)}
-          onPopOut={onPopOutCanvas ? () => onPopOutCanvas(canvas.id, canvas.name) : undefined}
-          onExportBlueprint={onExportBlueprint ? () => onExportBlueprint(canvas.id) : undefined}
-        />
-      ))}
-      <div className="relative flex-shrink-0" ref={addMenuRef}>
+      <div className="flex items-center gap-0.5 pl-1.5 py-1 overflow-x-auto flex-1 min-w-0">
+        {canvases.map((canvas) => (
+          <CanvasTab
+            key={canvas.id}
+            canvas={canvas}
+            active={canvas.id === activeCanvasId}
+            canClose={canvases.length > 1}
+            onSelect={() => onSelectCanvas(canvas.id)}
+            onRemove={() => onRemoveCanvas(canvas.id)}
+            onRename={(name) => onRenameCanvas(canvas.id, name)}
+            onPopOut={onPopOutCanvas ? () => onPopOutCanvas(canvas.id, canvas.name) : undefined}
+            onExportBlueprint={onExportBlueprint ? () => onExportBlueprint(canvas.id) : undefined}
+          />
+        ))}
+      </div>
+      {/* + button lives outside the scroll container so its dropdown is never clipped */}
+      <div className="relative flex-shrink-0 py-1 pl-0.5 pr-1.5" ref={addMenuRef}>
         <button
           onClick={() => {
             if (onAddFromBlueprint) {
@@ -74,7 +82,7 @@ export function CanvasTabBar({
         </button>
         {addMenuOpen && (
           <div
-            className="absolute top-full left-0 mt-1 bg-ctp-base border border-surface-0 rounded-lg shadow-lg py-1 min-w-[160px] z-50"
+            className="absolute top-full right-0 mt-1 bg-ctp-base border border-surface-0 rounded-lg shadow-lg py-1 min-w-[160px] z-50"
             data-testid="canvas-add-menu"
           >
             <button

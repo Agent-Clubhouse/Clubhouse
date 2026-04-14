@@ -75,6 +75,22 @@ describe('CanvasTabBar', () => {
     expect(defaultProps.onAddCanvas).toHaveBeenCalled();
   });
 
+  it('+ button is NOT inside the scrollable tabs container (overflow-x-auto regression guard)', () => {
+    // When overflow-x is set to auto, CSS computes overflow-y as auto too,
+    // clipping any absolutely-positioned dropdown that extends below the
+    // container. This test enforces that the + button lives in a sibling
+    // container so its dropdown is never clipped in real browsers.
+    render(<CanvasTabBar {...defaultProps} onAddFromBlueprint={vi.fn()} />);
+    const addButton = screen.getByTestId('canvas-add-button');
+    const tab = screen.getByTestId('canvas-tab-c1');
+
+    // The button and a canvas tab must NOT share the same immediate parent.
+    // If this fails, the button has been moved back inside the scrollable div.
+    expect(addButton.parentElement).not.toBe(tab.parentElement);
+    // And the scrollable tabs container must not contain the + button.
+    expect(tab.parentElement?.contains(addButton)).toBe(false);
+  });
+
   it('right-click on tab shows context menu with Export as Blueprint', () => {
     const onExportBlueprint = vi.fn();
     render(<CanvasTabBar {...defaultProps} onExportBlueprint={onExportBlueprint} />);
