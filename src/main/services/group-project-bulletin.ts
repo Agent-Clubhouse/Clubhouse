@@ -165,14 +165,26 @@ class BulletinBoard {
     return message;
   }
 
-  /** Get a digest of all topics (no message bodies). */
-  async getDigest(since?: string): Promise<TopicDigest[]> {
+  /** Check whether a topic has been created (has at least one message). */
+  async hasTopic(topic: string): Promise<boolean> {
+    await this.ensureLoaded();
+    return this.topics.has(topic);
+  }
+
+  /**
+   * Get a digest of topics (no message bodies). Pass `channels` to restrict the
+   * digest to a named list — omitted topics are still present on the board but
+   * skipped in the result to reduce token cost for agents polling a small set.
+   */
+  async getDigest(since?: string, channels?: string[]): Promise<TopicDigest[]> {
     await this.ensureLoaded();
     const sinceTime = since ? new Date(since).getTime() : 0;
+    const filter = channels && channels.length > 0 ? new Set(channels) : null;
     const digests: TopicDigest[] = [];
 
     for (const [topic, messages] of this.topics) {
       if (messages.length === 0) continue;
+      if (filter && !filter.has(topic)) continue;
       const newMessages = sinceTime > 0
         ? messages.filter(m => new Date(m.timestamp).getTime() > sinceTime)
         : messages;
@@ -467,4 +479,61 @@ export function _resetAllBoardsForTesting(): void {
     board._resetForTesting();
   }
   boards.clear();
+}
+
+// --- Channel bootstrap helpers ---
+
+/** Reserved project-level channels that agents always poll. */
+export const PROJECT_CHANNELS = ['general', 'control'] as const;
+
+/**
+ * Seed the `general` and `control` channels on a project board and mark them
+ * protected so they survive retention pruning. Idempotent — safe to call on
+ * project create and again for pre-existing boards on first agent join.
+ */
+export async function ensureProjectChannels(projectId: string): Promise<void> {
+  const board = getBulletinBoard(projectId);
+  for (const name of PROJECT_CHANNELS) {
+    if (!(await board.hasTopic(name))) {
+      await board.postMessage(
+        'system',
+        name,
+        name === 'general'
+          ? 'general — broad announcements and introductions. Keep traffic low; prefer scoped work channels for focused coordination.'
+          : 'control — coordination channel. Use it to point other agents at specific work channels (e.g. "follow #fix-login-bug").',
+      );
+    }
+    board.setTopicProtected(name, true);
+  }
+}
+
+/**
+ * Build the inbox channel name for an agent. Sanitized to the set
+ * /[a-z0-9-]/ so arbitrary display names don't produce odd channel names.
+ */
+export function inboxChannelName(agentName: string): string {
+  const safe = agentName
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
+  return `inbox-${safe || 'unknown'}`;
+}
+
+/**
+ * Seed an agent's personal inbox channel and mark it protected. Idempotent.
+ * Returns the resolved channel name.
+ */
+export async function ensureInboxChannel(projectId: string, agentName: string): Promise<string> {
+  const board = getBulletinBoard(projectId);
+  const name = inboxChannelName(agentName);
+  if (!(await board.hasTopic(name))) {
+    await board.postMessage(
+      'system',
+      name,
+      `Inbox channel for ${agentName}. Other agents post here for direct, async messages. Poll this on every cycle.`,
+    );
+  }
+  board.setTopicProtected(name, true);
+  return name;
 }

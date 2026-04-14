@@ -12,9 +12,6 @@ import { appLog } from '../log-service';
 /** Tool suffixes gated behind the group-project shoulderTapEnabled setting. */
 const SHOULDER_TAP_SUFFIXES = new Set(['shoulder_tap', 'broadcast']);
 
-/** Hint appended to read_bulletin description when shoulder tap is enabled. */
-const SHOULDER_TAP_HINT = '\n\nCheck the "shoulder-tap" topic for direct messages to you.';
-
 /** Tool suffixes gated behind the group-project agentControlEnabled setting. */
 const AGENT_CONTROL_SUFFIXES = new Set(['wake_agent', 'start_polling', 'stop_polling']);
 
@@ -204,11 +201,6 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       }
 
       let description = template.definition.description;
-
-      // When shoulder tap is enabled, hint agents to check the shoulder-tap topic
-      if (shoulderTapEnabled && template.nameSuffix === 'read_bulletin') {
-        description += SHOULDER_TAP_HINT;
-      }
 
       // Inject per-wire custom instructions into tool description
       if (binding.instructions) {

@@ -4,7 +4,7 @@
  */
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { getBulletinBoard } from './group-project-bulletin';
+import { getBulletinBoard, ensureInboxChannel, ensureProjectChannels } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import * as ptyManager from './pty-manager';
 import { agentRegistry } from './agent-registry';
@@ -145,6 +145,25 @@ async function syncMemberships(agentId: string): Promise<void> {
       const projectName = project?.name || projectId;
 
       try {
+        // Retrofit: projects created before the channel-model redesign won't
+        // have general/control seeded. Safe to call on every join — idempotent.
+        await ensureProjectChannels(projectId);
+      } catch (err) {
+        appLog('core:group-project', 'warn', 'Failed to ensure project channels on join', {
+          meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+
+      let inboxName: string | null = null;
+      try {
+        inboxName = await ensureInboxChannel(projectId, agentName);
+      } catch (err) {
+        appLog('core:group-project', 'warn', 'Failed to create inbox channel', {
+          meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+
+      try {
         const board = getBulletinBoard(projectId);
         await board.postMessage('system', 'system', `${agentName} joined project "${projectName}"`);
       } catch (err) {
@@ -157,7 +176,7 @@ async function syncMemberships(agentId: string): Promise<void> {
       if (project?.metadata?.pollingEnabled) {
         const orchestrator = getAgentOrchestrator(agentId);
         // Small delay so the welcome message is processed first
-        setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator)), 500);
+        setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator, inboxName)), 500);
       }
     }
   }

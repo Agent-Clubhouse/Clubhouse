@@ -1,14 +1,15 @@
 /**
- * Shoulder Tap — urgent direct messaging for group project agents.
+ * Shoulder Tap — urgent, ephemeral direct messaging for group project agents.
  *
  * Shared by MCP tool handler (agent taps) AND IPC handler (human taps).
- * Injects a message into the target agent's PTY (or structured input) with
- * clear response instructions pointing back to the bulletin board.
+ * Injects a message into the target agent's PTY (or structured input). The
+ * tap is NOT recorded to the bulletin board — if a response is expected,
+ * the target is told to post to the sender's inbox channel.
  */
 
 import { agentRegistry } from './agent-registry';
 import * as structuredManager from './structured-manager';
-import { getBulletinBoard } from './group-project-bulletin';
+import { inboxChannelName } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { buildToolName } from './clubhouse-mcp/tool-registry';
@@ -43,9 +44,20 @@ export interface ShoulderTapDelivery {
 
 export interface ShoulderTapResult {
   taskId: string;
-  messageId: string;
   delivered: ShoulderTapDelivery[];
   failed: ShoulderTapDelivery[];
+}
+
+/**
+ * Derive the reply channel for a shoulder tap target: the sender's inbox
+ * channel if the sender is an agent (senderLabel is `agentName@projectName`),
+ * or null when the sender is the UI/human user.
+ */
+function senderReplyChannel(senderLabel: string): string | null {
+  if (!senderLabel || senderLabel === 'user') return null;
+  const senderAgentName = senderLabel.split('@')[0];
+  if (!senderAgentName) return null;
+  return inboxChannelName(senderAgentName);
 }
 
 export async function executeShoulderTap(params: ShoulderTapParams): Promise<ShoulderTapResult> {
@@ -56,15 +68,7 @@ export async function executeShoulderTap(params: ShoulderTapParams): Promise<Sho
   const project = await groupProjectRegistry.get(projectId);
   const projectName = project?.name || projectId;
 
-  // Record tap to bulletin board
-  const board = getBulletinBoard(projectId);
-  const tapRecord = JSON.stringify({
-    taskId,
-    from: senderLabel,
-    to: targetAgentId || 'all',
-    message,
-  });
-  const bulletinMsg = await board.postMessage(senderLabel, 'shoulder-tap', tapRecord);
+  const replyChannel = senderReplyChannel(senderLabel);
 
   // Find target agents
   const allBindings = bindingManager.getAllBindings();
@@ -100,18 +104,30 @@ export async function executeShoulderTap(params: ShoulderTapParams): Promise<Sho
     // Build the response tool name for this agent's group binding
     const replyToolName = buildToolName(binding, 'post_bulletin');
 
-    // Build the injected message
+    // Build the injected message. This tap is ephemeral — no bulletin record
+    // was written — so the only trail of this exchange is what the target
+    // chooses to post in reply. Point them at the sender's inbox channel.
+    const replyLines = replyChannel
+      ? [
+          `To respond, use your ${replyToolName} tool:`,
+          `  topic: "${replyChannel}"    (sender's inbox)`,
+          `  body: "TASK_RESULT:${taskId}: <your response>"`,
+          `To acknowledge: body: "TASK_ACK:${taskId}: Working on it"`,
+        ]
+      : [
+          `This tap was initiated by a human user. No channel reply is required;`,
+          `if you need to follow up, post a status update to "general".`,
+        ];
+
     const taggedMessage =
       `Group Project notification — shoulder tap from "${senderLabel}" in "${projectName}"\n` +
       `${message}\n\n` +
       `---\n` +
       `RESPONSE INSTRUCTIONS:\n` +
       `Project: "${projectName}" (ID: ${projectId})\n` +
-      `Task ID: ${taskId} | Message ID: ${bulletinMsg.id}\n\n` +
-      `To respond, use your ${replyToolName} tool:\n` +
-      `  topic: "shoulder-tap"\n` +
-      `  body: "TASK_RESULT:${taskId}: <your response>"\n` +
-      `To acknowledge: body: "TASK_ACK:${taskId}: Working on it"`;
+      `Task ID: ${taskId}\n` +
+      `This tap is ephemeral — no bulletin record was created.\n\n` +
+      replyLines.join('\n');
 
     try {
       if (reg.runtime === 'pty') {
@@ -148,5 +164,5 @@ export async function executeShoulderTap(params: ShoulderTapParams): Promise<Sho
     meta: { projectId, taskId, senderLabel, deliveredCount: delivered.length, failedCount: failed.length },
   });
 
-  return { taskId, messageId: bulletinMsg.id, delivered, failed };
+  return { taskId, delivered, failed };
 }
