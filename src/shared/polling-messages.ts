@@ -14,9 +14,7 @@ import type { OrchestratorId } from './types';
 
 function standardChannelsHint(inboxChannel: string | null): string {
   const inboxPart = inboxChannel ? `"${inboxChannel}"` : '"inbox-<your-name>"';
-  return (
-    `channels=["general","control",${inboxPart}, ...any work channels you are actively tracking]`
-  );
+  return `channels=["general","control",${inboxPart}, ...any work channels you are actively tracking]`;
 }
 
 export function pollingStartMsg(
@@ -26,7 +24,7 @@ export function pollingStartMsg(
 ): string {
   const hint = standardChannelsHint(inboxChannel ?? null);
   const common =
-    `Group Project "${projectName}": start polling. ` +
+    `Group Project notification: start polling for "${projectName}". ` +
     'Call read_bulletin every 60 seconds with since=<latestTimestamp from your last read> and ' +
     `${hint}. ` +
     'Only drill into a channel with read_topic when its newMessageCount > 0.';
@@ -42,11 +40,11 @@ export function pollingStopMsg(projectName: string, orchestrator?: OrchestratorI
   switch (orchestrator) {
     case 'claude-code':
       return (
-        `Group Project notification: Stop polling the bulletin board for "${projectName}". ` +
+        `Group Project notification: stop polling the bulletin board for "${projectName}". ` +
         'Cancel any /loop or scheduled task you set up for this polling.'
       );
     default:
-      return `Group Project notification: Stop periodic bulletin board polling for "${projectName}".`;
+      return `Group Project notification: stop periodic bulletin board polling for "${projectName}".`;
   }
 }
 

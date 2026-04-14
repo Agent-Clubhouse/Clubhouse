@@ -181,7 +181,7 @@ describe('GroupProjectLifecycle', () => {
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('Poll the bulletin'),
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('start polling'),
     );
     expect(pollingCall).toBeDefined();
     expect(pollingCall![0]).toBe('agent-1');
@@ -349,7 +349,7 @@ describe('GroupProjectLifecycle', () => {
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('Poll the bulletin'),
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('start polling'),
     );
     expect(pollingCall).toBeUndefined();
   });
@@ -520,5 +520,69 @@ describe('GroupProjectLifecycle', () => {
     expect(_recentLeavesForTesting.has('agent-1:gp_123')).toBe(true);
     const ts = _recentLeavesForTesting.get('agent-1:gp_123')!;
     expect(Date.now() - ts).toBeLessThan(5000);
+  });
+
+  it('auto-creates a protected inbox channel when an agent joins', async () => {
+    initGroupProjectLifecycle();
+
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_inbox',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'Robin',
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+
+    const board = getBulletinBoard('gp_inbox');
+    const digest = await board.getDigest();
+    const inbox = digest.find(d => d.topic === 'inbox-robin');
+    expect(inbox).toBeDefined();
+    expect(inbox!.isProtected).toBe(true);
+  });
+
+  it('retrofits general/control channels when an agent joins a pre-existing project', async () => {
+    initGroupProjectLifecycle();
+
+    // Simulate a project that was created before the channel redesign — no
+    // ensureProjectChannels has run because we're binding directly to a raw id.
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_legacy',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+
+    const board = getBulletinBoard('gp_legacy');
+    const digest = await board.getDigest();
+    const topics = digest.map(d => d.topic);
+    expect(topics).toContain('general');
+    expect(topics).toContain('control');
+  });
+
+  it('passes the inbox channel to the polling instruction', async () => {
+    const project = await groupProjectRegistry.create('Inboxer');
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+    mockGetAgentOrchestrator.mockReturnValue('claude-code');
+
+    initGroupProjectLifecycle();
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'falcon',
+    });
+
+    await new Promise(r => setTimeout(r, 800));
+
+    const calls = mockPtyWrite.mock.calls;
+    const pollingCall = calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('start polling'),
+    );
+    expect(pollingCall).toBeDefined();
+    expect(pollingCall![1]).toContain('"inbox-falcon"');
   });
 });

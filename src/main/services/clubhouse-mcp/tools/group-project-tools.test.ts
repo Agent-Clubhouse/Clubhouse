@@ -576,38 +576,26 @@ describe('GroupProjectTools', () => {
     expect(result.content[0].text).toContain('required');
   });
 
-  it('read_bulletin description omits shoulder-tap hint when shoulderTapEnabled is false', () => {
-    bindingManager.bind('agent-1', {
-      targetId: 'gp_no_tap',
-      targetKind: 'group-project',
-      label: 'NoTap',
-      agentName: 'robin',
-      targetName: 'NoTap',
-    });
-
-    const tools = getScopedToolList('agent-1');
-    const readBulletin = tools.find(t => t.name.split('__').pop() === 'read_bulletin');
-    expect(readBulletin).toBeDefined();
-    expect(readBulletin!.description).not.toContain('shoulder-tap');
-  });
-
-  it('read_bulletin description includes shoulder-tap hint when shoulderTapEnabled is true', async () => {
-    const project = await groupProjectRegistry.create('TapHint');
+  it('read_bulletin description describes the channel model regardless of shoulderTapEnabled', async () => {
+    const project = await groupProjectRegistry.create('ChanModel');
     await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
       targetKind: 'group-project',
-      label: 'TapHint',
+      label: 'ChanModel',
       agentName: 'robin',
-      targetName: 'TapHint',
+      targetName: 'ChanModel',
     });
 
     const tools = getScopedToolList('agent-1');
     const readBulletin = tools.find(t => t.name.split('__').pop() === 'read_bulletin');
     expect(readBulletin).toBeDefined();
-    expect(readBulletin!.description).toContain('shoulder-tap');
-    expect(readBulletin!.description).toContain('direct messages to you');
+    // The legacy "shoulder-tap" topic hint is gone — channel-model guidance replaces it.
+    expect(readBulletin!.description).not.toContain('"shoulder-tap" topic');
+    expect(readBulletin!.description).toContain('general');
+    expect(readBulletin!.description).toContain('control');
+    expect(readBulletin!.description).toContain('inbox-<your-name>');
   });
 
   /* ---------- Agent Control Tools (wake, start/stop polling) ---------- */
