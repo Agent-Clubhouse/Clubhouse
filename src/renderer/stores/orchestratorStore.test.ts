@@ -102,14 +102,42 @@ describe('orchestratorStore', () => {
       expect(useOrchestratorStore.getState().enabled).toEqual(['claude-code']);
     });
 
-    it('prevents disabling the last orchestrator', async () => {
-      useOrchestratorStore.setState({ enabled: ['claude-code'] });
+    it('prevents disabling the last orchestrator when it is installed', async () => {
+      useOrchestratorStore.setState({
+        enabled: ['claude-code'],
+        availability: { 'claude-code': { available: true } },
+      });
 
       await useOrchestratorStore.getState().setEnabled('claude-code', false);
 
       // Should still have claude-code
       expect(useOrchestratorStore.getState().enabled).toEqual(['claude-code']);
       expect((window as any).clubhouse.app.saveOrchestratorSettings).not.toHaveBeenCalled();
+    });
+
+    it('prevents disabling the last orchestrator when availability is unknown', async () => {
+      useOrchestratorStore.setState({
+        enabled: ['claude-code'],
+        availability: {},
+      });
+
+      await useOrchestratorStore.getState().setEnabled('claude-code', false);
+
+      expect(useOrchestratorStore.getState().enabled).toEqual(['claude-code']);
+      expect((window as any).clubhouse.app.saveOrchestratorSettings).not.toHaveBeenCalled();
+    });
+
+    it('allows disabling the last orchestrator when it is not installed', async () => {
+      useOrchestratorStore.setState({
+        enabled: ['claude-code'],
+        availability: { 'claude-code': { available: false, error: 'CLI not found' } },
+      });
+      (window as any).clubhouse.app.saveOrchestratorSettings.mockResolvedValue(undefined);
+
+      await useOrchestratorStore.getState().setEnabled('claude-code', false);
+
+      expect(useOrchestratorStore.getState().enabled).toEqual([]);
+      expect((window as any).clubhouse.app.saveOrchestratorSettings).toHaveBeenCalledWith({ enabled: [] });
     });
 
     it('reverts on save error', async () => {
