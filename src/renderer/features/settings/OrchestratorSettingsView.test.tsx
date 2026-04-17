@@ -269,10 +269,11 @@ describe('OrchestratorSettingsView', () => {
             },
           });
           render(<OrchestratorSettingsView />);
-          const toggleButtons = screen.getAllByRole('button');
-          const claudeToggle = toggleButtons.find(
-            (btn) => btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'false'
-          );
+          // Find the claude-code toggle specifically: not-installed orchs show an error message
+          // beneath them — navigate from that error text up to the row's toggle button
+          const errorText = screen.getByText('CLI not found');
+          const row = errorText.closest('.flex.items-center.justify-between');
+          const claudeToggle = row?.querySelector('.toggle-track');
           expect(claudeToggle).toBeTruthy();
           expect(claudeToggle).toBeDisabled();
           expect(claudeToggle).toHaveAttribute('title', 'CLI not found — install to enable');
