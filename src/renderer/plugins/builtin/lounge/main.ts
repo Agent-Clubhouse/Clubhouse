@@ -827,7 +827,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
                 category: cat,
                 agents: catAgents,
                 allAgents: agents,
-                allCategories: visibleCategories,
+                allCategories: categories,
                 projects,
                 isCollapsed: collapsed.has(cat.id),
                 selectedAgentId,
