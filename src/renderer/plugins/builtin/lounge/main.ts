@@ -776,7 +776,30 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     }
   }, [agents, selectedAgentId, selectAgent]);
 
+  // Auto-delete empty custom circles (not project-derived, not General)
+  // Only runs after hydration + agents loaded to avoid premature cleanup
+  useEffect(() => {
+    if (!loaded || agents.length === 0) return;
+    for (const cat of categories) {
+      if (cat.projectId || isDefaultCircle(cat.id)) continue;
+      const catAgents = grouped.get(cat.id) ?? [];
+      if (catAgents.length === 0) {
+        deleteCircle(cat.id);
+      }
+    }
+  }, [grouped, categories, deleteCircle, loaded, agents.length]);
+
   const hasAgents = agents.length > 0;
+
+  // Categories visible in the sidebar: hide empty project-derived categories
+  const visibleCategories = useMemo(() =>
+    categories.filter((cat) => {
+      if (!cat.projectId) return true; // custom circles + General always visible
+      const catAgents = grouped.get(cat.id) ?? [];
+      return catAgents.length > 0;
+    }),
+    [categories, grouped],
+  );
 
   return React.createElement('div', {
     className: 'flex h-full w-full bg-ctp-base',
@@ -814,16 +837,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         'data-testid': 'lounge-category-list',
       },
         hasAgents || categories.some((c) => !c.projectId)
-          ? categories.map((cat) => {
+          ? visibleCategories.map((cat) => {
               const catAgents = grouped.get(cat.id) ?? [];
-              // Hide empty project-derived circles, but always show custom circles
-              if (catAgents.length === 0 && cat.projectId) return null;
               return React.createElement(CategorySection, {
                 key: cat.id,
                 category: cat,
                 agents: catAgents,
                 allAgents: agents,
-                allCategories: categories,
+                allCategories: visibleCategories,
                 projects,
                 isCollapsed: collapsed.has(cat.id),
                 selectedAgentId,

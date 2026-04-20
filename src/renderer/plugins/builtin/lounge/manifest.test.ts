@@ -17,8 +17,8 @@ describe('lounge manifest', () => {
     expect(manifest.scope).toBe('app');
   });
 
-  it('targets engine.api 0.6', () => {
-    expect(manifest.engine.api).toBe(0.6);
+  it('targets engine.api 0.8', () => {
+    expect(manifest.engine.api).toBe(0.8);
   });
 
   it('declares required permissions', () => {
