@@ -54,6 +54,8 @@ export interface LoungeState {
   categoryOrder: string[];
   /** User-defined emoji overrides keyed by category ID. */
   categoryEmojis: Record<string, string>;
+  /** Whether persisted state has been loaded (blocks mutations until true). */
+  hydrated: boolean;
 
   // Actions
   deriveCategories(projects: ProjectInfo[]): void;
@@ -192,7 +194,7 @@ function applyCategoryOrder(categories: LoungeCategory[], order: string[]): Loun
 // ── Store ────────────────────────────────────────────────────────────────
 
 export const createLoungeStore = () =>
-  create<LoungeState>((set) => ({
+  create<LoungeState>((set, get) => ({
     categories: [GENERAL_CIRCLE],
     collapsed: new Set<string>(),
     selectedAgentId: null,
@@ -203,15 +205,22 @@ export const createLoungeStore = () =>
     nextCircleId: 1,
     categoryOrder: [],
     categoryEmojis: {},
+    hydrated: false,
 
     deriveCategories(projects: ProjectInfo[]) {
       set((state) => {
-        const projectCategories: LoungeCategory[] = projects.map((p) => ({
-          id: `project:${p.id}`,
-          label: state.renamedLabels[`project:${p.id}`] ?? p.name,
-          emoji: state.categoryEmojis[`project:${p.id}`] ?? DEFAULT_PROJECT_EMOJI,
-          projectId: p.id,
-        }));
+        const projectCategories: LoungeCategory[] = projects.map((p) => {
+          const catId = `project:${p.id}`;
+          // Disambiguate project labels that collide with reserved names
+          const rawLabel = state.renamedLabels[catId] ?? p.name;
+          const label = isReservedCircleName(rawLabel) ? `${rawLabel} (project)` : rawLabel;
+          return {
+            id: catId,
+            label,
+            emoji: state.categoryEmojis[catId] ?? DEFAULT_PROJECT_EMOJI,
+            projectId: p.id,
+          };
+        });
 
         // Apply emoji overrides to custom circles
         const customWithEmojis = state.customCircles.map((c) => ({
@@ -261,6 +270,8 @@ export const createLoungeStore = () =>
       if (isDefaultCircle(categoryId)) return;
       // Cannot use a reserved name
       if (isReservedCircleName(label)) return;
+      // Block until hydrated to avoid overwriting persisted state
+      if (!get().hydrated) return;
 
       set((state) => {
         const newLabels = { ...state.renamedLabels, [categoryId]: label };
@@ -276,6 +287,7 @@ export const createLoungeStore = () =>
     },
 
     moveAgent(agentId: string, targetCategoryId: string) {
+      if (!get().hydrated) return;
       set((state) => ({
         agentCategoryOverrides: { ...state.agentCategoryOverrides, [agentId]: targetCategoryId },
       }));
@@ -284,6 +296,7 @@ export const createLoungeStore = () =>
     addCircle(label: string): string {
       // Reject reserved names
       if (isReservedCircleName(label)) return '';
+      if (!get().hydrated) return '';
 
       let newId = '';
       set((state) => {
@@ -306,6 +319,7 @@ export const createLoungeStore = () =>
       // Cannot move General
       if (isDefaultCircle(fromId) || isDefaultCircle(toId)) return;
       if (fromId === toId) return;
+      if (!get().hydrated) return;
 
       set((state) => {
         const cats = state.categories.filter((c) => c.id !== DEFAULT_CIRCLE_ID);
@@ -326,6 +340,7 @@ export const createLoungeStore = () =>
     },
 
     setCategoryEmoji(categoryId: string, emoji: string) {
+      if (!get().hydrated) return;
       set((state) => {
         const newEmojis = { ...state.categoryEmojis, [categoryId]: emoji };
         const newCategories = state.categories.map((c) =>
@@ -347,6 +362,7 @@ export const createLoungeStore = () =>
         categoryOrder: data.categoryOrder ?? [],
         categoryEmojis: data.categoryEmojis ?? {},
         collapsed: new Set(data.collapsed ?? []),
+        hydrated: true,
       });
     },
   }));

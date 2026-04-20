@@ -3,6 +3,13 @@ import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, DEFAUL
 import type { LoungeCategory, LoungePersistedState } from './state';
 import type { AgentInfo, ProjectInfo } from '../../../../shared/plugin-types';
 
+/** Create a store that is already hydrated (mutations are unblocked). */
+function createHydratedStore() {
+  const store = createLoungeStore();
+  store.setState({ hydrated: true });
+  return store;
+}
+
 function makeAgent(overrides: Partial<AgentInfo> & { id: string; projectId: string }): AgentInfo {
   return {
     name: 'agent-1',
@@ -23,7 +30,7 @@ function makeProject(overrides: Partial<ProjectInfo> & { id: string }): ProjectI
 
 describe('createLoungeStore', () => {
   it('initializes with General circle', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     const state = store.getState();
     expect(state.categories).toHaveLength(1);
     expect(state.categories[0]).toEqual({ id: DEFAULT_CIRCLE_ID, label: DEFAULT_CIRCLE_LABEL, emoji: '💬' });
@@ -34,7 +41,7 @@ describe('createLoungeStore', () => {
 
   describe('deriveCategories', () => {
     it('creates one category per project plus General', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().deriveCategories([
         makeProject({ id: 'proj-1', name: 'Project One' }),
         makeProject({ id: 'proj-2', name: 'Project Two' }),
@@ -47,7 +54,7 @@ describe('createLoungeStore', () => {
     });
 
     it('preserves collapsed state for surviving categories', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().deriveCategories([
         makeProject({ id: 'proj-1' }),
         makeProject({ id: 'proj-2' }),
@@ -65,7 +72,7 @@ describe('createLoungeStore', () => {
     });
 
     it('removes collapsed state for removed categories', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().deriveCategories([makeProject({ id: 'proj-1' })]);
       store.getState().toggleCollapsed('project:proj-1');
 
@@ -76,7 +83,7 @@ describe('createLoungeStore', () => {
 
   describe('toggleCollapsed', () => {
     it('toggles a category collapsed state', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().deriveCategories([makeProject({ id: 'proj-1' })]);
 
       store.getState().toggleCollapsed('project:proj-1');
@@ -89,14 +96,14 @@ describe('createLoungeStore', () => {
 
   describe('selectAgent', () => {
     it('sets selectedAgentId and selectedProjectId', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().selectAgent('agent-1', 'proj-1');
       expect(store.getState().selectedAgentId).toBe('agent-1');
       expect(store.getState().selectedProjectId).toBe('proj-1');
     });
 
     it('clears selection when null', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().selectAgent('agent-1', 'proj-1');
       store.getState().selectAgent(null);
       expect(store.getState().selectedAgentId).toBeNull();
@@ -106,14 +113,14 @@ describe('createLoungeStore', () => {
 
   describe('renameCategory', () => {
     it('updates the category label', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().deriveCategories([makeProject({ id: 'proj-1', name: 'Original' })]);
       store.getState().renameCategory('project:proj-1', 'Custom Name');
       expect(store.getState().categories[0].label).toBe('Custom Name');
     });
 
     it('persists renamed label across deriveCategories calls', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().deriveCategories([makeProject({ id: 'proj-1', name: 'Original' })]);
       store.getState().renameCategory('project:proj-1', 'My Label');
 
@@ -123,14 +130,14 @@ describe('createLoungeStore', () => {
     });
 
     it('stores the renamed label in renamedLabels', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().deriveCategories([makeProject({ id: 'proj-1' })]);
       store.getState().renameCategory('project:proj-1', 'Renamed');
       expect(store.getState().renamedLabels['project:proj-1']).toBe('Renamed');
     });
 
     it('does not affect other categories', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().deriveCategories([
         makeProject({ id: 'proj-1', name: 'One' }),
         makeProject({ id: 'proj-2', name: 'Two' }),
@@ -143,20 +150,20 @@ describe('createLoungeStore', () => {
 
   describe('moveAgent', () => {
     it('adds an override for the agent', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().moveAgent('agent-1', 'project:proj-2');
       expect(store.getState().agentCategoryOverrides['agent-1']).toBe('project:proj-2');
     });
 
     it('overwrites previous override', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().moveAgent('agent-1', 'project:proj-2');
       store.getState().moveAgent('agent-1', 'project:proj-3');
       expect(store.getState().agentCategoryOverrides['agent-1']).toBe('project:proj-3');
     });
 
     it('does not affect other agents', () => {
-      const store = createLoungeStore();
+      const store = createHydratedStore();
       store.getState().moveAgent('agent-1', 'project:proj-2');
       store.getState().moveAgent('agent-2', 'project:proj-3');
       expect(store.getState().agentCategoryOverrides['agent-1']).toBe('project:proj-2');
@@ -291,14 +298,14 @@ describe('default circle (General)', () => {
   });
 
   it('renameCategory is a no-op on the default circle', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().renameCategory(DEFAULT_CIRCLE_ID, 'Hacked');
     const general = store.getState().categories.find((c) => c.id === DEFAULT_CIRCLE_ID);
     expect(general!.label).toBe(DEFAULT_CIRCLE_LABEL);
   });
 
   it('renameCategory rejects reserved names on other circles', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([makeProject({ id: 'proj-1', name: 'MyProject' })]);
     store.getState().renameCategory('project:proj-1', 'General');
     expect(store.getState().categories[0].label).toBe('MyProject');
@@ -308,7 +315,7 @@ describe('default circle (General)', () => {
   });
 
   it('General is always last after deriveCategories', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([
       makeProject({ id: 'proj-1' }),
       makeProject({ id: 'proj-2' }),
@@ -350,7 +357,7 @@ describe('isReservedCircleName', () => {
 
 describe('addCircle', () => {
   it('adds a custom circle and returns its ID', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     const id = store.getState().addCircle('My Circle');
     expect(id).toBe('circle:1');
     expect(store.getState().customCircles).toHaveLength(1);
@@ -358,7 +365,7 @@ describe('addCircle', () => {
   });
 
   it('inserts custom circle before General in categories', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().addCircle('Team Chat');
     const cats = store.getState().categories;
     expect(cats[cats.length - 1].id).toBe(DEFAULT_CIRCLE_ID);
@@ -366,7 +373,7 @@ describe('addCircle', () => {
   });
 
   it('increments nextCircleId', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().addCircle('A');
     store.getState().addCircle('B');
     expect(store.getState().nextCircleId).toBe(3);
@@ -374,14 +381,14 @@ describe('addCircle', () => {
   });
 
   it('rejects reserved names and returns empty string', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     const id = store.getState().addCircle('General');
     expect(id).toBe('');
     expect(store.getState().customCircles).toHaveLength(0);
   });
 
   it('preserves custom circles across deriveCategories', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().addCircle('Favorites');
     store.getState().deriveCategories([makeProject({ id: 'proj-1' })]);
 
@@ -391,7 +398,7 @@ describe('addCircle', () => {
   });
 
   it('agents can be moved to custom circles', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     const circleId = store.getState().addCircle('VIPs');
     store.getState().deriveCategories([makeProject({ id: 'p1' })]);
 
@@ -407,7 +414,7 @@ describe('addCircle', () => {
 
 describe('reorderCategory', () => {
   it('moves a category before the target', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([
       makeProject({ id: 'p1', name: 'P1' }),
       makeProject({ id: 'p2', name: 'P2' }),
@@ -421,7 +428,7 @@ describe('reorderCategory', () => {
   });
 
   it('keeps General at the end after reorder', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([
       makeProject({ id: 'p1' }),
       makeProject({ id: 'p2' }),
@@ -432,7 +439,7 @@ describe('reorderCategory', () => {
   });
 
   it('is a no-op when dragging General', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([makeProject({ id: 'p1' })]);
     const before = store.getState().categories.map((c) => c.id);
     store.getState().reorderCategory(DEFAULT_CIRCLE_ID, 'project:p1');
@@ -441,7 +448,7 @@ describe('reorderCategory', () => {
   });
 
   it('is a no-op when dropping onto General', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([makeProject({ id: 'p1' })]);
     const before = store.getState().categories.map((c) => c.id);
     store.getState().reorderCategory('project:p1', DEFAULT_CIRCLE_ID);
@@ -450,7 +457,7 @@ describe('reorderCategory', () => {
   });
 
   it('is a no-op for same category', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([makeProject({ id: 'p1' })]);
     const before = store.getState().categories.map((c) => c.id);
     store.getState().reorderCategory('project:p1', 'project:p1');
@@ -459,7 +466,7 @@ describe('reorderCategory', () => {
   });
 
   it('persists order across deriveCategories', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([
       makeProject({ id: 'p1', name: 'P1' }),
       makeProject({ id: 'p2', name: 'P2' }),
@@ -478,20 +485,20 @@ describe('reorderCategory', () => {
 
 describe('setCategoryEmoji', () => {
   it('changes emoji on a project circle', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([makeProject({ id: 'p1' })]);
     store.getState().setCategoryEmoji('project:p1', '🔥');
     expect(store.getState().categories[0].emoji).toBe('🔥');
   });
 
   it('changes emoji on the General circle', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().setCategoryEmoji(DEFAULT_CIRCLE_ID, '🏠');
     expect(store.getState().categories.find((c) => c.id === DEFAULT_CIRCLE_ID)!.emoji).toBe('🏠');
   });
 
   it('changes emoji on a custom circle', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     const id = store.getState().addCircle('VIPs');
     store.getState().setCategoryEmoji(id, '💎');
     expect(store.getState().categories.find((c) => c.id === id)!.emoji).toBe('💎');
@@ -499,7 +506,7 @@ describe('setCategoryEmoji', () => {
   });
 
   it('persists emoji across deriveCategories', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([makeProject({ id: 'p1' })]);
     store.getState().setCategoryEmoji('project:p1', '🚀');
 
@@ -508,7 +515,7 @@ describe('setCategoryEmoji', () => {
   });
 
   it('stores emoji in categoryEmojis', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([makeProject({ id: 'p1' })]);
     store.getState().setCategoryEmoji('project:p1', '🎯');
     expect(store.getState().categoryEmojis['project:p1']).toBe('🎯');
@@ -517,7 +524,7 @@ describe('setCategoryEmoji', () => {
 
 describe('persistence (getPersistedState / loadPersistedState)', () => {
   it('round-trips state through persist/load', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([makeProject({ id: 'p1', name: 'P1' })]);
     store.getState().addCircle('Favorites');
     store.getState().renameCategory('project:p1', 'My Proj');
@@ -542,7 +549,7 @@ describe('persistence (getPersistedState / loadPersistedState)', () => {
   });
 
   it('getPersistedState serializes collapsed as array', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().deriveCategories([makeProject({ id: 'p1' })]);
     store.getState().toggleCollapsed('project:p1');
 
@@ -552,7 +559,7 @@ describe('persistence (getPersistedState / loadPersistedState)', () => {
   });
 
   it('loadPersistedState handles missing fields gracefully', () => {
-    const store = createLoungeStore();
+    const store = createHydratedStore();
     store.getState().loadPersistedState({} as LoungePersistedState);
 
     const s = store.getState();
@@ -560,5 +567,63 @@ describe('persistence (getPersistedState / loadPersistedState)', () => {
     expect(s.customCircles).toEqual([]);
     expect(s.categoryOrder).toEqual([]);
     expect(s.collapsed.size).toBe(0);
+  });
+});
+
+describe('hydration guard', () => {
+  it('starts un-hydrated', () => {
+    const store = createLoungeStore();
+    expect(store.getState().hydrated).toBe(false);
+  });
+
+  it('blocks mutations before hydration', () => {
+    const store = createLoungeStore();
+    store.getState().renameCategory('project:p1', 'X');
+    expect(store.getState().renamedLabels).toEqual({});
+
+    store.getState().moveAgent('a1', 'circle:1');
+    expect(store.getState().agentCategoryOverrides).toEqual({});
+
+    const id = store.getState().addCircle('Test');
+    expect(id).toBe('');
+    expect(store.getState().customCircles).toHaveLength(0);
+  });
+
+  it('unblocks after loadPersistedState', () => {
+    const store = createLoungeStore();
+    store.getState().loadPersistedState({ collapsed: [] } as unknown as LoungePersistedState);
+    expect(store.getState().hydrated).toBe(true);
+
+    store.getState().addCircle('Now works');
+    expect(store.getState().customCircles).toHaveLength(1);
+  });
+
+  it('allows deriveCategories and selectAgent before hydration', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1', name: 'P1' })]);
+    expect(store.getState().categories).toHaveLength(2);
+
+    store.getState().selectAgent('a1', 'p1');
+    expect(store.getState().selectedAgentId).toBe('a1');
+  });
+});
+
+describe('General project name collision', () => {
+  it('disambiguates project named General', () => {
+    const store = createHydratedStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1', name: 'General' })]);
+    const cats = store.getState().categories;
+    const projectCat = cats.find((c) => c.id === 'project:p1');
+    expect(projectCat?.label).toBe('General (project)');
+    // The default circle should remain as-is
+    const general = cats.find((c) => c.id === DEFAULT_CIRCLE_ID);
+    expect(general?.label).toBe(DEFAULT_CIRCLE_LABEL);
+  });
+
+  it('does not disambiguate projects with non-reserved names', () => {
+    const store = createHydratedStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1', name: 'My Project' })]);
+    const cats = store.getState().categories;
+    expect(cats[0].label).toBe('My Project');
   });
 });

@@ -584,8 +584,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   useEffect(() => {
     api.storage.global.read(STORAGE_KEY).then((data) => {
       if (data) loadPersistedState(data as LoungePersistedState);
+      else useLoungeStore.setState({ hydrated: true });
       setLoaded(true);
-    }).catch(() => setLoaded(true));
+    }).catch(() => {
+      useLoungeStore.setState({ hydrated: true });
+      setLoaded(true);
+    });
   }, [api, loadPersistedState]);
 
   // Debounced auto-save (500ms after any persistable state change)
@@ -603,7 +607,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const state = useLoungeStore.getState();
       api.storage.global.write(STORAGE_KEY, getPersistedState(state)).catch(() => {});
     }, 500);
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+    return () => {
+      // Flush pending save synchronously on unmount to prevent data loss
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        const state = useLoungeStore.getState();
+        api.storage.global.write(STORAGE_KEY, getPersistedState(state)).catch(() => {});
+      }
+    };
   }, [api, loaded, renamedLabels, agentCategoryOverrides, customCircles, nextCircleId, categoryOrder, categoryEmojis, collapsed]);
 
   // Force re-render when agents change
