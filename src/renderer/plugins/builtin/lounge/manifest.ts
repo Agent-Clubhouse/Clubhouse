@@ -9,7 +9,7 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Chat-style agent browser — hop between agents organized by project.',
   author: 'Clubhouse',
-  engine: { api: 0.6 },
+  engine: { api: 0.8 },
   scope: 'app',
   permissions: ['agents', 'projects', 'navigation', 'widgets', 'commands', 'storage'],
   contributes: {

@@ -25,6 +25,9 @@ esbuild.buildSync({
   outfile: outFile,
   sourcemap: false,
   minify: false,
+  // Use 'import' condition so zustand resolves to its ESM entry
+  // (avoids CJS require('react') that fails at runtime in data: URI context)
+  conditions: ['import', 'module', 'browser'],
 });
 
 // Copy manifest.json
