@@ -23,6 +23,12 @@ export function isDefaultCircle(categoryId: string): boolean {
   return categoryId === DEFAULT_CIRCLE_ID;
 }
 
+/** Check whether a label already exists among current categories (case-insensitive). */
+export function isDuplicateCircleName(label: string, categories: LoungeCategory[], excludeId?: string): boolean {
+  const normalized = label.toLowerCase().trim();
+  return categories.some((c) => c.id !== excludeId && c.label.toLowerCase().trim() === normalized);
+}
+
 // ── Types ────────────────────────────────────────────────────────────────
 
 export interface LoungeCategory {
@@ -64,6 +70,7 @@ export interface LoungeState {
   renameCategory(categoryId: string, label: string): void;
   moveAgent(agentId: string, targetCategoryId: string): void;
   addCircle(label: string): string;
+  deleteCircle(circleId: string): void;
   reorderCategory(fromId: string, toId: string): void;
   setCategoryEmoji(categoryId: string, emoji: string): void;
   /** Hydrate store from persisted data. */
@@ -268,10 +275,12 @@ export const createLoungeStore = () =>
     renameCategory(categoryId: string, label: string) {
       // Cannot rename the default circle
       if (isDefaultCircle(categoryId)) return;
-      // Cannot use a reserved name
-      if (isReservedCircleName(label)) return;
+      // Cannot use a reserved name or empty string
+      if (!label.trim() || isReservedCircleName(label)) return;
       // Block until hydrated to avoid overwriting persisted state
       if (!get().hydrated) return;
+      // Cannot use a duplicate name
+      if (isDuplicateCircleName(label, get().categories, categoryId)) return;
 
       set((state) => {
         const newLabels = { ...state.renamedLabels, [categoryId]: label };
@@ -294,9 +303,11 @@ export const createLoungeStore = () =>
     },
 
     addCircle(label: string): string {
-      // Reject reserved names
+      // Reject empty, reserved, or duplicate names
+      if (!label.trim()) return '';
       if (isReservedCircleName(label)) return '';
       if (!get().hydrated) return '';
+      if (isDuplicateCircleName(label, get().categories)) return '';
 
       let newId = '';
       set((state) => {
@@ -313,6 +324,37 @@ export const createLoungeStore = () =>
         };
       });
       return newId;
+    },
+
+    deleteCircle(circleId: string) {
+      // Cannot delete the default circle or project-derived circles
+      if (isDefaultCircle(circleId)) return;
+      if (!circleId.startsWith('circle:')) return;
+      if (!get().hydrated) return;
+
+      set((state) => {
+        const newCustomCircles = state.customCircles.filter((c) => c.id !== circleId);
+        const newCategories = state.categories.filter((c) => c.id !== circleId);
+        // Move any agents assigned to this circle back to General
+        const newOverrides = { ...state.agentCategoryOverrides };
+        for (const [agentId, catId] of Object.entries(newOverrides)) {
+          if (catId === circleId) delete newOverrides[agentId];
+        }
+        const newOrder = state.categoryOrder.filter((id) => id !== circleId);
+        const { [circleId]: _emoji, ...newEmojis } = state.categoryEmojis;
+        const { [circleId]: _label, ...newLabels } = state.renamedLabels;
+        const newCollapsed = new Set(state.collapsed);
+        newCollapsed.delete(circleId);
+        return {
+          customCircles: newCustomCircles,
+          categories: newCategories,
+          agentCategoryOverrides: newOverrides,
+          categoryOrder: newOrder,
+          categoryEmojis: newEmojis,
+          renamedLabels: newLabels,
+          collapsed: newCollapsed,
+        };
+      });
     },
 
     reorderCategory(fromId: string, toId: string) {

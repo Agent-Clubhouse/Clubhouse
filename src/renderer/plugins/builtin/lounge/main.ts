@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, AgentInfo } from '../../../../shared/plugin-types';
-import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, isDefaultCircle, isReservedCircleName, getPersistedState } from './state';
+import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, isDefaultCircle, isReservedCircleName, isDuplicateCircleName, getPersistedState } from './state';
 import type { LoungeCategory, LoungePersistedState } from './state';
 
 const useLoungeStore = createLoungeStore();
@@ -78,12 +78,15 @@ function AgentRow({ agent, displayName, isSelected, onClick, onContextMenu }: {
 
 // ── Category Context Menu ───────────────────────────────────────────────
 
-function CategoryContextMenu({ position, onRename, onClose }: {
+function CategoryContextMenu({ position, categoryId, onRename, onDelete, onClose }: {
   position: { x: number; y: number };
+  categoryId: string;
   onRename: () => void;
+  onDelete: () => void;
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const isCustomCircle = categoryId.startsWith('circle:') && !isDefaultCircle(categoryId);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -102,11 +105,11 @@ function CategoryContextMenu({ position, onRename, onClose }: {
 
   const style = useMemo(() => {
     const menuWidth = 160;
-    const menuHeight = 32 + 8;
+    const menuHeight = (isCustomCircle ? 64 : 32) + 8;
     const x = Math.min(position.x, window.innerWidth - menuWidth - 8);
     const y = Math.min(position.y, window.innerHeight - menuHeight - 8);
     return { left: x, top: y };
-  }, [position]);
+  }, [position, isCustomCircle]);
 
   return React.createElement('div', {
     ref: menuRef,
@@ -126,6 +129,21 @@ function CategoryContextMenu({ position, onRename, onClose }: {
         React.createElement('path', { d: 'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z' }),
       ),
       React.createElement('span', null, 'Rename'),
+    ),
+    // Delete option — only for custom circles (not project-derived)
+    isCustomCircle && React.createElement('button', {
+      className: 'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ctp-red hover:bg-surface-1 transition-colors cursor-pointer',
+      onClick: (e: React.MouseEvent) => { e.stopPropagation(); onDelete(); onClose(); },
+      'data-testid': 'lounge-ctx-delete',
+    },
+      React.createElement('svg', {
+        width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+      },
+        React.createElement('polyline', { points: '3 6 5 6 21 6' }),
+        React.createElement('path', { d: 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2' }),
+      ),
+      React.createElement('span', null, 'Delete'),
     ),
   );
 }
@@ -331,7 +349,94 @@ function EmojiPicker({ currentEmoji, onSelect, onClose }: {
   );
 }
 
-function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename, onMoveAgent, onCreateCircle, onReorderCategory, onSetEmoji }: {
+// ── Create Circle Dialog ──────────────────────────────────────────────
+
+function CreateCircleDialog({ onConfirm, onCancel, existingCategories }: {
+  onConfirm: (name: string) => void;
+  onCancel: () => void;
+  existingCategories: LoungeCategory[];
+}) {
+  const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onCancel]);
+
+  const handleSubmit = useCallback(() => {
+    const trimmed = value.trim();
+    if (trimmed && !isReservedCircleName(trimmed) && !isDuplicateCircleName(trimmed, existingCategories)) {
+      onConfirm(trimmed);
+    }
+  }, [value, onConfirm, existingCategories]);
+
+  const trimmed = value.trim();
+  const isReserved = trimmed.length > 0 && isReservedCircleName(trimmed);
+  const isDuplicate = trimmed.length > 0 && !isReserved && isDuplicateCircleName(trimmed, existingCategories);
+  const isValid = trimmed.length > 0 && !isReserved && !isDuplicate;
+
+  return React.createElement('div', {
+    className: 'fixed inset-0 z-50 flex items-center justify-center bg-black/50',
+    onClick: onCancel,
+  },
+    React.createElement('div', {
+      className: 'bg-ctp-mantle border border-surface-1 rounded-xl p-4 w-72 shadow-2xl',
+      onClick: (e: React.MouseEvent) => e.stopPropagation(),
+    },
+      React.createElement('h3', {
+        className: 'text-sm font-semibold text-ctp-text mb-3',
+      }, 'Create a new circle'),
+      React.createElement('input', {
+        ref: inputRef,
+        type: 'text',
+        value,
+        placeholder: 'Enter circle name',
+        className: 'w-full px-3 py-1.5 rounded-lg bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder-ctp-overlay0 outline-none focus:ring-1 focus:ring-ctp-accent',
+        onChange: (e: React.ChangeEvent<HTMLInputElement>) => setValue(e.target.value),
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === 'Enter' && isValid) handleSubmit();
+          if (e.key === 'Escape') onCancel();
+        },
+        'data-testid': 'lounge-create-circle-input',
+      }),
+      isReserved && React.createElement('p', {
+        className: 'text-[10px] text-ctp-red mt-1',
+      }, 'This name is reserved'),
+      isDuplicate && React.createElement('p', {
+        className: 'text-[10px] text-ctp-red mt-1',
+      }, 'A circle with this name already exists'),
+      React.createElement('div', {
+        className: 'flex justify-end gap-2 mt-3',
+      },
+        React.createElement('button', {
+          onClick: onCancel,
+          className: 'px-3 py-1 rounded-md text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 transition-colors cursor-pointer',
+          'data-testid': 'lounge-create-circle-cancel',
+        }, 'Cancel'),
+        React.createElement('button', {
+          onClick: handleSubmit,
+          disabled: !isValid,
+          className: `px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${
+            isValid
+              ? 'bg-ctp-accent text-ctp-base hover:opacity-90'
+              : 'bg-surface-1 text-ctp-overlay0 cursor-not-allowed'
+          }`,
+          'data-testid': 'lounge-create-circle-confirm',
+        }, 'Create'),
+      ),
+    ),
+  );
+}
+
+function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename, onDelete, onMoveAgent, onCreateCircle, onReorderCategory, onSetEmoji }: {
   category: LoungeCategory;
   agents: AgentInfo[];
   allAgents: AgentInfo[];
@@ -342,6 +447,7 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
   onToggle: () => void;
   onSelectAgent: (agentId: string, projectId: string) => void;
   onRename: (categoryId: string, label: string) => void;
+  onDelete: (categoryId: string) => void;
   onMoveAgent: (agentId: string, targetCategoryId: string) => void;
   onCreateCircle: () => void;
   onReorderCategory: (fromId: string, toId: string) => void;
@@ -480,7 +586,9 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
     // Context menu
     contextMenu && React.createElement(CategoryContextMenu, {
       position: contextMenu,
+      categoryId: category.id,
       onRename: startRename,
+      onDelete: () => onDelete(category.id),
       onClose: () => setContextMenu(null),
     }),
     // Agent rows (hidden when collapsed)
@@ -575,6 +683,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const moveAgent = useLoungeStore((s) => s.moveAgent);
   const agentCategoryOverrides = useLoungeStore((s) => s.agentCategoryOverrides);
   const addCircle = useLoungeStore((s) => s.addCircle);
+  const deleteCircle = useLoungeStore((s) => s.deleteCircle);
   const reorderCategory = useLoungeStore((s) => s.reorderCategory);
   const setCategoryEmoji = useLoungeStore((s) => s.setCategoryEmoji);
   const loadPersistedState = useLoungeStore((s) => s.loadPersistedState);
@@ -643,8 +752,15 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     selectAgent(agentId, projectId);
   }, [selectAgent]);
 
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+
   const handleCreateCircle = useCallback(() => {
-    addCircle('New circle');
+    setShowCreateDialog(true);
+  }, []);
+
+  const handleConfirmCreate = useCallback((name: string) => {
+    addCircle(name);
+    setShowCreateDialog(false);
   }, [addCircle]);
 
   // Clear selection when agent disappears
@@ -708,6 +824,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
                 onToggle: () => toggleCollapsed(cat.id),
                 onSelectAgent: handleSelectAgent,
                 onRename: renameCategory,
+                onDelete: deleteCircle,
                 onMoveAgent: moveAgent,
                 onCreateCircle: handleCreateCircle,
                 onReorderCategory: reorderCategory,
@@ -725,6 +842,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         ? React.createElement(AgentContent, { api, agentId: selectedAgentId })
         : React.createElement(NoSelection),
     ),
+    // Create circle dialog
+    showCreateDialog && React.createElement(CreateCircleDialog, {
+      onConfirm: handleConfirmCreate,
+      onCancel: () => setShowCreateDialog(false),
+      existingCategories: categories,
+    }),
   );
 }
 

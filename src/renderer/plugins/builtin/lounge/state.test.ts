@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, DEFAULT_CIRCLE_ID, DEFAULT_CIRCLE_LABEL, isReservedCircleName, isDefaultCircle, getPersistedState } from './state';
+import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, DEFAULT_CIRCLE_ID, DEFAULT_CIRCLE_LABEL, isReservedCircleName, isDefaultCircle, isDuplicateCircleName, getPersistedState } from './state';
 import type { LoungeCategory, LoungePersistedState } from './state';
 import type { AgentInfo, ProjectInfo } from '../../../../shared/plugin-types';
 
@@ -625,5 +625,108 @@ describe('General project name collision', () => {
     store.getState().deriveCategories([makeProject({ id: 'p1', name: 'My Project' })]);
     const cats = store.getState().categories;
     expect(cats[0].label).toBe('My Project');
+  });
+});
+
+describe('deleteCircle', () => {
+  it('removes a custom circle', () => {
+    const store = createHydratedStore();
+    const id = store.getState().addCircle('Temp');
+    expect(store.getState().customCircles).toHaveLength(1);
+    store.getState().deleteCircle(id);
+    expect(store.getState().customCircles).toHaveLength(0);
+    expect(store.getState().categories.find((c) => c.id === id)).toBeUndefined();
+  });
+
+  it('moves agents back to General when their circle is deleted', () => {
+    const store = createHydratedStore();
+    const id = store.getState().addCircle('VIPs');
+    store.getState().moveAgent('a1', id);
+    expect(store.getState().agentCategoryOverrides['a1']).toBe(id);
+    store.getState().deleteCircle(id);
+    expect(store.getState().agentCategoryOverrides['a1']).toBeUndefined();
+  });
+
+  it('cannot delete the General circle', () => {
+    const store = createHydratedStore();
+    store.getState().deleteCircle(DEFAULT_CIRCLE_ID);
+    expect(store.getState().categories.find((c) => c.id === DEFAULT_CIRCLE_ID)).toBeDefined();
+  });
+
+  it('cannot delete project-derived circles', () => {
+    const store = createHydratedStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1' })]);
+    store.getState().deleteCircle('project:p1');
+    expect(store.getState().categories.find((c) => c.id === 'project:p1')).toBeDefined();
+  });
+
+  it('cleans up emojis, labels, order, and collapsed state', () => {
+    const store = createHydratedStore();
+    const id = store.getState().addCircle('Temp');
+    store.getState().setCategoryEmoji(id, '🔥');
+    store.getState().renameCategory(id, 'Renamed');
+    store.getState().toggleCollapsed(id);
+    store.getState().deleteCircle(id);
+    expect(store.getState().categoryEmojis[id]).toBeUndefined();
+    expect(store.getState().renamedLabels[id]).toBeUndefined();
+    expect(store.getState().collapsed.has(id)).toBe(false);
+  });
+});
+
+describe('duplicate name validation', () => {
+  it('isDuplicateCircleName detects duplicates case-insensitively', () => {
+    const cats: LoungeCategory[] = [
+      { id: 'circle:1', label: 'Favorites' },
+      { id: DEFAULT_CIRCLE_ID, label: 'General' },
+    ];
+    expect(isDuplicateCircleName('Favorites', cats)).toBe(true);
+    expect(isDuplicateCircleName('favorites', cats)).toBe(true);
+    expect(isDuplicateCircleName('FAVORITES', cats)).toBe(true);
+    expect(isDuplicateCircleName('Something else', cats)).toBe(false);
+  });
+
+  it('isDuplicateCircleName excludes a specific ID', () => {
+    const cats: LoungeCategory[] = [
+      { id: 'circle:1', label: 'Favorites' },
+    ];
+    expect(isDuplicateCircleName('Favorites', cats, 'circle:1')).toBe(false);
+    expect(isDuplicateCircleName('Favorites', cats, 'circle:2')).toBe(true);
+  });
+
+  it('addCircle rejects duplicate names', () => {
+    const store = createHydratedStore();
+    store.getState().addCircle('Favorites');
+    const id = store.getState().addCircle('Favorites');
+    expect(id).toBe('');
+    expect(store.getState().customCircles).toHaveLength(1);
+  });
+
+  it('addCircle rejects duplicate names case-insensitively', () => {
+    const store = createHydratedStore();
+    store.getState().addCircle('Favorites');
+    const id = store.getState().addCircle('favorites');
+    expect(id).toBe('');
+  });
+
+  it('renameCategory rejects duplicate names', () => {
+    const store = createHydratedStore();
+    store.getState().addCircle('Alpha');
+    store.getState().addCircle('Beta');
+    store.getState().renameCategory('circle:2', 'Alpha');
+    expect(store.getState().categories.find((c) => c.id === 'circle:2')?.label).toBe('Beta');
+  });
+
+  it('renameCategory allows same name on the same circle (no-op)', () => {
+    const store = createHydratedStore();
+    store.getState().addCircle('Alpha');
+    store.getState().renameCategory('circle:1', 'Alpha');
+    expect(store.getState().categories.find((c) => c.id === 'circle:1')?.label).toBe('Alpha');
+  });
+
+  it('addCircle rejects empty names', () => {
+    const store = createHydratedStore();
+    expect(store.getState().addCircle('')).toBe('');
+    expect(store.getState().addCircle('   ')).toBe('');
+    expect(store.getState().customCircles).toHaveLength(0);
   });
 });
