@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, AgentInfo } from '../../../../shared/plugin-types';
-import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, isDefaultCircle, isReservedCircleName, isDuplicateCircleName, getPersistedState } from './state';
+import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, isDefaultCircle, isReservedCircleName, isDuplicateCircleName, getPersistedState, DEFAULT_CUSTOM_EMOJI } from './state';
 import type { LoungeCategory, LoungePersistedState } from './state';
 
 const useLoungeStore = createLoungeStore();
@@ -351,17 +351,24 @@ function EmojiPicker({ currentEmoji, onSelect, onClose }: {
 
 // ── Create Circle Dialog ──────────────────────────────────────────────
 
-function CreateCircleDialog({ onConfirm, onCancel, existingCategories }: {
-  onConfirm: (name: string) => void;
+function CircleDialog({ mode, onConfirm, onCancel, existingCategories, initialName, initialEmoji, editCategoryId }: {
+  mode: 'create' | 'edit';
+  onConfirm: (name: string, emoji?: string) => void;
   onCancel: () => void;
   existingCategories: LoungeCategory[];
+  initialName?: string;
+  initialEmoji?: string;
+  editCategoryId?: string;
 }) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initialName ?? '');
+  const [emoji, setEmoji] = useState(initialEmoji ?? DEFAULT_CUSTOM_EMOJI);
+  const [showEmojis, setShowEmojis] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+    if (mode === 'edit') inputRef.current?.select();
+  }, [mode]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -373,15 +380,16 @@ function CreateCircleDialog({ onConfirm, onCancel, existingCategories }: {
 
   const handleSubmit = useCallback(() => {
     const trimmed = value.trim();
-    if (trimmed && !isReservedCircleName(trimmed) && !isDuplicateCircleName(trimmed, existingCategories)) {
-      onConfirm(trimmed);
+    if (trimmed && !isReservedCircleName(trimmed) && !isDuplicateCircleName(trimmed, existingCategories, editCategoryId)) {
+      onConfirm(trimmed, emoji);
     }
-  }, [value, onConfirm, existingCategories]);
+  }, [value, emoji, onConfirm, existingCategories, editCategoryId]);
 
   const trimmed = value.trim();
   const isReserved = trimmed.length > 0 && isReservedCircleName(trimmed);
-  const isDuplicate = trimmed.length > 0 && !isReserved && isDuplicateCircleName(trimmed, existingCategories);
+  const isDuplicate = trimmed.length > 0 && !isReserved && isDuplicateCircleName(trimmed, existingCategories, editCategoryId);
   const isValid = trimmed.length > 0 && !isReserved && !isDuplicate;
+  const isCreate = mode === 'create';
 
   return React.createElement('div', {
     className: 'fixed inset-0 z-50 flex items-center justify-center bg-black/50',
@@ -393,20 +401,45 @@ function CreateCircleDialog({ onConfirm, onCancel, existingCategories }: {
     },
       React.createElement('h3', {
         className: 'text-sm font-semibold text-ctp-text mb-3',
-      }, 'Create a new circle'),
-      React.createElement('input', {
-        ref: inputRef,
-        type: 'text',
-        value,
-        placeholder: 'Enter circle name',
-        className: 'w-full px-3 py-1.5 rounded-lg bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder-ctp-overlay0 outline-none focus:ring-1 focus:ring-ctp-accent',
-        onChange: (e: React.ChangeEvent<HTMLInputElement>) => setValue(e.target.value),
-        onKeyDown: (e: React.KeyboardEvent) => {
-          if (e.key === 'Enter' && isValid) handleSubmit();
-          if (e.key === 'Escape') onCancel();
-        },
-        'data-testid': 'lounge-create-circle-input',
-      }),
+      }, isCreate ? 'Create a new circle' : 'Rename circle'),
+      // Emoji + input row
+      React.createElement('div', { className: 'flex items-center gap-2' },
+        // Emoji button
+        React.createElement('button', {
+          onClick: () => setShowEmojis(!showEmojis),
+          className: 'w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg bg-ctp-base border border-surface-1 text-base hover:bg-surface-0 transition-colors cursor-pointer',
+          title: 'Choose icon',
+          'data-testid': 'lounge-circle-dialog-emoji-btn',
+        }, emoji),
+        React.createElement('input', {
+          ref: inputRef,
+          type: 'text',
+          value,
+          placeholder: 'Enter circle name',
+          className: 'flex-1 min-w-0 px-3 py-1.5 rounded-lg bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder-ctp-overlay0 outline-none focus:ring-1 focus:ring-ctp-accent',
+          onChange: (e: React.ChangeEvent<HTMLInputElement>) => setValue(e.target.value),
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' && isValid) handleSubmit();
+            if (e.key === 'Escape') onCancel();
+          },
+          'data-testid': 'lounge-circle-dialog-input',
+        }),
+      ),
+      // Inline emoji picker
+      showEmojis && React.createElement('div', {
+        className: 'mt-2 p-2 rounded-lg bg-ctp-base border border-surface-1 grid grid-cols-8 gap-1',
+        'data-testid': 'lounge-circle-dialog-emoji-picker',
+      },
+        ...EMOJI_OPTIONS.map((e) =>
+          React.createElement('button', {
+            key: e,
+            onClick: () => { setEmoji(e); setShowEmojis(false); },
+            className: `w-7 h-7 flex items-center justify-center rounded text-sm cursor-pointer transition-colors ${
+              e === emoji ? 'bg-surface-1 ring-1 ring-ctp-accent' : 'hover:bg-surface-0'
+            }`,
+          }, e),
+        ),
+      ),
       isReserved && React.createElement('p', {
         className: 'text-[10px] text-ctp-red mt-1',
       }, 'This name is reserved'),
@@ -419,7 +452,7 @@ function CreateCircleDialog({ onConfirm, onCancel, existingCategories }: {
         React.createElement('button', {
           onClick: onCancel,
           className: 'px-3 py-1 rounded-md text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 transition-colors cursor-pointer',
-          'data-testid': 'lounge-create-circle-cancel',
+          'data-testid': 'lounge-circle-dialog-cancel',
         }, 'Cancel'),
         React.createElement('button', {
           onClick: handleSubmit,
@@ -429,14 +462,14 @@ function CreateCircleDialog({ onConfirm, onCancel, existingCategories }: {
               ? 'bg-ctp-accent text-ctp-base hover:opacity-90'
               : 'bg-surface-1 text-ctp-overlay0 cursor-not-allowed'
           }`,
-          'data-testid': 'lounge-create-circle-confirm',
-        }, 'Create'),
+          'data-testid': 'lounge-circle-dialog-confirm',
+        }, isCreate ? 'Create' : 'Save'),
       ),
     ),
   );
 }
 
-function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename, onDelete, onMoveAgent, onCreateCircle, onReorderCategory, onSetEmoji }: {
+function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onEditCircle, onDelete, onMoveAgent, onCreateCircle, onReorderCategory }: {
   category: LoungeCategory;
   agents: AgentInfo[];
   allAgents: AgentInfo[];
@@ -446,45 +479,21 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
   selectedAgentId: string | null;
   onToggle: () => void;
   onSelectAgent: (agentId: string, projectId: string) => void;
-  onRename: (categoryId: string, label: string) => void;
+  onEditCircle: (categoryId: string) => void;
   onDelete: (categoryId: string) => void;
   onMoveAgent: (agentId: string, targetCategoryId: string) => void;
   onCreateCircle: (agentId?: string) => void;
   onReorderCategory: (fromId: string, toId: string) => void;
-  onSetEmoji: (categoryId: string, emoji: string) => void;
 }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(category.label);
-  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
   const [agentContextMenu, setAgentContextMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    // Default circle cannot be renamed — no context menu
     if (isDefaultCircle(category.id)) return;
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY });
   }, [category.id]);
-
-  const startRename = useCallback(() => {
-    if (isDefaultCircle(category.id)) return;
-    setRenameValue(category.label);
-    setRenaming(true);
-  }, [category.label, category.id]);
-
-  const commitRename = useCallback(() => {
-    const trimmed = renameValue.trim();
-    if (trimmed && trimmed !== category.label && !isReservedCircleName(trimmed)) {
-      onRename(category.id, trimmed);
-    }
-    setRenaming(false);
-  }, [renameValue, category.id, category.label, onRename]);
-
-  const cancelRename = useCallback(() => {
-    setRenaming(false);
-  }, []);
 
   // ── Drag-and-drop handlers ──
 
@@ -525,13 +534,6 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
     }
   }, [category.id, onMoveAgent, onReorderCategory, isGeneralCircle]);
 
-  useEffect(() => {
-    if (renaming && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [renaming]);
-
   return React.createElement('div', {
     'data-testid': `lounge-category-${category.id}`,
     onDragOver: handleDragOver,
@@ -540,7 +542,7 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
   },
     // Category header
     React.createElement('button', {
-      onClick: renaming ? undefined : onToggle,
+      onClick: onToggle,
       onContextMenu: handleContextMenu,
       draggable: !isGeneralCircle,
       onDragStart: handleDragStart,
@@ -550,44 +552,15 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
       'data-testid': `lounge-category-toggle-${category.id}`,
     },
       isCollapsed ? CHEVRON_RIGHT : CHEVRON_DOWN,
-      // Emoji — clickable to open picker during rename, otherwise decorative
-      renaming
-        ? React.createElement('button', {
-            onClick: (e: React.MouseEvent) => { e.stopPropagation(); setEmojiPickerOpen(!emojiPickerOpen); },
-            className: 'text-sm flex-shrink-0 hover:bg-surface-1 rounded px-0.5 cursor-pointer',
-            title: 'Change icon',
-            'data-testid': `lounge-category-emoji-btn-${category.id}`,
-          }, category.emoji || '📁')
-        : React.createElement('span', { className: 'text-sm flex-shrink-0' }, category.emoji || '📁'),
-      renaming
-        ? React.createElement('input', {
-            ref: inputRef,
-            value: renameValue,
-            onChange: (e: React.ChangeEvent<HTMLInputElement>) => setRenameValue(e.target.value),
-            onBlur: commitRename,
-            onKeyDown: (e: React.KeyboardEvent) => {
-              if (e.key === 'Enter') commitRename();
-              if (e.key === 'Escape') cancelRename();
-              e.stopPropagation();
-            },
-            onClick: (e: React.MouseEvent) => e.stopPropagation(),
-            className: 'flex-1 bg-surface-0 text-ctp-text text-xs px-1 py-0.5 rounded border border-surface-1 outline-none focus:border-ctp-accent uppercase tracking-wider font-semibold',
-            'data-testid': `lounge-category-rename-input-${category.id}`,
-          })
-        : React.createElement('span', { className: 'flex-1 text-left truncate' }, category.label),
+      React.createElement('span', { className: 'text-sm flex-shrink-0' }, category.emoji || '📁'),
+      React.createElement('span', { className: 'flex-1 text-left truncate' }, category.label),
       React.createElement('span', { className: 'text-[10px] text-ctp-overlay0 tabular-nums' }, String(agents.length)),
     ),
-    // Emoji picker (shown during rename)
-    renaming && emojiPickerOpen && React.createElement(EmojiPicker, {
-      currentEmoji: category.emoji || '📁',
-      onSelect: (emoji: string) => { onSetEmoji(category.id, emoji); setEmojiPickerOpen(false); },
-      onClose: () => setEmojiPickerOpen(false),
-    }),
     // Context menu
     contextMenu && React.createElement(CategoryContextMenu, {
       position: contextMenu,
       categoryId: category.id,
-      onRename: startRename,
+      onRename: () => { setContextMenu(null); onEditCircle(category.id); },
       onDelete: () => onDelete(category.id),
       onClose: () => setContextMenu(null),
     }),
@@ -754,20 +727,45 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [pendingMoveAgentId, setPendingMoveAgentId] = useState<string | null>(null);
+  const [editingCircle, setEditingCircle] = useState<{ id: string; label: string; emoji?: string } | null>(null);
 
   const handleCreateCircle = useCallback((agentId?: string) => {
     setPendingMoveAgentId(agentId ?? null);
     setShowCreateDialog(true);
   }, []);
 
-  const handleConfirmCreate = useCallback((name: string) => {
+  const handleConfirmCreate = useCallback((name: string, emoji?: string) => {
     const newId = addCircle(name);
-    if (newId && pendingMoveAgentId) {
-      moveAgent(pendingMoveAgentId, newId);
+    if (newId) {
+      if (emoji && emoji !== DEFAULT_CUSTOM_EMOJI) {
+        setCategoryEmoji(newId, emoji);
+      }
+      if (pendingMoveAgentId) {
+        moveAgent(pendingMoveAgentId, newId);
+      }
     }
     setShowCreateDialog(false);
     setPendingMoveAgentId(null);
-  }, [addCircle, moveAgent, pendingMoveAgentId]);
+  }, [addCircle, moveAgent, setCategoryEmoji, pendingMoveAgentId]);
+
+  const handleEditCircle = useCallback((categoryId: string) => {
+    const cat = categories.find((c) => c.id === categoryId);
+    if (cat) {
+      setEditingCircle({ id: cat.id, label: cat.label, emoji: cat.emoji });
+    }
+  }, [categories]);
+
+  const handleConfirmEdit = useCallback((name: string, emoji?: string) => {
+    if (editingCircle) {
+      if (name !== editingCircle.label) {
+        renameCategory(editingCircle.id, name);
+      }
+      if (emoji) {
+        setCategoryEmoji(editingCircle.id, emoji);
+      }
+    }
+    setEditingCircle(null);
+  }, [editingCircle, renameCategory, setCategoryEmoji]);
 
   // Clear selection when agent disappears
   useEffect(() => {
@@ -791,15 +789,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const hasAgents = agents.length > 0;
 
-  // Categories visible in the sidebar: hide empty project-derived categories
-  const visibleCategories = useMemo(() =>
-    categories.filter((cat) => {
-      if (!cat.projectId) return true; // custom circles + General always visible
-      const catAgents = grouped.get(cat.id) ?? [];
-      return catAgents.length > 0;
-    }),
-    [categories, grouped],
-  );
+  // All categories are visible — project categories persist even when empty,
+  // custom circles are auto-deleted when empty (see effect above)
+  const visibleCategories = categories;
 
   return React.createElement('div', {
     className: 'flex h-full w-full bg-ctp-base',
@@ -850,12 +842,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
                 selectedAgentId,
                 onToggle: () => toggleCollapsed(cat.id),
                 onSelectAgent: handleSelectAgent,
-                onRename: renameCategory,
+                onEditCircle: handleEditCircle,
                 onDelete: deleteCircle,
                 onMoveAgent: moveAgent,
                 onCreateCircle: handleCreateCircle,
                 onReorderCategory: reorderCategory,
-                onSetEmoji: setCategoryEmoji,
               });
             })
           : React.createElement(EmptyState),
@@ -869,11 +860,21 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         ? React.createElement(AgentContent, { api, agentId: selectedAgentId })
         : React.createElement(NoSelection),
     ),
-    // Create circle dialog
-    showCreateDialog && React.createElement(CreateCircleDialog, {
+    // Circle dialog (create or edit mode)
+    showCreateDialog && React.createElement(CircleDialog, {
+      mode: 'create',
       onConfirm: handleConfirmCreate,
       onCancel: () => setShowCreateDialog(false),
       existingCategories: categories,
+    }),
+    editingCircle && React.createElement(CircleDialog, {
+      mode: 'edit',
+      onConfirm: handleConfirmEdit,
+      onCancel: () => setEditingCircle(null),
+      existingCategories: categories,
+      initialName: editingCircle.label,
+      initialEmoji: editingCircle.emoji,
+      editCategoryId: editingCircle.id,
     }),
   );
 }
