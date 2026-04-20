@@ -155,7 +155,7 @@ function AgentContextMenu({ position, categories, currentCategoryId, onMoveTo, o
   categories: LoungeCategory[];
   currentCategoryId: string;
   onMoveTo: (categoryId: string) => void;
-  onCreateCircle: () => void;
+  onCreateCircle: (agentId?: string) => void;
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -449,7 +449,7 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
   onRename: (categoryId: string, label: string) => void;
   onDelete: (categoryId: string) => void;
   onMoveAgent: (agentId: string, targetCategoryId: string) => void;
-  onCreateCircle: () => void;
+  onCreateCircle: (agentId?: string) => void;
   onReorderCategory: (fromId: string, toId: string) => void;
   onSetEmoji: (categoryId: string, emoji: string) => void;
 }) {
@@ -616,7 +616,7 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
       categories: allCategories,
       currentCategoryId: category.id,
       onMoveTo: (targetCategoryId: string) => onMoveAgent(agentContextMenu.agentId, targetCategoryId),
-      onCreateCircle,
+      onCreateCircle: () => onCreateCircle(agentContextMenu.agentId),
       onClose: () => setAgentContextMenu(null),
     }),
   );
@@ -753,15 +753,21 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [selectAgent]);
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [pendingMoveAgentId, setPendingMoveAgentId] = useState<string | null>(null);
 
-  const handleCreateCircle = useCallback(() => {
+  const handleCreateCircle = useCallback((agentId?: string) => {
+    setPendingMoveAgentId(agentId ?? null);
     setShowCreateDialog(true);
   }, []);
 
   const handleConfirmCreate = useCallback((name: string) => {
-    addCircle(name);
+    const newId = addCircle(name);
+    if (newId && pendingMoveAgentId) {
+      moveAgent(pendingMoveAgentId, newId);
+    }
     setShowCreateDialog(false);
-  }, [addCircle]);
+    setPendingMoveAgentId(null);
+  }, [addCircle, moveAgent, pendingMoveAgentId]);
 
   // Clear selection when agent disappears
   useEffect(() => {
