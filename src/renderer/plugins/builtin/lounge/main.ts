@@ -789,9 +789,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const hasAgents = agents.length > 0;
 
-  // All categories are visible — project categories persist even when empty,
-  // custom circles are auto-deleted when empty (see effect above)
-  const visibleCategories = categories;
+  // Hide empty project categories (no agents assigned)
+  const visibleCategories = categories.filter((cat) => {
+    if (cat.projectId) {
+      const catAgents = grouped.get(cat.id) ?? [];
+      return catAgents.length > 0;
+    }
+    return true;
+  });
 
   return React.createElement('div', {
     className: 'flex h-full w-full bg-ctp-base',
@@ -803,25 +808,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     },
       // Header
       React.createElement('div', {
-        className: 'px-3 py-3 border-b border-surface-0 flex items-center justify-between',
+        className: 'px-3 py-3 border-b border-surface-0',
       },
         React.createElement('h2', {
           className: 'text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider',
         }, 'Lounge'),
-        React.createElement('button', {
-          onClick: handleCreateCircle,
-          title: 'New circle',
-          className: 'w-5 h-5 flex items-center justify-center rounded text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 transition-colors cursor-pointer',
-          'data-testid': 'lounge-add-circle',
-        },
-          React.createElement('svg', {
-            width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
-            stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-          },
-            React.createElement('line', { x1: '12', y1: '5', x2: '12', y2: '19' }),
-            React.createElement('line', { x1: '5', y1: '12', x2: '19', y2: '12' }),
-          ),
-        ),
       ),
       // Scrollable category list
       React.createElement('div', {
