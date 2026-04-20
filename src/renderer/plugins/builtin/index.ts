@@ -9,8 +9,6 @@ import { manifest as browserManifest } from './browser/manifest';
 import * as browserModule from './browser/main';
 import { manifest as gitManifest } from './git/manifest';
 import * as gitModule from './git/main';
-import { manifest as loungeManifest } from './lounge/manifest';
-import * as loungeModule from './lounge/main';
 import { manifest as canvasManifest } from './canvas/manifest';
 import * as canvasModule from './canvas/main';
 import { manifest as sessionsManifest } from './sessions/manifest';
@@ -36,7 +34,7 @@ export interface ExperimentalFlags {
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
-const BASE_DEFAULT_IDS = ['terminal', 'files', 'git', 'browser', 'review', 'canvas', 'lounge'];
+const BASE_DEFAULT_IDS = ['terminal', 'files', 'git', 'browser', 'review', 'canvas'];
 
 /** Canvas sub-plugin IDs — hidden from the plugin list unless canvas is enabled. */
 export const CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'agent-queue', 'sticky-note']);
@@ -48,7 +46,6 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: filesManifest, module: filesModule },
     { manifest: browserManifest, module: browserModule },
     { manifest: gitManifest, module: gitModule },
-    { manifest: loungeManifest, module: loungeModule },
     { manifest: canvasManifest, module: canvasModule },
     { manifest: reviewManifest, module: reviewModule },
     { manifest: groupProjectManifest, module: groupProjectModule },
