@@ -37,6 +37,25 @@ describe('BindingManager', () => {
       bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
       expect(listener).toHaveBeenCalledWith('agent-1');
     });
+
+    it('returns true when a new binding is created', () => {
+      const isNew = bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      expect(isNew).toBe(true);
+    });
+
+    it('returns false for a duplicate binding', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      const isNew = bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      expect(isNew).toBe(false);
+    });
+
+    it('does not notify listeners for duplicate bindings', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      expect(listener).not.toHaveBeenCalled();
+    });
   });
 
   describe('unbind', () => {

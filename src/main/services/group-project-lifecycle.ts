@@ -129,7 +129,10 @@ async function syncMemberships(agentId: string): Promise<void> {
         recentLeaves.delete(leaveKey);
       }
 
-      // Agent joined this project
+      // Claim membership BEFORE the first await so that concurrent
+      // syncMemberships calls (e.g. from rapid wire restoration or a
+      // simultaneous binding update) cannot both pass the !members.has()
+      // check and inject duplicate loop-start messages.
       members.add(agentId);
 
       const agentName = resolveAgentName(agentId);

@@ -13,8 +13,13 @@ class BindingManager {
   private listeners = new Set<BindingChangeListener>();
   private version = 0;
 
-  /** Add a binding for an agent. */
-  bind(agentId: string, target: { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string }): void {
+  /**
+   * Add a binding for an agent.
+   * Returns true if a new binding was created, false if it already existed.
+   * Callers that receive false may want to broadcast the current binding state
+   * to keep renderer stores in sync without going through notifyChange.
+   */
+  bind(agentId: string, target: { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string }): boolean {
     let agentBindings = this.bindings.get(agentId);
     if (!agentBindings) {
       agentBindings = [];
@@ -22,10 +27,11 @@ class BindingManager {
     }
 
     // Don't duplicate
-    if (agentBindings.some(b => b.targetId === target.targetId)) return;
+    if (agentBindings.some(b => b.targetId === target.targetId)) return false;
 
     agentBindings.push({ agentId, ...target });
     this.notifyChange(agentId);
+    return true;
   }
 
   /** Remove a specific binding from an agent. */
