@@ -95,6 +95,7 @@ out/
 .clubhouse/agents/
 .clubhouse/.local/
 .clubhouse/agents.json
+.clubhouse/settings.json
 .clubhouse/settings.local.json
 
 # Materialized MCP config
