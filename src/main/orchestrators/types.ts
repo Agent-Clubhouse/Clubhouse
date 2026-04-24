@@ -109,6 +109,19 @@ export interface PasteSubmitTiming {
    * the paste content on slower CLIs.  Default 150.
    */
   postEndMarkerDelayMs?: number;
+  /**
+   * When set, replaces the fixed `initialDelayMs` / `retryDelayMs` sleeps
+   * before each Enter keystroke with a buffer-quiescence wait (poll until
+   * the PTY buffer length is unchanged for this many ms).  The fixed
+   * delays become caps on how long to wait for quiescence.
+   *
+   * Use for CLIs whose paste-preview render time is variable (e.g. GitHub
+   * Copilot CLI) — a fixed delay races against network jitter and can
+   * cause `\r` to be swallowed inside the bracketed-paste payload.
+   */
+  quiescenceMs?: number;
+  /** Poll interval (ms) for the quiescence wait.  Default 50. */
+  quiescencePollMs?: number;
 }
 
 // ── Capability Sub-interfaces ───────────────────────────────────────────────

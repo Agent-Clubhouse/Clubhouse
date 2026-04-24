@@ -77,12 +77,53 @@ export async function writeChunkedBracketedPaste(
 }
 
 /**
+ * Wait until the agent's PTY buffer length is unchanged for `quiescenceMs`,
+ * or until `maxWaitMs` elapses (whichever comes first).
+ *
+ * Used to detect when a TUI like GitHub Copilot CLI has finished rendering
+ * its paste-preview UI before sending the submit Enter.  GHCP's preview
+ * render time varies with network latency; a fixed sleep races against it,
+ * causing the `\r` to be folded into the bracketed paste and swallowed.
+ *
+ * Returns `quiet: true` if the buffer settled, `quiet: false` if maxWait
+ * fired first.  Either way the caller should proceed — quiet:false just
+ * means we gave up waiting and will fall back to the existing retry logic.
+ */
+export async function waitForBufferQuiescence(
+  agentId: string,
+  options: { quiescenceMs: number; maxWaitMs: number; pollMs?: number },
+): Promise<{ quiet: boolean; waitedMs: number }> {
+  const pollMs = options.pollMs ?? 50;
+  const startTs = Date.now();
+  let lastLen = ptyManager.getBuffer(agentId)?.length ?? 0;
+  let lastChangeTs = startTs;
+
+  while (Date.now() - startTs < options.maxWaitMs) {
+    await sleep(pollMs);
+    const cur = ptyManager.getBuffer(agentId)?.length ?? 0;
+    if (cur !== lastLen) {
+      lastLen = cur;
+      lastChangeTs = Date.now();
+    } else if (Date.now() - lastChangeTs >= options.quiescenceMs) {
+      return { quiet: true, waitedMs: Date.now() - startTs };
+    }
+  }
+  return { quiet: false, waitedMs: Date.now() - startTs };
+}
+
+/**
  * Submit content that was just pasted into an agent's PTY.
  *
  * Sends `\r` (Enter) with provider-specific delays and buffer health checks.
  * If the first Enter doesn't trigger processing (buffer doesn't grow), a
  * second Enter is sent as a retry — some CLIs show a paste preview that
  * requires Enter to accept before another Enter actually submits.
+ *
+ * When `timing.quiescenceMs` is set, the fixed `initialDelayMs` and
+ * `retryDelayMs` sleeps are replaced with quiescence waits capped at those
+ * values.  This addresses GitHub Copilot CLI's variable paste-preview
+ * render time — a fixed 1200ms delay races against network jitter and
+ * causes the `\r` to be folded into the paste payload (then ignored).
  */
 export async function submitAfterPaste(
   agentId: string,
@@ -90,10 +131,26 @@ export async function submitAfterPaste(
 ): Promise<void> {
   const bufferBefore = ptyManager.getBuffer(agentId)?.length ?? 0;
 
-  await sleep(timing.initialDelayMs);
+  if (timing.quiescenceMs) {
+    await waitForBufferQuiescence(agentId, {
+      quiescenceMs: timing.quiescenceMs,
+      maxWaitMs: timing.initialDelayMs,
+      pollMs: timing.quiescencePollMs,
+    });
+  } else {
+    await sleep(timing.initialDelayMs);
+  }
   ptyManager.write(agentId, '\r');
 
-  await sleep(timing.retryDelayMs);
+  if (timing.quiescenceMs) {
+    await waitForBufferQuiescence(agentId, {
+      quiescenceMs: timing.quiescenceMs,
+      maxWaitMs: timing.retryDelayMs,
+      pollMs: timing.quiescencePollMs,
+    });
+  } else {
+    await sleep(timing.retryDelayMs);
+  }
   const bufferAfterFirst = ptyManager.getBuffer(agentId)?.length ?? 0;
   if (bufferAfterFirst > bufferBefore) return; // First Enter worked
 

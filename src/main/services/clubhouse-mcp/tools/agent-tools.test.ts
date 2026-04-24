@@ -53,7 +53,7 @@ vi.mock('../../../orchestrators', () => ({
   getProvider: (id: string) => mockGetProvider(id),
 }));
 
-import { registerAgentTools, writeChunkedBracketedPaste } from './agent-tools';
+import { registerAgentTools, writeChunkedBracketedPaste, waitForBufferQuiescence } from './agent-tools';
 import { getScopedToolList, callTool, buildToolName, _resetForTesting as resetTools } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
@@ -325,6 +325,75 @@ describe('AgentTools', () => {
       // Drain the final check delay
       await vi.advanceTimersByTimeAsync(600);
       await promise;
+    });
+
+    it('Claude Code path: fires \\r at exact fixed initialDelayMs and never polls the buffer (regression guard)', async () => {
+      // Claude works perfectly on fixed-delay timing. This test pins down
+      // that contract: NO quiescence polling, \r at exactly 500ms after the
+      // paste sequence ends, and getBuffer called exactly twice (the
+      // boundary reads in submitAfterPaste — never inside a poll loop).
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      // Default beforeEach provider mock: 500/300/250, chunk 512/50, postEnd 150, NO quiescenceMs
+      mockPtyGetBuffer.mockReturnValue('');
+
+      const promise = callTool('agent-1', sendToolName, { message: 'l1\nl2', task_id: 'r1' });
+
+      // Paste sequence: 50 + 50 + 150 = 250ms before submitAfterPaste runs
+      await vi.advanceTimersByTimeAsync(250);
+      expect(mockPtyWrite.mock.calls.filter(c => c[1] === '\r')).toHaveLength(0);
+
+      // At paste+499ms: still no \r (fixed 500ms wait, no early-fire from quiescence)
+      await vi.advanceTimersByTimeAsync(499);
+      expect(mockPtyWrite.mock.calls.filter(c => c[1] === '\r')).toHaveLength(0);
+
+      // At paste+500ms: first \r fires exactly on time
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mockPtyWrite.mock.calls.filter(c => c[1] === '\r')).toHaveLength(1);
+
+      // Drain retry + final check
+      await vi.advanceTimersByTimeAsync(1000);
+      await promise;
+
+      // CRITICAL regression check: exactly 2 getBuffer calls (bufferBefore +
+      // bufferAfterFirst). If quiescence ever leaks onto the Claude path,
+      // this jumps to many more from the poll loop and the test fails loud.
+      expect(mockPtyGetBuffer).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses quiescence wait instead of fixed initialDelayMs when quiescenceMs is set', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'copilot-cli' });
+      mockGetProvider.mockReturnValue({
+        getPasteSubmitTiming: () => ({
+          initialDelayMs: 2000,         // large cap; quiescence should fire well before
+          retryDelayMs: 200,
+          finalCheckDelayMs: 100,
+          chunkSize: 256,
+          chunkDelayMs: 30,
+          postEndMarkerDelayMs: 50,
+          quiescenceMs: 100,
+          quiescencePollMs: 25,
+        }),
+      });
+
+      // Stable buffer from the start — paste preview "already rendered"
+      mockPtyGetBuffer.mockReturnValue('settled');
+
+      const promise = callTool('agent-1', sendToolName, { message: 'l1\nl2', task_id: 'q1' });
+
+      // Paste sequence: 30 + 30 + 50 = 110ms before submitAfterPaste runs
+      await vi.advanceTimersByTimeAsync(110);
+      expect(mockPtyWrite.mock.calls.filter(c => c[1] === '\r')).toHaveLength(0);
+
+      // Quiescence settles ~100ms later (well before the 2000ms cap)
+      await vi.advanceTimersByTimeAsync(120);
+      expect(mockPtyWrite.mock.calls.filter(c => c[1] === '\r')).toHaveLength(1);
+
+      // Drain retry quiescence + final check
+      await vi.advanceTimersByTimeAsync(500);
+      await promise;
+
+      // Buffer never grew, so retry sends a 2nd \r
+      expect(mockPtyWrite.mock.calls.filter(c => c[1] === '\r')).toHaveLength(2);
     });
 
     it('falls back to default timing when provider not found', async () => {
@@ -932,6 +1001,62 @@ describe('AgentTools', () => {
       const result = await callTool('agent-1', connectToolName, {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('is sleeping');
+    });
+  });
+
+  describe('waitForBufferQuiescence', () => {
+    it('resolves quiet=true after buffer is unchanged for quiescenceMs', async () => {
+      mockPtyGetBuffer.mockReturnValue('stable-12345');
+
+      const promise = waitForBufferQuiescence('agent-x', {
+        quiescenceMs: 100,
+        maxWaitMs: 500,
+        pollMs: 25,
+      });
+
+      await vi.advanceTimersByTimeAsync(150);
+      const result = await promise;
+
+      expect(result.quiet).toBe(true);
+      expect(result.waitedMs).toBeLessThan(200);
+    });
+
+    it('resolves quiet=false when buffer keeps changing past maxWaitMs', async () => {
+      let len = 0;
+      mockPtyGetBuffer.mockImplementation(() => 'x'.repeat(++len));
+
+      const promise = waitForBufferQuiescence('agent-x', {
+        quiescenceMs: 100,
+        maxWaitMs: 200,
+        pollMs: 25,
+      });
+
+      await vi.advanceTimersByTimeAsync(250);
+      const result = await promise;
+
+      expect(result.quiet).toBe(false);
+      expect(result.waitedMs).toBeGreaterThanOrEqual(200);
+    });
+
+    it('resolves quiet=true after buffer settles following an initial growth burst', async () => {
+      let calls = 0;
+      mockPtyGetBuffer.mockImplementation(() => {
+        calls++;
+        // Initial read + first 3 polls show growth, then stable
+        const len = calls < 5 ? calls * 10 : 50;
+        return 'x'.repeat(len);
+      });
+
+      const promise = waitForBufferQuiescence('agent-x', {
+        quiescenceMs: 100,
+        maxWaitMs: 1000,
+        pollMs: 25,
+      });
+
+      await vi.advanceTimersByTimeAsync(300);
+      const result = await promise;
+
+      expect(result.quiet).toBe(true);
     });
   });
 });
