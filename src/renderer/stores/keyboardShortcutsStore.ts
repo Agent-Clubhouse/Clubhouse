@@ -86,6 +86,10 @@ const DEFAULT_SHORTCUTS: Omit<ShortcutDefinition, 'currentBinding'>[] = [
 
   // Agents
   { id: 'new-quick-agent', label: 'New Quick Agent', category: 'Agents', defaultBinding: 'Meta+Shift+N' },
+  // Escape hatch for the "can scroll but can't type" xterm focus wedge: force
+  // focus back to the active agent terminal without needing a mouse click
+  // (clicks don't reliably refocus under Copilot CLI's mouse tracking).
+  { id: 'focus-active-terminal', label: 'Focus Active Terminal', category: 'Agents', defaultBinding: 'Meta+Shift+T' },
   ...Array.from({ length: 9 }, (_, i) => ({
     id: `switch-agent-${i + 1}`,
     label: `Switch to Agent ${i + 1}`,
