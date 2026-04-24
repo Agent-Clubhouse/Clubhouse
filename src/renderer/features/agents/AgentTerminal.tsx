@@ -18,6 +18,14 @@ const RESUME_SETTLE_MS = 1500;
 
 const SCROLL_LOG_NS = 'ui:terminal:scroll';
 
+/**
+ * Window event that requests the currently-focused AgentTerminal to re-focus
+ * its xterm.  Dispatched by the `focus-active-terminal` keyboard shortcut —
+ * the user's escape hatch for the "can scroll but can't type" wedge where
+ * xterm's hidden helper textarea lost focus (see the blur watchdog below).
+ */
+export const FOCUS_ACTIVE_TERMINAL_EVENT = 'clubhouse:focus-active-terminal';
+
 /** Pixels from bottom to be considered "at bottom". */
 const BOTTOM_THRESHOLD = 5;
 
@@ -84,6 +92,13 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   const resuming = useAgentStore((s) => s.agents[agentId]?.resuming);
   const clearResuming = useAgentStore((s) => s.clearResuming);
 
+  // Tracks the latest `focused` prop so long-lived effects (blur watchdog,
+  // post-reflow refocus calls) can read it without re-running on every
+  // focus-prop flip, which would otherwise tear down and rebuild the xterm
+  // listeners and lose input mid-session.
+  const focusedRef = useRef(!!focused);
+  useEffect(() => { focusedRef.current = !!focused; }, [focused]);
+
   // Debounce timer that detects when PTY output settles after a resume replay
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasReceivedDataRef = useRef(false);
@@ -116,6 +131,10 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         }
 
         ptyResize(agentId, terminalRef.current.cols, terminalRef.current.rows);
+        // fit() reflow can blur xterm's helper textarea; re-focus if this
+        // pane is still focused so the user can type immediately after
+        // the resume overlay dismisses.
+        if (focusedRef.current) terminalRef.current.focus();
       }
     });
   }, [agentId, clearResuming]);
@@ -141,6 +160,38 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     term.loadAddon(fitAddon);
     term.open(containerRef.current);
 
+    // Blur watchdog — the "can scroll but can't type" recovery path.
+    //
+    // xterm.js routes every keystroke through a hidden <textarea> element
+    // (.xterm-helper-textarea).  That textarea must hold DOM focus for
+    // typing to work.  Several things can blur it with no recovery:
+    //   • theme / font option mutations (xterm re-renders internals)
+    //   • fitAddon.fit() reflows
+    //   • large buffer replays on re-attach
+    //   • Copilot CLI / other Ink TUIs enable mouse-tracking CSI
+    //     sequences that cause xterm to intercept mousedown as a mouse
+    //     report, so clicking the terminal does NOT reliably refocus
+    //     the helper textarea
+    //
+    // When the textarea blurs to nothing (relatedTarget === null) while
+    // this pane is still the focused pane in the app and the window
+    // still has OS focus, re-focus xterm on the next microtask so we
+    // don't fight whatever triggered the blur.  Any legitimate focus
+    // move (user tabs or clicks something else) has a non-null
+    // relatedTarget and is left alone.
+    const helperTextarea = containerRef.current.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea');
+    const onHelperBlur = (ev: FocusEvent) => {
+      if (ev.relatedTarget) return;
+      if (!focusedRef.current) return;
+      if (!document.hasFocus()) return;
+      queueMicrotask(() => {
+        if (terminalRef.current === term && focusedRef.current && document.hasFocus()) {
+          term.focus();
+        }
+      });
+    };
+    helperTextarea?.addEventListener('blur', onHelperBlur);
+
     // Initial fit, replay buffered output, and focus
     requestAnimationFrame(() => {
       fitAddon.fit();
@@ -164,6 +215,11 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           for (const data of pendingData) term.write(data);
           pendingData.length = 0;
           bufferReplayed = true;
+          // Large writes (buf can approach the 2MB MAX_BUFFER_SIZE cap in
+          // pty-manager) can stall the renderer long enough that focus is
+          // dropped before the user sees a ready terminal.  Re-focus if
+          // this pane is still the focused one.
+          if (focusedRef.current) term.focus();
         });
       } else if (remoteParts) {
         // Remote agents: fetch buffer from satellite via HTTPS REST
@@ -178,6 +234,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           for (const data of pendingData) term.write(data);
           pendingData.length = 0;
           bufferReplayed = true;
+          if (focusedRef.current) term.focus();
         });
       }
     });
@@ -281,6 +338,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       inputDisposable.dispose();
       removeDataListener();
       removeExitListener();
+      helperTextarea?.removeEventListener('blur', onHelperBlur);
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -495,17 +553,37 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     return cleanup;
   }, [clipboardCompat, agentId, isRemote, remoteParts, sendClipboardImage]);
 
-  // Live-update theme on existing terminal instances
+  // Live-update theme on existing terminal instances.  Mutating xterm
+  // options re-renders internals and can drop focus from the helper
+  // textarea; re-focus when this pane is the active one so typing
+  // doesn't silently stop after a theme swap.
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.options.theme = effectiveTerminalColors;
+      if (focusedRef.current) terminalRef.current.focus();
     }
   }, [effectiveTerminalColors]);
 
   useEffect(() => {
     if (!terminalRef.current || !experimentalMonoFont) return;
     terminalRef.current.options.fontFamily = experimentalMonoFont;
+    if (focusedRef.current) terminalRef.current.focus();
   }, [experimentalMonoFont]);
+
+  // Keyboard shortcut escape hatch: when the user fires
+  // `focus-active-terminal` (default Ctrl/Cmd+Shift+T), the dispatcher in
+  // app-event-bridge.ts emits FOCUS_ACTIVE_TERMINAL_EVENT on window.  The
+  // active (focused) AgentTerminal re-focuses its xterm.  Multiple
+  // AgentTerminal instances mount at once (hub panes, popouts); only the
+  // one with `focused === true` should respond so we don't steal focus.
+  useEffect(() => {
+    if (!focused) return;
+    const onFocusRequest = () => {
+      terminalRef.current?.focus();
+    };
+    window.addEventListener(FOCUS_ACTIVE_TERMINAL_EVENT, onFocusRequest);
+    return () => window.removeEventListener(FOCUS_ACTIVE_TERMINAL_EVENT, onFocusRequest);
+  }, [focused]);
 
   const [remoteBanner, setRemoteBanner] = useState<string | null>(null);
   const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

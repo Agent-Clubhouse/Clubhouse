@@ -3,6 +3,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { usePanelStore } from '../../stores/panelStore';
+import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../agents/AgentTerminal';
 
 export interface CommandAction {
   id: string;
@@ -48,6 +49,13 @@ export function getCommandActions(): CommandAction[] {
       execute: () => {
         useUIStore.getState().openQuickAgentDialog();
       },
+    },
+    {
+      id: 'focus-active-terminal',
+      // Global so it fires even when the stuck xterm helper-textarea still
+      // technically holds focus — that's the exact state we need to unwedge.
+      global: true,
+      execute: () => window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT)),
     },
     {
       id: 'add-project',
