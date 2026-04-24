@@ -163,6 +163,24 @@ describe('BaseProvider', () => {
     });
   });
 
+  describe('getPasteSubmitTiming', () => {
+    it('returns fixed-delay defaults with no quiescence wait', () => {
+      const timing = provider.getPasteSubmitTiming();
+      expect(timing.initialDelayMs).toBe(500);
+      expect(timing.retryDelayMs).toBe(300);
+      expect(timing.finalCheckDelayMs).toBe(250);
+      expect(timing.chunkSize).toBe(512);
+      expect(timing.chunkDelayMs).toBe(50);
+      expect(timing.postEndMarkerDelayMs).toBe(150);
+      // Regression guard: default path MUST stay on fixed-delay, not quiescence.
+      // Quiescence is an opt-in for CLIs with variable paste-preview render
+      // times (e.g. GHCP). Claude Code and other well-behaved CLIs rely on
+      // the simple fixed delay and should not poll.
+      expect(timing.quiescenceMs).toBeUndefined();
+      expect(timing.quiescencePollMs).toBeUndefined();
+    });
+  });
+
   describe('getExitCommand', () => {
     it('returns /exit with carriage return', () => {
       expect(provider.getExitCommand()).toBe('/exit\r');

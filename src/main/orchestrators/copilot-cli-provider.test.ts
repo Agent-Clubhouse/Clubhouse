@@ -92,14 +92,16 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('getPasteSubmitTiming', () => {
-    it('returns GHCP-specific timing with extended delays', () => {
+    it('returns GHCP-specific timing with extended delays and quiescence wait', () => {
       const timing = provider.getPasteSubmitTiming();
-      expect(timing.initialDelayMs).toBe(1200);
-      expect(timing.retryDelayMs).toBe(600);
+      expect(timing.initialDelayMs).toBe(2500);
+      expect(timing.retryDelayMs).toBe(800);
       expect(timing.finalCheckDelayMs).toBe(400);
       expect(timing.chunkSize).toBe(256);
       expect(timing.chunkDelayMs).toBe(120);
       expect(timing.postEndMarkerDelayMs).toBe(300);
+      expect(timing.quiescenceMs).toBe(200);
+      expect(timing.quiescencePollMs).toBe(50);
     });
 
     it('uses longer delays than the base provider defaults', () => {

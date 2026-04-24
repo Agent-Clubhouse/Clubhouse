@@ -110,22 +110,26 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   // ── Paste timing ────────────────────────────────────────────────────────
 
   /**
-   * Copilot CLI processes bracketed paste more slowly than Claude Code.
-   * Use longer delays to give it time to render the paste preview before
-   * sending Enter keystrokes.
+   * Copilot CLI processes bracketed paste more slowly than Claude Code,
+   * and its paste-preview render time is variable (network-bound, jitter-
+   * prone in beta builds).  A fixed pre-Enter delay races against that
+   * render and causes `\r` to be folded into the paste payload, leaving
+   * the command sitting in the input box.
    *
-   * The latest GHCP beta introduced additional latency in paste handling,
-   * so these values include extra headroom to avoid race conditions where
-   * Enter arrives before the paste preview is ready.
+   * Use buffer-quiescence detection: poll the PTY buffer and only fire
+   * Enter once it's been unchanged for `quiescenceMs`.  The fixed delays
+   * remain as caps so we still proceed if quiescence never settles.
    */
   override getPasteSubmitTiming(): PasteSubmitTiming {
     return {
-      initialDelayMs: 1200,
-      retryDelayMs: 600,
+      initialDelayMs: 2500,       // raised cap; quiescence usually fires earlier
+      retryDelayMs: 800,
       finalCheckDelayMs: 400,
       chunkSize: 256,
       chunkDelayMs: 120,
       postEndMarkerDelayMs: 300,
+      quiescenceMs: 200,
+      quiescencePollMs: 50,
     };
   }
 

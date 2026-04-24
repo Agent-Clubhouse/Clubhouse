@@ -739,4 +739,23 @@ describe('ClaudeCodeProvider', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('getPasteSubmitTiming', () => {
+    it('inherits base defaults and does NOT enable quiescence (Claude works perfectly on fixed delays)', () => {
+      const timing = provider.getPasteSubmitTiming();
+      // Base defaults — Claude Code does NOT override these.
+      expect(timing.initialDelayMs).toBe(500);
+      expect(timing.retryDelayMs).toBe(300);
+      expect(timing.finalCheckDelayMs).toBe(250);
+      expect(timing.chunkSize).toBe(512);
+      expect(timing.chunkDelayMs).toBe(50);
+      expect(timing.postEndMarkerDelayMs).toBe(150);
+      // Regression guard: if someone adds quiescence to the Claude path by
+      // accident (e.g. copy-pasting the GHCP override), this test fails loud.
+      // Claude's paste-preview render is deterministic and fast — quiescence
+      // adds latency for no gain.
+      expect(timing.quiescenceMs).toBeUndefined();
+      expect(timing.quiescencePollMs).toBeUndefined();
+    });
+  });
 });
