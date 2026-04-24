@@ -22,6 +22,12 @@ vi.mock('@xterm/xterm', () => {
       Object.defineProperty(viewport, 'clientHeight', { value: 200, configurable: true, writable: true });
       viewport.scrollTop = 0;
       container.appendChild(viewport);
+
+      // Real xterm also creates an .xterm-helper-textarea to capture keystrokes.
+      // Focus-recovery tests attach a blur listener to this element.
+      const textarea = document.createElement('textarea');
+      textarea.classList.add('xterm-helper-textarea');
+      container.appendChild(textarea);
     });
     write = vi.fn();
     focus = vi.fn();
@@ -97,7 +103,7 @@ vi.mock('../../stores/remoteProjectStore', () => ({
   },
 }));
 
-import { AgentTerminal } from './AgentTerminal';
+import { AgentTerminal, FOCUS_ACTIVE_TERMINAL_EVENT } from './AgentTerminal';
 
 let mockOnDataCallback: ((id: string, data: string) => void) | null = null;
 let mockOnExitCallback: ((id: string, exitCode: number) => void) | null = null;
@@ -404,6 +410,184 @@ describe('AgentTerminal', () => {
       render(<AgentTerminal agentId="agent-1" focused={true} />);
       term().focus.mockClear();
       fireEvent.mouseDown(screen.getByTestId('agent-terminal'));
+      expect(term().focus).toHaveBeenCalled();
+    });
+  });
+
+  describe('focus recovery', () => {
+    // jsdom's document.hasFocus() returns false by default, which the
+    // blur watchdog (correctly) reads as "window lost focus, don't
+    // steal focus back".  Positive-path tests here need a focused
+    // window; the one negative test that specifically exercises the
+    // window-blur path overrides hasFocus locally.
+    let originalHasFocus: typeof document.hasFocus;
+    beforeEach(() => {
+      originalHasFocus = document.hasFocus.bind(document);
+      Object.defineProperty(document, 'hasFocus', {
+        configurable: true, value: () => true,
+      });
+    });
+    afterEach(() => {
+      Object.defineProperty(document, 'hasFocus', {
+        configurable: true, value: originalHasFocus,
+      });
+    });
+
+    function helperTextarea(): HTMLTextAreaElement {
+      const t = screen.getByTestId('agent-terminal')
+        .querySelector('.xterm-helper-textarea') as HTMLTextAreaElement;
+      expect(t).toBeTruthy();
+      return t;
+    }
+
+    function fireBlur(target: HTMLElement, relatedTarget: EventTarget | null = null): void {
+      // fireEvent.blur drops relatedTarget on some jsdom versions; dispatch
+      // a real FocusEvent directly so the watchdog sees the init dict.
+      target.dispatchEvent(new FocusEvent('blur', { bubbles: true, relatedTarget }));
+    }
+
+    it('re-focuses xterm when helper textarea blurs to null while focused', async () => {
+      render(<AgentTerminal agentId="agent-1" focused={true} />);
+      // Flush the initial focus on mount so we measure only blur-watchdog calls.
+      await act(async () => {});
+      term().focus.mockClear();
+
+      // A blur to nothing (relatedTarget === null) is the classic wedge:
+      // xterm lost focus during a reflow / theme swap / mouse-tracking race.
+      fireBlur(helperTextarea(), null);
+
+      // The refocus is deferred via queueMicrotask — flush microtasks.
+      await act(async () => { await Promise.resolve(); });
+      expect(term().focus).toHaveBeenCalled();
+    });
+
+    it('does not re-focus when the user blurs to a different element', async () => {
+      render(<AgentTerminal agentId="agent-1" focused={true} />);
+      await act(async () => {});
+      term().focus.mockClear();
+
+      // Simulate the user tabbing/clicking to a real element — respect that.
+      const other = document.createElement('button');
+      document.body.appendChild(other);
+      fireBlur(helperTextarea(), other);
+
+      await act(async () => { await Promise.resolve(); });
+      expect(term().focus).not.toHaveBeenCalled();
+
+      document.body.removeChild(other);
+    });
+
+    it('does not re-focus when this pane is not the focused one', async () => {
+      // Several AgentTerminals mount at once (hub panes, popouts); only the
+      // focused pane should recover its own xterm — otherwise we would steal
+      // focus from whichever pane the user is actually using.
+      render(<AgentTerminal agentId="agent-1" focused={false} />);
+      await act(async () => {});
+      term().focus.mockClear();
+
+      fireBlur(helperTextarea(), null);
+
+      await act(async () => { await Promise.resolve(); });
+      expect(term().focus).not.toHaveBeenCalled();
+    });
+
+    it('does not re-focus when the window has lost OS focus', async () => {
+      render(<AgentTerminal agentId="agent-1" focused={true} />);
+      await act(async () => {});
+      term().focus.mockClear();
+
+      // Simulate cmd-tab / window-blur.  jsdom's hasFocus is non-configurable
+      // via vi.spyOn in some versions; override with defineProperty instead.
+      const originalHasFocus = document.hasFocus.bind(document);
+      Object.defineProperty(document, 'hasFocus', {
+        configurable: true, value: () => false,
+      });
+      try {
+        fireBlur(helperTextarea(), null);
+        await act(async () => { await Promise.resolve(); });
+        expect(term().focus).not.toHaveBeenCalled();
+      } finally {
+        Object.defineProperty(document, 'hasFocus', {
+          configurable: true, value: originalHasFocus,
+        });
+      }
+    });
+
+    it('re-focuses on FOCUS_ACTIVE_TERMINAL_EVENT when focused', async () => {
+      render(<AgentTerminal agentId="agent-1" focused={true} />);
+      await act(async () => {});
+      term().focus.mockClear();
+
+      act(() => {
+        window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
+      });
+      expect(term().focus).toHaveBeenCalled();
+    });
+
+    it('does not re-focus on FOCUS_ACTIVE_TERMINAL_EVENT when unfocused', async () => {
+      // The shortcut is global; multiple AgentTerminals may be mounted — only
+      // the focused one should respond to the escape hatch.
+      render(<AgentTerminal agentId="agent-1" focused={false} />);
+      await act(async () => {});
+      term().focus.mockClear();
+
+      act(() => {
+        window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT));
+      });
+      expect(term().focus).not.toHaveBeenCalled();
+    });
+
+    it('re-focuses after a theme swap when focused', async () => {
+      render(<AgentTerminal agentId="agent-1" focused={true} />);
+      await act(async () => {});
+      term().focus.mockClear();
+
+      act(() => {
+        useThemeStore.setState({
+          theme: { terminal: { background: '#111', foreground: '#eee' } } as any,
+        });
+      });
+      expect(term().focus).toHaveBeenCalled();
+    });
+
+    it('does not re-focus after a theme swap when unfocused', async () => {
+      // Background panes also receive theme updates; they must not steal focus.
+      render(<AgentTerminal agentId="agent-1" focused={false} />);
+      await act(async () => {});
+      term().focus.mockClear();
+
+      act(() => {
+        useThemeStore.setState({
+          theme: { terminal: { background: '#111', foreground: '#eee' } } as any,
+        });
+      });
+      expect(term().focus).not.toHaveBeenCalled();
+    });
+
+    it('re-focuses after experimental mono font swap when focused', async () => {
+      render(<AgentTerminal agentId="agent-1" focused={true} />);
+      await act(async () => {});
+      term().focus.mockClear();
+
+      act(() => {
+        useThemeStore.setState({
+          theme: {
+            terminal: { background: '#000', foreground: '#fff' },
+            fonts: { mono: "'Fira Code', monospace" },
+          } as any,
+          experimentalGradients: true,
+        });
+      });
+      expect(term().focus).toHaveBeenCalled();
+    });
+
+    it('re-focuses after buffer replay completes when focused', async () => {
+      (window.clubhouse.pty.getBuffer as any).mockResolvedValue('replayed output');
+      render(<AgentTerminal agentId="agent-1" focused={true} />);
+      term().focus.mockClear();
+
+      // Flush the getBuffer promise chain that runs replay then refocus.
+      await act(async () => {});
       expect(term().focus).toHaveBeenCalled();
     });
   });
