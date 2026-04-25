@@ -20,7 +20,7 @@ import {
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
 import { AcpAdapter } from './adapters';
-import { homePath, parseModelChoicesFromHelp } from './shared';
+import { homePath, parseModelChoicesFromHelp, validateHookUrl } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 
@@ -232,10 +232,11 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   // ── HookCapable ─────────────────────────────────────────────────────────
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
+    const safeUrl = validateHookUrl(hookUrl);
     const makeCurl = (event: string) =>
       process.platform === 'win32'
-        ? `curl -s -X POST ${hookUrl}/%CLUBHOUSE_AGENT_ID%/${event} -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
-        : `cat | curl -s -X POST ${hookUrl}/\${CLUBHOUSE_AGENT_ID}/${event} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
+        ? `curl -s -X POST ${safeUrl}/%CLUBHOUSE_AGENT_ID%/${event} -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
+        : `cat | curl -s -X POST ${safeUrl}/\${CLUBHOUSE_AGENT_ID}/${event} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
 
     const ourHooks: Record<string, unknown[]> = {
       preToolUse: [{ type: 'command', bash: makeCurl('preToolUse'), timeoutSec: 5 }],

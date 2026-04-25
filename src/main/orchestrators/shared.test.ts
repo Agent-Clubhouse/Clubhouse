@@ -22,7 +22,7 @@ vi.mock('../util/shell', () => ({
 
 import * as fs from 'fs';
 import { execSync, execFileSync } from 'child_process';
-import { findBinaryInPath, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl } from './shared';
 import type { LaunchWrapperConfig } from '../../shared/types';
 
 describe('shared orchestrator utilities', () => {
@@ -319,6 +319,60 @@ Options:
       const result = buildSummaryInstruction('test');
       expect(result).toContain('"summary"');
       expect(result).toContain('"filesModified"');
+    });
+  });
+
+  describe('validateHookUrl', () => {
+    it('accepts a plain http localhost URL', () => {
+      expect(validateHookUrl('http://localhost:3000/hooks')).toBe('http://localhost:3000/hooks');
+    });
+
+    it('accepts https with an IP address', () => {
+      expect(validateHookUrl('https://127.0.0.1:8080/hook')).toBe('https://127.0.0.1:8080/hook');
+    });
+
+    it('accepts IPv6 bracket notation', () => {
+      expect(validateHookUrl('http://[::1]:4000/hooks')).toBe('http://[::1]:4000/hooks');
+    });
+
+    it('accepts a URL with no path', () => {
+      expect(validateHookUrl('http://localhost:9000')).toBe('http://localhost:9000');
+    });
+
+    it('rejects a URL with a semicolon (command separator)', () => {
+      expect(() => validateHookUrl('http://localhost:3000/hooks;rm -rf /')).toThrow('disallowed');
+    });
+
+    it('rejects a URL with a pipe', () => {
+      expect(() => validateHookUrl('http://localhost:3000/hooks|cat /etc/passwd')).toThrow('disallowed');
+    });
+
+    it('rejects a URL with an ampersand (shell background)', () => {
+      expect(() => validateHookUrl('http://localhost:3000/hook&evil')).toThrow('disallowed');
+    });
+
+    it('rejects a URL with a dollar sign (variable expansion)', () => {
+      expect(() => validateHookUrl('http://localhost:3000/$(rm -rf /)')).toThrow('disallowed');
+    });
+
+    it('rejects a URL with backticks', () => {
+      expect(() => validateHookUrl('http://localhost:3000/`whoami`')).toThrow('disallowed');
+    });
+
+    it('rejects a URL with a newline', () => {
+      expect(() => validateHookUrl('http://localhost:3000/hook\nrm -rf /')).toThrow('disallowed');
+    });
+
+    it('rejects a URL with a query string (& in query)', () => {
+      expect(() => validateHookUrl('http://localhost:3000/hooks?foo=bar&baz=qux')).toThrow('disallowed');
+    });
+
+    it('rejects non-http/https schemes', () => {
+      expect(() => validateHookUrl('file:///etc/passwd')).toThrow('disallowed');
+    });
+
+    it('rejects a completely invalid URL', () => {
+      expect(() => validateHookUrl('not a url')).toThrow('Invalid hook URL');
     });
   });
 

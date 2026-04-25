@@ -662,6 +662,70 @@ describe('annex-client', () => {
     });
   });
 
+  // ---- bearer token via Authorization header (SEC-CRIT-07) ----
+
+  describe('bearer token WebSocket auth', () => {
+    it('sends bearer token as Authorization header, not query param', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'XX:YY:ZZ:11',
+        alias: 'Remote Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'remote-pub-key',
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+
+      mockHttpPostPairSuccess('my-bearer-token');
+      vi.mocked(WsMock).mockClear();
+
+      await annexClient.pairWithService('XX:YY:ZZ:11', '986136');
+
+      expect(WsMock).toHaveBeenCalled();
+      const wsUrl = vi.mocked(WsMock).mock.calls[0][0] as string;
+      const wsOptions = vi.mocked(WsMock).mock.calls[0][1] as Record<string, unknown>;
+
+      // Token must be in Authorization header — not embedded in the URL
+      expect(wsUrl).not.toContain('token=');
+      expect(wsUrl).toContain('wss://');
+      expect((wsOptions?.headers as Record<string, string>)?.Authorization).toBe('Bearer my-bearer-token');
+    });
+
+    it('omits Authorization header when no bearer token (mTLS path)', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      vi.mocked(WsMock).mockClear();
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+
+      expect(WsMock).toHaveBeenCalled();
+      const wsOptions = vi.mocked(WsMock).mock.calls[0][1] as Record<string, unknown>;
+      const authHeader = (wsOptions?.headers as Record<string, string> | undefined)?.Authorization;
+      expect(authHeader).toBeUndefined();
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Directional peer role filtering
   // -------------------------------------------------------------------------

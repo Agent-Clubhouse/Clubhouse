@@ -671,15 +671,15 @@ export async function applyUpdate(): Promise<void> {
       const appBundlePath = appPath.replace(/\/Contents\/MacOS\/.*$/, '');
 
       if (appBundlePath.endsWith('.app') && await pathExists(downloadPath)) {
-        const { execSync } = require('child_process');
+        const { execFileSync } = require('child_process');
         const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
 
         // Clean up any previous extract
         await fsp.rm(tmpExtract, { recursive: true, force: true });
         await fsp.mkdir(tmpExtract, { recursive: true });
 
-        // Extract ZIP
-        execSync(`unzip -o -q "${downloadPath}" -d "${tmpExtract}"`, { timeout: 60_000 });
+        // Extract ZIP — use execFileSync so downloadPath is a literal arg, never shell-interpreted
+        execFileSync('unzip', ['-o', '-q', downloadPath, '-d', tmpExtract], { timeout: 60_000 });
 
         // Find the .app inside
         const extracted = (await fsp.readdir(tmpExtract)).find((f) => f.endsWith('.app'));

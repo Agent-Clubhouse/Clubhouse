@@ -2530,8 +2530,9 @@ export function start(): void {
     }
 
     if (authType !== 'mtls') {
-      // Fall back to bearer token auth
-      const token = urlObj.searchParams.get('token');
+      // Accept token from Authorization header (preferred) or query param (legacy
+      // fallback kept until Clubhouse-Go#76 ships on the mobile client).
+      const token = extractBearerToken(req) ?? urlObj.searchParams.get('token');
       if (!isValidToken(token || undefined)) {
         appLog('core:annex', 'warn', 'WebSocket upgrade rejected — unauthorized', {
           meta: { remoteAddress: req.socket.remoteAddress, hasToken: !!token },
@@ -2552,7 +2553,7 @@ export function start(): void {
         wsPeerFingerprints.set(ws, peerFingerprintForWs);
       }
       if (authType === 'bearer') {
-        const token = urlObj.searchParams.get('token');
+        const token = extractBearerToken(req) ?? urlObj.searchParams.get('token');
         if (token) wsBearerTokens.set(ws, token);
       }
       wss!.emit('connection', ws, req);

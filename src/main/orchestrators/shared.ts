@@ -196,6 +196,24 @@ export function homePath(...segments: string[]): string {
   return path.join(app.getPath('home'), ...segments);
 }
 
+// Hook URLs are embedded verbatim into shell command strings written to disk
+// (e.g. Claude Code / Codex hooks configs).  Only allow characters that are
+// safe in both POSIX sh and cmd.exe without quoting: no metacharacters, no
+// query strings, no fragments.  IPv6 bracket notation is permitted.
+const SAFE_HOOK_URL_RE = /^https?:\/\/[a-zA-Z0-9._\-[\]:]+(?:\/[a-zA-Z0-9._\-/]*)?$/;
+
+export function validateHookUrl(rawUrl: string): string {
+  try {
+    new URL(rawUrl);
+  } catch {
+    throw new Error(`Invalid hook URL: ${rawUrl}`);
+  }
+  if (!SAFE_HOOK_URL_RE.test(rawUrl)) {
+    throw new Error(`Hook URL contains characters disallowed in shell command strings: ${rawUrl}`);
+  }
+  return rawUrl;
+}
+
 /**
  * Shared summary instruction — identical across all providers.
  * Tells the agent to write a JSON summary file before exiting.

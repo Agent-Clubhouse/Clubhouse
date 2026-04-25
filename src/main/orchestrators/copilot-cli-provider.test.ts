@@ -35,6 +35,8 @@ vi.mock('./shared', () => ({
   findBinaryInPath: vi.fn(() => '/usr/local/bin/copilot'),
   homePath: vi.fn((...segments: string[]) => `/home/user/${segments.join('/')}`),
   humanizeModelId: vi.fn((id: string) => id),
+  validateHookUrl: vi.fn((url: string) => url),
+  parseModelChoicesFromHelp: vi.fn(() => null),
 }));
 
 vi.mock('../services/config-pipeline', () => ({
