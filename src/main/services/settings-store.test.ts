@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
 
+const mockGetPath = vi.fn(() => '/tmp/test-app');
+
 vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/test-app' },
+  app: { getPath: (...args: unknown[]) => mockGetPath(...args as []) },
 }));
 
 vi.mock('fs', () => ({
@@ -31,6 +33,7 @@ const DEFAULTS: TestSettings = {
 describe('settings-store', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetPath.mockReturnValue('/tmp/test-app');
     resetAllSettingsStoresForTests();
   });
 
@@ -235,6 +238,39 @@ describe('settings-store', () => {
       const [callA, callB] = vi.mocked(fs.promises.writeFile).mock.calls;
       expect(callA[0]).toContain('store-a.json');
       expect(callB[0]).toContain('store-b.json');
+    });
+  });
+
+  describe('userData path resolution', () => {
+    // Regression test: createSettingsStore previously captured `app.getPath('userData')`
+    // at construction time. That ran during module-load (e.g. when ipc/app-handlers
+    // imported a settings module), which is *before* main/index.ts gets to call
+    // `app.setPath('userData', CLUBHOUSE_USER_DATA)` for tests / dual-instance
+    // workflows. The eager capture silently locked the store to the default
+    // location, so test pre-seeded settings files in the override dir were ignored
+    // and the IPC roundtrip returned defaults.
+    it('reads from the current userData path on each get, not the path at construction', () => {
+      mockGetPath.mockReturnValue('/tmp/initial');
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+
+      // Simulate `app.setPath('userData', …)` running after the store was created.
+      mockGetPath.mockReturnValue('/tmp/overridden');
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ name: 'from-override', count: 7, nested: { flag: true } }));
+
+      expect(store.get()).toEqual({ name: 'from-override', count: 7, nested: { flag: true } });
+      const readCall = vi.mocked(fs.readFileSync).mock.calls[0];
+      expect(readCall[0]).toBe(path.join('/tmp/overridden', 'test.json'));
+    });
+
+    it('writes to the current userData path on each save, not the path at construction', async () => {
+      mockGetPath.mockReturnValue('/tmp/initial');
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+
+      mockGetPath.mockReturnValue('/tmp/overridden');
+      await store.save({ name: 'written', count: 1, nested: { flag: false } });
+
+      const writeCall = vi.mocked(fs.promises.writeFile).mock.calls[0];
+      expect(writeCall[0]).toBe(path.join('/tmp/overridden', 'test.json'));
     });
   });
 
