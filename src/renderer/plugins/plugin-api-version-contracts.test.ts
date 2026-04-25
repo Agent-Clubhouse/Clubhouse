@@ -36,6 +36,7 @@ import type {
   ThemeAPI,
   WorkspaceAPI,
   WindowAPI,
+  AnnexAPI,
   PluginContextInfo,
   PluginManifest,
   PluginPermission,
@@ -120,13 +121,37 @@ const WORKSPACE_API_METHODS: (keyof WorkspaceAPI)[] = [
 
 const WINDOW_API_METHODS: (keyof WindowAPI)[] = ['setTitle', 'resetTitle', 'getTitle'];
 
+const ANNEX_API_METHODS: (keyof AnnexAPI)[] = [
+  // Discovery & connection
+  'getSatellites', 'scan', 'connect', 'disconnect', 'retry',
+  'getDiscovered', 'pairWith', 'forgetSatellite', 'forgetAllSatellites',
+  // Remote agents
+  'agentSpawn', 'agentKill', 'agentWake', 'agentCreateDurable',
+  'agentDeleteDurable', 'agentWorktreeStatus', 'agentReorder',
+  // Remote PTY
+  'ptyInput', 'ptyResize', 'ptySpawnShell', 'ptyGetBuffer', 'clipboardImage',
+  // Remote files & git
+  'fileTree', 'fileRead', 'gitOperation',
+  // Canvas
+  'canvasMutation',
+  // Sessions
+  'sessionList', 'sessionTranscript', 'sessionSummary',
+  // Group projects
+  'gpGet', 'gpUpdate', 'gpBulletinDigest', 'gpBulletinTopic', 'gpBulletinAll',
+  'gpBulletinPost', 'gpShoulderTap', 'gpDeleteMessage', 'gpDeleteTopic',
+  'gpSetTopicProtection', 'gpInjectMessage',
+  // Events
+  'onSatellitesChanged', 'onDiscoveredChanged', 'onSatelliteEvent',
+];
+
 const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'projectPath'];
 
 // Top-level PluginAPI namespaces
 const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'project', 'projects', 'git', 'storage', 'ui', 'commands', 'events',
   'settings', 'agents', 'hub', 'navigation', 'widgets', 'terminal',
-  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'canvas', 'window', 'mcp', 'context',
+  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme',
+  'workspace', 'canvas', 'window', 'mcp', 'annex', 'context',
 ];
 
 // ── Helper: minimal valid manifest per version ─────────────────────────────
@@ -1211,6 +1236,30 @@ describe('§2b v0.7 pack plugins and new contributions', () => {
       expect(result.errors).toHaveLength(0);
     });
   });
+
+  describe('v0.9 manifest validation', () => {
+    it('accepts a minimal valid v0.9 manifest', () => {
+      const result = validateManifest(minimalV09Manifest());
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('v0.9 manifest with annex permission passes validation', () => {
+      const result = validateManifest(minimalV09Manifest({
+        permissions: ['annex'],
+      }));
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('v0.9 manifest with annex + other permissions passes validation', () => {
+      const result = validateManifest(minimalV09Manifest({
+        permissions: ['annex', 'agents', 'storage'],
+      }));
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+  });
 });
 
 // =============================================================================
@@ -1601,6 +1650,52 @@ describe('§4 Mock API safe return values', () => {
     expect(api.window.resetTitle()).toBeUndefined();
   });
 
+  it('api.annex.getSatellites() returns empty array', async () => {
+    expect(await api.annex.getSatellites()).toEqual([]);
+  });
+
+  it('api.annex.getDiscovered() returns empty array', async () => {
+    expect(await api.annex.getDiscovered()).toEqual([]);
+  });
+
+  it('api.annex.agentSpawn() returns empty string', async () => {
+    expect(await api.annex.agentSpawn('sat-1', {})).toBe('');
+  });
+
+  it('api.annex.ptyGetBuffer() returns empty string', async () => {
+    expect(await api.annex.ptyGetBuffer('sat-1', 'session-1')).toBe('');
+  });
+
+  it('api.annex.fileTree() returns empty array', async () => {
+    expect(await api.annex.fileTree('sat-1', 'proj-1')).toEqual([]);
+  });
+
+  it('api.annex.fileRead() returns empty string', async () => {
+    expect(await api.annex.fileRead('sat-1', 'proj-1', 'file.ts')).toBe('');
+  });
+
+  it('api.annex.gpBulletinDigest() returns empty array', async () => {
+    expect(await api.annex.gpBulletinDigest('sat-1', 'gp-1')).toEqual([]);
+  });
+
+  it('api.annex.gpDeleteMessage() returns false', async () => {
+    expect(await api.annex.gpDeleteMessage('sat-1', 'gp-1', 'topic', 'msg-1')).toBe(false);
+  });
+
+  it('api.annex.gpInjectMessage() returns false', async () => {
+    expect(await api.annex.gpInjectMessage('sat-1', 'agent-1', 'hello')).toBe(false);
+  });
+
+  it('api.annex.onSatellitesChanged() returns disposable', () => {
+    const d = api.annex.onSatellitesChanged(() => {});
+    expect(typeof d.dispose).toBe('function');
+  });
+
+  it('api.annex.onSatelliteEvent() returns disposable', () => {
+    const d = api.annex.onSatelliteEvent(() => {});
+    expect(typeof d.dispose).toBe('function');
+  });
+
   it('api.context has expected default values', () => {
     expect(api.context.mode).toBe('project');
     expect(api.context.projectId).toBe('test-project');
@@ -1756,6 +1851,13 @@ describe('§6 Regression guards — API surface removal detection', () => {
     const api = createMockAPI();
     for (const method of WINDOW_API_METHODS) {
       expect(method in api.window).toBe(true);
+    }
+  });
+
+  it('removing any AnnexAPI method would be detected', () => {
+    const api = createMockAPI();
+    for (const method of ANNEX_API_METHODS) {
+      expect(method in api.annex).toBe(true);
     }
   });
 });

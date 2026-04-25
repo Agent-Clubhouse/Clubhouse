@@ -22,6 +22,7 @@ import { createSoundsAPI } from './plugin-api-sounds';
 import { createThemeAPI } from './plugin-api-theme';
 import { createCanvasAPI } from './plugin-api-canvas';
 import { createWindowAPI } from './plugin-api-window';
+import { createAnnexAPI } from './plugin-api-annex';
 
 // Re-export test helpers and utilities used by external consumers
 export { _resetEnforcedViolations } from './plugin-api-shared';
@@ -137,6 +138,10 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest, () => apiRef.current!),
     ),
     window: createWindowAPI(ctx, manifest), // always available (v0.8+)
+    annex: gated(
+      true, scopeLabel, 'annex', 'annex',
+      ctx.pluginId, manifest, () => createAnnexAPI(ctx),
+    ),
     mcp: {
       async contributeTools(tools) {
         await window.clubhouse.pluginMcp.contributeTools(ctx.pluginId, tools);

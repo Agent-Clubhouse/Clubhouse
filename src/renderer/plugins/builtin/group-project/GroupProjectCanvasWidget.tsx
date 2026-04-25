@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
+import type { CanvasWidgetComponentProps, AnnexAPI } from '../../../../shared/plugin-types';
 import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
@@ -75,6 +75,7 @@ export function GroupProjectCanvasWidget({
       onUpdateMetadata={onUpdateMetadata}
       isRemote={isRemote}
       satelliteId={satelliteId}
+      annex={api.annex}
     />
   );
 }
@@ -147,15 +148,17 @@ function ProjectView({
   onUpdateMetadata,
   isRemote,
   satelliteId,
+  annex,
 }: {
   groupProjectId: string;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   isRemote: boolean;
   satelliteId: string | null;
+  annex: AnnexAPI;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
-  const ctx = useGroupProjectContext(groupProjectId, isRemote, satelliteId);
+  const ctx = useGroupProjectContext(groupProjectId, isRemote, satelliteId, annex);
 
   useEffect(() => {
     const el = containerRef.current;

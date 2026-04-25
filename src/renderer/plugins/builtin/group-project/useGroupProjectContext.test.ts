@@ -5,10 +5,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useGroupProjectContext } from './useGroupProjectContext';
+import type { AnnexAPI } from '../../../../shared/plugin-types';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 
-// Mock annex client methods on window.clubhouse
+// Mock annex API — passed directly as the 4th arg to useGroupProjectContext
 const mockGpUpdate = vi.fn().mockResolvedValue(undefined);
 const mockGpBulletinDigest = vi.fn().mockResolvedValue([]);
 const mockGpBulletinTopic = vi.fn().mockResolvedValue([]);
@@ -18,19 +19,20 @@ const mockGpDeleteMessage = vi.fn().mockResolvedValue({ deleted: true });
 const mockGpDeleteTopic = vi.fn().mockResolvedValue({ deleted: true });
 const mockGpSetTopicProtection = vi.fn().mockResolvedValue(undefined);
 
+const mockAnnex = {
+  gpUpdate: mockGpUpdate,
+  gpBulletinDigest: mockGpBulletinDigest,
+  gpBulletinTopic: mockGpBulletinTopic,
+  gpBulletinAll: mockGpBulletinAll,
+  gpInjectMessage: mockGpInjectMessage,
+  gpDeleteMessage: mockGpDeleteMessage,
+  gpDeleteTopic: mockGpDeleteTopic,
+  gpSetTopicProtection: mockGpSetTopicProtection,
+} as unknown as AnnexAPI;
+
 beforeEach(() => {
   vi.clearAllMocks();
   (window as any).clubhouse = {
-    annexClient: {
-      gpUpdate: mockGpUpdate,
-      gpBulletinDigest: mockGpBulletinDigest,
-      gpBulletinTopic: mockGpBulletinTopic,
-      gpBulletinAll: mockGpBulletinAll,
-      gpInjectMessage: mockGpInjectMessage,
-      gpDeleteMessage: mockGpDeleteMessage,
-      gpDeleteTopic: mockGpDeleteTopic,
-      gpSetTopicProtection: mockGpSetTopicProtection,
-    },
     groupProject: {
       getBulletinDigest: vi.fn().mockResolvedValue([]),
       getTopicMessages: vi.fn().mockResolvedValue([]),
@@ -75,7 +77,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 
   it('resolves remote project from store', () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
 
     expect(result.current.isRemote).toBe(true);
     expect(result.current.project).not.toBeNull();
@@ -84,7 +86,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 
   it('routes update through annex client when remote', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.update(GP_ID, { description: 'Updated desc' });
@@ -95,7 +97,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 
   it('optimistically updates local remote GP store after remote mutation', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.update(GP_ID, { description: 'New desc' });
@@ -110,7 +112,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 
   it('merges metadata rather than replacing during optimistic update', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.update(GP_ID, { metadata: { pollingEnabled: true } });
@@ -125,7 +127,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 
   it('routes fetchDigest through annex client when remote', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
 
     mockGpBulletinDigest.mockResolvedValue([{ topic: 'test', messageCount: 5 }]);
 
@@ -140,7 +142,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 
   it('routes fetchAllMessages through annex client when remote', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
 
     const mockMessages = [{ id: 'msg-1', sender: 'agent-1', topic: 'test', body: 'hello', timestamp: '2026-04-04T00:00:00Z' }];
     mockGpBulletinAll.mockResolvedValue(mockMessages);
@@ -156,7 +158,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 
   it('routes injectMessage through annex client when remote', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.injectMessage('agent-1', 'hello world');
@@ -167,7 +169,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 
   it('returns loaded=true for remote context', () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
     expect(result.current.loaded).toBe(true);
   });
 
@@ -182,7 +184,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
       },
     });
 
-    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
     expect(result.current.members).toHaveLength(2);
     expect(result.current.members[0].agentName).toBe('Alpha');
   });
@@ -191,7 +193,7 @@ describe('useGroupProjectContext — remote optimistic update', () => {
 describe('useGroupProjectContext — local mode', () => {
   it('returns loaded from local store', () => {
     useGroupProjectStore.setState({ loaded: false, projects: [] });
-    const { result } = renderHook(() => useGroupProjectContext('gp-1', false, null));
+    const { result } = renderHook(() => useGroupProjectContext('gp-1', false, null, mockAnnex));
     expect(result.current.loaded).toBe(false);
     expect(result.current.isRemote).toBe(false);
   });
@@ -228,7 +230,7 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
 
   it('strips namespace from gpId before calling gpBulletinDigest', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.fetchDigest(NAMESPACED_ID);
@@ -240,7 +242,7 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
 
   it('strips namespace from gpId before calling gpBulletinAll', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.fetchAllMessages(NAMESPACED_ID);
@@ -252,7 +254,7 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
 
   it('strips namespace from gpId before calling gpBulletinTopic', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.fetchTopicMessages(NAMESPACED_ID, 'general');
@@ -263,7 +265,7 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
 
   it('strips namespace from gpId before calling gpUpdate', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.update(NAMESPACED_ID, { description: 'new' });
@@ -274,7 +276,7 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
 
   it('strips namespace from gpId before calling gpDeleteMessage', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.deleteMessage(NAMESPACED_ID, 'general', 'msg-1');
@@ -285,7 +287,7 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
 
   it('strips namespace from gpId before calling gpDeleteTopic', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.deleteTopic(NAMESPACED_ID, 'general');
@@ -296,7 +298,7 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
 
   it('strips namespace from gpId before calling gpSetTopicProtection', async () => {
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.setTopicProtection(NAMESPACED_ID, 'general', true);
@@ -332,7 +334,7 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
     mockGpBulletinAll.mockResolvedValue(allMessages);
 
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(NAMESPACED_ID, true, SAT_ID, mockAnnex));
 
     let digest: any;
     let messages: any;
@@ -359,7 +361,7 @@ describe('useGroupProjectContext — remote namespace stripping (Mission 67)', (
     // because the canvas hasn't applied the namespace step), the helpers
     // must not break the bare ID.
     seedRemoteGP();
-    const { result } = renderHook(() => useGroupProjectContext(BARE_ID, true, SAT_ID));
+    const { result } = renderHook(() => useGroupProjectContext(BARE_ID, true, SAT_ID, mockAnnex));
 
     await act(async () => {
       await result.current.fetchDigest(BARE_ID);

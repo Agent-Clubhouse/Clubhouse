@@ -4,7 +4,7 @@
 // widget API so 1p widgets go through the same registration/validation path as 3p.
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
+import type { CanvasWidgetComponentProps, AnnexAPI } from '../../../../shared/plugin-types';
 import type { GitWorktreeEntry } from '../../../../shared/types';
 import type { TerminalIO } from '../../../features/terminal/ShellTerminal';
 import { ShellTerminal } from '../../../features/terminal/ShellTerminal';
@@ -24,28 +24,28 @@ function projectColor(name: string): string {
 
 /**
  * Create a TerminalIO adapter that routes PTY operations through the
- * annex client to a satellite machine.
+ * annex plugin API to a satellite machine.
  *
  * Accepts a ref for the satellite ID so the adapter methods always use
  * the latest connection info without creating a new object reference.
  * This prevents the downstream ShellTerminal from recreating its xterm
  * instance (and resetting scroll position) on satellite reconnection.
  */
-function createRemoteTerminalIO(satelliteIdRef: React.RefObject<string | null>): TerminalIO {
+function createRemoteTerminalIO(satelliteIdRef: React.RefObject<string | null>, annex: AnnexAPI): TerminalIO {
   return {
     write(sessionId: string, data: string) {
       if (satelliteIdRef.current) {
-        window.clubhouse.annexClient.ptyInput(satelliteIdRef.current, sessionId, data);
+        annex.ptyInput(satelliteIdRef.current, sessionId, data);
       }
     },
     resize(sessionId: string, cols: number, rows: number) {
       if (satelliteIdRef.current) {
-        window.clubhouse.annexClient.ptyResize(satelliteIdRef.current, sessionId, cols, rows);
+        annex.ptyResize(satelliteIdRef.current, sessionId, cols, rows);
       }
     },
     getBuffer(sessionId: string): Promise<string> {
       if (satelliteIdRef.current) {
-        return window.clubhouse.annexClient.ptyGetBuffer(satelliteIdRef.current, sessionId);
+        return annex.ptyGetBuffer(satelliteIdRef.current, sessionId);
       }
       return Promise.resolve('');
     },
@@ -95,8 +95,8 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
   // changes are picked up through the ref without a new object.
   const remoteIO = useMemo(() => {
     if (!remote.isRemote) return undefined;
-    return createRemoteTerminalIO(satelliteIdRef);
-  }, [remote.isRemote]);
+    return createRemoteTerminalIO(satelliteIdRef, api.annex);
+  }, [remote.isRemote, api.annex]);
 
   // Fetch worktrees when project is selected (skip for remote — no worktree listing over annex)
   useEffect(() => {
@@ -128,7 +128,7 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
     setExitCode(null);
     try {
       if (remote.isRemote && remote.satelliteId && remote.originalProjectId) {
-        await window.clubhouse.annexClient.ptySpawnShell(
+        await api.annex.ptySpawnShell(
           remote.satelliteId, sessionId, remote.originalProjectId,
         );
       } else {
@@ -138,7 +138,7 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
     } catch {
       setStatus('exited');
     }
-  }, [sessionId, remote]);
+  }, [sessionId, remote, api.annex]);
 
   useEffect(() => {
     if (!cwd) return;
