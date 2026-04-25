@@ -1258,4 +1258,80 @@ describe('annex-client', () => {
       );
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Bug fix LB-AN-003: pong timeout clears heartbeat interval before reconnect
+  // -------------------------------------------------------------------------
+
+  describe('heartbeat pong timeout clears interval (LB-AN-003)', () => {
+    it('calls clearInterval on heartbeat before reconnecting after pong timeout', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'TT:UU:VV:WW',
+        alias: 'Pong Test Mac',
+        icon: 'server',
+        color: 'blue',
+        publicKey: 'pong-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'TT:UU:VV:WW',
+        alias: 'Pong Test Mac',
+        icon: 'server',
+        color: 'blue',
+        publicKey: 'pong-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn(); // ping succeeds — pong just never arrives
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(openCb).not.toBeNull();
+      openCb!();
+
+      expect(annexClient.getSatellites()[0]?.state).toBe('connected');
+
+      // Spy on clearInterval AFTER connection is established so we only capture
+      // the heartbeat-related call, not any setup calls.
+      const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+
+      // Advance 30s: heartbeat fires, ping sent (no throw), pongTimeout armed
+      vi.advanceTimersByTime(30_000);
+      expect(annexClient.getSatellites()[0]?.state).toBe('connected');
+
+      // Advance 10s more: pong timeout fires (no pong was received)
+      vi.advanceTimersByTime(10_000);
+
+      // After pong timeout, the heartbeat interval must have been cleared
+      expect(clearIntervalSpy).toHaveBeenCalled();
+
+      const satsAfter = annexClient.getSatellites();
+      expect(satsAfter[0].state).toBe('disconnected');
+      expect(satsAfter[0].lastError).toBe('Heartbeat timeout');
+
+      clearIntervalSpy.mockRestore();
+      vi.useRealTimers();
+    });
+  });
 });
