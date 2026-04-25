@@ -147,6 +147,29 @@ describe('readAgents (via listDurable)', () => {
     expect(result[0].id).toBe('durable_1');
     expect(result[0].name).toBe('test-agent');
   });
+
+  it('preserves agentFile and agentSource fields read from agents.json', async () => {
+    // Regression guard: if a future schema/validation layer is added to
+    // readAgents, agentFile/agentSource must remain in the parsed config so
+    // the durable-config fallback in agent-system can thread them to spawn.
+    const agents = [{
+      id: 'durable_copilot',
+      name: 'copilot-agent',
+      color: 'indigo',
+      createdAt: '2024-01-01',
+      agentFile: 'k8s-assistant',
+      agentSource: '~/.copilot/agents',
+    }];
+    mockAgentsFile(agents);
+
+    const fromList = await listDurable(PROJECT_PATH);
+    expect(fromList[0].agentFile).toBe('k8s-assistant');
+    expect(fromList[0].agentSource).toBe('~/.copilot/agents');
+
+    const fromGet = await getDurableConfig(PROJECT_PATH, 'durable_copilot');
+    expect(fromGet?.agentFile).toBe('k8s-assistant');
+    expect(fromGet?.agentSource).toBe('~/.copilot/agents');
+  });
 });
 
 describe('createDurable', () => {
