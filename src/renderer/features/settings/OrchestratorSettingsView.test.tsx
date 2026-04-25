@@ -230,6 +230,83 @@ describe('OrchestratorSettingsView', () => {
         render(<OrchestratorSettingsView />);
         expect(screen.getByText('No orchestrators registered.')).toBeInTheDocument();
       });
+
+      describe('toggle disabled state when not installed', () => {
+        it('toggle is NOT disabled when orchestrator is enabled but not installed (can turn it off)', () => {
+          useOrchestratorStore.setState({
+            enabled: ['claude-code'],
+            availability: { 'claude-code': { available: false, error: 'CLI not found' } },
+          });
+          render(<OrchestratorSettingsView />);
+          const toggleButtons = screen.getAllByRole('button');
+          const orchToggle = toggleButtons.find((btn) =>
+            btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
+          );
+          expect(orchToggle).toBeTruthy();
+          expect(orchToggle).not.toBeDisabled();
+        });
+
+        it('toggle IS disabled when orchestrator is disabled and not installed (cannot turn it on)', () => {
+          useOrchestratorStore.setState({
+            enabled: ['other-cli'],
+            allOrchestrators: [
+              {
+                id: 'claude-code',
+                displayName: 'Claude Code',
+                shortName: 'CC',
+                capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true },
+              },
+              {
+                id: 'other-cli',
+                displayName: 'Other CLI',
+                shortName: 'OC',
+                capabilities: { headless: true, structuredOutput: false, hooks: false, sessionResume: false, permissions: false },
+              },
+            ],
+            availability: {
+              'claude-code': { available: false, error: 'CLI not found' },
+              'other-cli': { available: true },
+            },
+          });
+          render(<OrchestratorSettingsView />);
+          // Find the claude-code toggle specifically: not-installed orchs show an error message
+          // beneath them — navigate from that error text up to the row's toggle button
+          const errorText = screen.getByText('CLI not found');
+          const row = errorText.closest('.flex.items-center.justify-between');
+          const claudeToggle = row?.querySelector('.toggle-track');
+          expect(claudeToggle).toBeTruthy();
+          expect(claudeToggle).toBeDisabled();
+          expect(claudeToggle).toHaveAttribute('title', 'CLI not found — install to enable');
+        });
+
+        it('toggle is NOT disabled for last enabled orchestrator when it is not installed', () => {
+          // The "only enabled + not installed" case: isOnlyEnabled && notInstalled → should allow turning off
+          useOrchestratorStore.setState({
+            enabled: ['claude-code'],
+            availability: { 'claude-code': { available: false, error: 'CLI not found' } },
+          });
+          render(<OrchestratorSettingsView />);
+          const toggleButtons = screen.getAllByRole('button');
+          const orchToggle = toggleButtons.find((btn) =>
+            btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
+          );
+          expect(orchToggle).not.toBeDisabled();
+        });
+
+        it('toggle IS disabled for last enabled orchestrator when it IS installed', () => {
+          useOrchestratorStore.setState({
+            enabled: ['claude-code'],
+            availability: { 'claude-code': { available: true } },
+          });
+          render(<OrchestratorSettingsView />);
+          const toggleButtons = screen.getAllByRole('button');
+          const orchToggle = toggleButtons.find((btn) =>
+            btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
+          );
+          expect(orchToggle).toBeDisabled();
+          expect(orchToggle).toHaveAttribute('title', 'At least one orchestrator must be enabled');
+        });
+      });
     });
   });
 

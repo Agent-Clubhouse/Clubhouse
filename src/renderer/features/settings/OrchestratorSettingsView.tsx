@@ -195,7 +195,10 @@ function AppAgentSettings() {
           const avail = availability[o.id];
           const isOnlyEnabled = isEnabled && enabled.length === 1;
           const notInstalled = avail && !avail.available;
-          const toggleDisabled = isOnlyEnabled || !!notInstalled;
+          // Allow turning OFF a not-installed orchestrator; only block:
+          // 1. turning ON something not installed
+          // 2. turning OFF the last working (available) orchestrator
+          const toggleDisabled = (isOnlyEnabled && !notInstalled) || (!!notInstalled && !isEnabled);
 
           return (
             <div key={o.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
@@ -225,7 +228,7 @@ function AppAgentSettings() {
                 disabled={toggleDisabled}
                 className="toggle-track"
                 data-on={String(isEnabled)}
-                title={notInstalled ? 'CLI not found — install to enable' : isOnlyEnabled ? 'At least one orchestrator must be enabled' : undefined}
+                title={!!notInstalled && !isEnabled ? 'CLI not found — install to enable' : isOnlyEnabled && !notInstalled ? 'At least one orchestrator must be enabled' : undefined}
               >
                 <span className="toggle-knob" />
               </button>

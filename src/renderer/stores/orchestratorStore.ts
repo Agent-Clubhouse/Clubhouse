@@ -39,8 +39,12 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       next = current.includes(id) ? current : [...current, id];
     } else {
       next = current.filter((e) => e !== id);
-      // Don't allow disabling all orchestrators
-      if (next.length === 0) return;
+      // Don't allow disabling all orchestrators unless the last one is not installed
+      if (next.length === 0) {
+        const { availability } = get();
+        const lastIsUnavailable = availability[id] && !availability[id].available;
+        if (!lastIsUnavailable) return;
+      }
     }
     await optimisticUpdate(set, get,
       { enabled: next },
