@@ -1112,6 +1112,142 @@ export interface McpAPI {
   onToolCall(handler: (toolName: string, args: Record<string, unknown>) => Promise<PluginMcpToolResult>): Disposable;
 }
 
+// ── Annex Remote-Control API (v0.9+) ─────────────────────────────────
+// Requires 'annex' permission. Provides access to remote satellite instances.
+
+/** A satellite device connected via Annex. */
+export interface AnnexSatellite {
+  id: string;
+  fingerprint: string;
+  name: string;
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+}
+
+/** A discovered (not yet paired) device. */
+export interface AnnexDiscoveredService {
+  fingerprint: string;
+  name: string;
+  host: string;
+  port: number;
+}
+
+/** An event emitted by a satellite over the Annex connection. */
+export interface AnnexSatelliteEvent {
+  satelliteId: string;
+  type: string;
+  payload: unknown;
+}
+
+export interface AnnexAPI {
+  // ── Discovery & connection ───────────────────────────────────────────
+  /** List currently connected/known satellites. */
+  getSatellites(): Promise<AnnexSatellite[]>;
+  /** Trigger a Bonjour scan for nearby satellites. */
+  scan(): Promise<void>;
+  /** Connect to a known satellite by fingerprint. */
+  connect(fingerprint: string, bearerToken?: string): Promise<void>;
+  /** Disconnect from a satellite. */
+  disconnect(fingerprint: string): Promise<void>;
+  /** Retry a failed connection to a satellite. */
+  retry(fingerprint: string): Promise<void>;
+  /** Get discovered (unpaired) devices from the last scan. */
+  getDiscovered(): Promise<AnnexDiscoveredService[]>;
+  /** Pair with a discovered device using a PIN. */
+  pairWith(fingerprint: string, pin: string): Promise<void>;
+  /** Remove a satellite from the known list. */
+  forgetSatellite(fingerprint: string): Promise<void>;
+  /** Remove all satellites from the known list. */
+  forgetAllSatellites(): Promise<void>;
+
+  // ── Remote agents ───────────────────────────────────────────────────
+  /** Spawn an agent on a satellite. Returns the remote agent ID. */
+  agentSpawn(satelliteId: string, params: unknown): Promise<string>;
+  /** Kill a running agent on a satellite. */
+  agentKill(satelliteId: string, agentId: string): Promise<void>;
+  /** Wake a sleeping agent on a satellite. */
+  agentWake(satelliteId: string, agentId: string, opts?: { resume?: boolean; mission?: string }): Promise<void>;
+  /** Create a durable (persistent) agent on a satellite. */
+  agentCreateDurable(satelliteId: string, projectId: string, params: {
+    name: string;
+    color: string;
+    model?: string;
+    useWorktree?: boolean;
+    orchestrator?: string;
+    freeAgentMode?: boolean;
+    mcpIds?: string[];
+  }): Promise<unknown>;
+  /** Delete a durable agent on a satellite. */
+  agentDeleteDurable(satelliteId: string, projectId: string, agentId: string, mode: string): Promise<unknown>;
+  /** Get the worktree status for an agent on a satellite. */
+  agentWorktreeStatus(satelliteId: string, projectId: string, agentId: string): Promise<unknown>;
+  /** Reorder agents within a project on a satellite. */
+  agentReorder(satelliteId: string, projectId: string, orderedIds: string[]): Promise<void>;
+
+  // ── Remote PTY ──────────────────────────────────────────────────────
+  /** Send input to a remote PTY session. */
+  ptyInput(satelliteId: string, sessionId: string, data: string): Promise<void>;
+  /** Resize a remote PTY session. */
+  ptyResize(satelliteId: string, sessionId: string, cols: number, rows: number): Promise<void>;
+  /** Spawn a shell session on a satellite project. */
+  ptySpawnShell(satelliteId: string, sessionId: string, projectId: string): Promise<void>;
+  /** Fetch buffered output for a remote PTY session. */
+  ptyGetBuffer(satelliteId: string, sessionId: string): Promise<string>;
+  /** Send a clipboard image to a remote PTY. */
+  clipboardImage(satelliteId: string, agentId: string, base64: string, mimeType: string): Promise<void>;
+
+  // ── Remote files & git ──────────────────────────────────────────────
+  /** Read the file tree of a remote project. */
+  fileTree(satelliteId: string, projectId: string, opts?: { path?: string; depth?: number; includeHidden?: boolean }): Promise<unknown[]>;
+  /** Read a file from a remote project. */
+  fileRead(satelliteId: string, projectId: string, path: string): Promise<string>;
+  /** Perform a git operation on a remote project. */
+  gitOperation(satelliteId: string, projectId: string, params: { operation: string; [key: string]: unknown }): Promise<unknown>;
+
+  // ── Remote canvas ───────────────────────────────────────────────────
+  /** Send a canvas mutation to a satellite. */
+  canvasMutation(satelliteId: string, projectId: string, canvasId: string, scope: string, mutation: unknown): Promise<void>;
+
+  // ── Remote sessions ─────────────────────────────────────────────────
+  /** List sessions for a remote agent. */
+  sessionList(satelliteId: string, agentId: string, projectId: string, orchestrator?: string): Promise<unknown>;
+  /** Fetch a session transcript from a satellite. */
+  sessionTranscript(satelliteId: string, agentId: string, sessionId: string, projectId: string, offset: number, limit: number, orchestrator?: string): Promise<unknown>;
+  /** Fetch a session summary from a satellite. */
+  sessionSummary(satelliteId: string, agentId: string, sessionId: string, projectId: string, orchestrator?: string): Promise<unknown>;
+
+  // ── Remote group projects ────────────────────────────────────────────
+  /** Get a group project from a satellite. */
+  gpGet(satelliteId: string, groupProjectId: string): Promise<unknown>;
+  /** Update group project fields on a satellite. */
+  gpUpdate(satelliteId: string, groupProjectId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown>;
+  /** Get bulletin topic digest from a satellite group project. */
+  gpBulletinDigest(satelliteId: string, groupProjectId: string, since?: string): Promise<unknown[]>;
+  /** Get messages for a bulletin topic from a satellite group project. */
+  gpBulletinTopic(satelliteId: string, groupProjectId: string, topic: string, since?: string, limit?: number): Promise<unknown[]>;
+  /** Get all bulletin messages from a satellite group project. */
+  gpBulletinAll(satelliteId: string, groupProjectId: string, since?: string, limit?: number): Promise<unknown[]>;
+  /** Post a bulletin message to a satellite group project. */
+  gpBulletinPost(satelliteId: string, groupProjectId: string, sender: string, topic: string, body: string): Promise<unknown>;
+  /** Send a shoulder tap to agents in a satellite group project. */
+  gpShoulderTap(satelliteId: string, groupProjectId: string, targetAgentId: string | null, message: string, sender?: string): Promise<unknown>;
+  /** Delete a bulletin message on a satellite group project. */
+  gpDeleteMessage(satelliteId: string, groupProjectId: string, topic: string, messageId: string): Promise<boolean>;
+  /** Delete a bulletin topic on a satellite group project. */
+  gpDeleteTopic(satelliteId: string, groupProjectId: string, topic: string): Promise<boolean>;
+  /** Set topic protection on a satellite group project. */
+  gpSetTopicProtection(satelliteId: string, groupProjectId: string, topic: string, isProtected: boolean): Promise<boolean>;
+  /** Inject a message into an agent's PTY on a satellite. */
+  gpInjectMessage(satelliteId: string, agentId: string, message: string): Promise<boolean>;
+
+  // ── Events ──────────────────────────────────────────────────────────
+  /** Subscribe to satellite list changes. Returns a Disposable. */
+  onSatellitesChanged(callback: (satellites: AnnexSatellite[]) => void): Disposable;
+  /** Subscribe to discovered-device list changes. Returns a Disposable. */
+  onDiscoveredChanged(callback: (services: AnnexDiscoveredService[]) => void): Disposable;
+  /** Subscribe to all events from connected satellites. Returns a Disposable. */
+  onSatelliteEvent(callback: (event: AnnexSatelliteEvent) => void): Disposable;
+}
+
 // ── Composite PluginAPI ────────────────────────────────────────────────
 export interface PluginAPI {
   project: ProjectAPI;
@@ -1140,6 +1276,8 @@ export interface PluginAPI {
   window: WindowAPI;
   /** MCP tool contribution (v0.9+, requires 'mcp.tools' permission). */
   mcp: McpAPI;
+  /** Annex remote-control API (v0.9+, requires 'annex' permission). */
+  annex: AnnexAPI;
   context: PluginContextInfo;
 }
 

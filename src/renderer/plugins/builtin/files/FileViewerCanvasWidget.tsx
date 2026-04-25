@@ -94,7 +94,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
     }
     setFileContent(null);
     if (remote.isRemote && remote.satelliteId && remote.originalProjectId) {
-      window.clubhouse.annexClient.fileRead(remote.satelliteId, remote.originalProjectId, filePath)
+      api.annex.fileRead(remote.satelliteId, remote.originalProjectId, filePath)
         .then(setFileContent)
         .catch(() => setFileContent('Error reading file'));
     } else {
@@ -109,7 +109,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
     if (!remote.isRemote || !remote.satelliteId || !remote.originalProjectId) return undefined;
     const { satelliteId, originalProjectId } = remote;
     return async (dirPath: string): Promise<FileNode[]> => {
-      const items = await window.clubhouse.annexClient.fileTree(
+      const items = await api.annex.fileTree(
         satelliteId, originalProjectId, { path: dirPath || undefined },
       ) as Array<{ name: string; path: string; isDirectory: boolean }>;
       return items.map((item) => ({
@@ -118,7 +118,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
         isDirectory: item.isDirectory,
       }));
     };
-  }, [remote]);
+  }, [remote, api.annex]);
 
   const handleSelectProject = useCallback((pid: string) => {
     onUpdateMetadata({ projectId: pid, filePath: null, rootPath: null });

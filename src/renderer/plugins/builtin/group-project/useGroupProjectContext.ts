@@ -7,6 +7,7 @@
 import { useMemo, useCallback } from 'react';
 import type { GroupProject } from '../../../../shared/group-project-types';
 import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
+import type { AnnexAPI } from '../../../../shared/plugin-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
@@ -92,6 +93,7 @@ export function useGroupProjectContext(
   groupProjectId: string | undefined,
   isRemote: boolean,
   satelliteId: string | null,
+  annex: AnnexAPI,
 ): GroupProjectContextValue {
   // --- Local store selectors ---
   const localProjects = useGroupProjectStore((s) => s.projects);
@@ -147,7 +149,7 @@ export function useGroupProjectContext(
   const update = useCallback(async (gpId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => {
     if (isRemote && satelliteId) {
       const bareId = stripRemotePrefix(gpId);
-      await window.clubhouse.annexClient.gpUpdate(satelliteId, bareId, fields);
+      await annex.gpUpdate(satelliteId, bareId, fields);
       // Optimistically update local remote GP state so the UI reflects the change
       // immediately rather than waiting for the next snapshot sync.
       const satProjects = useRemoteProjectStore.getState().remoteGroupProjects[satelliteId] as GroupProject[] | undefined;
@@ -165,63 +167,63 @@ export function useGroupProjectContext(
     } else {
       await localUpdate(gpId, fields as any);
     }
-  }, [isRemote, satelliteId, localUpdate]);
+  }, [isRemote, satelliteId, localUpdate, annex]);
 
   // --- Bulletin reads ---
   const fetchDigest = useCallback(async (gpId: string, since?: string): Promise<TopicDigest[]> => {
     if (isRemote && satelliteId) {
-      return await window.clubhouse.annexClient.gpBulletinDigest(satelliteId, stripRemotePrefix(gpId), since) as TopicDigest[];
+      return await annex.gpBulletinDigest(satelliteId, stripRemotePrefix(gpId), since) as TopicDigest[];
     }
     return await window.clubhouse.groupProject.getBulletinDigest(gpId, since) as TopicDigest[];
-  }, [isRemote, satelliteId]);
+  }, [isRemote, satelliteId, annex]);
 
   const fetchTopicMessages = useCallback(async (gpId: string, topic: string, since?: string, limit?: number): Promise<BulletinMessage[]> => {
     if (isRemote && satelliteId) {
-      return await window.clubhouse.annexClient.gpBulletinTopic(satelliteId, stripRemotePrefix(gpId), topic, since, limit) as BulletinMessage[];
+      return await annex.gpBulletinTopic(satelliteId, stripRemotePrefix(gpId), topic, since, limit) as BulletinMessage[];
     }
     return await window.clubhouse.groupProject.getTopicMessages(gpId, topic, since, limit) as BulletinMessage[];
-  }, [isRemote, satelliteId]);
+  }, [isRemote, satelliteId, annex]);
 
   const fetchAllMessages = useCallback(async (gpId: string, since?: string, limit?: number): Promise<BulletinMessage[]> => {
     if (isRemote && satelliteId) {
-      return await window.clubhouse.annexClient.gpBulletinAll(satelliteId, stripRemotePrefix(gpId), since, limit) as BulletinMessage[];
+      return await annex.gpBulletinAll(satelliteId, stripRemotePrefix(gpId), since, limit) as BulletinMessage[];
     }
     return await window.clubhouse.groupProject.getAllMessages(gpId, since, limit) as BulletinMessage[];
-  }, [isRemote, satelliteId]);
+  }, [isRemote, satelliteId, annex]);
 
   // --- PTY injection: route through main process for proper chunked paste ---
   const injectMessage = useCallback(async (agentId: string, message: string): Promise<void> => {
     if (isRemote && satelliteId) {
-      await window.clubhouse.annexClient.gpInjectMessage(satelliteId, agentId, message);
+      await annex.gpInjectMessage(satelliteId, agentId, message);
     } else {
       await window.clubhouse.groupProject.injectMessage(agentId, message);
     }
-  }, [isRemote, satelliteId]);
+  }, [isRemote, satelliteId, annex]);
 
   // --- Delete operations ---
   const deleteMessage = useCallback(async (gpId: string, topic: string, messageId: string): Promise<boolean> => {
     if (isRemote && satelliteId) {
-      const result = await window.clubhouse.annexClient.gpDeleteMessage(satelliteId, stripRemotePrefix(gpId), topic, messageId) as unknown;
+      const result = await annex.gpDeleteMessage(satelliteId, stripRemotePrefix(gpId), topic, messageId) as unknown;
       return (result as { deleted: boolean })?.deleted ?? false;
     }
     return window.clubhouse.groupProject.deleteMessage(gpId, topic, messageId);
-  }, [isRemote, satelliteId]);
+  }, [isRemote, satelliteId, annex]);
 
   const deleteTopic = useCallback(async (gpId: string, topic: string): Promise<boolean> => {
     if (isRemote && satelliteId) {
-      const result = await window.clubhouse.annexClient.gpDeleteTopic(satelliteId, stripRemotePrefix(gpId), topic) as unknown;
+      const result = await annex.gpDeleteTopic(satelliteId, stripRemotePrefix(gpId), topic) as unknown;
       return (result as { deleted: boolean })?.deleted ?? false;
     }
     return window.clubhouse.groupProject.deleteTopic(gpId, topic);
-  }, [isRemote, satelliteId]);
+  }, [isRemote, satelliteId, annex]);
 
   const setTopicProtection = useCallback(async (gpId: string, topic: string, isProtected: boolean): Promise<boolean> => {
     if (isRemote && satelliteId) {
-      await window.clubhouse.annexClient.gpSetTopicProtection(satelliteId, stripRemotePrefix(gpId), topic, isProtected);
+      await annex.gpSetTopicProtection(satelliteId, stripRemotePrefix(gpId), topic, isProtected);
       return true;
     }
     return window.clubhouse.groupProject.setTopicProtection(gpId, topic, isProtected);
-  }, [isRemote, satelliteId]);
+  }, [isRemote, satelliteId, annex]);
 
   // --- Clear & trim operations ---
   const clearAllMessages = useCallback(async (gpId: string): Promise<{ removed: number }> => {

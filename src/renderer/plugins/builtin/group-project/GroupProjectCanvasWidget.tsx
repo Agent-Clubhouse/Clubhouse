@@ -155,7 +155,7 @@ function ProjectView({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
-  const ctx = useGroupProjectContext(groupProjectId, isRemote, satelliteId);
+  const ctx = useGroupProjectContext(groupProjectId, isRemote, satelliteId, api.annex);
 
   useEffect(() => {
     const el = containerRef.current;

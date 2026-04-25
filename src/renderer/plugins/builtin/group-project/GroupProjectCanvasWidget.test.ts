@@ -110,8 +110,8 @@ describe('GroupProjectCanvasWidget — PTY injection via context', () => {
     expect(hookSource).toContain('window.clubhouse.groupProject.injectMessage(agentId, message)');
   });
 
-  it('routes remote injection through annexClient.gpInjectMessage', () => {
-    expect(hookSource).toContain('annexClient.gpInjectMessage(satelliteId, agentId, message)');
+  it('routes remote injection through annex.gpInjectMessage', () => {
+    expect(hookSource).toContain('annex.gpInjectMessage(satelliteId, agentId, message)');
   });
 });
 
@@ -399,15 +399,15 @@ describe('GroupProjectCanvasWidget — Annex remote support', () => {
     expect(hookSource).toContain('remoteGroupProjectMembers');
   });
 
-  it('context hook routes mutations through annexClient for remote', () => {
-    expect(hookSource).toContain('annexClient.gpUpdate');
-    expect(hookSource).toContain('annexClient.gpBulletinDigest');
-    expect(hookSource).toContain('annexClient.gpBulletinTopic');
-    expect(hookSource).toContain('annexClient.gpBulletinAll');
+  it('context hook routes mutations through annex API for remote', () => {
+    expect(hookSource).toContain('annex.gpUpdate');
+    expect(hookSource).toContain('annex.gpBulletinDigest');
+    expect(hookSource).toContain('annex.gpBulletinTopic');
+    expect(hookSource).toContain('annex.gpBulletinAll');
   });
 
-  it('context hook routes injection through annexClient.gpInjectMessage for remote', () => {
-    expect(hookSource).toContain('annexClient.gpInjectMessage(satelliteId, agentId, message)');
+  it('context hook routes injection through annex.gpInjectMessage for remote', () => {
+    expect(hookSource).toContain('annex.gpInjectMessage(satelliteId, agentId, message)');
   });
 
   it('context hook falls back to local API for non-remote', () => {
