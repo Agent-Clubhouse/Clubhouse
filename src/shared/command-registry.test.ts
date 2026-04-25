@@ -178,4 +178,39 @@ describe('CommandRegistry', () => {
   it('exports a singleton commandRegistry instance', () => {
     expect(commandRegistry).toBeInstanceOf(CommandRegistry);
   });
+
+  /* ---- CQ-15: event listener exception isolation ---- */
+
+  it('continues firing subsequent listeners when one throws (CQ-15)', () => {
+    const second = vi.fn();
+    registry.onDidRegister(() => { throw new Error('listener boom'); });
+    registry.onDidRegister(second);
+
+    // Should not throw, and second listener should still be called
+    expect(() => registry.register(makeDef({ id: 'isolated' }))).not.toThrow();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs but does not propagate listener errors (CQ-15)', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    registry.onDidRegister(() => { throw new Error('event-error'); });
+
+    registry.register(makeDef({ id: 'log-test' }));
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[CommandRegistry]'),
+      expect.any(Error),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it('unregister events continue despite throwing listeners (CQ-15)', () => {
+    const second = vi.fn();
+    registry.onDidUnregister(() => { throw new Error('unreg boom'); });
+    registry.onDidUnregister(second);
+
+    const d = registry.register(makeDef({ id: 'unreg-isolated' }));
+    expect(() => d.dispose()).not.toThrow();
+    expect(second).toHaveBeenCalledWith('unreg-isolated');
+  });
 });

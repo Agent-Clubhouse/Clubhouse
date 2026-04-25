@@ -63,7 +63,11 @@ function createEvent<T>(): [CommandEvent<T>, (value: T) => void] {
   };
   const fire = (value: T) => {
     for (const listener of listeners) {
-      listener(value);
+      try {
+        listener(value);
+      } catch (err) {
+        console.error('[CommandRegistry] event listener threw:', err);
+      }
     }
   };
   return [event, fire];

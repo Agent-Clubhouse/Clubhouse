@@ -70,6 +70,13 @@ export async function startStructuredSession(
     meta: { agentId, adapter: adapter.constructor.name, model: opts.model, permissionMode: opts.permissionMode },
   });
 
+  let onExitFired = false;
+  const safeOnExit = () => {
+    if (onExitFired) return;
+    onExitFired = true;
+    onExit?.(agentId);
+  };
+
   // Consume the event stream in the background
   consumeEvents(session, opts).catch((err) => {
     if (!abortController.signal.aborted) {
@@ -86,8 +93,10 @@ export async function startStructuredSession(
   }).finally(() => {
     // Only invoke onExit for natural exits — explicit kills via cancelSession
     // already call untrackAgent directly, so skip to avoid a double call.
+    // Guard flag ensures onExit fires at most once even if abort races with
+    // natural stream completion.
     if (!abortController.signal.aborted) {
-      onExit?.(agentId);
+      safeOnExit();
     }
   });
 }

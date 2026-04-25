@@ -220,6 +220,13 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           // dropped before the user sees a ready terminal.  Re-focus if
           // this pane is still the focused one.
           if (focusedRef.current) term.focus();
+        }).catch((err: unknown) => {
+          rendererLog(SCROLL_LOG_NS, 'error', 'Buffer replay failed (local)', {
+            meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+          });
+          for (const data of pendingData) term.write(data);
+          pendingData.length = 0;
+          bufferReplayed = true;
         });
       } else if (remoteParts) {
         // Remote agents: fetch buffer from satellite via HTTPS REST
@@ -235,6 +242,13 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           pendingData.length = 0;
           bufferReplayed = true;
           if (focusedRef.current) term.focus();
+        }).catch((err: unknown) => {
+          rendererLog(SCROLL_LOG_NS, 'error', 'Buffer replay failed (remote/annex)', {
+            meta: { agentId, satelliteId: remoteParts.satelliteId, error: err instanceof Error ? err.message : String(err) },
+          });
+          for (const data of pendingData) term.write(data);
+          pendingData.length = 0;
+          bufferReplayed = true;
         });
       }
     });
