@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { GroupProjectPanelSidebar, useGroupProjectPanelLayout } from './GroupProjectPanelSidebar';
 import type { CanvasWidgetComponentProps, AnnexAPI } from '../../../../shared/plugin-types';
 import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
@@ -346,6 +347,17 @@ function ExpandedProjectView({
 }) {
   const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
 
+  const {
+    topicsWidth,
+    topicsCollapsed,
+    messagesWidth,
+    messagesCollapsed,
+    resizeTopics,
+    toggleTopicsCollapse,
+    resizeMessages,
+    toggleMessagesCollapse,
+  } = useGroupProjectPanelLayout();
+
   const [selectedTopic, setSelectedTopic] = useState<string>(ALL_TOPICS_KEY);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
@@ -596,8 +608,13 @@ function ExpandedProjectView({
       {/* 3-Pane Content */}
       <div className="flex flex-1 min-h-0 border-t border-surface-1">
         {/* Topic Sidebar */}
-        <div className="w-36 flex-shrink-0 border-r border-surface-1 overflow-y-auto">
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-ctp-accent/10 text-ctp-accent">
+        <GroupProjectPanelSidebar
+          width={topicsWidth}
+          collapsed={topicsCollapsed}
+          onResize={resizeTopics}
+          onToggleCollapse={toggleTopicsCollapse}
+        >
+          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-ctp-accent/10 text-ctp-accent sticky top-0 z-10">
             Topics
           </div>
           {/* All virtual topic */}
@@ -669,10 +686,15 @@ function ExpandedProjectView({
           {topics.length === 0 && (
             <div className="p-3 text-xs text-ctp-overlay0 italic">No topics yet</div>
           )}
-        </div>
+        </GroupProjectPanelSidebar>
 
         {/* Message List (compact preview pane) */}
-        <div className="w-48 flex-shrink-0 border-r border-surface-1 overflow-y-auto">
+        <GroupProjectPanelSidebar
+          width={messagesWidth}
+          collapsed={messagesCollapsed}
+          onResize={resizeMessages}
+          onToggleCollapse={toggleMessagesCollapse}
+        >
           {sortedMessages.length === 0 ? (
             <div className="p-3 text-xs text-ctp-overlay0 italic">
               {selectedTopic === ALL_TOPICS_KEY ? 'No messages yet' : `No messages in "${selectedTopic}"`}
@@ -712,7 +734,7 @@ function ExpandedProjectView({
               </div>
             ))
           )}
-        </div>
+        </GroupProjectPanelSidebar>
 
         {/* Message Detail (main content area) */}
         <div className="flex-1 min-w-0 overflow-y-auto p-3">
