@@ -140,6 +140,9 @@ const staleSweeper = new StaleSweeper<ManagedSession>(sessions, {
     }
   },
   onStale: (agentId, session) => {
+    const capturedGeneration = session.generation;
+    const current = sessions.get(agentId);
+    if (!current || current.generation !== capturedGeneration) return;
     appLog('core:pty', 'warn', 'Stale PTY session detected, cleaning up', {
       meta: { agentId, pid: session.process.pid },
     });
