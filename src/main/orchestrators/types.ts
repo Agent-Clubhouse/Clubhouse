@@ -19,6 +19,10 @@ export interface SpawnOpts {
   freeAgentMode?: boolean;
   /** Permission mode for autonomous execution: 'auto' uses Claude's auto-approve classifier, 'skip-all' bypasses all permissions */
   permissionMode?: 'auto' | 'skip-all';
+  /** CLI agent name to load (passed as --agent to Copilot CLI) */
+  agentFile?: string;
+  /** Source directory for agent file (passed as --source to Copilot CLI) */
+  agentSource?: string;
 }
 
 export interface HeadlessOpts extends SpawnOpts {

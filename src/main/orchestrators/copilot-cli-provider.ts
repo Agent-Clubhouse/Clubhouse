@@ -183,6 +183,13 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       args.push('-p', parts.join('\n\n'));
     }
 
+    if (opts.agentFile) {
+      args.push('--agent', opts.agentFile);
+    }
+    if (opts.agentSource) {
+      args.push('--source', opts.agentSource);
+    }
+
     return { binary, args };
   }
 

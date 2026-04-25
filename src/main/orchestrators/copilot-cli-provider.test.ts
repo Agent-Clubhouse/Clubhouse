@@ -264,6 +264,42 @@ describe('CopilotCliProvider', () => {
       expect(result.args).toContain('--allow-tool');
       expect(result.args.filter(a => a === '--allow-tool')).toHaveLength(2);
     });
+
+    it('adds --agent flag when agentFile is set', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        agentFile: 'k8s-assistant',
+      });
+      expect(result.args).toContain('--agent');
+      expect(result.args[result.args.indexOf('--agent') + 1]).toBe('k8s-assistant');
+    });
+
+    it('adds --source flag when agentSource is set', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        agentSource: '/home/user/.copilot/agents',
+      });
+      expect(result.args).toContain('--source');
+      expect(result.args[result.args.indexOf('--source') + 1]).toBe('/home/user/.copilot/agents');
+    });
+
+    it('adds both --agent and --source when both are set', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        agentFile: 'k8s-assistant',
+        agentSource: '/home/user/.copilot/agents',
+      });
+      expect(result.args).toContain('--agent');
+      expect(result.args).toContain('--source');
+      expect(result.args[result.args.indexOf('--agent') + 1]).toBe('k8s-assistant');
+      expect(result.args[result.args.indexOf('--source') + 1]).toBe('/home/user/.copilot/agents');
+    });
+
+    it('does not add --agent or --source when not set', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project' });
+      expect(result.args).not.toContain('--agent');
+      expect(result.args).not.toContain('--source');
+    });
   });
 
   describe('getExitCommand', () => {

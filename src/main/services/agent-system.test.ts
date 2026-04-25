@@ -1808,4 +1808,70 @@ describe('agent-system', () => {
       expect(mockPtySpawn).toHaveBeenCalled();
     });
   });
+
+  describe('durable config fallback for agentFile / agentSource', () => {
+    it('threads agentFile and agentSource from durable config to buildSpawnCommand', async () => {
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1',
+        name: 'agent-1',
+        agentFile: 'k8s-assistant',
+        agentSource: '/home/user/.copilot/agents',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentFile: 'k8s-assistant',
+          agentSource: '/home/user/.copilot/agents',
+        }),
+      );
+    });
+
+    it('does not override caller-provided agentFile with durable config', async () => {
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1',
+        name: 'agent-1',
+        agentFile: 'stored-agent',
+        agentSource: '/stored/path',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        agentFile: 'caller-agent',
+      });
+
+      expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentFile: 'caller-agent',
+        }),
+      );
+    });
+
+    it('does not set agentFile/agentSource when durable config has none', async () => {
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1',
+        name: 'agent-1',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      const callArgs = mockProvider.buildSpawnCommand.mock.calls[0][0];
+      expect(callArgs.agentFile).toBeUndefined();
+      expect(callArgs.agentSource).toBeUndefined();
+    });
+  });
 });

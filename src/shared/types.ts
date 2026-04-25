@@ -211,6 +211,10 @@ export interface DurableAgentConfig {
   mcpOverride?: boolean;
   /** Persona template ID applied at creation. Used to re-inject instructions on materialization. */
   persona?: string;
+  /** CLI agent name to load (e.g. "k8s-assistant" → --agent k8s-assistant) */
+  agentFile?: string;
+  /** Directory to search for the agent file (e.g. "~/.copilot/agents/" → --source ...) */
+  agentSource?: string;
 }
 
 /** Maps an orchestrator ID to its wrapper subcommand */
@@ -916,6 +920,10 @@ export interface SpawnAgentParams {
   sessionId?: string;
   /** Permission mode override for resume (preserves pre-restart mode) */
   permissionMode?: FreeAgentPermissionMode;
+  /** CLI agent name to load (e.g. --agent k8s-assistant) */
+  agentFile?: string;
+  /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
+  agentSource?: string;
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';

@@ -21,6 +21,14 @@ import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { isMcpEnabled } from './mcp-settings';
+import * as os from 'os';
+
+/** Expand leading `~` or `~/` to the user's home directory. */
+function expandHome(p: string): string {
+  if (p === '~') return os.homedir();
+  if (p.startsWith('~/') || p.startsWith('~\\')) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
 
 // Re-export registry functions for backward compatibility
 export { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, untrackAgent, resolveOrchestrator } from './agent-registry';
@@ -50,6 +58,10 @@ export interface SpawnAgentParams {
   companionWorkspace?: string;
   /** Permission mode override for resume (preserves pre-restart mode) */
   permissionMode?: FreeAgentPermissionMode;
+  /** CLI agent name to load (e.g. --agent k8s-assistant) */
+  agentFile?: string;
+  /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
+  agentSource?: string;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -148,6 +160,8 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
           if (params.freeAgentMode === undefined) params = { ...params, freeAgentMode: durableConfig.freeAgentMode };
           if (params.structuredMode === undefined && durableConfig.structuredMode) params = { ...params, structuredMode: durableConfig.structuredMode };
           if (params.model === undefined && durableConfig.model) params = { ...params, model: durableConfig.model };
+          if (params.agentFile === undefined && durableConfig.agentFile) params = { ...params, agentFile: durableConfig.agentFile };
+          if (params.agentSource === undefined && durableConfig.agentSource) params = { ...params, agentSource: durableConfig.agentSource };
         }
       } catch { /* config not available — use caller-provided values */ }
     }
@@ -186,6 +200,9 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
       });
       agentRegistry.setRuntime(params.agentId, 'structured');
       const adapter = provider.createStructuredAdapter();
+      const extraArgs: string[] = [];
+      if (params.agentFile) extraArgs.push('--agent', params.agentFile);
+      if (params.agentSource) extraArgs.push('--source', expandHome(params.agentSource));
       await structuredManager.startStructuredSession(params.agentId, adapter, {
         mission: structuredMission,
         systemPrompt: params.systemPrompt,
@@ -196,6 +213,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
         freeAgentMode: params.freeAgentMode,
         permissionMode,
         commandPrefix,
+        ...(extraArgs.length > 0 ? { extraArgs } : {}),
       }, (exitAgentId) => {
         if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
         untrackAgent(exitAgentId);
@@ -318,6 +336,8 @@ async function spawnPtyAgent(
       permissionMode,
       resume: params.resume,
       sessionId: params.sessionId,
+      agentFile: params.agentFile,
+      agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
     }),
   ]);
 
