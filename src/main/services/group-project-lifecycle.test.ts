@@ -308,6 +308,47 @@ describe('GroupProjectLifecycle', () => {
     expect(pollingCall![1]).toContain('read_bulletin');
   });
 
+  it('does not inject duplicate loop when concurrent notifyChange calls fire before members.add', async () => {
+    // Regression test for the race condition where two concurrent syncMemberships
+    // calls both pass the !members.has() check before either reaches members.add().
+    // This happens when an agent has multiple bindings created in rapid succession
+    // (e.g. during canvas wire restore: agent→groupProject + agent→browser).
+    const project = await groupProjectRegistry.create('Race Test Project');
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+
+    initGroupProjectLifecycle();
+
+    // First bind: agent→groupProject. This triggers syncMemberships(agent-1) which
+    // starts executing asynchronously. Before it can await and add to members, the
+    // second bind fires another notifyChange for the same agent.
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+
+    // Second bind for a different target on the same agent. This fires another
+    // notifyChange('agent-1') → another syncMemberships('agent-1'). Without the
+    // fix, both calls would see !members.has('agent-1') == true and both inject
+    // the polling loop. With the fix, members.add happens before the first await
+    // so the second call sees members.has('agent-1') == true and skips.
+    bindingManager.bind('agent-1', {
+      targetId: 'browser-widget',
+      targetKind: 'browser',
+      label: 'Browser',
+    });
+
+    // Wait long enough for all async lifecycle processing + polling delay (500ms)
+    await new Promise(r => setTimeout(r, 800));
+
+    const pollingCalls = mockPtyWrite.mock.calls.filter(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('bulletin'),
+    );
+    // The loop start message must be injected exactly once, not twice
+    expect(pollingCalls).toHaveLength(1);
+  });
+
   it('sends generic polling instruction for non-claude orchestrators', async () => {
     const project = await groupProjectRegistry.create('Codex Project');
     await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });

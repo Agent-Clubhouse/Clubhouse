@@ -97,7 +97,14 @@ export function registerMcpBindingHandlers(): void {
         appLog('core:mcp', 'debug', 'Creating binding for sleeping agent', { meta: { agentId } });
       }
       assertValidTargetKind(target.targetKind);
-      bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
+      const isNew = bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
+      if (!isNew) {
+        // Duplicate binding — notifyChange was skipped by bind(), so the
+        // renderer's mcpBindingStore won't receive a BINDINGS_CHANGED event.
+        // Broadcast explicitly so the canvas wire reconciler can see the
+        // binding and stop retrying.
+        broadcastBindingsChanged();
+      }
       appLog('core:mcp', 'info', 'Binding created', {
         meta: {
           agentId,
