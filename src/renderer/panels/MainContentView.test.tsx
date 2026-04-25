@@ -480,9 +480,12 @@ describe('MainContentView structured mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
+    // Default to experimental.structuredMode ON so existing assertions about
+    // StructuredAgentView routing keep working. Individual tests can override.
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
   });
 
-  it('renders StructuredAgentView for a running durable agent with structuredMode', () => {
+  it('renders StructuredAgentView for a running durable agent with structuredMode', async () => {
     useAgentStore.setState({
       agents: {
         'a-1': {
@@ -499,10 +502,41 @@ describe('MainContentView structured mode', () => {
     });
 
     render(<MainContentView />);
-    expect(screen.getByTestId('structured-agent-view')).toBeInTheDocument();
+    // Wait for experimental flag fetch to settle
+    await act(async () => { await Promise.resolve(); });
+    expect(await screen.findByTestId('structured-agent-view')).toBeInTheDocument();
     expect(screen.getByTestId('structured-agent-view')).toHaveAttribute('data-agent-id', 'a-1');
     expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
     expect(screen.queryByTestId('headless-agent')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render StructuredAgentView when experimental.structuredMode flag is off (even if agent has structuredMode set)', async () => {
+    // Override the beforeEach default — experimental flag is off
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
+    useAgentStore.setState({
+      agents: {
+        'a-1': {
+          id: 'a-1',
+          projectId: 'proj-1',
+          status: 'running',
+          kind: 'durable',
+          name: 'structured-agent',
+          color: 'blue',
+          structuredMode: true,
+        } as any,
+      },
+      activeAgentId: 'a-1',
+    });
+
+    render(<MainContentView />);
+    await act(async () => {
+      await Promise.resolve();
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    // Falls through to PTY (AgentTerminal) — preserves pre-experimental behavior.
+    expect(screen.getByTestId('agent-terminal')).toBeInTheDocument();
+    expect(screen.queryByTestId('structured-agent-view')).not.toBeInTheDocument();
   });
 
   it('renders AgentTerminal for a running agent without structuredMode', async () => {
@@ -573,7 +607,7 @@ describe('MainContentView structured mode', () => {
     expect(screen.queryByTestId('structured-agent-view')).not.toBeInTheDocument();
   });
 
-  it('shows satellite disconnected overlay over structured agent view on remote project', () => {
+  it('shows satellite disconnected overlay over structured agent view on remote project', async () => {
     const satelliteId = 'sat-fp';
     const remoteProjectId = `remote||${satelliteId}||proj-1`;
 
@@ -612,7 +646,8 @@ describe('MainContentView structured mode', () => {
     });
 
     render(<MainContentView />);
-    expect(screen.getByTestId('structured-agent-view')).toBeInTheDocument();
+    await act(async () => { await Promise.resolve(); });
+    expect(await screen.findByTestId('structured-agent-view')).toBeInTheDocument();
     expect(screen.getByTestId('satellite-disconnected-overlay')).toBeInTheDocument();
   });
 });

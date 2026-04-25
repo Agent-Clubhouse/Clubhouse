@@ -13,6 +13,7 @@ import { getDurableConfig, addSessionEntry } from './agent-config';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
+import * as experimentalSettings from './experimental-settings';
 import * as structuredManager from './structured-manager';
 import { applyLaunchWrapper } from '../orchestrators/shared';
 import type { LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
@@ -171,7 +172,12 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
     // Durable agents opt in via per-agent structuredMode config flag.
     // TODO: Apply launch wrapper transform to structured path once adapter architecture supports external binary override
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
-    const useStructured = (spawnMode === 'structured' && params.kind === 'quick') || params.structuredMode;
+    // Structured Mode is gated behind an experimental flag. When the flag is off,
+    // ignore both the per-agent durable config and project spawn-mode preference
+    // so existing behavior is preserved for opted-out users.
+    const structuredFlagEnabled = !!experimentalSettings.getSettings().structuredMode;
+    const useStructured = structuredFlagEnabled
+      && ((spawnMode === 'structured' && params.kind === 'quick') || !!params.structuredMode);
     const hasMission = !!params.mission && params.mission.trim() !== '';
     // For durable agents in structured mode without a mission, use a default open-ended prompt.
     // This allows the structured UI to launch and accept messages interactively.
