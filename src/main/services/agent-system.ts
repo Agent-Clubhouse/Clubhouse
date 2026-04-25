@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable } from '../orchestrators';
+import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable, isAgentFileCapable } from '../orchestrators';
 import { waitReady as waitHookServerReady } from './hook-server';
 import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
@@ -200,9 +200,16 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
       });
       agentRegistry.setRuntime(params.agentId, 'structured');
       const adapter = provider.createStructuredAdapter();
-      const extraArgs: string[] = [];
-      if (params.agentFile) extraArgs.push('--agent', params.agentFile);
-      if (params.agentSource) extraArgs.push('--source', expandHome(params.agentSource));
+      // Delegate --agent / --source flag construction to the provider so the
+      // structured (ACP) and PTY paths share one source of truth.  Providers
+      // that don't implement AgentFileCapable correctly produce no flags here,
+      // matching the no-op behavior already present on the PTY path.
+      const extraArgs = isAgentFileCapable(provider)
+        ? provider.buildAgentFileArgs({
+            agentFile: params.agentFile,
+            agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
+          })
+        : [];
       await structuredManager.startStructuredSession(params.agentId, adapter, {
         mission: structuredMission,
         systemPrompt: params.systemPrompt,

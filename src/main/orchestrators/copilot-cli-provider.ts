@@ -15,6 +15,7 @@ import {
   HeadlessCapable,
   SessionCapable,
   StructuredCapable,
+  AgentFileCapable,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
@@ -57,7 +58,7 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   userPromptSubmitted: 'notification',
 };
 
-export class CopilotCliProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable, StructuredCapable {
+export class CopilotCliProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable, StructuredCapable, AgentFileCapable {
   readonly id = 'copilot-cli' as const;
   readonly displayName = 'GitHub Copilot CLI';
   readonly shortName = 'GHCP';
@@ -183,14 +184,23 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       args.push('-p', parts.join('\n\n'));
     }
 
-    if (opts.agentFile) {
-      args.push('--agent', opts.agentFile);
-    }
-    if (opts.agentSource) {
-      args.push('--source', opts.agentSource);
-    }
+    args.push(...this.buildAgentFileArgs({ agentFile: opts.agentFile, agentSource: opts.agentSource }));
 
     return { binary, args };
+  }
+
+  // ── AgentFileCapable ───────────────────────────────────────────────────
+
+  /**
+   * Build the `--agent` / `--source` flag pair for Copilot CLI.  Used by both
+   * `buildSpawnCommand` (PTY) and the structured/ACP path (via `extraArgs`),
+   * so the flag-construction logic lives here only.
+   */
+  buildAgentFileArgs(opts: { agentFile?: string; agentSource?: string }): string[] {
+    const args: string[] = [];
+    if (opts.agentFile) args.push('--agent', opts.agentFile);
+    if (opts.agentSource) args.push('--source', opts.agentSource);
+    return args;
   }
 
   // ── MCP CLI injection ──────────────────────────────────────────────────

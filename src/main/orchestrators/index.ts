@@ -1,5 +1,5 @@
-export type { OrchestratorId, OrchestratorProvider, OrchestratorConventions, ProviderCapabilities, PasteSubmitTiming, SpawnOpts, HeadlessOpts, NormalizedHookEvent, AgentExecutionMode, StructuredAdapter, StructuredSessionOpts, HookCapable, HeadlessCapable, SessionCapable, StructuredCapable } from './types';
-export { isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable } from './types';
+export type { OrchestratorId, OrchestratorProvider, OrchestratorConventions, ProviderCapabilities, PasteSubmitTiming, SpawnOpts, HeadlessOpts, NormalizedHookEvent, AgentExecutionMode, StructuredAdapter, StructuredSessionOpts, HookCapable, HeadlessCapable, SessionCapable, StructuredCapable, AgentFileCapable } from './types';
+export { isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable, isAgentFileCapable } from './types';
 export { BaseProvider } from './base-provider';
 export type { ModelFetchConfig } from './base-provider';
 export { ClaudeCodeProvider } from './claude-code-provider';

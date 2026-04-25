@@ -165,6 +165,19 @@ export interface StructuredCapable {
   createStructuredAdapter(opts?: { resume?: boolean }): StructuredAdapter;
 }
 
+/**
+ * Providers that consume the `agentFile` / `agentSource` SpawnOpts to load a
+ * named CLI agent definition from a source directory.  Currently only Copilot
+ * CLI implements this; other providers silently ignore those fields.
+ *
+ * The single helper produces the args used by both the PTY path (via
+ * `buildSpawnCommand`) and the structured/ACP path (via `extraArgs`), so the
+ * flag-construction logic lives in exactly one place per provider.
+ */
+export interface AgentFileCapable {
+  buildAgentFileArgs(opts: { agentFile?: string; agentSource?: string }): string[];
+}
+
 // ── Type Guards ─────────────────────────────────────────────────────────────
 
 /** Check if a provider supports hooks (writeHooksConfig, parseHookEvent) */
@@ -189,6 +202,11 @@ export function isSessionCapable(provider: OrchestratorProvider): provider is Or
 export function isStructuredCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & StructuredCapable {
   return provider.getCapabilities().structuredMode
     && typeof (provider as unknown as StructuredCapable).createStructuredAdapter === 'function';
+}
+
+/** Check if a provider consumes agentFile / agentSource (e.g. Copilot CLI's --agent / --source) */
+export function isAgentFileCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & AgentFileCapable {
+  return typeof (provider as unknown as AgentFileCapable).buildAgentFileArgs === 'function';
 }
 
 // ── Core Interface ──────────────────────────────────────────────────────────
