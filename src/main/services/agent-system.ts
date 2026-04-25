@@ -24,7 +24,7 @@ import { isMcpEnabled } from './mcp-settings';
 import * as os from 'os';
 
 /** Expand leading `~` or `~/` to the user's home directory. */
-function expandHome(p: string): string {
+export function expandHome(p: string): string {
   if (p === '~') return os.homedir();
   if (p.startsWith('~/') || p.startsWith('~\\')) return path.join(os.homedir(), p.slice(2));
   return p;

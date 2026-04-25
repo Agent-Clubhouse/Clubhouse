@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as path from 'path';
 import type { OrchestratorConventions } from '../orchestrators';
 
 // Mock config-pipeline
@@ -183,7 +184,9 @@ import {
   untrackAgent,
   isHeadlessAgent,
   isStructuredAgent,
+  expandHome,
 } from './agent-system';
+import * as os from 'os';
 
 describe('agent-system', () => {
   beforeEach(() => {
@@ -1872,6 +1875,189 @@ describe('agent-system', () => {
       const callArgs = mockProvider.buildSpawnCommand.mock.calls[0][0];
       expect(callArgs.agentFile).toBeUndefined();
       expect(callArgs.agentSource).toBeUndefined();
+    });
+
+    it('expands tilde in agentSource before passing to buildSpawnCommand (PTY path)', async () => {
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1',
+        name: 'agent-1',
+        agentFile: 'k8s-assistant',
+        agentSource: '~/.copilot/agents',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      const callArgs = mockProvider.buildSpawnCommand.mock.calls[0][0];
+      // agentFile is a name, never expanded
+      expect(callArgs.agentFile).toBe('k8s-assistant');
+      // agentSource must be tilde-expanded — must NOT contain a leading ~
+      expect(callArgs.agentSource).toBe(path.join(os.homedir(), '.copilot/agents'));
+      expect(callArgs.agentSource.startsWith('~')).toBe(false);
+    });
+
+    it('does not apply agentFile/agentSource fallback for kind: "quick"', async () => {
+      // Even if a durable config exists with these fields, quick agents must not
+      // receive them (the durable-config fallback block is gated on kind === "durable").
+      mockGetDurableConfig.mockReturnValue({
+        id: 'quick-1',
+        name: 'quick-1',
+        agentFile: 'should-not-leak',
+        agentSource: '/should/not/leak',
+      });
+
+      await spawnAgent({
+        agentId: 'quick-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'do a thing',
+      });
+
+      const callArgs = mockProvider.buildSpawnCommand.mock.calls[0][0];
+      expect(callArgs.agentFile).toBeUndefined();
+      expect(callArgs.agentSource).toBeUndefined();
+    });
+  });
+
+  describe('structured mode passes agentFile / agentSource as extraArgs', () => {
+    let origCaps: typeof mockProvider.getCapabilities;
+
+    beforeEach(() => {
+      // Enable structured-capability on the mock provider
+      origCaps = mockProvider.getCapabilities;
+      mockProvider.getCapabilities = vi.fn(() => ({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      }));
+      const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
+      (mockProvider as any).createStructuredAdapter = vi.fn(() => mockAdapter);
+    });
+
+    afterEach(() => {
+      mockProvider.getCapabilities = origCaps;
+      delete (mockProvider as any).createStructuredAdapter;
+    });
+
+    it('passes only --agent in extraArgs when only agentFile is set', async () => {
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-s1',
+        name: 'agent-s1',
+        structuredMode: true,
+        agentFile: 'k8s-assistant',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-s1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockStartStructured).toHaveBeenCalled();
+      const sessionOpts = mockStartStructured.mock.calls[0][2];
+      expect(sessionOpts.extraArgs).toEqual(['--agent', 'k8s-assistant']);
+    });
+
+    it('passes both --agent and --source in extraArgs (in that order) when both are set', async () => {
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-s2',
+        name: 'agent-s2',
+        structuredMode: true,
+        agentFile: 'k8s-assistant',
+        agentSource: '/abs/agents',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-s2',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      const sessionOpts = mockStartStructured.mock.calls[0][2];
+      expect(sessionOpts.extraArgs).toEqual([
+        '--agent', 'k8s-assistant',
+        '--source', '/abs/agents',
+      ]);
+    });
+
+    it('omits the extraArgs key entirely when neither agentFile nor agentSource is set', async () => {
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-s3',
+        name: 'agent-s3',
+        structuredMode: true,
+      });
+
+      await spawnAgent({
+        agentId: 'agent-s3',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      const sessionOpts = mockStartStructured.mock.calls[0][2];
+      expect(sessionOpts).not.toHaveProperty('extraArgs');
+    });
+
+    it('expands tilde in agentSource before passing as --source extraArg', async () => {
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-s4',
+        name: 'agent-s4',
+        structuredMode: true,
+        agentSource: '~/.copilot/agents',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-s4',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      const sessionOpts = mockStartStructured.mock.calls[0][2];
+      expect(sessionOpts.extraArgs).toEqual([
+        '--source', path.join(os.homedir(), '.copilot/agents'),
+      ]);
+      // Sanity: must NOT contain an unexpanded tilde
+      expect(sessionOpts.extraArgs.some((a: string) => a.startsWith('~'))).toBe(false);
+    });
+  });
+
+  describe('expandHome', () => {
+    const home = os.homedir();
+
+    it('returns home dir for `~` alone', () => {
+      expect(expandHome('~')).toBe(home);
+    });
+
+    it('expands `~/foo` to <home>/foo', () => {
+      expect(expandHome('~/foo')).toBe(path.join(home, 'foo'));
+    });
+
+    it('expands `~\\foo` to <home>/foo (Windows-style)', () => {
+      expect(expandHome('~\\foo')).toBe(path.join(home, 'foo'));
+    });
+
+    it('preserves absolute paths unchanged', () => {
+      expect(expandHome('/abs/path')).toBe('/abs/path');
+    });
+
+    it('preserves relative paths unchanged', () => {
+      expect(expandHome('relative/path')).toBe('relative/path');
+    });
+
+    it('does NOT expand a tilde that is not at the start', () => {
+      expect(expandHome('foo~bar')).toBe('foo~bar');
+      expect(expandHome('/foo/~/bar')).toBe('/foo/~/bar');
+    });
+
+    it('preserves an empty string', () => {
+      expect(expandHome('')).toBe('');
     });
   });
 });
