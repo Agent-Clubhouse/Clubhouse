@@ -614,7 +614,6 @@ export function registerAgentTools(): void {
       try {
         if (reg.runtime === 'pty') {
           ptyManager.write(targetId, '/clear');
-          await sleep(100);
           ptyManager.write(targetId, '\r');
         } else {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support /clear` }], isError: true };
@@ -652,7 +651,6 @@ export function registerAgentTools(): void {
       try {
         if (reg.runtime === 'pty') {
           ptyManager.write(targetId, '/compact');
-          await sleep(100);
           ptyManager.write(targetId, '\r');
         } else {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support /compact` }], isError: true };

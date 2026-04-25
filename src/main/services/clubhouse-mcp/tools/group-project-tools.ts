@@ -8,6 +8,7 @@ import { mcpAdapter } from '../mcp-adapter';
 import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
+import * as ptyManager from '../../pty-manager';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
 import { spawnAgent } from '../../agent-system';
 import { listDurable } from '../../agent-config';
@@ -828,7 +829,8 @@ export function registerGroupProjectTools(): void {
         };
       }
 
-      injectPtyMessage(targetAgentId, '/clear');
+      ptyManager.write(targetAgentId, '/clear');
+      ptyManager.write(targetAgentId, '\r');
 
       return {
         content: [{
@@ -890,7 +892,8 @@ export function registerGroupProjectTools(): void {
         };
       }
 
-      injectPtyMessage(targetAgentId, '/compact');
+      ptyManager.write(targetAgentId, '/compact');
+      ptyManager.write(targetAgentId, '\r');
 
       return {
         content: [{

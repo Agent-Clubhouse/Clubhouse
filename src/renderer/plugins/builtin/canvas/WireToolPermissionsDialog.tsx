@@ -49,8 +49,6 @@ const TOOL_HINTS: Record<string, string> = {
   wake_agent: 'Wake a sleeping agent in this project',
   start_polling: 'Tell a connected agent to start polling the board',
   stop_polling: 'Tell a connected agent to stop polling the board',
-  clear_agent: 'Send /clear to an agent (clears its context)',
-  compact_agent: 'Send /compact to an agent (compacts its context)',
   clear_topic: 'Delete a bulletin channel and all its messages',
   delete_messages: 'Delete specific messages by ID',
   invoke: 'Submit a task to the queue',

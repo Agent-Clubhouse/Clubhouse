@@ -420,9 +420,8 @@ describe('GroupProjectTools', () => {
     agentRegistry.untrack('agent-1');
   });
 
-  it('registers 8 tools when shoulderTapEnabled is true', async () => {
+  it('shoulder_tap and broadcast are always available (no project-level flag needed)', async () => {
     const project = await groupProjectRegistry.create('TapProj');
-    await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -433,8 +432,6 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(8);
-
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('shoulder_tap');
     expect(suffixes).toContain('broadcast');
@@ -442,7 +439,6 @@ describe('GroupProjectTools', () => {
 
   it('shoulder_tap delivers message to target agent', async () => {
     const project = await groupProjectRegistry.create('TapDelivery');
-    await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
 
     agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
@@ -480,7 +476,6 @@ describe('GroupProjectTools', () => {
 
   it('broadcast delivers message to all agents except sender', async () => {
     const project = await groupProjectRegistry.create('BroadcastProj');
-    await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
 
     agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
@@ -591,7 +586,6 @@ describe('GroupProjectTools', () => {
 
   it('shoulder_tap returns error when target_agent_id is missing', async () => {
     const project = await groupProjectRegistry.create('ErrProj');
-    await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -609,9 +603,8 @@ describe('GroupProjectTools', () => {
     expect(result.content[0].text).toContain('required');
   });
 
-  it('read_bulletin description describes the channel model regardless of shoulderTapEnabled', async () => {
+  it('read_bulletin description describes the channel model', async () => {
     const project = await groupProjectRegistry.create('ChanModel');
-    await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -633,7 +626,7 @@ describe('GroupProjectTools', () => {
 
   /* ---------- Agent Control Tools (wake, start/stop polling) ---------- */
 
-  it('registers 5 tools when agentControlEnabled is false (default)', () => {
+  it('wake_agent, start_polling, stop_polling are always available', () => {
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -644,56 +637,13 @@ describe('GroupProjectTools', () => {
 
     const tools = getScopedToolList('agent-1');
     const suffixes = tools.map(t => t.name.split('__').pop());
-    expect(suffixes).not.toContain('wake_agent');
-    expect(suffixes).not.toContain('start_polling');
-    expect(suffixes).not.toContain('stop_polling');
-  });
-
-  it('registers 9 tools when agentControlEnabled is true (no shoulder tap)', async () => {
-    const project = await groupProjectRegistry.create('CtrlProj');
-    await groupProjectRegistry.update(project.id, { metadata: { agentControlEnabled: true } });
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'CtrlProj',
-      agentName: 'robin',
-      targetName: 'CtrlProj',
-    });
-
-    const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(9);
-
-    const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('wake_agent');
     expect(suffixes).toContain('start_polling');
     expect(suffixes).toContain('stop_polling');
-    // shoulder tap still off
-    expect(suffixes).not.toContain('shoulder_tap');
-    expect(suffixes).not.toContain('broadcast');
-  });
-
-  it('registers 11 tools when both agentControlEnabled and shoulderTapEnabled are true', async () => {
-    const project = await groupProjectRegistry.create('AllProj');
-    await groupProjectRegistry.update(project.id, {
-      metadata: { agentControlEnabled: true, shoulderTapEnabled: true },
-    });
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'AllProj',
-      agentName: 'robin',
-      targetName: 'AllProj',
-    });
-
-    const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(11);
   });
 
   it('wake_agent returns error for non-member agent', async () => {
     const project = await groupProjectRegistry.create('WakeProj');
-    await groupProjectRegistry.update(project.id, { metadata: { agentControlEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -713,7 +663,6 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent returns already_running when agent is alive', async () => {
     const project = await groupProjectRegistry.create('WakeRunning');
-    await groupProjectRegistry.update(project.id, { metadata: { agentControlEnabled: true } });
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -746,7 +695,6 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent spawns sleeping agent', async () => {
     const project = await groupProjectRegistry.create('WakeSpawn');
-    await groupProjectRegistry.update(project.id, { metadata: { agentControlEnabled: true } });
 
     // Mock project store and agent config for wake
     mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
@@ -794,7 +742,6 @@ describe('GroupProjectTools', () => {
 
   it('start_polling injects polling message into agent PTY', async () => {
     const project = await groupProjectRegistry.create('PollStart');
-    await groupProjectRegistry.update(project.id, { metadata: { agentControlEnabled: true } });
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -836,7 +783,6 @@ describe('GroupProjectTools', () => {
 
   it('start_polling returns error for sleeping agent', async () => {
     const project = await groupProjectRegistry.create('PollSleep');
-    await groupProjectRegistry.update(project.id, { metadata: { agentControlEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -863,7 +809,6 @@ describe('GroupProjectTools', () => {
 
   it('stop_polling injects stop message into agent PTY', async () => {
     const project = await groupProjectRegistry.create('PollStop');
-    await groupProjectRegistry.update(project.id, { metadata: { agentControlEnabled: true } });
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -904,7 +849,6 @@ describe('GroupProjectTools', () => {
 
   it('stop_polling returns error for sleeping agent', async () => {
     const project = await groupProjectRegistry.create('StopSleep');
-    await groupProjectRegistry.update(project.id, { metadata: { agentControlEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1026,9 +970,9 @@ describe('GroupProjectTools', () => {
     expect(text).not.toContain('\n');
   });
 
-  /* ---------- Agent deletion tools (gated by agentDeletionEnabled) ---------- */
+  /* ---------- Agent deletion tools ---------- */
 
-  it('does not register clear_topic/delete_messages when agentDeletionEnabled is false', () => {
+  it('clear_topic and delete_messages are always available (wire-level gating only)', () => {
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -1039,31 +983,12 @@ describe('GroupProjectTools', () => {
 
     const tools = getScopedToolList('agent-1');
     const suffixes = tools.map(t => t.name.split('__').pop());
-    expect(suffixes).not.toContain('clear_topic');
-    expect(suffixes).not.toContain('delete_messages');
-  });
-
-  it('registers clear_topic/delete_messages when agentDeletionEnabled is true', async () => {
-    const project = await groupProjectRegistry.create('DelProj');
-    await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'DelProj',
-      agentName: 'robin',
-      targetName: 'DelProj',
-    });
-
-    const tools = getScopedToolList('agent-1');
-    const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('clear_topic');
     expect(suffixes).toContain('delete_messages');
   });
 
   it('clear_topic deletes a topic and returns result', async () => {
     const project = await groupProjectRegistry.create('ClearProj');
-    await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1097,7 +1022,6 @@ describe('GroupProjectTools', () => {
 
   it('clear_topic rejects system topic', async () => {
     const project = await groupProjectRegistry.create('SysProj');
-    await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1117,7 +1041,6 @@ describe('GroupProjectTools', () => {
 
   it('delete_messages removes specific messages by ID', async () => {
     const project = await groupProjectRegistry.create('DelMsgProj');
-    await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1194,7 +1117,7 @@ describe('GroupProjectTools', () => {
         targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
       });
 
-      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id });
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, label: 'GP' });
       const toolName = buildToolName(binding, 'clear_agent');
       const result = await callTool('agent-1', toolName, { target_agent_id: 'not-a-member' });
 
@@ -1212,7 +1135,7 @@ describe('GroupProjectTools', () => {
       });
       // agent-2 not in agentRegistry = sleeping
 
-      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id });
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, label: 'GP' });
       const toolName = buildToolName(binding, 'clear_agent');
       const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
 
@@ -1263,7 +1186,7 @@ describe('GroupProjectTools', () => {
       });
       // agent-2 sleeping
 
-      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id });
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, label: 'GP' });
       const toolName = buildToolName(binding, 'compact_agent');
       const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
 

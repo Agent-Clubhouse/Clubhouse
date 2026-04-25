@@ -398,7 +398,6 @@ function ExpandedProjectView({
       setDefaultAgentControl(!AGENT_CONTROL_SUFFIXES.some(s => ddt.includes(s)));
       setDefaultAgentCleanup(!AGENT_CLEANUP_SUFFIXES.some(s => ddt.includes(s)));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.description, project?.instructions, project?.metadata?.defaultDisabledTools]);
 
   const computeDefaultDisabledTools = useCallback(() => {
@@ -407,7 +406,6 @@ function ExpandedProjectView({
     if (!defaultAgentControl) disabled.push(...AGENT_CONTROL_SUFFIXES);
     if (!defaultAgentCleanup) disabled.push(...AGENT_CLEANUP_SUFFIXES);
     return disabled;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultShoulderTap, defaultAgentControl, defaultAgentCleanup]);
 
   const hasUnsavedChanges = project

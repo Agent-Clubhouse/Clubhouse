@@ -630,8 +630,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onAddWireDefinition: (entry: McpBindingEntry) => {
               let wireEntry = entry;
               if (entry.targetKind === 'group-project' && !entry.disabledTools?.length) {
-                const projects = useGroupProjectStore.getState().projects;
-                const project = projects[entry.targetId];
+                const { projects } = useGroupProjectStore.getState();
+                const project = projects.find(p => p.id === entry.targetId);
                 const defaults = project?.metadata?.defaultDisabledTools as string[] | undefined;
                 if (!defaults) {
                   // No explicit defaults set — use the all-disabled default (new projects start locked down)

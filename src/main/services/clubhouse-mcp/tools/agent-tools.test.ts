@@ -136,13 +136,15 @@ describe('AgentTools', () => {
   describe('tool registration', () => {
     it('registers all agent-to-agent tools', () => {
       const tools = getScopedToolList('agent-1');
-      expect(tools).toHaveLength(6);
+      expect(tools).toHaveLength(8);
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toContain('send_message');
       expect(suffixes).toContain('get_status');
       expect(suffixes).toContain('read_output');
       expect(suffixes).toContain('check_connectivity');
       expect(suffixes).toContain('send_file');
+      expect(suffixes).toContain('clear_agent');
+      expect(suffixes).toContain('compact_agent');
       expect(suffixes).toContain('wake');
     });
 
@@ -609,8 +611,8 @@ describe('AgentTools', () => {
       });
 
       const tools = getScopedToolList('agent-1');
-      // 6 tools for agent-2 + 6 tools for agent-3 = 12
-      expect(tools).toHaveLength(12);
+      // 8 tools for agent-2 + 8 tools for agent-3 = 16
+      expect(tools).toHaveLength(16);
 
       const sendToolAgent2 = agentToolName(sourceBinding, 'send_message');
       const sendToolAgent3 = agentToolName(makeBinding({
