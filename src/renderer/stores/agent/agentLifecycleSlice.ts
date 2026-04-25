@@ -68,7 +68,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         projectId,
         name,
         kind: 'quick',
-        status: 'running',
+        status: 'spawning',
         color: 'gray',
         mission,
         model: resolvedModel,
@@ -118,6 +118,13 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           orchestrator: resolvedOrchestrator,
           freeAgentMode: resolvedFreeAgentMode,
         });
+
+        set((s) => {
+          if (!s.agents[agentId]) return s;
+          return {
+            agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'running' } },
+          };
+        });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
         set((s) => {
@@ -140,7 +147,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         projectId,
         name: config.name,
         kind: 'durable',
-        status: 'running',
+        status: 'spawning',
         color: config.color,
         icon: config.icon,
         worktreePath: config.worktreePath,
@@ -176,6 +183,13 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           structuredMode: config.structuredMode,
           resume,
           sessionId: resume ? config.lastSessionId : undefined,
+        });
+
+        set((s) => {
+          if (!s.agents[agentId]) return s;
+          return {
+            agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'running' } },
+          };
         });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
