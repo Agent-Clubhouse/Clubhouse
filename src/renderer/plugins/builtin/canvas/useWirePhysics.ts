@@ -14,7 +14,7 @@ import type { Edge } from './wire-utils';
 const STIFFNESS = 180;
 const DAMPING = 12;
 const MASS = 1;
-const AMBIENT_AMP = 1.5;
+const AMBIENT_AMP = 0.05;
 const AMBIENT_FREQ = 0.3; // Hz
 const MAX_OFFSET = 20;
 const MAX_DT = 0.033; // clamp dt to ~30fps
@@ -179,10 +179,9 @@ export function useWirePhysics(
       });
     }
 
-    // Ambient sway naturally keeps the loop alive because sway amplitude
-    // (1.5) exceeds IDLE_THRESHOLD (0.1). No need to force anyActive here —
-    // letting it go false when displacement and velocity settle allows the
-    // RAF loop to sleep when the canvas is truly idle.
+    // Sway amplitude (0.05) is small enough that the resulting steady-state
+    // displacement (~0.0003 px) and velocity (~0.0005 px/s) stay well below
+    // IDLE_THRESHOLD (0.1), letting anyActive go false once the spring settles.
 
     // Update tracked previous positions
     if (currentViewPos) {
