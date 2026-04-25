@@ -72,8 +72,8 @@ describe('sound-service', () => {
 
     it('saves settings to file', async () => {
       const settings = getSettings();
-      settings.slotAssignments = { 'agent-done': { packId: 'my-pack' } };
-      await saveSettings(settings);
+      // getSettings() returns a frozen object — spread to get a mutable copy
+      await saveSettings({ ...settings, slotAssignments: { 'agent-done': { packId: 'my-pack' } } });
       expect(fs.promises.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('sound-settings.json'),
         expect.stringContaining('"my-pack"'),

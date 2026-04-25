@@ -53,14 +53,20 @@ describe('settings-store', () => {
       expect(store.get()).toEqual(DEFAULTS);
     });
 
-    it('returns a copy of defaults, not the same reference', () => {
+    it('returns the same frozen reference on successive gets (no hot-path clone)', () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
       const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
       const a = store.get();
       const b = store.get();
       expect(a).toEqual(b);
-      expect(a).not.toBe(b);
-      expect(a.nested).not.toBe(b.nested);
+      expect(a).toBe(b);
+      expect(Object.isFrozen(a)).toBe(true);
+    });
+
+    it('get() returns a frozen object', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ name: 'test', count: 1, nested: { flag: true } }));
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+      expect(Object.isFrozen(store.get())).toBe(true);
     });
 
     it('parses stored JSON and returns settings', () => {

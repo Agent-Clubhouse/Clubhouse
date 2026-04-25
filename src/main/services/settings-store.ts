@@ -50,12 +50,11 @@ export function createSettingsStore<T>(
     return cloneSettings(parsed);
   }
 
-  function loadSettings(): T {
+  function loadSettings(): void {
     try {
       const raw = fs.readFileSync(filePath, 'utf-8');
       cachedSettings = parseSettings(raw);
       cacheLoaded = true;
-      return cloneSettings(cachedSettings);
     } catch (err) {
       if (fs.existsSync(filePath)) {
         console.warn(
@@ -65,7 +64,6 @@ export function createSettingsStore<T>(
       }
       cachedSettings = cloneSettings(defaults);
       cacheLoaded = true;
-      return cloneSettings(cachedSettings);
     }
   }
 
@@ -84,9 +82,9 @@ export function createSettingsStore<T>(
   const store: SettingsStore<T> = {
     get() {
       if (!cacheLoaded || cachedSettings === null) {
-        return loadSettings();
+        loadSettings();
       }
-      return cloneSettings(cachedSettings);
+      return Object.freeze(cachedSettings!) as T;
     },
     save(settings: T) {
       cachedSettings = cloneSettings(settings);

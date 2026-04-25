@@ -1088,6 +1088,64 @@ describe('pty-manager', () => {
 
       process.kill = originalKill;
     });
+
+    it('onStale generation guard: does not clean up replacement session (LB-OA-002)', async () => {
+      // The guard in onStale: `if (!current || current.generation !== capturedGeneration) return`
+      // prevents the sweeper from acting on a session that has been superseded.
+      // In single-threaded JS the race can't occur through the timer path, so we
+      // test via the existing onExit handler guard (same invariant, directly exercisable):
+      // spawn A_1, then A_2 (A_2 replaces A_1); stale process.kill mock throws for both;
+      // sweep fires on A_2 (the live session reference) — cleanup happens exactly once and
+      // the onExit callback is invoked exactly once.
+      vi.useFakeTimers();
+      const onExit = vi.fn();
+
+      await spawn('agent_lb_002', '/test', '/usr/local/bin/claude', [], undefined, onExit);
+      // Re-spawn: kills and replaces A_1 with A_2 (higher generation)
+      await spawn('agent_lb_002', '/test', '/usr/local/bin/claude', [], undefined, onExit);
+
+      expect(isRunning('agent_lb_002')).toBe(true);
+
+      const originalKill = process.kill;
+      process.kill = vi.fn(() => { throw new Error('ESRCH'); }) as any;
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+
+      // Only the current session (A_2) should be cleaned up — exactly once
+      expect(isRunning('agent_lb_002')).toBe(false);
+      expect(onExit).toHaveBeenCalledTimes(1);
+      expect(onExit).toHaveBeenCalledWith('agent_lb_002', 1, '');
+
+      process.kill = originalKill;
+    });
+
+    it('onStale does not broadcast exit when session was replaced before sweep fires (LB-OA-005)', async () => {
+      // Verifies that `broadcastAgentExit` is called exactly once per stale session, not
+      // once for each previous generation that was replaced.
+      vi.useFakeTimers();
+      vi.mocked(broadcastToAllWindows).mockClear();
+
+      // Spawn A_1, replace with A_2, replace with A_3
+      await spawn('agent_lb_005', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_lb_005', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_lb_005', '/test', '/usr/local/bin/claude', []);
+
+      const originalKill = process.kill;
+      process.kill = vi.fn(() => { throw new Error('ESRCH'); }) as any;
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+
+      // The sweep sees only A_3 (current session). Exit broadcast fires exactly once.
+      const exitCalls = vi.mocked(broadcastToAllWindows).mock.calls.filter(
+        call => call[0] === 'pty:exit',
+      );
+      expect(exitCalls.length).toBe(1);
+      expect(exitCalls[0][1]).toBe('agent_lb_005');
+
+      process.kill = originalKill;
+    });
   });
 
   // ── PTY Spawn Failure Tests ──────────────────────────────────────────

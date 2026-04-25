@@ -240,31 +240,37 @@ export function CanvasWorkspace({
   }, [blueprintError]);
 
   // ── Sleeping agent tracking (for wire dimming) ─────────────────
-  const [agentTick, setAgentTick] = useState(0);
+  // Use a granular selector so the component only re-renders when the SET of
+  // sleeping/error local agent IDs actually changes, not on every agent tick.
+  const [sleepingLocalIds, setSleepingLocalIds] = useState<ReadonlySet<string>>(() => {
+    const s = new Set<string>();
+    for (const a of api.agents.list()) {
+      if (a.status === 'sleeping' || a.status === 'error') s.add(a.id);
+    }
+    return s;
+  });
   useEffect(() => {
-    const sub = api.agents.onAnyChange(() => setAgentTick((n) => n + 1));
+    const sub = api.agents.onAnyChange(() => {
+      setSleepingLocalIds((prev) => {
+        const next = new Set<string>();
+        for (const a of api.agents.list()) {
+          if (a.status === 'sleeping' || a.status === 'error') next.add(a.id);
+        }
+        if (prev.size === next.size && [...prev].every((id) => next.has(id))) return prev;
+        return next;
+      });
+    });
     return () => sub.dispose();
   }, [api]);
   // Also subscribe to remote agent state changes so wires re-render after annex wake
   const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const sleepingAgentIds = useMemo(() => {
-    void agentTick; // reactive dependency
-    const sleeping = new Set<string>();
-    // Local agents
-    const agents = api.agents.list();
-    for (const agent of agents) {
-      if (agent.status === 'sleeping' || agent.status === 'error') {
-        sleeping.add(agent.id);
-      }
-    }
-    // Remote agents (annex)
+    const sleeping = new Set<string>(sleepingLocalIds);
     for (const [nsId, agent] of Object.entries(remoteAgents)) {
-      if (agent.status === 'sleeping' || agent.status === 'error') {
-        sleeping.add(nsId);
-      }
+      if (agent.status === 'sleeping' || agent.status === 'error') sleeping.add(nsId);
     }
     return sleeping;
-  }, [api, agentTick, remoteAgents]);
+  }, [sleepingLocalIds, remoteAgents]);
 
   // ── Satellite pause detection (full canvas overlay) ───────────
   // Only show pause overlay for remote canvases when their specific satellite is paused.

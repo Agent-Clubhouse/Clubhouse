@@ -505,6 +505,7 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
         sat.ws = null;
       }
       setState(sat, 'disconnected', 'Heartbeat timeout');
+      stopHeartbeat(sat);
       scheduleReconnect(sat);
     }, PONG_TIMEOUT_MS);
   }, HEARTBEAT_INTERVAL_MS);
