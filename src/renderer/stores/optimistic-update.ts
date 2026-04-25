@@ -14,13 +14,13 @@
  * concurrent optimistic updates to the same key are handled correctly.
  */
 
+type GetFn = () => unknown;
+
 // WeakMap keyed on the store's `get` function for per-store version isolation.
-// eslint-disable-next-line @typescript-eslint/ban-types
-const _storeKeyVersions = new WeakMap<Function, Map<string, number>>();
+const _storeKeyVersions = new WeakMap<GetFn, Map<string, number>>();
 let _globalVersion = 0;
 
-// eslint-disable-next-line @typescript-eslint/ban-types
-function getVersionMap(get: Function): Map<string, number> {
+function getVersionMap(get: GetFn): Map<string, number> {
   let map = _storeKeyVersions.get(get);
   if (!map) {
     map = new Map();

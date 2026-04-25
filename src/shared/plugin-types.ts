@@ -498,7 +498,7 @@ export interface AgentInfo {
   id: string;
   name: string;
   kind: 'durable' | 'quick' | 'companion';
-  status: 'running' | 'sleeping' | 'waking' | 'creating' | 'error';
+  status: 'running' | 'sleeping' | 'waking' | 'creating' | 'spawning' | 'error';
   color: string;
   icon?: string;
   exitCode?: number;

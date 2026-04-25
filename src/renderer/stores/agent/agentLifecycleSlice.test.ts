@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createLifecycleSlice } from './agentLifecycleSlice';
-import type { AgentState, AgentLifecycleSlice } from './types';
+import type { AgentState } from './types';
 
 // Minimal state that the lifecycle slice needs
 function createMinimalState(overrides: Partial<AgentState> = {}): AgentState {
@@ -101,15 +101,8 @@ describe('agentLifecycleSlice – spawnQuickAgent', () => {
 
   it('does not enter running state if spawn fails', async () => {
     const { state, slice } = createTestStore();
-    const statusHistory: string[] = [];
 
     (window as any).clubhouse.agent.spawnAgent = vi.fn().mockRejectedValue(new Error('fail'));
-
-    // Patch set to track transitions
-    const origSpawnAgent = (window as any).clubhouse.agent.spawnAgent;
-    (window as any).clubhouse.agent.spawnAgent = vi.fn().mockImplementation(async () => {
-      throw new Error('fail');
-    });
 
     try {
       await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'mission');
@@ -119,7 +112,6 @@ describe('agentLifecycleSlice – spawnQuickAgent', () => {
 
     const agentId = state().activeAgentId!;
     expect(state().agents[agentId]?.status).not.toBe('running');
-    (window as any).clubhouse.agent.spawnAgent = origSpawnAgent;
   });
 
   it('stores agentId and sets activeAgentId', async () => {
