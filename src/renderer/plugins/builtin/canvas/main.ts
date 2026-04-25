@@ -16,6 +16,7 @@ import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBin
 import { usePluginStore } from '../../plugin-store';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
+import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { ExportBlueprintDialog } from '../../../features/blueprints/ExportBlueprintDialog';
 
 /**
@@ -626,7 +627,24 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             selectedViewId,
             selectedViewIds,
             wireDefinitions,
-            onAddWireDefinition: (entry: McpBindingEntry) => store.getState().addWireDefinition(entry),
+            onAddWireDefinition: (entry: McpBindingEntry) => {
+              let wireEntry = entry;
+              if (entry.targetKind === 'group-project' && !entry.disabledTools?.length) {
+                const projects = useGroupProjectStore.getState().projects;
+                const project = projects[entry.targetId];
+                const defaults = project?.metadata?.defaultDisabledTools as string[] | undefined;
+                if (!defaults) {
+                  // No explicit defaults set — use the all-disabled default (new projects start locked down)
+                  const allAdvanced = ['shoulder_tap', 'broadcast', 'wake_agent', 'start_polling', 'stop_polling', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages'];
+                  wireEntry = { ...entry, disabledTools: allAdvanced };
+                  void window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, allAdvanced);
+                } else if (defaults.length > 0) {
+                  wireEntry = { ...entry, disabledTools: defaults };
+                  void window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, defaults);
+                }
+              }
+              store.getState().addWireDefinition(wireEntry);
+            },
             onRemoveWireDefinition: (agentId: string, targetId: string) => store.getState().removeWireDefinition(agentId, targetId),
             onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => store.getState().updateWireDefinition(agentId, targetId, updates),
             api,

@@ -91,7 +91,7 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
-  it('registers 6 tools when no optional features enabled (default)', () => {
+  it('registers all 15 tools by default (gating is per-wire only)', () => {
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -101,7 +101,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(6);
+    expect(tools).toHaveLength(15);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('list_members');
@@ -110,7 +110,40 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('read_topic');
     expect(suffixes).toContain('get_project_info');
     expect(suffixes).toContain('read_message');
+    expect(suffixes).toContain('shoulder_tap');
+    expect(suffixes).toContain('broadcast');
+    expect(suffixes).toContain('wake_agent');
+    expect(suffixes).toContain('start_polling');
+    expect(suffixes).toContain('stop_polling');
+    expect(suffixes).toContain('clear_agent');
+    expect(suffixes).toContain('compact_agent');
+    expect(suffixes).toContain('clear_topic');
+    expect(suffixes).toContain('delete_messages');
+  });
+
+  it('hides tools disabled at the wire level', () => {
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'My Project',
+      agentName: 'robin',
+      targetName: 'My Project',
+    });
+    bindingManager.setDisabledTools('agent-1', 'gp_123', ['shoulder_tap', 'broadcast', 'wake_agent', 'start_polling', 'stop_polling', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages']);
+
+    const tools = getScopedToolList('agent-1');
+    const suffixes = tools.map(t => t.name.split('__').pop());
+    expect(suffixes).toContain('list_members');
+    expect(suffixes).toContain('post_bulletin');
+    expect(suffixes).toContain('read_bulletin');
+    expect(suffixes).toContain('read_topic');
+    expect(suffixes).toContain('read_message');
+    expect(suffixes).toContain('get_project_info');
     expect(suffixes).not.toContain('shoulder_tap');
+    expect(suffixes).not.toContain('broadcast');
+    expect(suffixes).not.toContain('wake_agent');
+    expect(suffixes).not.toContain('clear_agent');
+    expect(suffixes).not.toContain('compact_agent');
     expect(suffixes).not.toContain('clear_topic');
     expect(suffixes).not.toContain('delete_messages');
   });
@@ -1121,6 +1154,122 @@ describe('GroupProjectTools', () => {
     const remaining = JSON.parse(readResult.content[0].text!);
     expect(remaining).toHaveLength(1);
     expect(remaining[0].body).toBe('keep me');
+  });
+
+  describe('clear_agent', () => {
+    it('injects /clear into connected agent PTY', async () => {
+      const project = await groupProjectRegistry.create('ClearProj');
+      bindingManager.bind('agent-1', {
+        targetId: project.id,
+        targetKind: 'group-project',
+        label: 'GP',
+        agentName: 'robin',
+        targetName: 'ClearProj',
+      });
+      bindingManager.bind('agent-2', {
+        targetId: project.id,
+        targetKind: 'group-project',
+        label: 'GP',
+        agentName: 'falcon',
+        targetName: 'ClearProj',
+      });
+      mockIsRunning.mockReturnValue(true);
+      agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'ClearProj' });
+      const toolName = buildToolName(binding, 'clear_agent');
+      const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text!);
+      expect(parsed.action).toBe('clear');
+      expect(parsed.delivered).toBe(true);
+      expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', '/clear');
+      agentRegistry.untrack('agent-2');
+    });
+
+    it('returns error when target is not a member', async () => {
+      const project = await groupProjectRegistry.create('ClearProj2');
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
+      });
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id });
+      const toolName = buildToolName(binding, 'clear_agent');
+      const result = await callTool('agent-1', toolName, { target_agent_id: 'not-a-member' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('not a member');
+    });
+
+    it('returns error when target is sleeping', async () => {
+      const project = await groupProjectRegistry.create('ClearProj3');
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
+      });
+      bindingManager.bind('agent-2', {
+        targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'falcon',
+      });
+      // agent-2 not in agentRegistry = sleeping
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id });
+      const toolName = buildToolName(binding, 'clear_agent');
+      const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('sleeping');
+    });
+  });
+
+  describe('compact_agent', () => {
+    it('injects /compact into connected agent PTY', async () => {
+      const project = await groupProjectRegistry.create('CompactProj');
+      bindingManager.bind('agent-1', {
+        targetId: project.id,
+        targetKind: 'group-project',
+        label: 'GP',
+        agentName: 'robin',
+        targetName: 'CompactProj',
+      });
+      bindingManager.bind('agent-2', {
+        targetId: project.id,
+        targetKind: 'group-project',
+        label: 'GP',
+        agentName: 'falcon',
+        targetName: 'CompactProj',
+      });
+      mockIsRunning.mockReturnValue(true);
+      agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'CompactProj' });
+      const toolName = buildToolName(binding, 'compact_agent');
+      const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text!);
+      expect(parsed.action).toBe('compact');
+      expect(parsed.delivered).toBe(true);
+      expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', '/compact');
+      agentRegistry.untrack('agent-2');
+    });
+
+    it('returns error when target is sleeping', async () => {
+      const project = await groupProjectRegistry.create('CompactProj2');
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
+      });
+      bindingManager.bind('agent-2', {
+        targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'falcon',
+      });
+      // agent-2 sleeping
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id });
+      const toolName = buildToolName(binding, 'compact_agent');
+      const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('sleeping');
+    });
   });
 
 });

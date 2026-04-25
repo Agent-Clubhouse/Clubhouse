@@ -14,7 +14,6 @@ vi.mock('fs/promises', () => ({
 import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
-import { groupProjectRegistry } from '../group-project-registry';
 import type { McpBinding } from './types';
 
 function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string; targetKind: McpBinding['targetKind'] }): McpBinding {
@@ -25,7 +24,6 @@ describe('ToolRegistry', () => {
   beforeEach(() => {
     _resetForTesting();
     bindingManager._resetForTesting();
-    groupProjectRegistry._resetForTesting();
     // Clean up any registrations from previous tests
     agentRegistry.untrack('agent-2');
     agentRegistry.untrack('agent-3');
@@ -594,84 +592,58 @@ describe('ToolRegistry', () => {
     });
   });
 
-  describe('shoulder tap group project gating', () => {
+  describe('group-project tool gating (wire-level only)', () => {
     beforeEach(() => {
       registerToolTemplate('group-project', 'list_members', { description: 'List', inputSchema: { type: 'object' } }, vi.fn());
       registerToolTemplate('group-project', 'shoulder_tap', { description: 'Tap', inputSchema: { type: 'object' } }, vi.fn());
       registerToolTemplate('group-project', 'broadcast', { description: 'Broadcast', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('group-project', 'wake_agent', { description: 'Wake', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('group-project', 'clear_topic', { description: 'Clear', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('group-project', 'clear_agent', { description: 'Clear agent', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('group-project', 'compact_agent', { description: 'Compact agent', inputSchema: { type: 'object' } }, vi.fn());
     });
 
-    it('hides shoulder_tap and broadcast when shoulderTapEnabled is false', async () => {
-      const project = await groupProjectRegistry.create('TestProj');
+    it('exposes all group-project tools when no wire-level disabledTools', () => {
       bindingManager.bind('agent-1', {
-        targetId: project.id, targetKind: 'group-project', label: 'TP', targetName: 'TestProj',
-      });
-      // Default: shoulderTapEnabled not set (falsy)
-      const tools = getScopedToolList('agent-1');
-      const suffixes = tools.map(t => t.name.split('__').pop());
-      expect(suffixes).toContain('list_members');
-      expect(suffixes).not.toContain('shoulder_tap');
-      expect(suffixes).not.toContain('broadcast');
-    });
-
-    it('shows shoulder_tap and broadcast when shoulderTapEnabled is true', async () => {
-      const project = await groupProjectRegistry.create('TapProj');
-      await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
-      bindingManager.bind('agent-1', {
-        targetId: project.id, targetKind: 'group-project', label: 'TP', targetName: 'TapProj',
+        targetId: 'gp_test_1', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toContain('list_members');
       expect(suffixes).toContain('shoulder_tap');
       expect(suffixes).toContain('broadcast');
+      expect(suffixes).toContain('wake_agent');
+      expect(suffixes).toContain('clear_topic');
+      expect(suffixes).toContain('clear_agent');
+      expect(suffixes).toContain('compact_agent');
     });
 
-    it('hides shoulder_tap even when enabled at project level if disabled at wire level', async () => {
-      const project = await groupProjectRegistry.create('MixProj');
-      await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
+    it('hides tools listed in wire-level disabledTools', () => {
       bindingManager.bind('agent-1', {
-        targetId: project.id, targetKind: 'group-project', label: 'MP', targetName: 'MixProj',
+        targetId: 'gp_test_2', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });
-      bindingManager.setDisabledTools('agent-1', project.id, ['shoulder_tap']);
+      bindingManager.setDisabledTools('agent-1', 'gp_test_2', ['shoulder_tap', 'broadcast', 'wake_agent', 'clear_topic', 'clear_agent', 'compact_agent']);
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toContain('list_members');
       expect(suffixes).not.toContain('shoulder_tap');
-      expect(suffixes).toContain('broadcast'); // broadcast not disabled at wire level
-    });
-  });
-
-  describe('agent deletion group project gating', () => {
-    beforeEach(() => {
-      registerToolTemplate('group-project', 'list_members', { description: 'List', inputSchema: { type: 'object' } }, vi.fn());
-      registerToolTemplate('group-project', 'clear_topic', { description: 'Clear Topic', inputSchema: { type: 'object' } }, vi.fn());
-      registerToolTemplate('group-project', 'delete_messages', { description: 'Delete Messages', inputSchema: { type: 'object' } }, vi.fn());
-    });
-
-    it('hides clear_topic and delete_messages when agentDeletionEnabled is false', async () => {
-      const project = await groupProjectRegistry.create('NoDel');
-      bindingManager.bind('agent-1', {
-        targetId: project.id, targetKind: 'group-project', label: 'ND', targetName: 'NoDel',
-      });
-      const tools = getScopedToolList('agent-1');
-      const suffixes = tools.map(t => t.name.split('__').pop());
-      expect(suffixes).toContain('list_members');
+      expect(suffixes).not.toContain('broadcast');
+      expect(suffixes).not.toContain('wake_agent');
       expect(suffixes).not.toContain('clear_topic');
-      expect(suffixes).not.toContain('delete_messages');
+      expect(suffixes).not.toContain('clear_agent');
+      expect(suffixes).not.toContain('compact_agent');
     });
 
-    it('shows clear_topic and delete_messages when agentDeletionEnabled is true', async () => {
-      const project = await groupProjectRegistry.create('YesDel');
-      await groupProjectRegistry.update(project.id, { metadata: { agentDeletionEnabled: true } });
+    it('can disable individual tools without affecting others', () => {
       bindingManager.bind('agent-1', {
-        targetId: project.id, targetKind: 'group-project', label: 'YD', targetName: 'YesDel',
+        targetId: 'gp_test_3', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });
+      bindingManager.setDisabledTools('agent-1', 'gp_test_3', ['clear_topic']);
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
-      expect(suffixes).toContain('list_members');
-      expect(suffixes).toContain('clear_topic');
-      expect(suffixes).toContain('delete_messages');
+      expect(suffixes).toContain('shoulder_tap');
+      expect(suffixes).toContain('broadcast');
+      expect(suffixes).not.toContain('clear_topic');
     });
   });
 

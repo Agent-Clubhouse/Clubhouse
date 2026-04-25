@@ -782,6 +782,130 @@ export function registerGroupProjectTools(): void {
     },
   });
 
+  // group__<name>_<hash>__clear_agent
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.clear_agent',
+    category: 'group-project',
+    label: 'Clear Agent Context',
+    mcp: { targetKind: 'group-project', nameSuffix: 'clear_agent' },
+    description:
+      'Send a /clear command to a connected agent, clearing its conversation context.\n\n' +
+      'Injects /clear directly into the target agent\'s terminal. Use this when the agent\'s ' +
+      'context is bloated or stale and a fresh slate would improve its performance.\n\n' +
+      'The agent must be connected (not sleeping). The target_agent_id must match an agentId ' +
+      'returned by list_members.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target_agent_id: {
+          type: 'string',
+          description: 'The agentId of the connected agent (from list_members).',
+        },
+      },
+      required: ['target_agent_id'],
+    },
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const targetAgentId = requireString(args, 'target_agent_id');
+      if (!targetAgentId) {
+        return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
+      }
+
+      const allBindings = bindingManager.getAllBindings();
+      const memberBinding = allBindings.find(
+        b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
+      );
+      if (!memberBinding) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is not a member of this group project.` }],
+          isError: true,
+        };
+      }
+
+      if (!isAgentAlive(targetAgentId)) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is sleeping — wake it first.` }],
+          isError: true,
+        };
+      }
+
+      injectPtyMessage(targetAgentId, '/clear');
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            agentId: targetAgentId,
+            agentName: memberBinding.agentName || targetAgentId,
+            action: 'clear',
+            delivered: true,
+          }),
+        }],
+      };
+    },
+  });
+
+  // group__<name>_<hash>__compact_agent
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.compact_agent',
+    category: 'group-project',
+    label: 'Compact Agent Context',
+    mcp: { targetKind: 'group-project', nameSuffix: 'compact_agent' },
+    description:
+      'Send a /compact command to a connected agent, compacting its conversation context.\n\n' +
+      'Injects /compact directly into the target agent\'s terminal. Use this when the agent\'s ' +
+      'context is large and you want it summarized without losing continuity.\n\n' +
+      'The agent must be connected (not sleeping). The target_agent_id must match an agentId ' +
+      'returned by list_members.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target_agent_id: {
+          type: 'string',
+          description: 'The agentId of the connected agent (from list_members).',
+        },
+      },
+      required: ['target_agent_id'],
+    },
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const targetAgentId = requireString(args, 'target_agent_id');
+      if (!targetAgentId) {
+        return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
+      }
+
+      const allBindings = bindingManager.getAllBindings();
+      const memberBinding = allBindings.find(
+        b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
+      );
+      if (!memberBinding) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is not a member of this group project.` }],
+          isError: true,
+        };
+      }
+
+      if (!isAgentAlive(targetAgentId)) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is sleeping — wake it first.` }],
+          isError: true,
+        };
+      }
+
+      injectPtyMessage(targetAgentId, '/compact');
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            agentId: targetAgentId,
+            agentName: memberBinding.agentName || targetAgentId,
+            action: 'compact',
+            delivered: true,
+          }),
+        }],
+      };
+    },
+  });
+
   // group__<name>_<hash>__delete_messages
   mcpAdapter.registerMcpCommand({
     id: 'group-project.delete_messages',
