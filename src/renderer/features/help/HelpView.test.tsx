@@ -34,10 +34,13 @@ describe('HelpView Ask Assistant button gating', () => {
   beforeEach(() => {
     resetStores();
     vi.clearAllMocks();
+    // Restore a working default before each test — `restoreMocks: true` in
+    // vitest config will revert per-test vi.fn() overrides to a no-op that
+    // returns undefined, which would crash the component's .then() call.
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
   });
 
   it('hides "Ask Assistant" button when experimental.assistant is off', async () => {
-    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
     render(<HelpView />);
     await waitFor(() => {
       expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();

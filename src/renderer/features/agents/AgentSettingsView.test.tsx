@@ -152,6 +152,7 @@ describe('AgentSettingsView', () => {
     resetStores();
 
     // Setup IPC mocks
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
     window.clubhouse.agentSettings.readInstructions = vi.fn().mockResolvedValue('Agent instructions');
     window.clubhouse.agentSettings.saveInstructions = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.agentSettings.readPermissions = vi.fn().mockResolvedValue({ allow: ['Read(**)'] });
