@@ -20,7 +20,7 @@ import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
 import { CodexAppServerAdapter } from './adapters';
-import { homePath, parseModelChoicesFromHelp } from './shared';
+import { homePath, parseModelChoicesFromHelp, validateHookUrl } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -265,9 +265,10 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
   // ── HookCapable ─────────────────────────────────────────────────────────
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
+    const safeUrl = validateHookUrl(hookUrl);
     const curlBase = process.platform === 'win32'
-      ? `curl -s -X POST ${hookUrl}/%CLUBHOUSE_AGENT_ID% -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
-      : `cat | curl -s -X POST ${hookUrl}/\${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
+      ? `curl -s -X POST ${safeUrl}/%CLUBHOUSE_AGENT_ID% -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
+      : `cat | curl -s -X POST ${safeUrl}/\${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
 
     const hooks: Record<string, unknown[]> = {
       PreToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],

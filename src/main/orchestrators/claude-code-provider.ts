@@ -17,7 +17,7 @@ import {
 } from './types';
 import { BaseProvider } from './base-provider';
 import { StreamJsonAdapter } from './adapters/stream-json-adapter';
-import { homePath } from './shared';
+import { homePath, validateHookUrl } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 
@@ -170,9 +170,10 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
   // ── HookCapable ─────────────────────────────────────────────────────────
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
+    const safeUrl = validateHookUrl(hookUrl);
     const curlBase = process.platform === 'win32'
-      ? `curl -s -X POST ${hookUrl}/%CLUBHOUSE_AGENT_ID% -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
-      : `cat | curl -s -X POST ${hookUrl}/\${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
+      ? `curl -s -X POST ${safeUrl}/%CLUBHOUSE_AGENT_ID% -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
+      : `cat | curl -s -X POST ${safeUrl}/\${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
 
     const hooks: Record<string, unknown[]> = {
       PreToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
