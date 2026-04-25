@@ -961,4 +961,7 @@ describe('AgentTerminal', () => {
       expect(term().options.theme).toEqual({ background: '#eff1f5', foreground: '#4c4f69' });
     });
   });
+
+  // Write batching tests are in AgentTerminal.batching.test.tsx
+  // (isolated to avoid rAF mock lifecycle conflicts with resume overlay tests)
 });

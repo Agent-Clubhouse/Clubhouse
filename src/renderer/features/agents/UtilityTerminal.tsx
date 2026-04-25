@@ -59,10 +59,25 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
       window.clubhouse.pty.write(ptyId, data);
     });
 
+    // Batch PTY data writes using rAF to avoid line-wrap glitches during
+    // rapid output.  Matches the batching strategy in ShellTerminal.
+    let batchedData = '';
+    let flushScheduled = false;
+    let flushId = 0;
+
     const removeDataListener = window.clubhouse.pty.onData(
       (id: string, data: string) => {
         if (id === ptyId) {
-          term.write(data);
+          batchedData += data;
+          if (!flushScheduled) {
+            flushScheduled = true;
+            flushId = requestAnimationFrame(() => {
+              const batch = batchedData;
+              batchedData = '';
+              flushScheduled = false;
+              term.write(batch);
+            });
+          }
         }
       }
     );
@@ -84,6 +99,7 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      if (flushScheduled) cancelAnimationFrame(flushId);
       inputDisposable.dispose();
       removeDataListener();
       resizeObserver.disconnect();

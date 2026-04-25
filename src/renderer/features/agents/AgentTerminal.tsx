@@ -288,14 +288,35 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     let removeDataListener: () => void;
     let removeExitListener: () => void;
 
+    // Batch PTY data writes using rAF to avoid line-wrap glitches during
+    // rapid streaming.  Matches the batching strategy in ShellTerminal.
+    let batchedData = '';
+    let flushScheduled = false;
+    let flushId = 0;
+
+    const flushBatch = () => {
+      const batch = batchedData;
+      batchedData = '';
+      flushScheduled = false;
+      term.write(batch);
+    };
+
+    const enqueueWrite = (source: 'local' | 'annex', data: string) => {
+      logDataWrite(source, data.length);
+      batchedData += data;
+      if (!flushScheduled) {
+        flushScheduled = true;
+        flushId = requestAnimationFrame(flushBatch);
+      }
+    };
+
     if (!isRemote) {
       // Local PTY: receive from local pty manager
       removeDataListener = window.clubhouse.pty.onData(
         (id: string, data: string) => {
           if (id !== agentId) return;
           if (bufferReplayed) {
-            logDataWrite('local', data.length);
-            term.write(data);
+            enqueueWrite('local', data);
           } else {
             pendingData.push(data);
           }
@@ -324,8 +345,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         (incomingSatId: string, incomingAgentId: string, data: string) => {
           if (incomingSatId !== satId || incomingAgentId !== origAgentId) return;
           if (bufferReplayed) {
-            logDataWrite('annex', data.length);
-            term.write(data);
+            enqueueWrite('annex', data);
           } else {
             pendingData.push(data);
           }
@@ -335,6 +355,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     }
 
     return () => {
+      if (flushScheduled) cancelAnimationFrame(flushId);
       inputDisposable.dispose();
       removeDataListener();
       removeExitListener();

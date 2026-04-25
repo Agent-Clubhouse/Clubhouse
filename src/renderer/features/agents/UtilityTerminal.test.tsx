@@ -146,4 +146,107 @@ describe('UtilityTerminal', () => {
     });
     expect(term().options.fontFamily).toBeUndefined();
   });
+
+  describe('write batching', () => {
+    let rafQueue: Array<{ id: number; cb: () => void }> = [];
+    let nextRafId: number;
+    let mockOnDataCallback: ((id: string, data: string) => void) | null = null;
+
+    function flushRAF() {
+      const current = [...rafQueue];
+      rafQueue = [];
+      current.forEach(({ cb }) => cb());
+    }
+
+    beforeEach(() => {
+      rafQueue = [];
+      nextRafId = 1;
+      mockOnDataCallback = null;
+      vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+        const id = nextRafId++;
+        rafQueue.push({ id, cb });
+        return id;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+        rafQueue = rafQueue.filter((entry) => entry.id !== id);
+      });
+      window.clubhouse.pty.onData = vi.fn().mockImplementation((cb: any) => {
+        mockOnDataCallback = cb;
+        return vi.fn();
+      });
+      // Make write observable
+      g.__testTerminal = null;
+    });
+
+    it('batches multiple data chunks into a single term.write call', () => {
+      render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+      // Flush mount rAFs (fit/resize)
+      flushRAF();
+      term().write = vi.fn();
+
+      // Simulate rapid data chunks
+      act(() => {
+        mockOnDataCallback!('utility_agent-1', 'chunk1');
+        mockOnDataCallback!('utility_agent-1', 'chunk2');
+        mockOnDataCallback!('utility_agent-1', 'chunk3');
+      });
+
+      // No writes yet — waiting for rAF
+      expect(term().write).not.toHaveBeenCalled();
+
+      // Flush
+      act(() => { flushRAF(); });
+
+      expect(term().write).toHaveBeenCalledTimes(1);
+      expect(term().write).toHaveBeenCalledWith('chunk1chunk2chunk3');
+    });
+
+    it('allows subsequent batches after a flush', () => {
+      render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+      flushRAF();
+      term().write = vi.fn();
+
+      act(() => {
+        mockOnDataCallback!('utility_agent-1', 'a');
+        mockOnDataCallback!('utility_agent-1', 'b');
+      });
+      act(() => { flushRAF(); });
+      expect(term().write).toHaveBeenCalledWith('ab');
+
+      term().write = vi.fn();
+
+      act(() => {
+        mockOnDataCallback!('utility_agent-1', 'c');
+        mockOnDataCallback!('utility_agent-1', 'd');
+      });
+      act(() => { flushRAF(); });
+      expect(term().write).toHaveBeenCalledWith('cd');
+    });
+
+    it('cancels pending flush on unmount', () => {
+      const { unmount } = render(
+        <UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />,
+      );
+      flushRAF();
+      term().write = vi.fn();
+
+      act(() => { mockOnDataCallback!('utility_agent-1', 'pending'); });
+      expect(rafQueue.length).toBeGreaterThan(0);
+
+      unmount();
+
+      flushRAF();
+      expect(term().write).not.toHaveBeenCalled();
+    });
+
+    it('does not schedule rAF for non-matching PTY IDs', () => {
+      render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+      flushRAF();
+      const queueLengthAfterMount = rafQueue.length;
+
+      act(() => { mockOnDataCallback!('utility_agent-2', 'other data'); });
+
+      expect(rafQueue.length).toBe(queueLengthAfterMount);
+    });
+  });
 });
