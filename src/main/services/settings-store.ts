@@ -36,7 +36,13 @@ export function createSettingsStore<T>(
   migrate?: (raw: Record<string, unknown>) => T,
   options?: { mode?: number },
 ): SettingsStore<T> {
-  const filePath = path.join(app.getPath('userData'), filename);
+  // Resolve filePath lazily on each access. `createSettingsStore` runs at
+  // module-load time (e.g. when ipc/app-handlers imports a settings module),
+  // which is *before* main/index.ts gets to call `app.setPath('userData', …)`
+  // for CLUBHOUSE_USER_DATA. Capturing the path eagerly would freeze it to
+  // the default userData location and silently ignore the override, so any
+  // pre-seeded settings file in the test's temp dir would never be read.
+  const getFilePath = () => path.join(app.getPath('userData'), filename);
   let cachedSettings: T | null = null;
   let cacheLoaded = false;
   let pendingWrite: Promise<void> = Promise.resolve();
@@ -51,6 +57,7 @@ export function createSettingsStore<T>(
   }
 
   function loadSettings(): void {
+    const filePath = getFilePath();
     try {
       const raw = fs.readFileSync(filePath, 'utf-8');
       cachedSettings = parseSettings(raw);
@@ -70,6 +77,7 @@ export function createSettingsStore<T>(
   function queueWrite(settings: T): Promise<void> {
     const snapshot = cloneSettings(settings);
     const serialized = JSON.stringify(snapshot, null, 2);
+    const filePath = getFilePath();
     const writeTask = pendingWrite
       .catch((err): void => {
         console.warn(`[settings-store] Previous write to ${filename} failed:`, err instanceof Error ? err.message : err);

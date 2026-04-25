@@ -22,9 +22,16 @@ const mockAnnexClient = {
   retry: vi.fn(),
 };
 
+// Mock the app IPC surface used by the rail's experimental-flag fetch.
+// Default: assistant disabled, so the rail renders the Help button (the
+// pre-experiment default). Tests can override per-case via vi.spyOn.
+const mockApp = {
+  getExperimentalSettings: vi.fn(() => Promise.resolve({} as Record<string, boolean>)),
+};
+
 vi.stubGlobal('window', {
   ...globalThis.window,
-  clubhouse: { annexClient: mockAnnexClient },
+  clubhouse: { annexClient: mockAnnexClient, app: mockApp },
 });
 
 function makeProject(overrides: Partial<Project> = {}): Project {
@@ -695,15 +702,75 @@ describe('ProjectRail annex-gated plugins', () => {
     expect(canvasBtn.className).not.toContain('opacity-40');
   });
 
-  it('assistant and settings are always visible regardless of host mode', () => {
+  it('help (default) and settings are always visible regardless of host mode', () => {
     useAnnexClientStore.setState({
       satellites: [makeSatellite({ id: 'sat-1' })],
     });
     useUIStore.setState({ activeHostId: 'sat-1' });
 
     render(<ProjectRail />);
-    expect(screen.getByTestId('nav-assistant')).toBeInTheDocument();
+    // With the assistant flag off (default), the rail shows the Help button.
+    expect(screen.getByTestId('nav-help')).toBeInTheDocument();
     expect(screen.getByTestId('nav-settings')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Experimental: assistant feature flag tests
+// ---------------------------------------------------------------------------
+
+describe('ProjectRail assistant feature flag gating', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(_cb: () => void) {}
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    resetStores();
+    mockApp.getExperimentalSettings.mockReset();
+  });
+
+  it('renders the Help button (and not Assistant) when experimental.assistant is off', async () => {
+    mockApp.getExperimentalSettings.mockResolvedValue({});
+    render(<ProjectRail />);
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('nav-help')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('nav-assistant')).not.toBeInTheDocument();
+  });
+
+  it('renders the Assistant button (and not Help) when experimental.assistant is on', async () => {
+    mockApp.getExperimentalSettings.mockResolvedValue({ assistant: true });
+    render(<ProjectRail />);
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('nav-assistant')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('nav-help')).not.toBeInTheDocument();
+  });
+
+  it('falls back to Help when the experimental settings IPC fails', async () => {
+    mockApp.getExperimentalSettings.mockRejectedValue(new Error('IPC down'));
+    render(<ProjectRail />);
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('nav-help')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('nav-assistant')).not.toBeInTheDocument();
+  });
+
+  it('Help button toggles help mode in the UI store', async () => {
+    mockApp.getExperimentalSettings.mockResolvedValue({});
+    render(<ProjectRail />);
+    const helpBtn = await screen.findByTestId('nav-help');
+    fireEvent.click(helpBtn);
+    expect(useUIStore.getState().explorerTab).toBe('help');
+  });
+
+  it('Assistant button toggles assistant mode when flag is on', async () => {
+    mockApp.getExperimentalSettings.mockResolvedValue({ assistant: true });
+    render(<ProjectRail />);
+    const assistantBtn = await screen.findByTestId('nav-assistant');
+    fireEvent.click(assistantBtn);
+    expect(useUIStore.getState().explorerTab).toBe('assistant');
   });
 });
 

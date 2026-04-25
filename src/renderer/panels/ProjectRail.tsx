@@ -259,6 +259,7 @@ export function ProjectRail() {
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
   const toggleAssistant = useUIStore((s) => s.toggleAssistant);
+  const toggleHelp = useUIStore((s) => s.toggleHelp);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
   const previousExplorerTab = useUIStore((s) => s.previousExplorerTab);
@@ -277,6 +278,18 @@ export function ProjectRail() {
   const inSettings = explorerTab === 'settings';
   const inHelp = explorerTab === 'help';
   const inAssistant = explorerTab === 'assistant';
+
+  // Experimental: assistant feature flag. While loading (null) we render the
+  // default Help button so the rail is never blank during the IPC round-trip.
+  // When enabled, the rail shows the Assistant button in place of Help.
+  const [assistantEnabled, setAssistantEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    window.clubhouse.app.getExperimentalSettings()
+      .then((flags) => { if (!cancelled) setAssistantEnabled(!!flags.assistant); })
+      .catch(() => { if (!cancelled) setAssistantEnabled(false); });
+    return () => { cancelled = true; };
+  }, []);
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHome = activeProjectId === null && !inSettings && !inHelp && !inAssistant && !isAppPlugin;
 
@@ -729,39 +742,73 @@ export function ProjectRail() {
         )}
 
         {/* ================================================================
-            Common footer: Help & Settings
+            Common footer: Help/Assistant & Settings
+            The Assistant button replaces Help only when the experimental
+            flag is enabled. Until the flag resolves, render Help so the
+            rail isn't blank during the async fetch.
             ================================================================ */}
         <div className="border-t border-surface-2 my-1 flex-shrink-0" />
-        <button
-          onClick={toggleAssistant}
-          title="Assistant"
-          data-testid="nav-assistant"
-          className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
-            expanded ? 'hover:bg-surface-0' : ''
-          }`}
-        >
-          <div
-            className={`
-              w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
-              transition-colors duration-100
-              ${inAssistant
-                ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
-                : expanded
-                  ? 'text-ctp-subtext0'
-                  : 'text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text'
-              }
-            `}
+        {assistantEnabled === true ? (
+          <button
+            onClick={toggleAssistant}
+            title="Assistant"
+            data-testid="nav-assistant"
+            className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
+              expanded ? 'hover:bg-surface-0' : ''
+            }`}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="11" width="18" height="10" rx="2" />
-              <circle cx="12" cy="5" r="2" />
-              <line x1="12" y1="7" x2="12" y2="11" />
-              <line x1="8" y1="16" x2="8" y2="16.01" />
-              <line x1="16" y1="16" x2="16" y2="16.01" />
-            </svg>
-          </div>
-          <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Assistant</span>
-        </button>
+            <div
+              className={`
+                w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+                transition-colors duration-100
+                ${inAssistant
+                  ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
+                  : expanded
+                    ? 'text-ctp-subtext0'
+                    : 'text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text'
+                }
+              `}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2" />
+                <circle cx="12" cy="5" r="2" />
+                <line x1="12" y1="7" x2="12" y2="11" />
+                <line x1="8" y1="16" x2="8" y2="16.01" />
+                <line x1="16" y1="16" x2="16" y2="16.01" />
+              </svg>
+            </div>
+            <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Assistant</span>
+          </button>
+        ) : (
+          <button
+            onClick={toggleHelp}
+            title="Help"
+            data-testid="nav-help"
+            className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
+              expanded ? 'hover:bg-surface-0' : ''
+            }`}
+          >
+            <div
+              className={`
+                w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+                transition-colors duration-100
+                ${inHelp
+                  ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
+                  : expanded
+                    ? 'text-ctp-subtext0'
+                    : 'text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text'
+                }
+              `}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </div>
+            <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Help</span>
+          </button>
+        )}
         <button
           onClick={toggleSettings}
           title="Settings"

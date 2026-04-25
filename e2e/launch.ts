@@ -1,18 +1,47 @@
 import { _electron as electron } from '@playwright/test';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 const APP_PATH = path.resolve(__dirname, '..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
+
+export interface LaunchOptions {
+  /**
+   * Experimental flags to seed before the app starts. Pass these via
+   * `experimental` rather than calling `saveExperimentalSettings` after
+   * mount — UI surfaces gated on these flags (e.g. the rail Assistant
+   * button) read them once on mount and won't react to a later IPC write.
+   *
+   * When provided, a temp `userData` directory is created and seeded with
+   * `experimental-settings.json`, then passed to electron via the
+   * `CLUBHOUSE_USER_DATA` env var.
+   */
+  experimental?: Record<string, boolean>;
+}
 
 /**
  * Launch the Electron app and return the renderer window (skipping DevTools).
  * DevTools opens automatically for unpackaged builds, so firstWindow() may
  * return the DevTools page instead of the renderer.
  */
-export async function launchApp() {
+export async function launchApp(opts: LaunchOptions = {}) {
+  let userDataDir: string | undefined;
+  const env = { ...process.env };
+  if (opts.experimental) {
+    userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-e2e-'));
+    fs.writeFileSync(
+      path.join(userDataDir, 'experimental-settings.json'),
+      JSON.stringify(opts.experimental, null, 2),
+      'utf-8',
+    );
+    env.CLUBHOUSE_USER_DATA = userDataDir;
+  }
+
   const electronApp = await electron.launch({
     args: [MAIN_ENTRY],
     cwd: APP_PATH,
+    env,
   });
 
   // Collect all windows that open, then pick the renderer (non-devtools) one.
@@ -37,7 +66,7 @@ export async function launchApp() {
     // Modal never appeared — onboarding was already completed
   }
 
-  return { electronApp, window: rendererWindow };
+  return { electronApp, window: rendererWindow, userDataDir };
 }
 
 async function findRendererWindow(

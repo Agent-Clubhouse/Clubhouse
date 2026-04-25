@@ -171,6 +171,7 @@ vi.mock('../../plugins/plugin-commands', () => ({
 const mockStorageRead = vi.fn();
 const mockStorageWrite = vi.fn();
 const mockIsPreviewEligible = vi.fn().mockResolvedValue(true);
+const mockGetExperimentalSettings = vi.fn().mockResolvedValue({} as Record<string, boolean>);
 (window as any).clubhouse = {
   ...(window as any).clubhouse,
   plugin: {
@@ -180,6 +181,7 @@ const mockIsPreviewEligible = vi.fn().mockResolvedValue(true);
   app: {
     ...(window as any).clubhouse?.app,
     isPreviewEligible: mockIsPreviewEligible,
+    getExperimentalSettings: mockGetExperimentalSettings,
   },
 };
 
@@ -206,6 +208,8 @@ describe('useCommandSource', () => {
     mockStorageWrite.mockResolvedValue(undefined);
     // Default: preview-eligible (restored after clearAllMocks)
     mockIsPreviewEligible.mockResolvedValue(true);
+    // Default: experimental flags off (restored after clearAllMocks)
+    mockGetExperimentalSettings.mockResolvedValue({});
   });
 
   it('annex commands hidden when not preview-eligible', async () => {
@@ -663,5 +667,30 @@ describe('useCommandSource', () => {
     expect(item).toBeDefined();
     expect(item.label).toBe('Export Canvas as Blueprint');
     expect(item.category).toBe('Actions');
+  });
+
+  // ── Assistant gating: nav:assistant hidden unless experimental.assistant is on ──
+
+  it('hides nav:assistant when experimental.assistant flag is off (default)', async () => {
+    const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    expect(findItem(result.current, 'nav:assistant')).toBeUndefined();
+  });
+
+  it('shows nav:assistant when experimental.assistant flag is on', async () => {
+    mockGetExperimentalSettings.mockResolvedValueOnce({ assistant: true });
+    const { result } = renderHook(() => useCommandSource());
+    await waitFor(() => {
+      expect(findItem(result.current, 'nav:assistant')).toBeDefined();
+    });
+    const item = findItem(result.current, 'nav:assistant');
+    expect(item.label).toBe('Open Assistant');
+    expect(item.category).toBe('Navigation');
+  });
+
+  it('still shows nav:help regardless of assistant flag', async () => {
+    const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    expect(findItem(result.current, 'nav:help')).toBeDefined();
   });
 });
