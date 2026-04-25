@@ -120,7 +120,7 @@ vi.mock('./group-project-bulletin', () => ({
 }));
 
 vi.mock('./group-project-shoulder-tap', () => ({
-  executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', messageId: 'msg_1', delivered: [], failed: [] }),
+  executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', delivered: [], failed: [] }),
 }));
 
 vi.mock('./clubhouse-mcp/binding-manager', () => ({

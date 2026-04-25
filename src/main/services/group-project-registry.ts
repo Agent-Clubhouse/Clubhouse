@@ -8,6 +8,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import type { GroupProject } from '../../shared/group-project-types';
 import { appLog } from './log-service';
+import { ensureProjectChannels } from './group-project-bulletin';
 
 function groupProjectsDir(): string {
   const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
@@ -121,6 +122,13 @@ class GroupProjectRegistry {
     };
     this.projects.set(id, project);
     this.markDirty();
+    try {
+      await ensureProjectChannels(id);
+    } catch (err) {
+      appLog('core:group-project', 'warn', 'Failed to seed project channels', {
+        meta: { projectId: id, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
     return project;
   }
 

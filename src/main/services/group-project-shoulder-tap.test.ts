@@ -102,7 +102,8 @@ describe('executeShoulderTap', () => {
     expect(result.delivered[0].status).toBe('delivered');
     expect(result.failed).toHaveLength(0);
     expect(result.taskId).toMatch(/^tap_/);
-    expect(result.messageId).toMatch(/^msg_/);
+    // Shoulder tap is ephemeral — no bulletin audit record is produced.
+    expect((result as Record<string, unknown>).messageId).toBeUndefined();
 
     // PTY write should use chunked bracketed paste (separate writes for markers)
     expect(mockPtyWrite).toHaveBeenCalled();
@@ -219,7 +220,7 @@ describe('executeShoulderTap', () => {
     agentRegistry.untrack('agent-b');
   });
 
-  it('records tap to shoulder-tap bulletin topic', async () => {
+  it('does NOT record tap to any bulletin channel (ephemeral)', async () => {
     const project = await groupProjectRegistry.create('RecordProj');
 
     agentRegistry.register('agent-r', { projectPath: '/r', orchestrator: 'claude-code', runtime: 'pty' });
@@ -239,13 +240,43 @@ describe('executeShoulderTap', () => {
     });
 
     const board = getBulletinBoard(project.id);
-    const messages = await board.getTopicMessages('shoulder-tap');
-    expect(messages).toHaveLength(1);
-    const body = JSON.parse(messages[0].body);
-    expect(body.from).toBe('user');
-    expect(body.to).toBe('agent-r');
-    expect(body.message).toBe('Check this out');
+    // Legacy "shoulder-tap" topic should not exist.
+    expect(await board.getTopicMessages('shoulder-tap')).toEqual([]);
+    // Digest should only show the auto-seeded protected channels and the
+    // inbox channel for the bound agent — no shoulder-tap channel.
+    const digest = await board.getDigest();
+    const topics = digest.map(d => d.topic).sort();
+    expect(topics).not.toContain('shoulder-tap');
+    expect(topics).toContain('general');
+    expect(topics).toContain('control');
 
     agentRegistry.untrack('agent-r');
+  });
+
+  it('injected message points reply at sender inbox when sender is an agent', async () => {
+    const project = await groupProjectRegistry.create('ReplyProj');
+    agentRegistry.register('agent-x', { projectPath: '/x', orchestrator: 'claude-code', runtime: 'pty' });
+    bindingManager.bind('agent-x', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'RP',
+      agentName: 'falcon',
+      targetName: 'ReplyProj',
+      projectName: 'myapp',
+    });
+
+    await executeShoulderTap({
+      projectId: project.id,
+      senderLabel: 'robin@myapp',
+      targetAgentId: 'agent-x',
+      message: 'ping',
+    });
+
+    const bodyWrites = mockPtyWrite.mock.calls.map((c: unknown[]) => c[1] as string);
+    const fullBody = bodyWrites.join('');
+    expect(fullBody).toContain('inbox-robin');
+    expect(fullBody).toContain('ephemeral');
+
+    agentRegistry.untrack('agent-x');
   });
 });

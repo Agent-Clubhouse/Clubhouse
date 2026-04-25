@@ -28,7 +28,15 @@ vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
-import { getBulletinBoard, destroyBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
+import {
+  getBulletinBoard,
+  destroyBulletinBoard,
+  _resetAllBoardsForTesting,
+  PROJECT_CHANNELS,
+  ensureProjectChannels,
+  ensureInboxChannel,
+  inboxChannelName,
+} from './group-project-bulletin';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 
@@ -484,6 +492,161 @@ describe('BulletinBoard', () => {
       await board.postMessage('alice', 'topic-a', 'msg3');
 
       expect(board.totalMessageCount()).toBe(3);
+    });
+  });
+
+  describe('hasTopic', () => {
+    it('returns false for an empty board', async () => {
+      const board = getBulletinBoard('gp_has_none');
+      expect(await board.hasTopic('general')).toBe(false);
+    });
+
+    it('returns true after a message is posted to that topic', async () => {
+      const board = getBulletinBoard('gp_has_some');
+      await board.postMessage('system', 'general', 'hi');
+      expect(await board.hasTopic('general')).toBe(true);
+      expect(await board.hasTopic('control')).toBe(false);
+    });
+  });
+
+  describe('getDigest channel filter', () => {
+    it('returns only the topics listed in the channels filter', async () => {
+      const board = getBulletinBoard('gp_filter');
+      await board.postMessage('a', 'general', 'g1');
+      await board.postMessage('a', 'control', 'c1');
+      await board.postMessage('a', 'feature-foo', 'f1');
+      await board.postMessage('a', 'feature-bar', 'b1');
+
+      const digest = await board.getDigest(undefined, ['general', 'control']);
+      const topics = digest.map(d => d.topic).sort();
+      expect(topics).toEqual(['control', 'general']);
+    });
+
+    it('returns all topics when channels filter is empty or omitted', async () => {
+      const board = getBulletinBoard('gp_filter_none');
+      await board.postMessage('a', 't1', 'm');
+      await board.postMessage('a', 't2', 'm');
+
+      const omitted = await board.getDigest();
+      expect(omitted.map(d => d.topic).sort()).toEqual(['t1', 't2']);
+
+      const empty = await board.getDigest(undefined, []);
+      expect(empty.map(d => d.topic).sort()).toEqual(['t1', 't2']);
+    });
+
+    it('combines since and channels filters', async () => {
+      const board = getBulletinBoard('gp_filter_since');
+      await board.postMessage('a', 'general', 'old-g');
+      await board.postMessage('a', 'control', 'old-c');
+      const cutoff = new Date().toISOString();
+      await new Promise(r => setTimeout(r, 2));
+      await board.postMessage('a', 'general', 'new-g');
+      await board.postMessage('a', 'control', 'new-c');
+
+      const digest = await board.getDigest(cutoff, ['general']);
+      expect(digest).toHaveLength(1);
+      expect(digest[0].topic).toBe('general');
+      expect(digest[0].newMessageCount).toBe(1);
+      expect(digest[0].messageCount).toBe(2);
+    });
+  });
+});
+
+describe('channel bootstrap helpers', () => {
+  beforeEach(() => {
+    store.clear();
+    _resetAllBoardsForTesting();
+  });
+
+  describe('inboxChannelName', () => {
+    it('lowercases a simple name', () => {
+      expect(inboxChannelName('Robin')).toBe('inbox-robin');
+    });
+
+    it('replaces disallowed characters with a single dash', () => {
+      expect(inboxChannelName('alice/bob')).toBe('inbox-alice-bob');
+      expect(inboxChannelName('Foo  Bar!!')).toBe('inbox-foo-bar');
+    });
+
+    it('strips leading and trailing dashes', () => {
+      expect(inboxChannelName('___robin___')).toBe('inbox-robin');
+    });
+
+    it('falls back to inbox-unknown for empty or fully invalid input', () => {
+      expect(inboxChannelName('')).toBe('inbox-unknown');
+      expect(inboxChannelName('!!!')).toBe('inbox-unknown');
+    });
+  });
+
+  describe('PROJECT_CHANNELS', () => {
+    it('reserves general and control', () => {
+      expect(PROJECT_CHANNELS).toEqual(['general', 'control']);
+    });
+  });
+
+  describe('ensureProjectChannels', () => {
+    it('seeds general and control as protected topics', async () => {
+      await ensureProjectChannels('gp_seed');
+      const board = getBulletinBoard('gp_seed');
+      const digest = await board.getDigest();
+      const byTopic = Object.fromEntries(digest.map(d => [d.topic, d]));
+      expect(byTopic.general).toBeDefined();
+      expect(byTopic.general.isProtected).toBe(true);
+      expect(byTopic.control).toBeDefined();
+      expect(byTopic.control.isProtected).toBe(true);
+    });
+
+    it('is idempotent — repeated calls do not add extra seed messages', async () => {
+      await ensureProjectChannels('gp_idem');
+      await ensureProjectChannels('gp_idem');
+      await ensureProjectChannels('gp_idem');
+      const board = getBulletinBoard('gp_idem');
+      const digest = await board.getDigest();
+      const general = digest.find(d => d.topic === 'general')!;
+      const control = digest.find(d => d.topic === 'control')!;
+      expect(general.messageCount).toBe(1);
+      expect(control.messageCount).toBe(1);
+    });
+
+    it('re-protects channels even if protection was cleared', async () => {
+      await ensureProjectChannels('gp_reprot');
+      const board = getBulletinBoard('gp_reprot');
+      board.setTopicProtected('general', false);
+      await ensureProjectChannels('gp_reprot');
+      const digest = await board.getDigest();
+      expect(digest.find(d => d.topic === 'general')!.isProtected).toBe(true);
+    });
+  });
+
+  describe('ensureInboxChannel', () => {
+    it('creates a sanitized inbox channel and marks it protected', async () => {
+      const name = await ensureInboxChannel('gp_inbox', 'Robin');
+      expect(name).toBe('inbox-robin');
+      const board = getBulletinBoard('gp_inbox');
+      const digest = await board.getDigest();
+      const inbox = digest.find(d => d.topic === 'inbox-robin');
+      expect(inbox).toBeDefined();
+      expect(inbox!.isProtected).toBe(true);
+      expect(inbox!.messageCount).toBe(1);
+    });
+
+    it('is idempotent across repeated joins', async () => {
+      await ensureInboxChannel('gp_inbox2', 'robin');
+      await ensureInboxChannel('gp_inbox2', 'robin');
+      await ensureInboxChannel('gp_inbox2', 'robin');
+      const board = getBulletinBoard('gp_inbox2');
+      const digest = await board.getDigest();
+      expect(digest.find(d => d.topic === 'inbox-robin')!.messageCount).toBe(1);
+    });
+
+    it('creates distinct inboxes for distinct agents on the same project', async () => {
+      await ensureInboxChannel('gp_multi', 'Alice');
+      await ensureInboxChannel('gp_multi', 'Bob');
+      const board = getBulletinBoard('gp_multi');
+      const digest = await board.getDigest();
+      const topics = digest.map(d => d.topic).sort();
+      expect(topics).toContain('inbox-alice');
+      expect(topics).toContain('inbox-bob');
     });
   });
 });

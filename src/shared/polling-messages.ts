@@ -3,26 +3,36 @@
  *
  * Used by both the renderer (polling toggle button) and the main process
  * (auto-inject on join when polling is already enabled).
+ *
+ * Channel model: every project has protected "general" and "control" channels
+ * plus a per-agent "inbox-<agent>" channel. Agents poll the digest filtered to
+ * their standard set (general + control + own inbox + tracked work channels)
+ * to avoid paying tokens for unrelated chatter.
  */
 
 import type { OrchestratorId } from './types';
 
-export function pollingStartMsg(projectName: string, orchestrator?: OrchestratorId): string {
+function standardChannelsHint(inboxChannel: string | null): string {
+  const inboxPart = inboxChannel ? `"${inboxChannel}"` : '"inbox-<your-name>"';
+  return `channels=["general","control",${inboxPart}, ...any work channels you are actively tracking]`;
+}
+
+export function pollingStartMsg(
+  projectName: string,
+  orchestrator?: OrchestratorId,
+  inboxChannel?: string | null,
+): string {
+  const hint = standardChannelsHint(inboxChannel ?? null);
+  const common =
+    `Group Project notification: start polling for "${projectName}". ` +
+    'Call read_bulletin every 60 seconds with since=<latestTimestamp from your last read> and ' +
+    `${hint}. ` +
+    'Only drill into a channel with read_topic when its newMessageCount > 0.';
   switch (orchestrator) {
     case 'claude-code':
-      return (
-        `Group Project notification: Set up automatic polling for "${projectName}". ` +
-        'Schedule a recurring task to call read_bulletin every 60 seconds. ' +
-        'IMPORTANT: Always pass the "since" parameter with the latestTimestamp from your previous read ' +
-        'to minimize token usage. Only fetch topics where newMessageCount > 0 using read_topic with since. ' +
-        'Use /loop to automate: /loop 60s read_bulletin'
-      );
+      return `${common} Automate with: /loop 60s read_bulletin`;
     default:
-      return (
-        `Group Project notification: Poll the bulletin board for "${projectName}" every 60 seconds ` +
-        'when idle or between turns. Use read_bulletin(since=<lastTimestamp>) to check for updates. ' +
-        'Always pass the "since" parameter to minimize token usage.'
-      );
+      return common;
   }
 }
 
@@ -30,25 +40,30 @@ export function pollingStopMsg(projectName: string, orchestrator?: OrchestratorI
   switch (orchestrator) {
     case 'claude-code':
       return (
-        `Group Project notification: Stop polling the bulletin board for "${projectName}". ` +
+        `Group Project notification: stop polling the bulletin board for "${projectName}". ` +
         'Cancel any /loop or scheduled task you set up for this polling.'
       );
     default:
-      return `Group Project notification: Stop periodic bulletin board polling for "${projectName}".`;
+      return `Group Project notification: stop periodic bulletin board polling for "${projectName}".`;
   }
 }
 
-export function pollingNudgeMsg(projectName: string, orchestrator?: OrchestratorId): string {
+export function pollingNudgeMsg(
+  projectName: string,
+  orchestrator?: OrchestratorId,
+  inboxChannel?: string | null,
+): string {
+  const hint = standardChannelsHint(inboxChannel ?? null);
   switch (orchestrator) {
     case 'claude-code':
       return (
-        `Group Project nudge: If you are NOT already polling the bulletin board for "${projectName}", ` +
-        'start now. Use /loop to automate: /loop 60s read_bulletin'
+        `Group Project nudge: if you are NOT already polling "${projectName}", start now. ` +
+        `Use /loop 60s read_bulletin with since=<latestTimestamp> and ${hint}.`
       );
     default:
       return (
-        `Group Project nudge: If you are NOT already polling the bulletin board for "${projectName}", ` +
-        'start polling every 60 seconds now. Use read_bulletin to check for updates.'
+        `Group Project nudge: if you are NOT already polling "${projectName}", start now ` +
+        `(every 60 seconds). Use read_bulletin with since=<latestTimestamp> and ${hint}.`
       );
   }
 }

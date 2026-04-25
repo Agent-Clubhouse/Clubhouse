@@ -98,21 +98,22 @@ export function registerGroupProjectTools(): void {
     label: 'Post Bulletin',
     mcp: { targetKind: 'group-project', nameSuffix: 'post_bulletin' },
     description:
-        'Post a message to the group project bulletin board.\n\n' +
-        'The bulletin board is the PRIMARY communication channel for group coordination. ' +
-        'Post regular progress updates, questions, decisions, and status changes.\n\n' +
-        'Your identity is automatically included as the sender. The "system" topic is ' +
-        'reserved for lifecycle events — use any other topic name freely.\n\n' +
-        'TOPIC HYGIENE: Use specific, distinct topic names to keep conversations organized. ' +
-        'Suggested topics: "progress", "questions", "decisions", "blockers". Avoid dumping ' +
-        'everything into a single topic — separate concerns make it easier to find and poll.\n\n' +
-        'Keep messages concise. Prefer plain text or short markdown over large JSON payloads.',
+        'Post a message to a channel on the project board.\n\n' +
+        'CHANNEL MODEL:\n' +
+        '- "general" (protected): introductions and broad announcements. Keep traffic low.\n' +
+        '- "control" (protected): coordination — tell other agents where to look ("follow #fix-login-bug") and agree on channel naming.\n' +
+        '- "inbox-<agent-name>" (protected): an agent\'s direct inbox. Post here for 1:1 async work with that agent.\n' +
+        '- work channels: create them liberally for scoped work (e.g. "fix-login-bug", "schema-v2"). One focused topic per channel.\n\n' +
+        'Introduce yourself on "general" when you first join. Prefer scoped work channels over posting shared context to "general". ' +
+        'Post replies where the work is happening — do not cross-post.\n\n' +
+        'Your identity is set automatically. The "system" channel is reserved. ' +
+        'Keep messages concise — plain text or short markdown beats large JSON payloads.',
       inputSchema: {
         type: 'object',
         properties: {
           topic: {
             type: 'string',
-            description: 'Topic name (freeform). "system" is reserved.',
+            description: 'Channel name. "system" is reserved. Use short-kebab-case for new work channels.',
           },
           body: {
             type: 'string',
@@ -167,14 +168,12 @@ export function registerGroupProjectTools(): void {
     label: 'Read Bulletin',
     mcp: { targetKind: 'group-project', nameSuffix: 'read_bulletin' },
       description:
-        'Read the bulletin board digest — shows all topics with message counts.\n\n' +
-        'This is the key coordination primitive. When you see topics with newMessageCount > 0, ' +
-        'use read_topic to get those new messages.\n\n' +
-        'IMPORTANT: Always pass the "since" parameter with the latestTimestamp from your last ' +
-        'read. This dramatically reduces response size and token cost. Only omit "since" on ' +
-        'your very first read.\n\n' +
-        'Returns a compact JSON array of {topic, messageCount, newMessageCount, latestTimestamp}.\n\n' +
-        'Always check the "system" topic for join/leave lifecycle events.',
+        'Get a digest of channels on the project board — {topic, messageCount, newMessageCount, latestTimestamp, isProtected} per channel.\n\n' +
+        'Pass "since" (the latestTimestamp from your last read) on every call after your first to keep the digest cheap.\n' +
+        'Pass "channels" to restrict the digest to the channels you care about. Your standard poll set is:\n' +
+        '  ["general", "control", "inbox-<your-name>", ...any work channels you are actively tracking]\n' +
+        'Only drill into a channel with read_topic when its newMessageCount > 0.\n\n' +
+        'Ignoring unrelated chatter is the whole point — do not read every channel on the board.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -182,12 +181,20 @@ export function registerGroupProjectTools(): void {
             type: 'string',
             description: 'ISO 8601 timestamp. If provided, newMessageCount reflects only messages after this time.',
           },
+          channels: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional allow-list of channel names to include in the digest. Omit for all channels.',
+          },
         },
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const since = optionalString(args, 'since');
+      const channels = Array.isArray(args.channels)
+        ? (args.channels as unknown[]).filter((c): c is string => typeof c === 'string')
+        : undefined;
       const board = getBulletinBoard(targetId);
-      const digest = await board.getDigest(since);
+      const digest = await board.getDigest(since, channels);
       return {
         content: [{ type: 'text', text: JSON.stringify(digest) }],
       };
@@ -201,18 +208,16 @@ export function registerGroupProjectTools(): void {
     label: 'Read Topic',
     mcp: { targetKind: 'group-project', nameSuffix: 'read_topic' },
       description:
-        'Read messages from a specific bulletin board topic.\n\n' +
-        'IMPORTANT: Always pass the "since" parameter with the timestamp from your last ' +
-        'read to only fetch new messages. This saves significant tokens.\n\n' +
-        'Use summary=true to get truncated message bodies (~200 chars). If you need the ' +
-        'full content of a specific message, use read_message with its ID.\n\n' +
+        'Read messages from a specific channel.\n\n' +
+        'Always pass "since" (latestTimestamp from your last read of this channel) to fetch only new messages — avoids re-reading the full history.\n' +
+        'Use summary=true on large channels to get truncated bodies (~200 chars); then call read_message by id for any full body you actually need.\n\n' +
         'Returns a compact JSON array of {id, sender, topic, body, timestamp}.',
       inputSchema: {
         type: 'object',
         properties: {
           topic: {
             type: 'string',
-            description: 'Topic name to read.',
+            description: 'Channel name to read.',
           },
           since: {
             type: 'string',
@@ -299,12 +304,14 @@ export function registerGroupProjectTools(): void {
         description: project.description,
         instructions: project.instructions,
         systemInstructions:
-          'EFFICIENT POLLING: Always pass "since" (the latestTimestamp from your last read) ' +
-          'to read_bulletin and read_topic. Only fetch topics where newMessageCount > 0. ' +
-          'Use summary=true on read_topic for large topics, then read_message for specific messages.\n\n' +
-          'TOPIC HYGIENE: Use specific, distinct topic names (e.g. "progress", "blockers", "decisions"). ' +
-          'Avoid dumping all communication into one topic.\n\n' +
-          'MESSAGE FORMAT: Post in plain text or short markdown. Avoid large JSON payloads in message bodies.',
+          'CHANNEL MODEL: Every project has protected "general" and "control" channels, plus a per-agent "inbox-<agent-name>" channel. Work channels are freeform — create them with post_bulletin as needed.\n' +
+          '- general: introduce yourself when you join ("I am <name>, working on <focus>"); post announcements that affect everyone. Keep traffic low.\n' +
+          '- control: set up shared work ("new channel #fix-login-bug, follow if relevant"), agree on naming, resolve cross-stream questions.\n' +
+          '- inbox-<your-name>: your direct inbox. Check it every poll. Other agents post here for 1:1 asks.\n' +
+          '- work channels: make them liberally for focused coordination. One topic per channel. Prefer this over cross-posting to "general".\n\n' +
+          'POLLING: Call read_bulletin with since=<latestTimestamp from last read> and channels=["general","control","inbox-<your-name>", ...subscribed work channels]. ' +
+          'Only drill into a channel with read_topic when its newMessageCount > 0. Use summary=true for large reads and read_message for full bodies.\n\n' +
+          'POSTING: Introduce yourself on "general" after you first join. Post replies on the channel where the work is happening. Do not cross-post. Keep messages short — plain text or short markdown, not large JSON.',
       };
 
       if (includeMembersList) {
@@ -331,15 +338,11 @@ export function registerGroupProjectTools(): void {
     label: 'Shoulder Tap',
     mcp: { targetKind: 'group-project', nameSuffix: 'shoulder_tap' },
       description:
-        'Send an urgent direct message to a specific agent in this group project.\n\n' +
-        'WARNING: This tool is NOT for normal communication. Use the bulletin board ' +
-        '(post_bulletin / read_bulletin) for routine coordination. Shoulder tap should ' +
-        'ONLY be used when you need immediate attention from a specific agent and the ' +
-        'bulletin board is insufficient (e.g. the agent is unresponsive to bulletin posts, ' +
-        'or there is a time-critical blocker).\n\n' +
-        'The message is injected directly into the target agent\'s terminal input. ' +
-        'The target agent\'s name must match one returned by list_members.\n\n' +
-        'A record of the tap is also posted to the "shoulder-tap" bulletin board topic.',
+        'Send an urgent, ephemeral message directly into a specific agent\'s terminal.\n\n' +
+        'NOT for routine coordination — post to a channel instead. Use shoulder_tap only when a channel post is insufficient: ' +
+        'the target is unresponsive, or there is a time-critical blocker.\n\n' +
+        'The message is injected as terminal input. No bulletin record is created — if a reply is expected, ask the target to post it on your inbox channel ("inbox-<your-name>").\n\n' +
+        'The target_agent_id must match an agentId returned by list_members.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -398,14 +401,9 @@ export function registerGroupProjectTools(): void {
     label: 'Broadcast',
     mcp: { targetKind: 'group-project', nameSuffix: 'broadcast' },
       description:
-        'Broadcast an urgent message to ALL agents in this group project.\n\n' +
-        'WARNING: This tool is NOT for normal communication. Use the bulletin board ' +
-        '(post_bulletin / read_bulletin) for routine coordination. Broadcast should ' +
-        'ONLY be used for critical announcements that require immediate attention from ' +
-        'every agent (e.g. "stop all work, critical issue found", "project goals changed").\n\n' +
-        'The message is injected directly into each agent\'s terminal input. ' +
-        'You (the sender) are excluded from the broadcast.\n\n' +
-        'A record of the broadcast is also posted to the "shoulder-tap" bulletin board topic.',
+        'Broadcast an urgent, ephemeral message to every agent in this project (injected into each terminal; no bulletin record).\n\n' +
+        'NOT for routine coordination — post to "general" for that. Use broadcast only for critical, all-hands announcements ' +
+        '("stop all work, critical issue found", "project goals changed"). You (the sender) are excluded.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -752,10 +750,10 @@ export function registerGroupProjectTools(): void {
     label: 'Clear Topic',
     mcp: { targetKind: 'group-project', nameSuffix: 'clear_topic' },
     description:
-      'Delete an entire topic and all its messages from the bulletin board.\n\n' +
-      'Use this to clean up stale or completed topics that are no longer relevant. ' +
-      'This is a destructive operation — all messages in the topic will be permanently removed.\n\n' +
-      'Cannot delete the "system" topic.',
+      'Delete an entire channel and all its messages from the project board.\n\n' +
+      'Use this to clean up stale or completed work channels that are no longer relevant. ' +
+      'Destructive — all messages in the channel are permanently removed.\n\n' +
+      'The "system" channel cannot be deleted, and protected channels ("general", "control", and any "inbox-<name>") will still be recreated automatically when used.',
     inputSchema: {
       type: 'object',
       properties: {
