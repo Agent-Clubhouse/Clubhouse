@@ -1014,4 +1014,62 @@ describe('hydrateFromRemote', () => {
       expect(store.getState().minimapAutoHide).toBe(false);
     });
   });
+
+  describe('LB-CB-001: loadWires re-entry guard', () => {
+    const mockMcpBindingWires = {
+      bind: vi.fn().mockResolvedValue(undefined),
+      setInstructions: vi.fn().mockResolvedValue(undefined),
+      setDisabledTools: vi.fn().mockResolvedValue(undefined),
+    };
+
+    beforeEach(() => {
+      (globalThis as any).window = {
+        ...(globalThis as any).window,
+        clubhouse: {
+          ...((globalThis as any).window?.clubhouse || {}),
+          mcpBinding: mockMcpBindingWires,
+          groupProject: { get: vi.fn().mockResolvedValue(null) },
+        },
+      };
+      mockMcpBindingWires.bind.mockClear();
+    });
+
+    it('second concurrent loadWires call is a no-op (re-entry guard)', async () => {
+      const wire = { agentId: 'a1', targetId: 'a2', targetKind: 'agent' as const, label: 'L', agentName: 'x', targetName: 'y', projectName: 'p' };
+      let resolveRead!: (v: unknown) => void;
+      const slowStorage: ScopedStorage = {
+        read: vi.fn(() => new Promise((resolve) => { resolveRead = resolve; })),
+        write: vi.fn(),
+        delete: vi.fn(),
+        list: vi.fn().mockResolvedValue([]),
+      };
+
+      // Kick off first load (will block on storage.read)
+      const first = store.getState().loadWires(slowStorage);
+      // Second concurrent call should return immediately without re-entering
+      const second = store.getState().loadWires(slowStorage);
+
+      // Resolve both
+      resolveRead([wire]);
+      await Promise.all([first, second]);
+
+      // storage.read should only have been called once despite two concurrent calls
+      expect(slowStorage.read).toHaveBeenCalledTimes(1);
+    });
+
+    it('loadWires can run again after completing', async () => {
+      const wire = { agentId: 'a1', targetId: 'a2', targetKind: 'agent' as const, label: 'L', agentName: 'x', targetName: 'y', projectName: 'p' };
+      const storage = createMockStorage({ 'canvas-wires': [wire] });
+
+      await store.getState().loadWires(storage);
+      expect(store.getState().wiresLoaded).toBe(true);
+
+      // Reset wiresLoaded to simulate a fresh state (e.g. new session)
+      store.setState({ wiresLoaded: false, wireDefinitions: [] });
+
+      // Second sequential call should proceed normally
+      await store.getState().loadWires(storage);
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+    });
+  });
 });

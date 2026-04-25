@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { FileViewer } from './FileViewer';
+import { FileViewer, clearFileCache } from './FileViewer';
 import { fileState } from './state';
 import { createMockAPI } from '../../testing';
 
@@ -68,6 +68,7 @@ function selectFile(path: string) {
 describe('FileViewer', () => {
   beforeEach(() => {
     fileState.reset();
+    clearFileCache();
     lastOnSave = null;
   });
 
@@ -191,5 +192,34 @@ describe('FileViewer', () => {
     });
 
     expect(screen.queryByText('Ln 1, Col 1')).not.toBeInTheDocument();
+  });
+
+  describe('LB-PU-001: module-level cache cleared on deactivate', () => {
+    it('clearFileCache is exported and callable without throwing', () => {
+      expect(() => clearFileCache()).not.toThrow();
+    });
+
+    it('clearFileCache causes next file load to re-fetch from API', async () => {
+      const api = createViewerAPI();
+      const { unmount } = render(<FileViewer api={api} />);
+
+      // Load a file — populates the module-level cache
+      selectFile('hello.ts');
+      await waitFor(() => expect(screen.getByTestId('monaco-editor')).toBeInTheDocument());
+      expect(api.files.readFile).toHaveBeenCalledTimes(1);
+
+      unmount();
+
+      // Simulate plugin deactivation: clear the module-level cache
+      clearFileCache();
+
+      // Re-mount with the same file already selected in state
+      const api2 = createViewerAPI();
+      render(<FileViewer api={api2} />);
+
+      selectFile('hello.ts');
+      await waitFor(() => expect(api2.files.readFile).toHaveBeenCalledTimes(1));
+      // api2 must have been called — proves the cache was cleared and re-fetched
+    });
   });
 });

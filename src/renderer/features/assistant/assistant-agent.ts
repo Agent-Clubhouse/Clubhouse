@@ -46,6 +46,7 @@ const statusListeners = new Set<StatusListener>();
 const modeListeners = new Set<ModeListener>();
 const orchestratorListeners = new Set<OrchestratorListener>();
 const agentIdListeners = new Set<AgentIdListener>();
+const MAX_FEED_ITEMS = 500;
 const pendingItems: FeedItem[] = [];
 let cleanupListeners: Array<() => void> = [];
 let messageQueue: string[] = [];
@@ -69,6 +70,9 @@ function setAgentId(agentId: string | null): void {
 
 function pushItem(item: FeedItem): void {
   pendingItems.push(item);
+  if (pendingItems.length > MAX_FEED_ITEMS) {
+    pendingItems.splice(0, pendingItems.length - MAX_FEED_ITEMS);
+  }
   notifyFeedListeners();
 }
 
@@ -542,7 +546,8 @@ export async function loadHistory(): Promise<void> {
     const items = await window.clubhouse.assistant.loadHistory();
     if (items && Array.isArray(items) && items.length > 0) {
       pendingItems.length = 0;
-      for (const item of items) {
+      const capped = items.length > MAX_FEED_ITEMS ? items.slice(-MAX_FEED_ITEMS) : items;
+      for (const item of capped) {
         pendingItems.push(item);
       }
       notifyFeedListeners();

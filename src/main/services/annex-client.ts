@@ -193,7 +193,10 @@ async function seedAndGetBuffer(satelliteId: string, agentId: string): Promise<s
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
       });
-      req.on('error', () => resolve(''));
+      req.on('error', (err) => {
+        appLog('core:annex-client', 'warn', 'Agent buffer fetch failed', { meta: { satelliteId, agentId, error: err.message } });
+        resolve('');
+      });
       req.on('timeout', () => { req.destroy(); resolve(''); });
     });
 
@@ -860,10 +863,16 @@ export function requestFileTree(fingerprint: string, projectId: string, options?
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
-        catch { resolve([]); }
+        catch (err) {
+          appLog('core:annex-client', 'warn', 'File tree response JSON parse failed', { meta: { fingerprint, error: String(err) } });
+          resolve([]);
+        }
       });
     });
-    req.on('error', () => resolve([]));
+    req.on('error', (err) => {
+      appLog('core:annex-client', 'warn', 'File tree request failed', { meta: { fingerprint, error: err.message } });
+      resolve([]);
+    });
     req.on('timeout', () => { req.destroy(); resolve([]); });
   });
 }
@@ -914,10 +923,16 @@ export function requestBulletinDigest(fingerprint: string, groupProjectId: strin
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
-        catch { resolve([]); }
+        catch (err) {
+          appLog('core:annex-client', 'warn', 'Bulletin digest response JSON parse failed', { meta: { fingerprint, error: String(err) } });
+          resolve([]);
+        }
       });
     });
-    req.on('error', () => resolve([]));
+    req.on('error', (err) => {
+      appLog('core:annex-client', 'warn', 'Bulletin digest request failed', { meta: { fingerprint, error: err.message } });
+      resolve([]);
+    });
     req.on('timeout', () => { req.destroy(); resolve([]); });
   });
 }
@@ -944,10 +959,16 @@ export function requestBulletinTopicMessages(fingerprint: string, groupProjectId
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
-        catch { resolve([]); }
+        catch (err) {
+          appLog('core:annex-client', 'warn', 'Bulletin topic messages response JSON parse failed', { meta: { fingerprint, error: String(err) } });
+          resolve([]);
+        }
       });
     });
-    req.on('error', () => resolve([]));
+    req.on('error', (err) => {
+      appLog('core:annex-client', 'warn', 'Bulletin topic messages request failed', { meta: { fingerprint, error: err.message } });
+      resolve([]);
+    });
     req.on('timeout', () => { req.destroy(); resolve([]); });
   });
 }
@@ -998,10 +1019,16 @@ export function requestBulletinAllMessages(
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
-        catch { resolve([]); }
+        catch (err) {
+          appLog('core:annex-client', 'warn', 'Bulletin all-messages response JSON parse failed', { meta: { fingerprint, error: String(err) } });
+          resolve([]);
+        }
       });
     });
-    req.on('error', () => resolve([]));
+    req.on('error', (err) => {
+      appLog('core:annex-client', 'warn', 'Bulletin all-messages request failed', { meta: { fingerprint, error: err.message } });
+      resolve([]);
+    });
     req.on('timeout', () => { req.destroy(); resolve([]); });
   });
 }

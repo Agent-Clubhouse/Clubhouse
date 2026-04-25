@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Project } from '../../shared/types';
+import { useBadgeStore } from './badgeStore';
+import { useBadgeSettingsStore } from './badgeSettingsStore';
 
 // ---------- IPC mock ----------
 const mockProject = {
@@ -48,6 +50,8 @@ describe('projectStore', () => {
       gitStatus: {},
       projectIcons: {},
     });
+    useBadgeStore.setState({ badges: {} });
+    useBadgeSettingsStore.setState({ enabled: true, pluginBadges: true, projectRailBadges: true, projectOverrides: {} });
   });
 
   // ---- defaults ----
@@ -211,6 +215,23 @@ describe('projectStore', () => {
       await getState().removeProject('proj_2');
 
       expect(getState().activeProjectId).toBe('proj_1');
+    });
+
+    it('LB-SM-002: clears badge store entries for the removed project', async () => {
+      const p = makeProject();
+      useProjectStore.setState({ projects: [p], activeProjectId: 'proj_1' });
+      // Plant badges for this project
+      useBadgeStore.getState().setBadge('core:agents', 'count', 3, { kind: 'explorer-tab', projectId: 'proj_1', tabId: 'agents' });
+      useBadgeStore.getState().setBadge('plugin:files', 'dot', 1, { kind: 'explorer-tab', projectId: 'proj_1', tabId: 'plugin:files' });
+      // Plant a badge for a different project (should survive)
+      useBadgeStore.getState().setBadge('core:agents', 'count', 5, { kind: 'explorer-tab', projectId: 'proj_2', tabId: 'agents' });
+
+      await getState().removeProject('proj_1');
+
+      // proj_1 badges should be gone
+      expect(useBadgeStore.getState().getProjectBadge('proj_1')).toBeNull();
+      // proj_2 badge should remain
+      expect(useBadgeStore.getState().getProjectBadge('proj_2')).not.toBeNull();
     });
   });
 

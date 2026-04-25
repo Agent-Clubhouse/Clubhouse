@@ -3,7 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/
 import { fileState } from './state';
 import { disposeAllModels } from './MonacoEditor';
 import { FileTree } from './FileTree';
-import { FileViewer } from './FileViewer';
+import { FileViewer, clearFileCache } from './FileViewer';
 import { SearchPanel } from './SearchPanel';
 import { FileViewerCanvasWidget } from './FileViewerCanvasWidget';
 
@@ -100,6 +100,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
 export function deactivate(): void {
   fileState.reset();
   disposeAllModels();
+  clearFileCache();
 }
 
 function SidebarWrapper({ api }: { api: PluginAPI }) {

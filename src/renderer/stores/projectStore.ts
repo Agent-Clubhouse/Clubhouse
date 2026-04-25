@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Project } from '../../shared/types';
+import { useBadgeStore } from './badgeStore';
 
 interface ProjectState {
   projects: Project[];
@@ -76,6 +77,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           : s.activeProjectId;
       return { projects, activeProjectId, gitStatus, projectIcons };
     });
+    useBadgeStore.getState().clearProjectBadges(id);
   },
 
   pickAndAddProject: async () => {

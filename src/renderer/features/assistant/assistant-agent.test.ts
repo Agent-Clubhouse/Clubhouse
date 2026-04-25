@@ -530,4 +530,39 @@ describe('assistant-agent', () => {
       });
     });
   });
+
+  describe('LB-AG-005: feed history cap', () => {
+    it('loadHistory caps feed at MAX_FEED_ITEMS (500) when more are stored', async () => {
+      const oversized = Array.from({ length: 501 }, (_, i) => ({
+        type: 'message' as const,
+        message: { id: `msg-${i}`, role: 'user' as const, content: `msg ${i}`, timestamp: i },
+      }));
+      mockLoadHistory.mockResolvedValueOnce(oversized);
+      await agent.loadHistory();
+      expect(agent.getFeedItems()).toHaveLength(500);
+    });
+
+    it('loadHistory keeps the most recent items when capping', async () => {
+      const oversized = Array.from({ length: 502 }, (_, i) => ({
+        type: 'message' as const,
+        message: { id: `msg-${i}`, role: 'user' as const, content: `msg ${i}`, timestamp: i },
+      }));
+      mockLoadHistory.mockResolvedValueOnce(oversized);
+      await agent.loadHistory();
+      const items = agent.getFeedItems();
+      // First 2 items (oldest) should be trimmed; item at index 2 becomes index 0
+      expect(items[0].message?.content).toBe('msg 2');
+      expect(items[499].message?.content).toBe('msg 501');
+    });
+
+    it('loadHistory preserves all items when under the cap', async () => {
+      const under = Array.from({ length: 10 }, (_, i) => ({
+        type: 'message' as const,
+        message: { id: `msg-${i}`, role: 'user' as const, content: `msg ${i}`, timestamp: i },
+      }));
+      mockLoadHistory.mockResolvedValueOnce(under);
+      await agent.loadHistory();
+      expect(agent.getFeedItems()).toHaveLength(10);
+    });
+  });
 });

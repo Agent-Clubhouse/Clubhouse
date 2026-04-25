@@ -174,6 +174,7 @@ function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): P
 
 export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
   const initialCanvas = createCanvasInstance();
+  let _wiresLoading = false;
 
   return create<CanvasState>((set, get) => ({
     canvases: [initialCanvas],
@@ -266,6 +267,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     },
 
     loadWires: async (storage) => {
+      if (_wiresLoading) return;
+      _wiresLoading = true;
       try {
         const saved = await storage.read(STORAGE_KEY_WIRES) as McpBindingEntry[] | null;
         if (!saved || !Array.isArray(saved) || saved.length === 0) {
@@ -336,6 +339,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         // Storage read failed — skip wire restore, but mark as loaded so
         // auto-save is not permanently blocked.
         set({ wiresLoaded: true });
+      } finally {
+        _wiresLoading = false;
       }
     },
 
