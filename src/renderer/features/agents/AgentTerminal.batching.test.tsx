@@ -16,6 +16,8 @@ const g = globalThis as any;
 g.__testTerminal = null;
 g.__testFitAddon = null;
 g.__testAttachClipboard = vi.fn().mockReturnValue(vi.fn());
+g.__satelliteBusListener = null;
+g.__satelliteBusUnsubscribe = vi.fn();
 
 vi.mock('@xterm/xterm', () => {
   class Terminal {
@@ -76,7 +78,12 @@ vi.mock('../../stores/annexClientStore', () => {
   useAnnexClientStore.subscribe = vi.fn(() => vi.fn());
   return {
     useAnnexClientStore,
-    satellitePtyDataBus: { on: vi.fn(() => vi.fn()) },
+    satellitePtyDataBus: {
+      on: (cb: (satId: string, agentId: string, data: string) => void) => {
+        g.__satelliteBusListener = cb;
+        return g.__satelliteBusUnsubscribe;
+      },
+    },
   };
 });
 
@@ -119,6 +126,8 @@ describe('AgentTerminal write batching', () => {
     mockRemoveDataListener.mockClear();
     mockRemoveExitListener.mockClear();
     mockDisconnect.mockClear();
+    g.__satelliteBusListener = null;
+    g.__satelliteBusUnsubscribe.mockClear();
 
     // Deferred rAF — queue callbacks instead of firing immediately
     rafQueue = [];
@@ -164,6 +173,14 @@ describe('AgentTerminal write batching', () => {
           id: 'agent-1',
           projectId: 'proj-1',
           name: 'test',
+          kind: 'durable',
+          status: 'running',
+          color: 'indigo',
+        },
+        'remote||sat-1||agent-1': {
+          id: 'remote||sat-1||agent-1',
+          projectId: 'proj-1',
+          name: 'remote-test',
           kind: 'durable',
           status: 'running',
           color: 'indigo',
@@ -255,5 +272,151 @@ describe('AgentTerminal write batching', () => {
 
     // No new rAF scheduled for non-matching agent
     expect(rafQueue.length).toBe(countAfterMount);
+  });
+
+  describe('satellite/remote PTY path', () => {
+    async function mountRemoteAndInit() {
+      g.__annexMockState.requestPtyBuffer = vi.fn().mockResolvedValue('');
+      render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      // Flush mount rAF → requestPtyBuffer().then() → bufferReplayed = true
+      await act(async () => { flushRAF(); });
+      term().write.mockClear();
+      rafQueue.length = 0;
+    }
+
+    it('batches multiple chunks from satellite into a single term.write call', async () => {
+      await mountRemoteAndInit();
+
+      act(() => {
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'r1');
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'r2');
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'r3');
+      });
+
+      // No writes yet — batched, waiting for rAF
+      expect(term().write).not.toHaveBeenCalled();
+
+      act(() => { flushRAF(); });
+
+      expect(term().write).toHaveBeenCalledTimes(1);
+      expect(term().write).toHaveBeenCalledWith('r1r2r3');
+    });
+
+    it('filters non-matching satellite IDs', async () => {
+      await mountRemoteAndInit();
+      const countAfterMount = rafQueue.length;
+
+      act(() => {
+        g.__satelliteBusListener!('sat-OTHER', 'agent-1', 'foreign');
+      });
+
+      // No new rAF scheduled — filter should reject the wrong satId
+      expect(rafQueue.length).toBe(countAfterMount);
+      expect(term().write).not.toHaveBeenCalled();
+    });
+
+    it('filters non-matching agent IDs on the satellite path', async () => {
+      await mountRemoteAndInit();
+      const countAfterMount = rafQueue.length;
+
+      act(() => {
+        g.__satelliteBusListener!('sat-1', 'agent-OTHER', 'foreign');
+      });
+
+      // Right satellite, wrong agent — must not batch
+      expect(rafQueue.length).toBe(countAfterMount);
+      expect(term().write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pre-replay buffering gate', () => {
+    /**
+     * The component buffers live PTY data in `pendingData[]` until the initial
+     * scrollback fetch resolves. Without these tests, a regression that flips
+     * the `bufferReplayed` gate would silently lose initial output or interleave
+     * it with live streaming. We exercise the deferred-replay path by holding
+     * the buffer-fetch promise unresolved while we fire live data.
+     */
+
+    it('local: queues live data during buffer fetch, drains in order after replay', async () => {
+      let resolveBuffer!: (s: string) => void;
+      window.clubhouse.pty.getBuffer = vi.fn().mockImplementation(
+        () => new Promise<string>((r) => { resolveBuffer = r; }),
+      );
+
+      render(<AgentTerminal agentId="agent-1" />);
+      // Fire mount rAF — this calls getBuffer() but the promise stays pending
+      await act(async () => { flushRAF(); });
+
+      // Live data arrives before replay completes — must be queued, not written
+      act(() => {
+        mockOnDataCallback!('agent-1', 'live-1');
+        mockOnDataCallback!('agent-1', 'live-2');
+      });
+
+      expect(term().write).not.toHaveBeenCalled();
+      expect(rafQueue.length).toBe(0); // No rAF scheduled — gate is closed
+
+      // Resolve the buffer fetch — drain should happen in order:
+      // buffered output first, then each pending chunk as a separate write
+      await act(async () => { resolveBuffer('BUF'); });
+
+      expect(term().write).toHaveBeenNthCalledWith(1, 'BUF');
+      expect(term().write).toHaveBeenNthCalledWith(2, 'live-1');
+      expect(term().write).toHaveBeenNthCalledWith(3, 'live-2');
+    });
+
+    it('satellite: queues live data during buffer fetch, drains in order after replay', async () => {
+      let resolveBuffer!: (s: string) => void;
+      g.__annexMockState.requestPtyBuffer = vi.fn().mockImplementation(
+        () => new Promise<string>((r) => { resolveBuffer = r; }),
+      );
+
+      render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      await act(async () => { flushRAF(); });
+
+      // Live data arrives via the satellite bus before replay
+      act(() => {
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'live-r1');
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'live-r2');
+      });
+
+      expect(term().write).not.toHaveBeenCalled();
+      expect(rafQueue.length).toBe(0);
+
+      await act(async () => { resolveBuffer('REMOTE-BUF'); });
+
+      expect(term().write).toHaveBeenNthCalledWith(1, 'REMOTE-BUF');
+      expect(term().write).toHaveBeenNthCalledWith(2, 'live-r1');
+      expect(term().write).toHaveBeenNthCalledWith(3, 'live-r2');
+    });
+
+    it('resumes batched writes after replay completes', async () => {
+      let resolveBuffer!: (s: string) => void;
+      window.clubhouse.pty.getBuffer = vi.fn().mockImplementation(
+        () => new Promise<string>((r) => { resolveBuffer = r; }),
+      );
+
+      render(<AgentTerminal agentId="agent-1" />);
+      await act(async () => { flushRAF(); });
+
+      // Resolve replay with no buffered content, no pre-replay chunks
+      await act(async () => { resolveBuffer(''); });
+      term().write.mockClear();
+      rafQueue.length = 0;
+
+      // After the gate opens, new chunks must batch via rAF (not write directly)
+      act(() => {
+        mockOnDataCallback!('agent-1', 'post-1');
+        mockOnDataCallback!('agent-1', 'post-2');
+      });
+
+      expect(term().write).not.toHaveBeenCalled();
+
+      act(() => { flushRAF(); });
+
+      expect(term().write).toHaveBeenCalledTimes(1);
+      expect(term().write).toHaveBeenCalledWith('post-1post-2');
+    });
   });
 });
