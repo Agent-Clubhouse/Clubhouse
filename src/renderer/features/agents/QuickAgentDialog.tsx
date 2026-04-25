@@ -178,7 +178,7 @@ export function QuickAgentDialog() {
               type="text"
               value={customModel}
               onChange={(e) => setCustomModel(e.target.value)}
-              placeholder="e.g. claude-opus-4-6[1m]"
+              placeholder="e.g. claude-opus-4-6"
               className="mt-1.5 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
                 text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
             />

@@ -762,7 +762,7 @@ export function AgentSettingsView({ agent }: Props) {
                     onChange={(e) => setAgentCustomModel(e.target.value)}
                     onBlur={handleCustomModelBlur}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModelBlur(); }}
-                    placeholder="e.g. claude-opus-4-6[1m]"
+                    placeholder="e.g. claude-opus-4-6"
                     disabled={agent.status === 'running'}
                     className="mt-1.5 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent disabled:opacity-50 disabled:cursor-not-allowed"
                   />
@@ -1144,7 +1144,7 @@ export function AgentSettingsView({ agent }: Props) {
                       type="text"
                       value={qadCustomModel}
                       onChange={(e) => { setQadCustomModel(e.target.value); setQadDirty(true); }}
-                      placeholder="e.g. claude-opus-4-6[1m]"
+                      placeholder="e.g. claude-opus-4-6"
                       disabled={isRunning}
                       className={`mt-1.5 w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus:border-ctp-accent focus:outline-none placeholder:text-ctp-overlay0 ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
