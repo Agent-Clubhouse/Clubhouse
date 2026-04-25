@@ -447,7 +447,7 @@ describe('AgentSettingsView', () => {
       renderSettings();
       const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
       fireEvent.change(modelSelect, { target: { value: 'custom' } });
-      expect(screen.getByPlaceholderText('e.g. claude-opus-4-6[1m]')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('e.g. claude-opus-4-6')).toBeInTheDocument();
     });
 
     it('loads non-standard persisted model as Custom with value in text input', async () => {
@@ -468,11 +468,11 @@ describe('AgentSettingsView', () => {
       renderSettings();
       const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
       fireEvent.change(modelSelect, { target: { value: 'custom' } });
-      const customInput = screen.getByPlaceholderText('e.g. claude-opus-4-6[1m]');
-      fireEvent.change(customInput, { target: { value: 'claude-opus-4-6[1m]' } });
+      const customInput = screen.getByPlaceholderText('e.g. claude-opus-4-6');
+      fireEvent.change(customInput, { target: { value: 'claude-opus-4-6' } });
       fireEvent.blur(customInput);
       await waitFor(() => {
-        expect(mockUpdate).toHaveBeenCalledWith('/project', 'agent-1', { model: 'claude-opus-4-6[1m]' });
+        expect(mockUpdate).toHaveBeenCalledWith('/project', 'agent-1', { model: 'claude-opus-4-6' });
       });
     });
 
