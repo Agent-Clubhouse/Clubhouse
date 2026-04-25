@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import { fileState } from './state';
 import type { Tab, ScrollState } from './state';
@@ -33,6 +33,13 @@ interface LoadedFile {
   content: string;
   binaryData: string;
   fileType: FileType;
+}
+
+// Module-level cache shared across component mounts; cleared on plugin deactivation.
+const _fileCache = new Map<string, LoadedFile>();
+
+export function clearFileCache(): void {
+  _fileCache.clear();
 }
 
 // ── Unsaved Changes Dialog ────────────────────────────────────────────
@@ -134,9 +141,6 @@ export function FileViewer({ api }: { api: PluginAPI }) {
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorColumn, setCursorColumn] = useState(1);
 
-  // Cache of loaded file data per path to avoid reloading on tab switch
-  const fileCache = useRef<Map<string, LoadedFile>>(new Map());
-
   // ── Subscribe to tab state changes ────────────────────────────────
 
   useEffect(() => {
@@ -157,7 +161,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
 
   const loadFile = useCallback(async (relativePath: string): Promise<LoadedFile> => {
     // Check cache first
-    const cached = fileCache.current.get(relativePath);
+    const cached = _fileCache.get(relativePath);
     if (cached) return cached;
 
     const ext = getExtension(relativePath);
@@ -201,7 +205,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       result.fileType = 'none';
     }
 
-    fileCache.current.set(relativePath, result);
+    _fileCache.set(relativePath, result);
     return result;
   }, [api]);
 
@@ -277,7 +281,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
         pendingAction: () => {
           // Dispose the Monaco model for this file
           disposeModel(tab.filePath);
-          fileCache.current.delete(tab.filePath);
+          _fileCache.delete(tab.filePath);
           fileState.closeTab(tabId);
         },
       });
@@ -285,7 +289,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     }
 
     disposeModel(tab.filePath);
-    fileCache.current.delete(tab.filePath);
+    _fileCache.delete(tab.filePath);
     fileState.closeTab(tabId);
   }, []);
 
@@ -324,7 +328,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       fileState.setTabDirty(activeTab.id, false);
       fileState.triggerRefresh();
       // Update cache
-      const cached = fileCache.current.get(activeTab.filePath);
+      const cached = _fileCache.get(activeTab.filePath);
       if (cached) {
         cached.content = newContent;
       }

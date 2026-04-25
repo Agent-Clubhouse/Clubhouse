@@ -97,6 +97,12 @@ vi.mock('http', async (importOriginal) => {
   };
 });
 
+// Mock https module for REST endpoints (requestFileTree, requestBulletinDigest, etc.)
+vi.mock('https', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('https')>();
+  return { ...actual, get: vi.fn() };
+});
+
 import * as annexClient from './annex-client';
 import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
@@ -104,6 +110,7 @@ import * as annexSettings from './annex-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import * as http from 'http';
+import * as https from 'https';
 
 /** Reset all mock implementations after vi.clearAllMocks() */
 function resetAllMocks() {
@@ -1045,6 +1052,146 @@ describe('annex-client', () => {
       expect(satsAfter[0].lastError).toBe('Heartbeat ping failed');
 
       vi.useRealTimers();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // LB-AN-001: REST error handlers log warnings instead of swallowing errors
+  // -------------------------------------------------------------------------
+
+  describe('LB-AN-001: REST endpoint error logging', () => {
+    const FINGERPRINT = 'AA:BB:CC:EE';
+
+    async function connectSatellite() {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: FINGERPRINT,
+        alias: 'Rest Satellite',
+        icon: 'server',
+        color: 'blue',
+        publicKey: 'rest-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FINGERPRINT,
+        alias: 'Rest Satellite',
+        icon: 'server',
+        color: 'blue',
+        publicKey: 'rest-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+      openCb!();
+      vi.useRealTimers();
+    }
+
+    function mockHttpsGetNetworkError() {
+      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, _cb: any) => {
+        const req = {
+          on: vi.fn().mockImplementation((event: string, cb: any) => {
+            if (event === 'error') cb(new Error('ECONNREFUSED'));
+            return req;
+          }),
+          setTimeout: vi.fn(),
+          destroy: vi.fn(),
+        };
+        return req as any;
+      });
+    }
+
+    function mockHttpsGetMalformedJson() {
+      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, cb: any) => {
+        const res = {
+          statusCode: 200,
+          resume: vi.fn(),
+          on: vi.fn().mockImplementation((event: string, handler: any) => {
+            if (event === 'data') handler(Buffer.from('not json!!!'));
+            if (event === 'end') handler();
+            return res;
+          }),
+        };
+        cb(res);
+        const req = { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn() };
+        return req as any;
+      });
+    }
+
+    it('requestFileTree logs warn on network error', async () => {
+      await connectSatellite();
+      const { appLog } = await import('./log-service');
+      vi.mocked(appLog).mockClear();
+      mockHttpsGetNetworkError();
+
+      await annexClient.requestFileTree(FINGERPRINT, 'proj-1');
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex-client', 'warn', 'File tree request failed',
+        expect.objectContaining({ meta: expect.objectContaining({ fingerprint: FINGERPRINT }) }),
+      );
+    });
+
+    it('requestFileTree logs warn on JSON parse failure', async () => {
+      await connectSatellite();
+      const { appLog } = await import('./log-service');
+      vi.mocked(appLog).mockClear();
+      mockHttpsGetMalformedJson();
+
+      await annexClient.requestFileTree(FINGERPRINT, 'proj-1');
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex-client', 'warn', 'File tree response JSON parse failed',
+        expect.objectContaining({ meta: expect.objectContaining({ fingerprint: FINGERPRINT }) }),
+      );
+    });
+
+    it('requestBulletinDigest logs warn on network error', async () => {
+      await connectSatellite();
+      const { appLog } = await import('./log-service');
+      vi.mocked(appLog).mockClear();
+      mockHttpsGetNetworkError();
+
+      await annexClient.requestBulletinDigest(FINGERPRINT, 'gp-1');
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex-client', 'warn', 'Bulletin digest request failed',
+        expect.objectContaining({ meta: expect.objectContaining({ fingerprint: FINGERPRINT }) }),
+      );
+    });
+
+    it('requestBulletinTopicMessages logs warn on network error', async () => {
+      await connectSatellite();
+      const { appLog } = await import('./log-service');
+      vi.mocked(appLog).mockClear();
+      mockHttpsGetNetworkError();
+
+      await annexClient.requestBulletinTopicMessages(FINGERPRINT, 'gp-1', 'progress');
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex-client', 'warn', 'Bulletin topic messages request failed',
+        expect.objectContaining({ meta: expect.objectContaining({ fingerprint: FINGERPRINT }) }),
+      );
     });
   });
 });
