@@ -590,6 +590,80 @@ export function registerAgentTools(): void {
     },
   });
 
+  // clubhouse__<project>_<name>_<hash>__clear_agent
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.clearAgent',
+    category: 'agent',
+    label: 'Clear Agent Context',
+    mcp: { targetKind: 'agent', nameSuffix: 'clear_agent' },
+    description:
+        'Send a /clear command to the linked agent, clearing its conversation context.\n\n' +
+        'Injects /clear directly into the agent\'s terminal. Use this when the agent\'s context ' +
+        'is bloated or stale and a fresh slate would improve its performance.\n\n' +
+        'The agent must be running. Use get_status to check first.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
+      const reg = agentRegistry.get(targetId);
+      if (!reg) {
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
+      }
+
+      try {
+        if (reg.runtime === 'pty') {
+          ptyManager.write(targetId, '/clear');
+          ptyManager.write(targetId, '\r');
+        } else {
+          return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support /clear` }], isError: true };
+        }
+
+        appLog('core:mcp', 'info', 'clear_agent: /clear sent', { meta: { sourceAgent: agentId, targetAgent: targetId } });
+        return { content: [{ type: 'text', text: `Sent /clear to agent ${targetId}.` }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Failed to send /clear: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  });
+
+  // clubhouse__<project>_<name>_<hash>__compact_agent
+  mcpAdapter.registerMcpCommand({
+    id: 'agent.compactAgent',
+    category: 'agent',
+    label: 'Compact Agent Context',
+    mcp: { targetKind: 'agent', nameSuffix: 'compact_agent' },
+    description:
+        'Send a /compact command to the linked agent, compacting its conversation context.\n\n' +
+        'Injects /compact directly into the agent\'s terminal. Use this when the agent\'s context ' +
+        'is large and you want it summarized without losing continuity.\n\n' +
+        'The agent must be running. Use get_status to check first.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
+      const reg = agentRegistry.get(targetId);
+      if (!reg) {
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
+      }
+
+      try {
+        if (reg.runtime === 'pty') {
+          ptyManager.write(targetId, '/compact');
+          ptyManager.write(targetId, '\r');
+        } else {
+          return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support /compact` }], isError: true };
+        }
+
+        appLog('core:mcp', 'info', 'compact_agent: /compact sent', { meta: { sourceAgent: agentId, targetAgent: targetId } });
+        return { content: [{ type: 'text', text: `Sent /compact to agent ${targetId}.` }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Failed to send /compact: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  });
+
   // clubhouse__<project>_<name>_<hash>__wake
   mcpAdapter.registerMcpCommand({
     id: 'agent.wake',

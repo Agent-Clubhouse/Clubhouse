@@ -306,16 +306,26 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
     expect(source).toContain("setEditInstr(project.instructions || '')");
   });
 
-  it('includes shoulder tap toggle in the inline editor', () => {
-    expect(source).toContain('shoulderTapEnabled');
+  it('includes connection defaults toggles in the inline editor', () => {
+    expect(source).toContain('defaultShoulderTap');
     expect(source).toContain('Shoulder Tap');
-    expect(source).toMatch(/<Toggle\s+checked=\{shoulderTapEnabled\}/);
+    expect(source).toContain('defaultAgentControl');
+    expect(source).toContain('Agent Control');
+    expect(source).toContain('defaultAgentCleanup');
+    expect(source).toContain('Agent Cleanup');
+    expect(source).toContain('New connection defaults');
   });
 
-  it('saves description, instructions, and shoulderTap together', () => {
+  it('saves description, instructions, and connection defaults together', () => {
     expect(source).toContain('description: editDesc');
     expect(source).toContain('instructions: editInstr');
-    expect(source).toContain('metadata: { shoulderTapEnabled, agentControlEnabled, agentDeletionEnabled }');
+    expect(source).toContain('defaultDisabledTools');
+    expect(source).toContain('computeDefaultDisabledTools');
+  });
+
+  it('has apply-all button to push defaults to existing connections', () => {
+    expect(source).toContain('Apply all');
+    expect(source).toContain('applyToAll');
   });
 });
 

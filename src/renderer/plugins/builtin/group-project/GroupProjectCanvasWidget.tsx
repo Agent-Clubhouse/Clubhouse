@@ -9,6 +9,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { pollingStartMsg, pollingStopMsg, pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
+import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { Toggle } from '../../../components/Toggle';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 import { useUIStore } from '../../../stores/uiStore';
@@ -371,46 +372,90 @@ function ExpandedProjectView({
     if (!loaded) loadProjects();
   }, [loaded, loadProjects]);
 
-  // Inline editable description, instructions & shoulder tap toggle
+  // Inline editable description, instructions & connection defaults
   const [editDesc, setEditDesc] = useState(project?.description || '');
   const [editInstr, setEditInstr] = useState(project?.instructions || '');
-  const [shoulderTapEnabled, setShoulderTapEnabled] = useState(!!(project?.metadata?.shoulderTapEnabled));
-  const [agentControlEnabled, setAgentControlEnabled] = useState(!!(project?.metadata?.agentControlEnabled));
-  const [agentDeletionEnabled, setAgentDeletionEnabled] = useState(!!(project?.metadata?.agentDeletionEnabled));
   const [saving, setSaving] = useState(false);
+
+  // Connection defaults: each toggle represents a group of tool suffixes disabled by default.
+  // When false, those suffixes are added to defaultDisabledTools in project metadata.
+  const SHOULDER_TAP_SUFFIXES = ['shoulder_tap', 'broadcast'];
+  const AGENT_CONTROL_SUFFIXES = ['wake_agent', 'start_polling', 'stop_polling', 'clear_agent', 'compact_agent'];
+  const AGENT_CLEANUP_SUFFIXES = ['clear_topic', 'delete_messages'];
+
+  const getDefaultDisabledTools = () =>
+    (project?.metadata?.defaultDisabledTools as string[] | undefined) ?? [
+      ...SHOULDER_TAP_SUFFIXES, ...AGENT_CONTROL_SUFFIXES, ...AGENT_CLEANUP_SUFFIXES,
+    ];
+
+  const [defaultShoulderTap, setDefaultShoulderTap] = useState(() => {
+    const ddt = getDefaultDisabledTools();
+    return !SHOULDER_TAP_SUFFIXES.some(s => ddt.includes(s));
+  });
+  const [defaultAgentControl, setDefaultAgentControl] = useState(() => {
+    const ddt = getDefaultDisabledTools();
+    return !AGENT_CONTROL_SUFFIXES.some(s => ddt.includes(s));
+  });
+  const [defaultAgentCleanup, setDefaultAgentCleanup] = useState(() => {
+    const ddt = getDefaultDisabledTools();
+    return !AGENT_CLEANUP_SUFFIXES.some(s => ddt.includes(s));
+  });
 
   // Sync local state when project data loads or changes externally
   useEffect(() => {
     if (project) {
       setEditDesc(project.description || '');
       setEditInstr(project.instructions || '');
-      setShoulderTapEnabled(!!(project.metadata?.shoulderTapEnabled));
-      setAgentControlEnabled(!!(project.metadata?.agentControlEnabled));
-      setAgentDeletionEnabled(!!(project.metadata?.agentDeletionEnabled));
+      const ddt = (project.metadata?.defaultDisabledTools as string[] | undefined) ?? [
+        ...SHOULDER_TAP_SUFFIXES, ...AGENT_CONTROL_SUFFIXES, ...AGENT_CLEANUP_SUFFIXES,
+      ];
+      setDefaultShoulderTap(!SHOULDER_TAP_SUFFIXES.some(s => ddt.includes(s)));
+      setDefaultAgentControl(!AGENT_CONTROL_SUFFIXES.some(s => ddt.includes(s)));
+      setDefaultAgentCleanup(!AGENT_CLEANUP_SUFFIXES.some(s => ddt.includes(s)));
     }
-  }, [project?.description, project?.instructions, project?.metadata?.shoulderTapEnabled, project?.metadata?.agentControlEnabled, project?.metadata?.agentDeletionEnabled]);
+  }, [project?.description, project?.instructions, project?.metadata?.defaultDisabledTools]);
+
+  const computeDefaultDisabledTools = useCallback(() => {
+    const disabled: string[] = [];
+    if (!defaultShoulderTap) disabled.push(...SHOULDER_TAP_SUFFIXES);
+    if (!defaultAgentControl) disabled.push(...AGENT_CONTROL_SUFFIXES);
+    if (!defaultAgentCleanup) disabled.push(...AGENT_CLEANUP_SUFFIXES);
+    return disabled;
+  }, [defaultShoulderTap, defaultAgentControl, defaultAgentCleanup]);
 
   const hasUnsavedChanges = project
     ? editDesc !== (project.description || '') ||
       editInstr !== (project.instructions || '') ||
-      shoulderTapEnabled !== !!(project.metadata?.shoulderTapEnabled) ||
-      agentControlEnabled !== !!(project.metadata?.agentControlEnabled) ||
-      agentDeletionEnabled !== !!(project.metadata?.agentDeletionEnabled)
+      JSON.stringify(computeDefaultDisabledTools().sort()) !==
+        JSON.stringify(getDefaultDisabledTools().sort())
     : false;
 
-  const handleSaveDescInstr = useCallback(async () => {
+  const setDisabledTools = useMcpBindingStore((s) => s.setDisabledTools);
+
+  const handleSaveDescInstr = useCallback(async (applyToAll = false) => {
     if (!hasUnsavedChanges || saving) return;
     setSaving(true);
     try {
+      const defaultDisabledTools = computeDefaultDisabledTools();
       await update(groupProjectId, {
         description: editDesc,
         instructions: editInstr,
-        metadata: { shoulderTapEnabled, agentControlEnabled, agentDeletionEnabled },
+        metadata: { defaultDisabledTools },
       });
+
+      if (applyToAll) {
+        const allBindings = useMcpBindingStore.getState().bindings;
+        const projectBindings = allBindings.filter(
+          b => b.targetId === groupProjectId && b.targetKind === 'group-project',
+        );
+        for (const binding of projectBindings) {
+          await setDisabledTools(binding.agentId, binding.targetId, defaultDisabledTools);
+        }
+      }
     } finally {
       setSaving(false);
     }
-  }, [hasUnsavedChanges, saving, update, groupProjectId, editDesc, editInstr, shoulderTapEnabled, agentControlEnabled, agentDeletionEnabled]);
+  }, [hasUnsavedChanges, saving, update, groupProjectId, editDesc, editInstr, computeDefaultDisabledTools, setDisabledTools]);
 
   const displayName = project?.name || 'Group Project';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
@@ -561,21 +606,22 @@ function ExpandedProjectView({
           />
         </div>
         <div className="flex flex-col justify-between flex-shrink-0 gap-1.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0 mb-0.5">New connection defaults</div>
           <div className="flex items-center gap-2">
-            <Toggle checked={shoulderTapEnabled} onChange={setShoulderTapEnabled} />
-            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap" title="Allow agents to inject messages into each other's terminals">Shoulder Tap</span>
+            <Toggle checked={defaultShoulderTap} onChange={setDefaultShoulderTap} />
+            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap">Shoulder Tap</span>
           </div>
           <div className="flex items-center gap-2">
-            <Toggle checked={agentControlEnabled} onChange={setAgentControlEnabled} />
-            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap" title="Allow agents to wake, start/stop polling for other agents">Agent Control</span>
+            <Toggle checked={defaultAgentControl} onChange={setDefaultAgentControl} />
+            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap">Agent Control</span>
           </div>
           <div className="flex items-center gap-2">
-            <Toggle checked={agentDeletionEnabled} onChange={setAgentDeletionEnabled} />
-            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap" title="Allow agents to clear topics and delete messages">Agent Cleanup</span>
+            <Toggle checked={defaultAgentCleanup} onChange={setDefaultAgentCleanup} />
+            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap">Agent Cleanup</span>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={handleSaveDescInstr}
+              onClick={() => handleSaveDescInstr(false)}
               disabled={!hasUnsavedChanges || saving}
               className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
                 hasUnsavedChanges
@@ -584,6 +630,18 @@ function ExpandedProjectView({
               }`}
             >
               {saving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              onClick={() => handleSaveDescInstr(true)}
+              disabled={!hasUnsavedChanges || saving}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
+                hasUnsavedChanges
+                  ? 'bg-ctp-accent/70 text-white shadow-md hover:opacity-90'
+                  : 'bg-surface-0 text-ctp-overlay0 cursor-default'
+              }`}
+              title="Save defaults and apply to all existing connections"
+            >
+              Apply all
             </button>
             {confirmClearAll ? (
               <button

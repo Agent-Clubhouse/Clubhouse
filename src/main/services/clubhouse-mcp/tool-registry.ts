@@ -6,17 +6,7 @@
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
-import { groupProjectRegistry } from '../group-project-registry';
 import { appLog } from '../log-service';
-
-/** Tool suffixes gated behind the group-project shoulderTapEnabled setting. */
-const SHOULDER_TAP_SUFFIXES = new Set(['shoulder_tap', 'broadcast']);
-
-/** Tool suffixes gated behind the group-project agentControlEnabled setting. */
-const AGENT_CONTROL_SUFFIXES = new Set(['wake_agent', 'start_polling', 'stop_polling']);
-
-/** Tool suffixes gated behind the group-project agentDeletionEnabled setting. */
-const AGENT_DELETION_SUFFIXES = new Set(['clear_topic', 'delete_messages']);
 
 /** Check if a value matches a JSON Schema type (handles array vs object correctly). */
 function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
@@ -164,17 +154,6 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     // When target agent is sleeping (not in registry), only expose status and wake tools
     const isTargetSleeping = binding.targetKind === 'agent' && !agentRegistry.get(binding.targetId);
 
-    // For group-project bindings, check feature flags at the project level
-    let shoulderTapEnabled = false;
-    let agentControlEnabled = false;
-    let agentDeletionEnabled = false;
-    if (binding.targetKind === 'group-project') {
-      const project = groupProjectRegistry.getSync(binding.targetId);
-      shoulderTapEnabled = !!(project?.metadata?.shoulderTapEnabled);
-      agentControlEnabled = !!(project?.metadata?.agentControlEnabled);
-      agentDeletionEnabled = !!(project?.metadata?.agentDeletionEnabled);
-    }
-
     for (const template of templates) {
       if (isTargetSleeping && template.nameSuffix !== 'get_status' && template.nameSuffix !== 'wake') {
         continue;
@@ -182,21 +161,6 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
 
       // Skip tools disabled at the wire level
       if (binding.disabledTools?.includes(template.nameSuffix)) {
-        continue;
-      }
-
-      // Skip shoulder tap tools when not enabled at the group project level
-      if (binding.targetKind === 'group-project' && SHOULDER_TAP_SUFFIXES.has(template.nameSuffix) && !shoulderTapEnabled) {
-        continue;
-      }
-
-      // Skip agent control tools when not enabled at the group project level
-      if (binding.targetKind === 'group-project' && AGENT_CONTROL_SUFFIXES.has(template.nameSuffix) && !agentControlEnabled) {
-        continue;
-      }
-
-      // Skip agent deletion tools when not enabled at the group project level
-      if (binding.targetKind === 'group-project' && AGENT_DELETION_SUFFIXES.has(template.nameSuffix) && !agentDeletionEnabled) {
         continue;
       }
 

@@ -136,13 +136,15 @@ describe('AgentTools', () => {
   describe('tool registration', () => {
     it('registers all agent-to-agent tools', () => {
       const tools = getScopedToolList('agent-1');
-      expect(tools).toHaveLength(6);
+      expect(tools).toHaveLength(8);
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toContain('send_message');
       expect(suffixes).toContain('get_status');
       expect(suffixes).toContain('read_output');
       expect(suffixes).toContain('check_connectivity');
       expect(suffixes).toContain('send_file');
+      expect(suffixes).toContain('clear_agent');
+      expect(suffixes).toContain('compact_agent');
       expect(suffixes).toContain('wake');
     });
 
@@ -609,8 +611,8 @@ describe('AgentTools', () => {
       });
 
       const tools = getScopedToolList('agent-1');
-      // 6 tools for agent-2 + 6 tools for agent-3 = 12
-      expect(tools).toHaveLength(12);
+      // 8 tools for agent-2 + 8 tools for agent-3 = 16
+      expect(tools).toHaveLength(16);
 
       const sendToolAgent2 = agentToolName(sourceBinding, 'send_message');
       const sendToolAgent3 = agentToolName(makeBinding({
@@ -1057,6 +1059,92 @@ describe('AgentTools', () => {
       const result = await promise;
 
       expect(result.quiet).toBe(true);
+    });
+  });
+
+  describe('clear_agent (A2A)', () => {
+    let binding: McpBinding;
+
+    beforeEach(() => {
+      binding = makeBinding({ agentId: 'caller-1', targetId: 'target-agent', targetKind: 'agent', targetName: 'target', projectName: 'proj' });
+      bindingManager.bind(binding.agentId, {
+        targetId: binding.targetId,
+        targetKind: binding.targetKind,
+        label: binding.label,
+        targetName: binding.targetName,
+        projectName: binding.projectName,
+      });
+    });
+
+    it('injects /clear into running agent PTY', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code', projectPath: '/test' });
+      const toolName = agentToolName(binding, 'clear_agent');
+      const result = await callTool('caller-1', toolName, {});
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('/clear');
+      expect(mockPtyWrite).toHaveBeenCalledWith('target-agent', '/clear');
+    });
+
+    it('returns error when target is sleeping', async () => {
+      mockAgentRegistryGet.mockReturnValue(undefined);
+      const toolName = agentToolName(binding, 'clear_agent');
+      const result = await callTool('caller-1', toolName, {});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('sleeping');
+    });
+
+    it('returns error for non-pty runtime', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
+      const toolName = agentToolName(binding, 'clear_agent');
+      const result = await callTool('caller-1', toolName, {});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('does not support /clear');
+    });
+  });
+
+  describe('compact_agent (A2A)', () => {
+    let binding: McpBinding;
+
+    beforeEach(() => {
+      binding = makeBinding({ agentId: 'caller-1', targetId: 'target-agent', targetKind: 'agent', targetName: 'target', projectName: 'proj' });
+      bindingManager.bind(binding.agentId, {
+        targetId: binding.targetId,
+        targetKind: binding.targetKind,
+        label: binding.label,
+        targetName: binding.targetName,
+        projectName: binding.projectName,
+      });
+    });
+
+    it('injects /compact into running agent PTY', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code', projectPath: '/test' });
+      const toolName = agentToolName(binding, 'compact_agent');
+      const result = await callTool('caller-1', toolName, {});
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('/compact');
+      expect(mockPtyWrite).toHaveBeenCalledWith('target-agent', '/compact');
+    });
+
+    it('returns error when target is sleeping', async () => {
+      mockAgentRegistryGet.mockReturnValue(undefined);
+      const toolName = agentToolName(binding, 'compact_agent');
+      const result = await callTool('caller-1', toolName, {});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('sleeping');
+    });
+
+    it('returns error for non-pty runtime', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
+      const toolName = agentToolName(binding, 'compact_agent');
+      const result = await callTool('caller-1', toolName, {});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('does not support /compact');
     });
   });
 });
