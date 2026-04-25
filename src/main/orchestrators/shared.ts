@@ -200,7 +200,7 @@ export function homePath(...segments: string[]): string {
 // (e.g. Claude Code / Codex hooks configs).  Only allow characters that are
 // safe in both POSIX sh and cmd.exe without quoting: no metacharacters, no
 // query strings, no fragments.  IPv6 bracket notation is permitted.
-const SAFE_HOOK_URL_RE = /^https?:\/\/[a-zA-Z0-9._\-\[\]:]+(?:\/[a-zA-Z0-9._\-/]*)?$/;
+const SAFE_HOOK_URL_RE = /^https?:\/\/[a-zA-Z0-9._\-[\]:]+(?:\/[a-zA-Z0-9._\-/]*)?$/;
 
 export function validateHookUrl(rawUrl: string): string {
   try {

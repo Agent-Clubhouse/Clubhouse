@@ -1364,6 +1364,30 @@ describe('annex-server', () => {
       expect(body.version).toBe('1');
     });
 
+    it('accepts WS upgrade with token in Authorization header (SEC-CRIT-07)', async () => {
+      // The mock wss.handleUpgrade does not write a 101 response to the raw socket,
+      // so we verify auth success via connectedCount (mock adds to wss.clients on auth pass).
+      const { port, token } = await startAndPair();
+
+      await new Promise<void>((resolve) => {
+        const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+          const wsKey = Buffer.from(`ws-key-header-${Date.now()}`).toString('base64');
+          socket.write([
+            'GET /ws HTTP/1.1',
+            'Host: 127.0.0.1', 'Connection: Upgrade', 'Upgrade: websocket',
+            'Sec-WebSocket-Version: 13', `Sec-WebSocket-Key: ${wsKey}`,
+            `Authorization: Bearer ${token}`,
+            '', '',
+          ].join('\r\n'));
+        });
+        // Give the server time to process the upgrade before asserting
+        setTimeout(() => { socket.destroy(); resolve(); }, 300);
+      });
+
+      // Auth passed → mock handleUpgrade added a client → connectedCount is 1
+      expect(annexServer.getStatus().connectedCount).toBe(1);
+    }, 10_000);
+
     it('unauthorized WS upgrade is rejected', async () => {
       const { port } = await startAndPair();
 

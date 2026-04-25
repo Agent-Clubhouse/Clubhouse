@@ -362,16 +362,18 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
   // Connect via WebSocket using mTLS (preferred) with optional bearer token fallback
   try {
     const tlsOptions = annexTls.createTlsClientOptions(identity);
-    // Build URL: use bearer token if available (e.g. fresh pairing), otherwise mTLS handles auth
-    const tokenParam = sat.bearerToken ? `?token=${encodeURIComponent(sat.bearerToken)}` : '';
-    const wsUrl = `wss://${sat.host}:${sat.mainPort}/ws${tokenParam}`;
+    const wsUrl = `wss://${sat.host}:${sat.mainPort}/ws`;
 
     appLog('core:annex-client', 'info', 'Connecting to satellite', {
       meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort, hasBearerToken: !!sat.bearerToken },
     });
 
+    // Pass bearer token in Authorization header (SEC-CRIT-07).  Query-param form
+    // (?token=…) is intentionally removed — the Go mobile client uses the header
+    // as of Clubhouse-Go#76; existing mTLS peers don't need a token at all.
     const ws = new WebSocket(wsUrl, {
       ...tlsOptions,
+      ...(sat.bearerToken ? { headers: { Authorization: `Bearer ${sat.bearerToken}` } } : {}),
       handshakeTimeout: 10_000,
     });
 
