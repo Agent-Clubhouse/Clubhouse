@@ -10,6 +10,7 @@ import { assertAllowedPath } from '../services/path-sandbox';
 
 const BLUEPRINTS_DIR = 'blueprints';
 const CLUBHOUSE_DIR = '.clubhouse';
+const MAX_BLUEPRINT_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 /**
  * Parse a blueprint JSON file and extract summary metadata.
@@ -114,6 +115,13 @@ export function registerBlueprintHandlers(): void {
 
         const filePath = path.join(blueprintsDir, entry.name);
         try {
+          const stat = await fsp.stat(filePath);
+          if (stat.size > MAX_BLUEPRINT_SIZE_BYTES) {
+            appLog('core:blueprint', 'warn', 'Skipping oversized blueprint file', {
+              meta: { filePath, sizeBytes: stat.size, limitBytes: MAX_BLUEPRINT_SIZE_BYTES },
+            });
+            continue;
+          }
           const raw = await fsp.readFile(filePath, 'utf-8');
           const data = JSON.parse(raw) as Record<string, unknown>;
           const source = project.displayName || project.name || path.basename(project.path);
@@ -136,6 +144,13 @@ export function registerBlueprintHandlers(): void {
   ipcMain.handle(IPC.BLUEPRINT.READ, withValidatedArgs([stringArg()], async (_event, filePath: string): Promise<Record<string, unknown> | null> => {
     try {
       await assertAllowedPath(filePath);
+      const stat = await fsp.stat(filePath);
+      if (stat.size > MAX_BLUEPRINT_SIZE_BYTES) {
+        appLog('core:blueprint', 'warn', 'Refusing to read oversized blueprint file', {
+          meta: { filePath, sizeBytes: stat.size, limitBytes: MAX_BLUEPRINT_SIZE_BYTES },
+        });
+        return null;
+      }
       const raw = await fsp.readFile(filePath, 'utf-8');
       return JSON.parse(raw) as Record<string, unknown>;
     } catch (err) {

@@ -19,6 +19,7 @@ vi.mock('fs/promises', () => ({
   readdir: vi.fn(),
   readFile: vi.fn(),
   realpath: vi.fn((p: string) => Promise.resolve(p)),
+  stat: vi.fn(),
   unlink: vi.fn(),
 }));
 
@@ -43,6 +44,8 @@ function getHandler(channel: string): (...args: unknown[]) => unknown {
 describe('blueprint-handlers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: all files are small (under the 10 MB limit)
+    vi.mocked(fsp.stat).mockResolvedValue({ size: 100 } as any);
     registerBlueprintHandlers();
   });
 
@@ -146,6 +149,30 @@ describe('blueprint-handlers', () => {
       expect(result).toEqual([]);
     });
 
+    it('skips blueprint files exceeding the 10 MB size limit (SEC-HIGH-06)', async () => {
+      vi.mocked(projectStore.list).mockResolvedValue([
+        { id: 'p1', name: 'proj', path: '/tmp/proj', displayName: 'Proj' } as any,
+      ]);
+      vi.mocked(fsp.access).mockResolvedValue(undefined);
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'huge.json', isFile: () => true } as any,
+        { name: 'small.json', isFile: () => true } as any,
+      ]);
+      // First file is oversized, second is small
+      vi.mocked(fsp.stat)
+        .mockResolvedValueOnce({ size: 11 * 1024 * 1024 } as any)
+        .mockResolvedValueOnce({ size: 100 } as any);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ version: 1, name: 'Small', views: [] }));
+
+      const handler = getHandler('blueprint:list');
+      const result = await handler({}) as any[];
+      // Only the small file should be returned
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('Small');
+      // readFile called only once (for the small file, not the huge one)
+      expect(fsp.readFile).toHaveBeenCalledTimes(1);
+    });
+
     it('scans multiple projects', async () => {
       vi.mocked(projectStore.list).mockResolvedValue([
         { id: 'p1', name: 'proj-a', path: '/tmp/a', displayName: 'A' } as any,
@@ -175,6 +202,15 @@ describe('blueprint-handlers', () => {
       const handler = getHandler('blueprint:read');
       const result = await handler({}, '/tmp/test.json');
       expect(result).toEqual(data);
+    });
+
+    it('returns null for blueprint files exceeding the 10 MB size limit (SEC-HIGH-06)', async () => {
+      vi.mocked(fsp.stat).mockResolvedValueOnce({ size: 11 * 1024 * 1024 } as any);
+
+      const handler = getHandler('blueprint:read');
+      const result = await handler({}, '/tmp/proj/.clubhouse/blueprints/huge.json');
+      expect(result).toBeNull();
+      expect(fsp.readFile).not.toHaveBeenCalled();
     });
 
     it('returns null for missing files', async () => {
