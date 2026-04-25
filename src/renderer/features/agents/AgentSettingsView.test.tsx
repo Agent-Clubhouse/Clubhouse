@@ -286,6 +286,25 @@ describe('AgentSettingsView', () => {
       expect(screen.getByText('Free Agent Mode')).toBeInTheDocument();
     });
 
+    it('hides Structured Mode toggle when experimental.structuredMode is off (default)', async () => {
+      renderSettings();
+      // Wait for async settings load to settle
+      await waitFor(() => {
+        expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
+      });
+      expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
+      expect(screen.queryByText('Structured Mode')).not.toBeInTheDocument();
+    });
+
+    it('shows Structured Mode toggle when experimental.structuredMode is on', async () => {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
+      renderSettings();
+      await waitFor(() => {
+        expect(screen.getByTestId('structured-mode-field')).toBeInTheDocument();
+      });
+      expect(screen.getByText('Structured Mode')).toBeInTheDocument();
+    });
+
     it('shows shared settings info note', () => {
       renderSettings();
       expect(screen.getByText(/Skills, agent definitions, and MCP settings/)).toBeInTheDocument();

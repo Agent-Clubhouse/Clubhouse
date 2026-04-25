@@ -227,6 +227,18 @@ export function AgentSettingsView({ agent }: Props) {
   // Structured Mode state (main agent)
   const [structuredMode, setStructuredMode] = useState(agent.structuredMode ?? false);
 
+  // Structured Mode is gated behind an experimental flag. When the flag is off
+  // the toggle is hidden — any persisted per-agent value is preserved on disk
+  // but not editable until the user opts in via experimental settings.
+  const [structuredModeFlag, setStructuredModeFlag] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    window.clubhouse.app.getExperimentalSettings()
+      .then((flags) => { if (!cancelled) setStructuredModeFlag(!!flags.structuredMode); })
+      .catch(() => { /* leave disabled on failure */ });
+    return () => { cancelled = true; };
+  }, []);
+
   // Quick Agent Defaults state
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const [qadSystemPrompt, setQadSystemPrompt] = useState('');
@@ -757,37 +769,39 @@ export function AgentSettingsView({ agent }: Props) {
                 )}
               </div>
 
-              {/* Structured Mode */}
-              <div>
-                <label
-                  className={`flex items-center gap-2 ${
-                    !isRunning && (capabilities?.structuredMode ?? false)
-                      ? 'cursor-pointer'
-                      : 'cursor-not-allowed opacity-50'
-                  }`}
-                  title={
-                    !(capabilities?.structuredMode ?? false)
-                      ? 'Not supported by this orchestrator'
-                      : isRunning
-                      ? 'Stop agent to change this setting'
-                      : 'Run in structured mode with rich event streaming'
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={structuredMode}
-                    onChange={(e) => handleStructuredModeChange(e.target.checked)}
-                    disabled={isRunning || !(capabilities?.structuredMode ?? false)}
-                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
-                  />
-                  <span className="text-sm text-ctp-text">Structured Mode</span>
-                </label>
-                {structuredMode && (capabilities?.structuredMode ?? false) && (
-                  <p className="mt-1 text-[10px] text-ctp-subtext0 pl-6">
-                    This agent will run with rich event streaming instead of a PTY terminal.
-                  </p>
-                )}
-              </div>
+              {/* Structured Mode (experimental — hidden unless opted in) */}
+              {structuredModeFlag && (
+                <div data-testid="structured-mode-field">
+                  <label
+                    className={`flex items-center gap-2 ${
+                      !isRunning && (capabilities?.structuredMode ?? false)
+                        ? 'cursor-pointer'
+                        : 'cursor-not-allowed opacity-50'
+                    }`}
+                    title={
+                      !(capabilities?.structuredMode ?? false)
+                        ? 'Not supported by this orchestrator'
+                        : isRunning
+                        ? 'Stop agent to change this setting'
+                        : 'Run in structured mode with rich event streaming'
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      checked={structuredMode}
+                      onChange={(e) => handleStructuredModeChange(e.target.checked)}
+                      disabled={isRunning || !(capabilities?.structuredMode ?? false)}
+                      className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
+                    />
+                    <span className="text-sm text-ctp-text">Structured Mode</span>
+                  </label>
+                  {structuredMode && (capabilities?.structuredMode ?? false) && (
+                    <p className="mt-1 text-[10px] text-ctp-subtext0 pl-6">
+                      This agent will run with rich event streaming instead of a PTY terminal.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Free Agent Mode */}
               <div>
