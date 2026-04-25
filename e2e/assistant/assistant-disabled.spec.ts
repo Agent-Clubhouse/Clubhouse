@@ -1,24 +1,19 @@
 /**
  * E2E tests for the assistant when the experimental flag is DISABLED.
  *
- * Mission 73 — Assistant visual crash on view (P1).
+ * Originally written for Mission 73 (Assistant visual crash on view P1) when
+ * the rail's Assistant button was always visible regardless of flag state and
+ * clicking it produced a blank page. That gap has since been closed: the rail
+ * now hides the Assistant button entirely when the flag is off, and the Help
+ * button takes its place. These tests cover the new gating contract:
  *
- * Before the fix, the assistant page was wrapped in `{assistantEnabled && ...}`
- * in App.tsx. When the flag was off — the default in stable builds — the
- * assistant tab rendered only the title bar and banners with no main content,
- * which Mason reported as a "visual crash on view".
+ *   1. With the flag disabled, the rail shows the Help button (not Assistant).
+ *   2. The placeholder still renders as defense-in-depth — if the user reaches
+ *      the assistant tab via the keyboard shortcut (which is not gated), the
+ *      AssistantView's internal flag check shows the disabled placeholder
+ *      with a recovery button rather than a blank content area.
  *
- * These tests verify the fix end-to-end by reaching the assistant tab from
- * a stable-build-like state (flag explicitly disabled) via the rail button,
- * and asserting:
- *   1. The page resolves to the disabled placeholder, not a blank content area.
- *   2. The recovery button ("Open Experimental Settings") is present and routes
- *      back to the settings page.
- *   3. No JS errors are emitted on navigation.
- *
- * Uses an isolated Electron instance with a clean user data dir so no state
- * leaks from the main `assistant.spec.ts` file (which intentionally enables
- * the flag in its launch helper).
+ * Uses an isolated Electron instance with a clean user data dir.
  */
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -70,10 +65,19 @@ async function findRendererWindow(
 
 /**
  * Launch a clean Clubhouse instance with the assistant experimental flag
- * EXPLICITLY disabled (default for stable builds).
+ * EXPLICITLY disabled (default for stable builds). Pre-writes the settings
+ * file before launch so the rail's mount-time flag fetch sees the disabled
+ * value (writing via IPC after mount would not retroactively re-render the
+ * rail's gated button).
  */
 async function launchDisabledInstance(): Promise<DisabledInstance> {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-e2e-assistant-disabled-'));
+
+  fs.writeFileSync(
+    path.join(userDataDir, 'experimental-settings.json'),
+    JSON.stringify({ assistant: false }, null, 2),
+    'utf-8',
+  );
 
   const electronApp = await electron.launch({
     args: ['--disable-gpu', MAIN_ENTRY],
@@ -104,22 +108,6 @@ async function launchDisabledInstance(): Promise<DisabledInstance> {
     // Onboarding already completed
   }
 
-  // Explicitly DISABLE the assistant flag to simulate a stable build's default state.
-  await window.evaluate(async () => {
-    const w = window as unknown as {
-      clubhouse?: {
-        app?: {
-          getExperimentalSettings?: () => Promise<Record<string, boolean>>;
-          saveExperimentalSettings?: (s: Record<string, boolean>) => Promise<void>;
-        };
-      };
-    };
-    if (w.clubhouse?.app?.getExperimentalSettings && w.clubhouse?.app?.saveExperimentalSettings) {
-      const expSettings = await w.clubhouse.app.getExperimentalSettings();
-      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, assistant: false });
-    }
-  });
-
   return { electronApp, window, userDataDir, pageErrors };
 }
 
@@ -142,24 +130,49 @@ test.beforeEach(() => {
   instance.pageErrors.length = 0;
 });
 
-test('clicking nav-assistant when flag is disabled shows placeholder, not blank page', async () => {
+test('rail shows Help button (not Assistant) when assistant flag is disabled', async () => {
   const { window } = instance;
 
-  // Wait for the rail to mount
-  const assistantBtn = window.locator('[data-testid="nav-assistant"]');
-  await expect(assistantBtn).toBeVisible({ timeout: 10_000 });
+  // The Help button — the pre-experiment default — should be visible.
+  const helpBtn = window.locator('[data-testid="nav-help"]');
+  await expect(helpBtn).toBeVisible({ timeout: 10_000 });
 
-  // Click the assistant rail button — same flow as a stable-build user would take
-  await assistantBtn.click();
+  // The Assistant button must not be in the DOM at all when the flag is off.
+  await expect(window.locator('[data-testid="nav-assistant"]')).toHaveCount(0);
 
-  // The assistant view should mount and resolve to the disabled state.
-  // Before the Mission 73 fix, this navigation produced an empty content area
-  // (the title bar would render but the assistant view itself was gated out
-  // of the JSX entirely by `{assistantEnabled && ...}`).
+  expect(instance.pageErrors).toHaveLength(0);
+});
+
+/**
+ * Dispatch the toggle-assistant keyboard event directly. Playwright's
+ * keyboard.press() goes through OS-level key translation, which on macOS
+ * turns Shift+`.` into `>` and would not match the binding `Meta+Shift+.`.
+ * Synthesizing the KeyboardEvent locally with the literal key the
+ * eventToBinding() handler expects sidesteps that translation.
+ */
+async function fireToggleAssistantShortcut(window: Page): Promise<void> {
+  await window.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', {
+      key: '.',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+    }));
+  });
+}
+
+test('keyboard shortcut to assistant shows disabled placeholder, not blank page', async () => {
+  const { window } = instance;
+
+  // The toggle-assistant keyboard shortcut (Meta+Shift+.) is registered
+  // independently of the rail button gating, so a user who memorized it can
+  // still trigger navigation to the assistant tab. The AssistantView's own
+  // flag check should then render the disabled placeholder — never a blank
+  // content area (the original Mission 73 bug).
+  await fireToggleAssistantShortcut(window);
+
   const assistantView = window.locator('[data-testid="assistant-view"]');
   await expect(assistantView).toBeVisible({ timeout: 10_000 });
-
-  // The data attribute should resolve away from "loading" to "disabled".
   await expect(assistantView).toHaveAttribute('data-assistant-state', 'disabled', {
     timeout: 10_000,
   });
@@ -167,12 +180,10 @@ test('clicking nav-assistant when flag is disabled shows placeholder, not blank 
   // The recovery button should be present.
   await expect(window.locator('[data-testid="assistant-open-settings-button"]')).toBeVisible();
 
-  // The chat UI elements should NOT be present (the bug they replaced).
+  // The chat UI must not appear in the disabled state.
   await expect(window.locator('[data-testid="assistant-feed-empty"]')).toHaveCount(0);
   await expect(window.locator('[data-testid="assistant-message-input"]')).toHaveCount(0);
 
-  // No JS errors on navigation — the original bug was visual emptiness, but
-  // we want this guard so a future regression that throws is caught here too.
   expect(instance.pageErrors).toHaveLength(0);
 });
 
@@ -180,10 +191,10 @@ test('clicking "Open Experimental Settings" routes to settings page', async () =
   const { window } = instance;
 
   // The previous test left us on the assistant tab in the disabled state.
-  // Re-open if we got navigated away.
+  // Re-open via the synthesized keyboard shortcut if we got navigated away.
   const assistantView = window.locator('[data-testid="assistant-view"]');
   if (!(await assistantView.isVisible().catch(() => false))) {
-    await window.locator('[data-testid="nav-assistant"]').click();
+    await fireToggleAssistantShortcut(window);
     await expect(assistantView).toBeVisible({ timeout: 10_000 });
   }
   await expect(assistantView).toHaveAttribute('data-assistant-state', 'disabled', {

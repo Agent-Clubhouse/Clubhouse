@@ -62,9 +62,23 @@ async function findRendererWindow(
 /**
  * Launch an isolated Clubhouse instance for assistant E2E tests.
  * Uses a temporary CLUBHOUSE_USER_DATA directory for clean state.
+ *
+ * The assistant feature is gated behind `experimental.assistant` in both the
+ * AssistantView and the rail's nav-assistant button. The rail reads the flag
+ * once on mount, so we must pre-write the settings file BEFORE launching
+ * electron — writing post-mount via IPC would leave the rail in its initial
+ * (Help button) state and `nav-assistant` would never appear.
  */
 export async function launchAssistantInstance(): Promise<AssistantInstance> {
   const userDataDir = createTempUserData();
+
+  // Pre-write the experimental settings so the flag is on from the very first
+  // read (settings-store reads from `userData/experimental-settings.json`).
+  fs.writeFileSync(
+    path.join(userDataDir, 'experimental-settings.json'),
+    JSON.stringify({ assistant: true }, null, 2),
+    'utf-8',
+  );
 
   const electronApp = await electron.launch({
     args: ['--disable-gpu', MAIN_ENTRY],
@@ -91,15 +105,6 @@ export async function launchAssistantInstance(): Promise<AssistantInstance> {
   } catch {
     // Onboarding already completed
   }
-
-  // Enable assistant experimental flag (assistant is gated behind it in stable builds)
-  await window.evaluate(async () => {
-    const w = window as any;
-    if (w.clubhouse?.app?.getExperimentalSettings) {
-      const expSettings = await w.clubhouse.app.getExperimentalSettings();
-      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, assistant: true });
-    }
-  });
 
   return { electronApp, window, userDataDir };
 }

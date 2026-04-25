@@ -26,16 +26,12 @@ let window: Page;
 const consoleErrors: string[] = [];
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
-
-  // Enable experimental features needed by smoke tests (assistant is gated)
-  await window.evaluate(async () => {
-    const w = window as any;
-    if (w.clubhouse?.app?.getExperimentalSettings) {
-      const expSettings = await w.clubhouse.app.getExperimentalSettings();
-      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, assistant: true, agentQueue: true });
-    }
-  });
+  // Pre-seed experimental flags before launch — the rail's Assistant button
+  // is gated on `experimental.assistant` and only reads the flag once on
+  // mount, so a post-mount IPC write would not make the button appear.
+  ({ electronApp, window } = await launchApp({
+    experimental: { assistant: true, agentQueue: true },
+  }));
 
   window.on('console', (msg) => {
     if (msg.type() === 'error') {
