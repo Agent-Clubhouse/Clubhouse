@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { TemplateConfigDialog } from './TemplateConfigDialog';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
@@ -79,6 +79,8 @@ describe('TemplateConfigDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
+    // Reset experimental flag mock to default (off) for each test.
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
   });
 
   it('renders with persona name in header', () => {
@@ -179,5 +181,36 @@ describe('TemplateConfigDialog', () => {
     const call = defaultProps.onCreate.mock.calls[0][0];
     expect(call.persona.id).toBe('qa');
     expect(call.persona.content).toBe('# QA\nTesting instructions...');
+  });
+
+  describe('Structured Mode gating (experimental flag)', () => {
+    it('hides Structured Mode toggle when experimental.structuredMode is off (default)', async () => {
+      render(<TemplateConfigDialog {...defaultProps} />);
+      await waitFor(() => {
+        expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
+      });
+      expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
+      expect(screen.queryByText('Use Structured Mode')).not.toBeInTheDocument();
+    });
+
+    it('shows Structured Mode toggle when experimental.structuredMode is on', async () => {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
+      render(<TemplateConfigDialog {...defaultProps} />);
+      await waitFor(() => {
+        expect(screen.getByTestId('structured-mode-field')).toBeInTheDocument();
+      });
+      expect(screen.getByText('Use Structured Mode')).toBeInTheDocument();
+    });
+
+    it('forces structuredMode to false in submitted config when flag is off', async () => {
+      render(<TemplateConfigDialog {...defaultProps} />);
+      await waitFor(() => {
+        expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
+      });
+      fireEvent.click(screen.getByText('Create Agent'));
+      expect(defaultProps.onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ structuredMode: false }),
+      );
+    });
   });
 });

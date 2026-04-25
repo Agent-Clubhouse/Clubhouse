@@ -47,6 +47,14 @@ vi.mock('./headless-settings', () => ({
   getSpawnMode: (...args: unknown[]) => mockGetSpawnMode(...args),
 }));
 
+// Mock experimental-settings — default to structuredMode ON so existing
+// structured-spawn tests don't need to be rewritten. Tests that need the
+// flag off can override mockGetExperimentalSettings.
+const mockGetExperimentalSettings = vi.fn(() => ({ structuredMode: true }));
+vi.mock('./experimental-settings', () => ({
+  getSettings: () => mockGetExperimentalSettings(),
+}));
+
 // Mock hook-server
 vi.mock('./hook-server', () => ({
   waitReady: vi.fn(() => Promise.resolve(12345)),
@@ -1296,6 +1304,35 @@ describe('agent-system', () => {
         cwd: '/project',
         kind: 'quick',
         mission: '   ',
+      });
+
+      expect(mockStartStructured).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('falls back to PTY for a quick agent in structured spawn mode when experimental.structuredMode flag is off', async () => {
+      mockGetExperimentalSettings.mockReturnValueOnce({ structuredMode: false });
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(mockStartStructured).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('falls back to PTY for a durable agent with structuredMode=true when experimental.structuredMode flag is off', async () => {
+      mockGetExperimentalSettings.mockReturnValueOnce({ structuredMode: false });
+      await spawnAgent({
+        agentId: 'test-durable-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        mission: 'build feature',
+        structuredMode: true,
       });
 
       expect(mockStartStructured).not.toHaveBeenCalled();

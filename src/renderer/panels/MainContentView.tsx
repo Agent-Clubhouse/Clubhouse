@@ -68,6 +68,19 @@ export function MainContentView() {
   const [terminalFocused, setTerminalFocused] = useState(false);
   const prevProjectIdRef = useRef(activeProjectId);
 
+  // Structured Mode is gated behind an experimental flag. Even if an agent has
+  // structuredMode persisted in its config (e.g. set when the flag was on), we
+  // must not route into StructuredAgentView when the flag is off — otherwise
+  // toggling the flag off would still change visible behavior.
+  const [structuredModeFlag, setStructuredModeFlag] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    window.clubhouse.app.getExperimentalSettings()
+      .then((flags) => { if (!cancelled) setStructuredModeFlag(!!flags.structuredMode); })
+      .catch(() => { /* leave disabled on failure */ });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (!isAgentView) {
       setTerminalFocused(false);
@@ -185,8 +198,10 @@ export function MainContentView() {
       );
     }
 
-    // Structured running agents get the rich chat feed instead of a terminal
-    if (activeAgent.structuredMode) {
+    // Structured running agents get the rich chat feed instead of a terminal.
+    // Gated on the experimental flag so a persisted structuredMode doesn't keep
+    // changing behavior after the flag is turned off.
+    if (activeAgent.structuredMode && structuredModeFlag) {
       return (
         <div className="relative h-full">
           <StructuredAgentView agentId={activeAgentId!} />
