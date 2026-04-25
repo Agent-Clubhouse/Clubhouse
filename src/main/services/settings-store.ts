@@ -73,7 +73,9 @@ export function createSettingsStore<T>(
     const snapshot = cloneSettings(settings);
     const serialized = JSON.stringify(snapshot, null, 2);
     const writeTask = pendingWrite
-      .catch((_err): void => {})
+      .catch((err): void => {
+        console.warn(`[settings-store] Previous write to ${filename} failed:`, err instanceof Error ? err.message : err);
+      })
       .then(() => fs.promises.writeFile(filePath, serialized, options?.mode != null ? { encoding: 'utf-8', mode: options.mode } : 'utf-8'));
     pendingWrite = writeTask;
     return writeTask;
