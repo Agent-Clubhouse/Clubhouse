@@ -302,6 +302,36 @@ describe('CopilotCliProvider', () => {
     });
   });
 
+  describe('buildAgentFileArgs (AgentFileCapable)', () => {
+    it('returns empty array when neither field is set', () => {
+      expect(provider.buildAgentFileArgs({})).toEqual([]);
+    });
+
+    it('returns only --agent pair when only agentFile is set', () => {
+      expect(provider.buildAgentFileArgs({ agentFile: 'k8s-assistant' }))
+        .toEqual(['--agent', 'k8s-assistant']);
+    });
+
+    it('returns only --source pair when only agentSource is set', () => {
+      expect(provider.buildAgentFileArgs({ agentSource: '/abs/agents' }))
+        .toEqual(['--source', '/abs/agents']);
+    });
+
+    it('returns --agent before --source when both are set', () => {
+      expect(provider.buildAgentFileArgs({
+        agentFile: 'k8s-assistant',
+        agentSource: '/abs/agents',
+      })).toEqual(['--agent', 'k8s-assistant', '--source', '/abs/agents']);
+    });
+
+    it('does not perform tilde expansion (caller is responsible for path normalization)', () => {
+      // Tilde expansion lives in agent-system.ts; the provider must pass through
+      // its input verbatim so the test layer can detect missing expansion upstream.
+      expect(provider.buildAgentFileArgs({ agentSource: '~/.copilot/agents' }))
+        .toEqual(['--source', '~/.copilot/agents']);
+    });
+  });
+
   describe('getExitCommand', () => {
     it('returns /exit with carriage return', () => {
       expect(provider.getExitCommand()).toBe('/exit\r');

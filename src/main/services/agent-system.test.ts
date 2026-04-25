@@ -170,6 +170,7 @@ vi.mock('../orchestrators', () => ({
   isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless && typeof p.buildHeadlessCommand === 'function'),
   isSessionCapable: vi.fn((p: any) => p.getCapabilities().sessionResume && typeof p.listSessions === 'function'),
   isStructuredCapable: vi.fn((p: any) => p.getCapabilities().structuredMode && typeof p.createStructuredAdapter === 'function'),
+  isAgentFileCapable: vi.fn((p: any) => typeof p.buildAgentFileArgs === 'function'),
 }));
 
 import {
@@ -2058,6 +2059,104 @@ describe('agent-system', () => {
 
     it('preserves an empty string', () => {
       expect(expandHome('')).toBe('');
+    });
+  });
+
+  describe('structured mode delegates agentFile / agentSource via AgentFileCapable', () => {
+    let origCaps: typeof mockProvider.getCapabilities;
+
+    beforeEach(() => {
+      // Enable structured-capability on the mock provider for this block
+      origCaps = mockProvider.getCapabilities;
+      mockProvider.getCapabilities = vi.fn(() => ({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      }));
+      const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
+      (mockProvider as any).createStructuredAdapter = vi.fn(() => mockAdapter);
+    });
+
+    afterEach(() => {
+      mockProvider.getCapabilities = origCaps;
+      delete (mockProvider as any).createStructuredAdapter;
+      delete (mockProvider as any).buildAgentFileArgs;
+    });
+
+    it('calls provider.buildAgentFileArgs with the tilde-expanded agentSource and uses its result as extraArgs', async () => {
+      const mockBuildAgentFileArgs = vi.fn(() => ['--agent', 'k8s-assistant', '--source', '/expanded/path']);
+      (mockProvider as any).buildAgentFileArgs = mockBuildAgentFileArgs;
+
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-s1',
+        name: 'agent-s1',
+        structuredMode: true,
+        agentFile: 'k8s-assistant',
+        agentSource: '~/.copilot/agents',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-s1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      // Provider was called with the expanded path (no leading ~)
+      expect(mockBuildAgentFileArgs).toHaveBeenCalledTimes(1);
+      const arg = mockBuildAgentFileArgs.mock.calls[0][0];
+      expect(arg.agentFile).toBe('k8s-assistant');
+      expect(arg.agentSource).not.toMatch(/^~/);
+      expect(arg.agentSource).toMatch(/\.copilot\/agents$/);
+
+      // The provider's return value flowed into the structured session as extraArgs
+      const sessionOpts = mockStartStructured.mock.calls[0][2];
+      expect(sessionOpts.extraArgs).toEqual(['--agent', 'k8s-assistant', '--source', '/expanded/path']);
+    });
+
+    it('omits extraArgs entirely when the provider is not AgentFileCapable, even with fields in durable config', async () => {
+      // No buildAgentFileArgs on mockProvider — this is the cross-provider safety
+      // case (e.g. a Claude Code agent whose durable config somehow has these
+      // Copilot-specific fields set).  Nothing should leak to the session.
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-s2',
+        name: 'agent-s2',
+        structuredMode: true,
+        agentFile: 'k8s-assistant',
+        agentSource: '/abs/agents',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-s2',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      const sessionOpts = mockStartStructured.mock.calls[0][2];
+      expect(sessionOpts).not.toHaveProperty('extraArgs');
+    });
+
+    it('omits extraArgs when capable provider returns an empty array (no fields set)', async () => {
+      const mockBuildAgentFileArgs = vi.fn(() => []);
+      (mockProvider as any).buildAgentFileArgs = mockBuildAgentFileArgs;
+
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-s3',
+        name: 'agent-s3',
+        structuredMode: true,
+      });
+
+      await spawnAgent({
+        agentId: 'agent-s3',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      // Provider was consulted, returned [], so extraArgs key must be omitted
+      expect(mockBuildAgentFileArgs).toHaveBeenCalled();
+      const sessionOpts = mockStartStructured.mock.calls[0][2];
+      expect(sessionOpts).not.toHaveProperty('extraArgs');
     });
   });
 });
