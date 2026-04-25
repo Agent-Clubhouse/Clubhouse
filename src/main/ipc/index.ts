@@ -31,7 +31,11 @@ export function registerAllHandlers(): void {
   // Auto-detect available CLIs on first run so users only see providers
   // they actually have installed.  Fire-and-forget: store.save() updates
   // the in-memory cache synchronously; the disk write is async.
-  autoDetectDefaults(getAllProviders()).catch(() => {});
+  autoDetectDefaults(getAllProviders()).catch((err) => {
+    logService.appLog('core:orchestrator', 'warn', 'Auto-detect orchestrator defaults failed', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
 
   // Initialize logging service early so handlers can use it
   logService.init();

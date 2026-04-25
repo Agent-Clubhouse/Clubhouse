@@ -15,7 +15,11 @@ import { withValidatedArgs, stringArg, objectArg } from './validation';
 function broadcastChanged(): void {
   agentQueueRegistry.list().then((queues) => {
     broadcastToAllWindows(IPC.AGENT_QUEUE.CHANGED, queues);
-  }).catch(() => { /* ignore */ });
+  }).catch((err) => {
+    appLog('core:agent-queue', 'warn', 'Failed to broadcast agent queue changes', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
 }
 
 let handlersRegistered = false;

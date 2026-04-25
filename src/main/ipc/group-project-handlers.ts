@@ -23,7 +23,11 @@ import type { PasteSubmitTiming } from '../orchestrators';
 function broadcastChanged(): void {
   groupProjectRegistry.list().then((projects) => {
     broadcastToAllWindows(IPC.GROUP_PROJECT.CHANGED, projects);
-  }).catch(() => { /* ignore */ });
+  }).catch((err) => {
+    appLog('core:group-project', 'warn', 'Failed to broadcast group project changes', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
 }
 
 let handlersRegistered = false;
