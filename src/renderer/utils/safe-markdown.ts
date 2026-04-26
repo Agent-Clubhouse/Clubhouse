@@ -27,14 +27,22 @@ const ALLOWED_ATTR = [
 ];
 
 /**
+ * Sanitize an HTML string using the same allowlist used for rendered markdown.
+ * Useful when callers have already produced HTML through marked and only need the sanitization step.
+ */
+export function sanitizeMarkdownHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR,
+    ALLOW_DATA_ATTR: false,
+  });
+}
+
+/**
  * Renders markdown to sanitized HTML, stripping all script injection vectors.
  * Uses DOMPurify to prevent XSS from untrusted markdown content.
  */
 export function renderMarkdownSafe(content: string): string {
   const raw = marked.parse(content, { async: false }) as string;
-  return DOMPurify.sanitize(raw, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    ALLOW_DATA_ATTR: false,
-  });
+  return sanitizeMarkdownHtml(raw);
 }
