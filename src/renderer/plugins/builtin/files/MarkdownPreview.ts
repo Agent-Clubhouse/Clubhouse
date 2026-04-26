@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
-import { marked } from 'marked';
+import { marked, type Token, type TokensList } from 'marked';
 import { useSafeMarkdownLinks } from '../../../utils/safe-markdown-links';
-import { renderMarkdownSafe } from '../../../utils/safe-markdown';
+import { sanitizeMarkdownHtml } from '../../../utils/safe-markdown';
+import { MermaidDiagram } from './MermaidDiagram';
 import hljs from 'highlight.js/lib/core';
 
 // Register languages selectively to keep bundle small
@@ -97,18 +98,59 @@ function injectHljsStyle(): void {
   styleInjected = true;
 }
 
+type Segment =
+  | { kind: 'html'; html: string }
+  | { kind: 'mermaid'; code: string };
+
+/** Split markdown into html/mermaid segments by extracting top-level mermaid fenced blocks.
+ *  Nested blocks (inside lists/blockquotes) fall through to normal code-block rendering. */
+export function splitMermaidSegments(content: string): Segment[] {
+  const tokens = marked.lexer(content) as TokensList;
+  const segments: Segment[] = [];
+  let buffer: Token[] = [];
+
+  const flush = () => {
+    if (buffer.length === 0) return;
+    // marked.parser uses links from the buffer; preserve the lexer's link references.
+    Object.assign(buffer, { links: tokens.links });
+    const html = marked.parser(buffer as unknown as TokensList);
+    segments.push({ kind: 'html', html });
+    buffer = [];
+  };
+
+  for (const token of tokens) {
+    if (token.type === 'code' && (token as { lang?: string }).lang === 'mermaid') {
+      flush();
+      segments.push({ kind: 'mermaid', code: (token as { text: string }).text });
+    } else {
+      buffer.push(token);
+    }
+  }
+  flush();
+  return segments;
+}
+
 export function MarkdownPreview({ content }: { content: string }) {
   injectHljsStyle();
   const handleClick = useSafeMarkdownLinks();
 
-  const html = useMemo(() => {
-    return renderMarkdownSafe(content);
-  }, [content]);
+  const segments = useMemo(() => splitMermaidSegments(content), [content]);
 
-  return React.createElement('div', {
-    className: 'help-content p-4 overflow-auto h-full focus:outline-none',
-    dangerouslySetInnerHTML: { __html: html },
-    onClick: handleClick,
-    tabIndex: 0,
-  });
+  return React.createElement(
+    'div',
+    {
+      className: 'help-content p-4 overflow-auto h-full focus:outline-none',
+      onClick: handleClick,
+      tabIndex: 0,
+    },
+    ...segments.map((segment, i) => {
+      if (segment.kind === 'mermaid') {
+        return React.createElement(MermaidDiagram, { key: `m-${i}`, code: segment.code });
+      }
+      return React.createElement('div', {
+        key: `h-${i}`,
+        dangerouslySetInnerHTML: { __html: sanitizeMarkdownHtml(segment.html) },
+      });
+    }),
+  );
 }
