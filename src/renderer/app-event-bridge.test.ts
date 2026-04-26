@@ -18,6 +18,7 @@ const mockRemovers = {
   onExit: vi.fn(),
   onHookEvent: vi.fn(),
   onAgentWaking: vi.fn(),
+  onAgentAwoke: vi.fn(),
   onAgentWakeFailed: vi.fn(),
   onAgentSleeping: vi.fn(),
   onAgentSpawned: vi.fn(),
@@ -57,6 +58,7 @@ vi.stubGlobal('window', {
     agent: {
       onHookEvent: vi.fn(() => mockRemovers.onHookEvent),
       onAgentWaking: vi.fn(() => mockRemovers.onAgentWaking),
+      onAgentAwoke: vi.fn(() => mockRemovers.onAgentAwoke),
       onAgentWakeFailed: vi.fn(() => mockRemovers.onAgentWakeFailed),
       onAgentSleeping: vi.fn(() => mockRemovers.onAgentSleeping),
       readTranscript: vi.fn(),
@@ -320,6 +322,34 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.pty.onExit).toHaveBeenCalled();
     expect(window.clubhouse.agent.onHookEvent).toHaveBeenCalled();
     expect(window.clubhouse.annex.onAgentSpawned).toHaveBeenCalled();
+  });
+
+  // Wave 10 #10: when a remote caller (MCP wake_agent, plugin) wakes an agent
+  // in main, the renderer needs the AGENT_AWOKE signal to flip the card from
+  // the sleeping mascot to the live PTY view.  Regression guard for the
+  // missing subscription that left agents stuck in 'waking' forever.
+  it('subscribes to onAgentAwoke and flips status to running', () => {
+    expect(window.clubhouse.agent.onAgentAwoke).toHaveBeenCalled();
+    const updateAgentStatus = vi.fn();
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: {},
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus,
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const awokeCallback = vi.mocked(window.clubhouse.agent.onAgentAwoke).mock.calls[0][0];
+    awokeCallback('agent-7');
+
+    expect(updateAgentStatus).toHaveBeenCalledWith('agent-7', 'running');
   });
 
   it('should register keyboard event listener', () => {

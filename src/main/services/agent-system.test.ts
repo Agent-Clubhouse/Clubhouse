@@ -103,6 +103,20 @@ vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
+// Mock ipc-broadcast — track AGENT_AWOKE/AGENT_WAKING/etc. broadcasts so tests
+// can verify the renderer signal path that flips agent cards from sleeping to
+// running.  Without this signal the MCP wake path leaves cards stuck in the
+// sleeping mascot view even though the PTY started in main.
+const mockBroadcastToAllWindows = vi.fn();
+vi.mock('../util/ipc-broadcast', () => ({
+  broadcastToAllWindows: (...args: unknown[]) => mockBroadcastToAllWindows(...args),
+  setChannelPolicy: vi.fn(),
+  clearChannelPolicy: vi.fn(),
+  clearAllPolicies: vi.fn(),
+  flushAllPending: vi.fn(),
+  pendingCount: vi.fn(() => 0),
+}));
+
 // Mock fs/promises for readProjectOrchestrator
 const mockReadFile = vi.fn(() => Promise.reject(new Error('ENOENT')));
 vi.mock('fs/promises', () => ({
@@ -534,6 +548,60 @@ describe('agent-system', () => {
           kind: 'durable',
         })
       ).rejects.toThrow(originalError);
+    });
+
+    // Regression guard for Wave 10 #10: the MCP wake_agent path used to leave
+    // agent cards stuck in the sleeping mascot view because nothing flipped
+    // status from 'waking' → 'running'.  The renderer now subscribes to
+    // AGENT_AWOKE; spawnAgent must broadcast it on every successful path so
+    // any caller (renderer IPC, MCP tool, plugin) converges on the same state.
+    it('broadcasts AGENT_AWOKE after a successful PTY spawn', async () => {
+      mockBroadcastToAllWindows.mockClear();
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-awoke', 'agent-1');
+    });
+
+    it('does not broadcast AGENT_AWOKE when spawn fails', async () => {
+      mockBroadcastToAllWindows.mockClear();
+      mockProvider.buildSpawnCommand.mockRejectedValueOnce(new Error('boom'));
+      await expect(
+        spawnAgent({
+          agentId: 'agent-1',
+          projectPath: '/project',
+          cwd: '/project',
+          kind: 'durable',
+        })
+      ).rejects.toThrow('boom');
+      expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('agent:agent-awoke', 'agent-1');
+    });
+
+    it('broadcasts AGENT_AWOKE after a successful headless spawn', async () => {
+      mockBroadcastToAllWindows.mockClear();
+      mockGetSpawnMode.mockReturnValueOnce('headless');
+      const mockBuildHeadlessCommand = vi.fn(() => Promise.resolve({
+        binary: '/usr/local/bin/claude',
+        args: ['-p', 'mission'],
+        env: {},
+        outputKind: 'stream-json' as const,
+      }));
+      (mockProvider as any).buildHeadlessCommand = mockBuildHeadlessCommand;
+      try {
+        await spawnAgent({
+          agentId: 'agent-1',
+          projectPath: '/project',
+          cwd: '/project',
+          kind: 'quick',
+          mission: 'do thing',
+        });
+        expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-awoke', 'agent-1');
+      } finally {
+        delete (mockProvider as any).buildHeadlessCommand;
+      }
     });
   });
 

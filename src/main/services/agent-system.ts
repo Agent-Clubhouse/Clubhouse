@@ -22,6 +22,8 @@ import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { isMcpEnabled } from './mcp-settings';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 
 /** Expand leading `~` or `~/` to the user's home directory. */
@@ -231,6 +233,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
         if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
         untrackAgent(exitAgentId);
       });
+      broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
       return;
     }
 
@@ -272,12 +275,14 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
           },
           commandPrefix,
         );
+        broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
         return;
       }
     }
 
     // Fall back to PTY mode
     await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds);
+    broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
   } catch (err) {
     untrackAgent(params.agentId);
     throw err;
