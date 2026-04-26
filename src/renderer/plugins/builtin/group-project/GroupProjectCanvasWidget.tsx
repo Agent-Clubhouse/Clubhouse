@@ -12,7 +12,7 @@ import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 import { useUIStore } from '../../../stores/uiStore';
-import { showConfirmDialog } from '../../PluginDialog';
+import { showApprovalDialog, showConfirmDialog } from '../../PluginDialog';
 import { WireToolPermissionsDialog } from '../canvas/WireToolPermissionsDialog';
 import {
   GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION,
@@ -411,8 +411,25 @@ function ExpandedProjectView({
 
   const setDisabledTools = useMcpBindingStore((s) => s.setDisabledTools);
 
-  const handleSaveDescInstr = useCallback(async (applyToAll = false) => {
+  const handleSaveDescInstr = useCallback(async () => {
     if (!hasUnsavedChanges || saving) return;
+    // Wave 10 #8: confirm Save with the new-vs-existing choice INSIDE the
+    // dialog so the user picks scope at confirm time, instead of forcing them
+    // to pre-commit by clicking one of two ambiguous side-by-side buttons.
+    const { promise } = showApprovalDialog({
+      title: 'Save default permissions',
+      summary:
+        'Apply the new defaults to future connections only, or also retroactively apply them to every existing wire on this project?',
+      actions: [
+        { value: 'cancel', label: 'Cancel', style: 'default' },
+        { value: 'future', label: 'Apply to new only', style: 'default' },
+        { value: 'all', label: 'Apply to all', style: 'primary' },
+      ],
+    });
+    const choice = await promise;
+    if (choice !== 'future' && choice !== 'all') return;
+    const applyToAll = choice === 'all';
+
     setSaving(true);
     try {
       const defaultDisabledTools = computeDefaultDisabledTools();
@@ -620,45 +637,41 @@ function ExpandedProjectView({
               Set defaults
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleSaveDescInstr(false)}
-              disabled={!hasUnsavedChanges || saving}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
-                hasUnsavedChanges
-                  ? 'bg-ctp-accent text-white shadow-md hover:opacity-90'
-                  : 'bg-surface-0 text-ctp-overlay0 cursor-default'
-              }`}
-            >
-              {saving ? 'Saving...' : 'Save future'}
-            </button>
-            <button
-              onClick={() => handleSaveDescInstr(true)}
-              disabled={!hasUnsavedChanges || saving}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
-                hasUnsavedChanges
-                  ? 'bg-ctp-accent/70 text-white shadow-md hover:opacity-90'
-                  : 'bg-surface-0 text-ctp-overlay0 cursor-default'
-              }`}
-              title="Save defaults and apply to all existing connections"
-            >
-              Apply all
-            </button>
-            <span className="text-[10px] text-ctp-overlay0 whitespace-nowrap" title={`${disabledDefaultCount} tools disabled by default`}>
-              {disabledDefaultCount} off
-            </span>
+          {/* Wave 10 #7+#8: single Save (scope chosen inside the confirm
+              dialog) + Clear All on its own row so neither gets clipped at
+              the column's fixed width. */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                onClick={() => handleSaveDescInstr()}
+                disabled={!hasUnsavedChanges || saving}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-all ${
+                  hasUnsavedChanges
+                    ? 'bg-ctp-accent text-white shadow-md hover:opacity-90'
+                    : 'bg-surface-0 text-ctp-overlay0 cursor-default'
+                }`}
+                data-testid="group-project-save-defaults-button"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+              <span className="text-[10px] text-ctp-overlay0 whitespace-nowrap" title={`${disabledDefaultCount} tools disabled by default`}>
+                {disabledDefaultCount} off
+              </span>
+            </div>
             {confirmClearAll ? (
               <button
                 onClick={handleClearAll}
-                className="px-2 py-1.5 text-[10px] font-medium bg-ctp-red text-white rounded hover:opacity-90 transition-opacity"
+                className="w-full px-2 py-1.5 text-[10px] font-medium bg-ctp-red text-white rounded hover:opacity-90 transition-opacity"
+                data-testid="group-project-confirm-clear-all"
               >
                 Confirm Clear
               </button>
             ) : (
               <button
                 onClick={() => setConfirmClearAll(true)}
-                className="px-2 py-1.5 text-[10px] font-medium text-ctp-red bg-ctp-red/10 rounded hover:bg-ctp-red/20 transition-colors"
+                className="w-full px-2 py-1.5 text-[10px] font-medium text-ctp-red bg-ctp-red/10 rounded hover:bg-ctp-red/20 transition-colors"
                 title="Clear all messages (keeps description, instructions, and wires)"
+                data-testid="group-project-clear-all"
               >
                 Clear All
               </button>
