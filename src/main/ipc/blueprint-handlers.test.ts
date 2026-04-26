@@ -4,6 +4,13 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: vi.fn(),
   },
+  BrowserWindow: {
+    getFocusedWindow: vi.fn(() => ({})),
+  },
+  dialog: {
+    showSaveDialog: vi.fn(),
+    showOpenDialog: vi.fn(),
+  },
 }));
 
 vi.mock('../services/project-store', () => ({
@@ -21,13 +28,14 @@ vi.mock('fs/promises', () => ({
   realpath: vi.fn((p: string) => Promise.resolve(p)),
   stat: vi.fn(),
   unlink: vi.fn(),
+  writeFile: vi.fn(),
 }));
 
 vi.mock('../services/path-sandbox', () => ({
   assertAllowedPath: vi.fn(async () => undefined),
 }));
 
-import { ipcMain } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import * as fsp from 'fs/promises';
 import * as projectStore from '../services/project-store';
 import { assertAllowedPath } from '../services/path-sandbox';
@@ -343,6 +351,165 @@ describe('blueprint-handlers', () => {
       const result = await handler({}, bp);
       expect(result).toBe(false);
       expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('BLUEPRINT.SAVE_TO_FILE', () => {
+    it('writes the supplied content to the user-chosen path', async () => {
+      vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePath: '/Users/me/Desktop/squad.json',
+      } as any);
+      vi.mocked(fsp.writeFile).mockResolvedValueOnce(undefined as never);
+
+      const handler = getHandler('blueprint:save-to-file');
+      const result = await handler({}, 'squad.json', '{"name":"Squad"}');
+
+      expect(result).toEqual({ canceled: false, filePath: '/Users/me/Desktop/squad.json' });
+      expect(fsp.writeFile).toHaveBeenCalledWith(
+        '/Users/me/Desktop/squad.json',
+        '{"name":"Squad"}',
+        'utf-8',
+      );
+    });
+
+    it('honors paths outside any registered project (no path-sandbox check)', async () => {
+      // Critical: SAVE_TO_FILE must NOT call assertAllowedPath, or the user
+      // wouldn't be able to save a blueprint to ~/Desktop.
+      vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePath: '/somewhere/outside/projects/x.json',
+      } as any);
+      vi.mocked(fsp.writeFile).mockResolvedValueOnce(undefined as never);
+
+      const handler = getHandler('blueprint:save-to-file');
+      await handler({}, 'x.json', '{}');
+
+      expect(assertAllowedPath).not.toHaveBeenCalled();
+      expect(fsp.writeFile).toHaveBeenCalled();
+    });
+
+    it('returns canceled when the user dismisses the dialog', async () => {
+      vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({
+        canceled: true,
+        filePath: undefined,
+      } as any);
+
+      const handler = getHandler('blueprint:save-to-file');
+      const result = await handler({}, 'x.json', '{}');
+
+      expect(result).toEqual({ canceled: true });
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('returns the error message when writeFile fails', async () => {
+      vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePath: '/readonly/x.json',
+      } as any);
+      vi.mocked(fsp.writeFile).mockRejectedValueOnce(new Error('EROFS: read-only'));
+
+      const handler = getHandler('blueprint:save-to-file');
+      const result = await handler({}, 'x.json', '{}') as any;
+
+      expect(result.canceled).toBe(false);
+      expect(result.filePath).toBe('/readonly/x.json');
+      expect(result.error).toContain('EROFS');
+    });
+  });
+
+  describe('BLUEPRINT.OPEN_AND_READ', () => {
+    it('opens a dialog and returns parsed contents of the chosen file', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ['/Users/me/Downloads/team.json'],
+      } as any);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        schemaVersion: 1,
+        name: 'Team',
+        canvas: { views: [], wires: [] },
+      }) as never);
+
+      const handler = getHandler('blueprint:open-and-read');
+      const result = await handler({}) as any;
+
+      expect(result.canceled).toBe(false);
+      expect(result.filePath).toBe('/Users/me/Downloads/team.json');
+      expect(result.data).toEqual({
+        schemaVersion: 1,
+        name: 'Team',
+        canvas: { views: [], wires: [] },
+      });
+    });
+
+    it('honors paths outside any registered project (no path-sandbox check)', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ['/elsewhere/blueprint.json'],
+      } as any);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{}' as never);
+
+      const handler = getHandler('blueprint:open-and-read');
+      await handler({});
+
+      expect(assertAllowedPath).not.toHaveBeenCalled();
+      expect(fsp.readFile).toHaveBeenCalled();
+    });
+
+    it('returns canceled when the user dismisses the dialog', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({
+        canceled: true,
+        filePaths: [],
+      } as any);
+
+      const handler = getHandler('blueprint:open-and-read');
+      const result = await handler({});
+
+      expect(result).toEqual({ canceled: true });
+      expect(fsp.readFile).not.toHaveBeenCalled();
+    });
+
+    it('returns canceled when the user picks no file (empty filePaths)', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePaths: [],
+      } as any);
+
+      const handler = getHandler('blueprint:open-and-read');
+      const result = await handler({});
+
+      expect(result).toEqual({ canceled: true });
+    });
+
+    it('returns an error when the file is invalid JSON', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ['/tmp/broken.json'],
+      } as any);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('not valid json' as never);
+
+      const handler = getHandler('blueprint:open-and-read');
+      const result = await handler({}) as any;
+
+      expect(result.canceled).toBe(false);
+      expect(result.filePath).toBe('/tmp/broken.json');
+      expect(result.error).toBeDefined();
+      expect(result.data).toBeUndefined();
+    });
+
+    it('rejects oversized files (10 MB limit)', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({
+        canceled: false,
+        filePaths: ['/tmp/huge.json'],
+      } as any);
+      vi.mocked(fsp.stat).mockResolvedValueOnce({ size: 11 * 1024 * 1024 } as any);
+
+      const handler = getHandler('blueprint:open-and-read');
+      const result = await handler({}) as any;
+
+      expect(result.canceled).toBe(false);
+      expect(result.error).toContain('too large');
+      expect(fsp.readFile).not.toHaveBeenCalled();
     });
   });
 });

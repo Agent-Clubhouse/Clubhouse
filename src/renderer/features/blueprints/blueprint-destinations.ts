@@ -63,20 +63,26 @@ export async function saveToClipboard(
 
 /**
  * Open a native save dialog and write the blueprint to the chosen location.
+ *
+ * Uses the combined `blueprint.saveToFile` IPC so that the user-picked path
+ * is honored verbatim — including paths outside any registered project
+ * directory (e.g. ~/Desktop, ~/Documents). The dialog itself is the consent
+ * gate; the renderer never gets to supply a target path directly.
  */
 export async function saveToFile(
   manifest: BlueprintManifest,
 ): Promise<ExportResult> {
   const defaultName = `${slugify(manifest.name)}.json`;
+  const json = serializeManifest(manifest);
 
   try {
-    const result = await window.clubhouse.blueprint.saveDialog(defaultName);
-    if (result.canceled || !result.filePath) {
+    const result = await window.clubhouse.blueprint.saveToFile(defaultName, json);
+    if (result.canceled) {
       return { success: false, destination: 'file', error: 'Cancelled' };
     }
-
-    const json = serializeManifest(manifest);
-    await window.clubhouse.file.write(result.filePath, json);
+    if (result.error) {
+      return { success: false, destination: 'file', error: result.error, filePath: result.filePath };
+    }
     return { success: true, destination: 'file', filePath: result.filePath };
   } catch (err) {
     return {

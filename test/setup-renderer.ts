@@ -196,7 +196,8 @@ vi.stubGlobal('clubhouse', {
     search: async () => [],
   },
   blueprint: {
-    saveDialog: async () => ({ canceled: true }),
+    saveToFile: async () => ({ canceled: true }),
+    openAndRead: async () => ({ canceled: true }),
     list: vi.fn(async () => []),
     read: vi.fn(async () => null),
     delete: vi.fn(async () => true),

@@ -63,11 +63,17 @@ vi.mock('../../plugins/builtin/canvas/main', () => ({
 const mockBlueprintList = vi.fn();
 const mockBlueprintRead = vi.fn();
 const mockBlueprintDelete = vi.fn();
+const mockBlueprintOpenAndRead = vi.fn();
 
 beforeEach(() => {
   (globalThis as any).window ??= {};
   (globalThis as any).window.clubhouse = {
-    blueprint: { list: mockBlueprintList, read: mockBlueprintRead, delete: mockBlueprintDelete },
+    blueprint: {
+      list: mockBlueprintList,
+      read: mockBlueprintRead,
+      delete: mockBlueprintDelete,
+      openAndRead: mockBlueprintOpenAndRead,
+    },
   };
 });
 
@@ -290,5 +296,103 @@ describe('BlueprintGallery', () => {
     });
     // Manifest import should NOT have been called
     expect(mockManifestImport).not.toHaveBeenCalled();
+  });
+
+  // ── Open from file (arbitrary path, bypasses sandbox) ──────────
+
+  it('renders an "Open from file…" button in the header', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([]);
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByTestId('blueprint-gallery-open-from-file')).toBeDefined(); });
+  });
+
+  it('imports a manifest blueprint chosen via the OS file picker', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([]);
+    mockBlueprintOpenAndRead.mockResolvedValue({
+      canceled: false,
+      filePath: '/Users/me/Downloads/squad.json',
+      data: {
+        schemaVersion: 1,
+        id: 'bp-import-1',
+        name: 'Manifest from disk',
+        version: '1.0.0',
+        createdAt: '2026-04-25',
+        canvas: { views: [], wires: [] },
+      },
+    });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByTestId('blueprint-gallery-open-from-file')).toBeDefined(); });
+
+    fireEvent.click(screen.getByTestId('blueprint-gallery-open-from-file'));
+
+    await waitFor(() => {
+      expect(mockBlueprintOpenAndRead).toHaveBeenCalled();
+      expect(mockManifestImport).toHaveBeenCalled();
+      expect(mockInsertCanvas).toHaveBeenCalled();
+    });
+  });
+
+  it('imports a legacy blueprint chosen via the OS file picker', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([]);
+    mockBlueprintOpenAndRead.mockResolvedValue({
+      canceled: false,
+      filePath: '/elsewhere/legacy.json',
+      data: {
+        version: 1,
+        name: 'Legacy from disk',
+        views: [],
+      },
+    });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByTestId('blueprint-gallery-open-from-file')).toBeDefined(); });
+
+    fireEvent.click(screen.getByTestId('blueprint-gallery-open-from-file'));
+
+    await waitFor(() => {
+      expect(mockLegacyImport).toHaveBeenCalled();
+      expect(mockInsertCanvas).toHaveBeenCalled();
+    });
+  });
+
+  it('does nothing visible when the user cancels the file picker', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([]);
+    mockBlueprintOpenAndRead.mockResolvedValue({ canceled: true });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByTestId('blueprint-gallery-open-from-file')).toBeDefined(); });
+
+    fireEvent.click(screen.getByTestId('blueprint-gallery-open-from-file'));
+
+    await waitFor(() => {
+      expect(mockBlueprintOpenAndRead).toHaveBeenCalled();
+    });
+    expect(mockInsertCanvas).not.toHaveBeenCalled();
+    expect(mockCloseBlueprintGallery).not.toHaveBeenCalled();
+  });
+
+  it('shows an error when the chosen file is unreadable', async () => {
+    state.blueprintGalleryOpen = true;
+    mockBlueprintList.mockResolvedValue([]);
+    mockBlueprintOpenAndRead.mockResolvedValue({
+      canceled: false,
+      filePath: '/tmp/broken.json',
+      error: 'Unexpected token in JSON',
+    });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByTestId('blueprint-gallery-open-from-file')).toBeDefined(); });
+
+    fireEvent.click(screen.getByTestId('blueprint-gallery-open-from-file'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('blueprint-gallery-error')).toBeDefined();
+    });
+    expect(screen.getByText(/Unexpected token/)).toBeDefined();
   });
 });

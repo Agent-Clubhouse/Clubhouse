@@ -3,6 +3,7 @@ import { useUIStore } from '../../stores/uiStore';
 import type { BlueprintSummary } from '../../../shared/blueprint-summary';
 import { importBlueprint as legacyImportBlueprint, validateBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
 import { importBlueprint as manifestImportBlueprint } from './blueprint-import';
+import { parseAnyBlueprint, buildWireDefinitionsFromResult } from './parse-blueprint';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../plugins/builtin/canvas/main';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -146,6 +147,41 @@ export function BlueprintGallery() {
     }
   }, [activeProjectId, close]);
 
+  const handleOpenFromFile = useCallback(async () => {
+    setError(null);
+    setImporting('__open_from_file__');
+    try {
+      const result = await window.clubhouse.blueprint.openAndRead();
+      if (result.canceled) return;
+      if (result.error || !result.data) {
+        throw new Error(result.error || 'Failed to read file');
+      }
+
+      const agents = Object.values(useAgentStore.getState().agents);
+      const projects = useProjectStore.getState().projects.map((p) => ({
+        id: p.id, name: p.name, path: p.path,
+      }));
+      const parsed = parseAnyBlueprint(result.data, {
+        agents,
+        projects,
+        activeProjectId: activeProjectId ?? undefined,
+      });
+
+      const store = activeProjectId
+        ? getProjectCanvasStore(activeProjectId)
+        : useAppCanvasStore;
+      store.getState().insertCanvas(parsed.canvas);
+      for (const wire of buildWireDefinitionsFromResult(parsed)) {
+        store.getState().addWireDefinition(wire);
+      }
+      close();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImporting(null);
+    }
+  }, [activeProjectId, close]);
+
   const handleDelete = useCallback(async (bp: BlueprintSummary) => {
     const deleted = await window.clubhouse.blueprint.delete(bp.filePath);
     if (deleted) {
@@ -189,6 +225,15 @@ export function BlueprintGallery() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-surface-0">
           <h2 className="text-sm font-semibold text-ctp-text">Import Blueprint</h2>
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenFromFile}
+              disabled={importing === '__open_from_file__'}
+              className="text-[10px] px-2 py-0.5 bg-ctp-mantle border border-surface-0 rounded text-ctp-subtext1 hover:text-ctp-text hover:border-ctp-accent disabled:opacity-50"
+              data-testid="blueprint-gallery-open-from-file"
+              title="Open a blueprint .json from anywhere on disk"
+            >
+              {importing === '__open_from_file__' ? 'Opening…' : 'Open from file…'}
+            </button>
             {/* Sort dropdown */}
             <select
               value={sortMode}
