@@ -306,14 +306,14 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
     expect(source).toContain("setEditInstr(project.instructions || '')");
   });
 
-  it('includes connection defaults toggles in the inline editor', () => {
-    expect(source).toContain('defaultShoulderTap');
-    expect(source).toContain('Shoulder Tap');
-    expect(source).toContain('defaultAgentControl');
-    expect(source).toContain('Agent Control');
-    expect(source).toContain('defaultAgentCleanup');
-    expect(source).toContain('Agent Cleanup');
-    expect(source).toContain('New connection defaults');
+  it('uses a simplified default permissions editor instead of legacy toggles', () => {
+    expect(source).not.toContain('defaultShoulderTap');
+    expect(source).not.toContain('defaultAgentControl');
+    expect(source).not.toContain('defaultAgentCleanup');
+    expect(source).not.toContain('New connection defaults');
+    expect(source).toContain('Default permissions');
+    expect(source).toContain('Set defaults');
+    expect(source).toContain('WireToolPermissionsDialog');
   });
 
   it('saves description, instructions, and connection defaults together', () => {
@@ -323,7 +323,8 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
     expect(source).toContain('computeDefaultDisabledTools');
   });
 
-  it('has apply-all button to push defaults to existing connections', () => {
+  it('has save-future and apply-all buttons for connection defaults', () => {
+    expect(source).toContain('Save future');
     expect(source).toContain('Apply all');
     expect(source).toContain('applyToAll');
   });

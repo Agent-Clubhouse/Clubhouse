@@ -5,12 +5,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { Toggle } from '../../../components/Toggle';
+import { GROUP_PROJECT_TOOL_SUFFIXES } from '../../../../shared/group-project-permissions';
 
 /** Known tool suffixes for each target kind. */
 const TOOL_SUFFIXES: Record<string, string[]> = {
   agent: ['send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent', 'wake'],
   browser: ['navigate', 'screenshot', 'get_console', 'click', 'type', 'evaluate', 'get_page_content', 'get_accessibility_tree'],
-  'group-project': ['list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'read_message', 'get_project_info', 'shoulder_tap', 'broadcast', 'wake_agent', 'start_polling', 'stop_polling', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages'],
+  'group-project': [...GROUP_PROJECT_TOOL_SUFFIXES],
   'agent-queue': ['invoke', 'get_output', 'list', 'cancel', 'get_queue_info'],
   terminal: [],
 };
@@ -47,6 +48,7 @@ const TOOL_HINTS: Record<string, string> = {
   shoulder_tap: 'Inject urgent message into an agent\'s terminal',
   broadcast: 'Inject urgent message into all agents\' terminals',
   wake_agent: 'Wake a sleeping agent in this project',
+  sleep_agent: 'Stop a connected agent in this project',
   start_polling: 'Tell a connected agent to start polling the board',
   stop_polling: 'Tell a connected agent to stop polling the board',
   clear_topic: 'Delete a bulletin channel and all its messages',
