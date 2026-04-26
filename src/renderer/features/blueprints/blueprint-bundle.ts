@@ -232,11 +232,13 @@ export async function saveBundleToClipboard(bundle: BlueprintBundle): Promise<Bu
 export async function saveBundleToFile(bundle: BlueprintBundle): Promise<BundleExportResult> {
   const defaultName = `${slugify(bundle.name)}-bundle.json`;
   try {
-    const result = await window.clubhouse.blueprint.saveDialog(defaultName);
-    if (result.canceled || !result.filePath) {
+    const result = await window.clubhouse.blueprint.saveToFile(defaultName, serializeBundle(bundle));
+    if (result.canceled) {
       return { success: false, destination: 'file', error: 'Cancelled' };
     }
-    await window.clubhouse.file.write(result.filePath, serializeBundle(bundle));
+    if (result.error) {
+      return { success: false, destination: 'file', error: result.error, filePath: result.filePath };
+    }
     return { success: true, destination: 'file', filePath: result.filePath };
   } catch (err) {
     return { success: false, destination: 'file', error: err instanceof Error ? err.message : String(err) };
