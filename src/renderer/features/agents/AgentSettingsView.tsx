@@ -29,7 +29,6 @@ export function AgentSettingsView({ agent }: Props) {
   const { closeAgentSettings, updateAgent, loadDurableAgents } = useAgentStore();
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
-  const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
   const { options: MODEL_OPTIONS } = useModelOptions();
   const enabled = useOrchestratorStore((s) => s.enabled);

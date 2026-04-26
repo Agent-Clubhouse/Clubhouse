@@ -512,7 +512,6 @@ describe('config-pipeline', () => {
   describe('concurrent restore serialization', () => {
     it('serializes concurrent restoreForAgent calls via mutex', async () => {
       const callOrder: string[] = [];
-      const absPath = path.resolve('/project/.claude/settings.json');
 
       // Make readFile return content so snapshot exists
       vi.mocked(fsp.readFile).mockResolvedValue('{"hooks":{}}');

@@ -17,7 +17,6 @@ import {
   AssistantInstance,
   launchAssistantInstance,
   cleanupAssistantInstance,
-  openAssistantPanel,
   resetAssistant,
   sendAssistantMessage,
   waitForFeedContent,

@@ -19,17 +19,19 @@ vi.mock('electron', () => ({
 }));
 
 import { applyWindowSecurityGuards } from './window-security-guards';
-import { appLog } from './services/log-service';
+
+type Listener = (...args: unknown[]) => unknown;
+type WindowOpenHandler = (details: { url: string }) => unknown;
 
 function createMockWindow() {
-  const listeners: Record<string, Function> = {};
-  let windowOpenHandler: Function | null = null;
+  const listeners: Record<string, Listener> = {};
+  let windowOpenHandler: WindowOpenHandler | null = null;
   return {
     webContents: {
-      on: vi.fn((event: string, handler: Function) => {
+      on: vi.fn((event: string, handler: Listener) => {
         listeners[event] = handler;
       }),
-      setWindowOpenHandler: vi.fn((handler: Function) => {
+      setWindowOpenHandler: vi.fn((handler: WindowOpenHandler) => {
         windowOpenHandler = handler;
       }),
     },

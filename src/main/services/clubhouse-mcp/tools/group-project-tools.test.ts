@@ -1053,7 +1053,7 @@ describe('GroupProjectTools', () => {
     const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'DelMsgProj' });
     const postName = buildToolName(binding, 'post_bulletin');
 
-    const r1 = await callTool('agent-1', postName, { topic: 'cleanup', body: 'keep me' });
+    await callTool('agent-1', postName, { topic: 'cleanup', body: 'keep me' });
     const r2 = await callTool('agent-1', postName, { topic: 'cleanup', body: 'delete me' });
     const r3 = await callTool('agent-1', postName, { topic: 'cleanup', body: 'delete me too' });
 

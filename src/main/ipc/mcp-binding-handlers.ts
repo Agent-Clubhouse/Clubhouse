@@ -19,14 +19,6 @@ import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
-/** Verify the agentId refers to a registered agent. Throws if not. */
-function assertAgentRegistered(agentId: string): void {
-  if (!agentRegistry.get(agentId)) {
-    appLog('core:mcp', 'warn', 'Rejected MCP binding request — agent not registered', { meta: { agentId } });
-    throw new Error(`Agent not registered: ${agentId}`);
-  }
-}
-
 /** Valid values for BindingTargetKind. */
 const VALID_TARGET_KINDS = new Set<BindingTargetKind>([
   'browser', 'agent', 'terminal', 'group-project', 'agent-queue', 'plugin', 'assistant',

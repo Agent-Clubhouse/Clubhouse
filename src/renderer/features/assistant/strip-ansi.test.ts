@@ -4,12 +4,11 @@ import { describe, it, expect } from 'vitest';
 function stripAnsi(text: string): string {
   return text
     // eslint-disable-next-line no-control-regex
-    .replace(/\x1b\[[\?]?[0-9;]*[a-zA-Z~]/g, '')
+    .replace(/\x1b\[[?]?[0-9;]*[a-zA-Z~]/g, '')
     // eslint-disable-next-line no-control-regex
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
     // eslint-disable-next-line no-control-regex
     .replace(/\x1b[^[\]]/g, '')
-    // eslint-disable-next-line no-control-regex
     .replace(/\r/g, '')
     .replace(/^quote> /gm, '');
 }

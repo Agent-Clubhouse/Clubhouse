@@ -5,7 +5,7 @@
  * projects and agents. This decouples Home from the Canvas plugin so
  * Home always renders useful content regardless of canvas/annex state.
  */
-import { useMemo, useCallback, useState } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import {
   useRemoteProjectStore,

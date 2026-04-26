@@ -468,7 +468,7 @@ describe('BulletinBoard', () => {
   describe('getMessageById', () => {
     it('finds a message across topics', async () => {
       const board = getBulletinBoard('gp_getmsg');
-      const msg1 = await board.postMessage('alice', 'topic-a', 'hello');
+      await board.postMessage('alice', 'topic-a', 'hello');
       const msg2 = await board.postMessage('bob', 'topic-b', 'world');
 
       const found = await board.getMessageById(msg2.id);

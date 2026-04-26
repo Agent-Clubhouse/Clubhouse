@@ -623,7 +623,6 @@ const handlers: Record<string, (args: Record<string, unknown>) => CanvasCommandR
     const idMap: Record<string, string> = {};
 
     // Phase 1: Create zones first (they must exist before cards reference them)
-    const prevActive = store.activeCanvasId;
     store.setActiveCanvas(canvasId);
 
     for (const zone of blueprint.zones || []) {
