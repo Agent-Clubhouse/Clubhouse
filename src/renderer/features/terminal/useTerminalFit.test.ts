@@ -238,9 +238,36 @@ describe('useTerminalFit', () => {
 
       rerender({ focused: true });
 
-      expect(mockFocus).toHaveBeenCalledTimes(1);
+      // Focus is called twice: once before fit (so the user sees a focused
+      // cursor immediately) and once after fit (to recover from the blur
+      // that xterm's reflow can cause — see issue #1387).
+      expect(mockFocus).toHaveBeenCalledTimes(2);
       expect(mockFit).toHaveBeenCalledTimes(1);
       expect(mockResize).toHaveBeenCalledWith('s1', 80, 24);
+    });
+
+    it('refocuses xterm after fit() to recover from reflow-induced blur', () => {
+      // Regression for issue #1387: switching back to an actively-streaming
+      // agent left the terminal unresponsive because fit() blurs xterm's
+      // helper textarea but the pane-focus effect did not refocus afterwards.
+      const callOrder: string[] = [];
+      mockFit.mockImplementation(() => callOrder.push('fit'));
+      mockFocus.mockImplementation(() => callOrder.push('focus'));
+
+      const { rerender } = renderHook(
+        ({ focused }) => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, focused),
+        { initialProps: { focused: false } },
+      );
+
+      callOrder.length = 0;
+      mockFit.mockClear();
+      mockFocus.mockClear();
+
+      rerender({ focused: true });
+
+      // Pre-fit focus (immediate cursor), fit (reflow blurs textarea),
+      // post-fit focus (recovery).
+      expect(callOrder).toEqual(['focus', 'fit', 'focus']);
     });
 
     it('does not call fit or resize when focused is false', () => {
