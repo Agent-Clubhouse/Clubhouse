@@ -40,10 +40,17 @@ vi.mock('../../structured-manager', () => ({
 }));
 
 const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
+const mockKillAgent = vi.fn().mockResolvedValue(undefined);
 vi.mock('../../agent-system', () => ({
   spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
+  killAgent: (...args: unknown[]) => mockKillAgent(...args),
   isHeadlessAgent: vi.fn().mockReturnValue(false),
   isStructuredAgent: vi.fn().mockReturnValue(false),
+}));
+
+const mockBroadcastToAllWindows = vi.fn();
+vi.mock('../../../util/ipc-broadcast', () => ({
+  broadcastToAllWindows: (...args: unknown[]) => mockBroadcastToAllWindows(...args),
 }));
 
 const mockListDurable = vi.fn().mockResolvedValue([]);
@@ -78,6 +85,9 @@ describe('GroupProjectTools', () => {
     mockIsRunning.mockReturnValue(false);
     mockSpawnAgent.mockClear();
     mockSpawnAgent.mockResolvedValue(undefined);
+    mockKillAgent.mockClear();
+    mockKillAgent.mockResolvedValue(undefined);
+    mockBroadcastToAllWindows.mockClear();
     mockListDurable.mockReset();
     mockListDurable.mockResolvedValue([]);
     mockProjectList.mockReset();
@@ -91,7 +101,7 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
-  it('registers all 15 tools by default (gating is per-wire only)', () => {
+  it('registers all 16 tools by default (gating is per-wire only)', () => {
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -101,7 +111,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(15);
+    expect(tools).toHaveLength(16);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('list_members');
@@ -113,6 +123,7 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('shoulder_tap');
     expect(suffixes).toContain('broadcast');
     expect(suffixes).toContain('wake_agent');
+    expect(suffixes).toContain('sleep_agent');
     expect(suffixes).toContain('start_polling');
     expect(suffixes).toContain('stop_polling');
     expect(suffixes).toContain('clear_agent');
@@ -129,7 +140,7 @@ describe('GroupProjectTools', () => {
       agentName: 'robin',
       targetName: 'My Project',
     });
-    bindingManager.setDisabledTools('agent-1', 'gp_123', ['shoulder_tap', 'broadcast', 'wake_agent', 'start_polling', 'stop_polling', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages']);
+    bindingManager.setDisabledTools('agent-1', 'gp_123', ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'start_polling', 'stop_polling', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages']);
 
     const tools = getScopedToolList('agent-1');
     const suffixes = tools.map(t => t.name.split('__').pop());
@@ -142,6 +153,7 @@ describe('GroupProjectTools', () => {
     expect(suffixes).not.toContain('shoulder_tap');
     expect(suffixes).not.toContain('broadcast');
     expect(suffixes).not.toContain('wake_agent');
+    expect(suffixes).not.toContain('sleep_agent');
     expect(suffixes).not.toContain('clear_agent');
     expect(suffixes).not.toContain('compact_agent');
     expect(suffixes).not.toContain('clear_topic');
@@ -624,9 +636,9 @@ describe('GroupProjectTools', () => {
     expect(readBulletin!.description).toContain('inbox-<your-name>');
   });
 
-  /* ---------- Agent Control Tools (wake, start/stop polling) ---------- */
+  /* ---------- Agent Control Tools (wake, sleep, start/stop polling) ---------- */
 
-  it('wake_agent, start_polling, stop_polling are always available', () => {
+  it('wake_agent, sleep_agent, start_polling, stop_polling are available when enabled', () => {
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -638,6 +650,7 @@ describe('GroupProjectTools', () => {
     const tools = getScopedToolList('agent-1');
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('wake_agent');
+    expect(suffixes).toContain('sleep_agent');
     expect(suffixes).toContain('start_polling');
     expect(suffixes).toContain('stop_polling');
   });
@@ -693,7 +706,7 @@ describe('GroupProjectTools', () => {
     agentRegistry.untrack('agent-2');
   });
 
-  it('wake_agent spawns sleeping agent', async () => {
+  it('wake_agent spawns sleeping agent and broadcasts waking state', async () => {
     const project = await groupProjectRegistry.create('WakeSpawn');
 
     // Mock project store and agent config for wake
@@ -738,6 +751,157 @@ describe('GroupProjectTools', () => {
         mission: 'Start working on Mission 42',
       }),
     );
+    expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-waking', 'agent-2');
+  });
+
+  it('wake_agent can resume the target agent session', async () => {
+    const project = await groupProjectRegistry.create('WakeResume');
+
+    mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
+    mockListDurable.mockResolvedValue([
+      {
+        id: 'agent-2',
+        name: 'falcon',
+        model: 'opus',
+        orchestrator: 'claude-code',
+        worktreePath: '/test/proj/wt',
+        lastSessionId: 'session-123',
+        freeAgentMode: true,
+        structuredMode: true,
+      },
+    ]);
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'WR',
+      agentName: 'robin',
+      targetName: 'WakeResume',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'WR',
+      agentName: 'falcon',
+      targetName: 'WakeResume',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'WakeResume' });
+    const toolName = buildToolName(binding, 'wake_agent');
+    const result = await callTool('agent-1', toolName, {
+      target_agent_id: 'agent-2',
+      resume: true,
+    });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.resume).toBe(true);
+    expect(mockSpawnAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: 'agent-2',
+        resume: true,
+        sessionId: 'session-123',
+        freeAgentMode: true,
+        structuredMode: true,
+      }),
+    );
+  });
+
+  it('wake_agent broadcasts wake_failed and not waking when spawn fails', async () => {
+    const project = await groupProjectRegistry.create('WakeFail');
+
+    mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
+    mockListDurable.mockResolvedValue([
+      { id: 'agent-2', name: 'falcon', model: 'opus', orchestrator: 'claude-code', worktreePath: '/test/proj/wt' },
+    ]);
+    mockSpawnAgent.mockRejectedValue(new Error('CLI not available'));
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'WF',
+      agentName: 'robin',
+      targetName: 'WakeFail',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'WF',
+      agentName: 'falcon',
+      targetName: 'WakeFail',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'WakeFail' });
+    const toolName = buildToolName(binding, 'wake_agent');
+    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('CLI not available');
+    expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-wake-failed', 'agent-2', 'CLI not available');
+    expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('agent:agent-waking', 'agent-2');
+  });
+
+  it('sleep_agent stops a connected member via agent lifecycle', async () => {
+    const project = await groupProjectRegistry.create('SleepAgent');
+
+    agentRegistry.register('agent-2', { projectPath: '/test/proj', orchestrator: 'claude-code', runtime: 'pty' });
+    mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'SA',
+      agentName: 'robin',
+      targetName: 'SleepAgent',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'SA',
+      agentName: 'falcon',
+      targetName: 'SleepAgent',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'SleepAgent' });
+    const toolName = buildToolName(binding, 'sleep_agent');
+    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.action).toBe('sleep_agent');
+    expect(parsed.delivered).toBe(true);
+    expect(mockKillAgent).toHaveBeenCalledWith('agent-2', '/test/proj', 'claude-code');
+    expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-sleeping', 'agent-2');
+
+    agentRegistry.untrack('agent-2');
+  });
+
+  it('sleep_agent reports already_sleeping for a sleeping member', async () => {
+    const project = await groupProjectRegistry.create('AlreadySleep');
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'AS',
+      agentName: 'robin',
+      targetName: 'AlreadySleep',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'AS',
+      agentName: 'falcon',
+      targetName: 'AlreadySleep',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'AlreadySleep' });
+    const toolName = buildToolName(binding, 'sleep_agent');
+    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.status).toBe('already_sleeping');
+    expect(mockKillAgent).not.toHaveBeenCalled();
   });
 
   it('start_polling injects polling message into agent PTY', async () => {

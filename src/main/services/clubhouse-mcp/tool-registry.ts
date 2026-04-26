@@ -151,11 +151,11 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     const templates = toolTemplates.get(binding.targetKind);
     if (!templates) continue;
 
-    // When target agent is sleeping (not in registry), only expose status and wake tools
+    // When target agent is sleeping (not in registry), only expose status tools.
     const isTargetSleeping = binding.targetKind === 'agent' && !agentRegistry.get(binding.targetId);
 
     for (const template of templates) {
-      if (isTargetSleeping && template.nameSuffix !== 'get_status' && template.nameSuffix !== 'wake') {
+      if (isTargetSleeping && template.nameSuffix !== 'get_status') {
         continue;
       }
 

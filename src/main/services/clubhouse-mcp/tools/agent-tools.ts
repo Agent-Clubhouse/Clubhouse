@@ -11,12 +11,8 @@ import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
 import * as ptyManager from '../../pty-manager';
 import * as structuredManager from '../../structured-manager';
-import * as agentSystem from '../../agent-system';
-import { getDurableConfig } from '../../agent-config';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
-import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
-import { IPC } from '../../../../shared/ipc-channels';
 import { getProvider } from '../../../orchestrators';
 import type { PasteSubmitTiming } from '../../../orchestrators';
 import { requireString, optionalString, numberWithDefault } from './validation';
@@ -242,7 +238,7 @@ export function registerAgentTools(): void {
         appLog('core:mcp', 'warn', 'send_message: target agent not found in registry', {
           meta: { sourceAgent: agentId, targetAgent: targetId },
         });
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before sending messages.` }], isError: true };
       }
 
       // Resolve sender identity from the binding
@@ -350,7 +346,7 @@ export function registerAgentTools(): void {
         runtime: reg?.runtime || null,
         message: running
           ? 'Agent is running and available for interaction.'
-          : 'Agent is sleeping. Use the wake tool to start it.',
+          : 'Agent is sleeping. Start it from Clubhouse or a group project wake_agent tool.',
       };
 
       appLog('core:mcp', 'info', 'get_status: resolved', {
@@ -392,7 +388,7 @@ export function registerAgentTools(): void {
         appLog('core:mcp', 'warn', 'read_output: target agent not found in registry', {
           meta: { sourceAgent: agentId, targetAgent: targetId },
         });
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before reading output.` }], isError: true };
       }
 
       let lines = numberWithDefault(args, 'lines', 50);
@@ -442,7 +438,7 @@ export function registerAgentTools(): void {
     handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before compacting.` }], isError: true };
       }
 
       // Check if the target has a binding back to the caller
@@ -534,7 +530,7 @@ export function registerAgentTools(): void {
 
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before sending files.` }], isError: true };
       }
 
       const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
@@ -608,7 +604,7 @@ export function registerAgentTools(): void {
     handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before clearing context.` }], isError: true };
       }
 
       try {
@@ -645,7 +641,7 @@ export function registerAgentTools(): void {
     handler: async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Start it from Clubhouse before compacting context.` }], isError: true };
       }
 
       try {
@@ -664,102 +660,4 @@ export function registerAgentTools(): void {
     },
   });
 
-  // clubhouse__<project>_<name>_<hash>__wake
-  mcpAdapter.registerMcpCommand({
-    id: 'agent.wake',
-    category: 'agent',
-    label: 'Wake Agent',
-    mcp: { targetKind: 'agent', nameSuffix: 'wake' },
-    description:
-        'Wake up a sleeping agent by spawning it in its PTY.\n\n' +
-        'Use this when the linked agent is not running (sleeping) and you need it to be alive ' +
-        'to send it messages or collaborate. This uses the same mechanism as the "Wake Up" button ' +
-        'in the Clubhouse UI — it reads the agent\'s durable config and spawns a fresh session.\n\n' +
-        'If the agent is already running, this returns immediately without re-spawning.\n\n' +
-        'Set resume=true to resume the agent\'s previous CLI session instead of starting fresh.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        resume: {
-          type: 'boolean',
-          description:
-            'Whether to resume the agent\'s previous CLI session. ' +
-            'Defaults to false (fresh session).',
-        },
-      },
-    },
-    handler: async (targetId, agentId, args): Promise<McpToolResult> => {
-      const resume = args.resume === true;
-
-      // If already running, nothing to do
-      const reg = agentRegistry.get(targetId);
-      if (reg) {
-        appLog('core:mcp', 'info', 'wake: agent already running', {
-          meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime },
-        });
-        return { content: [{ type: 'text', text: `Agent is already running (runtime=${reg.runtime}).` }] };
-      }
-
-      // Look up the calling agent's project path to find the durable config
-      const callerReg = agentRegistry.get(agentId);
-      if (!callerReg) {
-        return { content: [{ type: 'text', text: 'Cannot determine project path — caller agent not registered' }], isError: true };
-      }
-
-      const projectPath = callerReg.projectPath;
-
-      appLog('core:mcp', 'info', 'wake: looking up durable config', {
-        meta: { sourceAgent: agentId, targetAgent: targetId, projectPath, resume },
-      });
-
-      try {
-        const config = await getDurableConfig(projectPath, targetId);
-        if (!config) {
-          return {
-            content: [{ type: 'text', text: `No durable agent config found for ${targetId} in project. The agent may be a quick agent or from a different project.` }],
-            isError: true,
-          };
-        }
-
-        const cwd = config.worktreePath || projectPath;
-
-        // Broadcast waking status to renderer before spawning
-        broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, targetId);
-
-        await agentSystem.spawnAgent({
-          agentId: targetId,
-          projectPath,
-          cwd,
-          kind: 'durable',
-          model: config.model,
-          orchestrator: config.orchestrator,
-          freeAgentMode: config.freeAgentMode,
-          resume,
-          sessionId: resume ? config.lastSessionId : undefined,
-        });
-
-        appLog('core:mcp', 'info', 'wake: agent spawned successfully', {
-          meta: { sourceAgent: agentId, targetAgent: targetId, resume, cwd },
-        });
-
-        return {
-          content: [{
-            type: 'text',
-            text: `Agent ${config.name || targetId} is waking up. New tools and interactions will be available in a few seconds.`,
-          }],
-        };
-      } catch (err) {
-        appLog('core:mcp', 'error', 'wake: failed to spawn agent', {
-          meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
-        });
-        return {
-          content: [{
-            type: 'text',
-            text: `Failed to wake agent: ${err instanceof Error ? err.message : String(err)}`,
-          }],
-          isError: true,
-        };
-      }
-    },
-  });
 }

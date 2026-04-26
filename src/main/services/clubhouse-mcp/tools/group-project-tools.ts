@@ -10,19 +10,43 @@ import { groupProjectRegistry } from '../../group-project-registry';
 import { isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
 import * as ptyManager from '../../pty-manager';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
-import { spawnAgent } from '../../agent-system';
+import * as agentSystem from '../../agent-system';
 import { listDurable } from '../../agent-config';
 import * as projectStore from '../../project-store';
-import { getAgentOrchestrator } from '../../agent-registry';
+import { agentRegistry, getAgentOrchestrator } from '../../agent-registry';
 import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
 import * as annexEventBus from '../../annex-event-bus';
 import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
 import { requireString, optionalString, optionalNumber } from './validation';
+import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
+import { IPC } from '../../../../shared/ipc-channels';
 
 /** Resolve agent status for a member entry. */
 function resolveAgentStatus(agentId: string): 'connected' | 'sleeping' {
   return isAgentAlive(agentId) ? 'connected' : 'sleeping';
+}
+
+function findProjectMember(targetId: string, targetAgentId: string) {
+  const allBindings = bindingManager.getAllBindings();
+  return allBindings.find(
+    b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
+  );
+}
+
+async function findDurableAgentConfig(targetAgentId: string): Promise<{
+  agentConfig: Awaited<ReturnType<typeof listDurable>>[number];
+  projectPath: string;
+} | null> {
+  const projects = await projectStore.list();
+  for (const proj of projects) {
+    const durables = await listDurable(proj.path);
+    const found = durables.find(d => d.id === targetAgentId);
+    if (found) {
+      return { agentConfig: found, projectPath: proj.path };
+    }
+  }
+  return null;
 }
 
 /**
@@ -474,22 +498,24 @@ export function registerGroupProjectTools(): void {
             type: 'string',
             description: 'Optional mission or message to send to the agent after waking.',
           },
+          resume: {
+            type: 'boolean',
+            description: 'Whether to resume the agent\'s previous CLI session. Defaults to false.',
+          },
         },
         required: ['target_agent_id'],
       },
     handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
       const targetAgentId = requireString(args, 'target_agent_id');
       const message = optionalString(args, 'message');
+      const resume = args.resume === true;
 
       if (!targetAgentId) {
         return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
       }
 
       // Verify target is a member of this group project
-      const allBindings = bindingManager.getAllBindings();
-      const memberBinding = allBindings.find(
-        b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
-      );
+      const memberBinding = findProjectMember(targetId, targetAgentId);
       if (!memberBinding) {
         return {
           content: [{ type: 'text', text: `Agent ${targetAgentId} is not a member of this group project.` }],
@@ -509,30 +535,18 @@ export function registerGroupProjectTools(): void {
 
       // Find the agent's durable config across all projects
       try {
-        const projects = await projectStore.list();
-        let agentConfig: Awaited<ReturnType<typeof listDurable>>[number] | undefined;
-        let projectPath: string | undefined;
-
-        for (const proj of projects) {
-          const durables = await listDurable(proj.path);
-          const found = durables.find(d => d.id === targetAgentId);
-          if (found) {
-            agentConfig = found;
-            projectPath = proj.path;
-            break;
-          }
-        }
-
-        if (!agentConfig || !projectPath) {
+        const durable = await findDurableAgentConfig(targetAgentId);
+        if (!durable) {
           return {
             content: [{ type: 'text', text: `Could not find durable config for agent ${targetAgentId}.` }],
             isError: true,
           };
         }
+        const { agentConfig, projectPath } = durable;
 
         const cwd = agentConfig.worktreePath || projectPath;
 
-        await spawnAgent({
+        await agentSystem.spawnAgent({
           agentId: targetAgentId,
           projectPath,
           cwd,
@@ -540,10 +554,16 @@ export function registerGroupProjectTools(): void {
           model: agentConfig.model,
           mission: message,
           orchestrator: agentConfig.orchestrator,
+          freeAgentMode: agentConfig.freeAgentMode,
+          structuredMode: agentConfig.structuredMode,
+          resume,
+          sessionId: resume ? agentConfig.lastSessionId : undefined,
         });
 
+        broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, targetAgentId);
+
         appLog('core:group-project', 'info', 'Agent woken via GP tool', {
-          meta: { agentId: targetAgentId, projectPath },
+          meta: { agentId: targetAgentId, projectPath, resume },
         });
 
         return {
@@ -553,13 +573,97 @@ export function registerGroupProjectTools(): void {
               agentId: targetAgentId,
               agentName: memberBinding.agentName || targetAgentId,
               status: 'starting',
+              resume,
               message: message || null,
             }),
           }],
         };
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, targetAgentId, errorMessage);
         return {
-          content: [{ type: 'text', text: `Failed to wake agent: ${err instanceof Error ? err.message : String(err)}` }],
+          content: [{ type: 'text', text: `Failed to wake agent: ${errorMessage}` }],
+          isError: true,
+        };
+      }
+    },
+  });
+
+  // group__<name>_<hash>__sleep_agent
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.sleep_agent',
+    category: 'group-project',
+    label: 'Sleep Agent',
+    mcp: { targetKind: 'group-project', nameSuffix: 'sleep_agent' },
+      description:
+        'Put a connected agent in this group project to sleep.\n\n' +
+        'Gracefully stops the target agent using the same lifecycle path as the Clubhouse UI stop action. ' +
+        'Use list_members first; the target_agent_id must be a member of this project.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          target_agent_id: {
+            type: 'string',
+            description: 'The agentId of the connected agent to stop (from list_members).',
+          },
+        },
+        required: ['target_agent_id'],
+      },
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const targetAgentId = requireString(args, 'target_agent_id');
+      if (!targetAgentId) {
+        return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
+      }
+
+      const memberBinding = findProjectMember(targetId, targetAgentId);
+      if (!memberBinding) {
+        return {
+          content: [{ type: 'text', text: `Agent ${targetAgentId} is not a member of this group project.` }],
+          isError: true,
+        };
+      }
+
+      if (!isAgentAlive(targetAgentId)) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              agentId: targetAgentId,
+              agentName: memberBinding.agentName || targetAgentId,
+              status: 'already_sleeping',
+            }),
+          }],
+        };
+      }
+
+      try {
+        const tracked = agentRegistry.get(targetAgentId);
+        const durable = tracked ? null : await findDurableAgentConfig(targetAgentId);
+        const projectPath = tracked?.projectPath || durable?.projectPath;
+        if (!projectPath) {
+          return {
+            content: [{ type: 'text', text: `Could not determine project path for agent ${targetAgentId}.` }],
+            isError: true,
+          };
+        }
+
+        await agentSystem.killAgent(targetAgentId, projectPath, tracked?.orchestrator || durable?.agentConfig.orchestrator);
+        broadcastToAllWindows(IPC.AGENT.AGENT_SLEEPING, targetAgentId);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              agentId: targetAgentId,
+              agentName: memberBinding.agentName || targetAgentId,
+              action: 'sleep_agent',
+              delivered: true,
+            }),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Failed to sleep agent: ${err instanceof Error ? err.message : String(err)}` }],
           isError: true,
         };
       }

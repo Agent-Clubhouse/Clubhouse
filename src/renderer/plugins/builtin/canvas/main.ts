@@ -18,6 +18,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { ExportBlueprintDialog } from '../../../features/blueprints/ExportBlueprintDialog';
+import { getDefaultGroupProjectDisabledToolsFromMetadata } from '../../../../shared/group-project-permissions';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -632,15 +633,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
               if (entry.targetKind === 'group-project' && !entry.disabledTools?.length) {
                 const { projects } = useGroupProjectStore.getState();
                 const project = projects.find(p => p.id === entry.targetId);
-                const defaults = project?.metadata?.defaultDisabledTools as string[] | undefined;
-                if (!defaults) {
-                  // No explicit defaults set — use the all-disabled default (new projects start locked down)
-                  const allAdvanced = ['shoulder_tap', 'broadcast', 'wake_agent', 'start_polling', 'stop_polling', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages'];
-                  wireEntry = { ...entry, disabledTools: allAdvanced };
-                  void window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, allAdvanced);
-                } else if (defaults.length > 0) {
-                  wireEntry = { ...entry, disabledTools: defaults };
-                  void window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, defaults);
+                const disabledTools = getDefaultGroupProjectDisabledToolsFromMetadata(project?.metadata);
+                if (disabledTools.length > 0) {
+                  wireEntry = { ...entry, disabledTools };
+                  void window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, disabledTools);
                 }
               }
               store.getState().addWireDefinition(wireEntry);

@@ -34,16 +34,6 @@ vi.mock('../../structured-manager', () => ({
   sendMessage: (...args: unknown[]) => mockStructuredSendMessage(...args),
 }));
 
-const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
-vi.mock('../../agent-system', () => ({
-  spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
-}));
-
-const mockGetDurableConfig = vi.fn();
-vi.mock('../../agent-config', () => ({
-  getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
-}));
-
 vi.mock('../../log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -105,8 +95,6 @@ describe('AgentTools', () => {
     mockMkdir.mockReset().mockResolvedValue(undefined);
     mockWriteFile.mockReset().mockResolvedValue(undefined);
     mockUnlink.mockReset().mockResolvedValue(undefined);
-    mockSpawnAgent.mockReset().mockResolvedValue(undefined);
-    mockGetDurableConfig.mockReset();
 
     // Default buffer mock for post-send heuristic
     mockPtyGetBuffer.mockReturnValue('');
@@ -136,7 +124,7 @@ describe('AgentTools', () => {
   describe('tool registration', () => {
     it('registers all agent-to-agent tools', () => {
       const tools = getScopedToolList('agent-1');
-      expect(tools).toHaveLength(8);
+      expect(tools).toHaveLength(7);
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toContain('send_message');
       expect(suffixes).toContain('get_status');
@@ -145,7 +133,6 @@ describe('AgentTools', () => {
       expect(suffixes).toContain('send_file');
       expect(suffixes).toContain('clear_agent');
       expect(suffixes).toContain('compact_agent');
-      expect(suffixes).toContain('wake');
     });
 
     it('generates clubhouse-prefixed tool names with project and agent name', () => {
@@ -611,8 +598,8 @@ describe('AgentTools', () => {
       });
 
       const tools = getScopedToolList('agent-1');
-      // 8 tools for agent-2 + 8 tools for agent-3 = 16
-      expect(tools).toHaveLength(16);
+      // 7 tools for agent-2 + 7 tools for agent-3 = 14
+      expect(tools).toHaveLength(14);
 
       const sendToolAgent2 = agentToolName(sourceBinding, 'send_message');
       const sendToolAgent3 = agentToolName(makeBinding({
@@ -840,120 +827,6 @@ describe('AgentTools', () => {
         '{}',
         'utf-8',
       );
-    });
-  });
-
-  describe('wake', () => {
-    const wakeToolName = agentToolName(sourceBinding, 'wake');
-
-    it('returns already running when target agent is active', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' });
-      const result = await callTool('agent-1', wakeToolName, {});
-      expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain('already running');
-      expect(mockSpawnAgent).not.toHaveBeenCalled();
-    });
-
-    it('spawns sleeping agent using durable config', async () => {
-      // Target agent not running, calling agent is running
-      mockAgentRegistryGet.mockImplementation((id: string) => {
-        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
-        return undefined; // agent-2 is sleeping
-      });
-      mockGetDurableConfig.mockResolvedValue({
-        id: 'agent-2',
-        name: 'scrappy-robin',
-        color: 'blue',
-        worktreePath: '/project/.clubhouse/agents/scrappy-robin',
-        model: 'claude-sonnet-4.5',
-        orchestrator: 'claude-code',
-        createdAt: '2025-01-01',
-      });
-
-      const result = await callTool('agent-1', wakeToolName, {});
-      expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain('is waking up');
-      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
-        agentId: 'agent-2',
-        projectPath: '/project',
-        cwd: '/project/.clubhouse/agents/scrappy-robin',
-        kind: 'durable',
-        model: 'claude-sonnet-4.5',
-        resume: false,
-      }));
-    });
-
-    it('spawns with resume=true and passes lastSessionId', async () => {
-      mockAgentRegistryGet.mockImplementation((id: string) => {
-        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
-        return undefined;
-      });
-      mockGetDurableConfig.mockResolvedValue({
-        id: 'agent-2',
-        name: 'scrappy-robin',
-        color: 'blue',
-        createdAt: '2025-01-01',
-        lastSessionId: 'session-abc-123',
-      });
-
-      const result = await callTool('agent-1', wakeToolName, { resume: true });
-      expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain('is waking up');
-      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
-        agentId: 'agent-2',
-        resume: true,
-        sessionId: 'session-abc-123',
-      }));
-    });
-
-    it('falls back to projectPath as cwd when no worktreePath', async () => {
-      mockAgentRegistryGet.mockImplementation((id: string) => {
-        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
-        return undefined;
-      });
-      mockGetDurableConfig.mockResolvedValue({
-        id: 'agent-2', name: 'robin', color: 'red', createdAt: '2025-01-01',
-      });
-
-      await callTool('agent-1', wakeToolName, {});
-      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
-        cwd: '/project',
-      }));
-    });
-
-    it('returns error when no durable config found', async () => {
-      mockAgentRegistryGet.mockImplementation((id: string) => {
-        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
-        return undefined;
-      });
-      mockGetDurableConfig.mockResolvedValue(null);
-
-      const result = await callTool('agent-1', wakeToolName, {});
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('No durable agent config found');
-    });
-
-    it('returns error when caller agent is not registered', async () => {
-      mockAgentRegistryGet.mockReturnValue(undefined);
-
-      const result = await callTool('agent-1', wakeToolName, {});
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Cannot determine project path');
-    });
-
-    it('returns error when spawn fails', async () => {
-      mockAgentRegistryGet.mockImplementation((id: string) => {
-        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
-        return undefined;
-      });
-      mockGetDurableConfig.mockResolvedValue({
-        id: 'agent-2', name: 'robin', color: 'red', createdAt: '2025-01-01',
-      });
-      mockSpawnAgent.mockRejectedValue(new Error('CLI not available'));
-
-      const result = await callTool('agent-1', wakeToolName, {});
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('CLI not available');
     });
   });
 

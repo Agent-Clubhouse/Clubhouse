@@ -229,6 +229,15 @@ describe('canvas main', () => {
     expect(source).toContain('mcpBinding.bind');
   });
 
+  it('group-project wire defaults use shared migration-aware helper (structural)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    expect(source).toContain('getDefaultGroupProjectDisabledToolsFromMetadata');
+    expect(source).not.toContain("const allAdvanced = ['shoulder_tap'");
+  });
+
   it('handleRemoveView cleans up wire definitions (structural)', () => {
     const fs = require('fs');
     const path = require('path');

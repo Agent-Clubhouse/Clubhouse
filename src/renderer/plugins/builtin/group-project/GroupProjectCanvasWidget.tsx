@@ -10,10 +10,16 @@ import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { pollingStartMsg, pollingStopMsg, pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
-import { Toggle } from '../../../components/Toggle';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 import { useUIStore } from '../../../stores/uiStore';
 import { showConfirmDialog } from '../../PluginDialog';
+import { WireToolPermissionsDialog } from '../canvas/WireToolPermissionsDialog';
+import {
+  GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION,
+  GROUP_PROJECT_CORE_TOOL_SUFFIXES,
+  GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES,
+  getDefaultGroupProjectDisabledToolsFromMetadata,
+} from '../../../../shared/group-project-permissions';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
@@ -376,52 +382,25 @@ function ExpandedProjectView({
   const [editDesc, setEditDesc] = useState(project?.description || '');
   const [editInstr, setEditInstr] = useState(project?.instructions || '');
   const [saving, setSaving] = useState(false);
-
-  // Connection defaults: each toggle represents a group of tool suffixes disabled by default.
-  // When false, those suffixes are added to defaultDisabledTools in project metadata.
-  const SHOULDER_TAP_SUFFIXES = ['shoulder_tap', 'broadcast'];
-  const AGENT_CONTROL_SUFFIXES = ['wake_agent', 'start_polling', 'stop_polling', 'clear_agent', 'compact_agent'];
-  const AGENT_CLEANUP_SUFFIXES = ['clear_topic', 'delete_messages'];
+  const [showDefaultPermissionsDialog, setShowDefaultPermissionsDialog] = useState(false);
 
   const getDefaultDisabledTools = () =>
-    (project?.metadata?.defaultDisabledTools as string[] | undefined) ?? [
-      ...SHOULDER_TAP_SUFFIXES, ...AGENT_CONTROL_SUFFIXES, ...AGENT_CLEANUP_SUFFIXES,
-    ];
+    getDefaultGroupProjectDisabledToolsFromMetadata(project?.metadata);
 
-  const [defaultShoulderTap, setDefaultShoulderTap] = useState(() => {
-    const ddt = getDefaultDisabledTools();
-    return !SHOULDER_TAP_SUFFIXES.some(s => ddt.includes(s));
-  });
-  const [defaultAgentControl, setDefaultAgentControl] = useState(() => {
-    const ddt = getDefaultDisabledTools();
-    return !AGENT_CONTROL_SUFFIXES.some(s => ddt.includes(s));
-  });
-  const [defaultAgentCleanup, setDefaultAgentCleanup] = useState(() => {
-    const ddt = getDefaultDisabledTools();
-    return !AGENT_CLEANUP_SUFFIXES.some(s => ddt.includes(s));
-  });
+  const [defaultDisabledTools, setDefaultDisabledTools] = useState<string[]>(() => getDefaultDisabledTools());
 
   // Sync local state when project data loads or changes externally
   useEffect(() => {
     if (project) {
       setEditDesc(project.description || '');
       setEditInstr(project.instructions || '');
-      const ddt = (project.metadata?.defaultDisabledTools as string[] | undefined) ?? [
-        ...SHOULDER_TAP_SUFFIXES, ...AGENT_CONTROL_SUFFIXES, ...AGENT_CLEANUP_SUFFIXES,
-      ];
-      setDefaultShoulderTap(!SHOULDER_TAP_SUFFIXES.some(s => ddt.includes(s)));
-      setDefaultAgentControl(!AGENT_CONTROL_SUFFIXES.some(s => ddt.includes(s)));
-      setDefaultAgentCleanup(!AGENT_CLEANUP_SUFFIXES.some(s => ddt.includes(s)));
+      setDefaultDisabledTools(getDefaultGroupProjectDisabledToolsFromMetadata(project.metadata));
     }
   }, [project?.description, project?.instructions, project?.metadata?.defaultDisabledTools]);
 
   const computeDefaultDisabledTools = useCallback(() => {
-    const disabled: string[] = [];
-    if (!defaultShoulderTap) disabled.push(...SHOULDER_TAP_SUFFIXES);
-    if (!defaultAgentControl) disabled.push(...AGENT_CONTROL_SUFFIXES);
-    if (!defaultAgentCleanup) disabled.push(...AGENT_CLEANUP_SUFFIXES);
-    return disabled;
-  }, [defaultShoulderTap, defaultAgentControl, defaultAgentCleanup]);
+    return [...defaultDisabledTools];
+  }, [defaultDisabledTools]);
 
   const hasUnsavedChanges = project
     ? editDesc !== (project.description || '') ||
@@ -440,7 +419,7 @@ function ExpandedProjectView({
       await update(groupProjectId, {
         description: editDesc,
         instructions: editInstr,
-        metadata: { defaultDisabledTools },
+        metadata: { defaultDisabledTools, defaultDisabledToolsVersion: GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION },
       });
 
       if (applyToAll) {
@@ -459,6 +438,10 @@ function ExpandedProjectView({
 
   const displayName = project?.name || 'Group Project';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
+  const enabledPrivilegedDefaults = GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES.filter(
+    (suffix) => !defaultDisabledTools.includes(suffix),
+  ).length;
+  const disabledDefaultCount = defaultDisabledTools.length;
 
   // Poll for digest + messages
   useEffect(() => {
@@ -578,6 +561,20 @@ function ExpandedProjectView({
         showRetentionSettings={showRetentionSettings}
       />
 
+      {showDefaultPermissionsDialog && (
+        <WireToolPermissionsDialog
+          binding={{
+            agentId: 'group-project-defaults',
+            targetId: groupProjectId,
+            targetKind: 'group-project',
+            label: `${displayName} defaults`,
+            disabledTools: defaultDisabledTools,
+          }}
+          onSave={setDefaultDisabledTools}
+          onClose={() => setShowDefaultPermissionsDialog(false)}
+        />
+      )}
+
       {/* Retention Settings (collapsible) */}
       {showRetentionSettings && (
         <RetentionSettings groupProjectId={groupProjectId} />
@@ -605,19 +602,23 @@ function ExpandedProjectView({
             className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent resize-none"
           />
         </div>
-        <div className="flex flex-col justify-between flex-shrink-0 gap-1.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0 mb-0.5">New connection defaults</div>
-          <div className="flex items-center gap-2">
-            <Toggle checked={defaultShoulderTap} onChange={setDefaultShoulderTap} />
-            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap">Shoulder Tap</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Toggle checked={defaultAgentControl} onChange={setDefaultAgentControl} />
-            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap">Agent Control</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Toggle checked={defaultAgentCleanup} onChange={setDefaultAgentCleanup} />
-            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap">Agent Cleanup</span>
+        <div className="flex flex-col justify-between flex-shrink-0 gap-1.5 w-44">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0 mb-0.5">Default permissions</div>
+            <div className="text-[10px] text-ctp-subtext0 leading-snug">
+              {GROUP_PROJECT_CORE_TOOL_SUFFIXES.length} message tools on.
+              {' '}
+              {enabledPrivilegedDefaults === 0
+                ? 'Privileged actions off.'
+                : `${enabledPrivilegedDefaults} privileged action${enabledPrivilegedDefaults === 1 ? '' : 's'} on.`}
+            </div>
+            <button
+              onClick={() => setShowDefaultPermissionsDialog(true)}
+              className="mt-1 px-2 py-1 text-[10px] font-medium rounded bg-surface-0 text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
+              data-testid="group-project-default-permissions-button"
+            >
+              Set defaults
+            </button>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -629,7 +630,7 @@ function ExpandedProjectView({
                   : 'bg-surface-0 text-ctp-overlay0 cursor-default'
               }`}
             >
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : 'Save future'}
             </button>
             <button
               onClick={() => handleSaveDescInstr(true)}
@@ -643,6 +644,9 @@ function ExpandedProjectView({
             >
               Apply all
             </button>
+            <span className="text-[10px] text-ctp-overlay0 whitespace-nowrap" title={`${disabledDefaultCount} tools disabled by default`}>
+              {disabledDefaultCount} off
+            </span>
             {confirmClearAll ? (
               <button
                 onClick={handleClearAll}

@@ -528,11 +528,11 @@ describe('ToolRegistry', () => {
       });
     });
 
-    it('only exposes get_status and wake when target agent is sleeping (not in registry)', () => {
+    it('only exposes get_status when target agent is sleeping (not in registry)', () => {
       // agent-2 is NOT in agentRegistry → sleeping
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
-      expect(suffixes).toEqual(['get_status', 'wake']);
+      expect(suffixes).toEqual(['get_status']);
     });
 
     it('exposes all tools when target agent is running (in registry)', () => {
