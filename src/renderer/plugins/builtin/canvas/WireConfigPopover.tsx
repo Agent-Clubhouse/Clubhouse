@@ -110,6 +110,9 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
       await setDisabledTools(binding.targetId, binding.agentId, disabledTools);
       onUpdateWireDefinition?.(binding.targetId, binding.agentId, { disabledTools });
     }
+    // Dismiss the wire popover after saving — the dismissible-layer hook is
+    // disabled while the dialog is open, so we close explicitly here.
+    onClose();
   };
 
   const hasInstructions = liveBinding.instructions && Object.keys(liveBinding.instructions).length > 0;

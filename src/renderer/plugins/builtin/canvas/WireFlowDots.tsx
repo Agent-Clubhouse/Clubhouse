@@ -33,6 +33,12 @@ interface WireFlowDotsProps {
   wireKey: string;
   activity: WireActivityState;
   bidir?: boolean;
+  /**
+   * Target kind of the wire. A2A (`agent`) wires always pulse blue regardless
+   * of bidirectionality; the green tint is reserved for non-agent bidirectional
+   * wires (group-project, MCP) where green signals "two-way communication".
+   */
+  targetKind?: string;
 }
 
 /**
@@ -59,6 +65,7 @@ export const WireFlowDots = React.memo(function WireFlowDots({
   wireKey,
   activity,
   bidir,
+  targetKind,
 }: WireFlowDotsProps) {
   if (activity === 'idle') return null;
 
@@ -71,7 +78,10 @@ export const WireFlowDots = React.memo(function WireFlowDots({
   const opacityValues = isActive ? ACTIVE_OPACITY : AMBIENT_OPACITY;
   const dotRadius = isActive ? ACTIVE_DOT_RADIUS : AMBIENT_DOT_RADIUS;
   const filterId = isActive ? 'wire-dot-glow-active' : 'wire-dot-glow-ambient';
-  const dotColor = bidir ? 'rgb(var(--ctp-success, 166 227 161))' : 'rgb(var(--ctp-accent, 137 180 250))';
+  const isA2A = targetKind === 'agent';
+  const dotColor = bidir && !isA2A
+    ? 'rgb(var(--ctp-success, 166 227 161))'
+    : 'rgb(var(--ctp-accent, 137 180 250))';
 
   const showForward = activity === 'ambient' || activity === 'active-forward' || activity === 'active-both';
   const showReverse = activity === 'active-reverse' || activity === 'active-both';

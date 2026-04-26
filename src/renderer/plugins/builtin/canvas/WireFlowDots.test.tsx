@@ -138,4 +138,31 @@ describe('WireFlowDots', () => {
     const blur = container.querySelector('#wire-dot-glow-ambient feGaussianBlur');
     expect(blur?.getAttribute('stdDeviation')).toBe('2');
   });
+
+  // Wave 10 #4: A2A wires must always pulse blue, even when bidirectional.
+  // The green tint stays for non-agent bidirectional wires (group-project /
+  // MCP) where it signals two-way communication.
+  it('uses blue accent dots for bidirectional A2A wires', () => {
+    const { container } = renderWithSvg(
+      <WireFlowDots wireKey="test-wire" activity="ambient" bidir targetKind="agent" />,
+    );
+    const dot = container.querySelector('[data-testid="wire-dot-fwd-test-wire-0"]');
+    expect(dot?.getAttribute('fill')).toBe('rgb(var(--ctp-accent, 137 180 250))');
+  });
+
+  it('uses green success dots for bidirectional non-A2A wires', () => {
+    const { container } = renderWithSvg(
+      <WireFlowDots wireKey="test-wire" activity="ambient" bidir targetKind="group-project" />,
+    );
+    const dot = container.querySelector('[data-testid="wire-dot-fwd-test-wire-0"]');
+    expect(dot?.getAttribute('fill')).toBe('rgb(var(--ctp-success, 166 227 161))');
+  });
+
+  it('uses blue accent dots for unidirectional wires regardless of targetKind', () => {
+    const { container } = renderWithSvg(
+      <WireFlowDots wireKey="test-wire" activity="ambient" />,
+    );
+    const dot = container.querySelector('[data-testid="wire-dot-fwd-test-wire-0"]');
+    expect(dot?.getAttribute('fill')).toBe('rgb(var(--ctp-accent, 137 180 250))');
+  });
 });
