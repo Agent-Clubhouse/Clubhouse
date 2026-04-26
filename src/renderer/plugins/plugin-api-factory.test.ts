@@ -1581,6 +1581,24 @@ describe('plugin-api-factory', () => {
         expect(alpha.pluginMetadata).toEqual({ boardId: 'b1', cardId: 'c1' });
       });
 
+      it('includes mcpIds when present on agent', () => {
+        useAgentStore.setState((s) => ({
+          agents: {
+            ...s.agents,
+            'agent-1': { ...s.agents['agent-1'], mcpIds: ['mcp-1', 'mcp-2'] },
+          },
+        }));
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const alpha = api.agents.list().find((a) => a.id === 'agent-1')!;
+        expect(alpha.mcpIds).toEqual(['mcp-1', 'mcp-2']);
+      });
+
+      it('returns mcpIds as undefined when not set on store agent', () => {
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const beta = api.agents.list().find((a) => a.id === 'agent-2')!;
+        expect(beta.mcpIds).toBeUndefined();
+      });
+
       it('includes parentAgentId for child agents', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const beta = api.agents.list().find((a) => a.id === 'agent-2')!;
