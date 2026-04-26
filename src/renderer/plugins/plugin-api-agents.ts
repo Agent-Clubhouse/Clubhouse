@@ -42,6 +42,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
           orchestrator: a.orchestrator,
           freeAgentMode: a.freeAgentMode,
           pluginMetadata: a.pluginMetadata,
+          mcpIds: a.mcpIds,
         }));
     },
 

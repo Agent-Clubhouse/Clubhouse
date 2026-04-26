@@ -512,6 +512,8 @@ export interface AgentInfo {
   freeAgentMode?: boolean;
   /** Plugin-supplied metadata attached at spawn time. @since 0.8 */
   pluginMetadata?: Record<string, string>;
+  /** IDs of MCP servers attached to this agent via launch wrapper. @since 0.9 */
+  mcpIds?: string[];
 }
 
 export interface PluginAgentDetailedStatus {
