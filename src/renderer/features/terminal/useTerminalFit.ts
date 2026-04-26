@@ -203,6 +203,10 @@ export function useTerminalFit(
           terminalRef.current.cols,
           terminalRef.current.rows,
         );
+        // fit() reflow can blur xterm's helper textarea — refocus so the
+        // user can type immediately after switching back to an actively
+        // streaming agent (issue #1387).
+        terminalRef.current.focus();
       }
     });
   }, [focused, sessionId, onResize]);
