@@ -34,6 +34,8 @@ import type { PluginAPI, CanvasWidgetMetadata, AgentInfo } from '../../../../sha
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 import { useBlueprintDrop } from './useBlueprintDrop';
 import { getProjectCanvasStore, useAppCanvasStore } from './main';
+import { buildWireDefinitionsFromResult, type ParseResult } from '../../../features/blueprints/parse-blueprint';
+import { useAgentStore } from '../../../stores/agentStore';
 
 /** Pixels to pan per arrow key press (2 grid units). */
 const ARROW_PAN_STEP = 40;
@@ -217,19 +219,32 @@ export function CanvasWorkspace({
   const [blueprintError, setBlueprintError] = useState<string | null>(null);
   const projectId = api.context.projectId ?? null;
 
-  const handleBlueprintImport = useCallback((canvas: import('./canvas-types').CanvasInstance) => {
+  const handleBlueprintImport = useCallback((result: ParseResult) => {
     const store = projectId ? getProjectCanvasStore(projectId) : useAppCanvasStore;
-    store.getState().insertCanvas(canvas);
+    store.getState().insertCanvas(result.canvas);
+    // Manifest format may carry pending wires — restore the ones whose source
+    // agent already resolved on this machine. (Drag/drop into a foreign project
+    // typically won't match; the canvas still imports cleanly without wires.)
+    for (const wire of buildWireDefinitionsFromResult(result)) {
+      store.getState().addWireDefinition(wire);
+    }
   }, [projectId]);
 
   const handleBlueprintError = useCallback((message: string) => {
     setBlueprintError(message);
   }, []);
 
+  const getBlueprintParseContext = useCallback(() => ({
+    agents: Object.values(useAgentStore.getState().agents),
+    projects: useProjectStore.getState().projects.map((p) => ({ id: p.id, name: p.name, path: p.path })),
+    activeProjectId: projectId ?? undefined,
+  }), [projectId]);
+
   const { isDragOver: isBlueprintDragOver } = useBlueprintDrop({
     containerRef,
     onImport: handleBlueprintImport,
     onError: handleBlueprintError,
+    getParseContext: getBlueprintParseContext,
   });
 
   // Auto-dismiss blueprint error toast after 4 seconds

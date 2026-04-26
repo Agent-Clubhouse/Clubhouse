@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useBlueprintDrop } from './useBlueprintDrop';
 
-// Valid blueprint fixture
-const VALID_BLUEPRINT = {
+// ── Fixtures ─────────────────────────────────────────────────────────
+
+const VALID_LEGACY = {
   version: 1,
   name: 'Test Blueprint',
   views: [
@@ -11,8 +12,24 @@ const VALID_BLUEPRINT = {
     { type: 'anchor', title: 'Anchor 1', position: { x: 400, y: 0 }, size: { width: 250, height: 100 }, metadata: {}, label: 'My Anchor' },
   ],
 };
+const VALID_LEGACY_JSON = JSON.stringify(VALID_LEGACY);
 
-const VALID_BLUEPRINT_JSON = JSON.stringify(VALID_BLUEPRINT);
+// Manifest format — what fresh exports look like (semver string version + schemaVersion: 1)
+const VALID_MANIFEST = {
+  id: 'bp-test',
+  name: 'Manifest Test',
+  version: '1.0.0',
+  schemaVersion: 1,
+  createdAt: '2026-04-25T12:00:00.000Z',
+  canvas: {
+    views: [
+      { refId: 'v1', type: 'agent', displayName: 'Alpha', position: { x: 0, y: 0 }, size: { width: 480, height: 480 }, agentRef: 'a1' },
+    ],
+    wires: [],
+  },
+  agents: [{ refId: 'a1', name: 'Alpha', matchBy: { name: 'Alpha' } }],
+};
+const VALID_MANIFEST_JSON = JSON.stringify(VALID_MANIFEST);
 
 /** Create a mock File with the given name and text content. */
 function createMockFile(name: string, content: string, type = 'application/json'): File {
@@ -74,7 +91,7 @@ describe('useBlueprintDrop', () => {
       const { result } = renderDropHook();
       expect(result.current.isDragOver).toBe(false);
 
-      const file = createMockFile('blueprint.json', VALID_BLUEPRINT_JSON);
+      const file = createMockFile('blueprint.json', VALID_LEGACY_JSON);
       act(() => {
         container.dispatchEvent(createDragEvent('dragenter', [file]));
       });
@@ -85,7 +102,7 @@ describe('useBlueprintDrop', () => {
     it('sets isDragOver to false on dragleave', () => {
       const { result } = renderDropHook();
 
-      const file = createMockFile('blueprint.json', VALID_BLUEPRINT_JSON);
+      const file = createMockFile('blueprint.json', VALID_LEGACY_JSON);
       act(() => {
         container.dispatchEvent(createDragEvent('dragenter', [file]));
       });
@@ -100,7 +117,7 @@ describe('useBlueprintDrop', () => {
     it('handles nested dragenter/dragleave from child elements', () => {
       const { result } = renderDropHook();
 
-      const file = createMockFile('blueprint.json', VALID_BLUEPRINT_JSON);
+      const file = createMockFile('blueprint.json', VALID_LEGACY_JSON);
       // Enter parent, then enter child (two enters before one leave)
       act(() => {
         container.dispatchEvent(createDragEvent('dragenter', [file]));
@@ -124,7 +141,7 @@ describe('useBlueprintDrop', () => {
     it('resets isDragOver on drop', async () => {
       const { result } = renderDropHook();
 
-      const file = createMockFile('blueprint.json', VALID_BLUEPRINT_JSON);
+      const file = createMockFile('blueprint.json', VALID_LEGACY_JSON);
       act(() => {
         container.dispatchEvent(createDragEvent('dragenter', [file]));
       });
@@ -138,20 +155,35 @@ describe('useBlueprintDrop', () => {
   });
 
   describe('file drop import', () => {
-    it('imports valid .json blueprint file on drop', async () => {
+    it('imports valid legacy .json blueprint file on drop', async () => {
       renderDropHook();
 
-      const file = createMockFile('blueprint.json', VALID_BLUEPRINT_JSON);
+      const file = createMockFile('blueprint.json', VALID_LEGACY_JSON);
       await act(async () => {
         container.dispatchEvent(createDragEvent('drop', [file]));
       });
 
       expect(onImport).toHaveBeenCalledTimes(1);
-      const imported = onImport.mock.calls[0][0];
-      expect(imported.name).toBe('Test Blueprint');
-      expect(imported.views).toHaveLength(2);
-      expect(imported.views[0].type).toBe('agent');
-      expect(imported.views[1].type).toBe('anchor');
+      const result = onImport.mock.calls[0][0];
+      expect(result.format).toBe('legacy');
+      expect(result.canvas.name).toBe('Test Blueprint');
+      expect(result.canvas.views).toHaveLength(2);
+    });
+
+    it('imports a manifest blueprint (semver string version) on drop', async () => {
+      renderDropHook();
+
+      const file = createMockFile('manifest.json', VALID_MANIFEST_JSON);
+      await act(async () => {
+        container.dispatchEvent(createDragEvent('drop', [file]));
+      });
+
+      // Previously this case threw "Unsupported blueprint version: 1.0.0"
+      expect(onError).not.toHaveBeenCalled();
+      expect(onImport).toHaveBeenCalledTimes(1);
+      const result = onImport.mock.calls[0][0];
+      expect(result.format).toBe('manifest');
+      expect(result.canvas.name).toBe('Manifest Test');
     });
 
     it('calls onError for invalid JSON in .json file', async () => {
@@ -194,8 +226,8 @@ describe('useBlueprintDrop', () => {
     it('only imports the first .json file when multiple dropped', async () => {
       renderDropHook();
 
-      const file1 = createMockFile('first.json', VALID_BLUEPRINT_JSON);
-      const file2 = createMockFile('second.json', VALID_BLUEPRINT_JSON);
+      const file1 = createMockFile('first.json', VALID_LEGACY_JSON);
+      const file2 = createMockFile('second.json', VALID_LEGACY_JSON);
       await act(async () => {
         container.dispatchEvent(createDragEvent('drop', [file1, file2]));
       });
@@ -207,33 +239,69 @@ describe('useBlueprintDrop', () => {
       renderDropHook();
 
       const pngFile = createMockFile('image.png', 'binary', 'image/png');
-      const jsonFile = createMockFile('blueprint.json', VALID_BLUEPRINT_JSON);
+      const jsonFile = createMockFile('blueprint.json', VALID_LEGACY_JSON);
       await act(async () => {
         container.dispatchEvent(createDragEvent('drop', [pngFile, jsonFile]));
       });
 
       expect(onImport).toHaveBeenCalledTimes(1);
-      expect(onImport.mock.calls[0][0].name).toBe('Test Blueprint');
+      expect(onImport.mock.calls[0][0].canvas.name).toBe('Test Blueprint');
+    });
+
+    it('passes parse context to manifest imports for agent matching', async () => {
+      const matchedAgent: any = { id: 'agent-real', name: 'Alpha', orchestrator: null, model: null, status: 'sleeping' };
+      const getParseContext = vi.fn(() => ({
+        agents: [matchedAgent],
+        projects: [],
+        activeProjectId: 'proj-1',
+      }));
+      renderHook(() => useBlueprintDrop({ containerRef, onImport, onError, getParseContext }));
+
+      const file = createMockFile('manifest.json', VALID_MANIFEST_JSON);
+      await act(async () => {
+        container.dispatchEvent(createDragEvent('drop', [file]));
+      });
+
+      expect(getParseContext).toHaveBeenCalled();
+      const result = onImport.mock.calls[0][0];
+      // Agent should match and stub binding should be populated
+      expect(result.stubs).toHaveLength(1);
+      expect(result.stubs[0].badge).toBe('connected');
+      expect(result.stubs[0].boundAgentId).toBe('agent-real');
     });
   });
 
   describe('clipboard paste', () => {
-    it('imports valid blueprint JSON from clipboard paste', async () => {
+    it('imports valid legacy blueprint JSON from clipboard paste', async () => {
       renderDropHook();
 
       await act(async () => {
-        container.dispatchEvent(createPasteEvent(VALID_BLUEPRINT_JSON));
+        container.dispatchEvent(createPasteEvent(VALID_LEGACY_JSON));
       });
 
       expect(onImport).toHaveBeenCalledTimes(1);
-      const imported = onImport.mock.calls[0][0];
-      expect(imported.name).toBe('Test Blueprint');
+      const result = onImport.mock.calls[0][0];
+      expect(result.format).toBe('legacy');
+      expect(result.canvas.name).toBe('Test Blueprint');
+    });
+
+    it('imports valid manifest blueprint JSON from clipboard paste', async () => {
+      renderDropHook();
+
+      await act(async () => {
+        container.dispatchEvent(createPasteEvent(VALID_MANIFEST_JSON));
+      });
+
+      // Previously this silently failed because the legacy validator rejected the semver string version
+      expect(onError).not.toHaveBeenCalled();
+      expect(onImport).toHaveBeenCalledTimes(1);
+      expect(onImport.mock.calls[0][0].format).toBe('manifest');
     });
 
     it('prevents default on successful blueprint paste', async () => {
       renderDropHook();
 
-      const event = createPasteEvent(VALID_BLUEPRINT_JSON);
+      const event = createPasteEvent(VALID_LEGACY_JSON);
       await act(async () => {
         container.dispatchEvent(event);
       });
@@ -255,26 +323,32 @@ describe('useBlueprintDrop', () => {
     it('ignores JSON that does not look like a blueprint', async () => {
       renderDropHook();
 
-      // Has JSON structure but missing "version" and "views" fields
+      // Has JSON structure but missing the version/schemaVersion/views markers
       await act(async () => {
         container.dispatchEvent(createPasteEvent('{"name": "test"}'));
       });
 
       expect(onImport).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
     });
 
-    it('does not prevent default for invalid blueprint JSON', async () => {
+    it('surfaces an error when blueprint-shaped JSON fails to validate', async () => {
       renderDropHook();
 
-      // Has "version" and "views" keywords but is actually invalid
-      const badBlueprint = JSON.stringify({ version: 999, views: 'not-an-array' });
+      // Has "version" and "views" keywords but is actually invalid (future numeric version).
+      // Previously this silently dropped — users got no feedback. Now we surface the error.
+      const badBlueprint = JSON.stringify({ version: 999, views: [] });
       const event = createPasteEvent(badBlueprint);
       await act(async () => {
         container.dispatchEvent(event);
       });
 
-      expect(event.preventDefault).not.toHaveBeenCalled();
       expect(onImport).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onError.mock.calls[0][0]).toContain('Unsupported blueprint version');
+      // We still preventDefault — we consumed the paste (with an error toast),
+      // so the user's clipboard text shouldn't be inserted into a focused input.
+      expect(event.preventDefault).toHaveBeenCalled();
     });
 
     it('ignores empty clipboard', async () => {

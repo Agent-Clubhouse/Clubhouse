@@ -1,11 +1,15 @@
 // ── Blueprint Drag-Drop + Clipboard Paste Hook ─────────────────────
 //
 // Provides drag-drop and Ctrl+V paste support for importing blueprint
-// JSON files directly onto the canvas workspace.
+// JSON files (legacy CanvasBlueprint or modern BlueprintManifest) directly
+// onto the canvas workspace.
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { importBlueprint, validateBlueprint } from './canvas-blueprint';
-import type { CanvasInstance } from './canvas-types';
+import {
+  parseAnyBlueprintText,
+  type ParseContext,
+  type ParseResult,
+} from '../../../features/blueprints/parse-blueprint';
 
 export interface BlueprintDropState {
   /** Whether a valid file is being dragged over the drop zone */
@@ -15,10 +19,16 @@ export interface BlueprintDropState {
 export interface UseBlueprintDropOptions {
   /** Ref to the container element acting as the drop zone */
   containerRef: React.RefObject<HTMLDivElement | null>;
-  /** Callback when a valid blueprint is imported */
-  onImport: (canvas: CanvasInstance) => void;
+  /** Callback when a valid blueprint is parsed — consumer applies it to the store. */
+  onImport: (result: ParseResult) => void;
   /** Callback for user-facing error messages */
   onError: (message: string) => void;
+  /**
+   * Returns the live agent/project state for matching manifest refs.
+   * Optional — legacy blueprints don't need it. If omitted, manifests
+   * import with no matches (stubs stay unbound, wires stay pending).
+   */
+  getParseContext?: () => ParseContext;
 }
 
 /**
@@ -63,33 +73,15 @@ function getJsonFiles(e: DragEvent): File[] {
 }
 
 /**
- * Try to parse and import a blueprint from raw JSON text.
- * Returns the imported CanvasInstance or throws with a user-facing message.
- */
-function parseAndImportBlueprint(text: string): CanvasInstance {
-  let data: unknown;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error('Not a valid JSON file');
-  }
-
-  const error = validateBlueprint(data);
-  if (error) throw new Error(error);
-
-  return importBlueprint(data as any);
-}
-
-/**
  * Hook that adds blueprint drag-drop and clipboard paste to a canvas container.
  *
  * - Drag a .json file onto the canvas to import it
  * - Press Ctrl/Cmd+V with blueprint JSON in clipboard to import
  * - Shows visual drop overlay while dragging
  * - Ignores non-.json files silently
- * - Shows error toast for invalid blueprint JSON
+ * - Shows error toast for invalid blueprint JSON (drop and paste both surface errors)
  */
-export function useBlueprintDrop({ containerRef, onImport, onError }: UseBlueprintDropOptions): BlueprintDropState {
+export function useBlueprintDrop({ containerRef, onImport, onError, getParseContext }: UseBlueprintDropOptions): BlueprintDropState {
   const [isDragOver, setIsDragOver] = useState(false);
   // Track nested dragenter/dragleave events (child elements fire extra events)
   const dragCounterRef = useRef(0);
@@ -135,31 +127,41 @@ export function useBlueprintDrop({ containerRef, onImport, onError }: UseBluepri
     // Import the first .json file
     try {
       const text = await files[0].text();
-      const canvas = parseAndImportBlueprint(text);
-      onImport(canvas);
+      const result = parseAnyBlueprintText(text, getParseContext?.());
+      onImport(result);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to import blueprint');
     }
-  }, [onImport, onError]);
+  }, [onImport, onError, getParseContext]);
 
   // ── Clipboard paste handler ─────────────────────────────────────────
 
-  const handlePaste = useCallback(async (e: ClipboardEvent) => {
+  const handlePaste = useCallback((e: ClipboardEvent) => {
     const text = e.clipboardData?.getData('text/plain');
     if (!text) return;
 
-    // Quick check: must look like JSON with blueprint fields
+    // Quick heuristic: only attempt parse if it looks like a blueprint JSON.
+    // Both the legacy ({ version, views }) and manifest ({ schemaVersion, canvas })
+    // formats start with `{` and contain at least one of these keys.
     const trimmed = text.trim();
-    if (!trimmed.startsWith('{') || !trimmed.includes('"version"') || !trimmed.includes('"views"')) return;
+    if (!trimmed.startsWith('{')) return;
+    const looksLikeBlueprint =
+      trimmed.includes('"schemaVersion"') ||
+      (trimmed.includes('"version"') && trimmed.includes('"views"'));
+    if (!looksLikeBlueprint) return;
 
     try {
-      const canvas = parseAndImportBlueprint(trimmed);
-      e.preventDefault(); // Only prevent default if we successfully parsed
-      onImport(canvas);
-    } catch {
-      // Not a valid blueprint — let the paste event propagate normally
+      const result = parseAnyBlueprintText(trimmed, getParseContext?.());
+      e.preventDefault(); // We're consuming this paste — stop default text insertion
+      onImport(result);
+    } catch (err) {
+      // The clipboard *looked* like a blueprint (passed the heuristic) but failed
+      // to parse. Surface the error so the user knows their paste was rejected,
+      // rather than silently dropping it.
+      e.preventDefault();
+      onError(err instanceof Error ? err.message : 'Failed to import blueprint');
     }
-  }, [onImport]);
+  }, [onImport, onError, getParseContext]);
 
   // ── Attach event listeners ──────────────────────────────────────────
 

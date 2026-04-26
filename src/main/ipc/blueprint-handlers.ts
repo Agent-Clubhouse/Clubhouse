@@ -69,20 +69,91 @@ function extractSummary(filePath: string, data: Record<string, unknown>, source:
 }
 
 export function registerBlueprintHandlers(): void {
-  // SAVE_DIALOG — from Mission 51 (blueprint export)
-  ipcMain.handle(IPC.BLUEPRINT.SAVE_DIALOG, withValidatedArgs(
-    [stringArg()],
-    async (_event, defaultName: string) => {
+  /**
+   * SAVE_TO_FILE — combined save dialog + write.
+   *
+   * Opens a native save dialog and, if the user picks a path, writes the
+   * provided JSON content there. The dialog itself is the user-consent gate,
+   * so this deliberately skips the renderer-facing path sandbox: a user
+   * exporting a blueprint should be able to save it anywhere on disk
+   * (e.g. ~/Desktop, ~/Documents) without us second-guessing the choice.
+   *
+   * The IPC is indivisible — the renderer can't supply a target path; it
+   * comes from the dialog return inside main. So a malicious renderer can't
+   * leverage this to write to arbitrary locations without user interaction.
+   */
+  ipcMain.handle(IPC.BLUEPRINT.SAVE_TO_FILE, withValidatedArgs(
+    [stringArg(), stringArg({ minLength: 0 })],
+    async (_event, defaultName: string, content: string): Promise<{
+      canceled: boolean;
+      filePath?: string;
+      error?: string;
+    }> => {
       const win = BrowserWindow.getFocusedWindow();
       if (!win) return { canceled: true };
-      const result = await dialog.showSaveDialog(win, {
+      const dialogResult = await dialog.showSaveDialog(win, {
         title: 'Save Blueprint',
         defaultPath: defaultName,
         filters: [{ name: 'Blueprint files', extensions: ['json'] }],
       });
-      return { canceled: result.canceled, filePath: result.filePath };
+      if (dialogResult.canceled || !dialogResult.filePath) {
+        return { canceled: true };
+      }
+      try {
+        await fsp.writeFile(dialogResult.filePath, content, 'utf-8');
+        return { canceled: false, filePath: dialogResult.filePath };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        appLog('core:blueprint', 'error', 'Failed to write blueprint to user-chosen path', {
+          meta: { filePath: dialogResult.filePath, error: message },
+        });
+        return { canceled: false, filePath: dialogResult.filePath, error: message };
+      }
     },
   ));
+
+  /**
+   * OPEN_AND_READ — combined open dialog + read.
+   *
+   * Lets the user pick a blueprint .json file from anywhere on disk and
+   * returns its parsed contents. Same consent model as SAVE_TO_FILE: the OS
+   * dialog is the gate, so we bypass the sandbox. Returns `{ canceled: true }`
+   * if the user cancels, or `{ canceled: false, data, filePath }` on success.
+   * Read or parse failures return `{ canceled: false, error }`.
+   */
+  ipcMain.handle(IPC.BLUEPRINT.OPEN_AND_READ, async (): Promise<{
+    canceled: boolean;
+    data?: Record<string, unknown>;
+    filePath?: string;
+    error?: string;
+  }> => {
+    const win = BrowserWindow.getFocusedWindow();
+    if (!win) return { canceled: true };
+    const dialogResult = await dialog.showOpenDialog(win, {
+      title: 'Open Blueprint',
+      filters: [{ name: 'Blueprint files', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+    if (dialogResult.canceled || dialogResult.filePaths.length === 0) {
+      return { canceled: true };
+    }
+    const filePath = dialogResult.filePaths[0];
+    try {
+      const stat = await fsp.stat(filePath);
+      if (stat.size > MAX_BLUEPRINT_SIZE_BYTES) {
+        return { canceled: false, filePath, error: `File too large (max ${MAX_BLUEPRINT_SIZE_BYTES / 1024 / 1024} MB)` };
+      }
+      const raw = await fsp.readFile(filePath, 'utf-8');
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      return { canceled: false, filePath, data };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      appLog('core:blueprint', 'error', 'Failed to open user-chosen blueprint file', {
+        meta: { filePath, error: message },
+      });
+      return { canceled: false, filePath, error: message };
+    }
+  });
 
   /**
    * BLUEPRINT.LIST — Scan .clubhouse/blueprints/*.json across all project paths.

@@ -442,7 +442,18 @@ export const IPC = {
     LIST: 'blueprint:list',
     READ: 'blueprint:read',
     DELETE: 'blueprint:delete',
-    SAVE_DIALOG: 'blueprint:save-dialog',
+    /**
+     * Open a save dialog and write the chosen path in one IPC call.
+     * The user picking the path in the OS dialog is the consent gate, so this
+     * bypasses the renderer-facing path sandbox and accepts any writable path.
+     */
+    SAVE_TO_FILE: 'blueprint:save-to-file',
+    /**
+     * Open a file dialog and read+parse the chosen file in one IPC call.
+     * Same consent model as SAVE_TO_FILE — bypasses the sandbox so users can
+     * import blueprints from anywhere on disk (e.g. ~/Downloads).
+     */
+    OPEN_AND_READ: 'blueprint:open-and-read',
   },
   AGENT_QUEUE: {
     CREATE: 'agent-queue:create',
