@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ActionCardData, ActionCardStatus, FeedItem } from './types';
+import type { ActionCardData, FeedItem } from './types';
 
 // The global test setup (setup-renderer.ts) provides window.clubhouse with all
 // required mocks including assistant.saveHistory, assistant.loadHistory, etc.

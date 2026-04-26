@@ -36,9 +36,6 @@ import { CodexCliProvider } from './codex-cli-provider';
 
 
 describe('Instructions path resolution', () => {
-  // path.join normalizes separators for cross-platform compat ('\project' on Windows)
-  const projectDir = path.join('/project');
-
   beforeEach(() => {
     vi.clearAllMocks();
     // Default: binaries found at standard paths

@@ -152,7 +152,7 @@ describe('AgentTerminal write batching', () => {
       mockOnDataCallback = cb;
       return mockRemoveDataListener;
     });
-    window.clubhouse.pty.onExit = vi.fn().mockImplementation((cb: any) => {
+    window.clubhouse.pty.onExit = vi.fn().mockImplementation((_cb: any) => {
       return mockRemoveExitListener;
     });
 

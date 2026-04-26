@@ -352,7 +352,6 @@ async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): P
     // Log when agent count decreases — this is the signal for data loss
     const prevCount = entry.agents.length;
     if (agents.length < prevCount) {
-      const prevIds = new Set(entry.agents.map((a) => a.id));
       const newIds = new Set(agents.map((a) => a.id));
       const removed = entry.agents.filter((a) => !newIds.has(a.id));
       appLog('core:agent-config', 'warn', `Agent count decreased: ${prevCount} → ${agents.length}`, {

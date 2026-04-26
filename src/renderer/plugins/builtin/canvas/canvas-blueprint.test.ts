@@ -5,7 +5,7 @@ import {
   validateBlueprint,
   BLUEPRINT_VERSION,
 } from './canvas-blueprint';
-import type { CanvasBlueprint, BlueprintView } from './canvas-blueprint';
+import type { CanvasBlueprint } from './canvas-blueprint';
 import type {
   CanvasInstance,
   AgentCanvasView,

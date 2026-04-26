@@ -8,7 +8,7 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
-import { requireString, optionalString, numberWithDefault, stringWithDefault } from './validation';
+import { requireString, numberWithDefault, stringWithDefault } from './validation';
 
 /**
  * Read-only expressions that are safe to auto-allow without user confirmation.
