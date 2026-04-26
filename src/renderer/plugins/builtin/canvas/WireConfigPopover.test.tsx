@@ -3,6 +3,7 @@ import { render, fireEvent, waitFor, act } from '@testing-library/react';
 import { WireConfigPopover } from './WireConfigPopover';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { useAgentStore } from '../../../stores/agentStore';
 
 describe('WireConfigPopover', () => {
   const browserBinding: McpBindingEntry = {
@@ -21,6 +22,7 @@ describe('WireConfigPopover', () => {
 
   beforeEach(() => {
     useMcpBindingStore.setState({ bindings: [browserBinding, agentBinding] });
+    useAgentStore.setState({ agents: {} });
     vi.clearAllMocks();
   });
 
@@ -69,6 +71,21 @@ describe('WireConfigPopover', () => {
     );
     expect(getByTestId('wire-instructions-button')).toBeTruthy();
     expect(getByTestId('wire-instructions-button').textContent).toContain('Set Instructions');
+  });
+
+  it('does not expose a wire-level wake action for sleeping agent targets', () => {
+    useAgentStore.setState({
+      agents: {
+        'agent-2': { id: 'agent-2', name: 'Agent 2', kind: 'durable', status: 'sleeping', projectId: 'project-1' } as any,
+      },
+    });
+
+    const { queryByTestId, queryByText } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+
+    expect(queryByTestId('wire-wake-agent')).toBeNull();
+    expect(queryByText('Wake Agent')).toBeNull();
   });
 
   it('shows Edit Instructions when instructions are set', () => {

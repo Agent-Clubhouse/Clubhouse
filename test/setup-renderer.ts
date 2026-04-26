@@ -95,6 +95,8 @@ vi.stubGlobal('clubhouse', {
     isHeadlessAgent: async () => false,
     onHookEvent: () => noop,
     onAgentWaking: () => noop,
+    onAgentWakeFailed: () => noop,
+    onAgentSleeping: () => noop,
     // Structured mode
     startStructured: asyncNoop,
     cancelStructured: asyncNoop,

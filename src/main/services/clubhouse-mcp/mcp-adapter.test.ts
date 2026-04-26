@@ -169,7 +169,7 @@ describe('McpCommandAdapter', () => {
       expect(result.content[0].text).toBe('done');
     });
 
-    it('respects sleeping agent filtering — only get_status and wake visible', () => {
+    it('respects sleeping agent filtering — only get_status visible', () => {
       const statusHandler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'status' }] });
       const wakeHandler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'waking' }] });
       const sendHandler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'sent' }] });
@@ -217,7 +217,7 @@ describe('McpCommandAdapter', () => {
       });
 
       expect(suffixes).toContain('get_status');
-      expect(suffixes).toContain('wake');
+      expect(suffixes).not.toContain('wake');
       expect(suffixes).not.toContain('send_message');
     });
 

@@ -546,8 +546,6 @@ export function registerGroupProjectTools(): void {
 
         const cwd = agentConfig.worktreePath || projectPath;
 
-        broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, targetAgentId);
-
         await agentSystem.spawnAgent({
           agentId: targetAgentId,
           projectPath,
@@ -561,6 +559,8 @@ export function registerGroupProjectTools(): void {
           resume,
           sessionId: resume ? agentConfig.lastSessionId : undefined,
         });
+
+        broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, targetAgentId);
 
         appLog('core:group-project', 'info', 'Agent woken via GP tool', {
           meta: { agentId: targetAgentId, projectPath, resume },
@@ -579,8 +579,10 @@ export function registerGroupProjectTools(): void {
           }],
         };
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, targetAgentId, errorMessage);
         return {
-          content: [{ type: 'text', text: `Failed to wake agent: ${err instanceof Error ? err.message : String(err)}` }],
+          content: [{ type: 'text', text: `Failed to wake agent: ${errorMessage}` }],
           isError: true,
         };
       }
@@ -646,6 +648,7 @@ export function registerGroupProjectTools(): void {
         }
 
         await agentSystem.killAgent(targetAgentId, projectPath, tracked?.orchestrator || durable?.agentConfig.orchestrator);
+        broadcastToAllWindows(IPC.AGENT.AGENT_SLEEPING, targetAgentId);
 
         return {
           content: [{

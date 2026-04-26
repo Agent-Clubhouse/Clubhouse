@@ -15,9 +15,10 @@ import { useUIStore } from '../../../stores/uiStore';
 import { showConfirmDialog } from '../../PluginDialog';
 import { WireToolPermissionsDialog } from '../canvas/WireToolPermissionsDialog';
 import {
+  GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION,
   GROUP_PROJECT_CORE_TOOL_SUFFIXES,
   GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES,
-  getDefaultGroupProjectDisabledTools,
+  getDefaultGroupProjectDisabledToolsFromMetadata,
 } from '../../../../shared/group-project-permissions';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
@@ -384,7 +385,7 @@ function ExpandedProjectView({
   const [showDefaultPermissionsDialog, setShowDefaultPermissionsDialog] = useState(false);
 
   const getDefaultDisabledTools = () =>
-    getDefaultGroupProjectDisabledTools(project?.metadata?.defaultDisabledTools as string[] | undefined);
+    getDefaultGroupProjectDisabledToolsFromMetadata(project?.metadata);
 
   const [defaultDisabledTools, setDefaultDisabledTools] = useState<string[]>(() => getDefaultDisabledTools());
 
@@ -393,7 +394,7 @@ function ExpandedProjectView({
     if (project) {
       setEditDesc(project.description || '');
       setEditInstr(project.instructions || '');
-      setDefaultDisabledTools(getDefaultGroupProjectDisabledTools(project.metadata?.defaultDisabledTools as string[] | undefined));
+      setDefaultDisabledTools(getDefaultGroupProjectDisabledToolsFromMetadata(project.metadata));
     }
   }, [project?.description, project?.instructions, project?.metadata?.defaultDisabledTools]);
 
@@ -418,7 +419,7 @@ function ExpandedProjectView({
       await update(groupProjectId, {
         description: editDesc,
         instructions: editInstr,
-        metadata: { defaultDisabledTools },
+        metadata: { defaultDisabledTools, defaultDisabledToolsVersion: GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION },
       });
 
       if (applyToAll) {

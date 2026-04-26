@@ -807,6 +807,40 @@ describe('GroupProjectTools', () => {
     );
   });
 
+  it('wake_agent broadcasts wake_failed and not waking when spawn fails', async () => {
+    const project = await groupProjectRegistry.create('WakeFail');
+
+    mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
+    mockListDurable.mockResolvedValue([
+      { id: 'agent-2', name: 'falcon', model: 'opus', orchestrator: 'claude-code', worktreePath: '/test/proj/wt' },
+    ]);
+    mockSpawnAgent.mockRejectedValue(new Error('CLI not available'));
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'WF',
+      agentName: 'robin',
+      targetName: 'WakeFail',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'WF',
+      agentName: 'falcon',
+      targetName: 'WakeFail',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'WakeFail' });
+    const toolName = buildToolName(binding, 'wake_agent');
+    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('CLI not available');
+    expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-wake-failed', 'agent-2', 'CLI not available');
+    expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('agent:agent-waking', 'agent-2');
+  });
+
   it('sleep_agent stops a connected member via agent lifecycle', async () => {
     const project = await groupProjectRegistry.create('SleepAgent');
 
@@ -837,6 +871,7 @@ describe('GroupProjectTools', () => {
     expect(parsed.action).toBe('sleep_agent');
     expect(parsed.delivered).toBe(true);
     expect(mockKillAgent).toHaveBeenCalledWith('agent-2', '/test/proj', 'claude-code');
+    expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-sleeping', 'agent-2');
 
     agentRegistry.untrack('agent-2');
   });

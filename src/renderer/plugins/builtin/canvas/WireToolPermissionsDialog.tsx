@@ -9,7 +9,7 @@ import { GROUP_PROJECT_TOOL_SUFFIXES } from '../../../../shared/group-project-pe
 
 /** Known tool suffixes for each target kind. */
 const TOOL_SUFFIXES: Record<string, string[]> = {
-  agent: ['send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent', 'wake'],
+  agent: ['send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent'],
   browser: ['navigate', 'screenshot', 'get_console', 'click', 'type', 'evaluate', 'get_page_content', 'get_accessibility_tree'],
   'group-project': [...GROUP_PROJECT_TOOL_SUFFIXES],
   'agent-queue': ['invoke', 'get_output', 'list', 'cancel', 'get_queue_info'],
@@ -30,7 +30,6 @@ const TOOL_HINTS: Record<string, string> = {
   send_file: 'Send content via temp file',
   clear_agent: 'Send /clear to this agent (clears its context)',
   compact_agent: 'Send /compact to this agent (compacts its context)',
-  wake: 'Wake sleeping agents',
   navigate: 'Load URLs',
   screenshot: 'Capture page screenshots',
   get_console: 'Read console logs',

@@ -320,6 +320,7 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
     expect(source).toContain('description: editDesc');
     expect(source).toContain('instructions: editInstr');
     expect(source).toContain('defaultDisabledTools');
+    expect(source).toContain('defaultDisabledToolsVersion');
     expect(source).toContain('computeDefaultDisabledTools');
   });
 

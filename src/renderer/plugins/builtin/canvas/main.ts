@@ -18,7 +18,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { ExportBlueprintDialog } from '../../../features/blueprints/ExportBlueprintDialog';
-import { DEFAULT_GROUP_PROJECT_DISABLED_TOOLS } from '../../../../shared/group-project-permissions';
+import { getDefaultGroupProjectDisabledToolsFromMetadata } from '../../../../shared/group-project-permissions';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -633,15 +633,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
               if (entry.targetKind === 'group-project' && !entry.disabledTools?.length) {
                 const { projects } = useGroupProjectStore.getState();
                 const project = projects.find(p => p.id === entry.targetId);
-                const defaults = project?.metadata?.defaultDisabledTools as string[] | undefined;
-                if (!defaults) {
-                  // No explicit defaults set — use the all-disabled default (new projects start locked down)
-                  const disabledTools = [...DEFAULT_GROUP_PROJECT_DISABLED_TOOLS];
+                const disabledTools = getDefaultGroupProjectDisabledToolsFromMetadata(project?.metadata);
+                if (disabledTools.length > 0) {
                   wireEntry = { ...entry, disabledTools };
                   void window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, disabledTools);
-                } else if (defaults.length > 0) {
-                  wireEntry = { ...entry, disabledTools: defaults };
-                  void window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, defaults);
                 }
               }
               store.getState().addWireDefinition(wireEntry);

@@ -26,7 +26,17 @@ export const GROUP_PROJECT_TOOL_SUFFIXES = [
 ] as const;
 
 export const DEFAULT_GROUP_PROJECT_DISABLED_TOOLS = [...GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES];
+export const GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION = 2;
+export const LEGACY_DEFAULT_DISABLED_TOOL_ADDITIONS = ['sleep_agent'] as const;
 
-export function getDefaultGroupProjectDisabledTools(defaults?: string[]): string[] {
-  return defaults ? [...defaults] : [...DEFAULT_GROUP_PROJECT_DISABLED_TOOLS];
+export function getDefaultGroupProjectDisabledTools(defaults?: string[], version?: number): string[] {
+  if (!defaults) return [...DEFAULT_GROUP_PROJECT_DISABLED_TOOLS];
+  if (version === GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION) return [...defaults];
+  return Array.from(new Set([...defaults, ...LEGACY_DEFAULT_DISABLED_TOOL_ADDITIONS]));
+}
+
+export function getDefaultGroupProjectDisabledToolsFromMetadata(metadata?: Record<string, unknown>): string[] {
+  const defaults = metadata?.defaultDisabledTools as string[] | undefined;
+  const version = metadata?.defaultDisabledToolsVersion as number | undefined;
+  return getDefaultGroupProjectDisabledTools(defaults, version);
 }

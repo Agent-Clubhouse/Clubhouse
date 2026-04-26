@@ -325,10 +325,20 @@ function initPtyExitListener(): () => void {
 }
 
 function initAgentWakingListener(): () => void {
-  const removeListener = window.clubhouse.agent.onAgentWaking((agentId: string) => {
+  const removeWakingListener = window.clubhouse.agent.onAgentWaking((agentId: string) => {
     useAgentStore.getState().updateAgentStatus(agentId, 'waking');
   });
-  return removeListener;
+  const removeWakeFailedListener = window.clubhouse.agent.onAgentWakeFailed((agentId: string, errorMessage: string) => {
+    useAgentStore.getState().updateAgentStatus(agentId, 'error', undefined, errorMessage);
+  });
+  const removeSleepingListener = window.clubhouse.agent.onAgentSleeping((agentId: string) => {
+    useAgentStore.getState().updateAgentStatus(agentId, 'sleeping');
+  });
+  return () => {
+    removeWakingListener();
+    removeWakeFailedListener();
+    removeSleepingListener();
+  };
 }
 
 function initHookEventListener(): () => void {

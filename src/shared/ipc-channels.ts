@@ -58,6 +58,8 @@ export const IPC = {
     SPAWN_AGENT: 'agent:spawn-agent',
     KILL_AGENT: 'agent:kill-agent',
     AGENT_WAKING: 'agent:agent-waking',
+    AGENT_WAKE_FAILED: 'agent:agent-wake-failed',
+    AGENT_SLEEPING: 'agent:agent-sleeping',
     SPAWN_COMPANION: 'agent:spawn-companion',
     GET_COMPANION_STATUS: 'agent:get-companion-status',
     GET_COMPANION_WORKSPACE: 'agent:get-companion-workspace',
