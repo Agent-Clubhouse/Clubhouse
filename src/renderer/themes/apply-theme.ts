@@ -1,6 +1,7 @@
 import { ThemeDefinition } from '../../shared/types';
 
 export function hexToRgbChannels(hex: string): string {
+  if (!hex) return '0 0 0';
   const h = hex.replace('#', '');
   const r = parseInt(h.substring(0, 2), 16);
   const g = parseInt(h.substring(2, 4), 16);
@@ -42,6 +43,7 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
   };
 
   for (const [varName, hex] of Object.entries(colorMap)) {
+    if (hex === undefined) continue;
     const rgb = hexToRgbChannels(hex);
     s.setProperty(varName, rgb);
     cache[varName] = rgb;
@@ -187,7 +189,7 @@ export function themeToStyleVars(theme: ThemeDefinition): Record<string, string>
   };
 
   for (const [varName, hex] of Object.entries(colorMap)) {
-    vars[varName] = hexToRgbChannels(hex);
+    if (hex !== undefined) vars[varName] = hexToRgbChannels(hex);
   }
 
   return vars;
