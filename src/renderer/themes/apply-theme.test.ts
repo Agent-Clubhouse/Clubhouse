@@ -27,7 +27,7 @@ Object.defineProperty(globalThis, 'localStorage', {
   writable: true,
 });
 
-import { applyTheme } from './apply-theme';
+import { applyTheme, hexToRgbChannels, themeToStyleVars } from './apply-theme';
 
 function makeTheme(overrides?: Partial<ThemeDefinition>): ThemeDefinition {
   return {
@@ -98,6 +98,34 @@ function makeTheme(overrides?: Partial<ThemeDefinition>): ThemeDefinition {
     ...overrides,
   };
 }
+
+describe('hexToRgbChannels', () => {
+  it('converts a hex color to space-separated RGB channels', () => {
+    expect(hexToRgbChannels('#1e1e2e')).toBe('30 30 46');
+    expect(hexToRgbChannels('#ffffff')).toBe('255 255 255');
+    expect(hexToRgbChannels('#000000')).toBe('0 0 0');
+  });
+
+  it('returns "0 0 0" for an undefined color (plugin-contributed theme missing a slot)', () => {
+    expect(hexToRgbChannels(undefined as unknown as string)).toBe('0 0 0');
+  });
+
+  it('returns "0 0 0" for an empty string', () => {
+    expect(hexToRgbChannels('')).toBe('0 0 0');
+  });
+});
+
+describe('themeToStyleVars', () => {
+  it('skips undefined color slots without throwing (plugin theme missing accent2)', () => {
+    const theme = makeTheme();
+    delete (theme.colors as any).accent2;
+
+    let result: Record<string, string> | undefined;
+    expect(() => { result = themeToStyleVars(theme); }).not.toThrow();
+    expect(result!['--ctp-accent2']).toBeUndefined();
+    expect(result!['--ctp-base']).toBe('30 30 46');
+  });
+});
 
 describe('applyTheme', () => {
   beforeEach(() => {
@@ -220,6 +248,29 @@ describe('applyTheme', () => {
     it('sets exactly 36 CSS variables for a plain theme (17 colors + 16 hljs + 3 shadows)', () => {
       applyTheme(makeTheme());
       expect(mockSetProperty).toHaveBeenCalledTimes(36);
+    });
+  });
+
+  describe('missing color slots (plugin-contributed themes)', () => {
+    it('does not throw when accent2 is undefined', () => {
+      const theme = makeTheme();
+      delete (theme.colors as any).accent2;
+      expect(() => applyTheme(theme)).not.toThrow();
+    });
+
+    it('skips setting the CSS variable for any undefined color slot', () => {
+      const theme = makeTheme();
+      delete (theme.colors as any).accent2;
+      applyTheme(theme);
+      expect(mockSetProperty).not.toHaveBeenCalledWith('--ctp-accent2', expect.anything());
+    });
+
+    it('still sets all other color variables when one is missing', () => {
+      const theme = makeTheme();
+      delete (theme.colors as any).accent2;
+      applyTheme(theme);
+      expect(mockSetProperty).toHaveBeenCalledWith('--ctp-accent', '203 166 247');
+      expect(mockSetProperty).toHaveBeenCalledWith('--ctp-base', '30 30 46');
     });
   });
 
