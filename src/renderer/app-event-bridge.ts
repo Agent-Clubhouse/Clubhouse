@@ -341,6 +341,51 @@ function initAgentWakingListener(): () => void {
   };
 }
 
+/**
+ * Detect sleeping → running transitions via PTY data.
+ *
+ * When an agent is woken externally — e.g. via the group-project `wake_agent`
+ * MCP tool, or via annex sync — its status is set to `waking` (or stays
+ * `sleeping`) by the broadcast listeners above. The transition to `running`
+ * normally happens when a hook event arrives (see handleHookEvent), but if
+ * the woken agent sits idle at a prompt, no hook ever fires and the status
+ * is stuck. PTY data is a reliable signal that the process is alive.
+ *
+ * Mirrors the same logic in PopoutWindow.tsx for popout windows.
+ */
+function initPtyDataWakeListener(): () => void {
+  const awokenAgents = new Set<string>();
+
+  const removeDataListener = window.clubhouse.pty.onData((agentId: string) => {
+    if (awokenAgents.has(agentId)) return;
+    const agent = useAgentStore.getState().agents[agentId];
+    if (!agent) return;
+    awokenAgents.add(agentId);
+    if (agent.status === 'running') return;
+    useAgentStore.setState((s) => {
+      const a = s.agents[agentId];
+      if (!a || a.status === 'running') return s;
+      return {
+        agents: {
+          ...s.agents,
+          [agentId]: { ...a, status: 'running', exitCode: undefined, errorMessage: undefined },
+        },
+        agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
+      };
+    });
+  });
+
+  // Allow re-detection on the next wake by clearing the dedupe set on exit.
+  const removeExitListener = window.clubhouse.pty.onExit((agentId: string) => {
+    awokenAgents.delete(agentId);
+  });
+
+  return () => {
+    removeDataListener();
+    removeExitListener();
+  };
+}
+
 function initHookEventListener(): () => void {
   const removeHookListener = window.clubhouse.agent.onHookEvent(
     (agentId: string, event: { kind: string; toolName?: string; toolInput?: Record<string, unknown>; message?: string; toolVerb?: string; timestamp: number }) => {
@@ -637,6 +682,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(...initWindowListeners());
   cleanups.push(initPtyExitListener());
   cleanups.push(initAgentWakingListener());
+  cleanups.push(initPtyDataWakeListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initAnnexSpawnListener());
   cleanups.push(initAgentStateBroadcast());

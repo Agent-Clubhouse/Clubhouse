@@ -16,6 +16,7 @@ const mockRemovers = {
   onNavigateToAgent: vi.fn(),
   onNavigateToPluginSettings: vi.fn(),
   onExit: vi.fn(),
+  onData: vi.fn(),
   onHookEvent: vi.fn(),
   onAgentWaking: vi.fn(),
   onAgentWakeFailed: vi.fn(),
@@ -52,6 +53,7 @@ vi.stubGlobal('window', {
     },
     pty: {
       onExit: vi.fn(() => mockRemovers.onExit),
+      onData: vi.fn(() => mockRemovers.onData),
       kill: vi.fn(),
     },
     agent: {
@@ -427,6 +429,129 @@ describe('initAppEventBridge', () => {
     });
 
     expect(mockPlaySound).toHaveBeenCalledWith('permission-denied', 'proj-1');
+  });
+
+  it('registers a PTY data listener as a wake-detection fallback', () => {
+    expect(window.clubhouse.pty.onData).toHaveBeenCalled();
+  });
+
+  it('transitions a non-running agent to running on first PTY data', () => {
+    const setStateSpy = vi.mocked(useAgentStore.setState);
+    setStateSpy.mockClear();
+
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: { ...createAgent('a1', 'proj-1'), status: 'waking' } },
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const dataCallback = vi.mocked(window.clubhouse.pty.onData).mock.calls[0][0];
+    dataCallback('a1', 'output');
+
+    expect(setStateSpy).toHaveBeenCalledTimes(1);
+    const updater = setStateSpy.mock.calls[0][0] as (s: any) => any;
+    const next = updater({
+      agents: { a1: { ...createAgent('a1', 'proj-1'), status: 'waking' } },
+      agentSpawnedAt: {},
+    });
+    expect(next.agents.a1.status).toBe('running');
+    expect(next.agentSpawnedAt.a1).toBeTypeOf('number');
+  });
+
+  it('does not transition or re-fire on subsequent PTY data for the same agent', () => {
+    const setStateSpy = vi.mocked(useAgentStore.setState);
+    setStateSpy.mockClear();
+
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: { ...createAgent('a1', 'proj-1'), status: 'waking' } },
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const dataCallback = vi.mocked(window.clubhouse.pty.onData).mock.calls[0][0];
+    dataCallback('a1', 'first');
+    dataCallback('a1', 'second');
+    dataCallback('a1', 'third');
+
+    expect(setStateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not transition an already-running agent', () => {
+    const setStateSpy = vi.mocked(useAgentStore.setState);
+    setStateSpy.mockClear();
+
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: { ...createAgent('a1', 'proj-1'), status: 'running' } },
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const dataCallback = vi.mocked(window.clubhouse.pty.onData).mock.calls[0][0];
+    dataCallback('a1', 'output');
+
+    expect(setStateSpy).not.toHaveBeenCalled();
+  });
+
+  it('clears wake dedupe on PTY exit so the next wake is detected', () => {
+    const setStateSpy = vi.mocked(useAgentStore.setState);
+    setStateSpy.mockClear();
+
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: { ...createAgent('a1', 'proj-1'), status: 'waking' } },
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const dataCallback = vi.mocked(window.clubhouse.pty.onData).mock.calls[0][0];
+    dataCallback('a1', 'first');
+    expect(setStateSpy).toHaveBeenCalledTimes(1);
+
+    // Find the exit listener registered by the PTY data wake listener (not the
+    // earlier exit listener for status-to-sleeping). The latest call is ours.
+    const exitCalls = vi.mocked(window.clubhouse.pty.onExit).mock.calls;
+    const wakeExitCallback = exitCalls[exitCalls.length - 1][0];
+    wakeExitCallback('a1', 0);
+
+    setStateSpy.mockClear();
+    // Status is still 'waking' in the mock; second wake cycle should re-fire.
+    dataCallback('a1', 'second-wake');
+    expect(setStateSpy).toHaveBeenCalledTimes(1);
   });
 
   it('does not play agent-focus when the active agent is unchanged or cleared', () => {
