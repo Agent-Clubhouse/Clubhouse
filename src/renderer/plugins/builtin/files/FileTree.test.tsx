@@ -1701,6 +1701,105 @@ describe('FileTree — drag-and-drop', () => {
       expect(rename).not.toHaveBeenCalled();
     });
   });
+
+  // Wave 10 #3: when the dragged item is part of a multi-selection, every
+  // selected sibling moves with it.  Previously only the clicked node moved
+  // and the rest of the stack stayed put.
+  it('drag of one multi-selected file moves the whole selection', async () => {
+    const rename = vi.fn(async () => {});
+    const showConfirm = vi.fn(async () => true);
+    const api = createRealisticAPI({
+      files: { ...createMockAPI().files, readTree: realisticReadTree(), rename },
+      ui: { ...createMockAPI().ui, showConfirm },
+    });
+
+    const { container } = render(<FileTree api={api} />);
+    await screen.findByText('src');
+
+    // Multi-select README.md and package.json
+    fireEvent.click(screen.getByText('README.md'));
+    fireEvent.click(screen.getByText('package.json'), { metaKey: true });
+
+    const readmeEl = container.querySelector('[data-path="/project/README.md"]')!;
+    const srcEl = container.querySelector('[data-path="/project/src"]')!;
+
+    fireEvent.dragStart(readmeEl, { dataTransfer: { effectAllowed: '', setData: vi.fn() } });
+    fireEvent.dragOver(srcEl, { dataTransfer: { dropEffect: '' } });
+    fireEvent.drop(srcEl, { dataTransfer: { dropEffect: '' } });
+
+    await waitFor(() => {
+      expect(showConfirm).toHaveBeenCalledWith(expect.stringContaining('2 items'));
+      expect(rename).toHaveBeenCalledWith('README.md', 'src/README.md');
+      expect(rename).toHaveBeenCalledWith('package.json', 'src/package.json');
+    });
+  });
+
+});
+
+// ── New file/folder targeting (Wave 10 #1, #2) ────────────────────────
+
+describe('FileTree — toolbar new-file targets nav-selected folder', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  // Wave 10 #2: clicking a folder in the tree makes it the parent for the
+  // toolbar's New File / New Folder buttons.  Previously these buttons used
+  // the active editor's folder, which surprised users who had clearly just
+  // navigated somewhere else in the tree.
+  it('toolbar New File creates the file inside the folder the user clicked', async () => {
+    const writeFile = vi.fn(async () => {});
+    const showInput = vi.fn(async () => 'newfile.ts');
+    const api = createRealisticAPI({
+      files: { ...createMockAPI().files, readTree: realisticReadTree(), writeFile },
+      ui: { ...createMockAPI().ui, showInput },
+    });
+
+    const { container } = render(<FileTree api={api} />);
+    await screen.findByText('src');
+
+    // Open README.md — this becomes the active editor file
+    fireEvent.click(screen.getByText('README.md'));
+    // Now click the src folder in the nav pane
+    fireEvent.click(screen.getByText('src'));
+
+    // Click the toolbar New File button
+    const newFileBtn = container.querySelector('[title="New File"]')!;
+    fireEvent.click(newFileBtn);
+
+    await waitFor(() => {
+      expect(writeFile).toHaveBeenCalledWith('src/newfile.ts', '');
+    });
+  });
+
+  // Wave 10 #1: creating inside a previously-collapsed empty folder
+  // auto-expands it so the user sees the result instead of an apparently
+  // empty folder.
+  it('auto-expands the target folder after creating a new file inside it', async () => {
+    const writeFile = vi.fn(async () => {});
+    const showInput = vi.fn(async () => 'newfile.ts');
+    const api = createRealisticAPI({
+      files: { ...createMockAPI().files, readTree: realisticReadTree(), writeFile },
+      ui: { ...createMockAPI().ui, showInput },
+    });
+
+    render(<FileTree api={api} />);
+    const srcDir = await screen.findByText('src');
+
+    // Right-click on src — context menu New File
+    fireEvent.contextMenu(srcDir);
+    await waitFor(() => expect(screen.getByText('New File')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('New File'));
+
+    await waitFor(() => {
+      expect(writeFile).toHaveBeenCalledWith('src/newfile.ts', '');
+    });
+    // After creation the folder should be expanded — index.ts (a child of
+    // src in the realistic mock tree) becomes visible.
+    await waitFor(() => {
+      expect(screen.getByText('index.ts')).toBeInTheDocument();
+    });
+  });
 });
 
 // ── Reveal active file ────────────────────────────────────────────────

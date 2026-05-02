@@ -546,6 +546,11 @@ export function registerGroupProjectTools(): void {
 
         const cwd = agentConfig.worktreePath || projectPath;
 
+        // Notify renderer the wake is starting so the agent card can show a
+        // transitional state. spawnAgent will broadcast AGENT_AWOKE on success,
+        // which flips the card from "waking" to "running" and surfaces the PTY.
+        broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, targetAgentId);
+
         await agentSystem.spawnAgent({
           agentId: targetAgentId,
           projectPath,
@@ -559,8 +564,6 @@ export function registerGroupProjectTools(): void {
           resume,
           sessionId: resume ? agentConfig.lastSessionId : undefined,
         });
-
-        broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, targetAgentId);
 
         appLog('core:group-project', 'info', 'Agent woken via GP tool', {
           meta: { agentId: targetAgentId, projectPath, resume },

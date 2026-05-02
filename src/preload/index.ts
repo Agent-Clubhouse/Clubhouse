@@ -210,6 +210,13 @@ const api = {
       return () => { ipcRenderer.removeListener(IPC.AGENT.AGENT_WAKING, listener); };
     },
 
+    onAgentAwoke: (callback: (agentId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string) =>
+        callback(agentId);
+      ipcRenderer.on(IPC.AGENT.AGENT_AWOKE, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT.AGENT_AWOKE, listener); };
+    },
+
     onAgentWakeFailed: (callback: (agentId: string, errorMessage: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, agentId: string, errorMessage: string) =>
         callback(agentId, errorMessage);

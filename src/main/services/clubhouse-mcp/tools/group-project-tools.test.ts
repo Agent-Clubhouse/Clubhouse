@@ -807,7 +807,7 @@ describe('GroupProjectTools', () => {
     );
   });
 
-  it('wake_agent broadcasts wake_failed and not waking when spawn fails', async () => {
+  it('wake_agent broadcasts wake_failed when spawn fails', async () => {
     const project = await groupProjectRegistry.create('WakeFail');
 
     mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
@@ -837,8 +837,13 @@ describe('GroupProjectTools', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('CLI not available');
+    // AGENT_WAKING fires before spawn (transitional state).  AGENT_WAKE_FAILED
+    // then transitions the renderer to error.  AGENT_AWOKE must NOT fire on
+    // failure — that's broadcast by spawnAgent on success only and is what
+    // flips the card from 'waking' to 'running'.
+    expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-waking', 'agent-2');
     expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-wake-failed', 'agent-2', 'CLI not available');
-    expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('agent:agent-waking', 'agent-2');
+    expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('agent:agent-awoke', 'agent-2');
   });
 
   it('sleep_agent stops a connected member via agent lifecycle', async () => {

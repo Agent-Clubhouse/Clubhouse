@@ -165,7 +165,7 @@ const WireGroup = React.memo(function WireGroup({
         data-testid={`wire-path-${wireKey}`}
       />
       {/* Flowing light dots — driven by activity state */}
-      <WireFlowDots wireKey={wireKey} activity={activity} bidir={bidir} />
+      <WireFlowDots wireKey={wireKey} activity={activity} bidir={bidir} targetKind={binding.targetKind} />
     </g>
   );
 });

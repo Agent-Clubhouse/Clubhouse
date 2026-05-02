@@ -324,10 +324,24 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
     expect(source).toContain('computeDefaultDisabledTools');
   });
 
-  it('has save-future and apply-all buttons for connection defaults', () => {
-    expect(source).toContain('Save future');
-    expect(source).toContain('Apply all');
-    expect(source).toContain('applyToAll');
+  // Wave 10 #8: scope choice (apply to new vs apply to all) now lives inside
+  // the confirm dialog — the inline UI is one Save button, not two.
+  it('uses a single Save button that opens an approval dialog for scope', () => {
+    expect(source).toContain('group-project-save-defaults-button');
+    expect(source).toContain('showApprovalDialog');
+    expect(source).toContain("value: 'future'");
+    expect(source).toContain("value: 'all'");
+    // Old two-button copy gone
+    expect(source).not.toContain('Save future');
+    expect(source).not.toContain('Apply all');
+  });
+
+  // Wave 10 #7: Clear All sits on its own row inside the action column so it
+  // isn't clipped at the column's fixed width when the canvas widget is in
+  // the maximize/expanded view.
+  it('renders Clear All on its own row to avoid clipping', () => {
+    expect(source).toContain('group-project-clear-all');
+    expect(source).toContain('group-project-confirm-clear-all');
   });
 });
 

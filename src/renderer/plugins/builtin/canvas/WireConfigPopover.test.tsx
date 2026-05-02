@@ -265,6 +265,33 @@ describe('WireConfigPopover', () => {
     resolveUnbind();
   });
 
+  // Wave 10 #6: opening the manage-tools dialog suppresses the popover's
+  // outside-click handler.  After Save the dialog unmounts and the popover
+  // would re-enable that handler — but the click that triggered Save is
+  // already gone, so the popover would linger.  Closing explicitly on Save
+  // gives users the same dismiss-on-commit feel as the rest of the canvas.
+  it('closes the popover after saving tool permissions', async () => {
+    const setDisabledToolsMock = vi.fn().mockResolvedValue(undefined);
+    useMcpBindingStore.setState({
+      bindings: [browserBinding],
+      setDisabledTools: setDisabledToolsMock,
+    } as any);
+    const onClose = vi.fn();
+    const { getByTestId } = render(
+      <WireConfigPopover binding={browserBinding} x={100} y={200} onClose={onClose} />,
+    );
+
+    fireEvent.click(getByTestId('wire-permissions-button'));
+    fireEvent.click(getByTestId('wire-permissions-save'));
+
+    await waitFor(() => {
+      expect(setDisabledToolsMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+    });
+  });
+
   it('does not set instructions on reverse binding for unidirectional wires', async () => {
     const setInstructionsMock = vi.fn().mockResolvedValue(undefined);
     // Only forward binding, no reverse

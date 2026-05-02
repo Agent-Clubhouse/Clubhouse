@@ -506,6 +506,11 @@ export function FileTree({ api }: { api: PluginAPI }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [gitMap, setGitMap] = useState<Map<string, string>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: FileNode } | null>(null);
+  // Nav-pane selection — tracks the last node the user clicked in the tree
+  // (file OR folder).  Distinct from selectedPath, which syncs to the active
+  // editor tab.  Used so the toolbar's New File/Folder targets the folder the
+  // user picked, not the editor's parent dir.  Wave 10 #2.
+  const [navSelectedPath, setNavSelectedPath] = useState<string | null>(null);
   const [rootPath, setRootPath] = useState<string>('.');
   const [worktrees, setWorktrees] = useState<string[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string>('');
@@ -797,6 +802,11 @@ export function FileTree({ api }: { api: PluginAPI }) {
   // Expand directory — lazy load children
   const toggleExpand = useCallback(async (dirPath: string) => {
     setFocusedPath(dirPath);
+    // Wave 10 #2: clicking a folder selects it as the nav target so the
+    // toolbar's New File/Folder lands inside it, not in the active editor's
+    // parent dir.
+    setNavSelectedPath(dirPath);
+    setMultiSelectedPaths(new Set());
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(dirPath)) {
@@ -820,6 +830,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
   // Select file — single-click opens as preview tab
   const selectFile = useCallback((path: string) => {
     setSelectedPath(path);
+    setNavSelectedPath(path);
     setFocusedPath(path);
     setMultiSelectedPaths(new Set());
     const relPath = getRelativePath(path, projectPath);
@@ -829,6 +840,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
   // Double-click — opens as permanent (pinned) tab
   const openFilePermanently = useCallback((path: string) => {
     setSelectedPath(path);
+    setNavSelectedPath(path);
     setFocusedPath(path);
     setMultiSelectedPaths(new Set());
     const relPath = getRelativePath(path, projectPath);
@@ -898,78 +910,76 @@ export function FileTree({ api }: { api: PluginAPI }) {
     setExpanded(new Set());
   }, []);
 
+  // Resolve the directory the toolbar's New File/Folder should target.  Prefer
+  // the user's last nav-pane click (folder OR file). Fall back to selectedPath
+  // (the active editor's file) for the case where the user hasn't clicked
+  // anything in the tree yet.  Wave 10 #2.
+  const resolveTargetDir = useCallback((): string => {
+    const candidate = navSelectedPath || selectedPath;
+    if (!candidate) return rootPath === '.' ? '' : rootPath;
+    const findNode = (nodes: FileNode[]): FileNode | undefined => {
+      for (const n of nodes) {
+        if (n.path === candidate) return n;
+        if (n.children) {
+          const found = findNode(n.children);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    };
+    const node = findNode(tree);
+    const relCandidate = getRelativePath(candidate, projectPath);
+    if (node?.isDirectory) return relCandidate;
+    return relCandidate.replace(/\/[^/]+$/, '') || (rootPath === '.' ? '' : rootPath);
+  }, [navSelectedPath, selectedPath, projectPath, rootPath, tree]);
+
   // New file at root or selected directory
   const handleNewFile = useCallback(async () => {
     const name = await api.ui.showInput('File name');
     if (!name) return;
-
-    let dir = rootPath === '.' ? '' : rootPath;
-    if (selectedPath) {
-      const relSelected = getRelativePath(selectedPath, projectPath);
-      // Check if the tree node at selectedPath is a directory
-      const findNode = (nodes: FileNode[]): FileNode | undefined => {
-        for (const n of nodes) {
-          if (n.path === selectedPath) return n;
-          if (n.children) {
-            const found = findNode(n.children);
-            if (found) return found;
-          }
-        }
-        return undefined;
-      };
-      const node = findNode(tree);
-      if (node?.isDirectory) {
-        dir = relSelected;
-      } else {
-        dir = relSelected.replace(/\/[^/]+$/, '') || (rootPath === '.' ? '' : rootPath);
-      }
-    }
-
+    const dir = resolveTargetDir();
     const newPath = dir ? `${dir}/${name}` : name;
     try {
       await api.files.writeFile(newPath, '');
+      // Auto-expand the parent so the user can see the new file even when
+      // the target was a previously-collapsed empty folder.  Wave 10 #1.
+      if (dir) {
+        const absDir = `${projectPath}/${dir}`;
+        setExpanded((prev) => new Set(prev).add(absDir));
+        try {
+          const children = await api.files.readTree(dir, { includeHidden: showHidden, depth: 1 });
+          setTree(prev => updateNodeChildren(prev, absDir, children));
+        } catch { /* ignore */ }
+      }
       loadTree();
       loadGitStatus();
     } catch (err) {
       api.ui.showError(`Failed to create file: ${err}`);
     }
-  }, [api, rootPath, selectedPath, projectPath, tree, loadTree, loadGitStatus]);
+  }, [api, projectPath, showHidden, resolveTargetDir, loadTree, loadGitStatus]);
 
   // New folder at root or selected directory
   const handleNewFolder = useCallback(async () => {
     const name = await api.ui.showInput('Folder name');
     if (!name) return;
-
-    let dir = rootPath === '.' ? '' : rootPath;
-    if (selectedPath) {
-      const relSelected = getRelativePath(selectedPath, projectPath);
-      const findNode = (nodes: FileNode[]): FileNode | undefined => {
-        for (const n of nodes) {
-          if (n.path === selectedPath) return n;
-          if (n.children) {
-            const found = findNode(n.children);
-            if (found) return found;
-          }
-        }
-        return undefined;
-      };
-      const node = findNode(tree);
-      if (node?.isDirectory) {
-        dir = relSelected;
-      } else {
-        dir = relSelected.replace(/\/[^/]+$/, '') || (rootPath === '.' ? '' : rootPath);
-      }
-    }
-
+    const dir = resolveTargetDir();
     const newPath = dir ? `${dir}/${name}` : name;
     try {
       await api.files.mkdir(newPath);
+      if (dir) {
+        const absDir = `${projectPath}/${dir}`;
+        setExpanded((prev) => new Set(prev).add(absDir));
+        try {
+          const children = await api.files.readTree(dir, { includeHidden: showHidden, depth: 1 });
+          setTree(prev => updateNodeChildren(prev, absDir, children));
+        } catch { /* ignore */ }
+      }
       loadTree();
       loadGitStatus();
     } catch (err) {
       api.ui.showError(`Failed to create folder: ${err}`);
     }
-  }, [api, rootPath, selectedPath, projectPath, tree, loadTree, loadGitStatus]);
+  }, [api, projectPath, showHidden, resolveTargetDir, loadTree, loadGitStatus]);
 
   // File operations (context menu)
   const handleContextAction = useCallback(async (action: string, node: FileNode) => {
@@ -977,12 +987,28 @@ export function FileTree({ api }: { api: PluginAPI }) {
       ? getRelativePath(node.path, projectPath)
       : getRelativePath(node.path, projectPath).replace(/\/[^/]+$/, '') || '.';
 
+    // Wave 10 #1: when the target is an empty / collapsed folder, expand it
+    // and lazy-load its children so the newly-created item is visible
+    // immediately. Without this the folder still looks empty after a
+    // right-click → New File, which is what users described as "right-click
+    // can't add to it".
+    const revealInsideFolder = async (dirNode: FileNode) => {
+      if (!dirNode.isDirectory) return;
+      setExpanded((prev) => new Set(prev).add(dirNode.path));
+      try {
+        const relPath = getRelativePath(dirNode.path, projectPath);
+        const children = await api.files.readTree(relPath, { includeHidden: showHidden, depth: 1 });
+        setTree(prev => updateNodeChildren(prev, dirNode.path, children));
+      } catch { /* ignore */ }
+    };
+
     switch (action) {
       case 'newFile': {
         const name = await api.ui.showInput('File name');
         if (!name) return;
         const newPath = parentDir === '.' ? name : `${node.isDirectory ? getRelativePath(node.path, projectPath) : parentDir}/${name}`;
         await api.files.writeFile(newPath, '');
+        await revealInsideFolder(node);
         break;
       }
       case 'newFolder': {
@@ -990,6 +1016,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         if (!name) return;
         const newPath = parentDir === '.' ? name : `${node.isDirectory ? getRelativePath(node.path, projectPath) : parentDir}/${name}`;
         await api.files.mkdir(newPath);
+        await revealInsideFolder(node);
         break;
       }
       case 'rename': {
@@ -1035,22 +1062,33 @@ export function FileTree({ api }: { api: PluginAPI }) {
     // Refresh tree after operation
     loadTree();
     loadGitStatus();
-  }, [api, projectPath, loadTree, loadGitStatus, multiSelectedPaths]);
+  }, [api, projectPath, showHidden, loadTree, loadGitStatus, multiSelectedPaths]);
 
   // Drag-and-drop handlers
+  // dragSourcesRef holds *every* path included in the drag — the directly-
+  // clicked node plus any other multi-selected items.  Wave 10 #3.
+  const dragSourcesRef = useRef<string[]>([]);
   const handleDragStart = useCallback((e: React.DragEvent, node: FileNode) => {
+    // If the dragged item is part of an active multi-selection, include the
+    // whole stack; otherwise fall back to a single-item drag.
+    const sources = multiSelectedPaths.has(node.path)
+      ? Array.from(new Set([node.path, ...multiSelectedPaths]))
+      : [node.path];
+    dragSourcesRef.current = sources;
     dragSourceRef.current = node.path;
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', node.path);
-  }, []);
+    e.dataTransfer.setData('text/plain', sources.join('\n'));
+  }, [multiSelectedPaths]);
 
   const handleDragOver = useCallback((e: React.DragEvent, node: FileNode) => {
-    if (!dragSourceRef.current) return;
+    const sources = dragSourcesRef.current;
+    if (sources.length === 0) return;
     if (!node.isDirectory) return; // only directories are valid drop targets
-    if (node.path === dragSourceRef.current) return;
-    // Prevent dropping a folder into itself or a descendant
-    const srcPath = dragSourceRef.current;
-    if (node.path.startsWith(srcPath + '/') || node.path === srcPath) return;
+    // Prevent dropping any source folder into itself or a descendant
+    for (const srcPath of sources) {
+      if (node.path === srcPath) return;
+      if (node.path.startsWith(srcPath + '/')) return;
+    }
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDropTargetPath(node.path);
@@ -1074,32 +1112,47 @@ export function FileTree({ api }: { api: PluginAPI }) {
     dragEnterCounterRef.current = 0;
     setDropTargetPath(null);
 
-    const srcPath = dragSourceRef.current;
+    const sources = dragSourcesRef.current;
+    dragSourcesRef.current = [];
     dragSourceRef.current = null;
 
-    if (!srcPath || !targetNode.isDirectory) return;
-    if (targetNode.path === srcPath) return;
-    if (targetNode.path.startsWith(srcPath + '/')) return;
+    if (sources.length === 0 || !targetNode.isDirectory) return;
 
-    const srcRel = getRelativePath(srcPath, projectPath);
-    const fileName = srcRel.split('/').pop() ?? srcRel;
+    // Compute moves; skip any source that's the target or already inside it.
     const destDir = getRelativePath(targetNode.path, projectPath);
-    const destRel = `${destDir}/${fileName}`;
-
-    if (srcRel === destRel) return;
+    const moves: Array<{ srcRel: string; destRel: string; fileName: string }> = [];
+    for (const srcPath of sources) {
+      if (targetNode.path === srcPath) continue;
+      if (targetNode.path.startsWith(srcPath + '/')) continue;
+      const srcRel = getRelativePath(srcPath, projectPath);
+      const fileName = srcRel.split('/').pop() ?? srcRel;
+      const destRel = destDir === '.' ? fileName : `${destDir}/${fileName}`;
+      if (srcRel === destRel) continue;
+      moves.push({ srcRel, destRel, fileName });
+    }
+    if (moves.length === 0) return;
 
     const confirmed = await api.ui.showConfirm(
-      `Move "${fileName}" to "${destDir}"?`,
+      moves.length === 1
+        ? `Move "${moves[0].fileName}" to "${destDir}"?`
+        : `Move ${moves.length} items to "${destDir}"?`,
     );
     if (!confirmed) return;
 
-    try {
-      await api.files.rename(srcRel, destRel);
-      loadTree();
-      loadGitStatus();
-    } catch (err) {
-      api.ui.showError(`Failed to move file: ${err}`);
+    let failed = 0;
+    for (const m of moves) {
+      try {
+        await api.files.rename(m.srcRel, m.destRel);
+      } catch {
+        failed += 1;
+      }
     }
+    if (failed > 0) {
+      api.ui.showError(`Failed to move ${failed} of ${moves.length} item${moves.length === 1 ? '' : 's'}`);
+    }
+    setMultiSelectedPaths(new Set());
+    loadTree();
+    loadGitStatus();
   }, [api, projectPath, loadTree, loadGitStatus]);
 
   // Keyboard navigation

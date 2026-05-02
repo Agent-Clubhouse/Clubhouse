@@ -328,6 +328,9 @@ function initAgentWakingListener(): () => void {
   const removeWakingListener = window.clubhouse.agent.onAgentWaking((agentId: string) => {
     useAgentStore.getState().updateAgentStatus(agentId, 'waking');
   });
+  const removeAwokeListener = window.clubhouse.agent.onAgentAwoke((agentId: string) => {
+    useAgentStore.getState().updateAgentStatus(agentId, 'running');
+  });
   const removeWakeFailedListener = window.clubhouse.agent.onAgentWakeFailed((agentId: string, errorMessage: string) => {
     useAgentStore.getState().updateAgentStatus(agentId, 'error', undefined, errorMessage);
   });
@@ -336,6 +339,7 @@ function initAgentWakingListener(): () => void {
   });
   return () => {
     removeWakingListener();
+    removeAwokeListener();
     removeWakeFailedListener();
     removeSleepingListener();
   };

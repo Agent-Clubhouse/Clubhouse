@@ -167,7 +167,7 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
                 data-testid={`wire-permission-${suffix}`}
               >
                 <div className="flex-1 min-w-0">
-                  <div className={`text-xs font-medium ${isEnabled ? 'text-ctp-text' : 'text-ctp-overlay0 line-through'}`}>
+                  <div className={`text-xs font-medium ${isEnabled ? 'text-ctp-text' : 'text-ctp-overlay0'}`}>
                     {toolLabel(suffix)}
                   </div>
                   {TOOL_HINTS[suffix] && (
