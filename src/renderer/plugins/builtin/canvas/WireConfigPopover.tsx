@@ -3,9 +3,13 @@
  * disconnect, bidirectional toggle, and custom instructions controls.
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { useAgentStore } from '../../../stores/agentStore';
+import { useProjectStore } from '../../../stores/projectStore';
+import { useAnnexClientStore } from '../../../stores/annexClientStore';
+import { useRemoteProjectStore, parseNamespacedId, isRemoteAgentId } from '../../../stores/remoteProjectStore';
 import { Toggle } from '../../../components/Toggle';
 import { WireInstructionsDialog } from './WireInstructionsDialog';
 import { WireToolPermissionsDialog } from './WireToolPermissionsDialog';
@@ -37,6 +41,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
   const [bidirectional, setBidirectional] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
+  const [waking, setWaking] = useState(false);
 
   // Keep binding in sync with store (instructions may change)
   const liveBinding = bindings.find(
@@ -45,6 +50,44 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
 
   // Check if reverse binding exists (agent-to-agent only)
   const isAgentToAgent = binding.targetKind === 'agent';
+
+  // ── Wake action for sleeping agent targets ──────────────────────────
+  // For A2A wires, expose a wake action on the popover when the target
+  // agent is sleeping or in an error state. Mirrors SleepingAgent.tsx.
+  const targetAgentLocal = useAgentStore((s) => isAgentToAgent ? s.agents[binding.targetId] : undefined);
+  const targetAgentRemote = useRemoteProjectStore((s) => isAgentToAgent ? s.remoteAgents[binding.targetId] : undefined);
+  const targetAgent = targetAgentLocal || targetAgentRemote;
+  const projects = useProjectStore((s) => s.projects);
+  const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
+  const sendAgentWake = useAnnexClientStore((s) => s.sendAgentWake);
+
+  const isTargetSleeping = !!targetAgent
+    && (targetAgent.status === 'sleeping' || targetAgent.status === 'error')
+    && targetAgent.kind === 'durable';
+
+  const targetIsRemote = useMemo(() => isAgentToAgent && isRemoteAgentId(binding.targetId), [isAgentToAgent, binding.targetId]);
+  const remoteParts = useMemo(() => targetIsRemote ? parseNamespacedId(binding.targetId) : null, [targetIsRemote, binding.targetId]);
+
+  const handleWakeTarget = useCallback(async () => {
+    if (!targetAgent || waking) return;
+    setWaking(true);
+    try {
+      if (targetIsRemote && remoteParts) {
+        await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId);
+      } else {
+        const project = projects.find((p) => p.id === targetAgent.projectId);
+        if (!project) return;
+        const configs = await window.clubhouse.agent.listDurable(project.path);
+        const config = configs.find((c: { id: string }) => c.id === targetAgent.id);
+        if (config) {
+          await spawnDurableAgent(project.id, project.path, config, false);
+        }
+      }
+      onClose();
+    } finally {
+      setWaking(false);
+    }
+  }, [targetAgent, waking, targetIsRemote, remoteParts, sendAgentWake, projects, spawnDurableAgent, onClose]);
   useEffect(() => {
     if (isAgentToAgent) {
       const reverse = bindings.some(
@@ -133,6 +176,31 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
 
         {/* Actions */}
         <div className="p-2 space-y-1">
+          {/* Wake target agent (agent-to-agent + sleeping/errored target) */}
+          {isAgentToAgent && isTargetSleeping && (
+            <button
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-ctp-accent hover:bg-ctp-accent/10 rounded transition-colors disabled:opacity-50"
+              onClick={handleWakeTarget}
+              disabled={waking}
+              data-testid="wire-wake-agent"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+              <span className="flex-1 text-left">
+                {waking ? 'Waking...' : (targetAgent?.status === 'error' ? 'Retry Agent' : 'Wake Agent')}
+              </span>
+            </button>
+          )}
+
           {/* Bidirectional toggle (agent-to-agent only) */}
           {isAgentToAgent && (
             <div

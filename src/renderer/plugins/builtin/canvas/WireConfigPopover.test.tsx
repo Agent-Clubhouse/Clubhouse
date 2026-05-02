@@ -4,6 +4,7 @@ import { WireConfigPopover } from './WireConfigPopover';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useProjectStore } from '../../../stores/projectStore';
 
 describe('WireConfigPopover', () => {
   const browserBinding: McpBindingEntry = {
@@ -73,19 +74,114 @@ describe('WireConfigPopover', () => {
     expect(getByTestId('wire-instructions-button').textContent).toContain('Set Instructions');
   });
 
-  it('does not expose a wire-level wake action for sleeping agent targets', () => {
+  it('exposes a wake action for sleeping agent targets on A2A wires', () => {
     useAgentStore.setState({
       agents: {
         'agent-2': { id: 'agent-2', name: 'Agent 2', kind: 'durable', status: 'sleeping', projectId: 'project-1' } as any,
       },
     });
 
-    const { queryByTestId, queryByText } = render(
+    const { getByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+
+    expect(getByTestId('wire-wake-agent')).toBeTruthy();
+    expect(getByTestId('wire-wake-agent').textContent).toContain('Wake Agent');
+  });
+
+  it('shows "Retry Agent" for errored target agents', () => {
+    useAgentStore.setState({
+      agents: {
+        'agent-2': { id: 'agent-2', name: 'Agent 2', kind: 'durable', status: 'error', projectId: 'project-1' } as any,
+      },
+    });
+
+    const { getByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+
+    expect(getByTestId('wire-wake-agent').textContent).toContain('Retry');
+  });
+
+  it('does not expose a wake action when target agent is running', () => {
+    useAgentStore.setState({
+      agents: {
+        'agent-2': { id: 'agent-2', name: 'Agent 2', kind: 'durable', status: 'running', projectId: 'project-1' } as any,
+      },
+    });
+
+    const { queryByTestId } = render(
       <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
     );
 
     expect(queryByTestId('wire-wake-agent')).toBeNull();
-    expect(queryByText('Wake Agent')).toBeNull();
+  });
+
+  it('does not expose a wake action for non-agent targets even when binding label matches', () => {
+    useAgentStore.setState({
+      agents: {
+        'browser-1': { id: 'browser-1', name: 'Browser', kind: 'durable', status: 'sleeping', projectId: 'project-1' } as any,
+      },
+    });
+
+    const { queryByTestId } = render(
+      <WireConfigPopover binding={browserBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+
+    expect(queryByTestId('wire-wake-agent')).toBeNull();
+  });
+
+  it('does not expose a wake action for quick-kind agent targets', () => {
+    useAgentStore.setState({
+      agents: {
+        'agent-2': { id: 'agent-2', name: 'Agent 2', kind: 'quick', status: 'sleeping', projectId: 'project-1' } as any,
+      },
+    });
+
+    const { queryByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+
+    expect(queryByTestId('wire-wake-agent')).toBeNull();
+  });
+
+  it('clicking wake on a local sleeping target spawns the durable agent and closes the popover', async () => {
+    const onClose = vi.fn();
+    const spawnDurableAgent = vi.fn().mockResolvedValue('agent-2');
+    useAgentStore.setState({
+      agents: {
+        'agent-2': { id: 'agent-2', name: 'Agent 2', kind: 'durable', status: 'sleeping', projectId: 'project-1' } as any,
+      },
+      spawnDurableAgent,
+    } as any);
+
+    useProjectStore.setState({
+      projects: [{ id: 'project-1', name: 'Proj', path: '/path/to/proj' } as any],
+    } as any);
+
+    (window as any).clubhouse = {
+      agent: {
+        listDurable: vi.fn().mockResolvedValue([
+          { id: 'agent-2', name: 'Agent 2', color: 'red' },
+        ]),
+      },
+    };
+
+    const { getByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={onClose} />,
+    );
+
+    fireEvent.click(getByTestId('wire-wake-agent'));
+
+    await waitFor(() => {
+      expect(spawnDurableAgent).toHaveBeenCalledWith(
+        'project-1',
+        '/path/to/proj',
+        expect.objectContaining({ id: 'agent-2' }),
+        false,
+      );
+      expect(onClose).toHaveBeenCalled();
+    });
   });
 
   it('shows Edit Instructions when instructions are set', () => {
