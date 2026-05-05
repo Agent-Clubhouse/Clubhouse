@@ -15,7 +15,7 @@ import { registerAgentQueueHandlers } from './agent-queue-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
-import { registerSettingsHandlers } from './settings-handlers';
+import { registerSettingsHandlers, hookServerSettings } from './settings-handlers';
 import { registerAssistantHandlers } from './assistant-handlers';
 import { registerBlueprintHandlers } from './blueprint-handlers';
 import * as hookServer from '../services/hook-server';
@@ -66,8 +66,14 @@ export function registerAllHandlers(): void {
   registerAssistantHandlers();
   registerBlueprintHandlers();
 
-  // Start the hook server for agent status events
-  hookServer.start().catch((err) => {
+  // Start the hook server for agent status events.  The persisted toggle
+  // (HOOK_SERVER_SETTINGS) is honoured at startup so a previously-disabled
+  // server stays disabled across restarts — this is the durable escape hatch
+  // for users whose orchestrator hook integration gets stuck.
+  hookServer.start().then(() => {
+    const persisted = hookServerSettings.getSettings();
+    if (!persisted.enabled) hookServer.setEnabled(false);
+  }).catch((err) => {
     logService.appLog('core:hook-server', 'error', 'Failed to start hook server', {
       meta: { error: err?.message ?? String(err), stack: err?.stack },
     });

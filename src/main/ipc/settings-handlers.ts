@@ -13,10 +13,12 @@
  * That's it — no IPC channels, handler registration, or preload changes needed.
  */
 import { createManagedSettings } from '../services/managed-settings';
-import { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS } from '../../shared/settings-definitions';
+import { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, HOOK_SERVER_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS } from '../../shared/settings-definitions';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
+import { onHookServerSettingsChanged } from '../services/hook-server-toggle';
+import type { HookServerSettings } from '../../shared/types';
 
-export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
+export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, HOOK_SERVER_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
 
 export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
   defaultsOverride: {
@@ -31,6 +33,12 @@ export const mcpSettings = createManagedSettings(MCP_SETTINGS, {
 });
 
 export const securitySettings = createManagedSettings(SECURITY_SETTINGS);
+
+export const hookServerSettings = createManagedSettings(HOOK_SERVER_SETTINGS, {
+  onSave: (settings: HookServerSettings) => {
+    void onHookServerSettingsChanged(settings);
+  },
+});
 
 // ---------------------------------------------------------------------------
 // To migrate more settings, add them here following the same pattern.
@@ -48,4 +56,5 @@ export function registerSettingsHandlers(): void {
   editorSettings.register();
   mcpSettings.register();
   securitySettings.register();
+  hookServerSettings.register();
 }

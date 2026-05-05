@@ -61,7 +61,7 @@ vi.mock('./annex-event-bus', () => ({
   emitHookEvent: (...args: unknown[]) => mockEmitHookEvent(...args),
 }));
 
-import { start, stop, getPort, waitReady } from './hook-server';
+import { start, stop, getPort, waitReady, setEnabled, isEnabled } from './hook-server';
 
 function postToServer(port: number, path: string, body: unknown, extraHeaders?: Record<string, string>): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -924,6 +924,78 @@ describe('hook-server', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('disabled mode (escape hatch)', () => {
+    const VALID_NONCE = 'disabled-nonce';
+
+    beforeEach(() => {
+      mockGetAgentProjectPath.mockReturnValue('/my/project');
+      mockGetAgentOrchestrator.mockReturnValue('claude-code');
+      mockGetAgentNonce.mockReturnValue(VALID_NONCE);
+      mockResolveOrchestrator.mockResolvedValue({
+        id: 'claude-code',
+        parseHookEvent: vi.fn(() => ({ kind: 'pre_tool', toolName: 'Bash' })),
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+    });
+
+    afterEach(() => {
+      // Re-enable so other test groups aren't affected by ordering
+      setEnabled(true);
+    });
+
+    it('isEnabled defaults to true', () => {
+      expect(isEnabled()).toBe(true);
+    });
+
+    it('setEnabled(false) makes /hook routes return 200 immediately without dispatching', async () => {
+      setEnabled(false);
+      const status = await postToServer(port, '/hook/agent-1', {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await new Promise(r => setTimeout(r, 50));
+      expect(status).toBe(200);
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(mockResolveOrchestrator).not.toHaveBeenCalled();
+      expect(mockCreatePermission).not.toHaveBeenCalled();
+    });
+
+    it('setEnabled(false) short-circuits permission_request hooks too', async () => {
+      setEnabled(false);
+      const response = await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Bash',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      expect(response.status).toBe(200);
+      // Empty body — no permissionDecision, no holding response open
+      expect(mockCreatePermission).not.toHaveBeenCalled();
+    });
+
+    it('setEnabled(true) restores normal processing', async () => {
+      setEnabled(false);
+      setEnabled(true);
+      await postToServer(port, '/hook/agent-1', {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await new Promise(r => setTimeout(r, 50));
+      expect(mockSend).toHaveBeenCalled();
+    });
+
+    it('setEnabled is idempotent and only logs on actual transitions', () => {
+      setEnabled(true); // already enabled — no-op
+      setEnabled(false); // transition: enabled → disabled
+      setEnabled(false); // already disabled — no-op
+      const transitions = mockAppLog.mock.calls.filter(
+        (c: unknown[]) => c[2] === 'Hook server enabled' || c[2] === 'Hook server disabled',
+      );
+      // One transition log: 'Hook server disabled'.  No log for the no-op
+      // calls before/after.
+      expect(transitions).toHaveLength(1);
+      expect(transitions[0][2]).toBe('Hook server disabled');
     });
   });
 

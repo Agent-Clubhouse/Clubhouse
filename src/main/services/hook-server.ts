@@ -22,6 +22,28 @@ let server: any = null;
 let serverPort = 0;
 let readyPromise: Promise<number> | null = null;
 let stuckScanTimer: ReturnType<typeof setInterval> | null = null;
+let enabled = true;
+
+/**
+ * Toggle whether the hook server processes incoming hook callbacks.  When
+ * disabled, the server keeps listening (so existing curls don't dangle on
+ * connection refused) but returns 200 immediately for every `/hook/*` route.
+ *
+ * The toggle is the durable escape hatch for users whose orchestrator hook
+ * integration gets stuck.  See hook-server-toggle.ts for the side effects
+ * (stripping injected hooks from running agents' configs).
+ */
+export function setEnabled(value: boolean): void {
+  if (enabled === value) return;
+  enabled = value;
+  appLog('core:hook-server', 'info', `Hook server ${value ? 'enabled' : 'disabled'}`, {
+    meta: { enabled: value },
+  });
+}
+
+export function isEnabled(): boolean {
+  return enabled;
+}
 
 export function getPort(): number {
   return serverPort;
@@ -179,6 +201,17 @@ function handlePermissionRequest(
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   if (req.method !== 'POST' || !req.url?.startsWith('/hook/')) {
     res.writeHead(404);
+    res.end();
+    return;
+  }
+
+  // When disabled, short-circuit every hook route with a fast 200.  The
+  // orchestrator's curl child returns immediately and the orchestrator
+  // falls through to its own permission UI.  We deliberately don't drain
+  // the body — saves time, and the orchestrator doesn't care about response
+  // body content for non-permission hooks.
+  if (!enabled) {
+    res.writeHead(200);
     res.end();
     return;
   }
