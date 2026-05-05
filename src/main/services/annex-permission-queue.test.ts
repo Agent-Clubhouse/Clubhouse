@@ -1,4 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('./log-service', () => ({
+  appLog: vi.fn(),
+}));
+
 import * as queue from './annex-permission-queue';
 
 describe('annex-permission-queue', () => {
@@ -108,5 +113,36 @@ describe('annex-permission-queue', () => {
 
     await expect(decision).resolves.toBe('timeout');
     expect(queue.listPending().length).toBe(0);
+  });
+
+  describe('race-fix invariants', () => {
+    it('PERMISSION_QUEUE_TIMEOUT_MS is strictly less than the orchestrator hook timeout', async () => {
+      // The whole point of the race fix: our queue must resolve before the
+      // orchestrator's permissionRequest hook timeout fires, so the
+      // orchestrator actually receives our 'ask' fallback decision instead
+      // of killing the curl child and stalling.
+      const { PERMISSION_HOOK_TIMEOUT_SEC } = await import('../orchestrators/types');
+      expect(queue.PERMISSION_QUEUE_TIMEOUT_MS).toBeLessThan(PERMISSION_HOOK_TIMEOUT_SEC * 1000);
+      expect(queue.PERMISSION_QUEUE_SAFETY_MARGIN_MS).toBeGreaterThan(0);
+    });
+
+    it('createPermission defaults to PERMISSION_QUEUE_TIMEOUT_MS when no timeout is passed', async () => {
+      vi.useFakeTimers();
+      const { decision } = queue.createPermission('agent1', 'Bash');
+
+      // Advance just past the orchestrator hook timeout — by then our queue
+      // must already have resolved (otherwise the race is lost).
+      vi.advanceTimersByTime(queue.PERMISSION_QUEUE_TIMEOUT_MS + 1);
+      await expect(decision).resolves.toBe('timeout');
+      vi.useRealTimers();
+    });
+
+    it('an explicit timeoutMs overrides the default', async () => {
+      vi.useFakeTimers();
+      const { decision } = queue.createPermission('agent1', 'Bash', undefined, undefined, 50);
+      vi.advanceTimersByTime(51);
+      await expect(decision).resolves.toBe('timeout');
+      vi.useRealTimers();
+    });
   });
 });

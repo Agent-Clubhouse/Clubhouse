@@ -485,7 +485,6 @@ describe('hook-server', () => {
         'Bash',
         { command: 'rm -rf /' },
         'Allow dangerous command?',
-        120_000,
       );
 
       // Resolve the decision
@@ -567,7 +566,6 @@ describe('hook-server', () => {
         'unknown',
         undefined,
         undefined,
-        120_000,
       );
     });
 
@@ -723,7 +721,7 @@ describe('hook-server', () => {
       await new Promise(r => setTimeout(r, 50));
 
       expect(mockAppLog).toHaveBeenCalledWith(
-        'core:hook-server', 'error', 'Failed to send permission response',
+        'core:hook-server', 'error', 'Permission decision promise rejected',
         expect.objectContaining({
           meta: expect.objectContaining({ agentId: 'agent-1', error: 'connection closed' }),
         }),
@@ -779,6 +777,153 @@ describe('hook-server', () => {
       // The server was stopped in this test, so waitReady should reject
       // after stop() sets readyPromise to null
       await expect(waitReady()).rejects.toThrow('Hook server not started');
+    });
+  });
+
+  describe('hook event observability', () => {
+    const VALID_NONCE = 'log-nonce';
+
+    beforeEach(() => {
+      mockGetAgentProjectPath.mockReturnValue('/my/project');
+      mockGetAgentOrchestrator.mockReturnValue('claude-code');
+      mockGetAgentNonce.mockReturnValue(VALID_NONCE);
+    });
+
+    it('logs INFO when a hook event is received and successfully normalized', async () => {
+      mockResolveOrchestrator.mockResolvedValue({
+        id: 'claude-code',
+        parseHookEvent: vi.fn(() => ({
+          kind: 'pre_tool',
+          toolName: 'Bash',
+          toolInput: { command: 'ls' },
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      await postToServer(port, '/hook/agent-1', {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(mockAppLog).toHaveBeenCalledWith(
+        'core:hook-server', 'info', 'Hook event received',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            agentId: 'agent-1',
+            kind: 'pre_tool',
+            toolName: 'Bash',
+            orchestrator: 'claude-code',
+          }),
+        }),
+      );
+    });
+
+    it('logs WARN when parseHookEvent returns null (unknown event)', async () => {
+      mockResolveOrchestrator.mockResolvedValue({
+        id: 'claude-code',
+        parseHookEvent: vi.fn(() => null),
+        toolVerb: vi.fn(),
+      });
+
+      await postToServer(port, '/hook/agent-1/UnknownEvent', {
+        hook_event_name: 'UnknownEvent',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(mockAppLog).toHaveBeenCalledWith(
+        'core:hook-server', 'warn', 'Hook event ignored (unknown event for orchestrator)',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            agentId: 'agent-1',
+            rawEventName: 'UnknownEvent',
+          }),
+        }),
+      );
+    });
+
+    it('logs WARN when agent has no project path registered', async () => {
+      mockGetAgentProjectPath.mockReturnValue(undefined);
+
+      await postToServer(port, '/hook/orphan-agent/preToolUse', {
+        tool_name: 'Bash',
+      });
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(mockAppLog).toHaveBeenCalledWith(
+        'core:hook-server', 'warn', 'Hook event ignored (no project path for agent)',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            agentId: 'orphan-agent',
+            eventHint: 'preToolUse',
+          }),
+        }),
+      );
+    });
+
+    it('logs INFO when permission decision is sent back to the orchestrator', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-log-1',
+        decision: Promise.resolve('allow'),
+      });
+      mockResolveOrchestrator.mockResolvedValue({
+        id: 'claude-code',
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Bash',
+          toolInput: undefined,
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      expect(mockAppLog).toHaveBeenCalledWith(
+        'core:hook-server', 'info', 'Permission hook decision sent to orchestrator',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            agentId: 'agent-1',
+            requestId: 'req-log-1',
+            decision: 'allow',
+            queueResult: 'allow',
+          }),
+        }),
+      );
+    });
+
+    it('maps queue timeout to ask in the decision-sent log', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-log-2',
+        decision: Promise.resolve('timeout'),
+      });
+      mockResolveOrchestrator.mockResolvedValue({
+        id: 'claude-code',
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Write',
+          toolInput: undefined,
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Writing file'),
+      });
+
+      await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      expect(mockAppLog).toHaveBeenCalledWith(
+        'core:hook-server', 'info', 'Permission hook decision sent to orchestrator',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            decision: 'ask',
+            queueResult: 'timeout',
+          }),
+        }),
+      );
     });
   });
 

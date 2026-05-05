@@ -53,6 +53,18 @@ export interface NormalizedHookEvent {
   message?: string;
 }
 
+/**
+ * Hook timeout (seconds) the orchestrator's permissionRequest hook is configured
+ * with — the maximum time the orchestrator will wait for our hook server to
+ * respond before killing the curl child and falling through to its own UI.
+ *
+ * Our permission queue MUST resolve before this elapses (see
+ * PERMISSION_QUEUE_TIMEOUT_MS in annex-permission-queue.ts), otherwise the
+ * orchestrator records "Hook execution failed: timed out" and the agent stalls
+ * waiting for a TUI prompt that no human is watching.
+ */
+export const PERMISSION_HOOK_TIMEOUT_SEC = 120;
+
 export interface OrchestratorConventions {
   /** Directory name under the project root for agent config (e.g. '.claude') */
   configDir: string;

@@ -15,6 +15,7 @@ import {
   HookCapable,
   SessionCapable,
   NormalizedHookEvent,
+  PERMISSION_HOOK_TIMEOUT_SEC,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
@@ -272,7 +273,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
       PostToolUseFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Notification: [{ matcher: '', hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      PermissionRequest: [{ hooks: [{ type: 'command', command: curl, timeout: 120 }] }],
+      PermissionRequest: [{ hooks: [{ type: 'command', command: curl, timeout: PERMISSION_HOOK_TIMEOUT_SEC }] }],
     };
 
     const codexDir = path.join(cwd, '.codex');

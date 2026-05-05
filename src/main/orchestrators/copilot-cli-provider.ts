@@ -16,6 +16,7 @@ import {
   SessionCapable,
   StructuredCapable,
   AgentFileCapable,
+  PERMISSION_HOOK_TIMEOUT_SEC,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
@@ -241,7 +242,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       postToolUse: [{ type: 'command', bash: makeCurl('postToolUse'), timeoutSec: 5 }],
       errorOccurred: [{ type: 'command', bash: makeCurl('errorOccurred'), timeoutSec: 5 }],
       // PermissionRequest uses a long timeout to allow for remote approval via Annex
-      permissionRequest: [{ type: 'command', bash: makeCurl('permissionRequest'), timeoutSec: 120 }],
+      permissionRequest: [{ type: 'command', bash: makeCurl('permissionRequest'), timeoutSec: PERMISSION_HOOK_TIMEOUT_SEC }],
       sessionStart: [{ type: 'command', bash: makeCurl('sessionStart'), timeoutSec: 5 }],
       userPromptSubmitted: [{ type: 'command', bash: makeCurl('userPromptSubmitted'), timeoutSec: 5 }],
     };

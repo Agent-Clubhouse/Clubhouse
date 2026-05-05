@@ -14,6 +14,7 @@ import {
   HeadlessCapable,
   SessionCapable,
   StructuredCapable,
+  PERMISSION_HOOK_TIMEOUT_SEC,
 } from './types';
 import { BaseProvider } from './base-provider';
 import { StreamJsonAdapter } from './adapters/stream-json-adapter';
@@ -177,10 +178,10 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       PostToolUseFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Notification: [{ matcher: '', hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      // PermissionRequest uses a longer timeout (120s) so that the hook server
-      // can hold the response while waiting for a remote approval decision
-      // from the Annex iOS client.
-      PermissionRequest: [{ hooks: [{ type: 'command', command: curl, timeout: 120 }] }],
+      // PermissionRequest uses a longer timeout so that the hook server can
+      // hold the response while waiting for a remote approval decision from
+      // the Annex iOS client.
+      PermissionRequest: [{ hooks: [{ type: 'command', command: curl, timeout: PERMISSION_HOOK_TIMEOUT_SEC }] }],
     };
 
     const claudeDir = path.join(cwd, '.claude');
