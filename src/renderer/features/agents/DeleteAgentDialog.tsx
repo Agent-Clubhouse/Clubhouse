@@ -313,7 +313,7 @@ export function DeleteAgentDialog() {
                     disabled={executing}
                     className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors cursor-pointer disabled:opacity-50 flex items-start gap-3 ${
                       opt.destructive
-                        ? 'border-red-500/20 hover:border-red-500/40 hover:bg-ctp-error/5'
+                        ? 'border-ctp-error/20 hover:border-ctp-error/40 hover:bg-ctp-error/5'
                         : 'border-surface-0 hover:border-surface-2 hover:bg-surface-0'
                     }`}
                   >

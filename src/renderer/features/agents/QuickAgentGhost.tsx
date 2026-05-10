@@ -202,7 +202,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
           {onDelete && (
             <button
               onClick={onDelete}
-              className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-red-500/30
+              className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-ctp-error/30
                 hover:bg-ctp-error/20 transition-colors cursor-pointer
                 text-ctp-error"
             >

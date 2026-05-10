@@ -460,7 +460,7 @@ export function HeadlessAgentView({ agent }: Props) {
         {/* Stop button */}
         <button
           onClick={() => killAgent(agent.id)}
-          className="px-4 py-1.5 text-xs rounded-lg border border-red-500/30
+          className="px-4 py-1.5 text-xs rounded-lg border border-ctp-error/30
             hover:bg-ctp-error/20 transition-colors cursor-pointer text-ctp-error"
         >
           Stop Agent

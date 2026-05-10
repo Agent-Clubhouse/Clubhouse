@@ -198,7 +198,7 @@ function formatInput(input: Record<string, unknown>): string {
 
 function statusBorderClass(status: ActionCardStatus): string {
   switch (status) {
-    case 'error': return 'border-red-500/40 bg-ctp-error/5';
+    case 'error': return 'border-ctp-error/40 bg-ctp-error/5';
     case 'pending_approval': return 'border-ctp-accent/40 bg-ctp-accent/5';
     case 'skipped': return 'border-surface-0 bg-ctp-mantle opacity-60';
     case 'running': return 'border-ctp-accent/20 bg-ctp-mantle';

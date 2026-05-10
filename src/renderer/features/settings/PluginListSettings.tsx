@@ -250,7 +250,7 @@ function OrphanInjectionsBanner({
                 <button
                   onClick={() => handleClean(id)}
                   disabled={cleaning !== null}
-                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
                   data-testid={`clean-orphan-btn-${id}`}
                 >
                   {cleaning === id ? 'Cleaning…' : 'Clean up'}
@@ -263,7 +263,7 @@ function OrphanInjectionsBanner({
           <button
             onClick={handleCleanAll}
             disabled={cleaning !== null}
-            className="shrink-0 text-[11px] px-2 py-1 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
+            className="shrink-0 text-[11px] px-2 py-1 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
             data-testid="clean-all-orphans-btn"
           >
             {cleaning ? 'Cleaning…' : 'Clean all'}
@@ -326,7 +326,7 @@ function PluginInjectionsPanel({
         <button
           onClick={handleClean}
           disabled={cleaning}
-          className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
+          className="text-[10px] px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
           data-testid={`clean-injections-btn-${pluginId}`}
         >
           {cleaning ? 'Cleaning...' : 'Remove all'}
@@ -1207,7 +1207,7 @@ export function PluginListSettings() {
                 {externalPlugins.length > 0 && (
                   <button
                     onClick={handleUninstallAll}
-                    className="text-[11px] px-2 py-1 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer"
+                    className="text-[11px] px-2 py-1 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer"
                   >
                     Uninstall All
                   </button>

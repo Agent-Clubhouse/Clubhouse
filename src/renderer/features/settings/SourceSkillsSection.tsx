@@ -212,7 +212,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
               </button>
               <button
                 onClick={() => handleDelete(deleteTarget)}
-                className="text-xs px-3 py-1.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30 cursor-pointer transition-colors border border-red-500/30"
+                className="text-xs px-3 py-1.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30 cursor-pointer transition-colors border border-ctp-error/30"
               >
                 Delete
               </button>

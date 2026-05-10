@@ -163,7 +163,7 @@ function OrphanBanner({
                 <button
                   onClick={() => handleClean(id)}
                   disabled={cleaning !== null}
-                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
                 >
                   {cleaning === id ? 'Cleaning...' : 'Clean up'}
                 </button>
@@ -175,7 +175,7 @@ function OrphanBanner({
           <button
             onClick={handleCleanAll}
             disabled={cleaning !== null}
-            className="shrink-0 text-[10px] px-2 py-1 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
+            className="shrink-0 text-[10px] px-2 py-1 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
           >
             {cleaning ? 'Cleaning...' : 'Clean all'}
           </button>
