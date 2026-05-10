@@ -17,7 +17,7 @@ import {
 } from './types';
 import { BaseProvider } from './base-provider';
 import { StreamJsonAdapter } from './adapters/stream-json-adapter';
-import { homePath, validateHookUrl } from './shared';
+import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 
@@ -169,20 +169,18 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
     const safeUrl = validateHookUrl(hookUrl);
-    const curlBase = process.platform === 'win32'
-      ? `curl -s -X POST ${safeUrl}/%CLUBHOUSE_AGENT_ID% -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
-      : `cat | curl -s -X POST ${safeUrl}/\${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
+    const curl = buildHookCurlCommand(safeUrl);
 
     const hooks: Record<string, unknown[]> = {
-      PreToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      PostToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      PostToolUseFailure: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      Stop: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      Notification: [{ matcher: '', hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
+      PreToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      PostToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      PostToolUseFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      Notification: [{ matcher: '', hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       // PermissionRequest uses a longer timeout (120s) so that the hook server
       // can hold the response while waiting for a remote approval decision
       // from the Annex iOS client.
-      PermissionRequest: [{ hooks: [{ type: 'command', command: curlBase, timeout: 120 }] }],
+      PermissionRequest: [{ hooks: [{ type: 'command', command: curl, timeout: 120 }] }],
     };
 
     const claudeDir = path.join(cwd, '.claude');
@@ -197,18 +195,8 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       // No existing file — expected on first run
     }
 
-    // Merge per-event key: preserve user hooks, replace stale Clubhouse entries
-    const existingHooks = (existing.hooks || {}) as Record<string, unknown[]>;
-    const mergedHooks: Record<string, unknown[]> = { ...existingHooks };
-
-    for (const [eventKey, ourEntries] of Object.entries(hooks)) {
-      const current = mergedHooks[eventKey] || [];
-      const userEntries = current.filter(e => !isClubhouseHookEntry(e));
-      mergedHooks[eventKey] = [...userEntries, ...ourEntries];
-    }
-
-    const merged: Record<string, unknown> = { ...existing, hooks: mergedHooks };
-    await fsp.writeFile(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
+    const mergedHooks = mergeHookEntries(existing, hooks, isClubhouseHookEntry);
+    await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {
@@ -291,30 +279,11 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
    * Resolve the Claude Code project directory for a given working directory.
    *
    * Claude Code stores sessions under ~/.claude/projects/<encoded-path>/.
-   * The encoded path replaces path separators with dashes. This method
-   * handles the ambiguity of whether the leading dash is present.
+   * The encoded path replaces path separators with dashes.
    */
   private resolveProjectDir(cwd: string, profileEnv?: Record<string, string>): string | null {
     const configDir = profileEnv?.CLAUDE_CONFIG_DIR || homePath('.claude');
-    const projectsDir = path.join(configDir, 'projects');
-
-    if (!fs.existsSync(projectsDir)) return null;
-
-    // Claude Code encodes project path by replacing separators with dashes
-    const absCwd = path.resolve(cwd);
-    const encodedPath = absCwd.replace(/[/\\]/g, '-');
-
-    // Try candidate directory names (with and without leading dash)
-    const candidates = [encodedPath, encodedPath.replace(/^-/, '')];
-
-    for (const candidate of candidates) {
-      const dir = path.join(projectsDir, candidate);
-      if (fs.existsSync(dir)) {
-        return dir;
-      }
-    }
-
-    return null;
+    return resolveEncodedPathDir(path.join(configDir, 'projects'), cwd);
   }
 
   /**
@@ -426,26 +395,13 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
     if (!jsonlPath) return null;
 
-    // Parse JSONL line-by-line
-    try {
-      const content = await fsp.readFile(jsonlPath, 'utf-8');
-      const events: import('../services/jsonl-parser').StreamJsonEvent[] = [];
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          events.push(JSON.parse(trimmed));
-        } catch {
-          // Skip malformed JSONL lines — expected in truncated sessions
-        }
-      }
-      return events.length > 0 ? events : null;
-    } catch (err) {
+    const events = await parseJsonlFile(jsonlPath);
+    if (!events) {
       appLog('core:orchestrator', 'warn', 'Failed to read session transcript', {
-        meta: { jsonlPath, error: err instanceof Error ? err.message : String(err) },
+        meta: { jsonlPath },
       });
-      return null;
     }
+    return events;
   }
 
   /**

@@ -16,13 +16,18 @@ vi.mock('child_process', () => ({
   execFileSync: vi.fn(() => { throw new Error('not found'); }),
 }));
 
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
+}));
+
 vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` })),
 }));
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { execSync, execFileSync } from 'child_process';
-import { findBinaryInPath, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import type { LaunchWrapperConfig } from '../../shared/types';
 
 describe('shared orchestrator utilities', () => {
@@ -425,6 +430,125 @@ Options:
 
       const result = await readQuickSummary('agent-4');
       expect(result).toEqual({ summary: 'Done', filesModified: [] });
+    });
+  });
+
+  describe('buildHookCurlCommand', () => {
+    it('builds posix curl command without suffix', () => {
+      if (process.platform === 'win32') return;
+      const cmd = buildHookCurlCommand('http://localhost:3000/hooks');
+      expect(cmd).toContain('http://localhost:3000/hooks/${CLUBHOUSE_AGENT_ID}');
+      expect(cmd).toContain('--data-binary @-');
+      expect(cmd).toContain('X-Clubhouse-Nonce');
+    });
+
+    it('appends event suffix when provided', () => {
+      if (process.platform === 'win32') return;
+      const cmd = buildHookCurlCommand('http://localhost:3000/hooks', '/preToolUse');
+      expect(cmd).toContain('http://localhost:3000/hooks/${CLUBHOUSE_AGENT_ID}/preToolUse');
+    });
+
+    it('produces no suffix when omitted', () => {
+      const cmd = buildHookCurlCommand('http://localhost:3000/hooks');
+      expect(cmd).not.toContain('/preToolUse');
+    });
+  });
+
+  describe('mergeHookEntries', () => {
+    const isOwn = (e: unknown) => (e as Record<string, unknown>).clubhouse === true;
+
+    it('merges new hooks into empty existing config', () => {
+      const result = mergeHookEntries({}, { PreToolUse: [{ type: 'cmd', clubhouse: true }] }, isOwn);
+      expect(result).toEqual({ PreToolUse: [{ type: 'cmd', clubhouse: true }] });
+    });
+
+    it('preserves user entries and appends ours', () => {
+      const existing = { hooks: { PreToolUse: [{ type: 'user-hook' }] } };
+      const result = mergeHookEntries(existing, { PreToolUse: [{ type: 'cmd', clubhouse: true }] }, isOwn);
+      expect(result.PreToolUse).toEqual([
+        { type: 'user-hook' },
+        { type: 'cmd', clubhouse: true },
+      ]);
+    });
+
+    it('replaces stale Clubhouse entries (identified by isOwn)', () => {
+      const existing = {
+        hooks: { PreToolUse: [{ type: 'old-clubhouse', clubhouse: true }] },
+      };
+      const result = mergeHookEntries(existing, { PreToolUse: [{ type: 'new-clubhouse', clubhouse: true }] }, isOwn);
+      expect(result.PreToolUse).toEqual([{ type: 'new-clubhouse', clubhouse: true }]);
+    });
+
+    it('handles multiple event keys', () => {
+      const result = mergeHookEntries(
+        {},
+        {
+          PreToolUse: [{ a: 1, clubhouse: true }],
+          Stop: [{ b: 2, clubhouse: true }],
+        },
+        isOwn,
+      );
+      expect(Object.keys(result)).toEqual(expect.arrayContaining(['PreToolUse', 'Stop']));
+    });
+
+    it('does not mutate the existing object', () => {
+      const existing = { hooks: { PreToolUse: [{ type: 'user' }] } };
+      mergeHookEntries(existing, { PreToolUse: [{ type: 'ours', clubhouse: true }] }, isOwn);
+      expect((existing.hooks as Record<string, unknown[]>).PreToolUse).toEqual([{ type: 'user' }]);
+    });
+  });
+
+  describe('resolveEncodedPathDir', () => {
+    it('returns null when base directory does not exist', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      expect(resolveEncodedPathDir('/nonexistent/base', '/some/cwd')).toBeNull();
+    });
+
+    it('returns null when no encoded subdir matches', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === '/base');
+      expect(resolveEncodedPathDir('/base', '/some/project')).toBeNull();
+    });
+
+    it('resolves encoded path variant', () => {
+      const encoded = path.resolve('/some/project').replace(/[/\\]/g, '-');
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        return p === '/base' || p === path.join('/base', encoded) || p === path.join('/base', encoded.replace(/^-/, ''));
+      });
+      const result = resolveEncodedPathDir('/base', '/some/project');
+      const expectedVariant1 = path.join('/base', encoded);
+      const expectedVariant2 = path.join('/base', encoded.replace(/^-/, ''));
+      expect([expectedVariant1, expectedVariant2]).toContain(result);
+    });
+  });
+
+  describe('parseJsonlFile', () => {
+    it('returns null when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      expect(await parseJsonlFile('/no/such/file.jsonl')).toBeNull();
+    });
+
+    it('returns null for empty file', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('');
+      expect(await parseJsonlFile('/empty.jsonl')).toBeNull();
+    });
+
+    it('parses valid JSONL lines into events', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('{"type":"message","role":"user"}\n{"type":"message","role":"assistant"}\n');
+      const result = await parseJsonlFile('/session.jsonl');
+      expect(result).toHaveLength(2);
+      expect(result![0]).toEqual({ type: 'message', role: 'user' });
+      expect(result![1]).toEqual({ type: 'message', role: 'assistant' });
+    });
+
+    it('skips malformed JSONL lines and parses valid ones', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('{"type":"ok"}\nnot-json\n{"type":"also-ok"}\n');
+      const result = await parseJsonlFile('/mixed.jsonl');
+      expect(result).toHaveLength(2);
+    });
+
+    it('returns null when all lines are malformed', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('not-json\nalso-not-json\n');
+      expect(await parseJsonlFile('/bad.jsonl')).toBeNull();
     });
   });
 });

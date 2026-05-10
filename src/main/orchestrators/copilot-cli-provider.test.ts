@@ -31,13 +31,19 @@ vi.mock('util', () => ({
   promisify: vi.fn((fn: any) => vi.fn(async (...args: any[]) => fn(...args))),
 }));
 
-vi.mock('./shared', () => ({
-  findBinaryInPath: vi.fn(() => '/usr/local/bin/copilot'),
-  homePath: vi.fn((...segments: string[]) => `/home/user/${segments.join('/')}`),
-  humanizeModelId: vi.fn((id: string) => id),
-  validateHookUrl: vi.fn((url: string) => url),
-  parseModelChoicesFromHelp: vi.fn(() => null),
-}));
+vi.mock('./shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./shared')>();
+  return {
+    ...actual,
+    findBinaryInPath: vi.fn(() => '/usr/local/bin/copilot'),
+    homePath: vi.fn((...segments: string[]) => `/home/user/${segments.join('/')}`),
+    humanizeModelId: vi.fn((id: string) => id),
+    validateHookUrl: vi.fn((url: string) => url),
+    parseModelChoicesFromHelp: vi.fn(() => null),
+    resolveEncodedPathDir: vi.fn(() => null),
+    // buildHookCurlCommand, mergeHookEntries, and parseJsonlFile use real implementations
+  };
+});
 
 vi.mock('../services/config-pipeline', () => ({
   isClubhouseHookEntry: vi.fn(() => false),

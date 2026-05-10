@@ -20,7 +20,7 @@ import {
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
 import { AcpAdapter } from './adapters';
-import { homePath, parseModelChoicesFromHelp, validateHookUrl } from './shared';
+import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 
@@ -234,10 +234,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
     const safeUrl = validateHookUrl(hookUrl);
-    const makeCurl = (event: string) =>
-      process.platform === 'win32'
-        ? `curl -s -X POST ${safeUrl}/%CLUBHOUSE_AGENT_ID%/${event} -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
-        : `cat | curl -s -X POST ${safeUrl}/\${CLUBHOUSE_AGENT_ID}/${event} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
+    const makeCurl = (event: string) => buildHookCurlCommand(safeUrl, `/${event}`);
 
     const ourHooks: Record<string, unknown[]> = {
       preToolUse: [{ type: 'command', bash: makeCurl('preToolUse'), timeoutSec: 5 }],
@@ -262,16 +259,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       // No existing file
     }
 
-    // Merge per-event key: preserve user hooks, replace stale Clubhouse entries
-    const existingHooks = (existing.hooks || {}) as Record<string, unknown[]>;
-    const mergedHooks: Record<string, unknown[]> = { ...existingHooks };
-
-    for (const [eventKey, ourEntries] of Object.entries(ourHooks)) {
-      const current = mergedHooks[eventKey] || [];
-      const userEntries = current.filter(e => !isClubhouseHookEntry(e));
-      mergedHooks[eventKey] = [...userEntries, ...ourEntries];
-    }
-
+    const mergedHooks = mergeHookEntries(existing, ourHooks, isClubhouseHookEntry);
     await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
   }
 
@@ -321,28 +309,14 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
    * Resolve the Copilot CLI session directory for a given working directory.
    *
    * GitHub Copilot CLI stores session data under ~/.copilot/session-state/.
-   * Sessions may be organized by project path or stored flat.
+   * Falls back to the flat session-state directory when no project-scoped subdir exists.
    */
   private resolveSessionDir(cwd: string, profileEnv?: Record<string, string>): string | null {
     const configDir = profileEnv?.GH_COPILOT_CONFIG_DIR || homePath('.copilot');
     const sessionDir = path.join(configDir, 'session-state');
-
     if (!fs.existsSync(sessionDir)) return null;
-
-    // Check for project-scoped subdirectory (path encoded with dashes)
-    const absCwd = path.resolve(cwd);
-    const encodedPath = absCwd.replace(/[/\\]/g, '-');
-    const candidates = [encodedPath, encodedPath.replace(/^-/, '')];
-
-    for (const candidate of candidates) {
-      const dir = path.join(sessionDir, candidate);
-      if (fs.existsSync(dir)) {
-        return dir;
-      }
-    }
-
-    // Fall back to the flat session-state directory
-    return sessionDir;
+    // Return project-scoped subdir if found, else fall back to flat session-state dir
+    return resolveEncodedPathDir(sessionDir, cwd) ?? sessionDir;
   }
 
   /**
@@ -468,25 +442,13 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
     if (!filePath) return null;
 
-    try {
-      const content = await fsp.readFile(filePath, 'utf-8');
-      const events: import('../services/jsonl-parser').StreamJsonEvent[] = [];
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          events.push(JSON.parse(trimmed));
-        } catch {
-          // Skip malformed lines — expected in truncated sessions
-        }
-      }
-      return events.length > 0 ? events : null;
-    } catch (err) {
+    const events = await parseJsonlFile(filePath);
+    if (!events) {
       appLog('core:orchestrator', 'warn', 'Failed to read GHCP session transcript', {
-        meta: { filePath, error: err instanceof Error ? err.message : String(err) },
+        meta: { filePath },
       });
-      return null;
     }
+    return events;
   }
 
   /**
