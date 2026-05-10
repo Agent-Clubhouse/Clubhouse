@@ -70,6 +70,7 @@ const cachedCanvasState = new Map<string, CanvasStateSnapshot>();
 // concurrent GET requests are batched so only one relay round-trip fires.
 
 let pendingAgentRelay: Promise<AgentStateSnapshot> | null = null;
+let relayInProgress = false;
 
 /** @internal Reset module state for testing. */
 export function _resetForTesting(): void {
@@ -78,6 +79,7 @@ export function _resetForTesting(): void {
   cachedHubState.clear();
   cachedCanvasState.clear();
   pendingAgentRelay = null;
+  relayInProgress = false;
 }
 
 function getThemeColors(): { bg: string; mantle: string; text: string } {
@@ -100,8 +102,12 @@ function findMainWindow(): BrowserWindow | undefined {
  * so only one IPC round-trip is fired.
  */
 function relayAgentState(): Promise<AgentStateSnapshot> {
+  // Batch concurrent requests onto the in-flight relay first.
   if (pendingAgentRelay) return pendingAgentRelay;
+  // Break circular relay chains (popout → main → popout → ...) when no relay is pending.
+  if (relayInProgress) return Promise.resolve(cachedAgentState ?? EMPTY_AGENT_STATE);
 
+  relayInProgress = true;
   pendingAgentRelay = new Promise<AgentStateSnapshot>((resolve) => {
     const mainWindow = findMainWindow();
     if (!mainWindow) {
@@ -131,6 +137,7 @@ function relayAgentState(): Promise<AgentStateSnapshot> {
     mainWindow.webContents.send(IPC.WINDOW.REQUEST_AGENT_STATE, requestId);
   }).finally(() => {
     pendingAgentRelay = null;
+    relayInProgress = false;
   });
 
   return pendingAgentRelay;

@@ -30,7 +30,7 @@ export function registerFileHandlers(): void {
     try {
       return await fileService.readTree(dirPath, { ...options, signal: controller.signal });
     } finally {
-      event.sender.off('destroyed', abort);
+      try { event.sender.off('destroyed', abort); } catch { /* sender already destroyed */ }
     }
     },
   ));

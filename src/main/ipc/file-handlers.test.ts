@@ -422,4 +422,27 @@ describe('file-handlers', () => {
       expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to stat file', expect.anything());
     });
   });
+
+  describe('LB-IPC-004: READ_TREE does not throw when sender is destroyed in finally', () => {
+    it('completes without throwing when event.sender.off throws (sender already destroyed)', async () => {
+      // Simulate: readTree completes, then the finally block tries to remove the listener
+      // but sender.off throws because the webContents is destroyed.
+      const thrownByOff = new Error('Object has been destroyed');
+      const sender = {
+        once: vi.fn(),
+        off: vi.fn().mockImplementation(() => { throw thrownByOff; }),
+      };
+
+      const handler = handlers.get(IPC.FILE.READ_TREE)!;
+      // Should not throw — the try/catch in finally swallows the sender error
+      await expect(handler({ sender }, '/project', {})).resolves.toBeDefined();
+    });
+
+    it('still removes the destroyed listener when sender is healthy', async () => {
+      const sender = { once: vi.fn(), off: vi.fn() };
+      const handler = handlers.get(IPC.FILE.READ_TREE)!;
+      await handler({ sender }, '/project', {});
+      expect(sender.off).toHaveBeenCalledWith('destroyed', expect.any(Function));
+    });
+  });
 });

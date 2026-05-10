@@ -72,7 +72,7 @@ export function registerProcessHandlers(): void {
         },
       })(req.options, `${argName}.options`);
     },
-  })], async (_event, req: ProcessExecRequest) => {
+  })], async (event, req: ProcessExecRequest) => {
     const { pluginId, command, args, projectPath, options } = req;
 
     // Reject requests without a pluginId
@@ -117,7 +117,10 @@ export function registerProcessHandlers(): void {
 
     trackSpawn(pluginId);
     return new Promise((resolve) => {
-      execFile(
+      let onSenderDestroyed: (() => void) | undefined;
+      let settled = false;
+
+      const child = execFile(
         command,
         args,
         {
@@ -128,6 +131,11 @@ export function registerProcessHandlers(): void {
           maxBuffer: 10 * 1024 * 1024,
         },
         (error, stdout, stderr) => {
+          if (settled) return;
+          settled = true;
+          if (onSenderDestroyed) {
+            try { event.sender.off('destroyed', onSenderDestroyed); } catch { /* sender already destroyed */ }
+          }
           trackExit(pluginId);
           if (error && (error as any).killed) {
             resolve({ stdout: stdout || '', stderr: stderr || 'Command timed out', exitCode: 124 });
@@ -142,6 +150,18 @@ export function registerProcessHandlers(): void {
           });
         },
       );
+
+      // Only register the destroy listener if the process is still running
+      if (!settled) {
+        onSenderDestroyed = () => {
+          if (settled) return;
+          settled = true;
+          child.kill();
+          trackExit(pluginId);
+          resolve({ stdout: '', stderr: 'Renderer disconnected', exitCode: 1 });
+        };
+        event.sender.once('destroyed', onSenderDestroyed);
+      }
     });
   }));
 }
