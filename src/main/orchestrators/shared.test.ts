@@ -515,8 +515,9 @@ Options:
         return p === '/base' || p === path.join('/base', encoded) || p === path.join('/base', encoded.replace(/^-/, ''));
       });
       const result = resolveEncodedPathDir('/base', '/some/project');
-      expect(result).toBeTruthy();
-      expect(result).toContain('/base');
+      const expectedVariant1 = path.join('/base', encoded);
+      const expectedVariant2 = path.join('/base', encoded.replace(/^-/, ''));
+      expect([expectedVariant1, expectedVariant2]).toContain(result);
     });
   });
 
