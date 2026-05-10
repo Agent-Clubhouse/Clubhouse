@@ -491,6 +491,70 @@ describe('annexClientStore', () => {
     });
   });
 
+    // -------------------------------------------------------------------------
+    // LB-SM-007: cleanup discards buffered PTY data — no stale emit on reconnect
+    // -------------------------------------------------------------------------
+
+    it('cleanup discards buffered pty:data — no emission after cleanup', async () => {
+      const { satellitePtyDataBus } = await import('./annexClientStore');
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      const cleanup = initAnnexClientListener();
+
+      const received: any[] = [];
+      const unsub = satellitePtyDataBus.on((satId, agentId, data) => {
+        received.push({ satId, agentId, data });
+      });
+
+      vi.useFakeTimers();
+      // Enqueue PTY data into the buffer (timer has NOT fired yet)
+      eventCallback!({ satelliteId: 'sat-1', type: 'pty:data', payload: { agentId: 'agent-1', data: 'stale data' } });
+
+      // Cleanup before the 100ms flush timer fires — buffer should be discarded
+      cleanup();
+
+      // Advance past the flush window — should not emit
+      vi.advanceTimersByTime(200);
+
+      expect(received).toHaveLength(0);
+      unsub();
+      vi.useRealTimers();
+    });
+
+    it('cleanup allows a fresh listener session to start clean', async () => {
+      const { satellitePtyDataBus } = await import('./annexClientStore');
+      let eventCb1: ((event: any) => void) | undefined;
+
+      mockAnnexClient.onSatelliteEvent
+        .mockImplementationOnce((cb: any) => { eventCb1 = cb; return vi.fn(); })
+        .mockImplementationOnce((_cb: any) => vi.fn());
+
+      // First session: enqueue data and clean up before flush
+      vi.useFakeTimers();
+      const cleanup1 = initAnnexClientListener();
+      eventCb1!({ satelliteId: 'sat-1', type: 'pty:data', payload: { agentId: 'agent-1', data: 'session1' } });
+      cleanup1();
+
+      // Second session: start fresh
+      const cleanup2 = initAnnexClientListener();
+      const received: any[] = [];
+      const unsub = satellitePtyDataBus.on((satId, agentId, data) => {
+        received.push({ satId, agentId, data });
+      });
+
+      // Advance — only second session data (none queued) should fire
+      vi.advanceTimersByTime(200);
+
+      expect(received).toHaveLength(0); // no stale data from session 1
+      cleanup2();
+      unsub();
+      vi.useRealTimers();
+    });
+
   // -------------------------------------------------------------------------
   // satellitePtyDataBus
   // -------------------------------------------------------------------------

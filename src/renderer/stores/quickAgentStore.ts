@@ -20,8 +20,8 @@ function saveToStorage(projectId: string, records: CompletedQuickAgent[]): void 
   try {
     const capped = records.length > MAX_COMPLETED_AGENTS ? records.slice(0, MAX_COMPLETED_AGENTS) : records;
     localStorage.setItem(storageKey(projectId), JSON.stringify(capped));
-  } catch {
-    // Ignore quota errors
+  } catch (err) {
+    console.warn('[store:quick-agent] Failed to persist completed agents to localStorage (quota?):', err instanceof Error ? err.message : err);
   }
 }
 

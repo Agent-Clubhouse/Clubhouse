@@ -29,7 +29,9 @@ function loadTabOrder(projectId: string): string[] | null {
 function saveTabOrder(projectId: string, order: string[]): void {
   try {
     localStorage.setItem(TAB_ORDER_KEY_PREFIX + projectId, JSON.stringify(order));
-  } catch { /* quota exceeded – silently ignore */ }
+  } catch (err) {
+    console.warn('[ExplorerRail] Failed to persist tab order to localStorage (quota?):', err instanceof Error ? err.message : err);
+  }
 }
 
 const CORE_TABS: TabEntry[] = [

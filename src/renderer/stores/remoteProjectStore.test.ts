@@ -779,6 +779,85 @@ describe('remoteProjectStore', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // updateRemoteGroupProject — LB-SM-006: immutable update pattern
+  // -------------------------------------------------------------------------
+
+  describe('updateRemoteGroupProject (LB-SM-006)', () => {
+    type FakeGP = { id: string; name: string };
+
+    beforeEach(() => {
+      useRemoteProjectStore.setState({ remoteGroupProjects: {} });
+    });
+
+    it('creates: adds a new group project without mutating prior array', () => {
+      const gp: FakeGP = { id: 'gp-1', name: 'Sprint' };
+      useRemoteProjectStore.getState().updateRemoteGroupProject('sat-1', 'created', gp);
+
+      const projects = useRemoteProjectStore.getState().remoteGroupProjects['sat-1'];
+      expect(projects).toHaveLength(1);
+      expect((projects[0] as FakeGP).id).toBe('gp-1');
+    });
+
+    it('updated: replaces matching entry by id, returning a new array reference', () => {
+      const gp1: FakeGP = { id: 'gp-1', name: 'Sprint' };
+      const gp2: FakeGP = { id: 'gp-2', name: 'Other' };
+      useRemoteProjectStore.setState({
+        remoteGroupProjects: { 'sat-1': [gp1, gp2] },
+      });
+
+      const prevRef = useRemoteProjectStore.getState().remoteGroupProjects['sat-1'];
+      const updated: FakeGP = { id: 'gp-1', name: 'Sprint v2' };
+      useRemoteProjectStore.getState().updateRemoteGroupProject('sat-1', 'updated', updated);
+
+      const nextRef = useRemoteProjectStore.getState().remoteGroupProjects['sat-1'];
+      expect(nextRef).not.toBe(prevRef); // new array reference
+      expect((nextRef[0] as FakeGP).name).toBe('Sprint v2');
+      expect((nextRef[1] as FakeGP).id).toBe('gp-2'); // unrelated entry preserved
+    });
+
+    it('deleted: filters out entry by id, returning a new array reference', () => {
+      const gp1: FakeGP = { id: 'gp-1', name: 'Sprint' };
+      const gp2: FakeGP = { id: 'gp-2', name: 'Other' };
+      useRemoteProjectStore.setState({
+        remoteGroupProjects: { 'sat-1': [gp1, gp2] },
+      });
+
+      const prevRef = useRemoteProjectStore.getState().remoteGroupProjects['sat-1'];
+      useRemoteProjectStore.getState().updateRemoteGroupProject('sat-1', 'deleted', gp1);
+
+      const nextRef = useRemoteProjectStore.getState().remoteGroupProjects['sat-1'];
+      expect(nextRef).not.toBe(prevRef);
+      expect(nextRef).toHaveLength(1);
+      expect((nextRef[0] as FakeGP).id).toBe('gp-2');
+    });
+
+    it('updated with unknown id: appends without mutation', () => {
+      const gp1: FakeGP = { id: 'gp-1', name: 'Sprint' };
+      useRemoteProjectStore.setState({ remoteGroupProjects: { 'sat-1': [gp1] } });
+
+      const newGP: FakeGP = { id: 'gp-new', name: 'New Sprint' };
+      useRemoteProjectStore.getState().updateRemoteGroupProject('sat-1', 'updated', newGP);
+
+      const next = useRemoteProjectStore.getState().remoteGroupProjects['sat-1'];
+      expect(next).toHaveLength(2);
+      expect((next[1] as FakeGP).id).toBe('gp-new');
+    });
+
+    it('does not mutate the previous array directly', () => {
+      const gp: FakeGP = { id: 'gp-1', name: 'Sprint' };
+      useRemoteProjectStore.setState({ remoteGroupProjects: { 'sat-1': [gp] } });
+
+      const prevArray = useRemoteProjectStore.getState().remoteGroupProjects['sat-1'];
+      const prevLength = prevArray.length;
+
+      useRemoteProjectStore.getState().updateRemoteGroupProject('sat-1', 'created', { id: 'gp-2', name: 'Other' });
+
+      // The old array should not have been mutated (no splice/push)
+      expect(prevArray.length).toBe(prevLength);
+    });
+  });
+
   describe('upsertRemoteAgent', () => {
     it('uses canonical || namespace format for projectId', () => {
       const store = useRemoteProjectStore.getState();

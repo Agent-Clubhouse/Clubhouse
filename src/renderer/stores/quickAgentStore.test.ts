@@ -235,6 +235,53 @@ describe('quickAgentStore', () => {
     });
   });
 
+  // ---- LB-SP-004: localStorage write errors are logged ----
+  describe('localStorage write error logging (LB-SP-004)', () => {
+    it('logs console.warn when setItem throws a quota error in addCompleted', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.mocked(localStorage.setItem).mockImplementationOnce(() => {
+        throw new DOMException('QuotaExceededError');
+      });
+
+      getState().addCompleted(makeCompleted());
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[store:quick-agent]'),
+        expect.anything(),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('logs console.warn when setItem throws in dismissCompleted', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      useQuickAgentStore.setState({ completedAgents: { proj_1: [makeCompleted()] } });
+      vi.mocked(localStorage.setItem).mockImplementationOnce(() => {
+        throw new DOMException('QuotaExceededError');
+      });
+
+      getState().dismissCompleted('proj_1', 'agent_1');
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[store:quick-agent]'),
+        expect.anything(),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('in-memory state still updates even when setItem throws', () => {
+      vi.mocked(localStorage.setItem).mockImplementationOnce(() => {
+        throw new DOMException('QuotaExceededError');
+      });
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const r = makeCompleted({ id: 'agent_quota' });
+      getState().addCompleted(r);
+
+      expect(getState().completedAgents['proj_1']).toHaveLength(1);
+      expect(getState().completedAgents['proj_1'][0].id).toBe('agent_quota');
+    });
+  });
+
   // ---- || [] fallback edge cases ----
   describe('|| [] fallback edge cases', () => {
     it('addCompleted with completely empty state does not throw', () => {

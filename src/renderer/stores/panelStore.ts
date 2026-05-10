@@ -50,7 +50,9 @@ function persist(state: Pick<PanelState, 'explorerWidth' | 'explorerCollapsed' |
       railPinned: state.railPinned,
       railWidth: state.railWidth,
     }));
-  } catch { /* ignore */ }
+  } catch (err) {
+    console.warn('[store:panel] Failed to persist panel sizes to localStorage (quota?):', err instanceof Error ? err.message : err);
+  }
 }
 
 const PERSIST_DEBOUNCE_MS = 300;

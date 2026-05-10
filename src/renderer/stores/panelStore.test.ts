@@ -1,8 +1,19 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { usePanelStore } from './panelStore';
+
+// Provide a spyable localStorage mock
+const storageMock: Record<string, string> = {};
+const localStorageMock = {
+  getItem: vi.fn((k: string) => storageMock[k] ?? null),
+  setItem: vi.fn((k: string, v: string) => { storageMock[k] = v; }),
+  removeItem: vi.fn((k: string) => { delete storageMock[k]; }),
+};
+vi.stubGlobal('localStorage', localStorageMock);
 
 describe('panelStore', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    for (const k of Object.keys(storageMock)) delete storageMock[k];
     usePanelStore.setState({
       explorerWidth: 200,
       explorerCollapsed: false,
@@ -11,7 +22,6 @@ describe('panelStore', () => {
       railPinned: false,
       railWidth: 200,
     });
-    vi.restoreAllMocks();
   });
 
   it('resizes explorer within bounds', () => {
@@ -153,6 +163,42 @@ describe('panelStore', () => {
     usePanelStore.getState().toggleExplorerCollapse();
     expect(usePanelStore.getState().railPinned).toBe(true);
     expect(usePanelStore.getState().explorerCollapsed).toBe(true);
+  });
+
+  // ── LB-SP-004: localStorage write errors are logged ──────────────────
+
+  describe('localStorage write error logging (LB-SP-004)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('logs console.warn when localStorage.setItem throws during persist debounce', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      localStorageMock.setItem.mockImplementationOnce(() => {
+        throw new DOMException('QuotaExceededError');
+      });
+
+      vi.useFakeTimers();
+      usePanelStore.getState().resizeExplorer(10);
+      vi.advanceTimersByTime(400); // past 300ms debounce
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[store:panel]'),
+        expect.anything(),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('in-memory state still updates even when localStorage.setItem throws', () => {
+      localStorageMock.setItem.mockImplementationOnce(() => {
+        throw new DOMException('QuotaExceededError');
+      });
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      vi.useFakeTimers();
+      usePanelStore.getState().resizeExplorer(20);
+      expect(usePanelStore.getState().explorerWidth).toBe(220);
+    });
   });
 
   // ── Debounced persist tests ──────────────────────────────────────────
