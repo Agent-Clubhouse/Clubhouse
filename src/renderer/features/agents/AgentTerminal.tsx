@@ -665,7 +665,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           data-testid="scroll-to-bottom"
           onClick={handleScrollToBottom}
           className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2 py-1 rounded-md
-            bg-ctp-surface0/90 hover:bg-ctp-surface1 text-ctp-subtext0 hover:text-ctp-text
+            bg-surface-0/90 hover:bg-ctp-surface1 text-ctp-subtext0 hover:text-ctp-text
             text-[10px] font-medium shadow-lg backdrop-blur-sm transition-all duration-150
             border border-ctp-surface1/50"
           title="Scroll to bottom"
@@ -695,7 +695,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       {remoteBanner && (
         <div
           data-testid="remote-banner"
-          className="absolute bottom-2 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg bg-ctp-surface0/90 text-ctp-subtext0 text-xs font-medium shadow-lg z-10 pointer-events-none"
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg bg-surface-0/90 text-ctp-subtext0 text-xs font-medium shadow-lg z-10 pointer-events-none"
         >
           {remoteBanner}
         </div>

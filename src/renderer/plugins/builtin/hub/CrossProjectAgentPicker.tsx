@@ -178,7 +178,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
                 value={mission}
                 onChange={(e) => setMission(e.target.value)}
                 placeholder="What should the quick agent do?"
-                className="w-full px-3 py-2 bg-surface-0 border border-surface-2 rounded-lg text-xs text-ctp-text placeholder-ctp-overlay0 resize-none focus:outline-none focus:ring-1 focus:ring-ctp-accent"
+                className="w-full px-3 py-2 bg-surface-0 border border-surface-2 rounded-lg text-xs text-ctp-text placeholder:text-ctp-overlay0 resize-none focus-ring"
                 rows={3}
                 autoFocus
                 onKeyDown={(e) => {

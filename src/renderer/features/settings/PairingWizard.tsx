@@ -130,7 +130,7 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
               onKeyDown={handlePinKeyDown}
               placeholder="000000"
               className="flex-1 px-3 py-2 text-sm rounded bg-surface-1 border border-surface-2
-                text-ctp-text placeholder-ctp-overlay0 outline-none focus:border-ctp-accent
+                text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:border-ctp-accent
                 tracking-widest text-center font-mono"
             />
             <button

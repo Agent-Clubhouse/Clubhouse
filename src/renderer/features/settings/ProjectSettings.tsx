@@ -47,7 +47,7 @@ function NameAndPathSection({ projectId }: { projectId: string }) {
           placeholder={project.name}
           className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
             text-ctp-text placeholder:text-ctp-subtext0/40
-            focus:outline-none focus:border-ctp-accent/50 focus:ring-1 focus:ring-ctp-accent/30"
+            focus-ring-dim"
         />
         {dirty && (
           <button

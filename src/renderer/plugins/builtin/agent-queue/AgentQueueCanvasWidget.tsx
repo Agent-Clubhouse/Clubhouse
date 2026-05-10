@@ -117,14 +117,14 @@ function CreationForm({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Queue name..."
-        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
+        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
         autoFocus
       />
       {projects.length > 0 && (
         <select
           value={selectedProjectId}
           onChange={(e) => setSelectedProjectId(e.target.value)}
-          className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text focus:outline-none focus:border-ctp-accent"
+          className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text focus-ring"
         >
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
@@ -336,7 +336,7 @@ function QueueSettings({
           value={concurrency}
           onChange={(e) => setConcurrency(e.target.value)}
           onBlur={handleSave}
-          className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
+          className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
         />
       </div>
       {enabledOrchestrators.length > 0 && (
@@ -349,7 +349,7 @@ function QueueSettings({
               setModel('');
               void update(queueId, { orchestrator: e.target.value || undefined, model: undefined });
             }}
-            className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
+            className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
           >
             {enabledOrchestrators.map((o) => (
               <option key={o.id} value={o.id}>{o.displayName}</option>
@@ -365,7 +365,7 @@ function QueueSettings({
           onChange={(e) => setModel(e.target.value)}
           onBlur={handleSave}
           placeholder="default"
-          className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
+          className="w-full px-2 py-1 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
         />
       </div>
       <div className="flex items-center justify-between">

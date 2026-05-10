@@ -81,7 +81,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="flex-1 bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                  text-ctp-text focus:outline-none focus:border-ctp-accent"
+                  text-ctp-text focus-ring"
                 autoFocus
               />
               <button
@@ -129,7 +129,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                  text-ctp-text focus:outline-none focus:border-ctp-accent"
+                  text-ctp-text focus-ring"
               >
                 {MODEL_OPTIONS.map((opt) => (
                   <option key={opt.id} value={opt.id}>{opt.label}</option>
@@ -145,7 +145,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
               value={orchestrator}
               onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }}
               className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                text-ctp-text focus:outline-none focus:border-ctp-accent"
+                text-ctp-text focus-ring"
             >
               {enabledOrchestrators.map((o) => {
                 const avail = availability[o.id];
@@ -205,7 +205,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
               checked={freeAgentMode}
               onChange={(e) => setFreeAgentMode(e.target.checked)}
               disabled={!supportsPermissions}
-              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-red-500 accent-red-500"
+              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
             />
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
             <span className="text-[10px] text-ctp-subtext0/70 ml-1">

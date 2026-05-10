@@ -500,7 +500,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search plugins..."
-            className="w-full px-3 py-2 rounded-lg bg-surface-0 border border-surface-1 text-sm text-ctp-text placeholder-ctp-subtext0 outline-none focus:border-ctp-accent"
+            className="w-full px-3 py-2 rounded-lg bg-surface-0 border border-surface-1 text-sm text-ctp-text placeholder:text-ctp-subtext0 outline-none focus:border-ctp-accent"
             data-testid="marketplace-search"
           />
 

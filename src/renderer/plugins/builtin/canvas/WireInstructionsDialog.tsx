@@ -113,7 +113,7 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
           <select
             value={selectedTool}
             onChange={(e) => setSelectedTool(e.target.value)}
-            className="mt-1 w-full bg-ctp-base border border-surface-2 rounded px-2 py-1.5 text-xs text-ctp-text focus:outline-none focus:ring-1 focus:ring-ctp-accent"
+            className="mt-1 w-full bg-ctp-base border border-surface-2 rounded px-2 py-1.5 text-xs text-ctp-text focus-ring"
             data-testid="wire-instructions-tool-select"
           >
             {dropdownOptions.map((suffix) => (
@@ -132,7 +132,7 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
             value={currentValue}
             onChange={(e) => handleTextChange(e.target.value)}
             placeholder={`e.g. "Do not transmit raw telemetry over this connection"`}
-            className="w-full h-32 bg-ctp-base border border-surface-2 rounded px-2.5 py-2 text-xs text-ctp-text placeholder-ctp-overlay0 resize-none focus:outline-none focus:ring-1 focus:ring-ctp-accent"
+            className="w-full h-32 bg-ctp-base border border-surface-2 rounded px-2.5 py-2 text-xs text-ctp-text placeholder:text-ctp-overlay0 resize-none focus-ring"
             data-testid="wire-instructions-textarea"
           />
           <div className="text-[10px] text-ctp-overlay0 mt-1">

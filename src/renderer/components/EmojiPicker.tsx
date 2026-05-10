@@ -204,7 +204,7 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search emoji..."
-          className="w-full bg-surface-0 border border-surface-2 rounded-lg px-2.5 py-1.5 text-xs text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
+          className="w-full bg-surface-0 border border-surface-2 rounded-lg px-2.5 py-1.5 text-xs text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
         />
       </div>
 

@@ -1377,7 +1377,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
             value: filterText,
             onChange: (e: React.ChangeEvent<HTMLInputElement>) => setFilterText(e.target.value),
             onKeyDown: (e: React.KeyboardEvent) => e.stopPropagation(), // prevent tree keyboard nav while typing
-            className: 'w-full bg-surface-0 text-ctp-text placeholder-ctp-subtext0 text-xs rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-ctp-accent/50 pr-5',
+            className: 'w-full bg-surface-0 text-ctp-text placeholder:text-ctp-subtext0 text-xs rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-ctp-accent/50 pr-5',
             'aria-label': 'Filter files',
           }),
           filterText

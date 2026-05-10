@@ -633,7 +633,7 @@ export function AgentSettingsView({ agent }: Props) {
                       onChange={(e) => setRenameValue(e.target.value)}
                       onBlur={handleRenameConfirm}
                       onKeyDown={handleRenameKeyDown}
-                      className="flex-1 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-accent"
+                      className="flex-1 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring"
                     />
                   ) : (
                     <>
@@ -726,7 +726,7 @@ export function AgentSettingsView({ agent }: Props) {
                     value={agentOrchestrator}
                     onChange={(e) => handleOrchestratorChange(e.target.value)}
                     disabled={agent.status === 'running'}
-                    className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {enabledOrchestrators.map((o) => (
                       <option key={o.id} value={o.id}>{o.displayName}</option>
@@ -747,7 +747,7 @@ export function AgentSettingsView({ agent }: Props) {
                   value={agentModel}
                   onChange={(e) => handleModelChange(e.target.value)}
                   disabled={agent.status === 'running'}
-                  className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {MODEL_OPTIONS.map((opt) => (
                     <option key={opt.id} value={opt.id}>{opt.label}</option>
@@ -763,7 +763,7 @@ export function AgentSettingsView({ agent }: Props) {
                     onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModelBlur(); }}
                     placeholder="e.g. claude-opus-4-6"
                     disabled={agent.status === 'running'}
-                    className="mt-1.5 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="mt-1.5 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 )}
               </div>
@@ -823,7 +823,7 @@ export function AgentSettingsView({ agent }: Props) {
                     checked={freeAgentMode}
                     onChange={(e) => handleFreeAgentModeChange(e.target.checked)}
                     disabled={isRunning || !(capabilities?.permissions ?? false)}
-                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-red-500 accent-red-500"
+                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
                   />
                   <span className="text-sm text-ctp-text">Free Agent Mode</span>
                 </label>
@@ -1169,7 +1169,7 @@ export function AgentSettingsView({ agent }: Props) {
                       checked={qadFreeAgentMode}
                       onChange={(e) => { setQadFreeAgentMode(e.target.checked); setQadDirty(true); }}
                       disabled={isRunning || !(capabilities?.permissions ?? false)}
-                      className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-red-500 accent-red-500"
+                      className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
                     />
                     <span className="text-xs text-ctp-subtext0">Free Agent Mode by default</span>
                   </label>

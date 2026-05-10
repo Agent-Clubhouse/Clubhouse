@@ -135,7 +135,7 @@ function CreationForm({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Project name..."
-        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
+        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
         autoFocus
       />
       <button
@@ -606,7 +606,7 @@ function ExpandedProjectView({
             onChange={(e) => setEditDesc(e.target.value)}
             placeholder="Purpose of this group project..."
             rows={5}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -616,7 +616,7 @@ function ExpandedProjectView({
             onChange={(e) => setEditInstr(e.target.value)}
             placeholder="Rules agents must follow..."
             rows={5}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
           />
         </div>
         <div className="flex flex-col justify-between flex-shrink-0 gap-1.5 w-44">
@@ -926,7 +926,7 @@ function ExpandedHeader({
           onChange={(e) => setEditName(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleSaveEdit}
-          className="px-2 py-0.5 text-sm font-semibold bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
+          className="px-2 py-0.5 text-sm font-semibold bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
           autoFocus
         />
       ) : (
@@ -1048,7 +1048,7 @@ function ShoulderTapModal({
           <select
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
           >
             <option value="all">Broadcast to all</option>
             {members.map((m) => (
@@ -1079,7 +1079,7 @@ function ShoulderTapModal({
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type your message..."
             rows={4}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
             autoFocus
           />
         </div>
@@ -1157,7 +1157,7 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
           min={1}
           value={maxPerTopic}
           onChange={(e) => { setMaxPerTopic(Math.max(1, parseInt(e.target.value) || 1)); setConfirmTrim(false); }}
-          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
+          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
         />
       </label>
       <label className="flex items-center gap-1.5 text-xs text-ctp-subtext1">
@@ -1167,7 +1167,7 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
           min={1}
           value={maxTotal}
           onChange={(e) => { setMaxTotal(Math.max(1, parseInt(e.target.value) || 1)); setConfirmTrim(false); }}
-          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-accent"
+          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
         />
       </label>
       {trimEstimate != null && trimEstimate > 0 && (

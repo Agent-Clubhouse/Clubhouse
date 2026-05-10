@@ -64,7 +64,7 @@ function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
             onChange={(e) => setValue(e.target.value)}
             data-testid="plugin-dialog-input"
             className="w-full bg-ctp-base border border-surface-1 rounded-lg px-3 py-2 text-sm text-ctp-text
-              placeholder:text-ctp-subtext0 focus:outline-none focus:border-ctp-accent"
+              placeholder:text-ctp-subtext0 focus-ring"
             onKeyDown={(e) => {
               if (e.key === 'Enter') resolve(value);
               if (e.key === 'Escape') resolve(null);

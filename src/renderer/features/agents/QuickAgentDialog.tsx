@@ -117,7 +117,7 @@ export function QuickAgentDialog() {
             value={selectedProjectId}
             onChange={(e) => { setSelectedProjectId(e.target.value); setParentAgentId(''); }}
             className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-              text-ctp-text focus:outline-none focus:border-ctp-accent"
+              text-ctp-text focus-ring"
           >
             {projects.length === 0 && <option value="">No projects</option>}
             {projects.map((p) => (
@@ -133,7 +133,7 @@ export function QuickAgentDialog() {
             value={parentAgentId}
             onChange={(e) => setParentAgentId(e.target.value)}
             className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-              text-ctp-text focus:outline-none focus:border-ctp-accent"
+              text-ctp-text focus-ring"
           >
             <option value="">None (project root)</option>
             {durableAgents.map((a) => (
@@ -150,7 +150,7 @@ export function QuickAgentDialog() {
               value={orchestrator || enabledOrchestrators[0]?.id}
               onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }}
               className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                text-ctp-text focus:outline-none focus:border-ctp-accent"
+                text-ctp-text focus-ring"
             >
               {enabledOrchestrators.map((o) => (
                 <option key={o.id} value={o.id}>{o.displayName}</option>
@@ -166,7 +166,7 @@ export function QuickAgentDialog() {
             value={model}
             onChange={(e) => setModel(e.target.value)}
             className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-              text-ctp-text focus:outline-none focus:border-ctp-accent"
+              text-ctp-text focus-ring"
           >
             {MODEL_OPTIONS.map((opt) => (
               <option key={opt.id} value={opt.id}>{opt.label}</option>
@@ -180,7 +180,7 @@ export function QuickAgentDialog() {
               onChange={(e) => setCustomModel(e.target.value)}
               placeholder="e.g. claude-opus-4-6"
               className="mt-1.5 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
+                text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
             />
           )}
         </div>
@@ -195,7 +195,7 @@ export function QuickAgentDialog() {
             checked={freeAgentMode}
             onChange={(e) => setFreeAgentMode(e.target.checked)}
             disabled={!supportsPermissions}
-            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-red-500 accent-red-500"
+            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
           />
           <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
           <span className="text-[10px] text-ctp-subtext0/70 ml-1">
@@ -214,7 +214,7 @@ export function QuickAgentDialog() {
             rows={3}
             className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-2 text-sm
               text-ctp-text placeholder:text-ctp-overlay0
-              focus:outline-none focus:border-ctp-accent resize-none"
+              focus-ring resize-none"
           />
           <span className="text-[10px] text-ctp-overlay0 mt-0.5 block">
             {navigator.platform.includes('Mac') ? '\u2318' : 'Ctrl'}+Enter to submit
