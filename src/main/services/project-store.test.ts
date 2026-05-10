@@ -1252,3 +1252,215 @@ describe('readIconData — path traversal protection', () => {
     expect(result).toContain('data:image/png;base64,');
   });
 });
+
+// ── LB-SP-005: migrateProjectOverrides is awaited before add() returns ────
+
+describe('LB-SP-005: add() awaits badge/sound saves before returning', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+  });
+
+  it('add() resolves only after saveBadgeSettings completes', async () => {
+    // Verify ordering: add() must not resolve before saveBadgeSettings finishes.
+    // We use setImmediate (macrotask boundary) inside the mock so that any code NOT
+    // awaiting the save promise would resolve add() before 'save-completed' is recorded.
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update('/lb-sp-005').digest('hex').slice(0, 16);
+    const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
+
+    vi.mocked(pathExists).mockImplementation(async (p: any) => {
+      const s = String(p);
+      if (s === sidecarPath) return true;
+      if (s.includes('project-icons')) return true;
+      return false;
+    });
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      if (String(p) === sidecarPath) return JSON.stringify({ _previousId: 'proj_old_sp005' });
+      return '';
+    });
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+
+    vi.mocked(getBadgeSettings).mockReturnValue({
+      enabled: true, pluginBadges: true, projectRailBadges: true,
+      projectOverrides: { proj_old_sp005: { enabled: false, pluginBadges: false } },
+    });
+
+    const events: string[] = [];
+    vi.mocked(saveBadgeSettings).mockImplementation(async () => {
+      events.push('save-started');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      events.push('save-completed');
+    });
+
+    await add('/lb-sp-005');
+
+    expect(events).toEqual(['save-started', 'save-completed']);
+  });
+
+  it('add() resolves only after saveSoundSettings completes', async () => {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update('/lb-sp-005-sound').digest('hex').slice(0, 16);
+    const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
+
+    vi.mocked(pathExists).mockImplementation(async (p: any) => {
+      const s = String(p);
+      if (s === sidecarPath) return true;
+      if (s.includes('project-icons')) return true;
+      return false;
+    });
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      if (String(p) === sidecarPath) return JSON.stringify({ _previousId: 'proj_old_sp005s' });
+      return '';
+    });
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+
+    vi.mocked(getBadgeSettings).mockReturnValue({ enabled: true, pluginBadges: true, projectRailBadges: true });
+    vi.mocked(getSoundSettings).mockReturnValue({
+      activePack: null, eventSettings: {} as any,
+      projectOverrides: { proj_old_sp005s: { activePack: 'retro' } },
+    });
+
+    const events: string[] = [];
+    vi.mocked(saveSoundSettings).mockImplementation(async () => {
+      events.push('save-started');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      events.push('save-completed');
+    });
+
+    await add('/lb-sp-005-sound');
+
+    expect(events).toEqual(['save-started', 'save-completed']);
+  });
+});
+
+// ── LB-SP-007: icon operations happen before projects.json write ───────────
+
+describe('LB-SP-007: icon-before-JSON atomicity in remove()', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+  });
+
+  it('unlinks icon file before writing projects.json (no icon field)', async () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_del', name: 'Del', path: '/del' }],
+    };
+    mockStoreFile(store);
+    vi.mocked(fsp.readdir).mockResolvedValue(['proj_del.png'] as any);
+
+    const callOrder: string[] = [];
+    vi.mocked(fsp.unlink).mockImplementation(async (p: any) => {
+      callOrder.push(`unlink:${path.basename(String(p))}`);
+    });
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any) => {
+      callOrder.push(`writeFile:${path.basename(String(p))}`);
+    });
+
+    await remove('proj_del');
+
+    const unlinkIdx = callOrder.findIndex((s) => s.startsWith('unlink:'));
+    const writeIdx = callOrder.findIndex((s) => s === 'writeFile:projects.json');
+    expect(unlinkIdx).toBeGreaterThanOrEqual(0);
+    expect(writeIdx).toBeGreaterThanOrEqual(0);
+    expect(unlinkIdx).toBeLessThan(writeIdx);
+  });
+
+  it('renames (preserves) icon before writing projects.json (project has icon field)', async () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_del', name: 'Del', path: '/del', icon: 'proj_del.png' }],
+    };
+    mockStoreFile(store);
+    vi.mocked(fsp.readdir).mockResolvedValue(['proj_del.png'] as any);
+
+    const callOrder: string[] = [];
+    vi.mocked(fsp.rename).mockImplementation(async (_src: any, _dst: any) => {
+      callOrder.push('rename');
+    });
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any) => {
+      callOrder.push(`writeFile:${path.basename(String(p))}`);
+    });
+
+    await remove('proj_del');
+
+    const renameIdx = callOrder.findIndex((s) => s === 'rename');
+    const writeIdx = callOrder.findIndex((s) => s === 'writeFile:projects.json');
+    expect(renameIdx).toBeGreaterThanOrEqual(0);
+    expect(writeIdx).toBeGreaterThanOrEqual(0);
+    expect(renameIdx).toBeLessThan(writeIdx);
+  });
+});
+
+describe('LB-SP-007: icon-before-JSON atomicity in update()', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+  });
+
+  it('unlinks icon before writing projects.json when icon is cleared', async () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_up', name: 'Up', path: '/up', icon: 'proj_up.png' }],
+    };
+    mockStoreFile(store);
+    vi.mocked(fsp.readdir).mockResolvedValue(['proj_up.png'] as any);
+
+    const callOrder: string[] = [];
+    vi.mocked(fsp.unlink).mockImplementation(async (p: any) => {
+      callOrder.push(`unlink:${path.basename(String(p))}`);
+    });
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any) => {
+      callOrder.push(`writeFile:${path.basename(String(p))}`);
+    });
+
+    await update('proj_up', { icon: '' });
+
+    const unlinkIdx = callOrder.findIndex((s) => s.startsWith('unlink:'));
+    const writeIdx = callOrder.findIndex((s) => s === 'writeFile:projects.json');
+    expect(unlinkIdx).toBeGreaterThanOrEqual(0);
+    expect(writeIdx).toBeGreaterThanOrEqual(0);
+    expect(unlinkIdx).toBeLessThan(writeIdx);
+  });
+
+  it('unlinks icon before writing projects.json when emoji is set', async () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_emoji', name: 'Emoji', path: '/emoji', icon: 'proj_emoji.png' }],
+    };
+    mockStoreFile(store);
+    vi.mocked(fsp.readdir).mockResolvedValue(['proj_emoji.png'] as any);
+
+    const callOrder: string[] = [];
+    vi.mocked(fsp.unlink).mockImplementation(async (p: any) => {
+      callOrder.push(`unlink:${path.basename(String(p))}`);
+    });
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any) => {
+      callOrder.push(`writeFile:${path.basename(String(p))}`);
+    });
+
+    await update('proj_emoji', { emoji: '🏠' });
+
+    const unlinkIdx = callOrder.findIndex((s) => s.startsWith('unlink:'));
+    const writeIdx = callOrder.findIndex((s) => s === 'writeFile:projects.json');
+    expect(unlinkIdx).toBeGreaterThanOrEqual(0);
+    expect(writeIdx).toBeGreaterThanOrEqual(0);
+    expect(unlinkIdx).toBeLessThan(writeIdx);
+  });
+
+  it('does not unlink icon when icon is not being cleared', async () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_noop', name: 'Noop', path: '/noop', icon: 'proj_noop.png' }],
+    };
+    mockStoreFile(store);
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+
+    await update('proj_noop', { color: 'amber' });
+
+    expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalled();
+  });
+});
