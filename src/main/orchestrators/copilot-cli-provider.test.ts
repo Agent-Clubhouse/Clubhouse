@@ -258,6 +258,38 @@ describe('CopilotCliProvider', () => {
       expect(result.args[promptIdx + 1]).toContain('Fix the bug');
     });
 
+    it('adds --allow-all-tools when permissionMode is skip-all', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        permissionMode: 'skip-all',
+      });
+      expect(result.args).toContain('--allow-all-tools');
+    });
+
+    it('does not add --allow-all-tools when permissionMode is undefined', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project' });
+      expect(result.args).not.toContain('--allow-all-tools');
+    });
+
+    it('does not add --allow-all-tools for other permissionMode values', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        permissionMode: 'prompt' as any,
+      });
+      expect(result.args).not.toContain('--allow-all-tools');
+    });
+
+    it('combines freeAgentMode and permissionMode skip-all', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        freeAgentMode: true,
+        permissionMode: 'skip-all',
+      });
+      expect(result.args).toContain('--yolo');
+      expect(result.args).toContain('--autopilot');
+      expect(result.args).toContain('--allow-all-tools');
+    });
+
     it('adds --allow-tool flags for allowed tools', async () => {
       const result = await provider.buildSpawnCommand({
         cwd: '/project',
