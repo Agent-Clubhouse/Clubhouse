@@ -1453,6 +1453,84 @@ describe('annex-client', () => {
   describe('LB-AN-004: bearer token cleared when expired or issuedAt missing', () => {
     const FINGERPRINT = 'AN004:BB:CC';
 
+    it('does not send Authorization header on reconnect when issuedAt is null (token loaded from disk)', async () => {
+      // Regression test for the actual LB-AN-004 bug: `null && ...` short-circuited to
+      // false in the old expiry check, so disk-loaded tokens with no issuedAt were trusted
+      // indefinitely. The fix adds `!sat.bearerTokenIssuedAt` so null issuedAt → clear token.
+      const { WebSocket: WsMock } = await import('ws');
+
+      const FP = 'AN004:NULL:ISSUED';
+      mockHttpGetIdentity({
+        fingerprint: FP,
+        alias: 'Null Issued Sat',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'null-issued-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FP,
+        alias: 'Null Issued Sat',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'null-issued-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+      let closeCb: (() => void) | null = null;
+      const wsCtorArgsList: any[] = [];
+
+      vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
+        wsCtorArgsList.push(opts);
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          if (event === 'close') closeCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Connect with a bearer token (issuedAt is set to now by connect())
+      annexClient.connect(FP, 'disk-loaded-token');
+
+      // Simulate a disk-loaded token state: token present but issuedAt is null
+      annexClient._setSatelliteTokenStateForTesting(FP, 'disk-loaded-token', null);
+
+      // Fire open to transition to connected
+      expect(openCb).not.toBeNull();
+      openCb!();
+      expect(annexClient.getSatellites().find(s => s.id === FP)?.state).toBe('connected');
+
+      // Fire close to trigger reconnect (connectToSatellite re-runs the expiry check)
+      expect(closeCb).not.toBeNull();
+      closeCb!();
+
+      // Advance past reconnect delay
+      await vi.advanceTimersByTimeAsync(2000);
+
+      vi.useRealTimers();
+
+      // Second WebSocket connection must NOT carry Authorization header —
+      // the null-issuedAt token should have been cleared before reconnecting.
+      expect(wsCtorArgsList.length).toBeGreaterThanOrEqual(2);
+      const reconnectOpts = wsCtorArgsList[wsCtorArgsList.length - 1];
+      expect(reconnectOpts?.headers?.Authorization).toBeUndefined();
+    });
+
     it('does not send Authorization header on reconnect when token is past the 22h TTL', async () => {
       const { WebSocket: WsMock } = await import('ws');
 

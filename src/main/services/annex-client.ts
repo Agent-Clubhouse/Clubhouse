@@ -1481,3 +1481,12 @@ export function stopClient(): void {
   discoveredServices.clear();
   stopDiscovery();
 }
+
+/** For testing only: set a satellite's bearer token state to simulate disk-loaded tokens with no issuedAt. */
+export function _setSatelliteTokenStateForTesting(fingerprint: string, token: string | null, issuedAt: number | null): void {
+  const sat = satellites.get(fingerprint);
+  if (sat) {
+    sat.bearerToken = token;
+    sat.bearerTokenIssuedAt = issuedAt;
+  }
+}
