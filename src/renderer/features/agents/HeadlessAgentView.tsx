@@ -439,7 +439,7 @@ export function HeadlessAgentView({ agent }: Props) {
         <div className="w-full bg-ctp-mantle border border-surface-0 rounded-lg overflow-hidden">
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-surface-0">
             <span className="text-[10px] text-ctp-subtext0 uppercase tracking-wider">Live Activity</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-ctp-success animate-pulse" />
           </div>
           <div
             ref={feedRef}
@@ -461,7 +461,7 @@ export function HeadlessAgentView({ agent }: Props) {
         <button
           onClick={() => killAgent(agent.id)}
           className="px-4 py-1.5 text-xs rounded-lg border border-red-500/30
-            hover:bg-red-500/20 transition-colors cursor-pointer text-red-400"
+            hover:bg-ctp-error/20 transition-colors cursor-pointer text-ctp-error"
         >
           Stop Agent
         </button>
@@ -493,10 +493,10 @@ function LiveFeedItem({ item, isLatest }: { item: FeedItem; isLatest: boolean })
   // result
   return (
     <div className="flex items-center gap-1.5 text-xs border-t border-surface-0 pt-1.5 mt-1">
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--ctp-success))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="20 6 9 17 4 12" />
       </svg>
-      <span className="text-green-400">{item.text || 'Done'}</span>
+      <span className="text-ctp-success">{item.text || 'Done'}</span>
     </div>
   );
 }

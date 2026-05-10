@@ -28,7 +28,7 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 space-y-4">
-          <h3 className="text-lg font-semibold text-red-400">Reset Project</h3>
+          <h3 className="text-lg font-semibold text-ctp-error">Reset Project</h3>
           <p className="text-sm text-ctp-subtext1">
             This will permanently delete all Clubhouse configuration for{' '}
             <span className="font-semibold text-ctp-text">{projectName}</span>, then close the project.
@@ -85,7 +85,7 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
             disabled={!canConfirm}
             className={`px-4 py-2 text-sm rounded-lg border cursor-pointer transition-colors ${
               canConfirm
-                ? 'bg-red-500/20 border-red-500/40 text-red-400 hover:bg-red-500/30'
+                ? 'bg-ctp-error/20 border-red-500/40 text-ctp-error hover:bg-ctp-error/30'
                 : 'bg-surface-0 border-surface-2 text-ctp-subtext0 opacity-50 cursor-not-allowed'
             }`}
           >

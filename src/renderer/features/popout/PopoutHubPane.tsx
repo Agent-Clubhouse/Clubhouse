@@ -172,7 +172,7 @@ export function PopoutHubPane({
               <button
                 onClick={(e) => { e.stopPropagation(); onClose(pane.id); }}
                 className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded
-                  text-xs text-ctp-overlay0 bg-surface-1/60 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                  text-xs text-ctp-overlay0 bg-surface-1/60 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors"
                 title="Close pane"
               >
                 &times;
@@ -219,7 +219,7 @@ export function PopoutHubPane({
                   {agent.status === 'running' && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleKill(); }}
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30"
                       title="Stop agent"
                     >
                       Stop
@@ -227,7 +227,7 @@ export function PopoutHubPane({
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleUnassign(); }}
-                    className="text-[10px] px-1 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-red-500/20 hover:text-red-400"
+                    className="text-[10px] px-1 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-ctp-error/20 hover:text-ctp-error"
                     title="Remove from pane"
                   >
                     &times;
@@ -285,7 +285,7 @@ function PopoutAgentPicker({ agents, onPick }: {
                 >
                   <AgentAvatarWithRing agent={a} />
                   <span className="text-xs text-ctp-text truncate flex-1">{a.name}</span>
-                  <span className={`text-[10px] ${a.status === 'running' ? 'text-green-400' : a.status === 'error' ? 'text-red-400' : 'text-ctp-overlay0'}`}>
+                  <span className={`text-[10px] ${a.status === 'running' ? 'text-ctp-success' : a.status === 'error' ? 'text-ctp-error' : 'text-ctp-overlay0'}`}>
                     {a.status}
                   </span>
                 </button>
@@ -303,7 +303,7 @@ function PopoutAgentPicker({ agents, onPick }: {
                 >
                   <AgentAvatarWithRing agent={a} />
                   <span className="text-xs text-ctp-text truncate flex-1">{a.name}</span>
-                  <span className="text-[10px] text-green-400">running</span>
+                  <span className="text-[10px] text-ctp-success">running</span>
                 </button>
               ))}
             </div>

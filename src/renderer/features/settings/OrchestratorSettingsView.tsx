@@ -205,7 +205,7 @@ function AppAgentSettings() {
               <div className="flex items-center gap-3">
                 <div
                   className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                    avail?.available ? 'bg-green-500' : avail ? 'bg-red-500' : 'bg-ctp-overlay0'
+                    avail?.available ? 'bg-ctp-success' : avail ? 'bg-ctp-error' : 'bg-ctp-overlay0'
                   }`}
                   title={avail?.available ? 'CLI found' : avail?.error || 'Checking...'}
                 />

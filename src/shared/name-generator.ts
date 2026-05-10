@@ -88,7 +88,7 @@ export function generateZoneName(): string {
 export const AGENT_COLORS = [
   { id: 'indigo', label: 'Indigo', bg: 'bg-indigo-500', ring: 'ring-indigo-500', hex: '#6366f1' },
   { id: 'emerald', label: 'Emerald', bg: 'bg-emerald-500', ring: 'ring-emerald-500', hex: '#10b981' },
-  { id: 'amber', label: 'Amber', bg: 'bg-amber-500', ring: 'ring-amber-500', hex: '#f59e0b' },
+  { id: 'amber', label: 'Amber', bg: 'bg-ctp-warning', ring: 'ring-amber-500', hex: '#f59e0b' },
   { id: 'rose', label: 'Rose', bg: 'bg-rose-500', ring: 'ring-rose-500', hex: '#f43f5e' },
   { id: 'cyan', label: 'Cyan', bg: 'bg-cyan-500', ring: 'ring-cyan-500', hex: '#06b6d4' },
   { id: 'violet', label: 'Violet', bg: 'bg-violet-500', ring: 'ring-violet-500', hex: '#8b5cf6' },

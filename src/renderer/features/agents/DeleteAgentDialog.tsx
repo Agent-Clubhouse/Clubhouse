@@ -172,8 +172,8 @@ export function DeleteAgentDialog() {
             <button
               onClick={() => handleExecute('unregister')}
               disabled={executing}
-              className="px-4 py-1.5 text-xs rounded bg-red-500/80 text-white
-                hover:bg-red-500 cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
+              className="px-4 py-1.5 text-xs rounded bg-ctp-error/80 text-white
+                hover:bg-ctp-error cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
             >
               {executing && <span className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" />}
               Remove
@@ -238,8 +238,8 @@ export function DeleteAgentDialog() {
               <button
                 onClick={handleSimpleDelete}
                 disabled={executing}
-                className="px-4 py-1.5 text-xs rounded bg-red-500/80 text-white
-                  hover:bg-red-500 cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
+                className="px-4 py-1.5 text-xs rounded bg-ctp-error/80 text-white
+                  hover:bg-ctp-error cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
               >
                 {executing && <span className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" />}
                 Delete
@@ -311,13 +311,13 @@ export function DeleteAgentDialog() {
                     disabled={executing}
                     className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors cursor-pointer disabled:opacity-50 flex items-start gap-3 ${
                       opt.destructive
-                        ? 'border-red-500/20 hover:border-red-500/40 hover:bg-red-500/5'
+                        ? 'border-red-500/20 hover:border-red-500/40 hover:bg-ctp-error/5'
                         : 'border-surface-0 hover:border-surface-2 hover:bg-surface-0'
                     }`}
                   >
                     <span className="text-base flex-shrink-0 mt-0.5">{opt.icon}</span>
                     <div className="min-w-0">
-                      <div className={`text-sm font-medium ${opt.destructive ? 'text-red-300' : 'text-ctp-text'}`}>
+                      <div className={`text-sm font-medium ${opt.destructive ? 'text-ctp-error' : 'text-ctp-text'}`}>
                         {opt.label}
                       </div>
                       <div className="text-xs text-ctp-subtext0 mt-0.5">{opt.description}</div>

@@ -23,9 +23,9 @@ function formatBytes(bytes: number): string {
 const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
 
 const RISK_COLORS: Record<PermissionRiskLevel, string> = {
-  safe: 'bg-green-500/20 text-green-400',
+  safe: 'bg-ctp-success/20 text-ctp-success',
   elevated: 'bg-yellow-500/20 text-yellow-400',
-  dangerous: 'bg-red-500/20 text-red-400',
+  dangerous: 'bg-ctp-error/20 text-ctp-error',
 };
 
 function sortPermissionsByRisk(perms: string[]): string[] {
@@ -75,7 +75,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
             <span className="text-sm font-medium text-ctp-text">{plugin.name}</span>
             <span className="text-xs text-ctp-subtext0">v{plugin.latest}</span>
             {plugin.official && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">Official</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success">Official</span>
             )}
             {plugin.marketplaceName && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
@@ -86,7 +86,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
               API {release.api}
             </span>
             {!compatible && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Incompatible</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
             )}
             {compatible && deprecatedRemoval && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400" title={`API ${release.api} will be removed in ${deprecatedRemoval}`}>Deprecated</span>
@@ -186,7 +186,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
                 </span>
               )}
               {!betaCompatible && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Incompatible</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
               )}
             </div>
             <button
@@ -472,7 +472,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
           )}
 
           {customErrorEntries.length > 0 && (
-            <div className="mb-3 p-2 rounded bg-red-500/10 border border-red-500/30 text-xs text-red-400">
+            <div className="mb-3 p-2 rounded bg-ctp-error/10 border border-red-500/30 text-xs text-ctp-error">
               {customErrorEntries.map(([id, err]) => {
                 const mkt = customMarketplaces.find((m) => m.id === id);
                 return (
@@ -535,7 +535,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
           {error && (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
-                <p className="text-sm text-red-400 mb-2">Failed to load marketplace</p>
+                <p className="text-sm text-ctp-error mb-2">Failed to load marketplace</p>
                 <p className="text-xs text-ctp-subtext0">{error}</p>
               </div>
             </div>
@@ -567,10 +567,10 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
                     }}
                   />
                   {installErrors[plugin.id] && (
-                    <p className="text-xs text-red-400 mt-1 px-1">{installErrors[plugin.id]}</p>
+                    <p className="text-xs text-ctp-error mt-1 px-1">{installErrors[plugin.id]}</p>
                   )}
                   {betaInstallErrors[plugin.id] && (
-                    <p className="text-xs text-red-400 mt-1 px-1">{betaInstallErrors[plugin.id]}</p>
+                    <p className="text-xs text-ctp-error mt-1 px-1">{betaInstallErrors[plugin.id]}</p>
                   )}
                 </div>
               ))}

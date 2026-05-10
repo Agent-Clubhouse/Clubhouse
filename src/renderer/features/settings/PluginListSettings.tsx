@@ -16,9 +16,9 @@ import { showConfirmDialog } from '../../plugins/PluginDialog';
 const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
 
 const RISK_COLORS: Record<PermissionRiskLevel, string> = {
-  safe: 'bg-green-500/20 text-green-400',
+  safe: 'bg-ctp-success/20 text-ctp-success',
   elevated: 'bg-yellow-500/20 text-yellow-400',
-  dangerous: 'bg-red-500/20 text-red-400',
+  dangerous: 'bg-ctp-error/20 text-ctp-error',
 };
 
 function sortPermissionsByRisk(perms: PluginPermission[]): PluginPermission[] {
@@ -138,7 +138,7 @@ function SourceBadge({ entry }: { entry: PluginRegistryEntry }) {
   }
   if (entry.source === 'marketplace') {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">Official</span>
+      <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success">Official</span>
     );
   }
   if (entry.source === 'community') {
@@ -250,7 +250,7 @@ function OrphanInjectionsBanner({
                 <button
                   onClick={() => handleClean(id)}
                   disabled={cleaning !== null}
-                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
                   data-testid={`clean-orphan-btn-${id}`}
                 >
                   {cleaning === id ? 'Cleaning…' : 'Clean up'}
@@ -263,7 +263,7 @@ function OrphanInjectionsBanner({
           <button
             onClick={handleCleanAll}
             disabled={cleaning !== null}
-            className="shrink-0 text-[11px] px-2 py-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
+            className="shrink-0 text-[11px] px-2 py-1 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
             data-testid="clean-all-orphans-btn"
           >
             {cleaning ? 'Cleaning…' : 'Clean all'}
@@ -326,14 +326,14 @@ function PluginInjectionsPanel({
         <button
           onClick={handleClean}
           disabled={cleaning}
-          className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
+          className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
           data-testid={`clean-injections-btn-${pluginId}`}
         >
           {cleaning ? 'Cleaning...' : 'Remove all'}
         </button>
       </div>
       {cleanError && (
-        <p className="text-[10px] text-red-400 mb-1">{cleanError}</p>
+        <p className="text-[10px] text-ctp-error mb-1">{cleanError}</p>
       )}
       <ul className="space-y-0.5 list-disc list-inside">
         {injections.skills.map((s) => (
@@ -399,13 +399,13 @@ function PluginRow({
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">API {entry.manifest.engine.api}</span>
             <PermissionInfoPopup entry={entry} />
             {isIncompatible && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Incompatible</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
             )}
             {!isIncompatible && DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api] && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400" title={`API ${entry.manifest.engine.api} will be removed in ${DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api]}`}>Deprecated API</span>
             )}
             {isErrored && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Error</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Error</span>
             )}
             {isPendingApproval && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach" data-testid={`pending-badge-${entry.manifest.id}`}>
@@ -435,11 +435,11 @@ function PluginRow({
             const stack = newlineIdx >= 0 ? entry.error.slice(newlineIdx + 1) : null;
             return (
               <div className="mt-1">
-                <p className="text-xs text-red-400">{message}</p>
+                <p className="text-xs text-ctp-error">{message}</p>
                 {stack && (
                   <details className="mt-1">
-                    <summary className="text-[10px] text-red-400/70 cursor-pointer">View details</summary>
-                    <pre className="text-[10px] text-red-400/70 bg-surface-0 p-2 rounded mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{stack}</pre>
+                    <summary className="text-[10px] text-ctp-error/70 cursor-pointer">View details</summary>
+                    <pre className="text-[10px] text-ctp-error/70 bg-surface-0 p-2 rounded mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{stack}</pre>
                   </details>
                 )}
               </div>
@@ -458,7 +458,7 @@ function PluginRow({
                       key={perm}
                       className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
                         risk === 'dangerous'
-                          ? 'bg-red-500/20 text-red-400'
+                          ? 'bg-ctp-error/20 text-ctp-error'
                           : 'bg-yellow-500/20 text-yellow-400'
                       }`}
                     >
@@ -512,7 +512,7 @@ function PluginRow({
           {onUninstall && (
             <button
               onClick={onUninstall}
-              className="p-1.5 rounded hover:bg-red-500/10 text-ctp-subtext0 hover:text-red-400 cursor-pointer"
+              className="p-1.5 rounded hover:bg-ctp-error/10 text-ctp-subtext0 hover:text-ctp-error cursor-pointer"
               title="Uninstall plugin"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -668,7 +668,7 @@ function CustomMarketplaceManager() {
                   <div className="flex items-center gap-2 ml-3">
                     <button
                       onClick={() => handleRemove(m.id)}
-                      className="p-1 rounded hover:bg-red-500/10 text-ctp-subtext0 hover:text-red-400 cursor-pointer"
+                      className="p-1 rounded hover:bg-ctp-error/10 text-ctp-subtext0 hover:text-ctp-error cursor-pointer"
                       title="Remove marketplace"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -727,7 +727,7 @@ function CustomMarketplaceManager() {
               </button>
             </div>
             {addError && (
-              <p className="text-xs text-red-400">{addError}</p>
+              <p className="text-xs text-ctp-error">{addError}</p>
             )}
           </div>
         </div>
@@ -1207,7 +1207,7 @@ export function PluginListSettings() {
                 {externalPlugins.length > 0 && (
                   <button
                     onClick={handleUninstallAll}
-                    className="text-[11px] px-2 py-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer"
+                    className="text-[11px] px-2 py-1 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer"
                   >
                     Uninstall All
                   </button>

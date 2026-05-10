@@ -180,8 +180,8 @@ export function AgentAvatarWithRing({ agent }: { agent: Agent }) {
   const detailed = detailedStatus[agent.id];
   const isWorking = agent.status === 'running' && detailed?.state === 'working';
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
-  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
-    : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
+  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? STATUS_RING_COLOR.needs_permission
+    : agent.status === 'running' && detailed?.state === 'tool_error' ? STATUS_RING_COLOR.tool_error
     : baseRingColor;
 
   return (

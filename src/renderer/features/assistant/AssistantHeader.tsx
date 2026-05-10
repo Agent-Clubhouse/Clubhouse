@@ -41,7 +41,7 @@ export function AssistantHeader({ onReset, mode, onModeChange, orchestrator, onO
       .catch(() => {});
   }, []);
 
-  const statusColor = status === 'error' ? 'text-red-400' :
+  const statusColor = status === 'error' ? 'text-ctp-error' :
     status === 'responding' ? 'text-ctp-accent' :
     'text-ctp-subtext0';
 

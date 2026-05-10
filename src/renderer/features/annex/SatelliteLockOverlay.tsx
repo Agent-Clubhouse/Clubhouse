@@ -76,7 +76,7 @@ export const SatelliteLockOverlay = React.memo(function SatelliteLockOverlay({ l
             </button>
             <button
               onClick={onDisableAndDisconnect}
-              className="px-5 py-2.5 rounded-lg bg-red-500/30 hover:bg-red-500/40 text-white
+              className="px-5 py-2.5 rounded-lg bg-ctp-error/30 hover:bg-ctp-error/40 text-white
                 text-sm font-medium transition-colors cursor-pointer backdrop-blur-sm"
             >
               Disconnect & Disable Annex
