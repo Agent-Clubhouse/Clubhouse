@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal } from '../../components/Modal';
 
 interface SessionNamePromptDialogProps {
   agentId: string;
@@ -12,7 +12,6 @@ export function SessionNamePromptDialog({ agentId, projectPath, onDone }: Sessio
   const [saving, setSaving] = useState(false);
   const [lastSessionId, setLastSessionId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   // Fetch the last session ID on mount
   useEffect(() => {
@@ -50,61 +49,45 @@ export function SessionNamePromptDialog({ agentId, projectPath, onDone }: Sessio
     onDone();
   }, [onDone]);
 
-  return createPortal(
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
-      <div
-        ref={dialogRef}
-        data-testid="session-name-prompt-dialog"
-        className="bg-ctp-mantle border border-surface-1 rounded-xl shadow-2xl w-[400px] flex flex-col"
-      >
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-surface-1">
-          <h3 className="text-sm font-semibold text-ctp-text">Name This Session</h3>
-          <p className="text-xs text-ctp-subtext0 mt-1">
-            Give this session a friendly name for easy identification later.
-          </p>
-        </div>
-
-        {/* Input */}
-        <div className="px-4 py-4">
-          <input
-            ref={inputRef}
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Bug fix for login flow"
-            data-testid="session-name-input"
-            className="w-full bg-surface-1 border border-surface-2 rounded-lg px-3 py-2 text-sm text-ctp-text
-              placeholder:text-ctp-subtext0 focus-ring"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSave();
-              if (e.key === 'Escape') handleSkip();
-            }}
-          />
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-surface-1">
-          <button
-            onClick={handleSkip}
-            data-testid="session-name-skip"
-            className="px-3 py-1.5 text-xs rounded-lg text-ctp-subtext0 hover:text-ctp-text
-              hover:bg-surface-1 cursor-pointer transition-colors"
-          >
-            Skip
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !name.trim()}
-            data-testid="session-name-save"
-            className="px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-white hover:bg-ctp-accent/80
-              cursor-pointer transition-colors font-medium disabled:opacity-40 disabled:cursor-default"
-          >
-            Save
-          </button>
-        </div>
+  return (
+    <Modal open={true} onClose={handleSkip} title="Name This Session" width="w-[400px]">
+      <div data-testid="session-name-prompt-dialog">
+      <p className="text-xs text-ctp-subtext0 mb-3">
+        Give this session a friendly name for easy identification later.
+      </p>
+      <input
+        ref={inputRef}
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g. Bug fix for login flow"
+        data-testid="session-name-input"
+        className="w-full bg-surface-1 border border-surface-2 rounded-lg px-3 py-2 text-sm text-ctp-text
+          placeholder:text-ctp-subtext0 focus-ring mb-4"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleSave();
+        }}
+      />
+      <div className="flex items-center justify-end gap-2">
+        <button
+          onClick={handleSkip}
+          data-testid="session-name-skip"
+          className="px-3 py-1.5 text-xs rounded-lg text-ctp-subtext0 hover:text-ctp-text
+            hover:bg-surface-1 cursor-pointer transition-colors"
+        >
+          Skip
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving || !name.trim()}
+          data-testid="session-name-save"
+          className="px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-white hover:bg-ctp-accent/80
+            cursor-pointer transition-colors font-medium disabled:opacity-40 disabled:cursor-default"
+        >
+          Save
+        </button>
       </div>
-    </div>,
-    document.body
+      </div>
+    </Modal>
   );
 }

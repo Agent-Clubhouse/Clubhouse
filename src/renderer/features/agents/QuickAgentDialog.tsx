@@ -4,6 +4,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { Modal } from '../../components/Modal';
 
 export function QuickAgentDialog() {
   const isOpen = useUIStore((s) => s.quickAgentDialogOpen);
@@ -45,8 +46,6 @@ export function QuickAgentDialog() {
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [isOpen]);
-
-  if (!isOpen) return null;
 
   // Durable agents for the selected project
   const durableAgents = Object.values(agents).filter(
@@ -96,20 +95,11 @@ export function QuickAgentDialog() {
       e.preventDefault();
       handleSubmit();
     }
-    if (e.key === 'Escape') {
-      closeDialog();
-    }
   };
 
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDialog}>
-      <div
-        className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[420px] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={handleKeyDown}
-      >
-        <h2 className="text-base font-semibold text-ctp-text mb-4">New Quick Agent</h2>
-
+    <Modal open={isOpen} onClose={closeDialog} title="New Quick Agent" width="w-[420px]">
+      <div onKeyDown={handleKeyDown}>
         {/* Project */}
         <label className="block mb-3">
           <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Project</span>
@@ -195,7 +185,7 @@ export function QuickAgentDialog() {
             checked={freeAgentMode}
             onChange={(e) => setFreeAgentMode(e.target.checked)}
             disabled={!supportsPermissions}
-            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
+            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
           />
           <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
           <span className="text-[10px] text-ctp-subtext0/70 ml-1">
@@ -243,6 +233,6 @@ export function QuickAgentDialog() {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
