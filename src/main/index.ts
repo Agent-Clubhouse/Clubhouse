@@ -1,5 +1,6 @@
 import * as path from 'path';
-import { app, BrowserWindow, dialog, powerMonitor } from 'electron';
+import * as fs from 'fs';
+import { app, BrowserWindow, dialog, powerMonitor, session, net } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, stopAllWatches } from './services/file-watch-service';
@@ -20,6 +21,7 @@ import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
+import { generateCspNonce, getCspNonce } from './csp-nonce';
 
 // Allow overriding userData path for running multiple isolated instances (e.g. testing,
 // dual-instance Annex V2 workflows). Must be set before app.name so that any early
@@ -197,6 +199,55 @@ app.on('ready', () => {
     safeMode.clearMarker();
     process.env.CLUBHOUSE_SAFE_MODE = '1';
   }
+
+  // Generate a per-run CSP nonce before creating any windows.
+  // The nonce is injected into index.html and the CSP header so that inline
+  // scripts (import map, flash-prevention) are allowed while unsafe-inline is
+  // removed from script-src. Only applied to file:// (production) requests —
+  // dev mode uses the webpack dev server which has its own CSP relaxations.
+  const cspNonce = generateCspNonce();
+
+  // Intercept file:// requests so we can inject the nonce into index.html.
+  // All other file:// requests are passed through unchanged.
+  session.defaultSession.protocol.handle('file', async (request) => {
+    const rawPath = decodeURIComponent(
+      new URL(request.url).pathname,
+    );
+    // On Windows, pathname is '/C:/path' — strip the leading slash.
+    const filePath = process.platform === 'win32' && /^\/[A-Za-z]:\//.test(rawPath)
+      ? rawPath.slice(1)
+      : rawPath;
+
+    if (path.basename(filePath) === 'index.html') {
+      try {
+        const html = await fs.promises.readFile(filePath, 'utf-8');
+        return new Response(html.replace(/%%NONCE%%/g, cspNonce), {
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        });
+      } catch {
+        // Fall through to default handling if read fails
+      }
+    }
+
+    return net.fetch(request as unknown as Request, { bypassCustomProtocolHandlers: true });
+  });
+
+  // Enforce CSP via HTTP header on the main-frame HTML response (production only).
+  // This replaces the <meta> CSP tag that was removed from index.html.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (details.resourceType === 'mainFrame' && details.url.startsWith('file://')) {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            `default-src 'self' 'unsafe-inline' data:; script-src 'self' 'nonce-${getCspNonce()}' blob:; worker-src 'self' blob:`,
+          ],
+        },
+      });
+    } else {
+      callback({ responseHeaders: details.responseHeaders });
+    }
+  });
 
   createWindow();
 
