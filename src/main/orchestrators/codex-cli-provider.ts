@@ -20,7 +20,7 @@ import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
 import { CodexAppServerAdapter } from './adapters';
-import { homePath, parseModelChoicesFromHelp, validateHookUrl } from './shared';
+import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -264,17 +264,15 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
     const safeUrl = validateHookUrl(hookUrl);
-    const curlBase = process.platform === 'win32'
-      ? `curl -s -X POST ${safeUrl}/%CLUBHOUSE_AGENT_ID% -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
-      : `cat | curl -s -X POST ${safeUrl}/\${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
+    const curl = buildHookCurlCommand(safeUrl);
 
     const hooks: Record<string, unknown[]> = {
-      PreToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      PostToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      PostToolUseFailure: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      Stop: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      Notification: [{ matcher: '', hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      PermissionRequest: [{ hooks: [{ type: 'command', command: curlBase, timeout: 120 }] }],
+      PreToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      PostToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      PostToolUseFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      Notification: [{ matcher: '', hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      PermissionRequest: [{ hooks: [{ type: 'command', command: curl, timeout: 120 }] }],
     };
 
     const codexDir = path.join(cwd, '.codex');
@@ -289,16 +287,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
       // No existing file — expected on first run
     }
 
-    // Merge per-event key: preserve user hooks, replace stale Clubhouse entries
-    const existingHooks = (existing.hooks || {}) as Record<string, unknown[]>;
-    const mergedHooks: Record<string, unknown[]> = { ...existingHooks };
-
-    for (const [eventKey, ourEntries] of Object.entries(hooks)) {
-      const current = mergedHooks[eventKey] || [];
-      const userEntries = current.filter(e => !isClubhouseHookEntry(e));
-      mergedHooks[eventKey] = [...userEntries, ...ourEntries];
-    }
-
+    const mergedHooks = mergeHookEntries(existing, hooks, isClubhouseHookEntry);
     await fsp.writeFile(hooksPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
   }
 
@@ -429,25 +418,13 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
 
     if (!filePath) return null;
 
-    try {
-      const content = await fsp.readFile(filePath, 'utf-8');
-      const events: StreamJsonEvent[] = [];
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          events.push(JSON.parse(trimmed));
-        } catch {
-          // Skip malformed JSONL lines
-        }
-      }
-      return events.length > 0 ? events : null;
-    } catch (err) {
+    const events = await parseJsonlFile(filePath);
+    if (!events) {
       appLog('core:orchestrator', 'warn', 'Failed to read session transcript', {
-        meta: { filePath, error: err instanceof Error ? err.message : String(err) },
+        meta: { filePath },
       });
-      return null;
     }
+    return events;
   }
 
   extractSessionId(ptyBuffer: string): string | null {

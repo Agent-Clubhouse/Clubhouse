@@ -1,10 +1,12 @@
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { execSync, execFileSync } from 'child_process';
 import { app } from 'electron';
 import { getShellEnvironment } from '../util/shell';
 import type { LaunchWrapperConfig } from '../../shared/types';
+import type { StreamJsonEvent } from '../services/jsonl-parser';
 
 /** Cached binary lookup results keyed by the first binary name */
 const binaryCache = new Map<string, { path: string; ts: number }>();
@@ -240,4 +242,87 @@ export async function readQuickSummary(agentId: string): Promise<{ summary: stri
   } catch {
     return null;
   }
+}
+
+/**
+ * Parse a JSONL file line-by-line, returning events or null if unreadable/empty.
+ * Used by all three provider SessionCapable implementations — identical across them.
+ */
+export async function parseJsonlFile(filePath: string): Promise<StreamJsonEvent[] | null> {
+  try {
+    const content = await fsp.readFile(filePath, 'utf-8');
+    const events: StreamJsonEvent[] = [];
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        events.push(JSON.parse(trimmed));
+      } catch {
+        // Skip malformed JSONL lines — expected in truncated sessions
+      }
+    }
+    return events.length > 0 ? events : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build the platform-specific curl command for a Clubhouse hook endpoint.
+ *
+ * @param safeUrl   Already-validated hook base URL (no shell metacharacters).
+ * @param eventSuffix  Optional path suffix appended to the URL (e.g. '/preToolUse').
+ */
+export function buildHookCurlCommand(safeUrl: string, eventSuffix?: string): string {
+  const suffix = eventSuffix ?? '';
+  return process.platform === 'win32'
+    ? `curl -s -X POST ${safeUrl}/%CLUBHOUSE_AGENT_ID%${suffix} -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
+    : `cat | curl -s -X POST ${safeUrl}/\${CLUBHOUSE_AGENT_ID}${suffix} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
+}
+
+/**
+ * Merge provider-owned hook entries into an existing hooks config object.
+ *
+ * Preserves user-defined entries (those for which isOwnEntry returns false),
+ * replacing only Clubhouse-managed entries per event key.
+ */
+export function mergeHookEntries(
+  existing: Record<string, unknown>,
+  newHooks: Record<string, unknown[]>,
+  isOwnEntry: (entry: unknown) => boolean,
+): Record<string, unknown[]> {
+  const existingHooks = (existing.hooks || {}) as Record<string, unknown[]>;
+  const merged: Record<string, unknown[]> = { ...existingHooks };
+
+  for (const [eventKey, ourEntries] of Object.entries(newHooks)) {
+    const current = merged[eventKey] || [];
+    const userEntries = current.filter(e => !isOwnEntry(e));
+    merged[eventKey] = [...userEntries, ...ourEntries];
+  }
+
+  return merged;
+}
+
+/**
+ * Resolve a session/project directory by scanning for a dash-encoded CWD path.
+ *
+ * Many CLI tools (Claude Code, Copilot) encode the project path by replacing
+ * path separators with dashes and storing sessions under that name. This helper
+ * checks both the raw encoded path and the variant with the leading dash stripped.
+ *
+ * Returns the matching directory, or null if none found.
+ */
+export function resolveEncodedPathDir(baseDir: string, cwd: string): string | null {
+  if (!fs.existsSync(baseDir)) return null;
+
+  const absCwd = path.resolve(cwd);
+  const encodedPath = absCwd.replace(/[/\\]/g, '-');
+  const candidates = [encodedPath, encodedPath.replace(/^-/, '')];
+
+  for (const candidate of candidates) {
+    const dir = path.join(baseDir, candidate);
+    if (fs.existsSync(dir)) return dir;
+  }
+
+  return null;
 }
