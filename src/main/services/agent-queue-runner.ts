@@ -120,6 +120,11 @@ async function drainQueue(queueId: string): Promise<void> {
 
 /** Start a single task — spawn a quick agent for it. */
 async function startTask(queueId: string, task: AgentQueueTask): Promise<void> {
+  // Atomically claim the task before any await — prevents a concurrent drainQueue
+  // call from starting the same task a second time if it reads the status before
+  // this call's updateTask has committed to the in-memory store.
+  if (!agentQueueTaskStore.tryClaim(queueId, task.id)) return;
+
   const queue = await agentQueueRegistry.get(queueId);
   if (!queue) {
     await agentQueueTaskStore.updateTask(queueId, task.id, {
@@ -147,9 +152,8 @@ async function startTask(queueId: string, task: AgentQueueTask): Promise<void> {
   // Track the agent -> task mapping
   agentTaskMap.set(agentId, { queueId, taskId: task.id });
 
-  // Update task to running
+  // Update task with agent details — status was already set to 'running' by tryClaim
   await agentQueueTaskStore.updateTask(queueId, task.id, {
-    status: 'running',
     agentId,
     agentName,
     startedAt: new Date().toISOString(),

@@ -152,3 +152,79 @@ describe('AgentQueueTaskStore', () => {
     unsub();
   });
 });
+
+describe('AgentQueueTaskStore.tryClaim (LB-AG-001)', () => {
+  beforeEach(() => {
+    store.clear();
+    dirs.clear();
+    agentQueueTaskStore._resetForTesting();
+  });
+
+  it('claims a pending task — returns true and sets status to running', async () => {
+    const task = await agentQueueTaskStore.createTask('aq_1', 'Claimable');
+    expect(task.status).toBe('pending');
+
+    const claimed = agentQueueTaskStore.tryClaim('aq_1', task.id);
+
+    expect(claimed).toBe(true);
+    const updated = await agentQueueTaskStore.getTask('aq_1', task.id);
+    expect(updated!.status).toBe('running');
+  });
+
+  it('returns false when task is already running (prevents double-start)', async () => {
+    const task = await agentQueueTaskStore.createTask('aq_1', 'Already running');
+    agentQueueTaskStore.tryClaim('aq_1', task.id); // first claim
+
+    const secondClaim = agentQueueTaskStore.tryClaim('aq_1', task.id);
+
+    expect(secondClaim).toBe(false);
+  });
+
+  it('returns false for non-existent task', () => {
+    const claimed = agentQueueTaskStore.tryClaim('aq_1', 'aqt_nonexistent');
+    expect(claimed).toBe(false);
+  });
+
+  it('returns false for cancelled task', async () => {
+    const task = await agentQueueTaskStore.createTask('aq_1', 'Cancelled');
+    await agentQueueTaskStore.cancelTask('aq_1', task.id);
+
+    const claimed = agentQueueTaskStore.tryClaim('aq_1', task.id);
+
+    expect(claimed).toBe(false);
+  });
+
+  it('returns false for completed task', async () => {
+    const task = await agentQueueTaskStore.createTask('aq_1', 'Completed');
+    agentQueueTaskStore.tryClaim('aq_1', task.id); // pending → running
+    await agentQueueTaskStore.updateTask('aq_1', task.id, { status: 'completed' });
+
+    const secondClaim = agentQueueTaskStore.tryClaim('aq_1', task.id);
+
+    expect(secondClaim).toBe(false);
+  });
+
+  it('notifies onChange listeners when claim succeeds', async () => {
+    const task = await agentQueueTaskStore.createTask('aq_1', 'Notify on claim');
+    const listener = vi.fn();
+    const unsub = agentQueueTaskStore.onChange(listener);
+    listener.mockClear();
+
+    agentQueueTaskStore.tryClaim('aq_1', task.id);
+
+    expect(listener).toHaveBeenCalledWith('aq_1', task.id);
+    unsub();
+  });
+
+  it('concurrent claims: only first returns true (no double-start)', async () => {
+    const task = await agentQueueTaskStore.createTask('aq_1', 'Race');
+
+    // Simulate two concurrent drainQueue calls both trying to claim the same task.
+    // In Node.js single-threaded model, these run synchronously in order.
+    const first = agentQueueTaskStore.tryClaim('aq_1', task.id);
+    const second = agentQueueTaskStore.tryClaim('aq_1', task.id);
+
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+  });
+});
