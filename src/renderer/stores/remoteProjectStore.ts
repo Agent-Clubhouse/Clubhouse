@@ -587,20 +587,23 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
 
   updateRemoteGroupProject: (satelliteId, action, project) => {
     set((state) => {
-      const existing = [...(state.remoteGroupProjects[satelliteId] || [])];
+      const prev = state.remoteGroupProjects[satelliteId] || [];
       const gp = project as { id: string };
+      let next: unknown[];
       if (action === 'created') {
-        existing.push(project);
+        next = [...prev, project];
       } else if (action === 'updated') {
-        const idx = existing.findIndex((p: any) => p.id === gp.id);
-        if (idx >= 0) existing[idx] = project;
-        else existing.push(project);
+        const idx = prev.findIndex((p: any) => p.id === gp.id);
+        next = idx >= 0
+          ? [...prev.slice(0, idx), project, ...prev.slice(idx + 1)]
+          : [...prev, project];
       } else if (action === 'deleted') {
-        const idx = existing.findIndex((p: any) => p.id === gp.id);
-        if (idx >= 0) existing.splice(idx, 1);
+        next = prev.filter((p: any) => p.id !== gp.id);
+      } else {
+        next = prev;
       }
       return {
-        remoteGroupProjects: { ...state.remoteGroupProjects, [satelliteId]: existing },
+        remoteGroupProjects: { ...state.remoteGroupProjects, [satelliteId]: next },
       };
     });
   },

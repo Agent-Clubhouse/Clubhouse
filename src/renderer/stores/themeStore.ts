@@ -89,23 +89,26 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
   const store = useThemeStore.getState();
   store.refreshAvailable();
 
-  // Invalidate flash-prevention cache — stale theme data causes flicker
-  // when plugin themes are added, removed, or updated
-  try { localStorage.removeItem('clubhouse-theme-vars'); } catch { /* ignore */ }
-
-  // If the active theme was unregistered, fall back to default
   const currentTheme = getTheme(store.themeId);
   if (!currentTheme) {
+    // Active theme was unregistered — clear stale flash-prevention cache and fall back.
+    // The cache is only removed here, atomically with applying the fallback that replaces it,
+    // so we never leave the cache in a state that doesn't match the applied CSS.
+    try { localStorage.removeItem('clubhouse-theme-vars'); } catch { /* ignore */ }
     const fallback = BUILTIN_THEMES['catppuccin-mocha'];
     applyTheme(fallback, { experimentalGradients: store.experimentalGradients });
     syncTitleBarOverlay(fallback);
     useThemeStore.setState({ themeId: 'catppuccin-mocha', theme: fallback });
-  } else if (currentTheme.id !== store.theme.id) {
-    // The preferred theme was previously unavailable (loaded with fallback) and is now registered.
-    // Re-apply so CSS variables reflect the correct theme.
+  } else {
+    // Theme is still registered — re-apply to pick up any variable changes from updated
+    // plugin themes. applyTheme atomically re-writes the flash-prevention cache so it stays
+    // consistent with the CSS variables that were just written to the document.
     applyTheme(currentTheme, { experimentalGradients: store.experimentalGradients });
     syncTitleBarOverlay(currentTheme);
-    useThemeStore.setState({ theme: currentTheme });
+    if (currentTheme.id !== store.theme.id) {
+      // Previously unavailable theme is now registered — update state to match CSS.
+      useThemeStore.setState({ theme: currentTheme });
+    }
   }
 
   // Sync plugin themes to main process for MCP tool visibility

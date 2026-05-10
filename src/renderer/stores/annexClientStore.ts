@@ -587,9 +587,9 @@ export function initAnnexClientListener(): () => void {
     unsubSatellites();
     unsubDiscovered();
     unsubEvents();
-    // Flush pending PTY data and clear throttle timers
+    // Discard buffered PTY data — do NOT emit into the next session on reconnect.
     if (ptyDataFlushTimer) { clearTimeout(ptyDataFlushTimer); ptyDataFlushTimer = null; }
-    flushPtyData();
+    ptyDataBuffer.splice(0);
     for (const timer of hookThrottleTimers.values()) clearTimeout(timer);
     hookThrottleTimers.clear();
     pendingHookPayloads.clear();

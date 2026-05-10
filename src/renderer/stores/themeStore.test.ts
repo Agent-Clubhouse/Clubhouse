@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { ThemeId } from '../../shared/types';
+import type { ThemeId, ThemeDefinition } from '../../shared/types';
 
 // ---------- mock applyTheme before importing store ----------
 vi.mock('../themes/apply-theme', () => ({
@@ -19,10 +19,18 @@ vi.stubGlobal('window', {
   clubhouse: { app: mockApp },
 });
 
+// localStorage mock for flash-prevention cache tests
+const localStorageStore: Record<string, string> = {};
+vi.stubGlobal('localStorage', {
+  getItem: vi.fn((k: string) => localStorageStore[k] ?? null),
+  setItem: vi.fn((k: string, v: string) => { localStorageStore[k] = v; }),
+  removeItem: vi.fn((k: string) => { delete localStorageStore[k]; }),
+  clear: vi.fn(() => { for (const k of Object.keys(localStorageStore)) delete localStorageStore[k]; }),
+});
+
 import { useThemeStore } from './themeStore';
 import { THEMES, registerTheme, unregisterTheme } from '../themes';
 import { applyTheme } from '../themes/apply-theme';
-import type { ThemeDefinition } from '../../shared/types';
 
 // ---------- helpers ----------
 function getState() {
@@ -33,6 +41,7 @@ function getState() {
 describe('themeStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    for (const k of Object.keys(localStorageStore)) delete localStorageStore[k];
     mockApp.updateTitleBarOverlay.mockResolvedValue(undefined);
     mockApp.getExperimentalSettings.mockResolvedValue({} as Record<string, boolean>);
     useThemeStore.setState({
@@ -196,9 +205,11 @@ describe('themeStore', () => {
       expect(useThemeStore.getState().themeId).toBe(fakePluginTheme.id);
     });
 
-    it('does not re-apply when the active theme already matches themeId', () => {
-      // Both themeId and theme are already the plugin theme — registry fires for a
-      // different reason (another plugin registers), active state is untouched.
+    it('re-applies (for cache consistency) when registry fires and active theme is still valid', () => {
+      // Both themeId and theme are the plugin theme. Registry fires for another
+      // reason (different plugin registers/unregisters). The fix always re-applies
+      // to atomically regenerate the flash-prevention localStorage cache so it
+      // stays consistent with the CSS variables written to the document.
       registerTheme(fakePluginTheme);
       useThemeStore.setState({
         themeId: fakePluginTheme.id as ThemeId,
@@ -214,7 +225,8 @@ describe('themeStore', () => {
       registerTheme(otherTheme);
       unregisterTheme(otherTheme.id);
 
-      expect(applyTheme).not.toHaveBeenCalled();
+      // applyTheme is called to regenerate the flash-prevention cache atomically
+      expect(applyTheme).toHaveBeenCalledWith(fakePluginTheme, { experimentalGradients: false });
     });
 
     it('falls back to catppuccin-mocha when the active plugin theme is unregistered', async () => {
@@ -291,6 +303,80 @@ describe('themeStore', () => {
 
       unregisterTheme(fakePluginTheme.id);
       expect(getState().availableThemeIds).not.toContain('plugin:test:ocean');
+    });
+  });
+
+  // ── LB-SP-006: registry change — cache consistency ──────────────────
+
+  describe('flash-prevention cache consistency on registry change (LB-SP-006)', () => {
+    const pluginTheme: ThemeDefinition = {
+      id: 'plugin:test:cache-test',
+      name: 'Cache Test',
+      type: 'dark',
+      colors: THEMES['catppuccin-mocha'].colors,
+      hljs: THEMES['catppuccin-mocha'].hljs,
+      terminal: THEMES['catppuccin-mocha'].terminal,
+    };
+
+    afterEach(() => {
+      unregisterTheme(pluginTheme.id);
+    });
+
+    it('does NOT remove localStorage cache when active theme is still registered', () => {
+      registerTheme(pluginTheme);
+      useThemeStore.setState({
+        themeId: pluginTheme.id as ThemeId,
+        theme: pluginTheme,
+      });
+      vi.clearAllMocks();
+
+      // Trigger registry change by registering another theme
+      const other: ThemeDefinition = { ...pluginTheme, id: 'plugin:test:other2', name: 'Other' };
+      registerTheme(other);
+      unregisterTheme(other.id);
+
+      expect(localStorage.removeItem).not.toHaveBeenCalledWith('clubhouse-theme-vars');
+    });
+
+    it('re-applies theme (regenerating cache) when registry fires with valid theme', () => {
+      registerTheme(pluginTheme);
+      useThemeStore.setState({
+        themeId: pluginTheme.id as ThemeId,
+        theme: pluginTheme,
+      });
+      vi.clearAllMocks();
+
+      const other: ThemeDefinition = { ...pluginTheme, id: 'plugin:test:other3', name: 'Other3' };
+      registerTheme(other);
+      unregisterTheme(other.id);
+
+      // applyTheme must be called to keep CSS vars and flash-prevention cache in sync
+      expect(applyTheme).toHaveBeenCalledWith(pluginTheme, { experimentalGradients: false });
+    });
+
+    it('removes localStorage cache when active plugin theme is unregistered', async () => {
+      registerTheme(pluginTheme);
+      await getState().setTheme(pluginTheme.id as ThemeId);
+      localStorageStore['clubhouse-theme-vars'] = 'stale-vars';
+      vi.clearAllMocks();
+
+      unregisterTheme(pluginTheme.id);
+
+      expect(localStorage.removeItem).toHaveBeenCalledWith('clubhouse-theme-vars');
+    });
+
+    it('falls back to catppuccin-mocha and does not leave stale cache when theme unregistered', async () => {
+      registerTheme(pluginTheme);
+      await getState().setTheme(pluginTheme.id as ThemeId);
+      localStorageStore['clubhouse-theme-vars'] = 'stale-vars';
+      vi.clearAllMocks();
+
+      unregisterTheme(pluginTheme.id);
+
+      expect(useThemeStore.getState().themeId).toBe('catppuccin-mocha');
+      expect(applyTheme).toHaveBeenCalledWith(THEMES['catppuccin-mocha'], { experimentalGradients: false });
+      // Cache was removed, not left stale
+      expect(localStorageStore['clubhouse-theme-vars']).toBeUndefined();
     });
   });
 });

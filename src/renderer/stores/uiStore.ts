@@ -24,7 +24,11 @@ function loadViewPrefs(): ViewPrefs {
 function saveViewPrefs(prefs: ViewPrefs): void {
   try {
     localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
-  } catch { /* ignore */ }
+  } catch (err) {
+    rendererLog('store:ui', 'warn', 'Failed to persist view prefs to localStorage (quota?)', {
+      meta: { key: VIEW_PREFS_KEY, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
 }
 
 interface UIState {
@@ -94,7 +98,11 @@ export const useUIStore = create<UIState>((set, get) => ({
       } else {
         localStorage.removeItem(ACTIVE_HOST_KEY);
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      rendererLog('store:ui', 'warn', 'Failed to persist active host to localStorage (quota?)', {
+        meta: { key: ACTIVE_HOST_KEY, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
   },
 
   setExplorerTab: (tab, projectId?) => {
