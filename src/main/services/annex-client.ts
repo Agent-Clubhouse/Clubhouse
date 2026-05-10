@@ -182,22 +182,24 @@ async function seedAndGetBuffer(satelliteId: string, agentId: string): Promise<s
     const tlsOptions = annexTls.createTlsClientOptions(identity);
 
     const satelliteBuffer = await new Promise<string>((resolve) => {
+      let resolved = false;
+      const once = (val: string) => { if (!resolved) { resolved = true; resolve(val); } };
       const url = `https://${sat.host}:${sat.mainPort}/api/v1/agents/${encodeURIComponent(agentId)}/buffer`;
       const req = https.get(url, { ...tlsOptions, timeout: 5000 }, (res) => {
         if (res.statusCode !== 200) {
           res.resume();
-          resolve('');
+          once('');
           return;
         }
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+        res.on('end', () => once(Buffer.concat(chunks).toString('utf-8')));
       });
       req.on('error', (err) => {
         appLog('core:annex-client', 'warn', 'Agent buffer fetch failed', { meta: { satelliteId, agentId, error: err.message } });
-        resolve('');
+        once('');
       });
-      req.on('timeout', () => { req.destroy(); resolve(''); });
+      req.on('timeout', () => { req.destroy(); once(''); });
     });
 
     if (satelliteBuffer && !localBuffer) {
@@ -354,7 +356,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
 
   // Check bearer token expiry — refresh well before server's 24h TTL to avoid session drops
   const TOKEN_CLIENT_TTL_MS = 22 * 60 * 60 * 1000;
-  if (sat.bearerToken && sat.bearerTokenIssuedAt && Date.now() - sat.bearerTokenIssuedAt > TOKEN_CLIENT_TTL_MS) {
+  if (sat.bearerToken && (!sat.bearerTokenIssuedAt || Date.now() - sat.bearerTokenIssuedAt > TOKEN_CLIENT_TTL_MS)) {
     appLog('core:annex-client', 'info', 'Bearer token expired, clearing for re-authentication', {
       meta: { fingerprint: sat.fingerprint },
     });
@@ -439,11 +441,15 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
   const type = msg.type as string;
 
   switch (type) {
-    case 'snapshot':
-      sat.snapshot = msg.payload as SatelliteSnapshot;
-      broadcastSatellitesChanged();
-      broadcastSatelliteEvent(sat.id, 'snapshot', msg.payload);
+    case 'snapshot': {
+      const incoming = msg.payload as SatelliteSnapshot;
+      if (!sat.snapshot || incoming.lastSeq >= sat.snapshot.lastSeq) {
+        sat.snapshot = incoming;
+        broadcastSatellitesChanged();
+        broadcastSatelliteEvent(sat.id, 'snapshot', msg.payload);
+      }
       break;
+    }
 
     case 'pty:data': {
       // Cache remotely-received PTY data locally for instant buffer replay
@@ -1474,4 +1480,13 @@ export function stopClient(): void {
   seededBuffers.clear();
   discoveredServices.clear();
   stopDiscovery();
+}
+
+/** For testing only: set a satellite's bearer token state to simulate disk-loaded tokens with no issuedAt. */
+export function _setSatelliteTokenStateForTesting(fingerprint: string, token: string | null, issuedAt: number | null): void {
+  const sat = satellites.get(fingerprint);
+  if (sat) {
+    sat.bearerToken = token;
+    sat.bearerTokenIssuedAt = issuedAt;
+  }
 }

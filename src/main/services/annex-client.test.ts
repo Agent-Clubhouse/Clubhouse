@@ -1334,4 +1334,392 @@ describe('annex-client', () => {
       vi.useRealTimers();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // LB-AN-002: Buffer fetch promise double-resolve prevention
+  // -------------------------------------------------------------------------
+
+  describe('LB-AN-002: buffer fetch timeout does not double-resolve promise', () => {
+    const FINGERPRINT = 'AN002:AA:BB';
+
+    async function connectAN002() {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: FINGERPRINT,
+        alias: 'Timeout Sat',
+        icon: 'server',
+        color: 'red',
+        publicKey: 'timeout-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FINGERPRINT,
+        alias: 'Timeout Sat',
+        icon: 'server',
+        color: 'red',
+        publicKey: 'timeout-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+      openCb!();
+      vi.useRealTimers();
+    }
+
+    it('resolves cleanly when timeout fires and then error fires (req.destroy side-effect)', async () => {
+      await connectAN002();
+
+      let timeoutCb: (() => void) | null = null;
+      let errorCb: ((err: Error) => void) | null = null;
+
+      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, _cb: any) => {
+        const req = {
+          on: vi.fn().mockImplementation((event: string, cb: any) => {
+            if (event === 'timeout') timeoutCb = cb;
+            if (event === 'error') errorCb = cb;
+            return req;
+          }),
+          destroy: vi.fn(),
+        };
+        return req as any;
+      });
+
+      const bufferPromise = annexClient.requestPtyBuffer(FINGERPRINT, 'agent-1');
+
+      expect(timeoutCb).not.toBeNull();
+      expect(errorCb).not.toBeNull();
+
+      // Fire timeout then error (the exact sequence that caused double-resolve before the fix)
+      timeoutCb!();
+      errorCb!(new Error('destroyed'));
+
+      // Should settle to '' without hanging or rejecting
+      await expect(bufferPromise).resolves.toBe('');
+    });
+
+    it('resolves cleanly when error fires before timeout is cancelled', async () => {
+      await connectAN002();
+
+      let errorCb: ((err: Error) => void) | null = null;
+      let timeoutCb: (() => void) | null = null;
+
+      vi.mocked(https.get).mockImplementation((_url: any, _opts: any, _cb: any) => {
+        const req = {
+          on: vi.fn().mockImplementation((event: string, cb: any) => {
+            if (event === 'error') errorCb = cb;
+            if (event === 'timeout') timeoutCb = cb;
+            return req;
+          }),
+          destroy: vi.fn(),
+        };
+        return req as any;
+      });
+
+      const bufferPromise = annexClient.requestPtyBuffer(FINGERPRINT, 'agent-2');
+
+      errorCb!(new Error('ECONNREFUSED'));
+      // Firing timeout after error should not cause unhandled rejection
+      timeoutCb!();
+
+      await expect(bufferPromise).resolves.toBe('');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // LB-AN-004: Bearer token expiry — expired or missing issuedAt clears token
+  // -------------------------------------------------------------------------
+
+  describe('LB-AN-004: bearer token cleared when expired or issuedAt missing', () => {
+    const FINGERPRINT = 'AN004:BB:CC';
+
+    it('does not send Authorization header on reconnect when issuedAt is null (token loaded from disk)', async () => {
+      // Regression test for the actual LB-AN-004 bug: `null && ...` short-circuited to
+      // false in the old expiry check, so disk-loaded tokens with no issuedAt were trusted
+      // indefinitely. The fix adds `!sat.bearerTokenIssuedAt` so null issuedAt → clear token.
+      const { WebSocket: WsMock } = await import('ws');
+
+      const FP = 'AN004:NULL:ISSUED';
+      mockHttpGetIdentity({
+        fingerprint: FP,
+        alias: 'Null Issued Sat',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'null-issued-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FP,
+        alias: 'Null Issued Sat',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'null-issued-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+      let closeCb: (() => void) | null = null;
+      const wsCtorArgsList: any[] = [];
+
+      vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
+        wsCtorArgsList.push(opts);
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          if (event === 'close') closeCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Connect with a bearer token (issuedAt is set to now by connect())
+      annexClient.connect(FP, 'disk-loaded-token');
+
+      // Simulate a disk-loaded token state: token present but issuedAt is null
+      annexClient._setSatelliteTokenStateForTesting(FP, 'disk-loaded-token', null);
+
+      // Fire open to transition to connected
+      expect(openCb).not.toBeNull();
+      openCb!();
+      expect(annexClient.getSatellites().find(s => s.id === FP)?.state).toBe('connected');
+
+      // Fire close to trigger reconnect (connectToSatellite re-runs the expiry check)
+      expect(closeCb).not.toBeNull();
+      closeCb!();
+
+      // Advance past reconnect delay
+      await vi.advanceTimersByTimeAsync(2000);
+
+      vi.useRealTimers();
+
+      // Second WebSocket connection must NOT carry Authorization header —
+      // the null-issuedAt token should have been cleared before reconnecting.
+      expect(wsCtorArgsList.length).toBeGreaterThanOrEqual(2);
+      const reconnectOpts = wsCtorArgsList[wsCtorArgsList.length - 1];
+      expect(reconnectOpts?.headers?.Authorization).toBeUndefined();
+    });
+
+    it('does not send Authorization header on reconnect when token is past the 22h TTL', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: FINGERPRINT,
+        alias: 'Token Sat',
+        icon: 'server',
+        color: 'blue',
+        publicKey: 'token-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FINGERPRINT,
+        alias: 'Token Sat',
+        icon: 'server',
+        color: 'blue',
+        publicKey: 'token-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+      let closeCb: (() => void) | null = null;
+      const wsCtorArgsList: any[] = [];
+
+      vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
+        wsCtorArgsList.push(opts);
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          if (event === 'close') closeCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+
+      // Set system time to 23 hours ago when connecting so bearerTokenIssuedAt is old
+      const TWENTY_THREE_HOURS_AGO = Date.now() - 23 * 60 * 60 * 1000;
+      vi.setSystemTime(TWENTY_THREE_HOURS_AGO);
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Connect with bearer token — issuedAt is set to 23h ago
+      annexClient.connect(FINGERPRINT, 'old-token');
+
+      // Restore system time to now
+      vi.setSystemTime(Date.now() + 23 * 60 * 60 * 1000);
+
+      // Fire open to transition to connected
+      expect(openCb).not.toBeNull();
+      openCb!();
+      expect(annexClient.getSatellites().find(s => s.id === FINGERPRINT)?.state).toBe('connected');
+
+      // Fire close to trigger reconnect
+      expect(closeCb).not.toBeNull();
+      closeCb!();
+
+      // Advance past reconnect delay (up to 1500ms for first attempt with jitter)
+      await vi.advanceTimersByTimeAsync(2000);
+
+      vi.useRealTimers();
+
+      // Second WebSocket connection should have been made without Authorization header
+      expect(wsCtorArgsList.length).toBeGreaterThanOrEqual(2);
+      const secondConnectOpts = wsCtorArgsList[wsCtorArgsList.length - 1];
+      expect(secondConnectOpts?.headers?.Authorization).toBeUndefined();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // LB-AN-005: Stale snapshot sequence guard
+  // -------------------------------------------------------------------------
+
+  describe('LB-AN-005: stale snapshot sequences discarded on reconnect', () => {
+    const FINGERPRINT = 'AN005:CC:DD';
+
+    async function connectSatelliteAN005() {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: FINGERPRINT,
+        alias: 'Seq Sat',
+        icon: 'server',
+        color: 'purple',
+        publicKey: 'seq-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FINGERPRINT,
+        alias: 'Seq Sat',
+        icon: 'server',
+        color: 'purple',
+        publicKey: 'seq-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+      let messageCb: ((data: any) => void) | null = null;
+
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          if (event === 'message') messageCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+      openCb!();
+      vi.useRealTimers();
+
+      return { messageCb: () => messageCb };
+    }
+
+    it('applies snapshot with higher sequence number', async () => {
+      const { messageCb } = await connectSatelliteAN005();
+
+      const snapshot1 = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 5 };
+      messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot1 }));
+
+      expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(5);
+
+      const snapshot2 = { ...snapshot1, lastSeq: 10 };
+      messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot2 }));
+
+      expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(10);
+    });
+
+    it('discards snapshot with lower sequence number (stale on reconnect)', async () => {
+      const { messageCb } = await connectSatelliteAN005();
+
+      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 20 };
+      messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_new }));
+
+      expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(20);
+
+      // Stale snapshot from a reconnect — lower seq should be discarded
+      const snapshot_stale = { ...snapshot_new, lastSeq: 5 };
+      messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_stale }));
+
+      // Still 20 — stale was discarded
+      expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(20);
+    });
+
+    it('applies first snapshot when no snapshot exists yet', async () => {
+      const { messageCb } = await connectSatelliteAN005();
+
+      expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot).toBeNull();
+
+      const snapshot = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1 };
+      messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot }));
+
+      expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(1);
+    });
+
+    it('does not broadcast when stale snapshot is discarded', async () => {
+      const { messageCb } = await connectSatelliteAN005();
+      const { broadcastToAllWindows: bcast } = await import('../util/ipc-broadcast');
+      vi.mocked(bcast).mockClear();
+
+      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 15 };
+      messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_new }));
+      const broadcastCountAfterNew = vi.mocked(bcast).mock.calls.length;
+
+      // Stale snapshot — should not trigger any broadcast
+      const snapshot_stale = { ...snapshot_new, lastSeq: 3 };
+      messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_stale }));
+
+      expect(vi.mocked(bcast).mock.calls.length).toBe(broadcastCountAfterNew);
+    });
+  });
 });
