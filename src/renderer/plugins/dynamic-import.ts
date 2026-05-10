@@ -5,23 +5,26 @@ import type { PluginModule } from '../../shared/plugin-types';
  *
  * In dev mode the renderer is served from http://localhost (webpack dev server),
  * so Chromium's ES module loader blocks cross-origin import() of file:// URLs.
- * We work around this by reading the file via IPC and importing from a data: URI.
+ * We work around this by reading the file via IPC and importing from a blob: URI,
+ * which avoids the cross-origin restriction without requiring unsafe-eval or data:.
+ *
+ * The webpackIgnore comment prevents webpack from statically analyzing the import().
  */
 export async function dynamicImportModule(url: string): Promise<PluginModule> {
-  // Use indirect eval to prevent webpack from analyzing the expression
-  const importFn = new Function('path', 'return import(path)') as (path: string) => Promise<PluginModule>;
-
-  // In dev mode (http origin), file:// imports are cross-origin and blocked.
-  // Read file contents via IPC and import from a data: URI instead.
   if (url.startsWith('file:') && window.location.protocol !== 'file:') {
+    // Strip only the 'file://' scheme prefix, preserving the leading '/' for absolute paths.
     const filePath = decodeURIComponent(
-      url.replace(/^file:\/\/\/?/, '').replace(/\?.*$/, ''),
+      url.replace(/^file:\/\//, '').replace(/\?.*$/, ''),
     );
     const contents = await window.clubhouse.plugin.loadModuleSource(filePath);
-    const encoded = btoa(unescape(encodeURIComponent(contents)));
-    const dataUrl = `data:text/javascript;base64,${encoded}`;
-    return importFn(dataUrl);
+    const blob = new Blob([contents], { type: 'text/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
+    try {
+      return await import(/* webpackIgnore: true */ blobUrl);
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
   }
 
-  return importFn(url);
+  return import(/* webpackIgnore: true */ url);
 }
