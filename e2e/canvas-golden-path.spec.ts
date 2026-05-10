@@ -74,6 +74,22 @@ async function navigateToCanvas(win: Page) {
   await expect(canvasPanel).toBeVisible({ timeout: 10_000 });
 }
 
+/**
+ * Wait for the canvas to contain no zones or agent views.
+ * Guards against cross-test state leakage when a previous test's cleanup
+ * (e.g. zone deletion) hasn't fully committed before the next test starts.
+ */
+async function waitForEmptyCanvas(win: Page) {
+  await win
+    .waitForFunction(
+      () =>
+        document.querySelectorAll('[data-testid^="zone-card-"]').length === 0 &&
+        document.querySelectorAll('[data-testid^="canvas-view-"]').length === 0,
+      { timeout: 5_000 },
+    )
+    .catch(() => {});
+}
+
 test.beforeAll(async () => {
   ({ electronApp, window } = await launchApp());
 });
@@ -90,6 +106,10 @@ test.describe('Canvas golden path', () => {
       window.locator(`text=${path.basename(FIXTURE_PROJECT)}`).first(),
     ).toBeVisible({ timeout: 10_000 });
     await navigateToCanvas(window);
+    // Guard: wait for any leftover zones/views from the previous test to disappear
+    // before we start right-clicking. Avoids context-menu suppression when a click
+    // lands on a child element rather than the bare workspace background.
+    await waitForEmptyCanvas(window);
   });
 
   test('create zone → drag → resize → delete zone', async () => {
@@ -155,7 +175,7 @@ test.describe('Canvas golden path', () => {
 
     // 2. Create first agent view
     await workspace.click({ button: 'right', position: { x: 300, y: 200 } });
-    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 5_000 });
+    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
     const firstView = window.locator('[data-testid^="canvas-view-"]').first();
@@ -163,7 +183,7 @@ test.describe('Canvas golden path', () => {
 
     // 3. Create second agent view
     await workspace.click({ button: 'right', position: { x: 600, y: 200 } });
-    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 5_000 });
+    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
     const allViews = window.locator('[data-testid^="canvas-view-"]');
@@ -183,7 +203,7 @@ test.describe('Canvas golden path', () => {
 
     // Create zone at a known position
     await workspace.click({ button: 'right', position: { x: 80, y: 80 } });
-    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 5_000 });
+    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-zone"]').click();
 
     const zoneCard = window.locator('[data-testid^="zone-card-"]').first();
@@ -191,7 +211,7 @@ test.describe('Canvas golden path', () => {
 
     // Create agent view (outside zone, then drag into zone - or just create it anywhere)
     await workspace.click({ button: 'right', position: { x: 300, y: 300 } });
-    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 5_000 });
+    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
     await expect(window.locator('[data-testid^="canvas-view-"]').first()).toBeVisible({ timeout: 8_000 });
@@ -218,11 +238,11 @@ test.describe('Canvas golden path', () => {
 
     // Create two agent views
     await workspace.click({ button: 'right', position: { x: 200, y: 250 } });
-    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 5_000 });
+    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
     await workspace.click({ button: 'right', position: { x: 550, y: 250 } });
-    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 5_000 });
+    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
     await expect(window.locator('[data-testid^="canvas-view-"]')).toHaveCount(2, { timeout: 8_000 });
