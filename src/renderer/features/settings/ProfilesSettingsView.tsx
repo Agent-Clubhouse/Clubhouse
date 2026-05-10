@@ -53,7 +53,7 @@ function EnvVarEditor({ entries, suggestedKeys, onChange }: EnvEditorProps) {
             placeholder="KEY"
             list={`env-keys-${i}`}
             className="w-48 px-2 py-1 text-xs font-mono rounded bg-ctp-base border border-surface-2
-              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+              text-ctp-text focus-ring-dim"
           />
           <datalist id={`env-keys-${i}`}>
             {suggestedKeys.map((k) => <option key={k} value={k} />)}
@@ -65,7 +65,7 @@ function EnvVarEditor({ entries, suggestedKeys, onChange }: EnvEditorProps) {
             onChange={(e) => updateEntry(i, 'value', e.target.value)}
             placeholder="value (~ expands to home dir)"
             className="flex-1 px-2 py-1 text-xs font-mono rounded bg-ctp-base border border-surface-2
-              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+              text-ctp-text focus-ring-dim"
           />
           <button
             onClick={() => removeEntry(i)}
@@ -192,7 +192,7 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Work, Personal"
           className="w-full px-3 py-1.5 text-sm rounded-lg bg-ctp-base border border-surface-2
-            text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+            text-ctp-text focus-ring-dim"
         />
       </div>
 
@@ -228,7 +228,7 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
                 }
               }}
               className="px-2 py-1 text-xs rounded bg-ctp-base border border-surface-2
-                text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+                text-ctp-text focus-ring-dim"
             >
               <option value="" disabled>+ Add Orchestrator</option>
               {availableToAdd.map((o) => (

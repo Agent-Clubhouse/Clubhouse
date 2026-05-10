@@ -18,7 +18,7 @@ export function AnnexIdentitySection({ settings, status, onSave }: Props) {
           value={settings.alias}
           onChange={(e) => onSave({ ...settings, alias: e.target.value })}
           className="w-full px-3 py-1.5 text-sm rounded bg-surface-0 border border-surface-1
-            text-ctp-text placeholder-ctp-subtext0 focus:outline-none focus:border-ctp-accent"
+            text-ctp-text placeholder:text-ctp-subtext0 focus-ring"
           placeholder="My Mac"
         />
       </div>

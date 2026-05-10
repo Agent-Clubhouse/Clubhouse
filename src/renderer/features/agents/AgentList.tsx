@@ -452,14 +452,14 @@ export function AgentList() {
           placeholder="What should this quick agent do?"
           className="w-full px-2 py-1.5 text-xs rounded border border-surface-0
             bg-ctp-base text-ctp-text placeholder:text-ctp-overlay0
-            focus:outline-none focus:border-ctp-accent"
+            focus-ring"
         />
         <div className="flex gap-1.5">
           <select
             value={quickModel}
             onChange={(e) => setQuickModel(e.target.value)}
             className="flex-1 min-w-0 px-1.5 py-1 text-[10px] rounded bg-surface-0 border border-surface-2
-              text-ctp-text focus:outline-none focus:border-ctp-accent"
+              text-ctp-text focus-ring"
           >
             {MODEL_OPTIONS.map((opt) => (
               <option key={opt.id} value={opt.id}>{opt.label}</option>
@@ -470,7 +470,7 @@ export function AgentList() {
               value={quickOrchestrator || enabledOrchestrators[0]?.id}
               onChange={(e) => setQuickOrchestrator(e.target.value)}
               className="flex-1 min-w-0 px-1.5 py-1 text-[10px] rounded bg-surface-0 border border-surface-2
-                text-ctp-text focus:outline-none focus:border-ctp-accent"
+                text-ctp-text focus-ring"
             >
               {enabledOrchestrators.map((o) => (
                 <option key={o.id} value={o.id}>{o.displayName}</option>
@@ -488,7 +488,7 @@ export function AgentList() {
             checked={quickFreeAgentMode}
             onChange={(e) => setQuickFreeAgentMode(e.target.checked)}
             disabled={!supportsPermissions}
-            className="w-3 h-3 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-red-500 accent-red-500"
+            className="w-3 h-3 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
           />
           <span className="text-[10px] text-ctp-subtext0">Free Agent Mode</span>
           {quickFreeAgentMode && supportsPermissions && (

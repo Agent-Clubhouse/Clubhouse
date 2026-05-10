@@ -229,7 +229,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     // Commit box
     staged.length > 0 && h('div', { className: 'px-3 py-2 border-b border-surface-0' },
       h('textarea', {
-        className: 'w-full bg-ctp-base text-ctp-text text-[11px] rounded p-1.5 border border-surface-0 resize-none focus:outline-none focus:border-ctp-accent',
+        className: 'w-full bg-ctp-base text-ctp-text text-[11px] rounded p-1.5 border border-surface-0 resize-none focus-ring',
         rows: 3,
         placeholder: 'Commit message...',
         value: commitMessage,

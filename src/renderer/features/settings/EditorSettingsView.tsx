@@ -77,7 +77,7 @@ export function EditorSettingsView() {
                 saveSettings({ editorCommand: cmd, editorName: cmd });
               }
             }}
-            className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-surface-1 bg-ctp-mantle text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
+            className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-surface-1 bg-ctp-mantle text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
             data-testid="editor-custom-command"
           />
         </div>

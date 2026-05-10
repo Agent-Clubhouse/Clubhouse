@@ -96,6 +96,26 @@
     outline-offset: 2px;
   }
 
+  /* Canonical input focus utilities — replace ad-hoc focus:outline-none focus:border-* patterns */
+  .focus-ring:focus,
+  .focus-ring:focus-visible {
+    outline: none;
+    border-color: rgb(var(--ctp-accent));
+    box-shadow: 0 0 0 1px rgb(var(--ctp-accent) / 0.3);
+  }
+  .focus-ring-dim:focus,
+  .focus-ring-dim:focus-visible {
+    outline: none;
+    border-color: rgb(var(--ctp-accent) / 0.5);
+    box-shadow: 0 0 0 1px rgb(var(--ctp-accent) / 0.15);
+  }
+  .focus-ring-error:focus,
+  .focus-ring-error:focus-visible {
+    outline: none;
+    border-color: rgb(var(--ctp-error) / 0.5);
+    box-shadow: 0 0 0 1px rgb(var(--ctp-error) / 0.3);
+  }
+
   body {
     background-color: rgb(var(--ctp-base));
     color: rgb(var(--ctp-text));

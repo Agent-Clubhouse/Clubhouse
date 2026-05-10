@@ -47,7 +47,7 @@ export const SatelliteDisconnectedOverlay = React.memo(function SatelliteDisconn
         {!isRetrying ? (
           <button
             onClick={handleRetry}
-            className="mt-3 px-3 py-1.5 text-xs font-medium rounded-md bg-ctp-surface0 text-ctp-text hover:bg-ctp-surface1 transition-colors"
+            className="mt-3 px-3 py-1.5 text-xs font-medium rounded-md bg-surface-0 text-ctp-text hover:bg-ctp-surface1 transition-colors"
             data-testid="satellite-retry-button"
           >
             Retry Connection

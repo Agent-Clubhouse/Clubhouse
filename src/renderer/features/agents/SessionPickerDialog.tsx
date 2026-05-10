@@ -66,7 +66,7 @@ function SessionRow({
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               placeholder="Enter a name..."
-              className="flex-1 bg-surface-1 border border-surface-2 rounded px-2 py-1 text-xs text-ctp-text focus:outline-none focus:border-ctp-accent"
+              className="flex-1 bg-surface-1 border border-surface-2 rounded px-2 py-1 text-xs text-ctp-text focus-ring"
               onBlur={() => handleRename(session.sessionId)}
               onKeyDown={(e) => { if (e.key === 'Escape') { setEditingId(null); } }}
             />
@@ -280,7 +280,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
                 placeholder="Or enter a session ID..."
-                className="flex-1 bg-surface-1 border border-surface-2 rounded px-2.5 py-1.5 text-xs text-ctp-text placeholder:text-ctp-subtext0 focus:outline-none focus:border-ctp-accent"
+                className="flex-1 bg-surface-1 border border-surface-2 rounded px-2.5 py-1.5 text-xs text-ctp-text placeholder:text-ctp-subtext0 focus-ring"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && manualId.trim()) {
                     onResume(manualId.trim());

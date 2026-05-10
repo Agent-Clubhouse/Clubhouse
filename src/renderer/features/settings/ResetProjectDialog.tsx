@@ -66,7 +66,7 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
               placeholder={projectName}
               className="w-full px-3 py-2 text-sm rounded-lg bg-ctp-mantle border border-surface-2
                 text-ctp-text placeholder:text-ctp-subtext0/40
-                focus:outline-none focus:border-red-400/50 focus:ring-1 focus:ring-red-400/30"
+                focus-ring-error"
               autoFocus
             />
           </div>

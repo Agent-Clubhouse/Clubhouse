@@ -529,7 +529,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             value={sourceControlProvider}
             onChange={(e) => { setSourceControlProvider(e.target.value as SourceControlProvider); setDirty(true); }}
             className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+              text-ctp-text focus-ring-dim"
           >
             <option value="github">GitHub (gh CLI)</option>
             <option value="azure-devops">Azure DevOps (az CLI)</option>
@@ -554,7 +554,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
                 value={profileId || ''}
                 onChange={(e) => { setProfileId(e.target.value || undefined); setDirty(true); }}
                 className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-                  text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+                  text-ctp-text focus-ring-dim"
               >
                 <option value="">None (default credentials)</option>
                 {profiles.map((p) => (
@@ -581,7 +581,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             value={commandPrefix}
             onChange={(e) => { setCommandPrefix(e.target.value); setDirty(true); }}
             placeholder=". ./init.sh"
-            className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-accent"
+            className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
             spellCheck={false}
           />
           <p className="text-[10px] text-ctp-subtext0/60 mt-1">
@@ -602,7 +602,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
                 value={buildCommand}
                 onChange={(e) => { setBuildCommand(e.target.value); setDirty(true); }}
                 placeholder="npm run build"
-                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-accent"
+                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
                 spellCheck={false}
               />
             </div>
@@ -612,7 +612,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
                 value={testCommand}
                 onChange={(e) => { setTestCommand(e.target.value); setDirty(true); }}
                 placeholder="npm test"
-                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-accent"
+                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
                 spellCheck={false}
               />
             </div>
@@ -622,7 +622,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
                 value={lintCommand}
                 onChange={(e) => { setLintCommand(e.target.value); setDirty(true); }}
                 placeholder="npm run lint"
-                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-accent"
+                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
                 spellCheck={false}
               />
             </div>
@@ -635,7 +635,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             type="checkbox"
             checked={freeAgentMode}
             onChange={(e) => { setFreeAgentMode(e.target.checked); setDirty(true); }}
-            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-red-500 accent-red-500"
+            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
           />
           <span className="text-xs text-ctp-subtext0">Free Agent Mode by default</span>
         </label>

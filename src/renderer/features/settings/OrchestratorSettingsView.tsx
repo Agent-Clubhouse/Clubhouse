@@ -69,7 +69,7 @@ function AppAgentSettings() {
             value={defaultMode}
             onChange={(e) => setDefaultMode(e.target.value as SpawnMode)}
             className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+              text-ctp-text focus-ring-dim"
           >
             <option value="interactive">Interactive</option>
             <option value="headless">Headless</option>
@@ -84,7 +84,7 @@ function AppAgentSettings() {
             value={freeAgentDefaultMode}
             onChange={(e) => setFreeAgentDefaultMode(e.target.value as FreeAgentPermissionMode)}
             className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+              text-ctp-text focus-ring-dim"
           >
             <option value="skip-all">Skip All Permissions (default)</option>
             <option value="auto">Auto (requires CLI support)</option>
@@ -134,7 +134,7 @@ function AppAgentSettings() {
               value={clubhouseScp}
               onChange={(e) => setClubhouseScp(e.target.value as SourceControlProvider)}
               className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-                text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+                text-ctp-text focus-ring-dim"
             >
               <option value="github">GitHub (gh CLI)</option>
               <option value="azure-devops">Azure DevOps (az CLI)</option>
@@ -246,7 +246,7 @@ function AppAgentSettings() {
 
 // ── Reusable dropdown row for project defaults ──────────────────────────
 
-const DROPDOWN_SELECT_CLASS = 'w-48 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2 text-ctp-text focus:outline-none focus:border-ctp-accent/50';
+const DROPDOWN_SELECT_CLASS = 'w-48 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2 text-ctp-text focus-ring-dim';
 
 function DefaultRow({ label, description, children }: { label: string; description: string; children: React.ReactNode }) {
   return (

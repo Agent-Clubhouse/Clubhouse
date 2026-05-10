@@ -112,7 +112,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
             value={skillName}
             onChange={(e) => setSkillName(e.target.value)}
             placeholder="skill-name (lowercase, hyphens)"
-            className="w-full mb-2 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-accent"
+            className="w-full mb-2 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring"
             spellCheck={false}
           />
         )}
