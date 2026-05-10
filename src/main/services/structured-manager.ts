@@ -117,7 +117,7 @@ async function consumeEvents(session: StructuredSession, opts: StructuredSession
     exitCode = 1;
     throw err;
   } finally {
-    cleanupSession(agentId);
+    cleanupSession(session);
     broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode);
     annexEventBus.emitPtyExit(agentId, exitCode);
   }
@@ -212,12 +212,11 @@ export async function cancelSession(agentId: string): Promise<void> {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
   }
-  cleanupSession(agentId);
+  cleanupSession(session);
 }
 
-function cleanupSession(agentId: string): void {
-  const session = sessions.get(agentId);
-  if (!session || session.cleanedUp) return;
+function cleanupSession(session: StructuredSession): void {
+  if (session.cleanedUp) return;
   session.cleanedUp = true;
 
   try {
@@ -230,10 +229,15 @@ function cleanupSession(agentId: string): void {
   } catch {
     // Stream cleanup is best-effort
   }
-  sessions.delete(agentId);
+  // Only remove from the Map if this is still the active session — a new session
+  // may have been started for the same agentId while this one was being cancelled,
+  // and we must not delete the replacement session.
+  if (sessions.get(session.agentId) === session) {
+    sessions.delete(session.agentId);
+  }
 
   appLog('core:structured', 'info', 'Structured session cleaned up', {
-    meta: { agentId },
+    meta: { agentId: session.agentId },
   });
 }
 

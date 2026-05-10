@@ -317,6 +317,7 @@ describe('ToolRegistry', () => {
         inputSchema: { type: 'object' },
       }, handler);
 
+      agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
       bindingManager.bind('agent-1', {
         targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
         targetName: 'robin', projectName: 'app',
@@ -330,6 +331,7 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', toolName, { message: 'hello' });
       expect(result.isError).toBeFalsy();
       expect(handler).toHaveBeenCalledWith('agent-2', 'agent-1', { message: 'hello' });
+      agentRegistry.untrack('agent-2');
     });
 
     it('returns error for unknown tool', async () => {
@@ -381,6 +383,7 @@ describe('ToolRegistry', () => {
       }, handler);
 
       // Bind with a targetId that gets sanitized (dot → underscore)
+      agentRegistry.register('agent.2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
       bindingManager.bind('agent-1', {
         targetId: 'agent.2', targetKind: 'agent', label: 'Agent 2',
         targetName: 'robin', projectName: 'app',
@@ -395,6 +398,7 @@ describe('ToolRegistry', () => {
       expect(result.isError).toBeFalsy();
       // Handler receives the ORIGINAL targetId (with dot), not the sanitized one
       expect(handler).toHaveBeenCalledWith('agent.2', 'agent-1', { message: 'hi' });
+      agentRegistry.untrack('agent.2');
     });
 
     it('isolates tools across different agents', async () => {
@@ -450,6 +454,7 @@ describe('ToolRegistry', () => {
         },
       }, handler);
 
+      agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
       bindingManager.bind('agent-1', {
         targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
         targetName: 'robin', projectName: 'app',
@@ -464,6 +469,7 @@ describe('ToolRegistry', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Missing required argument: message');
       expect(handler).not.toHaveBeenCalled();
+      agentRegistry.untrack('agent-2');
     });
 
     it('returns error when argument has wrong type', async () => {
@@ -481,6 +487,7 @@ describe('ToolRegistry', () => {
         },
       }, handler);
 
+      agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
       bindingManager.bind('agent-1', {
         targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
         targetName: 'robin', projectName: 'app',
@@ -495,6 +502,31 @@ describe('ToolRegistry', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Invalid type');
       expect(handler).not.toHaveBeenCalled();
+      agentRegistry.untrack('agent-2');
+    });
+
+    it('tool list excludes non-status tools when agent is untracked (LB-OA-006)', () => {
+      // The structural guard against the registry-delete race is in getScopedToolList:
+      // when an agent is not in the registry, only get_status is exposed.
+      // This ensures that after an agent dies and the cache is invalidated,
+      // send_message and other action tools are no longer callable.
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('agent', 'get_status', { description: 'Status', inputSchema: { type: 'object' } }, vi.fn());
+
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'robin', projectName: 'app',
+      });
+
+      // Agent not in registry (sleeping / untracked after race condition window)
+      // After invalidating the cache, getScopedToolList should only show get_status
+      invalidateToolListCache();
+      const tools = getScopedToolList('agent-1');
+      const suffixes = tools.map(t => t.name.split('__').pop());
+
+      // send_message is NOT available — only get_status is (structural guard)
+      expect(suffixes).not.toContain('send_message');
+      expect(suffixes).toContain('get_status');
     });
 
     it('works with browser tool names', async () => {
