@@ -8,6 +8,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('electron', () => {
   const mockWindows: any[] = [];
   let nextId = 1;
+  // onListeners tracks handlers registered via ipcMain.on (LB-IPC-001 uses on, not once)
+  const onListeners = new Map<string, ((...args: any[]) => void)[]>();
   const onceListeners = new Map<string, ((...args: any[]) => void)[]>();
 
   class MockBrowserWindow {
@@ -48,29 +50,46 @@ vi.mock('electron', () => {
     BrowserWindow: MockBrowserWindow,
     ipcMain: {
       handle: vi.fn(),
-      on: vi.fn(),
+      on: vi.fn((channel: string, cb: (...args: any[]) => void) => {
+        const list = onListeners.get(channel) || [];
+        list.push(cb);
+        onListeners.set(channel, list);
+      }),
       once: vi.fn((channel: string, cb: (...args: any[]) => void) => {
         const list = onceListeners.get(channel) || [];
         list.push(cb);
         onceListeners.set(channel, list);
       }),
       emit: vi.fn((channel: string, ...args: any[]) => {
-        const list = onceListeners.get(channel) || [];
-        for (const cb of list) cb(...args);
+        // Fire and clear once-listeners
+        const onceList = onceListeners.get(channel) || [];
+        for (const cb of onceList) cb(...args);
         onceListeners.delete(channel);
+        // Fire (but keep) on-listeners
+        const onList = onListeners.get(channel) || [];
+        for (const cb of onList) cb(...args);
       }),
       removeAllListeners: vi.fn((channel: string) => {
         onceListeners.delete(channel);
+        onListeners.delete(channel);
       }),
       removeListener: vi.fn((channel: string, handler: (...args: any[]) => void) => {
-        const list = onceListeners.get(channel);
-        if (list) {
-          const idx = list.indexOf(handler);
-          if (idx !== -1) list.splice(idx, 1);
-          if (list.length === 0) onceListeners.delete(channel);
+        for (const listeners of [onListeners, onceListeners]) {
+          const list = listeners.get(channel);
+          if (list) {
+            const idx = list.indexOf(handler);
+            if (idx !== -1) {
+              list.splice(idx, 1);
+              if (list.length === 0) listeners.delete(channel);
+              break;
+            }
+          }
         }
       }),
-      _resetOnceListeners: () => onceListeners.clear(),
+      _resetOnceListeners: () => {
+        onceListeners.clear();
+        onListeners.clear();
+      },
     },
   };
 });
@@ -410,7 +429,7 @@ describe('window-handlers', () => {
     expect(list2.length).toBe(1);
   });
 
-  it('GET_AGENT_STATE does not call removeListener when relay response arrives before timeout', async () => {
+  it('GET_AGENT_STATE calls removeListener exactly once when relay response arrives before timeout', async () => {
     // Ensure cold cache so relay is triggered
     const mainWin = new (BrowserWindow as any)({});
     const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
@@ -432,12 +451,14 @@ describe('window-handlers', () => {
     const result = await statePromise;
     expect(result).toEqual(mockState);
 
-    // removeListener should NOT have been called (timeout was cleared)
+    // LB-IPC-001: removeListener is called in the success handler to remove the
+    // ipcMain.on listener by reference (prevents leak if response arrives before timeout).
     const channel = `${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`;
     const removeListenerCalls = (ipcMain.removeListener as any).mock.calls.filter(
       (call: any[]) => call[0] === channel,
     );
-    expect(removeListenerCalls.length).toBe(0);
+    expect(removeListenerCalls.length).toBe(1);
+    expect(typeof removeListenerCalls[0][1]).toBe('function');
   });
 
   // ── Hub state: broadcast forwarding ─────────────────────────────────
@@ -557,5 +578,60 @@ describe('window-handlers', () => {
       mutation,
       undefined, // projectId
     );
+  });
+
+  // ── LB-IPC-001: listener cleanup via ipcMain.on + removeListener ────
+
+  it('LB-IPC-001: relayAgentState calls removeListener on timeout (not once-wrapper)', async () => {
+    vi.useFakeTimers();
+    const mainWin = new (BrowserWindow as any)({});
+    const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+
+    const statePromise = handler({});
+
+    // Capture requestId from the relay call
+    const relayCalls = mainWin.webContents.send.mock.calls.filter(
+      (call: any[]) => call[0] === IPC.WINDOW.REQUEST_AGENT_STATE,
+    );
+    expect(relayCalls.length).toBe(1);
+    const requestId = relayCalls[0][1];
+    const expectedChannel = `${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`;
+
+    // Advance past timeout — this should fire the timeout callback
+    vi.advanceTimersByTime(1500);
+    await statePromise;
+
+    // ipcMain.removeListener must have been called on the per-request channel
+    const removeListenerCalls = (ipcMain.removeListener as any).mock.calls.filter(
+      (call: any[]) => call[0] === expectedChannel,
+    );
+    expect(removeListenerCalls.length).toBe(1);
+    // Second arg must be the handler function reference (not a once-wrapper)
+    expect(typeof removeListenerCalls[0][1]).toBe('function');
+
+    vi.useRealTimers();
+  });
+
+  it('LB-IPC-001: relayAgentState registers handler with ipcMain.on (not ipcMain.once)', () => {
+    new (BrowserWindow as any)({});
+    const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+
+    // Kick off relay (cold cache, no response sent)
+    handler({});
+
+    // The relay must use ipcMain.on for the per-request response channel
+    // so removeListener can reliably remove it by reference.
+    const onCalls = (ipcMain.on as any).mock.calls;
+    const perRequestOnCall = onCalls.find(
+      (call: any[]) => typeof call[0] === 'string' && call[0].startsWith(IPC.WINDOW.AGENT_STATE_RESPONSE + ':'),
+    );
+    expect(perRequestOnCall).toBeDefined();
+
+    // ipcMain.once must NOT have been used for this channel
+    const onceCalls = (ipcMain.once as any).mock.calls;
+    const perRequestOnceCall = onceCalls.find(
+      (call: any[]) => typeof call[0] === 'string' && call[0].startsWith(IPC.WINDOW.AGENT_STATE_RESPONSE + ':'),
+    );
+    expect(perRequestOnceCall).toBeUndefined();
   });
 });

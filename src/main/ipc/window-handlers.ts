@@ -112,7 +112,11 @@ function relayAgentState(): Promise<AgentStateSnapshot> {
     const requestId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
     const channel = `${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`;
 
+    // LB-IPC-001: use ipcMain.on + explicit removeListener in both paths so the
+    // same function reference is removed regardless of HMR or rapid popout cycles.
+    // ipcMain.once wraps the handler internally, making removeListener unreliable.
     const handler = (_e: any, state: AgentStateSnapshot) => {
+      ipcMain.removeListener(channel, handler);
       clearTimeout(timeout);
       cachedAgentState = state;
       resolve(state);
@@ -123,7 +127,7 @@ function relayAgentState(): Promise<AgentStateSnapshot> {
       resolve(cachedAgentState ?? EMPTY_AGENT_STATE);
     }, RELAY_TIMEOUT_MS);
 
-    ipcMain.once(channel as any, handler);
+    ipcMain.on(channel as any, handler);
     mainWindow.webContents.send(IPC.WINDOW.REQUEST_AGENT_STATE, requestId);
   }).finally(() => {
     pendingAgentRelay = null;

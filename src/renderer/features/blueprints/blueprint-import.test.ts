@@ -601,3 +601,148 @@ describe('bindAgentToStub', () => {
     expect(wireResult.remaining).toHaveLength(0);
   });
 });
+
+// ── LB-CB-003: position/size sanitization ──────────────────────────
+
+describe('LB-CB-003: importBlueprint sanitizes invalid position and size values', () => {
+  it('replaces NaN position values with 0', () => {
+    const manifest = makeManifest({
+      canvas: {
+        views: [
+          { refId: 'v1', type: 'agent', displayName: 'A', position: { x: NaN, y: NaN }, agentRef: 'a1' },
+        ],
+        wires: [],
+      },
+      agents: [{ refId: 'a1', name: 'scout', matchBy: { name: 'scout' } }],
+    });
+
+    const result = importBlueprint(manifest, [], []);
+    const view = result.canvas.views[0];
+
+    expect(Number.isFinite(view.position.x)).toBe(true);
+    expect(Number.isFinite(view.position.y)).toBe(true);
+    expect(view.position.x).toBe(0);
+    expect(view.position.y).toBe(0);
+  });
+
+  it('replaces Infinity position values with 0', () => {
+    const manifest = makeManifest({
+      canvas: {
+        views: [
+          { refId: 'v1', type: 'agent', displayName: 'A', position: { x: Infinity, y: -Infinity }, agentRef: 'a1' },
+        ],
+        wires: [],
+      },
+      agents: [{ refId: 'a1', name: 'scout', matchBy: { name: 'scout' } }],
+    });
+
+    const result = importBlueprint(manifest, [], []);
+    const view = result.canvas.views[0];
+
+    expect(Number.isFinite(view.position.x)).toBe(true);
+    expect(Number.isFinite(view.position.y)).toBe(true);
+  });
+
+  it('replaces negative size values with defaults', () => {
+    const manifest = makeManifest({
+      canvas: {
+        views: [
+          { refId: 'v1', type: 'agent', displayName: 'A', position: { x: 0, y: 0 }, size: { width: -100, height: -50 }, agentRef: 'a1' },
+        ],
+        wires: [],
+      },
+      agents: [{ refId: 'a1', name: 'scout', matchBy: { name: 'scout' } }],
+    });
+
+    const result = importBlueprint(manifest, [], []);
+    const view = result.canvas.views[0];
+
+    expect(view.size.width).toBeGreaterThan(0);
+    expect(view.size.height).toBeGreaterThan(0);
+  });
+
+  it('replaces zero size with defaults', () => {
+    const manifest = makeManifest({
+      canvas: {
+        views: [
+          { refId: 'v1', type: 'agent', displayName: 'A', position: { x: 0, y: 0 }, size: { width: 0, height: 0 }, agentRef: 'a1' },
+        ],
+        wires: [],
+      },
+      agents: [{ refId: 'a1', name: 'scout', matchBy: { name: 'scout' } }],
+    });
+
+    const result = importBlueprint(manifest, [], []);
+    const view = result.canvas.views[0];
+
+    expect(view.size.width).toBeGreaterThan(0);
+    expect(view.size.height).toBeGreaterThan(0);
+  });
+
+  it('preserves valid position and size values unchanged', () => {
+    const manifest = makeManifest({
+      canvas: {
+        views: [
+          { refId: 'v1', type: 'agent', displayName: 'A', position: { x: 200, y: 300 }, size: { width: 480, height: 480 }, agentRef: 'a1' },
+        ],
+        wires: [],
+      },
+      agents: [{ refId: 'a1', name: 'scout', matchBy: { name: 'scout' } }],
+    });
+
+    const result = importBlueprint(manifest, [], []);
+    const view = result.canvas.views[0];
+
+    expect(view.position.x).toBe(200);
+    expect(view.position.y).toBe(300);
+    expect(view.size.width).toBe(480);
+    expect(view.size.height).toBe(480);
+  });
+});
+
+// ── LB-CB-005: instructionHash match must not fall through ──────────
+
+describe('LB-CB-005: matchAgent with instructionHash does not fall through to name matching', () => {
+  it('returns not_found for instructionHash match (unavailable in renderer)', () => {
+    const agents: Agent[] = [
+      makeAgent({ id: 'a1', name: 'scout' }),
+      makeAgent({ id: 'a2', name: 'scout' }),
+    ];
+
+    // Two agents with the same name — if instructionHash fell through to name matching,
+    // it would return 'ambiguous' instead of 'not_found'
+    const def: BlueprintAgentDef = {
+      refId: 'x',
+      name: 'scout',
+      matchBy: {
+        instructionHash: 'abc123',
+      },
+      instructionContent: 'You are a scout agent.',
+    };
+
+    const result = matchAgent(def, agents);
+
+    expect(result.status).toBe('not_found');
+    expect(result.agents).toHaveLength(0);
+  });
+
+  it('instructionHash does not silently bind wrong agent when names are unique', () => {
+    const agents: Agent[] = [makeAgent({ id: 'a1', name: 'scout' })];
+
+    const def: BlueprintAgentDef = {
+      refId: 'x',
+      name: 'scout',
+      matchBy: {
+        instructionHash: 'abc123',
+      },
+      instructionContent: 'You are a scout agent.',
+    };
+
+    // Even with a unique name, instructionHash path returns not_found
+    // (file hashing not available in renderer — pre-fix would fall through
+    // to name matching and return 'matched', potentially binding the wrong agent)
+    const result = matchAgent(def, agents);
+
+    expect(result.status).toBe('not_found');
+  });
+});

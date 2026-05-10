@@ -1072,4 +1072,72 @@ describe('hydrateFromRemote', () => {
       expect(store.getState().wireDefinitions).toHaveLength(1);
     });
   });
+
+  describe('LB-CB-002: removeZone cascades wire cleanup', () => {
+    it('removes wires where zone viewId is the wire source', () => {
+      store.getState().addView('zone', { x: 0, y: 0 });
+      const zone = store.getState().views.find((v) => v.type === 'zone')!;
+
+      store.setState({
+        wireDefinitions: [
+          { agentId: zone.id, targetId: 'other-target', targetKind: 'agent', label: 'w', agentName: 'Z', targetName: 'T', projectName: '' },
+        ],
+      });
+
+      store.getState().removeZone(zone.id, false);
+
+      expect(store.getState().wireDefinitions).toHaveLength(0);
+    });
+
+    it('removes wires where zone viewId is the wire target', () => {
+      store.getState().addView('zone', { x: 0, y: 0 });
+      const zone = store.getState().views.find((v) => v.type === 'zone')!;
+
+      store.setState({
+        wireDefinitions: [
+          { agentId: 'source-agent', targetId: zone.id, targetKind: 'zone', label: 'w', agentName: 'A', targetName: 'Z', projectName: '' },
+        ],
+      });
+
+      store.getState().removeZone(zone.id, false);
+
+      expect(store.getState().wireDefinitions).toHaveLength(0);
+    });
+
+    it('with removeContents=true removes wires for contained views by viewId', () => {
+      store.getState().addView('zone', { x: 0, y: 0 });
+      store.getState().addView('agent', { x: 100, y: 100 });
+
+      const zone = store.getState().views.find((v) => v.type === 'zone') as any;
+      const agent = store.getState().views.find((v) => v.type === 'agent')!;
+
+      // Agent has no agentId yet, so the wire key is the view ID
+      store.setState({
+        wireDefinitions: [
+          { agentId: agent.id, targetId: 'other-target', targetKind: 'agent', label: 'w', agentName: 'A', targetName: 'T', projectName: '' },
+        ],
+      });
+
+      expect(zone.containedViewIds).toContain(agent.id);
+
+      store.getState().removeZone(zone.id, true);
+
+      expect(store.getState().wireDefinitions).toHaveLength(0);
+    });
+
+    it('preserves unrelated wires when zone is removed', () => {
+      store.getState().addView('zone', { x: 0, y: 0 });
+      const zone = store.getState().views.find((v) => v.type === 'zone')!;
+
+      store.setState({
+        wireDefinitions: [
+          { agentId: 'agent-a', targetId: 'agent-b', targetKind: 'agent', label: 'unrelated', agentName: 'A', targetName: 'B', projectName: '' },
+        ],
+      });
+
+      store.getState().removeZone(zone.id, false);
+
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+    });
+  });
 });

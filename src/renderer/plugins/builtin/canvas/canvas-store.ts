@@ -627,10 +627,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     // ── Zone operations ─────────────────────────────────────────
 
     removeZone: (zoneId, removeContents) => {
-      set(updateActiveCanvas(get(), (canvas) => {
-        const zone = canvas.views.find((v) => v.id === zoneId && v.type === 'zone') as ZoneCanvasView | undefined;
-        if (!zone) return { views: canvas.views };
+      const state = get();
+      const zone = state.views.find((v) => v.id === zoneId && v.type === 'zone') as ZoneCanvasView | undefined;
+      if (!zone) return;
 
+      const canvasUpdate = updateActiveCanvas(state, (canvas) => {
         let views = canvas.views.filter((v) => v.id !== zoneId);
         if (removeContents) {
           const contained = new Set(zone.containedViewIds);
@@ -640,7 +641,25 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           views: recomputeZones(views),
           selectedViewId: canvas.selectedViewId === zoneId ? null : canvas.selectedViewId,
         };
-      }));
+      });
+
+      // LB-CB-002: cascade wire cleanup — remove any wires that reference the zone
+      // or (when removeContents=true) any views that were inside it.
+      const removedWireIds = new Set<string>([zoneId]);
+      if (removeContents) {
+        for (const containedId of zone.containedViewIds) {
+          const containedView = state.views.find((v) => v.id === containedId);
+          const wireId = (containedView?.type === 'agent' && (containedView as AgentCanvasView).agentId)
+            ? (containedView as AgentCanvasView).agentId!
+            : containedId;
+          removedWireIds.add(wireId);
+        }
+      }
+      const filtered = state.wireDefinitions.filter(
+        (w) => !removedWireIds.has(w.agentId) && !removedWireIds.has(w.targetId),
+      );
+
+      set({ ...canvasUpdate, wireDefinitions: filtered });
     },
 
     updateZoneTheme: (zoneId, themeId) => {
