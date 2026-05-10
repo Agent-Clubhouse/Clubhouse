@@ -101,7 +101,7 @@ export function CommandPalette() {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50" data-testid="command-palette-overlay" onKeyDown={handleKeyDown}>
+    <div className="fixed inset-0 z-modal" data-testid="command-palette-overlay" onKeyDown={handleKeyDown}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50" onClick={close} />
       {/* Palette */}

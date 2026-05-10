@@ -144,7 +144,7 @@ export function DeleteAgentDialog() {
   // Non-worktree agents get a simple unregister dialog
   if (!agent.worktreePath) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
+      <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
         <div
           className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[400px] shadow-2xl"
           onClick={(e) => e.stopPropagation()}
@@ -191,7 +191,7 @@ export function DeleteAgentDialog() {
   const handleLeaveFiles = () => handleExecute('unregister');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
       <div
         className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[480px] shadow-2xl max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}

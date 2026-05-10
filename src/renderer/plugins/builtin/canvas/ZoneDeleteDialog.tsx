@@ -14,7 +14,7 @@ interface ZoneDeleteDialogProps {
 
 export function ZoneDeleteDialog({ zoneName, containedCount, onConfirm, onCancel }: ZoneDeleteDialogProps) {
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-canvas-dialog flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-ctp-base border border-surface-2 rounded-lg p-5 max-w-sm shadow-xl">
         <h3 className="text-sm font-semibold text-ctp-text mb-2">
           Delete Zone &ldquo;{zoneName}&rdquo;?

@@ -141,7 +141,7 @@ export function ConfigChangesDialog() {
     item.category === 'instructions' || item.category === 'skills' || item.category === 'agent-templates';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeDialog}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDialog}>
       <div
         className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[540px] shadow-2xl max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}

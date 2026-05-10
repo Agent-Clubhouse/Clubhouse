@@ -217,7 +217,7 @@ export function ImageCropDialog({
   const canvasSize = CROP_AREA_SIZE + 80; // Extra padding around crop area
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={onCancel}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/70" onClick={onCancel}>
       <div
         className="bg-ctp-base rounded-xl border border-surface-2 shadow-2xl p-5 flex flex-col items-center gap-4"
         onClick={(e) => e.stopPropagation()}

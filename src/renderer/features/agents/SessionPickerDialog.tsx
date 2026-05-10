@@ -180,7 +180,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
   }, []);
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div
         ref={dialogRef}
         data-testid="session-picker-dialog"

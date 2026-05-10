@@ -89,7 +89,7 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
       {open && (
         <div
           data-testid="permission-popup"
-          className="fixed z-50 w-72 p-3 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg"
+          className="fixed z-dropdown w-72 p-3 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg"
           style={popupStyle}
         >
           <p className="text-xs font-semibold text-ctp-subtext1 mb-2">Permissions</p>

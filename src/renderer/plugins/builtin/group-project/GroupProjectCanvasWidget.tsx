@@ -1028,7 +1028,7 @@ function ShoulderTapModal({
 
   return (
     <div
-      className="absolute inset-0 bg-ctp-crust/80 flex items-center justify-center z-50"
+      className="absolute inset-0 bg-ctp-crust/80 flex items-center justify-center z-modal"
       onClick={onClose}
     >
       <div

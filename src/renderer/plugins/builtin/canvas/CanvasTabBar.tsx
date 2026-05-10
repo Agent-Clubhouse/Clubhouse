@@ -82,7 +82,7 @@ export function CanvasTabBar({
         </button>
         {addMenuOpen && (
           <div
-            className="absolute top-full right-0 mt-1 bg-ctp-base border border-surface-0 rounded-lg shadow-lg py-1 min-w-[160px] z-50"
+            className="absolute top-full right-0 mt-1 bg-ctp-base border border-surface-0 rounded-lg shadow-lg py-1 min-w-[160px] z-dropdown"
             data-testid="canvas-add-menu"
           >
             <button
@@ -149,7 +149,7 @@ function TabContextMenu({ x, y, onExportBlueprint, onClose }: TabContextMenuProp
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-ctp-mantle border border-surface-0 rounded-lg shadow-2xl py-1 min-w-[180px] text-[11px]"
+      className="fixed z-dropdown bg-ctp-mantle border border-surface-0 rounded-lg shadow-2xl py-1 min-w-[180px] text-[11px]"
       style={{ left: x, top: y }}
       data-testid="canvas-tab-context-menu"
     >

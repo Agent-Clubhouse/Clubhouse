@@ -95,7 +95,7 @@ function TabContextMenu({ x, y, tab, onClose, onAction }: TabContextMenuProps) {
 
   return React.createElement('div', {
     ref: menuRef,
-    className: 'fixed z-50 bg-ctp-mantle border border-surface-0 rounded shadow-lg py-1 min-w-[170px]',
+    className: 'fixed z-dropdown bg-ctp-mantle border border-surface-0 rounded shadow-lg py-1 min-w-[170px]',
     style,
   },
     ...items.map((item) => {

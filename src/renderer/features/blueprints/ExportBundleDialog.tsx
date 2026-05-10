@@ -95,7 +95,7 @@ export function ExportBundleDialog({
     <div
       ref={backdropRef}
       className="fixed inset-0 bg-black/50 flex items-center justify-center"
-      style={{ zIndex: 100000 }}
+      style={{ zIndex: "var(--z-top)" }}
       onClick={handleBackdropClick}
       data-testid="export-bundle-dialog"
     >

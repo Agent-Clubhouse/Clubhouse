@@ -479,7 +479,7 @@ function ContextMenu({ x, y, node: _node, multiSelectCount, onClose, onAction }:
 
   return React.createElement('div', {
     ref: menuRef,
-    className: 'fixed z-50 bg-ctp-mantle border border-surface-0 rounded shadow-lg py-1 min-w-[140px]',
+    className: 'fixed z-dropdown bg-ctp-mantle border border-surface-0 rounded shadow-lg py-1 min-w-[140px]',
     style,
   },
     ...items.map((item) =>

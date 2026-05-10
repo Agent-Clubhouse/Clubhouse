@@ -33,7 +33,7 @@ export const SatelliteLockOverlay = React.memo(function SatelliteLockOverlay({ l
 
   return (
     <div
-      className={`fixed inset-0 z-[9999] flex items-center justify-center transition-opacity ${
+      className={`fixed inset-0 z-canvas-overlay flex items-center justify-center transition-opacity ${
         lockState.paused ? 'bg-black/20 pointer-events-none' : 'bg-black/60'
       }`}
       style={{ backdropFilter: lockState.paused ? 'none' : 'blur(4px)' }}

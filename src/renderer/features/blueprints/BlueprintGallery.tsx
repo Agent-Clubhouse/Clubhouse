@@ -213,7 +213,7 @@ export function BlueprintGallery() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-black/50"
       onClick={(e) => { if (e.target === e.currentTarget) close(); }}
       data-testid="blueprint-gallery-overlay"
     >
@@ -423,7 +423,7 @@ function BlueprintCard({
       {contextMenu && (
         <div
           ref={menuRef}
-          className="fixed z-50 bg-ctp-mantle border border-surface-0 rounded-lg shadow-2xl py-1 min-w-[140px] text-[11px]"
+          className="fixed z-dropdown bg-ctp-mantle border border-surface-0 rounded-lg shadow-2xl py-1 min-w-[140px] text-[11px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           data-testid="blueprint-card-context-menu"
         >

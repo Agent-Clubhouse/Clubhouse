@@ -22,7 +22,7 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
   const canConfirm = confirmText === projectName;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onCancel}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60" onClick={onCancel}>
       <div
         className="bg-ctp-base border border-surface-2 rounded-xl shadow-2xl w-full max-w-md mx-4"
         onClick={(e) => e.stopPropagation()}

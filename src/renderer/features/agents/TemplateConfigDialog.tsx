@@ -87,7 +87,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
         className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[360px] shadow-2xl"
         onClick={(e) => e.stopPropagation()}

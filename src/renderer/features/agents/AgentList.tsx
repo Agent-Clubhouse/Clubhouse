@@ -551,7 +551,7 @@ export function AgentList() {
             const rect = dropdownBtnRef.current?.getBoundingClientRect();
             return (
               <div
-                className="fixed bg-ctp-mantle border border-surface-0 rounded-lg shadow-xl py-1 z-50 min-w-[160px]"
+                className="fixed bg-ctp-mantle border border-surface-0 rounded-lg shadow-xl py-1 z-dropdown min-w-[160px]"
                 style={rect ? { top: rect.bottom + 4, right: window.innerWidth - rect.right } : undefined}
               >
                 <button
@@ -595,7 +595,7 @@ export function AgentList() {
 
       {/* Close dropdown on outside click */}
       {showDropdown && (
-        <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
+        <div className="fixed inset-0 z-dropdown-backdrop" onClick={() => setShowDropdown(false)} />
       )}
 
       <div className="flex-1 overflow-y-auto min-h-0" data-testid="agent-list-content">
