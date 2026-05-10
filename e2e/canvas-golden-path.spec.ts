@@ -177,7 +177,7 @@ test.describe('Canvas golden path', () => {
     await expect(allViews).toHaveCount(1, { timeout: 5_000 });
   });
 
-  test('create zone with agent view inside → delete zone with "Keep Widgets"', async () => {
+  test('create zone and agent view, then delete empty zone (no-dialog path)', async () => {
     const workspace = window.locator('[data-testid="canvas-workspace"]');
     await expect(workspace).toBeVisible({ timeout: 5_000 });
 
