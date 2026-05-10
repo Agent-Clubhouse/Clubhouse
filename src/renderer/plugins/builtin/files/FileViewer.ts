@@ -38,8 +38,12 @@ interface LoadedFile {
 // Module-level cache shared across component mounts; cleared on plugin deactivation.
 const _fileCache = new Map<string, LoadedFile>();
 
+// Track the mtime of the last file we saved, so watch events from our own writes are ignored.
+const _savedMtimes = new Map<string, number>();
+
 export function clearFileCache(): void {
   _fileCache.clear();
+  _savedMtimes.clear();
 }
 
 // ── Unsaved Changes Dialog ────────────────────────────────────────────
@@ -300,6 +304,9 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     if (content === null) return;
     try {
       await api.files.writeFile(filePath, content);
+      // Record mtime so the file watcher can distinguish our write from external changes
+      const stat = await api.files.stat(filePath);
+      _savedMtimes.set(filePath, stat.modifiedAt);
       updateSavedContent(filePath, content);
       const tab = fileState.getTabByPath(filePath);
       if (tab) {
@@ -324,6 +331,9 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     if (!activeTab) return;
     try {
       await api.files.writeFile(activeTab.filePath, newContent);
+      // Record mtime so the file watcher can distinguish our write from external changes
+      const stat = await api.files.stat(activeTab.filePath);
+      _savedMtimes.set(activeTab.filePath, stat.modifiedAt);
       updateSavedContent(activeTab.filePath, newContent);
       fileState.setTabDirty(activeTab.id, false);
       fileState.triggerRefresh();
@@ -350,6 +360,41 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     setCursorLine(line);
     setCursorColumn(column);
   }, []);
+
+  // ── External change detection ─────────────────────────────────────
+  // Watch open tabs for changes made by agents or collaborators after a save.
+  // When a change originates externally, update Monaco's saved baseline so the
+  // dirty indicator reflects whether the editor content matches the new disk state.
+
+  useEffect(() => {
+    const disposable = api.files.watch('**/*', async (events) => {
+      for (const evt of events) {
+        if (evt.type !== 'modified') continue;
+        const tab = fileState.getTabByPath(evt.path);
+        if (!tab) continue;
+
+        try {
+          const stat = await api.files.stat(evt.path);
+          const knownMtime = _savedMtimes.get(evt.path);
+          // If mtime matches our last save, this is our own write — skip
+          if (knownMtime !== undefined && stat.modifiedAt === knownMtime) continue;
+
+          // External change: reload content and update Monaco's saved baseline
+          const cached = _fileCache.get(evt.path);
+          if (!cached || (cached.fileType !== 'text' && cached.fileType !== 'markdown')) continue;
+
+          const newContent = await api.files.readFile(evt.path);
+          cached.content = newContent;
+          _savedMtimes.set(evt.path, stat.modifiedAt);
+          updateSavedContent(evt.path, newContent);
+          // Monaco now shows dirty only when editor content differs from newContent
+        } catch {
+          // File may have been deleted or be temporarily unreadable
+        }
+      }
+    });
+    return () => disposable.dispose();
+  }, [api]);
 
   // ── Reveal in tree ────────────────────────────────────────────────
 

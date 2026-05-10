@@ -37,13 +37,18 @@ export function hasProjectHubStore(projectId: string | null): boolean {
 
 /** Get (or create) the hub store for a specific project. */
 export function getProjectHubStore(projectId: string | null): ReturnType<typeof createHubStore> {
-  if (!projectId) return createHubStore(PANE_PREFIX); // transient fallback
+  if (!projectId) return useAppHubStore; // safe fallback — null projectId in project mode is transient
   let store = projectHubStores.get(projectId);
   if (!store) {
     store = createHubStore(PANE_PREFIX);
     projectHubStores.set(projectId, store);
   }
   return store;
+}
+
+/** Remove the hub store for a project (called on project close). */
+export function removeProjectHubStore(projectId: string): void {
+  projectHubStores.delete(projectId);
 }
 
 export function activate(ctx: PluginContext, api: PluginAPI): void {
@@ -53,6 +58,12 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
     store.getState().splitPane(focusedPaneId, 'horizontal', PANE_PREFIX);
   });
   ctx.subscriptions.push(disposable);
+
+  // Remove the project's hub store when this context is deactivated (project closed)
+  if (ctx.projectId) {
+    const projectId = ctx.projectId;
+    ctx.subscriptions.push({ dispose: () => { projectHubStores.delete(projectId); } });
+  }
 }
 
 export function deactivate(): void {

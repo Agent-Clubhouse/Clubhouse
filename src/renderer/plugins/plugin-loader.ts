@@ -483,8 +483,9 @@ export async function deactivatePlugin(pluginId: string, projectId?: string): Pr
 
   if (!ctx) return;
 
-  // Dispose subscriptions in reverse order
+  // Dispose subscriptions in reverse order; clear to release references
   const subs = [...ctx.subscriptions].reverse();
+  ctx.subscriptions = [];
   for (const sub of subs) {
     try {
       sub.dispose();
