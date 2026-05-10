@@ -148,8 +148,8 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
 
   const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
-  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
-    : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
+  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? STATUS_RING_COLOR.needs_permission
+    : agent.status === 'running' && detailed?.state === 'tool_error' ? STATUS_RING_COLOR.tool_error
     : baseRingColor;
 
   const isCreating = agent.status === 'creating';
@@ -245,7 +245,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
         id: 'wake',
         label: 'Wake',
         icon: <span>{'\u25B6'}</span>,
-        hoverColor: 'hover:text-green-400',
+        hoverColor: 'hover:text-ctp-success',
         visible: true,
         handler: handleWake,
       });
@@ -258,7 +258,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
             <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
           </svg>
         ),
-        hoverColor: 'hover:text-green-400',
+        hoverColor: 'hover:text-ctp-success',
         visible: true,
         handler: handleWakeAndResume,
       });
@@ -313,7 +313,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
         id: 'delete',
         label: 'Delete',
         icon: <span>{'\u2715'}</span>,
-        hoverColor: 'hover:text-red-400',
+        hoverColor: 'hover:text-ctp-error',
         visible: true,
         handler: handleDelete,
       });
@@ -322,7 +322,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
         id: 'remove',
         label: 'Remove',
         icon: <span>{'\u2715'}</span>,
-        hoverColor: 'hover:text-red-400',
+        hoverColor: 'hover:text-ctp-error',
         visible: true,
         handler: handleStopOrRemove,
       });
@@ -393,7 +393,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
           {/* Free Agent Mode badge */}
           {agent.freeAgentMode && (
             <div
-              className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 flex items-center justify-center ring-2 ring-ctp-base z-20"
+              className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-ctp-error flex items-center justify-center ring-2 ring-ctp-base z-20"
               title="Free Agent Mode — all permissions bypassed"
             >
               <span className="text-[9px] font-bold text-white leading-none">!</span>
@@ -443,7 +443,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
           </div>
           <span className={`text-xs truncate block mt-0.5 ${
             hasDetailed && detailed.state === 'needs_permission' ? 'text-orange-400' :
-            hasDetailed && detailed.state === 'tool_error' ? 'text-red-400' :
+            hasDetailed && detailed.state === 'tool_error' ? 'text-ctp-error' :
             'text-ctp-subtext0'
           }`}>
             {statusLabel}

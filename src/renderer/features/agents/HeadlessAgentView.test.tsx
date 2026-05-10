@@ -65,7 +65,7 @@ describe('HeadlessAgentView', () => {
     const { container } = render(<HeadlessAgentView agent={headlessAgent} />);
 
     // Green pulse dot should still be present
-    const pulseDot = container.querySelector('.bg-green-500.animate-pulse');
+    const pulseDot = container.querySelector('.bg-ctp-success.animate-pulse');
     expect(pulseDot).not.toBeNull();
   });
 

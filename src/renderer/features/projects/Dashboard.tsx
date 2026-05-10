@@ -76,8 +76,8 @@ function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' 
   const detailed = detailedStatus[agent.id];
   const isWorking = agent.status === 'running' && detailed?.state === 'working';
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
-  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
-    : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
+  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? STATUS_RING_COLOR.needs_permission
+    : agent.status === 'running' && detailed?.state === 'tool_error' ? STATUS_RING_COLOR.tool_error
     : baseRingColor;
 
   return (
@@ -310,9 +310,9 @@ function ProjectCard({ project }: { project: Project }) {
 
   const statusDots = useMemo(() => {
     const dots: { color: string; pulse: boolean; label: string; count: number }[] = [];
-    if (agentSummary.working > 0) dots.push({ color: 'bg-green-400', pulse: true, label: 'working', count: agentSummary.working });
+    if (agentSummary.working > 0) dots.push({ color: 'bg-ctp-success', pulse: true, label: 'working', count: agentSummary.working });
     if (agentSummary.idle > 0) dots.push({ color: 'bg-blue-400', pulse: false, label: 'idle', count: agentSummary.idle });
-    if (agentSummary.errored > 0) dots.push({ color: 'bg-red-400', pulse: false, label: 'error', count: agentSummary.errored });
+    if (agentSummary.errored > 0) dots.push({ color: 'bg-ctp-error', pulse: false, label: 'error', count: agentSummary.errored });
     if (agentSummary.sleeping > 0) dots.push({ color: 'bg-ctp-subtext0/50', pulse: false, label: 'sleeping', count: agentSummary.sleeping });
     return dots;
   }, [agentSummary]);
@@ -548,7 +548,7 @@ function AgentRow({ agent, project, navigateToAgent }: {
         id: 'wake',
         label: 'Wake',
         icon: <span>{'\u25B6'}</span>,
-        hoverColor: 'hover:text-green-400',
+        hoverColor: 'hover:text-ctp-success',
         handler: handleWake,
       });
       list.push({
@@ -560,7 +560,7 @@ function AgentRow({ agent, project, navigateToAgent }: {
             <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
           </svg>
         ),
-        hoverColor: 'hover:text-green-400',
+        hoverColor: 'hover:text-ctp-success',
         handler: handleWakeAndResume,
       });
     }
@@ -587,7 +587,7 @@ function AgentRow({ agent, project, navigateToAgent }: {
   const primaryAction = agent.status === 'running'
     ? { id: 'stop', title: 'Stop', icon: <span>{'\u25A0'}</span>, hoverColor: 'hover:text-yellow-400', handler: handleStop }
     : isDurable && (agent.status === 'sleeping' || agent.status === 'error')
-      ? { id: 'wake', title: 'Wake', icon: <span>{'\u25B6'}</span>, hoverColor: 'hover:text-green-400', handler: handleWake }
+      ? { id: 'wake', title: 'Wake', icon: <span>{'\u25B6'}</span>, hoverColor: 'hover:text-ctp-success', handler: handleWake }
       : null;
 
   return (
@@ -607,7 +607,7 @@ function AgentRow({ agent, project, navigateToAgent }: {
             hasDetailed && detailed.state === 'needs_permission'
               ? 'text-orange-400'
               : hasDetailed && detailed.state === 'tool_error'
-                ? 'text-red-400'
+                ? 'text-ctp-error'
                 : 'text-ctp-subtext0'
           }`}
         >
@@ -699,8 +699,8 @@ function RecentActivity() {
             {/* Status icon */}
             <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
               item.cancelled ? 'bg-ctp-subtext0/15 text-ctp-subtext0'
-                : item.exitCode === 0 ? 'bg-green-400/15 text-green-400'
-                : 'bg-red-400/15 text-red-400'
+                : item.exitCode === 0 ? 'bg-ctp-success/15 text-ctp-success'
+                : 'bg-ctp-error/15 text-ctp-error'
             }`}>
               {item.cancelled ? (
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

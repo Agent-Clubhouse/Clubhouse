@@ -130,7 +130,7 @@ export function AnnexSettingsView() {
                   purgeServerConfig();
                   setConfirmPurge(false);
                 }}
-                className="px-3 py-1.5 text-xs rounded bg-red-600 hover:bg-red-700
+                className="px-3 py-1.5 text-xs rounded bg-ctp-error hover:bg-ctp-error
                   transition-colors cursor-pointer text-white font-medium"
               >
                 Confirm Reset
@@ -147,7 +147,7 @@ export function AnnexSettingsView() {
             <button
               onClick={() => setConfirmPurge(true)}
               className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                transition-colors cursor-pointer text-ctp-error hover:text-red-400"
+                transition-colors cursor-pointer text-ctp-error hover:text-ctp-error"
             >
               Purge All Annex Config
             </button>

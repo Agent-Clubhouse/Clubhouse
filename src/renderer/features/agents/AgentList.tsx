@@ -488,11 +488,11 @@ export function AgentList() {
             checked={quickFreeAgentMode}
             onChange={(e) => setQuickFreeAgentMode(e.target.checked)}
             disabled={!supportsPermissions}
-            className="w-3 h-3 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
+            className="w-3 h-3 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
           />
           <span className="text-[10px] text-ctp-subtext0">Free Agent Mode</span>
           {quickFreeAgentMode && supportsPermissions && (
-            <span className="text-[10px] text-red-400">skip all permissions</span>
+            <span className="text-[10px] text-ctp-error">skip all permissions</span>
           )}
         </label>
         <div className="flex gap-1.5">

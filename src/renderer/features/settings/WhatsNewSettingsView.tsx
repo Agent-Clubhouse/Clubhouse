@@ -32,7 +32,7 @@ export function WhatsNewSettingsView() {
         )}
 
         {error && (
-          <div className="text-sm text-red-400" data-testid="whats-new-error">
+          <div className="text-sm text-ctp-error" data-testid="whats-new-error">
             Failed to load version history: {error}
           </div>
         )}

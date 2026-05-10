@@ -106,7 +106,7 @@ export function AssistantActionCard({ action, onApprove, onSkip }: Props) {
         )}
         <span className="ml-auto flex items-center gap-2 shrink-0">
           {action.status === 'completed' && summary && (
-            <span className="text-[10px] text-green-400 truncate max-w-[140px]">{summary}</span>
+            <span className="text-[10px] text-ctp-success truncate max-w-[140px]">{summary}</span>
           )}
           {action.durationMs != null && action.status === 'completed' && (
             <span className="text-[10px] text-ctp-subtext0 tabular-nums">
@@ -170,7 +170,7 @@ export function AssistantActionCard({ action, onApprove, onSkip }: Props) {
           {/* Error */}
           {action.error && (
             <div className="px-3 py-2">
-              <p className="text-xs text-red-400">{humanError(action.error)}</p>
+              <p className="text-xs text-ctp-error">{humanError(action.error)}</p>
             </div>
           )}
 
@@ -198,7 +198,7 @@ function formatInput(input: Record<string, unknown>): string {
 
 function statusBorderClass(status: ActionCardStatus): string {
   switch (status) {
-    case 'error': return 'border-red-500/40 bg-red-500/5';
+    case 'error': return 'border-red-500/40 bg-ctp-error/5';
     case 'pending_approval': return 'border-ctp-accent/40 bg-ctp-accent/5';
     case 'skipped': return 'border-surface-0 bg-ctp-mantle opacity-60';
     case 'running': return 'border-ctp-accent/20 bg-ctp-mantle';
@@ -226,14 +226,14 @@ function StatusIcon({ status }: { status: ActionCardStatus }) {
       );
     case 'completed':
       return (
-        <svg className="w-3.5 h-3.5 text-green-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="w-3.5 h-3.5 text-ctp-success" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="8" cy="8" r="6" />
           <polyline points="5.5 8 7.5 10 10.5 6" />
         </svg>
       );
     case 'error':
       return (
-        <svg className="w-3.5 h-3.5 text-red-400" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <svg className="w-3.5 h-3.5 text-ctp-error" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <circle cx="8" cy="8" r="6" />
           <line x1="6" y1="6" x2="10" y2="10" />
           <line x1="10" y1="6" x2="6" y2="10" />

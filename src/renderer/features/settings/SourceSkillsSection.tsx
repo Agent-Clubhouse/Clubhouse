@@ -177,7 +177,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
                 </button>
                 <button
                   onClick={() => setDeleteTarget(skill.name)}
-                  className="text-ctp-subtext0 hover:text-red-400 p-1 cursor-pointer transition-colors"
+                  className="text-ctp-subtext0 hover:text-ctp-error p-1 cursor-pointer transition-colors"
                   title="Delete skill"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -200,7 +200,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
             <p className="text-xs text-ctp-subtext0 mb-1">
               Are you sure you want to delete <span className="font-mono text-ctp-text">{deleteTarget}</span>?
             </p>
-            <p className="text-xs text-red-400 mb-4">
+            <p className="text-xs text-ctp-error mb-4">
               This will permanently delete the skill directory and cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
@@ -212,7 +212,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
               </button>
               <button
                 onClick={() => handleDelete(deleteTarget)}
-                className="text-xs px-3 py-1.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 cursor-pointer transition-colors border border-red-500/30"
+                className="text-xs px-3 py-1.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30 cursor-pointer transition-colors border border-red-500/30"
               >
                 Delete
               </button>

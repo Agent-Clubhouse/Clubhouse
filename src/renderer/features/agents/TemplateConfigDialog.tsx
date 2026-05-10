@@ -241,7 +241,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
               checked={freeAgentMode}
               onChange={(e) => setFreeAgentMode(e.target.checked)}
               disabled={!supportsPermissions}
-              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
+              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
             />
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
             <span className="text-[10px] text-ctp-subtext0/70 ml-1">

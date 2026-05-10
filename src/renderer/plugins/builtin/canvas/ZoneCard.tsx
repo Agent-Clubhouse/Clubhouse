@@ -86,7 +86,7 @@ export const ZoneCard = React.memo(function ZoneCard({ zone, mcpEnabled, dragOff
       <button
         ref={buttonRef}
         className="w-5 h-5 rounded-full border border-surface-2 flex-shrink-0 mx-1 transition-transform hover:scale-110"
-        style={{ backgroundColor: currentTheme?.colors.accent ?? '#89b4fa' }}
+        style={{ backgroundColor: currentTheme?.colors.accent ?? 'rgb(var(--ctp-accent))' }}
         onClick={(e) => { e.stopPropagation(); setThemePickerOpen(!themePickerOpen); }}
         onMouseDown={(e) => e.stopPropagation()}
         title="Zone theme"

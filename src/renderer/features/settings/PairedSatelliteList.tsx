@@ -92,7 +92,7 @@ export function PairedSatelliteList({ satellites }: Props) {
                     forgetSatellite(sat.fingerprint);
                     setConfirmForget(null);
                   }}
-                  className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700
+                  className="px-2 py-1 text-xs rounded bg-ctp-error hover:bg-ctp-error
                     transition-colors cursor-pointer text-white font-medium"
                 >
                   Confirm
@@ -109,7 +109,7 @@ export function PairedSatelliteList({ satellites }: Props) {
               <button
                 onClick={() => setConfirmForget(sat.fingerprint)}
                 className="px-2 py-1 text-xs rounded bg-surface-1 hover:bg-surface-2
-                  transition-colors cursor-pointer text-ctp-error hover:text-red-400"
+                  transition-colors cursor-pointer text-ctp-error hover:text-ctp-error"
               >
                 Forget
               </button>

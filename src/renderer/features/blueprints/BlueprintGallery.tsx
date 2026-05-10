@@ -570,8 +570,8 @@ function PreviewPanel({
 function typeColor(type: string): string {
   switch (type) {
     case 'agent': return 'bg-ctp-accent/15 text-ctp-accent';
-    case 'anchor': return 'bg-amber-500/15 text-amber-400';
-    case 'plugin': return 'bg-green-500/15 text-green-400';
+    case 'anchor': return 'bg-ctp-warning/15 text-ctp-warning';
+    case 'plugin': return 'bg-ctp-success/15 text-ctp-success';
     case 'sticky-note': return 'bg-yellow-500/15 text-yellow-400';
     case 'zone': return 'bg-purple-500/15 text-purple-400';
     default: return 'bg-surface-0 text-ctp-subtext0';

@@ -202,7 +202,7 @@ export function HubPane({
               <button
                 onClick={(e) => { e.stopPropagation(); onClose(pane.id); }}
                 className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded
-                  text-xs text-ctp-overlay0 bg-surface-1/60 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                  text-xs text-ctp-overlay0 bg-surface-1/60 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors"
                 title="Close pane"
               >
                 &times;

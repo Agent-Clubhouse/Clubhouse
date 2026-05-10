@@ -184,7 +184,7 @@ export function SoundPackCard({
             <button
               type="button"
               onClick={onDelete}
-              className="text-xs text-ctp-subtext0 hover:text-red-400 transition-colors cursor-pointer"
+              className="text-xs text-ctp-subtext0 hover:text-ctp-error transition-colors cursor-pointer"
             >
               Delete
             </button>

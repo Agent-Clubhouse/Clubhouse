@@ -255,8 +255,8 @@ const ActionGroupCard = React.memo(function ActionGroupCard({ group, actions, on
   const [expanded, setExpanded] = useState(false);
 
   const statusColor =
-    group.status === 'completed' ? 'text-green-400' :
-    group.status === 'error' ? 'text-red-400' :
+    group.status === 'completed' ? 'text-ctp-success' :
+    group.status === 'error' ? 'text-ctp-error' :
     group.status === 'running' ? 'text-ctp-accent' :
     'text-ctp-subtext0';
 

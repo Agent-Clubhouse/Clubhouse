@@ -55,7 +55,7 @@ function RemoveButton({ onClick, disabled }: { onClick: () => void; disabled?: b
     <button
       onClick={onClick}
       disabled={disabled}
-      className="text-ctp-subtext0 hover:text-red-400 p-0.5 cursor-pointer transition-colors disabled:opacity-30 flex-shrink-0"
+      className="text-ctp-subtext0 hover:text-ctp-error p-0.5 cursor-pointer transition-colors disabled:opacity-30 flex-shrink-0"
       title="Remove this item"
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -163,7 +163,7 @@ function OrphanBanner({
                 <button
                   onClick={() => handleClean(id)}
                   disabled={cleaning !== null}
-                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50 transition-colors"
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
                 >
                   {cleaning === id ? 'Cleaning...' : 'Clean up'}
                 </button>
@@ -175,7 +175,7 @@ function OrphanBanner({
           <button
             onClick={handleCleanAll}
             disabled={cleaning !== null}
-            className="shrink-0 text-[10px] px-2 py-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50 transition-colors"
+            className="shrink-0 text-[10px] px-2 py-1 rounded border border-red-500/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
           >
             {cleaning ? 'Cleaning...' : 'Clean all'}
           </button>
@@ -635,12 +635,12 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             type="checkbox"
             checked={freeAgentMode}
             onChange={(e) => { setFreeAgentMode(e.target.checked); setDirty(true); }}
-            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
+            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
           />
           <span className="text-xs text-ctp-subtext0">Free Agent Mode by default</span>
         </label>
         {freeAgentMode && (
-          <p className="text-[10px] text-red-400 pl-6">
+          <p className="text-[10px] text-ctp-error pl-6">
             New agents will skip all permission prompts by default.
           </p>
         )}

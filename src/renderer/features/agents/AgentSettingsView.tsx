@@ -702,7 +702,7 @@ export function AgentSettingsView({ agent }: Props) {
                   {((agent.icon && iconDataUrl) || agent.emoji) && !isRunning && (
                     <button
                       onClick={agent.emoji ? handleRemoveEmoji : handleRemoveIcon}
-                      className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:text-red-400 hover:border-red-400/50 cursor-pointer transition-colors"
+                      className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:text-ctp-error hover:border-red-400/50 cursor-pointer transition-colors"
                     >
                       Remove
                     </button>
@@ -823,12 +823,12 @@ export function AgentSettingsView({ agent }: Props) {
                     checked={freeAgentMode}
                     onChange={(e) => handleFreeAgentModeChange(e.target.checked)}
                     disabled={isRunning || !(capabilities?.permissions ?? false)}
-                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
+                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
                   />
                   <span className="text-sm text-ctp-text">Free Agent Mode</span>
                 </label>
                 {freeAgentMode && (capabilities?.permissions ?? false) && (
-                  <p className="mt-1 text-[10px] text-red-400 pl-6">
+                  <p className="mt-1 text-[10px] text-ctp-error pl-6">
                     This agent will run with full access — no tool approvals required.
                   </p>
                 )}
@@ -1169,7 +1169,7 @@ export function AgentSettingsView({ agent }: Props) {
                       checked={qadFreeAgentMode}
                       onChange={(e) => { setQadFreeAgentMode(e.target.checked); setQadDirty(true); }}
                       disabled={isRunning || !(capabilities?.permissions ?? false)}
-                      className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-red-500 focus:ring-ctp-error accent-red-500"
+                      className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
                     />
                     <span className="text-xs text-ctp-subtext0">Free Agent Mode by default</span>
                   </label>

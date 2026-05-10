@@ -168,7 +168,7 @@ function HubTab({ hub, active, canClose, onSelect, onRemove, onRename, onPopOut,
           {canClose && (
             <button
               onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              className="w-4 h-4 flex items-center justify-center rounded text-[9px] text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400"
+              className="w-4 h-4 flex items-center justify-center rounded text-[9px] text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error"
               title="Close hub"
               data-testid="hub-tab-close"
             >

@@ -203,8 +203,8 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
             <button
               onClick={onDelete}
               className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-red-500/30
-                hover:bg-red-500/20 transition-colors cursor-pointer
-                text-red-400"
+                hover:bg-ctp-error/20 transition-colors cursor-pointer
+                text-ctp-error"
             >
               Delete
             </button>
@@ -226,20 +226,20 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete: _onDele
       {/* Exit indicator */}
       <span className="flex-shrink-0">
         {completed.cancelled ? (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--ctp-warning))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <rect x="4" y="4" width="16" height="16" rx="2" />
           </svg>
         ) : completed.exitCode === 0 ? (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--ctp-success))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         ) : completed.exitCode > 128 ? (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--ctp-error))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         ) : (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--ctp-warning))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
         )}
@@ -282,7 +282,7 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete: _onDele
       {/* Dismiss (trash icon) */}
       <button
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-        className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-500/20 text-ctp-overlay0 hover:text-red-400 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+        className="w-4 h-4 flex items-center justify-center rounded hover:bg-ctp-error/20 text-ctp-overlay0 hover:text-ctp-error cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
         title="Dismiss"
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

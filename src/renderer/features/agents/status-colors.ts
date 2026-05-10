@@ -8,4 +8,6 @@ export const STATUS_RING_COLORS: Record<string, string> = {
   waking: 'rgb(var(--ctp-warning))',
   creating: 'rgb(var(--ctp-accent))',
   error: 'rgb(var(--ctp-error))',
+  needs_permission: 'rgb(var(--ctp-badge-orange))',
+  tool_error: 'rgb(var(--ctp-badge-amber))',
 };

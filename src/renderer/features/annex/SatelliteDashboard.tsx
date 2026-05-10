@@ -56,8 +56,8 @@ function RemoteAgentRow({ agent, satelliteId, detailedStatus, iconDataUrl, navig
 
   const isWorking = agent.status === 'running' && detailedStatus?.state === 'working';
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
-  const ringColor = agent.status === 'running' && detailedStatus?.state === 'needs_permission' ? '#f97316'
-    : agent.status === 'running' && detailedStatus?.state === 'tool_error' ? '#facc15'
+  const ringColor = agent.status === 'running' && detailedStatus?.state === 'needs_permission' ? STATUS_RING_COLOR.needs_permission
+    : agent.status === 'running' && detailedStatus?.state === 'tool_error' ? STATUS_RING_COLOR.tool_error
     : baseRingColor;
 
   const hasDetailed = agent.status === 'running' && detailedStatus;
@@ -83,7 +83,7 @@ function RemoteAgentRow({ agent, satelliteId, detailedStatus, iconDataUrl, navig
   const primaryAction = agent.status === 'running'
     ? { id: 'stop', title: 'Stop', icon: <span>{'\u25A0'}</span>, hoverColor: 'hover:text-yellow-400', handler: handleStop }
     : isDurable && (agent.status === 'sleeping' || agent.status === 'error')
-      ? { id: 'wake', title: 'Wake', icon: <span>{'\u25B6'}</span>, hoverColor: 'hover:text-green-400', handler: handleWake }
+      ? { id: 'wake', title: 'Wake', icon: <span>{'\u25B6'}</span>, hoverColor: 'hover:text-ctp-success', handler: handleWake }
       : null;
 
   return (
@@ -103,7 +103,7 @@ function RemoteAgentRow({ agent, satelliteId, detailedStatus, iconDataUrl, navig
           hasDetailed && detailedStatus.state === 'needs_permission'
             ? 'text-orange-400'
             : hasDetailed && detailedStatus.state === 'tool_error'
-              ? 'text-red-400'
+              ? 'text-ctp-error'
               : 'text-ctp-subtext0'
         }`}
       >
@@ -153,9 +153,9 @@ function RemoteProjectCard({ project, agents, satelliteId, agentIcons, detailedS
       else if (a.status === 'error') errored++;
     }
     const dots: { color: string; pulse: boolean; label: string; count: number }[] = [];
-    if (working > 0) dots.push({ color: 'bg-green-400', pulse: true, label: 'working', count: working });
+    if (working > 0) dots.push({ color: 'bg-ctp-success', pulse: true, label: 'working', count: working });
     if (idle > 0) dots.push({ color: 'bg-blue-400', pulse: false, label: 'idle', count: idle });
-    if (errored > 0) dots.push({ color: 'bg-red-400', pulse: false, label: 'error', count: errored });
+    if (errored > 0) dots.push({ color: 'bg-ctp-error', pulse: false, label: 'error', count: errored });
     if (sleeping > 0) dots.push({ color: 'bg-ctp-subtext0/50', pulse: false, label: 'sleeping', count: sleeping });
     return dots;
   }, [agents, detailedStatuses]);
@@ -385,7 +385,7 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
               </span>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${satellite?.state === 'connected' ? 'bg-green-400' : 'bg-ctp-subtext0'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${satellite?.state === 'connected' ? 'bg-ctp-success' : 'bg-ctp-subtext0'}`} />
               <p className="text-xs text-ctp-subtext0">
                 {satellite?.state === 'connected' ? 'Connected' : satellite?.state || 'Unknown'}
                 {satellite?.host && ` \u00B7 ${satellite.host}`}
