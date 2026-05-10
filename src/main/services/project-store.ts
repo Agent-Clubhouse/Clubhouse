@@ -105,26 +105,26 @@ async function restorePreservedSettings(project: Project): Promise<PreservedSett
  * Re-key project overrides in external settings files (badge-settings,
  * sound-settings) from the old project ID to the new one.
  */
-function migrateProjectOverrides(oldId: string, newId: string): void {
+async function migrateProjectOverrides(oldId: string, newId: string): Promise<void> {
   try {
-    // Badge settings
+    // Badge settings — await the write so the next read sees the migrated state
     const badge = getBadgeSettings();
     if (badge.projectOverrides?.[oldId]) {
       badge.projectOverrides[newId] = badge.projectOverrides[oldId];
       delete badge.projectOverrides[oldId];
-      saveBadgeSettings(badge);
+      await saveBadgeSettings(badge);
     }
   } catch {
     // Non-critical — don't block add()
   }
 
   try {
-    // Sound settings
+    // Sound settings — await the write so the next read sees the migrated state
     const sound = getSoundSettings();
     if (sound.projectOverrides?.[oldId]) {
       sound.projectOverrides[newId] = sound.projectOverrides[oldId];
       delete sound.projectOverrides[oldId];
-      saveSoundSettings(sound);
+      await saveSoundSettings(sound);
     }
   } catch {
     // Non-critical — don't block add()
@@ -250,7 +250,7 @@ export async function add(dirPath: string): Promise<Project> {
 
   // Migrate ID-keyed overrides in external settings files (badge, sound)
   if (restoredSettings._previousId) {
-    migrateProjectOverrides(restoredSettings._previousId, id);
+    await migrateProjectOverrides(restoredSettings._previousId, id);
   }
 
   // Restore a preserved icon from a previous session at this path
@@ -264,36 +264,40 @@ export async function add(dirPath: string): Promise<Project> {
 }
 
 export async function remove(id: string): Promise<void> {
-  let removedProject: Project | undefined;
-  await updateProjects((projects) => {
-    removedProject = projects.find((p) => p.id === id);
-    return projects.filter((p) => p.id !== id);
-  });
+  // Read the project first so we can operate on its icon before modifying projects.json.
+  // Icon preservation/deletion happens BEFORE the JSON write to avoid orphaned icon files
+  // if the process crashes between the two filesystem operations.
+  const projects = await readProjects();
+  const removedProject = projects.find((p) => p.id === id);
 
   if (removedProject) {
-    // Preserve user-configured settings for later re-add at the same path
     await preserveSettings(removedProject);
+    if (removedProject.icon) {
+      await preserveIcon(removedProject);
+    } else {
+      await removeIconFile(id);
+    }
   }
 
-  // Preserve the icon for later re-add at the same path; delete if no icon
-  if (removedProject?.icon) {
-    await preserveIcon(removedProject);
-  } else {
-    await removeIconFile(id);
-  }
+  await updateProjects((ps) => ps.filter((p) => p.id !== id));
 }
 
 export async function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'emoji' | 'name' | 'displayName' | 'orchestrator'>>): Promise<Project[]> {
-  let shouldRemoveIcon = false;
+  // Determine whether the icon file should be deleted before touching projects.json.
+  // Deleting first avoids orphaned files if the process crashes between the JSON
+  // write and the filesystem unlink (icon cleared from JSON but file never removed).
+  const willClearIcon = updates.icon === '' || (updates.emoji !== undefined && updates.emoji !== '');
+  if (willClearIcon) {
+    await removeIconFile(id);
+  }
 
-  const result = await updateProjects((projects) => {
+  return updateProjects((projects) => {
     return projects.map((p) => {
       if (p.id !== id) return p;
 
       const next = { ...p };
 
       if (updates.icon === '') {
-        shouldRemoveIcon = true;
         delete next.icon;
       } else if (updates.icon !== undefined) {
         next.icon = updates.icon;
@@ -330,7 +334,6 @@ export async function update(id: string, updates: Partial<Pick<Project, 'color' 
           next.emoji = updates.emoji;
           // Emoji and image icon are mutually exclusive — clear image when emoji is set
           if (next.emoji) {
-            shouldRemoveIcon = true;
             delete next.icon;
           }
         }
@@ -339,13 +342,6 @@ export async function update(id: string, updates: Partial<Pick<Project, 'color' 
       return next;
     });
   });
-
-  // Perform filesystem side effect after the state write succeeds
-  if (shouldRemoveIcon) {
-    await removeIconFile(id);
-  }
-
-  return result;
 }
 
 export async function setIcon(projectId: string, sourcePath: string): Promise<string> {

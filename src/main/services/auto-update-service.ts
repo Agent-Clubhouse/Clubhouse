@@ -323,7 +323,7 @@ function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
   });
 }
 
-function downloadFile(
+export function downloadFile(
   url: string,
   destPath: string,
   expectedSize: number | undefined,
@@ -360,6 +360,11 @@ function downloadFile(
       res.pipe(file);
       file.on('finish', () => {
         file.close();
+        if (totalSize > 0 && downloadedBytes !== totalSize) {
+          fs.unlink(destPath, () => {});
+          reject(new Error(`Partial download: expected ${totalSize} bytes, received ${downloadedBytes}`));
+          return;
+        }
         onProgress(100);
         resolve();
       });

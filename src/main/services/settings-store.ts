@@ -80,9 +80,15 @@ export function createSettingsStore<T>(
     const filePath = getFilePath();
     const writeTask = pendingWrite
       .catch((err): void => {
+        // Previous write in the queue failed — log but continue so the next write proceeds.
+        // Note: appLog cannot be imported here (circular: settings-store → log-service → log-settings → settings-store).
         console.warn(`[settings-store] Previous write to ${filename} failed:`, err instanceof Error ? err.message : err);
       })
-      .then(() => fs.promises.writeFile(filePath, serialized, options?.mode != null ? { encoding: 'utf-8', mode: options.mode } : 'utf-8'));
+      .then(() => fs.promises.writeFile(filePath, serialized, options?.mode != null ? { encoding: 'utf-8', mode: options.mode } : 'utf-8'))
+      .catch((err) => {
+        console.error(`[settings-store] Write to ${filename} failed — cache may diverge from disk:`, err instanceof Error ? err.message : err);
+        throw err;
+      });
     pendingWrite = writeTask;
     return writeTask;
   }

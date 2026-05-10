@@ -324,3 +324,75 @@ describe('settings-store', () => {
     });
   });
 });
+
+// ── LB-SP-003: write errors logged (not silently swallowed) ──────────────
+
+describe('LB-SP-003: write errors are surfaced, not silently swallowed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetPath.mockReturnValue('/tmp/test-app');
+    resetAllSettingsStoresForTests();
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+  });
+
+  it('logs write failure to console.error and re-throws so caller can detect it', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+    const writeError = new Error('ENOSPC: no space left on device');
+    vi.mocked(fs.promises.writeFile).mockRejectedValue(writeError);
+
+    await expect(store.save(DEFAULTS)).rejects.toThrow('ENOSPC');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('test.json'),
+      expect.stringContaining('ENOSPC'),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it('logs previous write failure at warn level and lets the next write proceed', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+
+    let rejectFirst!: (err: Error) => void;
+    let callCount = 0;
+    // Each save is queued via the pendingWrite chain. First save returns a promise we control.
+    vi.mocked(fs.promises.writeFile).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return new Promise<void>((_, reject) => {
+          // Capture the rejector — called after both saves are queued
+          rejectFirst = reject;
+        });
+      }
+      return Promise.resolve();
+    });
+
+    // Queue two saves — both are queued before first rejects
+    const save1 = store.save({ name: 'first', count: 1, nested: { flag: false } });
+    const save2 = store.save({ name: 'second', count: 2, nested: { flag: true } });
+
+    // Wait for the pendingWrite chain to advance so writeFile has been called for save1
+    await vi.waitFor(() => { expect(callCount).toBeGreaterThanOrEqual(1); });
+
+    rejectFirst(new Error('disk full'));
+
+    // save1 rejects; save2 should still succeed because the .catch() swallows the prior error
+    await expect(save1).rejects.toThrow();
+    await expect(save2).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('test.json'),
+      expect.stringContaining('disk full'),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('reject propagates to the caller — write errors are not silently swallowed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+    vi.mocked(fs.promises.writeFile).mockRejectedValue(new Error('write error'));
+
+    await expect(store.save(DEFAULTS)).rejects.toThrow('write error');
+  });
+});

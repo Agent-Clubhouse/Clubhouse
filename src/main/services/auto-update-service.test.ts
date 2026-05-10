@@ -429,3 +429,4 @@ describe('auto-update-service', () => {
     });
   });
 });
+
