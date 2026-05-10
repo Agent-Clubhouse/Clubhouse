@@ -1,6 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { isValidWireTarget, hitTestViews } from './useWiring';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { isValidWireTarget, hitTestViews, useWiring } from './useWiring';
 import type { AgentCanvasView, PluginCanvasView, AnchorCanvasView, ZoneCanvasView } from './canvas-types';
+
+const mockBind = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../stores/mcpBindingStore', () => ({
+  useMcpBindingStore: (selector: (s: any) => any) => selector({ bind: mockBind }),
+}));
 
 function makeAgentView(id: string, agentId: string | null): AgentCanvasView {
   return {
@@ -170,5 +177,85 @@ describe('hitTestViews', () => {
     const agent: AgentCanvasView = { ...makeAgentView('a1', 'agent-1'), zIndex: 1 };
     const result = hitTestViews({ x: 100, y: 100 }, [zone, agent]);
     expect(result?.id).toBe('a1');
+  });
+});
+
+// ── LB-CB-008: useWiring null-agentId guard ─────────────────────────
+
+describe('LB-CB-008: useWiring does not call bind when sourceView has no agentId', () => {
+  const viewport = { panX: 0, panY: 0, zoom: 1 };
+
+  beforeEach(() => {
+    mockBind.mockClear();
+  });
+
+  it('does not call bind when source agent has null agentId', async () => {
+    const sourceView: AgentCanvasView = makeAgentView('src', null); // no agentId
+    const targetView: AgentCanvasView = makeAgentView('tgt', 'agent-target');
+    // Position target at (300,0) so it's at x=300..500, y=0..200
+    const views = [
+      sourceView,
+      { ...targetView, position: { x: 300, y: 0 } },
+    ];
+
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ left: 0, top: 0, width: 1000, height: 1000, right: 1000, bottom: 1000 }),
+    });
+    const containerRef = { current: container };
+
+    const { result } = renderHook(() =>
+      useWiring(views, viewport, containerRef as any),
+    );
+
+    // Start a wire drag from the null-agentId source
+    act(() => {
+      result.current.startWireDrag(sourceView);
+    });
+
+    expect(result.current.isWireDragging).toBe(true);
+
+    // Simulate mouseup over the target (x=350 lands in target's 300..500 range)
+    act(() => {
+      const mouseUpEvent = new MouseEvent('mouseup', {
+        bubbles: true,
+        clientX: 350,
+        clientY: 100,
+      });
+      window.dispatchEvent(mouseUpEvent);
+    });
+
+    expect(result.current.isWireDragging).toBe(false);
+    // bind must NOT have been called — sourceAgentId was null
+    expect(mockBind).not.toHaveBeenCalled();
+  });
+
+  it('calls bind when source agent has a valid agentId', async () => {
+    const sourceView: AgentCanvasView = makeAgentView('src', 'agent-source');
+    const targetView: AgentCanvasView = { ...makeAgentView('tgt', 'agent-target'), position: { x: 300, y: 0 } };
+    const views = [sourceView, targetView];
+
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ left: 0, top: 0, width: 1000, height: 1000, right: 1000, bottom: 1000 }),
+    });
+    const containerRef = { current: container };
+
+    const { result } = renderHook(() =>
+      useWiring(views, viewport, containerRef as any),
+    );
+
+    act(() => {
+      result.current.startWireDrag(sourceView);
+    });
+
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 350, clientY: 100 }));
+    });
+
+    // bind should have been called (both source and reverse for agent-to-agent)
+    expect(mockBind).toHaveBeenCalled();
+    const bindArgs = mockBind.mock.calls[0];
+    expect(bindArgs[0]).toBe('agent-source');
   });
 });

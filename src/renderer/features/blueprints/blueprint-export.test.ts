@@ -469,3 +469,62 @@ describe('slugify', () => {
     expect(slugify('Hello World!')).toBe('hello-world');
   });
 });
+
+// ── LB-CB-004: refId guard — all exported views must have valid refIds ─
+
+describe('LB-CB-004: exportCanvasToBlueprint guards against undefined refIds', () => {
+  it('all exported views have non-null, non-undefined refIds', () => {
+    const views = [
+      makeAgentView(),
+      makeAnchorView(),
+      makePluginView(),
+      makeStickyView(),
+      makeZoneView(),
+    ];
+    const canvas = makeCanvas(views);
+    const ctx = makeContext({ agents: { durable_abc: makeAgent() } });
+
+    const manifest = exportCanvasToBlueprint(canvas, ctx);
+
+    expect(manifest.canvas.views).toHaveLength(5);
+    for (const view of manifest.canvas.views) {
+      expect(view.refId).toBeTruthy();
+      expect(typeof view.refId).toBe('string');
+    }
+  });
+
+  it('output view count matches input view count', () => {
+    const agentView = makeAgentView();
+    const canvas = makeCanvas([agentView]);
+    const ctx = makeContext({ agents: { durable_abc: makeAgent() } });
+
+    const manifest = exportCanvasToBlueprint(canvas, ctx);
+
+    // Pre-fix: map() always returned one entry per view, even with undefined refId.
+    // Post-fix: flatMap() with guard skips views with missing refIds but preserves
+    // valid views. For a normal canvas this must still produce one view per input.
+    expect(manifest.canvas.views).toHaveLength(1);
+    expect(manifest.canvas.views[0].refId).toBeDefined();
+  });
+
+  it('wire sourceRef and targetRef are both non-null strings', () => {
+    const agent1 = makeAgent({ id: 'durable_abc', name: 'A' });
+    const agent2 = makeAgent({ id: 'durable_def', name: 'B' });
+    const view1 = makeAgentView({ id: 'cv_1', agentId: 'durable_abc' });
+    const view2 = makeAgentView({ id: 'cv_2', agentId: 'durable_def', title: 'B', displayName: 'B', metadata: { agentId: 'durable_def' } });
+    const wire = makeWire({ agentId: 'durable_abc', targetId: 'durable_def' });
+    const canvas = makeCanvas([view1, view2]);
+    const ctx = makeContext({
+      agents: { durable_abc: agent1, durable_def: agent2 },
+      wireDefinitions: [wire],
+    });
+
+    const manifest = exportCanvasToBlueprint(canvas, ctx);
+
+    expect(manifest.canvas.wires).toHaveLength(1);
+    expect(manifest.canvas.wires[0].sourceRef).toBeTruthy();
+    expect(manifest.canvas.wires[0].targetRef).toBeTruthy();
+    expect(typeof manifest.canvas.wires[0].sourceRef).toBe('string');
+    expect(typeof manifest.canvas.wires[0].targetRef).toBe('string');
+  });
+});

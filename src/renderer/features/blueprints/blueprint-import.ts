@@ -203,11 +203,11 @@ export function matchAgent(def: BlueprintAgentDef, existingAgents: Agent[]): Age
 
   // 3. Instruction hash match
   if (def.matchBy?.instructionHash && def.instructionContent) {
-    // Instruction hash matching requires reading agent files from disk,
-    // which is not available in the renderer. Skip to next matcher.
-    const matched: Agent[] = [];
-    if (matched.length === 1) return { status: 'matched', agents: matched };
-    if (matched.length > 1) return { status: 'ambiguous', agents: matched };
+    // Instruction hash matching requires reading agent files from disk — not
+    // available in the renderer.  Return not_found rather than falling through
+    // to name matching, which could silently bind the wrong agent when multiple
+    // agents share the same name (LB-CB-005).
+    return { status: 'not_found', agents: [] };
   }
 
   // 4. Fallback: case-insensitive match on def.name
@@ -335,8 +335,22 @@ export function importBlueprint(
     const displayName = deduplicateDisplayName(bv.displayName || bv.type, existingNames);
     existingNames.push(displayName);
 
-    const position = snapPosition(bv.position || { x: 0, y: 0 });
-    const size = bv.size || { width: DEFAULT_VIEW_WIDTH, height: DEFAULT_VIEW_HEIGHT };
+    // LB-CB-003: sanitize position and size — NaN/Infinity/negative values produce
+    // invisible or off-screen cards post-import.
+    const rawPos = bv.position || { x: 0, y: 0 };
+    const position = snapPosition({
+      x: Number.isFinite(rawPos.x) ? rawPos.x : 0,
+      y: Number.isFinite(rawPos.y) ? rawPos.y : 0,
+    });
+    const rawSize = bv.size as { width?: unknown; height?: unknown } | undefined ?? {};
+    const size = {
+      width: Number.isFinite(rawSize.width as number) && (rawSize.width as number) > 0
+        ? rawSize.width as number
+        : DEFAULT_VIEW_WIDTH,
+      height: Number.isFinite(rawSize.height as number) && (rawSize.height as number) > 0
+        ? rawSize.height as number
+        : DEFAULT_VIEW_HEIGHT,
+    };
     const viewType = mapViewType(bv.type);
 
     const base = {

@@ -197,8 +197,14 @@ export function exportCanvasToBlueprint(
 
   // ── Phase 4: Build BlueprintViews ───────────────────────────────
 
-  const blueprintViews: BlueprintView[] = canvas.views.map((view) => {
-    const refId = viewIdToRefId.get(view.id)!;
+  // LB-CB-004: guard the refId lookup — every view should have been registered
+  // in Phase 1, but a missing entry must not crash with a non-null assertion.
+  const blueprintViews: BlueprintView[] = canvas.views.flatMap((view): BlueprintView[] => {
+    const refId = viewIdToRefId.get(view.id);
+    if (!refId) {
+      console.warn(`[blueprint-export] view ${view.id} (${view.type}) has no refId — skipping`);
+      return [] as BlueprintView[];
+    }
 
     const bv: BlueprintView = {
       refId,
@@ -264,7 +270,7 @@ export function exportCanvasToBlueprint(
       }
     }
 
-    return bv;
+    return [bv];
   });
 
   // ── Phase 5: Remap wires to refIds ──────────────────────────────

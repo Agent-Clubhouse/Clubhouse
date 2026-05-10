@@ -149,48 +149,56 @@ export function useWiring(
               ? (hitView.metadata?.queueId as string) ?? hitView.id
               : hitView.id;
             onZoneWireRef.current(wireDrag.sourceView.id, resolvedTargetId, kind as 'zone' | 'agent' | 'group-project' | 'agent-queue' | 'browser');
-          } else if (wireDrag.sourceView.type === 'agent' && (wireDrag.sourceView as AgentCanvasViewType).agentId) {
+          } else if (wireDrag.sourceView.type === 'agent') {
             // Agent -> zone: create a zone wire from the zone to the agent
-            onZoneWireRef.current(hitView.id, (wireDrag.sourceView as AgentCanvasViewType).agentId!, 'agent');
+            // LB-CB-008: extract agentId to a local const for a consistent null guard
+            const sourceAgentId = (wireDrag.sourceView as AgentCanvasViewType).agentId;
+            if (sourceAgentId) {
+              onZoneWireRef.current(hitView.id, sourceAgentId, 'agent');
+            }
           }
-        } else if (wireDrag.sourceView.type === 'agent' && (wireDrag.sourceView as AgentCanvasViewType).agentId) {
+        } else if (wireDrag.sourceView.type === 'agent') {
           // Standard agent wire
+          // LB-CB-008: extract agentId once so the null guard and all usages are consistent
           const agentSource = wireDrag.sourceView as AgentCanvasViewType;
-          const resolvedTargetId = kind === 'agent'
-            ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
-            : kind === 'group-project'
-            ? (hitView.metadata?.groupProjectId as string) ?? hitView.id
-            : kind === 'agent-queue'
-            ? (hitView.metadata?.queueId as string) ?? hitView.id
-            : hitView.id;
-          const projectName = (hitView.metadata?.projectName as string)
-            || (agentSource.metadata?.projectName as string)
-            || undefined;
-          const sourceLabel = agentSource.displayName || agentSource.title;
-          const targetLabel = hitView.displayName || hitView.title;
-          const fwdTarget = {
-            targetId: resolvedTargetId,
-            targetKind: kind as 'agent' | 'browser' | 'group-project' | 'agent-queue',
-            label: targetLabel,
-            agentName: sourceLabel,
-            targetName: targetLabel,
-            projectName,
-          };
-          bind(agentSource.agentId!, fwdTarget);
-          onAddWireDefRef.current?.({ agentId: agentSource.agentId!, ...fwdTarget });
-
-          // Agent-to-agent wires: optionally create reverse direction
-          if (kind === 'agent' && createBidirectional) {
-            const revTarget = {
-              targetId: agentSource.agentId!,
-              targetKind: 'agent' as const,
-              label: sourceLabel,
-              agentName: targetLabel,
-              targetName: sourceLabel,
+          const sourceAgentId = agentSource.agentId;
+          if (sourceAgentId) {
+            const resolvedTargetId = kind === 'agent'
+              ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
+              : kind === 'group-project'
+              ? (hitView.metadata?.groupProjectId as string) ?? hitView.id
+              : kind === 'agent-queue'
+              ? (hitView.metadata?.queueId as string) ?? hitView.id
+              : hitView.id;
+            const projectName = (hitView.metadata?.projectName as string)
+              || (agentSource.metadata?.projectName as string)
+              || undefined;
+            const sourceLabel = agentSource.displayName || agentSource.title;
+            const targetLabel = hitView.displayName || hitView.title;
+            const fwdTarget = {
+              targetId: resolvedTargetId,
+              targetKind: kind as 'agent' | 'browser' | 'group-project' | 'agent-queue',
+              label: targetLabel,
+              agentName: sourceLabel,
+              targetName: targetLabel,
               projectName,
             };
-            bind(resolvedTargetId, revTarget);
-            onAddWireDefRef.current?.({ agentId: resolvedTargetId, ...revTarget });
+            bind(sourceAgentId, fwdTarget);
+            onAddWireDefRef.current?.({ agentId: sourceAgentId, ...fwdTarget });
+
+            // Agent-to-agent wires: optionally create reverse direction
+            if (kind === 'agent' && createBidirectional) {
+              const revTarget = {
+                targetId: sourceAgentId,
+                targetKind: 'agent' as const,
+                label: sourceLabel,
+                agentName: targetLabel,
+                targetName: sourceLabel,
+                projectName,
+              };
+              bind(resolvedTargetId, revTarget);
+              onAddWireDefRef.current?.({ agentId: resolvedTargetId, ...revTarget });
+            }
           }
         }
       }
