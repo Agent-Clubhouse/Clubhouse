@@ -16,8 +16,9 @@ vi.mock('../../util/shell', () => ({
 }));
 
 // Mock log service
+const mockAppLog = vi.fn();
 vi.mock('../../services/log-service', () => ({
-  appLog: vi.fn(),
+  appLog: (...args: unknown[]) => mockAppLog(...args),
 }));
 
 import { StreamJsonAdapter } from './stream-json-adapter';
@@ -69,6 +70,7 @@ describe('StreamJsonAdapter', () => {
   beforeEach(() => {
     mockProc = createMockProcess();
     mockSpawn.mockReturnValue(mockProc);
+    mockAppLog.mockClear();
   });
 
   // ── Empty mission guard ──────────────────────────────────────────────────
@@ -718,6 +720,72 @@ describe('StreamJsonAdapter', () => {
 
     const textDelta = events.find((e) => e.type === 'text_delta');
     expect(textDelta?.data).toEqual({ text: 'Hello' });
+  });
+
+  // ── Invalid index logging (LB-OA-007) ────────────────────────────────────
+
+  it('logs warning and returns empty for content_block_start with missing index', async () => {
+    const adapter = new StreamJsonAdapter({ binary: 'claude' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    // Send start with no index (omit to simulate invalid)
+    feedLine(mockProc, {
+      type: 'content_block_start',
+      // index: omitted → undefined → -1 in handleBlockStart
+      content_block: { type: 'text' },
+    });
+    mockProc.emit('close', 0);
+
+    const events = await collectEvents(stream, 1);
+    // Only the 'end' event should come out — block_start was dropped
+    expect(events[0].type).toBe('end');
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured',
+      'warn',
+      expect.stringContaining('content_block_start'),
+      expect.anything(),
+    );
+  });
+
+  it('logs warning and returns empty for content_block_delta with negative index', async () => {
+    const adapter = new StreamJsonAdapter({ binary: 'claude' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    feedLine(mockProc, {
+      type: 'content_block_delta',
+      // index: omitted → -1
+      delta: { type: 'text_delta', text: 'orphan' },
+    });
+    mockProc.emit('close', 0);
+
+    const events = await collectEvents(stream, 1);
+    expect(events[0].type).toBe('end');
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured',
+      'warn',
+      expect.stringContaining('content_block_delta'),
+      expect.anything(),
+    );
+  });
+
+  it('logs warning and returns empty for content_block_stop with negative index', async () => {
+    const adapter = new StreamJsonAdapter({ binary: 'claude' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    feedLine(mockProc, {
+      type: 'content_block_stop',
+      // index: omitted → -1
+    });
+    mockProc.emit('close', 0);
+
+    const events = await collectEvents(stream, 1);
+    expect(events[0].type).toBe('end');
+    expect(mockAppLog).toHaveBeenCalledWith(
+      'core:structured',
+      'warn',
+      expect.stringContaining('content_block_stop'),
+      expect.anything(),
+    );
   });
 
   // ── Unknown events ────────────────────────────────────────────────────────

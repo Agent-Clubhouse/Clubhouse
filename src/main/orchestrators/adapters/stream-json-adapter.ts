@@ -248,7 +248,12 @@ export class StreamJsonAdapter implements StructuredAdapter {
   private handleBlockStart(event: StreamJsonEvent): StructuredEvent[] {
     const index = typeof event.index === 'number' ? event.index : -1;
     const block = event.content_block;
-    if (!block || index < 0) return [];
+    if (!block || index < 0) {
+      appLog('core:structured', 'warn', 'stream-json: content_block_start with invalid index — skipped', {
+        meta: { index: event.index, blockType: block?.type },
+      });
+      return [];
+    }
 
     this.activeBlocks.set(index, {
       type: block.type,
@@ -274,7 +279,14 @@ export class StreamJsonAdapter implements StructuredAdapter {
     const delta = event.delta as { type?: string; text?: string; thinking?: string; partial_json?: string } | undefined;
     if (!delta) return [];
 
-    const block = index >= 0 ? this.activeBlocks.get(index) : undefined;
+    if (index < 0) {
+      appLog('core:structured', 'warn', 'stream-json: content_block_delta with invalid index — skipped', {
+        meta: { index: event.index, deltaType: delta.type },
+      });
+      return [];
+    }
+
+    const block = this.activeBlocks.get(index);
 
     if (delta.type === 'text_delta' && delta.text) {
       // Accumulate text for text_done
@@ -294,7 +306,13 @@ export class StreamJsonAdapter implements StructuredAdapter {
 
   private handleBlockStop(event: StreamJsonEvent): StructuredEvent[] {
     const index = typeof event.index === 'number' ? event.index : -1;
-    const block = index >= 0 ? this.activeBlocks.get(index) : undefined;
+    if (index < 0) {
+      appLog('core:structured', 'warn', 'stream-json: content_block_stop with invalid index — skipped', {
+        meta: { index: event.index },
+      });
+      return [];
+    }
+    const block = this.activeBlocks.get(index);
     if (!block) return [];
 
     this.activeBlocks.delete(index);

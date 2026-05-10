@@ -422,6 +422,60 @@ describe('structured-manager', () => {
     });
   });
 
+  describe('session identity guard (LB-OA-008)', () => {
+    it('new session survives cleanup of a prior session for the same agentId', async () => {
+      // Create a long-running adapter that we can cancel later
+      let resolveHang!: () => void;
+      const hangPromise = new Promise<void>((r) => { resolveHang = r; });
+
+      const oldAdapter: StructuredAdapter = {
+        start: async function* () {
+          yield makeEvent('text_delta', { text: 'old session' });
+          await hangPromise; // hang until we resolve it
+        },
+        sendMessage: vi.fn(async () => {}),
+        respondToPermission: vi.fn(async () => {}),
+        cancel: vi.fn(async () => { resolveHang(); }),
+        dispose: vi.fn(),
+      };
+
+      const newAdapter: StructuredAdapter = {
+        start: async function* () {
+          yield makeEvent('text_delta', { text: 'new session' });
+          await new Promise(() => {}); // hang forever
+        },
+        sendMessage: vi.fn(async () => {}),
+        respondToPermission: vi.fn(async () => {}),
+        cancel: vi.fn(async () => {}),
+        dispose: vi.fn(),
+      };
+
+      // Start old session
+      await startStructuredSession('shared-agent', oldAdapter, baseOpts);
+      // Wait for old session to yield its first event (it's now hanging)
+      await vi.waitFor(() => {
+        expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+          'agent:structured-event',
+          'shared-agent',
+          expect.objectContaining({ type: 'text_delta' }),
+        );
+      });
+
+      // Start new session — this cancels old, registers new session
+      await startStructuredSession('shared-agent', newAdapter, baseOpts);
+
+      // The new session must still be registered after the old cleanup runs
+      expect(isStructuredSession('shared-agent')).toBe(true);
+      // Verify the new session's adapter is what's active (sendMessage delegates to new adapter)
+      await sendMessage('shared-agent', 'ping');
+      expect(newAdapter.sendMessage).toHaveBeenCalledWith('ping');
+      expect(oldAdapter.sendMessage).not.toHaveBeenCalled();
+
+      // Cleanup
+      await cancelSession('shared-agent');
+    });
+  });
+
   describe('error handling in event stream', () => {
     it('forwards permission_request to annex as permission_request hook', async () => {
       const events: StructuredEvent[] = [
