@@ -51,7 +51,7 @@ export function HubTabContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-ctp-mantle border border-surface-0 rounded-lg shadow-2xl py-1 min-w-[180px] text-[11px]"
+      className="fixed z-dropdown bg-ctp-mantle border border-surface-0 rounded-lg shadow-2xl py-1 min-w-[180px] text-[11px]"
       style={{ left: x, top: y }}
       data-testid="hub-tab-context-menu"
     >

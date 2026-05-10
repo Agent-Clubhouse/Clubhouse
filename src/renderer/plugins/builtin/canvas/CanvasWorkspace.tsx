@@ -1194,7 +1194,7 @@ export function CanvasWorkspace({
       {/* Blueprint error toast */}
       {blueprintError && (
         <div
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 bg-ctp-error text-ctp-text text-sm rounded-lg shadow-lg"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-canvas-overlay px-4 py-2 bg-ctp-error text-ctp-text text-sm rounded-lg shadow-lg"
           data-testid="canvas-blueprint-error-toast"
         >
           {blueprintError}
@@ -1219,7 +1219,7 @@ export function CanvasWorkspace({
       {/* Zoomed view overlay */}
       {zoomedView && (
         <div
-          className="absolute inset-0 z-[9999] flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
+          className="absolute inset-0 z-canvas-overlay flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
           onClick={(e) => { if (e.target === e.currentTarget) onZoomView(null); }}
           data-testid="canvas-zoom-overlay"
         >
@@ -1448,7 +1448,7 @@ export function CanvasWorkspace({
         <MenuPortal>
           <div
             ref={viewMenuRef}
-            className="fixed z-[9999] min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
+            className="fixed z-canvas-overlay min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
             style={{ left: viewContextMenu.x, top: viewContextMenu.y }}
             data-testid="view-context-menu"
           >

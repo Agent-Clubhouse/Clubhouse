@@ -146,7 +146,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
               {dropdownOpen && (
                 <div
                   data-testid="wake-dropdown-menu"
-                  className="absolute top-full mt-1 left-0 right-0 min-w-[180px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle z-50"
+                  className="absolute top-full mt-1 left-0 right-0 min-w-[180px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle z-dropdown"
                 >
                   <button
                     onClick={handleWakeAndResume}

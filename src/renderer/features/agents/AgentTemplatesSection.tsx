@@ -275,7 +275,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
 
       {/* Delete confirmation dialog */}
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50">
           <div className="bg-ctp-base border border-surface-1 rounded-lg p-4 max-w-sm mx-4 shadow-xl">
             <h4 className="text-sm font-semibold text-ctp-text mb-2">Delete Agent Definition</h4>
             <p className="text-xs text-ctp-subtext0 mb-1">

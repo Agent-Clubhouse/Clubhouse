@@ -294,7 +294,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
           </button>
           {showLayoutMenu && (
             <div
-              className="absolute top-full right-0 mt-1 w-56 bg-ctp-mantle border border-surface-0 rounded-lg shadow-lg p-2 z-50"
+              className="absolute top-full right-0 mt-1 w-56 bg-ctp-mantle border border-surface-0 rounded-lg shadow-lg p-2 z-dropdown"
               data-testid="canvas-auto-layout-menu"
             >
               <div className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1.5 px-1">Auto Layout</div>

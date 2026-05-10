@@ -102,7 +102,7 @@ function ContextMenu({ actions, position, onClose }: {
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 min-w-[160px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle"
+      className="fixed z-dropdown min-w-[160px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle"
       style={style}
       data-testid="agent-context-menu"
     >

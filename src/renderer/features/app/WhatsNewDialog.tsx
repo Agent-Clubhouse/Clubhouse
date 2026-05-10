@@ -32,7 +32,7 @@ export function WhatsNewDialog() {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center"
+      className="fixed inset-0 z-modal bg-black/50 flex items-center justify-center"
       data-testid="whats-new-backdrop"
       onClick={handleDismiss}
     >

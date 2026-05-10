@@ -51,7 +51,7 @@ export function SessionNamePromptDialog({ agentId, projectPath, onDone }: Sessio
   }, [onDone]);
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div
         ref={dialogRef}
         data-testid="session-name-prompt-dialog"

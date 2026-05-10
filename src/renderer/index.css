@@ -29,6 +29,16 @@
   --color-ctp-peach: rgb(var(--ctp-warning));
   --color-ctp-mauve: rgb(var(--ctp-accent2));
   --color-ctp-yellow: rgb(var(--ctp-warning));
+
+  /* Named z-index scale — use z-modal, z-toast, etc. instead of ad-hoc z-50/z-[9999] */
+  --z-raised: 10;
+  --z-dropdown-backdrop: 40;
+  --z-dropdown: 50;
+  --z-modal: 200;
+  --z-toast: 300;
+  --z-canvas-overlay: 9999;
+  --z-canvas-dialog: 10000;
+  --z-top: 100000;
 }
 
 @import '@xterm/xterm/css/xterm.css';

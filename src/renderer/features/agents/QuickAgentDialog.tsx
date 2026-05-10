@@ -102,7 +102,7 @@ export function QuickAgentDialog() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeDialog}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDialog}>
       <div
         className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[420px] shadow-2xl"
         onClick={(e) => e.stopPropagation()}

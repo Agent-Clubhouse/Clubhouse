@@ -53,7 +53,7 @@ interface UnsavedDialogProps {
 
 function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: UnsavedDialogProps) {
   return React.createElement('div', {
-    className: 'absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm',
+    className: 'absolute inset-0 z-dropdown-backdrop flex items-center justify-center bg-black/60 backdrop-blur-sm',
   },
     React.createElement('div', {
       className: 'bg-ctp-mantle border border-surface-1 rounded-xl shadow-2xl w-[360px] flex flex-col',

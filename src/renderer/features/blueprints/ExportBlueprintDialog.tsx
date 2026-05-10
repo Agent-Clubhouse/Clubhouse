@@ -103,7 +103,7 @@ export function ExportBlueprintDialog({
     <div
       ref={backdropRef}
       className="fixed inset-0 bg-black/50 flex items-center justify-center"
-      style={{ zIndex: 100000 }}
+      style={{ zIndex: "var(--z-top)" }}
       onClick={handleBackdropClick}
       data-testid="export-blueprint-dialog"
     >

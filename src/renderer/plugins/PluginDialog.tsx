@@ -41,7 +41,7 @@ function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-canvas-dialog flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={() => resolve(null)}
       data-testid="plugin-dialog-overlay"
     >
@@ -122,7 +122,7 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-canvas-dialog flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={() => resolve(false)}
       data-testid="plugin-dialog-overlay"
     >
@@ -257,7 +257,7 @@ function ApprovalDialog({ options, onResolve }: ApprovalDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-canvas-dialog flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={() => resolve(null)}
       data-testid="plugin-dialog-overlay"
     >

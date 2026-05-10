@@ -20,7 +20,7 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
   const hasWorking = workingAgents.length > 0;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={onCancel}>
+    <div className="fixed inset-0 z-modal bg-black/50 flex items-center justify-center" onClick={onCancel}>
       <div
         className="bg-ctp-mantle border border-surface-0 rounded-xl shadow-2xl max-w-lg w-full mx-4 p-5"
         onClick={(e) => e.stopPropagation()}

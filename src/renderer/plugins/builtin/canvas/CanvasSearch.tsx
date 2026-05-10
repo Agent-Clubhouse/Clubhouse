@@ -213,7 +213,7 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
 
       {/* Results dropdown */}
       <div
-        className="absolute top-8 right-0 w-64 max-h-64 overflow-y-auto bg-ctp-mantle border border-surface-1 rounded-lg shadow-lg z-50"
+        className="absolute top-8 right-0 w-64 max-h-64 overflow-y-auto bg-ctp-mantle border border-surface-1 rounded-lg shadow-lg z-dropdown"
         data-testid="canvas-search-results"
       >
         {filteredViews.length === 0 ? (

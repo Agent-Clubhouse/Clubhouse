@@ -152,7 +152,7 @@ function AppearanceSection({ projectId }: { projectId: string }) {
             </button>
           )}
           {showEmojiPicker && (
-            <div className="absolute top-12 left-0 z-50">
+            <div className="absolute top-12 left-0 z-dropdown">
               <EmojiPicker
                 onSelect={handleEmojiSelect}
                 onClose={() => setShowEmojiPicker(false)}

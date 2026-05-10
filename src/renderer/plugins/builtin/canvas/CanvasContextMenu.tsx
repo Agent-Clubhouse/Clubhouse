@@ -76,7 +76,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
     <MenuPortal>
       <div
         ref={menuRef}
-        className="fixed z-[9999] min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
+        className="fixed z-canvas-overlay min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
         style={{ left: x, top: y }}
         data-testid="canvas-context-menu"
       >
