@@ -610,10 +610,14 @@ export function approveAction(actionId: string): void {
   if (item?.action && item.action.status === 'pending_approval') {
     item.action.status = 'running';
     notifyFeedListeners();
-    // Notify the orchestrator that the tool execution is approved
-    // The IPC method may not exist yet — guarded by optional chaining on the untyped cast
+    // Notify the orchestrator that the tool execution is approved.
+    // Use Promise.resolve() to safely handle both Promise and non-Promise returns —
+    // the ?.catch?.() pattern silently drops rejections when the return is not a
+    // Promise, leaving the agent hung waiting for approval that never completes.
     if (state.agentId && state.mode === 'structured') {
-      (window.clubhouse.agent as any).approveToolExecution?.(state.agentId, actionId)?.catch?.((err: unknown) => {
+      void Promise.resolve(
+        (window.clubhouse.agent as any).approveToolExecution?.(state.agentId, actionId)
+      ).catch((err: unknown) => {
         console.error('Failed to approve action:', err);
         if (item.action) {
           item.action.status = 'error';
@@ -630,10 +634,13 @@ export function skipAction(actionId: string): void {
   if (item?.action && item.action.status === 'pending_approval') {
     item.action.status = 'skipped';
     notifyFeedListeners();
-    // Notify the orchestrator to skip this tool execution
-    // The IPC method may not exist yet — guarded by optional chaining on the untyped cast
+    // Notify the orchestrator to skip this tool execution.
+    // Use Promise.resolve() to safely handle both Promise and non-Promise returns —
+    // the ?.catch?.() pattern silently drops rejections when the return is not a Promise.
     if (state.agentId && state.mode === 'structured') {
-      (window.clubhouse.agent as any).skipToolExecution?.(state.agentId, actionId)?.catch?.((err: unknown) => {
+      void Promise.resolve(
+        (window.clubhouse.agent as any).skipToolExecution?.(state.agentId, actionId)
+      ).catch((err: unknown) => {
         console.error('Failed to skip action:', err);
         if (item.action) {
           item.action.status = 'error';

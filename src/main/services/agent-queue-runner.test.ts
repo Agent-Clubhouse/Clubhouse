@@ -20,6 +20,7 @@ vi.mock('./agent-queue-task-store', () => ({
     listTasks: vi.fn(),
     getTask: vi.fn(),
     cancelTask: vi.fn(),
+    tryClaim: vi.fn().mockReturnValue(true),
   },
 }));
 
@@ -126,6 +127,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   capturedExitCb = undefined;
   _resetForTesting();
+  // Re-default tryClaim to true — some tests override it to false and vi.clearAllMocks
+  // only clears recordings, not implementations.
+  vi.mocked(agentQueueTaskStore.tryClaim).mockReturnValue(true);
 });
 
 // ---------------------------------------------------------------------------
@@ -181,9 +185,10 @@ describe('happy path: enqueue -> drain -> spawn -> exit(0) -> task completed', (
     await enqueueTask('q1', 'do something');
     await flushPromises();
 
-    // Verify task was marked running
+    // Verify tryClaim was called to atomically set status to running
+    expect(agentQueueTaskStore.tryClaim).toHaveBeenCalledWith('q1', 'task1');
+    // updateTask sets agent details (status was already set by tryClaim)
     expect(agentQueueTaskStore.updateTask).toHaveBeenCalledWith('q1', 'task1', expect.objectContaining({
-      status: 'running',
       agentId: 'quick_test_abc',
       agentName: 'brave-owl',
     }));
@@ -364,6 +369,27 @@ describe('concurrency limit enforcement', () => {
   });
 });
 
+describe('atomic claim prevents concurrent double-start (LB-AG-001)', () => {
+  it('does not spawn when tryClaim returns false', async () => {
+    const queue = makeQueue({ concurrency: 2 });
+    const task = makeTask();
+
+    vi.mocked(agentQueueTaskStore.createTask).mockResolvedValue(task);
+    vi.mocked(agentQueueRegistry.get).mockResolvedValue(queue);
+    vi.mocked(agentQueueTaskStore.listTasks).mockResolvedValue([task]);
+    vi.mocked(agentQueueTaskStore.updateTask).mockResolvedValue(task);
+    vi.mocked(spawnAgent).mockResolvedValue(undefined);
+    // tryClaim returns false — task already claimed by a concurrent drain
+    vi.mocked(agentQueueTaskStore.tryClaim).mockReturnValue(false);
+
+    await enqueueTask('q1', 'do something');
+    await flushPromises();
+
+    // spawnAgent should NOT be called since tryClaim rejected the claim
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+});
+
 describe('re-entrancy prevention', () => {
   it('skips drain when already draining the same queue', async () => {
     const queue = makeQueue();
@@ -480,10 +506,8 @@ describe('spawn failure', () => {
     await enqueueTask('q1', 'do something');
     await flushPromises();
 
-    // Task should be marked running first, then failed after spawn error
-    expect(agentQueueTaskStore.updateTask).toHaveBeenCalledWith('q1', 'task1', expect.objectContaining({
-      status: 'running',
-    }));
+    // tryClaim atomically set status to running; then updateTask commits agent details
+    expect(agentQueueTaskStore.tryClaim).toHaveBeenCalledWith('q1', 'task1');
     expect(agentQueueTaskStore.updateTask).toHaveBeenCalledWith('q1', 'task1', expect.objectContaining({
       status: 'failed',
       errorMessage: 'spawn failed',

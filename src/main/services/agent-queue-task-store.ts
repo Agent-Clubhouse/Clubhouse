@@ -232,6 +232,27 @@ class AgentQueueTaskStore {
     this.tasks.set(queueId, queueTasks);
   }
 
+  /**
+   * Atomically claim a pending task by transitioning its status from 'pending'
+   * to 'running' in the in-memory cache (synchronous in Node.js single-threaded model).
+   * Returns true if the claim succeeded; false if the task is not pending or not found.
+   *
+   * Callers must call this before any await to guarantee no other concurrent
+   * drainQueue can claim the same task.
+   */
+  tryClaim(queueId: string, taskId: string): boolean {
+    const task = this.tasks.get(queueId)?.get(taskId);
+    if (!task || task.status !== 'pending') return false;
+    task.status = 'running';
+    this.persistTask(task).catch((err) => {
+      appLog('core:agent-queue', 'warn', 'Failed to persist task claim', {
+        meta: { queueId, taskId, error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+    this.notifyListeners(queueId, taskId);
+    return true;
+  }
+
   /** For testing: reset all state. */
   _resetForTesting(): void {
     this.tasks.clear();

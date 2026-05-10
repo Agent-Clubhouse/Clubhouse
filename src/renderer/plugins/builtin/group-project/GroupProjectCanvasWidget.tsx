@@ -242,7 +242,9 @@ function ProjectCard({
     const remoteAgents = useRemoteProjectStore.getState().remoteAgents;
     const allAgents = { ...localAgents, ...remoteAgents };
     for (const member of members) {
-      const orchestrator = allAgents[member.agentId]?.orchestrator;
+      const agent = allAgents[member.agentId];
+      if (!agent) continue;
+      const orchestrator = agent.orchestrator;
       const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
       void injectMessage(member.agentId, msg);
     }
@@ -488,9 +490,15 @@ function ExpandedProjectView({
     return () => { cancelled = true; clearInterval(interval); };
   }, [groupProjectId, selectedTopic, fetchDigest, fetchAllMessages, fetchTopicMessages]);
 
-  // Sort messages newest-first so the feed shows latest on top
+  // Sort messages newest-first by the numeric timestamp embedded in the message ID
+  // (msg_<epoch_ms>_<random>) to match the backend's numeric sort order and avoid
+  // localeCompare producing wrong results for same-millisecond messages.
   const sortedMessages = useMemo(
-    () => [...messages].sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+    () => [...messages].sort((a, b) => {
+      const tsA = parseInt(a.id.split('_')[1] || '0', 10);
+      const tsB = parseInt(b.id.split('_')[1] || '0', 10);
+      return tsB - tsA;
+    }),
     [messages],
   );
 
@@ -514,7 +522,9 @@ function ExpandedProjectView({
     const remoteAgents = useRemoteProjectStore.getState().remoteAgents;
     const allAgents = { ...localAgents, ...remoteAgents };
     for (const member of members) {
-      const orchestrator = allAgents[member.agentId]?.orchestrator;
+      const agent = allAgents[member.agentId];
+      if (!agent) continue;
+      const orchestrator = agent.orchestrator;
       const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
       void injectMessage(member.agentId, msg);
     }

@@ -169,10 +169,12 @@ describe('GroupProjectCanvasWidget — include instructions checkbox', () => {
 
 describe('GroupProjectCanvasWidget — message ordering', () => {
   it('sorts messages newest-first in expanded view using sortedMessages', () => {
-    // The expanded view should sort messages by timestamp descending
+    // The expanded view should sort messages by numeric message ID descending
+    // (LB-AG-002: localeCompare on timestamps gives wrong order for same-second messages)
     expect(source).toContain('sortedMessages');
     expect(source).toMatch(/\[\.\.\.messages\]\.sort\(/);
-    expect(source).toMatch(/b\.timestamp\.localeCompare\(a\.timestamp\)/);
+    // Sort uses numeric ID extraction (id format: prefix_<timestamp>)
+    expect(source).toMatch(/parseInt.*split.*\[1\]/);
   });
 
   it('renders sortedMessages instead of raw messages in the list', () => {
@@ -246,7 +248,9 @@ describe('GroupProjectCanvasWidget — orchestrator-aware polling', () => {
     expect(source).toContain('useAgentStore.getState().agents');
     expect(source).toContain('useRemoteProjectStore.getState().remoteAgents');
     expect(source).toContain('const allAgents = { ...localAgents, ...remoteAgents }');
-    expect(source).toContain('allAgents[member.agentId]?.orchestrator');
+    // LB-AG-004: guard against undefined agent before accessing orchestrator
+    expect(source).toContain('allAgents[member.agentId]');
+    expect(source).toContain('agent.orchestrator');
   });
 
   it('passes orchestrator to pollingStartMsg and pollingStopMsg', () => {
