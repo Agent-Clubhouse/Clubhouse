@@ -92,6 +92,15 @@ async function waitForEmptyCanvas(win: Page) {
 
 test.beforeAll(async () => {
   ({ electronApp, window } = await launchApp());
+
+  // Add the project once — reused across all tests
+  await stubDialogForPath(FIXTURE_PROJECT);
+  await expect(window.locator('[data-testid="nav-add-project"]')).toBeVisible({ timeout: 5_000 });
+  await window.locator('[data-testid="nav-add-project"]').click();
+  await expect(
+    window.locator(`text=${path.basename(FIXTURE_PROJECT)}`).first(),
+  ).toBeVisible({ timeout: 10_000 });
+  await navigateToCanvas(window);
 });
 
 test.afterAll(async () => {
@@ -100,15 +109,19 @@ test.afterAll(async () => {
 
 test.describe('Canvas golden path', () => {
   test.beforeEach(async () => {
-    await stubDialogForPath(FIXTURE_PROJECT);
-    await window.locator('[data-testid="nav-add-project"]').click();
-    await expect(
-      window.locator(`text=${path.basename(FIXTURE_PROJECT)}`).first(),
-    ).toBeVisible({ timeout: 10_000 });
+    // Create a fresh canvas tab so each test starts with a completely empty
+    // workspace — avoids context-menu suppression caused by previous test's
+    // leftover zones/views covering the right-click target position.
     await navigateToCanvas(window);
-    // Guard: wait for any leftover zones/views from the previous test to disappear
-    // before we start right-clicking. Avoids context-menu suppression when a click
-    // lands on a child element rather than the bare workspace background.
+    const addBtn = window.locator('[data-testid="canvas-add-button"]');
+    await expect(addBtn).toBeVisible({ timeout: 5_000 });
+    await addBtn.click();
+    const addNew = window.locator('[data-testid="canvas-add-new"]');
+    const menuVisible = await addNew.isVisible({ timeout: 2_000 }).catch(() => false);
+    if (menuVisible) {
+      await expect(addNew).toBeVisible({ timeout: 3_000 });
+      await addNew.click();
+    }
     await waitForEmptyCanvas(window);
   });
 
@@ -227,6 +240,7 @@ test.describe('Canvas golden path', () => {
     if (!hadDialog) {
       // Zone has no contained views → direct delete (no dialog)
       const deleteBtn = zoneCard.locator('button[title="Delete zone"]');
+      await expect(deleteBtn).toBeVisible({ timeout: 5_000 });
       await deleteBtn.click();
       await expect(zoneCard).not.toBeVisible({ timeout: 5_000 });
     }
