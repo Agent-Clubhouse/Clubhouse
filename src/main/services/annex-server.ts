@@ -1719,6 +1719,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           body.orchestrator as string | undefined,
           body.freeAgentMode as boolean | undefined,
           body.mcpIds as string[] | undefined,
+          undefined,
         );
         // Broadcast snapshot refresh so controllers see the new agent
         broadcastSnapshotRefresh();
