@@ -634,4 +634,53 @@ describe('window-handlers', () => {
     );
     expect(perRequestOnceCall).toBeUndefined();
   });
+
+  describe('LB-IPC-005: circular relay guard prevents stall', () => {
+    it('returns cached state immediately when relayInProgress is set (no pending relay)', async () => {
+      // Seed the agent state cache via broadcast
+      const cachedState = {
+        agents: { 'a1': { status: 'idle' } },
+        agentDetailedStatus: {},
+        agentIcons: {},
+      };
+      const broadcastHandler = findOnHandler(IPC.WINDOW.AGENT_STATE_CHANGED);
+      expect(broadcastHandler).toBeDefined();
+      broadcastHandler!({}, cachedState);
+
+      // Create a main window so the GET_AGENT_STATE can serve from cache
+      const mainWin = new (BrowserWindow as any)({});
+      void mainWin;
+
+      const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+
+      // Cache is populated — handler serves from cache immediately (no relay needed)
+      const result = await handler({});
+      expect(result).toEqual(cachedState);
+
+      // No relay was needed since cache was warm
+      const relayCalls = mainWin.webContents.send.mock.calls.filter(
+        (call: any[]) => call[0] === IPC.WINDOW.REQUEST_AGENT_STATE,
+      );
+      expect(relayCalls.length).toBe(0);
+    });
+
+    it('_resetForTesting clears relayInProgress so a fresh relay can start', () => {
+      _resetForTesting();
+      // Reinitialize handlers after reset (reset clears module state)
+      handlers = new Map();
+      (ipcMain.handle as any).mockImplementation((channel: string, h: any) => handlers.set(channel, h));
+      registerWindowHandlers();
+
+      const mainWin = new (BrowserWindow as any)({});
+      void mainWin;
+
+      const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+      void handler({});
+
+      const relayCalls = mainWin.webContents.send.mock.calls.filter(
+        (call: any[]) => call[0] === IPC.WINDOW.REQUEST_AGENT_STATE,
+      );
+      expect(relayCalls.length).toBe(1);
+    });
+  });
 });

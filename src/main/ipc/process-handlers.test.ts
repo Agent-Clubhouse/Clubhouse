@@ -343,4 +343,83 @@ describe('process-handlers', () => {
     expect(result.exitCode).toBe(127);
     expect(result.stderr).toBe('command not found');
   });
+
+  describe('LB-IPC-006: renderer disconnect kills orphaned process', () => {
+    it('kills the process and resolves when the renderer is destroyed before exec finishes', async () => {
+      vi.mocked(getAllowedCommands).mockReturnValue(['sleep']);
+
+      let capturedDestroyedCb: (() => void) | undefined;
+      const mockKill = vi.fn();
+
+      vi.mocked(execFile).mockImplementation(
+        (_cmd: any, _args: any, _opts: any, _callback: any) => {
+          // Return a child process mock that never calls callback (simulates long-running process)
+          return { kill: mockKill } as any;
+        },
+      );
+
+      const sender = {
+        once: vi.fn().mockImplementation((_event: string, cb: () => void) => {
+          capturedDestroyedCb = cb;
+        }),
+        off: vi.fn(),
+      };
+
+      const handler = handlers.get(IPC.PROCESS.EXEC)!;
+      const resultPromise = handler({ sender }, {
+        pluginId: 'p1',
+        command: 'sleep',
+        args: ['60'],
+        projectPath: '/project',
+      });
+
+      // Let async handler run past the `await refreshManifest` point so
+      // event.sender.once is registered before we assert on it.
+      await Promise.resolve();
+
+      // Verify the destroy listener was registered
+      expect(sender.once).toHaveBeenCalledWith('destroyed', expect.any(Function));
+      expect(capturedDestroyedCb).toBeDefined();
+
+      // Simulate renderer destruction mid-execution
+      capturedDestroyedCb!();
+
+      const result = await resultPromise;
+
+      // Process should be killed
+      expect(mockKill).toHaveBeenCalled();
+      // Promise resolves (doesn't hang) with disconnect error
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Renderer disconnected');
+    });
+
+    it('removes the destroy listener after successful exec', async () => {
+      vi.mocked(getAllowedCommands).mockReturnValue(['echo']);
+
+      // Use deferred callback to ensure the destroy listener is registered before
+      // the callback completes (mirrors real async execFile behavior).
+      let capturedCallback: ((err: null, stdout: string, stderr: string) => void) | undefined;
+      vi.mocked(execFile).mockImplementation(
+        (_cmd: any, _args: any, _opts: any, callback: any) => {
+          capturedCallback = callback;
+          return {} as any;
+        },
+      );
+
+      const sender = { once: vi.fn(), off: vi.fn() };
+      const handler = handlers.get(IPC.PROCESS.EXEC)!;
+      const resultPromise = handler({ sender }, { pluginId: 'p1', command: 'echo', args: [], projectPath: '/project' });
+
+      // Let the async handler register the destroy listener
+      await Promise.resolve();
+      expect(sender.once).toHaveBeenCalledWith('destroyed', expect.any(Function));
+
+      // Now complete the process
+      capturedCallback!(null, 'hello', '');
+      await resultPromise;
+
+      // Destroy listener should be removed since process finished normally
+      expect(sender.off).toHaveBeenCalledWith('destroyed', expect.any(Function));
+    });
+  });
 });
