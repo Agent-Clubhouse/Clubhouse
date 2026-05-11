@@ -76,23 +76,23 @@
   --ctp-badge-indigo: 99 102 241;
   --ctp-badge-sky: 14 165 233;
 
-  /* highlight.js token colors */
-  --hljs-keyword: #cba6f7;
-  --hljs-string: #a6e3a1;
+  /* highlight.js token colors — use CSS vars where a theme token maps cleanly */
+  --hljs-keyword: rgb(var(--ctp-accent2));
+  --hljs-string: rgb(var(--ctp-success));
   --hljs-number: #fab387;
-  --hljs-comment: #6c7086;
-  --hljs-function: #89b4fa;
-  --hljs-type: #f9e2af;
-  --hljs-variable: #f38ba8;
+  --hljs-comment: rgb(var(--ctp-overlay0));
+  --hljs-function: rgb(var(--ctp-accent));
+  --hljs-type: rgb(var(--ctp-warning));
+  --hljs-variable: rgb(var(--ctp-error));
   --hljs-regexp: #f5c2e7;
-  --hljs-tag: #89b4fa;
-  --hljs-attribute: #f9e2af;
-  --hljs-symbol: #f38ba8;
+  --hljs-tag: rgb(var(--ctp-accent));
+  --hljs-attribute: rgb(var(--ctp-warning));
+  --hljs-symbol: rgb(var(--ctp-error));
   --hljs-meta: #fab387;
-  --hljs-addition: #a6e3a1;
-  --hljs-deletion: #f38ba8;
+  --hljs-addition: rgb(var(--ctp-success));
+  --hljs-deletion: rgb(var(--ctp-error));
   --hljs-property: #94e2d5;
-  --hljs-punctuation: #9399b2;
+  --hljs-punctuation: rgb(var(--ctp-overlay1));
 }
 
 @layer base {

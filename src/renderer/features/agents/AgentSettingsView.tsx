@@ -702,7 +702,7 @@ export function AgentSettingsView({ agent }: Props) {
                   {((agent.icon && iconDataUrl) || agent.emoji) && !isRunning && (
                     <button
                       onClick={agent.emoji ? handleRemoveEmoji : handleRemoveIcon}
-                      className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:text-ctp-error hover:border-red-400/50 cursor-pointer transition-colors"
+                      className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:text-ctp-error hover:border-ctp-error/50 cursor-pointer transition-colors"
                     >
                       Remove
                     </button>

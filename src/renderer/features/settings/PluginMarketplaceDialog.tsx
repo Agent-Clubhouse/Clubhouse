@@ -472,7 +472,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
           )}
 
           {customErrorEntries.length > 0 && (
-            <div className="mb-3 p-2 rounded bg-ctp-error/10 border border-red-500/30 text-xs text-ctp-error">
+            <div className="mb-3 p-2 rounded bg-ctp-error/10 border border-ctp-error/30 text-xs text-ctp-error">
               {customErrorEntries.map(([id, err]) => {
                 const mkt = customMarketplaces.find((m) => m.id === id);
                 return (

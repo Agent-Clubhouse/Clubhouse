@@ -85,7 +85,7 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
             disabled={!canConfirm}
             className={`px-4 py-2 text-sm rounded-lg border cursor-pointer transition-colors ${
               canConfirm
-                ? 'bg-ctp-error/20 border-red-500/40 text-ctp-error hover:bg-ctp-error/30'
+                ? 'bg-ctp-error/20 border-ctp-error/40 text-ctp-error hover:bg-ctp-error/30'
                 : 'bg-surface-0 border-surface-2 text-ctp-subtext0 opacity-50 cursor-not-allowed'
             }`}
           >

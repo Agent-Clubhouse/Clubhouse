@@ -146,7 +146,7 @@ function AppearanceSection({ projectId }: { projectId: string }) {
             <button
               onClick={handleRemoveIcon}
               className="px-3 py-1.5 text-xs rounded-lg bg-surface-0 border border-surface-2
-                text-ctp-subtext0 hover:text-ctp-error hover:border-red-400/50 cursor-pointer transition-colors"
+                text-ctp-subtext0 hover:text-ctp-error hover:border-ctp-error/50 cursor-pointer transition-colors"
             >
               Remove
             </button>
@@ -402,19 +402,19 @@ function DangerZone({ projectId, projectPath, projectName }: { projectId: string
 
   return (
     <>
-      <div className="rounded-lg border border-red-500/30 p-4 space-y-3">
+      <div className="rounded-lg border border-ctp-error/30 p-4 space-y-3">
         <h3 className="text-xs text-ctp-error uppercase tracking-wider">Danger Zone</h3>
         <div className="flex items-center gap-3">
           <button
             onClick={handleClose}
-            className="px-4 py-2 text-sm rounded-lg bg-ctp-error/10 border border-red-500/30
+            className="px-4 py-2 text-sm rounded-lg bg-ctp-error/10 border border-ctp-error/30
               text-ctp-error hover:bg-ctp-error/20 cursor-pointer transition-colors"
           >
             Close Project
           </button>
           <button
             onClick={() => setShowResetDialog(true)}
-            className="px-4 py-2 text-sm rounded-lg bg-ctp-error/10 border border-red-500/30
+            className="px-4 py-2 text-sm rounded-lg bg-ctp-error/10 border border-ctp-error/30
               text-ctp-error hover:bg-ctp-error/20 cursor-pointer transition-colors"
           >
             Reset Project
