@@ -89,7 +89,7 @@ async function waitForEmptyCanvas(win: Page) {
         if (!ws) return true;
         return (
           ws.querySelectorAll('[data-testid^="zone-card-"]').length === 0 &&
-          ws.querySelectorAll('[data-testid^="canvas-view-"]').length === 0
+          ws.querySelectorAll('[data-testid^="canvas-view-cv_"]').length === 0
         );
       },
       { timeout: 5_000 },
@@ -198,7 +198,9 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    const firstView = workspace.locator('[data-testid^="canvas-view-"]').first();
+    // canvas-view-cv_ targets only view containers; the generic canvas-view- prefix
+    // also matches internal child elements (titlebar, close, resize handles — ~13 per view).
+    const firstView = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
     await expect(firstView).toBeVisible({ timeout: 8_000 });
 
     // 3. Create second agent view — dynamically position to avoid overlapping the first view card
@@ -212,7 +214,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    const allViews = workspace.locator('[data-testid^="canvas-view-"]');
+    const allViews = workspace.locator('[data-testid^="canvas-view-cv_"]');
     await expect(allViews).toHaveCount(2, { timeout: 8_000 });
 
     // 9. Close the first agent view
@@ -240,7 +242,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    await expect(workspace.locator('[data-testid^="canvas-view-"]').first()).toBeVisible({ timeout: 8_000 });
+    await expect(workspace.locator('[data-testid^="canvas-view-cv_"]').first()).toBeVisible({ timeout: 8_000 });
 
     // Use evaluate() to move the agent view into the zone so containedViewIds is populated
     // This tests the delete-with-dialog path
@@ -268,7 +270,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    const wireFirstView = workspace.locator('[data-testid^="canvas-view-"]').first();
+    const wireFirstView = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
     await expect(wireFirstView).toBeVisible({ timeout: 8_000 });
 
     const wireWorkspaceBox = (await workspace.boundingBox())!;
@@ -281,7 +283,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    await expect(workspace.locator('[data-testid^="canvas-view-"]')).toHaveCount(2, { timeout: 8_000 });
+    await expect(workspace.locator('[data-testid^="canvas-view-cv_"]')).toHaveCount(2, { timeout: 8_000 });
 
     // Attempt to inject a wire via evaluate() using the mcpBinding bridge.
     // The WireOverlay merges live mcpBindingStore bindings with wireDefinitions,
