@@ -80,11 +80,18 @@ async function navigateToCanvas(win: Page) {
  * (e.g. zone deletion) hasn't fully committed before the next test starts.
  */
 async function waitForEmptyCanvas(win: Page) {
+  // Scope to the active canvas-workspace so views/zones from inactive tabs
+  // (created by earlier beforeEach iterations) are not counted.
   await win
     .waitForFunction(
-      () =>
-        document.querySelectorAll('[data-testid^="zone-card-"]').length === 0 &&
-        document.querySelectorAll('[data-testid^="canvas-view-"]').length === 0,
+      () => {
+        const ws = document.querySelector('[data-testid="canvas-workspace"]');
+        if (!ws) return true;
+        return (
+          ws.querySelectorAll('[data-testid^="zone-card-"]').length === 0 &&
+          ws.querySelectorAll('[data-testid^="canvas-view-"]').length === 0
+        );
+      },
       { timeout: 5_000 },
     )
     .catch(() => {});
@@ -135,7 +142,7 @@ test.describe('Canvas golden path', () => {
     await expect(contextMenu).toBeVisible({ timeout: 5_000 });
     await window.locator('[data-testid="canvas-context-menu-zone"]').click();
 
-    const zoneCard = window.locator('[data-testid^="zone-card-"]').first();
+    const zoneCard = workspace.locator('[data-testid^="zone-card-"]').first();
     await expect(zoneCard).toBeVisible({ timeout: 8_000 });
 
     const zoneId = (await zoneCard.getAttribute('data-testid'))?.replace('zone-card-', '') ?? '';
@@ -191,7 +198,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    const firstView = window.locator('[data-testid^="canvas-view-"]').first();
+    const firstView = workspace.locator('[data-testid^="canvas-view-"]').first();
     await expect(firstView).toBeVisible({ timeout: 8_000 });
 
     // 3. Create second agent view — dynamically position to avoid overlapping the first view card
@@ -205,7 +212,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    const allViews = window.locator('[data-testid^="canvas-view-"]');
+    const allViews = workspace.locator('[data-testid^="canvas-view-"]');
     await expect(allViews).toHaveCount(2, { timeout: 8_000 });
 
     // 9. Close the first agent view
@@ -225,7 +232,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-zone"]').click();
 
-    const zoneCard = window.locator('[data-testid^="zone-card-"]').first();
+    const zoneCard = workspace.locator('[data-testid^="zone-card-"]').first();
     await expect(zoneCard).toBeVisible({ timeout: 8_000 });
 
     // Create agent view (outside zone, then drag into zone - or just create it anywhere)
@@ -233,7 +240,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    await expect(window.locator('[data-testid^="canvas-view-"]').first()).toBeVisible({ timeout: 8_000 });
+    await expect(workspace.locator('[data-testid^="canvas-view-"]').first()).toBeVisible({ timeout: 8_000 });
 
     // Use evaluate() to move the agent view into the zone so containedViewIds is populated
     // This tests the delete-with-dialog path
@@ -261,7 +268,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    const wireFirstView = window.locator('[data-testid^="canvas-view-"]').first();
+    const wireFirstView = workspace.locator('[data-testid^="canvas-view-"]').first();
     await expect(wireFirstView).toBeVisible({ timeout: 8_000 });
 
     const wireWorkspaceBox = (await workspace.boundingBox())!;
@@ -274,7 +281,7 @@ test.describe('Canvas golden path', () => {
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    await expect(window.locator('[data-testid^="canvas-view-"]')).toHaveCount(2, { timeout: 8_000 });
+    await expect(workspace.locator('[data-testid^="canvas-view-"]')).toHaveCount(2, { timeout: 8_000 });
 
     // Attempt to inject a wire via evaluate() using the mcpBinding bridge.
     // The WireOverlay merges live mcpBindingStore bindings with wireDefinitions,
@@ -307,7 +314,7 @@ test.describe('Canvas golden path', () => {
     });
 
     // If the wire rendered (agentId matched a view), test the disconnect flow
-    const wireHitbox = window.locator('[data-testid^="wire-hitbox-"]').first();
+    const wireHitbox = workspace.locator('[data-testid^="wire-hitbox-"]').first();
     const wireVisible = await wireHitbox.isVisible({ timeout: 2_000 }).catch(() => false);
 
     if (wireVisible && bindResult === 'bound') {
