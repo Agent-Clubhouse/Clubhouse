@@ -133,11 +133,15 @@ test('lock overlay Pause button toggles to paused state', async () => {
     const lockOverlay = satellite.window.locator('text=/Controlled by/');
     await expect(lockOverlay).toBeVisible({ timeout: 10_000 });
 
-    // Click the Pause button
+    // Click the Pause button.
+    // Use dispatchEvent instead of click() — on Linux/Xvfb, backdrop-filter on the
+    // overlay div causes the underlying no-active-agent div to intercept synthetic
+    // pointer events at the button's coordinates. dispatchEvent fires directly on
+    // the DOM element, bypassing coordinate-based hit testing.
     const pauseBtn = satellite.window.locator('button:has-text("Pause")');
     await expect(pauseBtn).toBeVisible({ timeout: 5_000 });
     await expect(pauseBtn).toBeEnabled();
-    await pauseBtn.click();
+    await pauseBtn.dispatchEvent('click');
 
     // In paused state, the full overlay dims and shows "(paused)" text
     const pausedIndicator = satellite.window.locator('text=/paused/');
