@@ -137,7 +137,9 @@ test.describe('Canvas golden path', () => {
     await expect(workspace).toBeVisible({ timeout: 5_000 });
 
     // 1. Create zone via right-click context menu
-    await workspace.click({ button: 'right', position: { x: 120, y: 120 } });
+    // force:true bypasses Playwright's stability check (visible+enabled+stable) which times
+    // out on macOS CI when the canvas workspace element is still in a transitional render state.
+    await workspace.click({ button: 'right', position: { x: 120, y: 120 }, force: true });
     const contextMenu = window.locator('[data-testid="canvas-context-menu"]');
     await expect(contextMenu).toBeVisible({ timeout: 5_000 });
     await window.locator('[data-testid="canvas-context-menu-zone"]').click();
@@ -206,7 +208,7 @@ test.describe('Canvas golden path', () => {
     await expect(workspace).toBeVisible({ timeout: 5_000 });
 
     // 2. Create first agent view — left side of workspace
-    await workspace.click({ button: 'right', position: { x: 150, y: 150 } });
+    await workspace.click({ button: 'right', position: { x: 150, y: 150 }, force: true });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
@@ -222,7 +224,7 @@ test.describe('Canvas golden path', () => {
       workspaceBox.width - 60,
       (firstViewBox.x - workspaceBox.x) + firstViewBox.width + 80,
     );
-    await workspace.click({ button: 'right', position: { x: secondX, y: 150 } });
+    await workspace.click({ button: 'right', position: { x: secondX, y: 150 }, force: true });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
@@ -244,7 +246,8 @@ test.describe('Canvas golden path', () => {
     // Create zone at a known position — use x:120,y:120 to stay clear of the rail
     // which can overlap the workspace at small x offsets on Windows CI (causing the
     // rail's Review button to intercept the synthetic click at that viewport coordinate).
-    await workspace.click({ button: 'right', position: { x: 120, y: 120 } });
+    // force:true bypasses the macOS CI stability check (element visible but not yet "stable").
+    await workspace.click({ button: 'right', position: { x: 120, y: 120 }, force: true });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-zone"]').click();
 
@@ -252,7 +255,7 @@ test.describe('Canvas golden path', () => {
     await expect(zoneCard).toBeVisible({ timeout: 8_000 });
 
     // Create agent view (outside zone, then drag into zone - or just create it anywhere)
-    await workspace.click({ button: 'right', position: { x: 300, y: 300 } });
+    await workspace.click({ button: 'right', position: { x: 300, y: 300 }, force: true });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
@@ -282,7 +285,7 @@ test.describe('Canvas golden path', () => {
     await expect(workspace).toBeVisible({ timeout: 5_000 });
 
     // Create two agent views — dynamically position second to avoid overlapping first card
-    await workspace.click({ button: 'right', position: { x: 150, y: 200 } });
+    await workspace.click({ button: 'right', position: { x: 150, y: 200 }, force: true });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
@@ -295,7 +298,7 @@ test.describe('Canvas golden path', () => {
       wireWorkspaceBox.width - 60,
       (wireFirstViewBox.x - wireWorkspaceBox.x) + wireFirstViewBox.width + 80,
     );
-    await workspace.click({ button: 'right', position: { x: wireSecondX, y: 200 } });
+    await workspace.click({ button: 'right', position: { x: wireSecondX, y: 200 }, force: true });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
