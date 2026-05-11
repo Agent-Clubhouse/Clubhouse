@@ -186,16 +186,22 @@ test.describe('Canvas golden path', () => {
     const workspace = window.locator('[data-testid="canvas-workspace"]');
     await expect(workspace).toBeVisible({ timeout: 5_000 });
 
-    // 2. Create first agent view
-    await workspace.click({ button: 'right', position: { x: 300, y: 200 } });
+    // 2. Create first agent view — left side of workspace
+    await workspace.click({ button: 'right', position: { x: 150, y: 150 } });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
     const firstView = window.locator('[data-testid^="canvas-view-"]').first();
     await expect(firstView).toBeVisible({ timeout: 8_000 });
 
-    // 3. Create second agent view
-    await workspace.click({ button: 'right', position: { x: 600, y: 200 } });
+    // 3. Create second agent view — dynamically position to avoid overlapping the first view card
+    const workspaceBox = (await workspace.boundingBox())!;
+    const firstViewBox = (await firstView.boundingBox())!;
+    const secondX = Math.min(
+      workspaceBox.width - 60,
+      (firstViewBox.x - workspaceBox.x) + firstViewBox.width + 80,
+    );
+    await workspace.click({ button: 'right', position: { x: secondX, y: 150 } });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
@@ -250,12 +256,21 @@ test.describe('Canvas golden path', () => {
     const workspace = window.locator('[data-testid="canvas-workspace"]');
     await expect(workspace).toBeVisible({ timeout: 5_000 });
 
-    // Create two agent views
-    await workspace.click({ button: 'right', position: { x: 200, y: 250 } });
+    // Create two agent views — dynamically position second to avoid overlapping first card
+    await workspace.click({ button: 'right', position: { x: 150, y: 200 } });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
-    await workspace.click({ button: 'right', position: { x: 550, y: 250 } });
+    const wireFirstView = window.locator('[data-testid^="canvas-view-"]').first();
+    await expect(wireFirstView).toBeVisible({ timeout: 8_000 });
+
+    const wireWorkspaceBox = (await workspace.boundingBox())!;
+    const wireFirstViewBox = (await wireFirstView.boundingBox())!;
+    const wireSecondX = Math.min(
+      wireWorkspaceBox.width - 60,
+      (wireFirstViewBox.x - wireWorkspaceBox.x) + wireFirstViewBox.width + 80,
+    );
+    await workspace.click({ button: 'right', position: { x: wireSecondX, y: 200 } });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-agent"]').click();
 
