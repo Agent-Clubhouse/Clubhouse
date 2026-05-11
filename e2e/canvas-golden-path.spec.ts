@@ -191,12 +191,13 @@ test.describe('Canvas golden path', () => {
     }
 
     // 8. Delete zone — since it has no contained views the dialog is skipped.
-    // force:true bypasses Playwright's in-viewport actionability check — the canvas
-    // may render the zone card at a CSS-transform position that extends slightly
-    // beyond the browser viewport on Windows CI; the button IS visible and enabled.
+    // dispatchEvent bypasses Playwright's viewport coordinate check entirely —
+    // force:true skips actionability checks but the browser still rejects synthetic
+    // mouse clicks at coordinates outside window bounds. dispatchEvent fires directly
+    // on the DOM element and works regardless of CSS-transform positioning on Windows CI.
     const deleteBtn = zoneCard.locator('button[title="Delete zone"]');
     await expect(deleteBtn).toBeVisible({ timeout: 3_000 });
-    await deleteBtn.click({ force: true });
+    await deleteBtn.dispatchEvent('click');
     await expect(zoneCard).not.toBeVisible({ timeout: 5_000 });
   });
 
