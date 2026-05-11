@@ -108,11 +108,11 @@ vi.mock('./log-service', () => ({
 
 // Mock orchestrators/shared so we can control wrapper validation outcomes
 const mockApplyLaunchWrapper = vi.fn(
-  (_cfg: unknown, _id: string, binary: string, args: string[]) => ({ binary: '/wrapped/bin', args: ['--wrap', ...args] }),
+  (_cfg: unknown, _id: string, binary: string, args: string[], _mcpIds?: string[], _mcpConfigs?: unknown) => ({ binary: '/wrapped/bin', args: ['--wrap', ...args] }),
 );
 const mockValidateWrapperConfig = vi.fn(() => ({ ok: true as const }));
 vi.mock('../orchestrators/shared', () => ({
-  applyLaunchWrapper: (...args: unknown[]) => mockApplyLaunchWrapper(...(args as [unknown, string, string, string[], string[]])),
+  applyLaunchWrapper: (...args: unknown[]) => mockApplyLaunchWrapper(...args),
   validateWrapperConfig: (...args: unknown[]) => mockValidateWrapperConfig(...(args as [unknown, string, { isPluginEnabled: (id: string) => boolean }])),
 }));
 

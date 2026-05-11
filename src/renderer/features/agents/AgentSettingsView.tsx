@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Agent, QuickAgentDefaults, MaterializationPreview, McpCatalogEntry, McpCatalogEntryWithState } from '../../../shared/types';
+import { Agent, QuickAgentDefaults, MaterializationPreview, McpCatalogArg, McpCatalogEntry, McpCatalogEntryWithState } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useAgentStore } from '../../stores/agentStore';
@@ -583,24 +583,26 @@ export function AgentSettingsView({ agent }: Props) {
 
   const handleMcpConfigChange = async (mcpId: string, flag: string, value: string) => {
     if (!projectPath) return;
-    setAgentMcpConfigs((prev) => {
-      const entry = { ...prev[mcpId] };
-      if (value) {
-        entry[flag] = value;
-      } else {
-        delete entry[flag];
-      }
-      const next = { ...prev };
-      if (Object.keys(entry).length > 0) {
-        next[mcpId] = entry;
-      } else {
-        delete next[mcpId];
-      }
-      window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, {
+    const entry = { ...agentMcpConfigs[mcpId] };
+    if (value) {
+      entry[flag] = value;
+    } else {
+      delete entry[flag];
+    }
+    const next = { ...agentMcpConfigs };
+    if (Object.keys(entry).length > 0) {
+      next[mcpId] = entry;
+    } else {
+      delete next[mcpId];
+    }
+    setAgentMcpConfigs(next);
+    try {
+      await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, {
         mcpConfigs: Object.keys(next).length > 0 ? next : null,
       });
-      return next;
-    });
+    } catch {
+      setAgentMcpConfigs(agentMcpConfigs);
+    }
   };
 
   // Load instructions file for agent's orchestrator

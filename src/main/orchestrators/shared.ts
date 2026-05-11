@@ -206,6 +206,9 @@ export function validateWrapperConfig(
   if (config.contributingPluginId && !ctx.isPluginEnabled(config.contributingPluginId)) {
     return { ok: false, reason: `wrapper plugin '${config.contributingPluginId}' is not enabled` };
   }
+  if (/[;&|`$(){}]/.test(config.binary)) {
+    return { ok: false, reason: `wrapper binary '${config.binary}' contains invalid characters` };
+  }
   try {
     findBinaryInPath([config.binary], []);
   } catch {
