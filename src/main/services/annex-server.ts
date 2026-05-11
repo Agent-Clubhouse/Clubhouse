@@ -2565,24 +2565,11 @@ export function start(): void {
     wsAlive.set(ws, true);
     ws.on('pong', () => { wsAlive.set(ws, true); });
 
-    // Send snapshot on connect
-    try {
-      safeSend(ws, JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
-    } catch (err) {
-      appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-      try {
-        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
-      } catch (sendErr) {
-        appLog('core:annex', 'debug', 'Failed to send error to client (client likely disconnected)', {
-          meta: { error: sendErr instanceof Error ? sendErr.message : String(sendErr) },
-        });
-      }
-    }
-
-    // Broadcast lock state when an mTLS controller connects
+    // wsAuthTypes is set synchronously in handleUpgrade before 'connection' fires — safe to read here.
     const authType = wsAuthTypes.get(ws);
+
+    // Broadcast lock state immediately when mTLS controller connects — before the async
+    // buildSnapshot() so the satellite UI locks without waiting for snapshot I/O to complete.
     if (authType === 'mtls') {
       const fingerprint = wsPeerFingerprints.get(ws);
       const peer = fingerprint ? annexPeers.getPeer(fingerprint) : null;
@@ -2598,12 +2585,8 @@ export function start(): void {
       });
     }
 
-    // Listen for client messages (replay requests)
-    ws.on('message', (data) => {
-      handleWsMessage(ws, data.toString());
-    });
-
-    // Broadcast unlock when mTLS controller disconnects
+    // Register close handler before any await so a disconnect during buildSnapshot
+    // is handled correctly and never leaves the satellite stuck in locked state.
     ws.on('close', (code, reason) => {
       appLog('core:annex', 'info', 'WebSocket client disconnected', {
         meta: { authType, code, reason: reason?.toString() || '' },
@@ -2633,6 +2616,27 @@ export function start(): void {
         }
       }
     });
+
+    // Listen for client messages (replay requests)
+    ws.on('message', (data) => {
+      handleWsMessage(ws, data.toString());
+    });
+
+    // Send snapshot on connect — async I/O after all event handlers are registered
+    try {
+      safeSend(ws, JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
+    } catch (err) {
+      appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+      try {
+        safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
+      } catch (sendErr) {
+        appLog('core:annex', 'debug', 'Failed to send error to client (client likely disconnected)', {
+          meta: { error: sendErr instanceof Error ? sendErr.message : String(sendErr) },
+        });
+      }
+    }
   });
 
   // Subscribe to event bus (clean up any stale listeners first)

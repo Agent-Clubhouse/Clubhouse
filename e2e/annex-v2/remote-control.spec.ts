@@ -136,6 +136,7 @@ test('lock overlay Pause button toggles to paused state', async () => {
     // Click the Pause button
     const pauseBtn = satellite.window.locator('button:has-text("Pause")');
     await expect(pauseBtn).toBeVisible({ timeout: 5_000 });
+    await expect(pauseBtn).toBeEnabled();
     await pauseBtn.click();
 
     // In paused state, the full overlay dims and shows "(paused)" text
