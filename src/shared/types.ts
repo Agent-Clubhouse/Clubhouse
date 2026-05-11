@@ -207,6 +207,8 @@ export interface DurableAgentConfig {
   sessionHistory?: SessionInfo[];
   /** MCP IDs to inject via launch wrapper (when unset, falls back to project defaultMcps) */
   mcpIds?: string[];
+  /** Per-MCP configuration values keyed by MCP ID then flag name */
+  mcpConfigs?: Record<string, Record<string, string>>;
   /** Per-agent override for the Clubhouse MCP bridge feature. */
   mcpOverride?: boolean;
   /** Persona template ID applied at creation. Used to re-inject instructions on materialization. */
@@ -232,6 +234,20 @@ export interface LaunchWrapperConfig {
   orchestratorMap: Record<string, WrapperOrchestratorMapping>;
   /** Optional environment variables to set when launching through the wrapper */
   env?: Record<string, string>;
+  /** Optional plugin command id that core invokes when the user clicks Refresh in the wrapper picker. */
+  refreshCommandId?: string;
+  /** Optional id of the plugin that contributed this preset. Used for pre-flight validation. */
+  contributingPluginId?: string;
+}
+
+/** A configurable parameter for an MCP server, discovered via wrapper schema. */
+export interface McpCatalogArg {
+  /** CLI flag name, e.g. "--organization" */
+  name: string;
+  /** Human-readable description shown as placeholder/tooltip */
+  description?: string;
+  /** Whether this arg is required for the MCP to function */
+  required: boolean;
 }
 
 /** An MCP server available through a launch wrapper */
@@ -242,6 +258,24 @@ export interface McpCatalogEntry {
   name: string;
   /** Brief description of the MCP's functionality */
   description: string;
+  /** Configurable parameters discovered from schema (empty/absent = zero-config MCP) */
+  args?: McpCatalogArg[];
+}
+
+/** Diff state for a catalog entry, computed at render time against the snapshot. */
+export type McpCatalogEntryState = 'stable' | 'new' | 'changed' | 'removed';
+
+/** A catalog entry annotated with its diff state. */
+export interface McpCatalogEntryWithState extends McpCatalogEntry {
+  state: McpCatalogEntryState;
+}
+
+/** Snapshot of the last user-acknowledged catalog. Persisted in project settings. */
+export interface WrapperCatalogSnapshot {
+  /** The catalog as it was at the time of last acknowledgement. */
+  lastSeenCatalog: McpCatalogEntry[];
+  /** ISO timestamp of last acknowledgement. */
+  lastSeenAt: string;
 }
 
 export interface DurableConfigUpdates {

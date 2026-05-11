@@ -12,10 +12,10 @@ import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry } from './agent-config';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
-import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
+import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import * as experimentalSettings from './experimental-settings';
 import * as structuredManager from './structured-manager';
-import { applyLaunchWrapper } from '../orchestrators/shared';
+import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
@@ -148,6 +148,16 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
       }
     }
 
+    let resolvedMcpConfigs: Record<string, Record<string, string>> = {};
+    if (wrapperConfig) {
+      if (params.kind === 'durable') {
+        const config = await getDurableConfig(params.projectPath, params.agentId);
+        resolvedMcpConfigs = config?.mcpConfigs || await readMcpConfigs(params.projectPath);
+      } else {
+        resolvedMcpConfigs = await readMcpConfigs(params.projectPath);
+      }
+    }
+
     // Resolve the free-agent permission mode (auto vs skip-all) from settings,
     // but honour an explicit override (e.g. from session resume)
     const permissionMode = params.permissionMode ?? freeAgentSettings.getPermissionMode(params.projectPath);
@@ -253,14 +263,23 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
 
       if (headlessResult) {
         agentRegistry.setRuntime(params.agentId, 'headless');
-        // Apply launch wrapper transform if configured
+        // Apply launch wrapper transform if configured and validation passes.
+        // Plugin-enabled lookup is treated as always-true: plugins live renderer-side,
+        // main has no real-time view. Binary-on-PATH check still catches the common case.
         let { binary: headlessBin, args: headlessArgs } = headlessResult;
-        if (wrapperConfig && wrapperConfig.orchestratorMap[provider.id]) {
-          const wrapped = applyLaunchWrapper(wrapperConfig, provider.id, headlessBin, headlessArgs, resolvedMcpIds);
-          headlessBin = wrapped.binary;
-          headlessArgs = wrapped.args;
+        let wrapperApplied = false;
+        if (wrapperConfig) {
+          const v = validateWrapperConfig(wrapperConfig, provider.id, { isPluginEnabled: () => true });
+          if (v.ok === false) {
+            appLog('core:agent', 'warn', `Skipping wrapper: ${v.reason}`, { meta: { agentId: params.agentId } });
+          } else {
+            const wrapped = applyLaunchWrapper(wrapperConfig, provider.id, headlessBin, headlessArgs, resolvedMcpIds, resolvedMcpConfigs);
+            headlessBin = wrapped.binary;
+            headlessArgs = wrapped.args;
+            wrapperApplied = true;
+          }
         }
-        const spawnEnv = { ...headlessResult.env, ...profileEnv, ...wrapperConfig?.env, CLUBHOUSE_AGENT_ID: params.agentId };
+        const spawnEnv = { ...headlessResult.env, ...profileEnv, ...(wrapperApplied ? wrapperConfig?.env : undefined), CLUBHOUSE_AGENT_ID: params.agentId };
         await headlessManager.spawnHeadless(
           params.agentId,
           params.cwd,
@@ -281,7 +300,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
     }
 
     // Fall back to PTY mode
-    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds);
+    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs);
     broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
   } catch (err) {
     untrackAgent(params.agentId);
@@ -297,6 +316,7 @@ async function spawnPtyAgent(
   commandPrefix?: string,
   wrapperConfig?: LaunchWrapperConfig,
   mcpIds?: string[],
+  mcpConfigs?: Record<string, Record<string, string>>,
 ): Promise<void> {
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);
@@ -370,11 +390,20 @@ async function spawnPtyAgent(
     args = [...args, ...provider.buildMcpArgs(serverDef)];
   }
 
-  // Apply launch wrapper transform if configured
-  if (wrapperConfig && wrapperConfig.orchestratorMap[provider.id]) {
-    const wrapped = applyLaunchWrapper(wrapperConfig, provider.id, binary, args, mcpIds || []);
-    binary = wrapped.binary;
-    args = wrapped.args;
+  // Apply launch wrapper transform if configured and validation passes.
+  // Plugin-enabled lookup is treated as always-true: plugins live renderer-side,
+  // main has no real-time view. Binary-on-PATH check still catches the common case.
+  let wrapperApplied = false;
+  if (wrapperConfig) {
+    const v = validateWrapperConfig(wrapperConfig, provider.id, { isPluginEnabled: () => true });
+    if (v.ok === false) {
+      appLog('core:agent', 'warn', `Skipping wrapper: ${v.reason}`, { meta: { agentId: params.agentId } });
+    } else {
+      const wrapped = applyLaunchWrapper(wrapperConfig, provider.id, binary, args, mcpIds || [], mcpConfigs);
+      binary = wrapped.binary;
+      args = wrapped.args;
+      wrapperApplied = true;
+    }
   }
 
   appLog('core:agent', 'info', `Spawning ${params.kind} agent`, {
@@ -394,7 +423,7 @@ async function spawnPtyAgent(
   const spawnEnv: Record<string, string> = {
     ...env,
     ...profileEnv,
-    ...wrapperConfig?.env,
+    ...(wrapperApplied ? wrapperConfig?.env : undefined),
     CLUBHOUSE_AGENT_ID: params.agentId,
     CLUBHOUSE_HOOK_NONCE: nonce,
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),

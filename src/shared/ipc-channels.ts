@@ -29,6 +29,10 @@ export const IPC = {
     WRITE_MCP_CATALOG: 'project:write-mcp-catalog',
     READ_DEFAULT_MCPS: 'project:read-default-mcps',
     WRITE_DEFAULT_MCPS: 'project:write-default-mcps',
+    READ_MCP_CONFIGS: 'project:read-mcp-configs',
+    WRITE_MCP_CONFIGS: 'project:write-mcp-configs',
+    READ_WRAPPER_CATALOG_SNAPSHOT: 'project:read-wrapper-catalog-snapshot',
+    WRITE_WRAPPER_CATALOG_SNAPSHOT: 'project:write-wrapper-catalog-snapshot',
   },
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',

@@ -849,11 +849,15 @@ export function PluginListSettings() {
     } else {
       if (isAppContext) {
         const entry = usePluginStore.getState().plugins[pluginId];
-        if (entry?.status === 'disabled') {
+        if (entry?.status === 'disabled' || entry?.status === 'errored') {
           usePluginStore.getState().setPluginStatus(pluginId, 'registered');
         }
         enableApp(pluginId);
-        await activatePlugin(pluginId);
+        // Only activate app/dual plugins immediately — project-scoped plugins
+        // need a project context and will be activated by handleProjectSwitch.
+        if (entry && entry.manifest.scope !== 'project') {
+          await activatePlugin(pluginId);
+        }
         // When enabling canvas, also cascade-enable its sub-plugins
         // (symmetric with cascade-disable on canvas off)
         if (pluginId === 'canvas') {
@@ -864,11 +868,17 @@ export function PluginListSettings() {
                 usePluginStore.getState().setPluginStatus(subId, 'registered');
               }
               enableApp(subId);
-              await activatePlugin(subId);
+              if (subEntry && subEntry.manifest.scope !== 'project') {
+                await activatePlugin(subId);
+              }
             }
           }
         }
       } else if (projectId) {
+        const entry = usePluginStore.getState().plugins[pluginId];
+        if (entry?.status === 'errored') {
+          usePluginStore.getState().setPluginStatus(pluginId, 'registered');
+        }
         enableForProject(projectId, pluginId);
         const projectPath = project?.path;
         await activatePlugin(pluginId, projectId, projectPath);

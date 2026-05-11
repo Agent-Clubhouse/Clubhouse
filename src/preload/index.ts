@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import { settingsChannels } from '../shared/settings-definitions';
-import { AgentHookEvent, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings } from '../shared/types';
+import { AgentHookEvent, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings, WrapperCatalogSnapshot } from '../shared/types';
 import type { PluginUpdatesStatus } from '../shared/marketplace-types';
 
 const api = {
@@ -81,12 +81,20 @@ const api = {
       ipcRenderer.invoke(IPC.PROJECT.READ_DEFAULT_MCPS, projectPath),
     writeDefaultMcps: (projectPath: string, mcpIds: string[]) =>
       ipcRenderer.invoke(IPC.PROJECT.WRITE_DEFAULT_MCPS, projectPath, mcpIds),
+    readMcpConfigs: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.PROJECT.READ_MCP_CONFIGS, projectPath),
+    writeMcpConfigs: (projectPath: string, configs: Record<string, Record<string, string>>) =>
+      ipcRenderer.invoke(IPC.PROJECT.WRITE_MCP_CONFIGS, projectPath, configs),
+    readWrapperCatalogSnapshot: (projectPath: string): Promise<WrapperCatalogSnapshot | undefined> =>
+      ipcRenderer.invoke(IPC.PROJECT.READ_WRAPPER_CATALOG_SNAPSHOT, projectPath),
+    writeWrapperCatalogSnapshot: (projectPath: string, snapshot: WrapperCatalogSnapshot | undefined): Promise<void> =>
+      ipcRenderer.invoke(IPC.PROJECT.WRITE_WRAPPER_CATALOG_SNAPSHOT, projectPath, snapshot),
   },
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
-    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean, persona?: string) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode, persona),
+    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, structuredMode?: boolean, persona?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, structuredMode, persona),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>

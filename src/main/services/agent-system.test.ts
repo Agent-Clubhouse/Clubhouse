@@ -92,15 +92,28 @@ vi.mock('./profile-settings', () => ({
 const mockReadProjectAgentDefaults = vi.fn(() => ({}));
 const mockReadLaunchWrapper = vi.fn(() => undefined);
 const mockReadDefaultMcps = vi.fn(() => []);
+const mockReadMcpConfigs = vi.fn(() => ({}));
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: (...args: unknown[]) => mockReadProjectAgentDefaults(...args),
   readLaunchWrapper: (...args: unknown[]) => mockReadLaunchWrapper(...args),
   readDefaultMcps: (...args: unknown[]) => mockReadDefaultMcps(...args),
+  readMcpConfigs: (...args: unknown[]) => mockReadMcpConfigs(...args),
 }));
 
 // Mock log-service
+const mockAppLog = vi.fn();
 vi.mock('./log-service', () => ({
-  appLog: vi.fn(),
+  appLog: (...args: unknown[]) => mockAppLog(...args),
+}));
+
+// Mock orchestrators/shared so we can control wrapper validation outcomes
+const mockApplyLaunchWrapper = vi.fn(
+  (_cfg: unknown, _id: string, binary: string, args: string[]) => ({ binary: '/wrapped/bin', args: ['--wrap', ...args] }),
+);
+const mockValidateWrapperConfig = vi.fn(() => ({ ok: true as const }));
+vi.mock('../orchestrators/shared', () => ({
+  applyLaunchWrapper: (...args: unknown[]) => mockApplyLaunchWrapper(...(args as [unknown, string, string, string[], string[]])),
+  validateWrapperConfig: (...args: unknown[]) => mockValidateWrapperConfig(...(args as [unknown, string, { isPluginEnabled: (id: string) => boolean }])),
 }));
 
 // Mock ipc-broadcast — track AGENT_AWOKE/AGENT_WAKING/etc. broadcasts so tests
@@ -2161,6 +2174,135 @@ describe('agent-system', () => {
       expect(mockBuildAgentFileArgs).toHaveBeenCalled();
       const sessionOpts = mockStartStructured.mock.calls[0][2];
       expect(sessionOpts).not.toHaveProperty('extraArgs');
+    });
+  });
+
+  describe('launch wrapper validation', () => {
+    const wrapperCfg = {
+      binary: 'node',
+      separator: '--',
+      orchestratorMap: { 'claude-code': { subcommand: 'claude' } },
+      env: { WRAPPER_ENV_VAR: 'on' },
+    };
+
+    beforeEach(() => {
+      mockReadLaunchWrapper.mockReturnValue(wrapperCfg);
+      mockValidateWrapperConfig.mockReturnValue({ ok: true });
+      mockApplyLaunchWrapper.mockImplementation(
+        (_cfg: unknown, _id: string, binary: string, args: string[]) => ({ binary: '/wrapped/bin', args: ['--wrap', ...args] }),
+      );
+    });
+
+    afterEach(() => {
+      mockReadLaunchWrapper.mockReturnValue(undefined);
+    });
+
+    it('applies wrapper and merges wrapperConfig.env when validation passes (PTY)', async () => {
+      await spawnAgent({
+        agentId: 'agent-wrap-ok',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockValidateWrapperConfig).toHaveBeenCalled();
+      expect(mockApplyLaunchWrapper).toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalledWith(
+        'agent-wrap-ok',
+        '/project',
+        '/wrapped/bin',
+        expect.arrayContaining(['--wrap']),
+        expect.objectContaining({ WRAPPER_ENV_VAR: 'on' }),
+        expect.any(Function),
+        undefined,
+      );
+    });
+
+    it('skips wrapping and omits wrapper env when validation fails (PTY)', async () => {
+      mockValidateWrapperConfig.mockReturnValue({ ok: false, reason: 'wrapper binary is not available on PATH' });
+
+      await spawnAgent({
+        agentId: 'agent-wrap-skip',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      // applyLaunchWrapper must NOT have been called
+      expect(mockApplyLaunchWrapper).not.toHaveBeenCalled();
+
+      // PTY spawn used the original binary, not the wrapped one
+      const spawnCall = mockPtySpawn.mock.calls.find((c) => c[0] === 'agent-wrap-skip');
+      expect(spawnCall).toBeDefined();
+      expect(spawnCall![2]).toBe('/usr/local/bin/claude');
+      // wrapperConfig.env must NOT leak through when validation failed
+      expect(spawnCall![4]).not.toHaveProperty('WRAPPER_ENV_VAR');
+
+      // Warning logged with the validation reason
+      const warnCall = mockAppLog.mock.calls.find(
+        (c) => c[1] === 'warn' && typeof c[2] === 'string' && c[2].includes('Skipping wrapper'),
+      );
+      expect(warnCall).toBeDefined();
+      expect(warnCall![2]).toContain('not available on PATH');
+      expect(warnCall![3]).toMatchObject({ meta: { agentId: 'agent-wrap-skip' } });
+    });
+
+    it('skips wrapping and omits wrapper env when validation fails (headless)', async () => {
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({
+          binary: '/usr/bin/claude',
+          args: ['-p', 'mission'],
+          env: {},
+          outputKind: 'stream-json' as const,
+        }),
+      );
+      mockValidateWrapperConfig.mockReturnValue({ ok: false, reason: 'wrapper plugin foo is not enabled' });
+
+      await spawnAgent({
+        agentId: 'headless-wrap-skip',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'mission',
+      });
+
+      expect(mockApplyLaunchWrapper).not.toHaveBeenCalled();
+
+      const spawnCall = mockHeadlessSpawn.mock.calls.find((c) => c[0] === 'headless-wrap-skip');
+      expect(spawnCall).toBeDefined();
+      expect(spawnCall![2]).toBe('/usr/bin/claude');
+      expect(spawnCall![4]).not.toHaveProperty('WRAPPER_ENV_VAR');
+
+      const warnCall = mockAppLog.mock.calls.find(
+        (c) => c[1] === 'warn' && typeof c[2] === 'string' && c[2].includes('Skipping wrapper'),
+      );
+      expect(warnCall).toBeDefined();
+      expect(warnCall![2]).toContain('not enabled');
+
+      delete (mockProvider as any).buildHeadlessCommand;
+    });
+
+    it('passes mcpConfigs to applyLaunchWrapper (PTY)', async () => {
+      const testConfigs = { 'my-mcp': { port: '3000', verbose: 'true' } };
+      mockReadMcpConfigs.mockReturnValue(testConfigs);
+      mockReadDefaultMcps.mockReturnValue(['my-mcp']);
+
+      await spawnAgent({
+        agentId: 'agent-mcp-configs',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockApplyLaunchWrapper).toHaveBeenCalledWith(
+        wrapperCfg,
+        'claude-code',
+        expect.any(String),
+        expect.any(Array),
+        ['my-mcp'],
+        testConfigs,
+      );
     });
   });
 });

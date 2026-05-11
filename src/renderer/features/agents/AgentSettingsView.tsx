@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Agent, QuickAgentDefaults, MaterializationPreview } from '../../../shared/types';
+import { Agent, QuickAgentDefaults, MaterializationPreview, McpCatalogEntry, McpCatalogEntryWithState } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useAgentStore } from '../../stores/agentStore';
@@ -22,6 +22,113 @@ type SettingsTab = 'main' | 'quick';
 
 interface Props {
   agent: Agent;
+}
+
+function McpConfigRow({
+  entry,
+  checked,
+  configs,
+  onToggle,
+  onConfigChange,
+}: {
+  entry: McpCatalogEntryWithState;
+  checked: boolean;
+  configs: Record<string, string>;
+  onToggle: () => void;
+  onConfigChange: (flag: string, value: string) => void;
+}) {
+  const hasArgs = entry.args && entry.args.length > 0;
+  const [expanded, setExpanded] = useState(false);
+  const isRemoved = entry.state === 'removed';
+
+  // Detect boolean flags by description heuristic — render as toggle chips, not text inputs.
+  const isBooleanFlag = (a: McpCatalogArg) =>
+    !a.description || /^(enable|disable|force|use)\b/i.test(a.description);
+  const booleanArgs = (entry.args || []).filter(isBooleanFlag);
+  const textArgs = (entry.args || []).filter((a) => !isBooleanFlag(a));
+
+  return (
+    <div className={expanded ? 'col-span-2' : ''}>
+      <div
+        className={`flex items-center gap-2 py-1 px-2 rounded hover:bg-surface-0 ${
+          isRemoved ? 'opacity-70' : ''
+        }`}
+        title={entry.description}
+      >
+        <label className="flex items-center gap-2 flex-1 cursor-pointer min-w-0">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={onToggle}
+            className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500 shrink-0"
+          />
+          <span className="text-xs text-ctp-text truncate flex items-center gap-1.5">
+            {entry.name}
+            {entry.state === 'new' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 uppercase tracking-wider">new</span>
+            )}
+            {entry.state === 'changed' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 uppercase tracking-wider">changed</span>
+            )}
+            {entry.state === 'removed' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 uppercase tracking-wider">removed</span>
+            )}
+          </span>
+        </label>
+        {hasArgs && (
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="text-[10px] text-ctp-subtext0 hover:text-ctp-text transition-colors shrink-0 px-1"
+            title="Configure parameters"
+          >
+            {expanded ? '▴' : '▾'}
+          </button>
+        )}
+      </div>
+      {expanded && hasArgs && (
+        <div className="mt-1.5 ml-7 mb-2 space-y-1.5">
+          {textArgs.map((arg) => (
+            <div key={arg.name} className="flex items-center gap-2">
+              <span className="text-[10px] text-ctp-subtext0 font-mono w-28 text-right shrink-0 flex items-center justify-end gap-1">
+                {arg.required && <span className="w-1 h-1 rounded-full bg-amber-400 inline-block" title="Required" />}
+                {arg.name.replace(/^--/, '')}
+              </span>
+              <input
+                type="text"
+                value={configs[arg.name] || ''}
+                onChange={(e) => onConfigChange(arg.name, e.target.value)}
+                placeholder={arg.description || ''}
+                className="flex-1 text-xs bg-surface-0 border border-surface-2 rounded px-2 py-1 text-ctp-text placeholder:text-ctp-subtext0/40 placeholder:italic focus:outline-none focus:border-indigo-500/50 transition-colors"
+              />
+            </div>
+          ))}
+          {booleanArgs.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-1">
+              {booleanArgs.map((arg) => {
+                const active = configs[arg.name] === 'true';
+                return (
+                  <button
+                    key={arg.name}
+                    type="button"
+                    onClick={() => onConfigChange(arg.name, active ? '' : 'true')}
+                    title={arg.description || ''}
+                    className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                      active
+                        ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-300'
+                        : 'border-surface-2 text-ctp-subtext0 hover:border-ctp-subtext0'
+                    }`}
+                  >
+                    {arg.name.replace(/^--/, '')}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function AgentSettingsView({ agent }: Props) {
@@ -249,6 +356,12 @@ export function AgentSettingsView({ agent }: Props) {
   const [qadSaving, setQadSaving] = useState(false);
   const [qadLoaded, setQadLoaded] = useState(false);
 
+  // MCP catalog state for per-agent wrapper MCPs
+  const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
+  const [agentMcpIds, setAgentMcpIds] = useState<string[]>([]);
+  const [agentMcpConfigs, setAgentMcpConfigs] = useState<Record<string, Record<string, string>>>({});
+  const [mcpLoaded, setMcpLoaded] = useState(false);
+
   // Clubhouse Mode state
   const isClubhouseModeEnabled = useClubhouseModeStore((s) => s.isEnabledForProject);
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
@@ -437,6 +550,58 @@ export function AgentSettingsView({ agent }: Props) {
       }
     })();
   }, [projectPath, agent.id, refreshKey]);
+
+  // Load MCP catalog and agent's current MCP state
+  useEffect(() => {
+    if (!projectPath) return;
+    (async () => {
+      try {
+        const [catalog, config] = await Promise.all([
+          window.clubhouse.project.readMcpCatalog(projectPath),
+          window.clubhouse.agent.getDurableConfig(projectPath, agent.id),
+        ]);
+        setMcpCatalog(catalog || []);
+        setAgentMcpIds(config?.mcpIds || []);
+        setAgentMcpConfigs(config?.mcpConfigs || {});
+        setMcpLoaded(true);
+      } catch {
+        setMcpLoaded(true);
+      }
+    })();
+  }, [projectPath, agent.id, refreshKey]);
+
+  const handleToggleMcp = async (id: string) => {
+    if (!projectPath) return;
+    const next = agentMcpIds.includes(id)
+      ? agentMcpIds.filter((m) => m !== id)
+      : [...agentMcpIds, id];
+    setAgentMcpIds(next);
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, {
+      mcpIds: next.length > 0 ? next : null,
+    });
+  };
+
+  const handleMcpConfigChange = async (mcpId: string, flag: string, value: string) => {
+    if (!projectPath) return;
+    setAgentMcpConfigs((prev) => {
+      const entry = { ...prev[mcpId] };
+      if (value) {
+        entry[flag] = value;
+      } else {
+        delete entry[flag];
+      }
+      const next = { ...prev };
+      if (Object.keys(entry).length > 0) {
+        next[mcpId] = entry;
+      } else {
+        delete next[mcpId];
+      }
+      window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, {
+        mcpConfigs: Object.keys(next).length > 0 ? next : null,
+      });
+      return next;
+    });
+  };
 
   // Load instructions file for agent's orchestrator
   useEffect(() => {
@@ -1031,6 +1196,28 @@ export function AgentSettingsView({ agent }: Props) {
                 refreshKey={refreshKey}
                 pathLabel={mcpPathLabel}
               />
+            )}
+
+            {/* Launch Wrapper MCPs */}
+            {!isManagedByClubhouse && mcpLoaded && mcpCatalog.length > 0 && (
+              <section>
+                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Launch Wrapper MCPs</h3>
+                <p className="text-[10px] text-ctp-subtext0/60 mb-2">
+                  MCPs injected via the launch wrapper when this agent starts. Expand entries to configure parameters.
+                </p>
+                <div className="grid grid-cols-2 gap-1">
+                  {mcpCatalog.map((entry) => (
+                    <McpConfigRow
+                      key={entry.id}
+                      entry={{ ...entry, state: 'stable' as const }}
+                      checked={agentMcpIds.includes(entry.id)}
+                      configs={agentMcpConfigs[entry.id] || {}}
+                      onToggle={() => handleToggleMcp(entry.id)}
+                      onConfigChange={(flag, value) => handleMcpConfigChange(entry.id, flag, value)}
+                    />
+                  ))}
+                </div>
+              </section>
             )}
 
             {/* Permissions Section (hidden when managed) */}

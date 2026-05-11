@@ -130,8 +130,8 @@ describe('agent-handlers', () => {
 
   it('CREATE_DURABLE delegates to agentConfig.createDurable', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined);
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined);
+    const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined, undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined, undefined);
     expect(result).toEqual({ id: 'agent-1', name: 'Test' });
   });
 
@@ -412,7 +412,7 @@ describe('agent-handlers', () => {
     } as any);
 
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'qa');
+    await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, undefined, 'qa');
 
     expect(mockReadInstructions).toHaveBeenCalledWith('/wt/qa');
     expect(mockWriteInstructions).toHaveBeenCalledWith('/wt/qa', expect.stringContaining('Existing instructions'));
@@ -425,7 +425,7 @@ describe('agent-handlers', () => {
     } as any);
 
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    await handler({}, '/project', 'pm-bot', 'indigo', undefined, false, undefined, false, undefined, undefined, 'qa');
+    await handler({}, '/project', 'pm-bot', 'indigo', undefined, false, undefined, false, undefined, undefined, undefined, 'qa');
 
     // Should not call resolveOrchestrator since no worktreePath
     expect(agentSystem.resolveOrchestrator).not.toHaveBeenCalled();
@@ -437,7 +437,7 @@ describe('agent-handlers', () => {
     } as any);
 
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    const result = await handler({}, '/project', 'x-bot', 'blue', undefined, true, undefined, false, undefined, undefined, 'nonexistent');
+    const result = await handler({}, '/project', 'x-bot', 'blue', undefined, true, undefined, false, undefined, undefined, undefined, 'nonexistent');
 
     // Should succeed (agent created) but no instructions written
     expect(result).toEqual(expect.objectContaining({ id: 'agent-x' }));
@@ -460,7 +460,7 @@ describe('agent-handlers', () => {
     } as any);
 
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'qa');
+    await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, undefined, 'qa');
 
     // Should write persona content standalone (no existing instructions)
     expect(mockWriteInstructions).toHaveBeenCalledWith('/wt/qa2', '# QA Agent\nReview code.');

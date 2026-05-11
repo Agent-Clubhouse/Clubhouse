@@ -60,6 +60,10 @@ vi.stubGlobal('clubhouse', {
     writeMcpCatalog: asyncNoop,
     readDefaultMcps: async () => [],
     writeDefaultMcps: asyncNoop,
+    readMcpConfigs: async () => ({}),
+    writeMcpConfigs: asyncNoop,
+    readWrapperCatalogSnapshot: async () => undefined,
+    writeWrapperCatalogSnapshot: asyncNoop,
   },
   agent: {
     listDurable: async () => [],

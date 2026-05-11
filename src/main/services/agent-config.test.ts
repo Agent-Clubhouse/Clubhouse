@@ -406,12 +406,12 @@ describe('createDurable', () => {
   });
 
   it('includes structuredMode when true', async () => {
-    const config = await createDurable(PROJECT_PATH, 'structured-agent', 'indigo', 'default', true, undefined, false, undefined, true);
+    const config = await createDurable(PROJECT_PATH, 'structured-agent', 'indigo', 'default', true, undefined, false, undefined, undefined, true);
     expect(config.structuredMode).toBe(true);
   });
 
   it('omits structuredMode when false', async () => {
-    const config = await createDurable(PROJECT_PATH, 'no-structured', 'indigo', 'default', true, undefined, false, undefined, false);
+    const config = await createDurable(PROJECT_PATH, 'no-structured', 'indigo', 'default', true, undefined, false, undefined, undefined, false);
     expect(config).not.toHaveProperty('structuredMode');
   });
 

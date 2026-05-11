@@ -76,7 +76,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
 
       const model = options.model && options.model !== 'default' ? options.model : undefined;
       const config = await window.clubhouse.agent.createDurable(
-        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds,
+        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds, undefined,
       );
       return useAgentStore.getState().spawnDurableAgent(projectId, projectPath, config, false);
     },

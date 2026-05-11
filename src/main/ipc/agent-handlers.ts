@@ -30,9 +30,9 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), booleanArg({ optional: true }), stringArg({ optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode, persona) => {
-        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode, persona);
+      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true })],
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, structuredMode, persona) => {
+        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs as Record<string, Record<string, string>> | undefined, structuredMode, persona);
 
         // Inject persona instructions into the agent's worktree
         if (persona && config.worktreePath) {

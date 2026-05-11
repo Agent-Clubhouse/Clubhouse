@@ -27,7 +27,7 @@ vi.mock('../util/shell', () => ({
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { execSync, execFileSync } from 'child_process';
-import { findBinaryInPath, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile, validateWrapperConfig, clearBinaryCache } from './shared';
 import type { LaunchWrapperConfig } from '../../shared/types';
 
 describe('shared orchestrator utilities', () => {
@@ -201,11 +201,11 @@ describe('shared orchestrator utilities', () => {
 
     it('maps different orchestrator IDs to correct subcommands', () => {
       const result = applyLaunchWrapper(
-        wrapperConfig, 'copilot-cli', 'copilot', ['--help'], ['workiq']
+        wrapperConfig, 'copilot-cli', 'copilot', ['--help'], ['fs']
       );
       expect(result).toEqual({
         binary: 'mywrapper',
-        args: ['copilot', '--mcp', 'workiq', '--', '--help'],
+        args: ['copilot', '--mcp', 'fs', '--', '--help'],
       });
     });
 
@@ -232,11 +232,56 @@ describe('shared orchestrator utilities', () => {
 
     it('handles multiple MCPs in order', () => {
       const result = applyLaunchWrapper(
-        wrapperConfig, 'claude-code', 'claude', [], ['ado', 'kusto', 'workiq', 'icm']
+        wrapperConfig, 'claude-code', 'claude', [], ['mcp-a', 'mcp-b', 'mcp-c', 'mcp-d']
       );
       expect(result.args).toEqual([
-        'claude', '--mcp', 'ado', '--mcp', 'kusto', '--mcp', 'workiq', '--mcp', 'icm', '--',
+        'claude', '--mcp', 'mcp-a', '--mcp', 'mcp-b', '--mcp', 'mcp-c', '--mcp', 'mcp-d', '--',
       ]);
+    });
+
+    it('passes mcpConfigs as args joined with the MCP ID', () => {
+      const configs = { 'mcp-a': { '--org': 'myorg' } };
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'claude-code', 'claude', ['--model', 'opus'], ['mcp-a', 'mcp-b'], configs
+      );
+      expect(result.args).toEqual([
+        'claude', '--mcp', 'mcp-a --org myorg', '--mcp', 'mcp-b', '--', '--model', 'opus',
+      ]);
+    });
+
+    it('handles boolean flags in mcpConfigs (value "true" emits flag only)', () => {
+      const configs = { 'mcp-a': { '--org': 'myorg', '--verbose': 'true' } };
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'claude-code', 'claude', [], ['mcp-a'], configs
+      );
+      expect(result.args).toEqual([
+        'claude', '--mcp', 'mcp-a --org myorg --verbose', '--',
+      ]);
+    });
+
+    it('skips empty-string config values', () => {
+      const configs = { 'mcp-a': { '--org': '', '--scope': 'read' } };
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'claude-code', 'claude', [], ['mcp-a'], configs
+      );
+      expect(result.args).toEqual([
+        'claude', '--mcp', 'mcp-a --scope read', '--',
+      ]);
+    });
+
+    it('passes plain ID when MCP has no config entry', () => {
+      const configs = { 'mcp-a': { '--org': 'myorg' } };
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'claude-code', 'claude', [], ['mcp-a', 'mcp-b'], configs
+      );
+      expect(result.args[4]).toBe('mcp-b');
+    });
+
+    it('works with undefined mcpConfigs (backwards compat)', () => {
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'claude-code', 'claude', ['--model', 'opus'], ['mcp-a']
+      );
+      expect(result.args).toEqual(['claude', '--mcp', 'mcp-a', '--', '--model', 'opus']);
     });
   });
 
@@ -549,6 +594,45 @@ Options:
     it('returns null when all lines are malformed', async () => {
       vi.mocked(fsp.readFile).mockResolvedValue('not-json\nalso-not-json\n');
       expect(await parseJsonlFile('/bad.jsonl')).toBeNull();
+    });
+  });
+
+  describe('validateWrapperConfig', () => {
+    const cfg: LaunchWrapperConfig = {
+      binary: 'node',
+      separator: '--',
+      orchestratorMap: { 'claude-code': { subcommand: 'claude' } },
+    };
+
+    beforeEach(() => {
+      clearBinaryCache();
+    });
+
+    it('returns ok when binary exists and orchestrator mapped', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).endsWith('node') || String(p).endsWith('node.exe'));
+      const r = validateWrapperConfig(cfg, 'claude-code', { isPluginEnabled: () => true });
+      expect(r.ok).toBe(true);
+    });
+
+    it('fails when orchestrator not in map', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).endsWith('node') || String(p).endsWith('node.exe'));
+      const r = validateWrapperConfig(cfg, 'unknown-cli', { isPluginEnabled: () => true });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/unknown-cli/);
+    });
+
+    it('fails when binary not on PATH', () => {
+      // fs.existsSync default is false; execSync default throws — so binary lookup throws
+      const r = validateWrapperConfig({ ...cfg, binary: 'definitely-not-a-binary-xyz' }, 'claude-code', { isPluginEnabled: () => true });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/not available/i);
+    });
+
+    it('fails when contributingPluginId set but plugin disabled', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).endsWith('node') || String(p).endsWith('node.exe'));
+      const r = validateWrapperConfig({ ...cfg, contributingPluginId: 'foo' }, 'claude-code', { isPluginEnabled: () => false });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/foo/);
     });
   });
 });

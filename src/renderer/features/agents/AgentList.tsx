@@ -323,7 +323,7 @@ export function AgentList() {
 
     try {
       const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, structuredMode
+        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, structuredMode
       );
       if (tempId) removeAgent(tempId);
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
@@ -349,7 +349,7 @@ export function AgentList() {
     try {
       const config = await window.clubhouse.agent.createDurable(
         activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree,
-        orch, fam || undefined, mcpIds, sm || undefined, persona.id,
+        orch, fam || undefined, mcpIds, undefined, sm || undefined, persona.id,
       );
       if (tempId) removeAgent(tempId);
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);

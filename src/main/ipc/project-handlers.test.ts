@@ -50,6 +50,19 @@ vi.mock('child_process', () => ({
   execSync: vi.fn(),
 }));
 
+vi.mock('../services/agent-settings-service', () => ({
+  readLaunchWrapper: vi.fn(async () => undefined),
+  writeLaunchWrapper: vi.fn(async () => undefined),
+  readMcpCatalog: vi.fn(async () => []),
+  writeMcpCatalog: vi.fn(async () => undefined),
+  readDefaultMcps: vi.fn(async () => []),
+  writeDefaultMcps: vi.fn(async () => undefined),
+  readMcpConfigs: vi.fn(async () => ({})),
+  writeMcpConfigs: vi.fn(async () => undefined),
+  readWrapperCatalogSnapshot: vi.fn(async () => undefined),
+  writeWrapperCatalogSnapshot: vi.fn(async () => undefined),
+}));
+
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
   return {
@@ -80,6 +93,7 @@ import { ensureGitignore } from '../services/agent-config';
 import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
 import { assertAllowedPath } from '../services/path-sandbox';
+import * as settingsService from '../services/agent-settings-service';
 import { registerProjectHandlers } from './project-handlers';
 
 describe('project-handlers', () => {
@@ -123,6 +137,10 @@ describe('project-handlers', () => {
       IPC.PROJECT.WRITE_MCP_CATALOG,
       IPC.PROJECT.READ_DEFAULT_MCPS,
       IPC.PROJECT.WRITE_DEFAULT_MCPS,
+      IPC.PROJECT.READ_MCP_CONFIGS,
+      IPC.PROJECT.WRITE_MCP_CONFIGS,
+      IPC.PROJECT.READ_WRAPPER_CATALOG_SNAPSHOT,
+      IPC.PROJECT.WRITE_WRAPPER_CATALOG_SNAPSHOT,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -649,6 +667,68 @@ describe('project-handlers', () => {
   it('WRITE_DEFAULT_MCPS rejects non-array mcpIds', () => {
     const handler = handlers.get(IPC.PROJECT.WRITE_DEFAULT_MCPS)!;
     expect(() => handler({}, '/tmp/project', 'not-an-array')).toThrow('must be an array');
+  });
+
+  it('READ_WRAPPER_CATALOG_SNAPSHOT rejects non-string projectPath', () => {
+    const handler = handlers.get(IPC.PROJECT.READ_WRAPPER_CATALOG_SNAPSHOT)!;
+    expect(() => handler({}, 99)).toThrow('must be a string');
+  });
+
+  it('WRITE_WRAPPER_CATALOG_SNAPSHOT rejects non-string projectPath', () => {
+    const handler = handlers.get(IPC.PROJECT.WRITE_WRAPPER_CATALOG_SNAPSHOT)!;
+    expect(() => handler({}, null, {})).toThrow('must be a string');
+  });
+
+  it('WRITE_WRAPPER_CATALOG_SNAPSHOT accepts undefined snapshot (clears)', async () => {
+    const handler = handlers.get(IPC.PROJECT.WRITE_WRAPPER_CATALOG_SNAPSHOT)!;
+    await handler({}, '/tmp/project', undefined);
+    expect(settingsService.writeWrapperCatalogSnapshot).toHaveBeenCalledWith('/tmp/project', undefined);
+  });
+
+  it('round-trip: WRITE then READ wrapper catalog snapshot returns same value', async () => {
+    const snapshot = {
+      lastSeenCatalog: [{ id: 'fs', name: 'Filesystem', description: 'Files' }],
+      lastSeenAt: '2026-05-06T00:00:00.000Z',
+    };
+    // Stub the read fn to return what was written (simulates persistence)
+    let stored: typeof snapshot | undefined;
+    vi.mocked(settingsService.writeWrapperCatalogSnapshot).mockImplementationOnce(async (_p, s) => {
+      stored = s as typeof snapshot;
+    });
+    vi.mocked(settingsService.readWrapperCatalogSnapshot).mockImplementationOnce(async () => stored);
+
+    const writeHandler = handlers.get(IPC.PROJECT.WRITE_WRAPPER_CATALOG_SNAPSHOT)!;
+    await writeHandler({}, '/tmp/project', snapshot);
+
+    const readHandler = handlers.get(IPC.PROJECT.READ_WRAPPER_CATALOG_SNAPSHOT)!;
+    const result = await readHandler({}, '/tmp/project');
+
+    expect(result).toEqual(snapshot);
+  });
+
+  it('READ_WRAPPER_CATALOG_SNAPSHOT returns undefined and logs error on failure', async () => {
+    vi.mocked(settingsService.readWrapperCatalogSnapshot).mockRejectedValueOnce(new Error('boom'));
+    const handler = handlers.get(IPC.PROJECT.READ_WRAPPER_CATALOG_SNAPSHOT)!;
+    const result = await handler({}, '/tmp/project');
+    expect(result).toBeUndefined();
+    expect(appLog).toHaveBeenCalledWith(
+      'core:project',
+      'error',
+      'Failed to read wrapper catalog snapshot',
+      expect.objectContaining({ meta: expect.objectContaining({ projectPath: '/tmp/project' }) }),
+    );
+  });
+
+  it('WRITE_WRAPPER_CATALOG_SNAPSHOT throws and logs error on failure', async () => {
+    vi.mocked(settingsService.writeWrapperCatalogSnapshot).mockRejectedValueOnce(new Error('disk full'));
+    const handler = handlers.get(IPC.PROJECT.WRITE_WRAPPER_CATALOG_SNAPSHOT)!;
+    await expect(handler({}, '/tmp/project', { lastSeenCatalog: [], lastSeenAt: '' })).rejects.toThrow('disk full');
+    expect(appLog).toHaveBeenCalledWith(
+      'core:project',
+      'error',
+      'Failed to write wrapper catalog snapshot',
+      expect.objectContaining({ meta: expect.objectContaining({ projectPath: '/tmp/project' }) }),
+    );
   });
 
   // --- Path validation (SEC-M09) ---
