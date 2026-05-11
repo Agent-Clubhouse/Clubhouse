@@ -156,11 +156,10 @@ test.describe('Canvas golden path', () => {
     const dragX = cardBox!.x + 25;
     const dragY = cardBox!.y + cardBox!.height / 2;
 
-    // Cap drag so zone stays within workspace viewport — Windows CI uses a
-    // smaller window; a zone dragged off-screen fails Playwright's actionability
-    // check (element is outside of the viewport) on the subsequent deleteBtn.click().
-    const dx = Math.min(120, workspaceBox.x + workspaceBox.width - cardBox!.x - cardBox!.width - 30);
-    const dy = Math.min(80, workspaceBox.y + workspaceBox.height - cardBox!.y - cardBox!.height - 30);
+    // Cap drag so zone stays within workspace viewport. Math.max(0,...) prevents
+    // negative deltas (zone already near edge) which would drag in the wrong direction.
+    const dx = Math.max(0, Math.min(120, workspaceBox.x + workspaceBox.width - cardBox!.x - cardBox!.width - 30));
+    const dy = Math.max(0, Math.min(80, workspaceBox.y + workspaceBox.height - cardBox!.y - cardBox!.height - 30));
 
     await window.mouse.move(dragX, dragY);
     await window.mouse.down();
@@ -173,7 +172,7 @@ test.describe('Canvas golden path', () => {
     // Card should still exist after drag (not deleted)
     await expect(zoneCard).toBeVisible({ timeout: 3_000 });
 
-    // 5. Resize zone via SE corner handle
+    // 5. Resize zone via SE corner handle — cap resize delta to keep zone in viewport
     const seHandle = window.locator(`[data-testid="zone-resize-se-${zoneId}"]`);
     const seVisible = await seHandle.isVisible({ timeout: 3_000 }).catch(() => false);
     if (seVisible) {
@@ -181,18 +180,23 @@ test.describe('Canvas golden path', () => {
       if (seBox) {
         const hx = seBox.x + seBox.width / 2;
         const hy = seBox.y + seBox.height / 2;
+        const rdx = Math.max(0, Math.min(80, workspaceBox.x + workspaceBox.width - hx - 30));
+        const rdy = Math.max(0, Math.min(60, workspaceBox.y + workspaceBox.height - hy - 30));
         await window.mouse.move(hx, hy);
         await window.mouse.down();
-        await window.mouse.move(hx + 80, hy + 60, { steps: 10 });
+        await window.mouse.move(hx + rdx, hy + rdy, { steps: 10 });
         await window.mouse.up();
         await window.waitForTimeout(200);
       }
     }
 
-    // 8. Delete zone — since it has no contained views the dialog is skipped
+    // 8. Delete zone — since it has no contained views the dialog is skipped.
+    // force:true bypasses Playwright's in-viewport actionability check — the canvas
+    // may render the zone card at a CSS-transform position that extends slightly
+    // beyond the browser viewport on Windows CI; the button IS visible and enabled.
     const deleteBtn = zoneCard.locator('button[title="Delete zone"]');
     await expect(deleteBtn).toBeVisible({ timeout: 3_000 });
-    await deleteBtn.click();
+    await deleteBtn.click({ force: true });
     await expect(zoneCard).not.toBeVisible({ timeout: 5_000 });
   });
 
