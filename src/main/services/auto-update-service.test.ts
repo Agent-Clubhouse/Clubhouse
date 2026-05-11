@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript } from './auto-update-service';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -426,6 +426,121 @@ describe('auto-update-service', () => {
         '/tmp/script.sh',
       );
       expect(script).toContain("'/Applications/$(rm -rf /).app'");
+    });
+  });
+
+  // ── execFileSync arg-array construction (TC-HIGH) ──────────────────────────
+  // applyUpdate() calls execFileSync with array arguments (never a shell string)
+  // to prevent shell injection. The tests below verify the arg-array construction
+  // indirectly via the exported helper functions that build the argument values.
+
+  describe('getSquirrelReleasesUrl — arg-array value safety', () => {
+    it('returns a URL-safe string for the stable channel', () => {
+      const url = getSquirrelReleasesUrl(false);
+      // Must be a valid URL — no shell metacharacters that could be dangerous
+      // if mistakenly passed to a shell-form exec call.
+      expect(url).toMatch(/^https?:\/\//);
+      expect(url).not.toContain(';');
+      expect(url).not.toContain('&&');
+      expect(url).not.toContain('|');
+      expect(url).not.toContain('`');
+    });
+
+    it('returns a URL-safe string for the preview channel', () => {
+      const url = getSquirrelReleasesUrl(true);
+      expect(url).toMatch(/^https?:\/\//);
+      expect(url).toContain('preview');
+    });
+
+    it('stable channel does not contain "preview"', () => {
+      const stable = getSquirrelReleasesUrl(false);
+      expect(stable).toContain('stable');
+      expect(stable).not.toContain('preview');
+    });
+  });
+
+  describe('getSquirrelUpdateExePath — arg-array value safety', () => {
+    it('resolves to an absolute path containing Update.exe', () => {
+      const exePath = getSquirrelUpdateExePath();
+      // Must be an absolute OS path — safe to pass as a literal execFileSync arg.
+      expect(path.isAbsolute(exePath)).toBe(true);
+      expect(exePath).toContain('Update.exe');
+    });
+
+    it('does not contain shell metacharacters', () => {
+      const exePath = getSquirrelUpdateExePath();
+      expect(exePath).not.toContain(';');
+      expect(exePath).not.toContain('&&');
+      expect(exePath).not.toContain('|');
+      expect(exePath).not.toContain('`');
+      expect(exePath).not.toContain('$');
+    });
+  });
+
+  describe('buildMacUpdateScript — exec arg safety (no unquoted shell metacharacters)', () => {
+    it('all path arguments are individually shell-escaped via shellEscape()', () => {
+      // Each arg must be wrapped in single quotes. This verifies that the script
+      // construction uses shellEscape() for every path rather than raw interpolation,
+      // which matches how execFileSync-launched bash would interpret the args.
+      const script = buildMacUpdateScript(
+        '/Applications/Clubhouse.app',
+        '/tmp/new.app',
+        '/tmp/extract',
+        '/tmp/download.zip',
+        '/tmp/script.sh',
+      );
+      // Each path appears as a single-quoted literal in the script
+      expect(script).toContain("'/Applications/Clubhouse.app'");
+      expect(script).toContain("'/tmp/new.app'");
+      expect(script).toContain("'/tmp/extract'");
+      expect(script).toContain("'/tmp/download.zip'");
+      expect(script).toContain("'/tmp/script.sh'");
+    });
+
+    it('does not use eval or unquoted command substitution', () => {
+      const script = buildMacUpdateScript(
+        '/Applications/App.app',
+        '/tmp/new.app',
+        '/tmp/extract',
+        '/tmp/download.zip',
+        '/tmp/script.sh',
+      );
+      // Script only uses rm/mv/open with shell-escaped args — no eval, no $() subshell
+      expect(script).not.toContain('eval');
+      expect(script).not.toMatch(/\$\([^)]/);
+    });
+
+    it('quit-update script uses unzip with shell-escaped positional args, not eval', () => {
+      const script = buildMacQuitUpdateScript(
+        '/Applications/App.app',
+        '/tmp/download.zip',
+        '/tmp/extract',
+        '/tmp/script.sh',
+      );
+      // unzip is called with positional args (all paths are shell-escaped)
+      expect(script).toContain('unzip');
+      expect(script).not.toContain('eval');
+      // The only $() allowed is the safe APP_PATH=$(find ...) variable assignment
+      // with a shell-escaped path; it should NOT include raw user-controlled data.
+      const subshells = script.match(/\$\([^)]+\)/g) ?? [];
+      for (const s of subshells) {
+        // Each subshell should reference the shellEscape-d tmpExtract path
+        // and use 'find' with controlled args — no user-supplied raw string
+        expect(s).toContain('find');
+      }
+    });
+
+    it('a path with spaces is quoted correctly and does not split into multiple args', () => {
+      const script = buildMacUpdateScript(
+        '/Applications/My Clubhouse.app',
+        '/tmp/My New.app',
+        '/tmp/extract dir',
+        '/tmp/my download.zip',
+        '/tmp/my script.sh',
+      );
+      // Space-containing paths must be single-quoted — spaces inside quotes are literal
+      expect(script).toContain("'/Applications/My Clubhouse.app'");
+      expect(script).toContain("'/tmp/My New.app'");
     });
   });
 });
