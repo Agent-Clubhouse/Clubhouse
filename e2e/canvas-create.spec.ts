@@ -56,7 +56,9 @@ test.afterAll(async () => {
 test('clicking the canvas + button → New Canvas creates a new canvas tab', async () => {
   // 1. Add a project fixture (canvas is per-project)
   await stubDialogForPath(FIXTURE_PROJECT);
-  await window.locator('[data-testid="nav-add-project"]').click();
+  const navAddBtn = window.locator('[data-testid="nav-add-project"]');
+  await expect(navAddBtn).toBeVisible({ timeout: 5_000 });
+  await navAddBtn.click();
   await expect(window.locator(`text=${path.basename(FIXTURE_PROJECT)}`).first()).toBeVisible({
     timeout: 10_000,
   });
@@ -109,7 +111,9 @@ test('clicking the canvas + button → New Canvas creates a new canvas tab', asy
   // 5. The dropdown should appear and contain "New Canvas".
   const addMenu = window.locator('[data-testid="canvas-add-menu"]');
   await expect(addMenu).toBeVisible({ timeout: 2_000 });
-  await window.locator('[data-testid="canvas-add-new"]').click();
+  const addNew = window.locator('[data-testid="canvas-add-new"]');
+  await expect(addNew).toBeVisible({ timeout: 5_000 });
+  await addNew.click();
 
   // 6. A new canvas tab must now exist (count increased by exactly 1).
   await expect(tabsLocator).toHaveCount(initialCount + 1, { timeout: 5_000 });

@@ -50,8 +50,8 @@ describe('DeleteAgentDialog', () => {
   });
 
   it('renders loading spinner initially', () => {
-    const { container } = render(<DeleteAgentDialog />);
-    expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+    render(<DeleteAgentDialog />);
+    expect(document.body.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
   it('shows clean state confirmation for clean worktree', async () => {
@@ -144,8 +144,8 @@ describe('DeleteAgentDialog', () => {
   });
 
   it('closes dialog when backdrop clicked', async () => {
-    const { container } = render(<DeleteAgentDialog />);
-    const backdrop = container.querySelector('.fixed.inset-0');
+    render(<DeleteAgentDialog />);
+    const backdrop = document.body.querySelector('.fixed.inset-0');
     fireEvent.click(backdrop!);
     expect(mockCloseDeleteDialog).toHaveBeenCalled();
   });

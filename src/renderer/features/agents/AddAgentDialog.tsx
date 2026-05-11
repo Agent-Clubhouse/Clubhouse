@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { generateDurableName, AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -64,7 +65,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
     onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined, sm);
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
         className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[360px] shadow-2xl"
@@ -259,6 +260,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

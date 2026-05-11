@@ -180,6 +180,7 @@ test.describe('Agent Lifecycle — Add Agent Dialog', () => {
 
   test('cancel closes dialog without creating', async () => {
     const cancelBtn = window.locator('button:has-text("Cancel")');
+    await expect(cancelBtn).toBeVisible({ timeout: 5_000 });
     await cancelBtn.click();
 
     const dialog = window.locator('h2:has-text("New Agent")');
@@ -188,6 +189,7 @@ test.describe('Agent Lifecycle — Add Agent Dialog', () => {
 
   test('submitting the form closes the dialog', async () => {
     const addAgentBtn = window.locator('button:has-text("+ Agent")').first();
+    await expect(addAgentBtn).toBeVisible({ timeout: 5_000 });
     await addAgentBtn.click();
 
     const dialog = window.locator('h2:has-text("New Agent")');
@@ -200,6 +202,7 @@ test.describe('Agent Lifecycle — Add Agent Dialog', () => {
     await nameInput.fill(AGENT_NAME);
 
     const createBtn = window.locator('button:has-text("Create Agent")');
+    await expect(createBtn).toBeVisible({ timeout: 5_000 });
     await createBtn.click();
 
     await expect(dialog).not.toBeVisible({ timeout: 10_000 });
@@ -270,6 +273,7 @@ test.describe('Agent Lifecycle — Dropdown', () => {
     await navigateToSmokeProject(window);
 
     const dropdownBtn = window.locator('button:has-text("▾")');
+    await expect(dropdownBtn).toBeVisible({ timeout: 5_000 });
     await dropdownBtn.click();
     await window.waitForTimeout(300);
 
@@ -279,8 +283,13 @@ test.describe('Agent Lifecycle — Dropdown', () => {
     await expect(durableOption).toBeVisible({ timeout: 3_000 });
     await expect(quickOption).toBeVisible({ timeout: 3_000 });
 
-    // Dismiss by clicking elsewhere
-    await window.locator('.fixed.inset-0').click();
+    // Dismiss via the backdrop. Use force:true so Playwright fires the click
+    // directly on the backdrop element without checking for pointer-interception
+    // — the dropdown menu (z:50) can cover the backdrop (z:40) at the viewport
+    // centre on ubuntu CI, causing a plain click() to time out.
+    const backdrop = window.locator('.fixed.inset-0');
+    await expect(backdrop).toBeVisible({ timeout: 5_000 });
+    await backdrop.click({ force: true });
     await window.waitForTimeout(200);
   });
 });

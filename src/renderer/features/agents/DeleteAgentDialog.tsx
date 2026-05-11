@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useAgentStore, DeleteMode } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useRemoteProjectStore, isRemoteAgentId, parseNamespacedId, isRemoteProjectId } from '../../stores/remoteProjectStore';
@@ -143,7 +144,7 @@ export function DeleteAgentDialog() {
 
   // Non-worktree agents get a simple unregister dialog
   if (!agent.worktreePath) {
-    return (
+    return createPortal(
       <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
         <div
           className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[400px] shadow-2xl"
@@ -180,7 +181,8 @@ export function DeleteAgentDialog() {
             </button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
@@ -190,7 +192,7 @@ export function DeleteAgentDialog() {
   const handleSimpleDelete = () => handleExecute('force');
   const handleLeaveFiles = () => handleExecute('unregister');
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
       <div
         className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[480px] shadow-2xl max-h-[80vh] flex flex-col"
@@ -343,6 +345,7 @@ export function DeleteAgentDialog() {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

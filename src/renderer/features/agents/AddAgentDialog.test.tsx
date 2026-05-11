@@ -112,8 +112,8 @@ describe('AddAgentDialog', () => {
   });
 
   it('calls onClose when backdrop clicked', () => {
-    const { container } = render(<AddAgentDialog {...defaultProps} />);
-    const backdrop = container.querySelector('.fixed.inset-0');
+    render(<AddAgentDialog {...defaultProps} />);
+    const backdrop = document.body.querySelector('.fixed.inset-0');
     fireEvent.click(backdrop!);
     expect(defaultProps.onClose).toHaveBeenCalled();
   });
