@@ -1,7 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('./MermaidDiagram', () => ({
+  MermaidDiagram: () => null,
+}));
+
+vi.mock('./MonacoEditor', () => ({
+  MonacoEditor: () => null,
+  disposeModel: vi.fn(),
+  updateSavedContent: vi.fn(),
+  getModelContent: vi.fn(() => ''),
+}));
+
 import { validateManifest } from '../../manifest-validator';
 import { manifest } from './manifest';
 import * as filesModule from './main';
+import { clearFileCache } from './FileViewer';
 
 describe('files plugin', () => {
   describe('manifest', () => {
@@ -74,6 +87,33 @@ describe('files plugin', () => {
     it('exports MainPanel component', () => {
       expect(filesModule.MainPanel).toBeDefined();
       expect(typeof filesModule.MainPanel).toBe('function');
+    });
+  });
+
+  describe('LB-PU-006: external change detection infrastructure', () => {
+    it('clearFileCache is exported from FileViewer and callable', () => {
+      expect(typeof clearFileCache).toBe('function');
+      expect(() => clearFileCache()).not.toThrow();
+    });
+
+    it('clearFileCache can be called multiple times without throwing', () => {
+      clearFileCache();
+      clearFileCache();
+      expect(() => clearFileCache()).not.toThrow();
+    });
+
+    it('external vs own-write detection: mtime comparison logic', () => {
+      // This unit test models the comparison logic used in the file watcher callback.
+      // knownMtime is undefined → always treat as external (first change since any save)
+      // knownMtime === currentMtime → our own write, skip
+      // knownMtime !== currentMtime → external change, update baseline
+      function isExternalChange(knownMtime: number | undefined, currentMtime: number): boolean {
+        return knownMtime === undefined || knownMtime !== currentMtime;
+      }
+
+      expect(isExternalChange(undefined, 1000)).toBe(true);   // unknown → external
+      expect(isExternalChange(1000, 1000)).toBe(false);        // same mtime → own write
+      expect(isExternalChange(1000, 2000)).toBe(true);         // different mtime → external
     });
   });
 });

@@ -936,6 +936,48 @@ describe('plugin-loader', () => {
       await expect(deactivatePlugin('err-d')).resolves.toBeUndefined();
       spy.mockRestore();
     });
+
+    describe('LB-PU-002: subscription chain resilience', () => {
+      it('continues disposing remaining subscriptions when one throws', async () => {
+        const disposed: string[] = [];
+        const mod: PluginModule = {
+          activate: (ctx) => {
+            ctx.subscriptions.push({ dispose: () => disposed.push('first') });
+            ctx.subscriptions.push({ dispose: () => { throw new Error('sub dispose blew up'); } });
+            ctx.subscriptions.push({ dispose: () => disposed.push('third') });
+          },
+        };
+        usePluginStore.getState().registerPlugin(makeManifest({ id: 'sub-throw', scope: 'app' }), 'builtin', '', 'registered');
+        usePluginStore.getState().setPluginModule('sub-throw', mod);
+        await activatePlugin('sub-throw');
+
+        // Should not throw even though the middle subscription's dispose() throws
+        await expect(deactivatePlugin('sub-throw')).resolves.toBeUndefined();
+
+        // All disposables that don't throw should still run (reversed: third, first)
+        expect(disposed).toContain('first');
+        expect(disposed).toContain('third');
+      });
+
+      it('clears the subscriptions array after deactivation', async () => {
+        let capturedCtx: any;
+        const mod: PluginModule = {
+          activate: (ctx) => {
+            capturedCtx = ctx;
+            ctx.subscriptions.push({ dispose: vi.fn() });
+            ctx.subscriptions.push({ dispose: vi.fn() });
+          },
+        };
+        usePluginStore.getState().registerPlugin(makeManifest({ id: 'subs-clear', scope: 'app' }), 'builtin', '', 'registered');
+        usePluginStore.getState().setPluginModule('subs-clear', mod);
+        await activatePlugin('subs-clear');
+
+        expect(capturedCtx.subscriptions.length).toBeGreaterThanOrEqual(2);
+        await deactivatePlugin('subs-clear');
+        // Subscriptions array cleared — no stale references retained
+        expect(capturedCtx.subscriptions).toHaveLength(0);
+      });
+    });
   });
 
   // ── handleProjectSwitch ──────────────────────────────────────────────

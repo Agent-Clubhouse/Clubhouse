@@ -23,14 +23,25 @@ describe('hub main', () => {
     expect(registerFn).toHaveBeenCalledWith('split-pane', expect.any(Function));
   });
 
-  it('activate pushes disposable to ctx.subscriptions', () => {
-    const ctx = createMockContext({ pluginId: 'hub', scope: 'dual' });
+  it('activate pushes command disposable to ctx.subscriptions (app mode — no project cleanup)', () => {
+    const ctx = createMockContext({ pluginId: 'hub', scope: 'app', projectId: undefined });
     const api = createMockAPI();
 
     hubModule.activate(ctx, api);
 
     expect(ctx.subscriptions).toHaveLength(1);
     expect(typeof ctx.subscriptions[0].dispose).toBe('function');
+  });
+
+  it('activate pushes command + cleanup disposables when projectId is set', () => {
+    const ctx = createMockContext({ pluginId: 'hub', scope: 'dual', projectId: 'proj-x' });
+    const api = createMockAPI();
+
+    hubModule.activate(ctx, api);
+
+    expect(ctx.subscriptions).toHaveLength(2);
+    expect(typeof ctx.subscriptions[0].dispose).toBe('function');
+    expect(typeof ctx.subscriptions[1].dispose).toBe('function');
   });
 
   it('deactivate does not throw', () => {
@@ -91,5 +102,53 @@ describe('hub main', () => {
     const leafB = storeB.getState().paneTree;
     expect(leafB.type).toBe('leaf');
     expect((leafB as any).agentId).toBeNull();
+  });
+
+  describe('LB-PU-003: hub store lifecycle fixes', () => {
+    it('getProjectHubStore(null) returns a stable store instead of a new throwaway store', () => {
+      const store1 = hubModule.getProjectHubStore(null);
+      const store2 = hubModule.getProjectHubStore(null);
+      // Must return the same reference (app store), not a new store each time
+      expect(store1).toBe(store2);
+    });
+
+    it('removeProjectHubStore removes the store from the registry', () => {
+      const projectId = 'proj-to-remove';
+      hubModule.getProjectHubStore(projectId);
+      expect(hubModule.hasProjectHubStore(projectId)).toBe(true);
+
+      hubModule.removeProjectHubStore(projectId);
+
+      expect(hubModule.hasProjectHubStore(projectId)).toBe(false);
+    });
+
+    it('activate cleanup subscription removes project store on dispose', () => {
+      const projectId = 'proj-cleanup-dispose';
+      const ctx = createMockContext({ pluginId: 'hub', scope: 'dual', projectId });
+      const api = createMockAPI();
+
+      hubModule.activate(ctx, api);
+      // Ensure the store exists
+      hubModule.getProjectHubStore(projectId);
+      expect(hubModule.hasProjectHubStore(projectId)).toBe(true);
+
+      // Dispose the cleanup subscription (simulates project close)
+      const cleanupSub = ctx.subscriptions[1];
+      cleanupSub.dispose();
+
+      expect(hubModule.hasProjectHubStore(projectId)).toBe(false);
+    });
+
+    it('getProjectHubStore creates a new store after removal (clean slate)', () => {
+      const projectId = 'proj-recreate';
+      const store1 = hubModule.getProjectHubStore(projectId);
+      hubModule.removeProjectHubStore(projectId);
+      const store2 = hubModule.getProjectHubStore(projectId);
+      expect(store1).not.toBe(store2);
+    });
+
+    it('removeProjectHubStore is a no-op for unknown project', () => {
+      expect(() => hubModule.removeProjectHubStore('does-not-exist')).not.toThrow();
+    });
   });
 });
