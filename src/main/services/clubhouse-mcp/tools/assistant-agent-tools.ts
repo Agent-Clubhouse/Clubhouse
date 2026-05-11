@@ -106,7 +106,8 @@ registerMcpCommand({
         orchestrator,
         freeAgentMode,
         mcpIds,
-        undefined, // structuredMode
+        undefined,
+        undefined,
         personaId,
       );
 
