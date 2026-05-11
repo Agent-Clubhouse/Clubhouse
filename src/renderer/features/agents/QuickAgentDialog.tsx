@@ -47,6 +47,10 @@ export function QuickAgentDialog() {
     }
   }, [isOpen]);
 
+  // Skip all JSX evaluation when closed — hooks still run (rules of hooks),
+  // but the children tree is not built until the dialog is actually open.
+  if (!isOpen) return null;
+
   // Durable agents for the selected project
   const durableAgents = Object.values(agents).filter(
     (a) => a.projectId === selectedProjectId && a.kind === 'durable'
