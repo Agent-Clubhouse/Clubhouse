@@ -2345,6 +2345,51 @@ describe('annex-server', () => {
     }, 10_000);
   });
 
+  // --- LB-AN-006: Lock overlay timing fix ---
+  describe('mTLS lock state broadcast ordering', () => {
+    it('broadcasts LOCK_STATE_CHANGED before awaiting buildSnapshot in connection handler', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // Find the wss.on('connection', ...) handler body
+      const connStart = source.indexOf("wss.on('connection', async (ws) => {");
+      expect(connStart).toBeGreaterThan(-1);
+
+      // Locate the positions of the critical operations within the handler
+      const lockBroadcastPos = source.indexOf('broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {', connStart);
+      const buildSnapshotPos = source.indexOf('await buildSnapshot()', connStart);
+
+      expect(lockBroadcastPos).toBeGreaterThan(-1);
+      expect(buildSnapshotPos).toBeGreaterThan(-1);
+
+      // LOCK_STATE_CHANGED must be broadcast BEFORE buildSnapshot is awaited
+      expect(lockBroadcastPos).toBeLessThan(buildSnapshotPos);
+    });
+
+    it('registers ws.on(close) before awaiting buildSnapshot in connection handler', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      const connStart = source.indexOf("wss.on('connection', async (ws) => {");
+      const closeHandlerPos = source.indexOf("ws.on('close',", connStart);
+      const buildSnapshotPos = source.indexOf('await buildSnapshot()', connStart);
+
+      expect(closeHandlerPos).toBeGreaterThan(-1);
+      expect(buildSnapshotPos).toBeGreaterThan(-1);
+
+      // close handler must be registered BEFORE buildSnapshot is awaited
+      expect(closeHandlerPos).toBeLessThan(buildSnapshotPos);
+    });
+  });
+
   // --- SEC-11: Session token expiry ---
   describe('session token expiry', () => {
     it('rejects expired tokens', async () => {
