@@ -467,7 +467,7 @@ export function AgentSettingsView({ agent }: Props) {
       // Create durable agent with user-chosen config
       const config = await window.clubhouse.agent.createDurable(
         projectPath, name, color, model !== 'default' ? model : undefined, useWorktree,
-        orch, freeAgentMode || undefined, mcpIds, structuredMode || undefined,
+        orch, freeAgentMode || undefined, mcpIds, undefined, structuredMode || undefined,
       );
 
       const agentWorktree = config.worktreePath || worktreePath;

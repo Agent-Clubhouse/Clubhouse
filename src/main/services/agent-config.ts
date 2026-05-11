@@ -3,7 +3,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
-import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, QuickAgentDefaults, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { resolveOrchestrator } from './agent-system';
@@ -472,7 +472,7 @@ export async function getDurableConfig(projectPath: string, agentId: string): Pr
 export async function updateDurableConfig(
   projectPath: string,
   agentId: string,
-  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string; freeAgentMode?: boolean; clubhouseModeOverride?: boolean; lastSessionId?: string | null; mcpIds?: string[] | null; mcpConfigs?: Record<string, Record<string, string>> | null },
+  updates: DurableConfigUpdates,
 ): Promise<void> {
   const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);

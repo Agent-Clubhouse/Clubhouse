@@ -285,6 +285,8 @@ export interface DurableConfigUpdates {
   freeAgentMode?: boolean;
   clubhouseModeOverride?: boolean;
   lastSessionId?: string | null;
+  mcpIds?: string[] | null;
+  mcpConfigs?: Record<string, Record<string, string>> | null;
   structuredMode?: boolean;
   persona?: string;
 }
