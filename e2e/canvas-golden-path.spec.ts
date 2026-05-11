@@ -149,15 +149,22 @@ test.describe('Canvas golden path', () => {
     expect(zoneId).toBeTruthy();
 
     // 4. Drag zone — mouse down on the drag icon (first ~50px of card width)
+    const workspaceBox = (await workspace.boundingBox())!;
     const cardBox = await zoneCard.boundingBox();
     expect(cardBox).not.toBeNull();
 
     const dragX = cardBox!.x + 25;
     const dragY = cardBox!.y + cardBox!.height / 2;
 
+    // Cap drag so zone stays within workspace viewport — Windows CI uses a
+    // smaller window; a zone dragged off-screen fails Playwright's actionability
+    // check (element is outside of the viewport) on the subsequent deleteBtn.click().
+    const dx = Math.min(120, workspaceBox.x + workspaceBox.width - cardBox!.x - cardBox!.width - 30);
+    const dy = Math.min(80, workspaceBox.y + workspaceBox.height - cardBox!.y - cardBox!.height - 30);
+
     await window.mouse.move(dragX, dragY);
     await window.mouse.down();
-    await window.mouse.move(dragX + 120, dragY + 80, { steps: 12 });
+    await window.mouse.move(dragX + dx, dragY + dy, { steps: 12 });
     await window.mouse.up();
 
     // Give React one frame to process the drop
