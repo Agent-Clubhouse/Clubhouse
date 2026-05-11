@@ -1,4 +1,5 @@
 import React, { useCallback, useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { CanvasInstance } from './canvas-types';
 
 interface CanvasTabBarProps {
@@ -25,15 +26,27 @@ export function CanvasTabBar({
   onExportBlueprint,
 }: CanvasTabBarProps) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const addMenuRef = useRef<HTMLDivElement>(null);
+  const addBtnRef = useRef<HTMLButtonElement>(null);
+  const addMenuDropdownRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
 
-  // Close add menu on outside click
+  // Compute dropdown position when menu opens
+  useEffect(() => {
+    if (addMenuOpen && addBtnRef.current) {
+      const rect = addBtnRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+  }, [addMenuOpen]);
+
+  // Close add menu on outside click — checks both the button and the portal dropdown
   useEffect(() => {
     if (!addMenuOpen) return;
     const handleClick = (e: MouseEvent) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
-        setAddMenuOpen(false);
-      }
+      if (
+        addBtnRef.current?.contains(e.target as Node) ||
+        addMenuDropdownRef.current?.contains(e.target as Node)
+      ) return;
+      setAddMenuOpen(false);
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -65,8 +78,9 @@ export function CanvasTabBar({
         ))}
       </div>
       {/* + button lives outside the scroll container so its dropdown is never clipped */}
-      <div className="relative flex-shrink-0 py-1 pl-0.5 pr-1.5" ref={addMenuRef}>
+      <div className="flex-shrink-0 py-1 pl-0.5 pr-1.5">
         <button
+          ref={addBtnRef}
           onClick={() => {
             if (onAddFromBlueprint) {
               setAddMenuOpen(!addMenuOpen);
@@ -80,9 +94,12 @@ export function CanvasTabBar({
         >
           +
         </button>
-        {addMenuOpen && (
+        {/* Portalled to document.body so it escapes CanvasWorkspace's stacking context */}
+        {addMenuOpen && createPortal(
           <div
-            className="absolute top-full right-0 mt-1 bg-ctp-base border border-surface-0 rounded-lg shadow-lg py-1 min-w-[160px] z-dropdown"
+            ref={addMenuDropdownRef}
+            className="fixed bg-ctp-base border border-surface-0 rounded-lg shadow-lg py-1 min-w-[160px] z-dropdown"
+            style={{ top: menuPos.top, right: menuPos.right }}
             data-testid="canvas-add-menu"
           >
             <button
@@ -99,7 +116,8 @@ export function CanvasTabBar({
             >
               From Blueprint
             </button>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </div>
