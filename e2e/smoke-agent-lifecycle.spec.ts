@@ -283,10 +283,13 @@ test.describe('Agent Lifecycle — Dropdown', () => {
     await expect(durableOption).toBeVisible({ timeout: 3_000 });
     await expect(quickOption).toBeVisible({ timeout: 3_000 });
 
-    // Dismiss by clicking elsewhere
+    // Dismiss via the backdrop. Use force:true so Playwright fires the click
+    // directly on the backdrop element without checking for pointer-interception
+    // — the dropdown menu (z:50) can cover the backdrop (z:40) at the viewport
+    // centre on ubuntu CI, causing a plain click() to time out.
     const backdrop = window.locator('.fixed.inset-0');
     await expect(backdrop).toBeVisible({ timeout: 5_000 });
-    await backdrop.click();
+    await backdrop.click({ force: true });
     await window.waitForTimeout(200);
   });
 });
