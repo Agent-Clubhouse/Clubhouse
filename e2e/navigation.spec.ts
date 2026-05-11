@@ -100,9 +100,12 @@ test.describe('Project Rail', () => {
   test('add first project and verify it becomes active', async () => {
     await addProject(FIXTURE_A);
 
-    // The title bar should mention the project name
-    const title = await getTitleBarText();
-    expect(title).toContain('project-a');
+    // Title bar updates asynchronously after the project appears in the rail.
+    // Use toContainText with a timeout to avoid a point-in-time read race on Windows CI.
+    await expect(window.locator('[data-testid="title-bar"]')).toContainText(
+      'project-a',
+      { timeout: 5_000 },
+    );
   });
 
   test('add second project and verify it becomes active', async () => {

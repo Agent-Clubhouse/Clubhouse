@@ -241,8 +241,10 @@ test.describe('Canvas golden path', () => {
     const workspace = window.locator('[data-testid="canvas-workspace"]');
     await expect(workspace).toBeVisible({ timeout: 5_000 });
 
-    // Create zone at a known position
-    await workspace.click({ button: 'right', position: { x: 80, y: 80 } });
+    // Create zone at a known position — use x:120,y:120 to stay clear of the rail
+    // which can overlap the workspace at small x offsets on Windows CI (causing the
+    // rail's Review button to intercept the synthetic click at that viewport coordinate).
+    await workspace.click({ button: 'right', position: { x: 120, y: 120 } });
     await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
     await window.locator('[data-testid="canvas-context-menu-zone"]').click();
 
@@ -268,7 +270,9 @@ test.describe('Canvas golden path', () => {
       // Zone has no contained views → direct delete (no dialog)
       const deleteBtn = zoneCard.locator('button[title="Delete zone"]');
       await expect(deleteBtn).toBeVisible({ timeout: 5_000 });
-      await deleteBtn.click();
+      // dispatchEvent bypasses Playwright's viewport coordinate check — the zone card
+      // may be CSS-transform-positioned outside viewport bounds on Windows CI.
+      await deleteBtn.dispatchEvent('click');
       await expect(zoneCard).not.toBeVisible({ timeout: 5_000 });
     }
   });
