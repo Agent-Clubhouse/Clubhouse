@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
+import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings, ThemeId } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
@@ -100,13 +100,13 @@ export function registerAppHandlers(): void {
   });
 
   ipcMain.handle(IPC.APP.SAVE_THEME, withValidatedArgs(
-    [objectArg<{ themeId: string }>({
+    [objectArg<{ themeId: ThemeId }>({
       validate: (v, name) => {
         if (typeof v.themeId !== 'string' || !v.themeId) throw new Error(`${name}.themeId must be a non-empty string`);
       },
     })],
     async (_event, settings) => {
-      await themeService.saveSettings(settings as any);
+      await themeService.saveSettings(settings);
       annexServer.broadcastThemeChanged();
     },
   ));

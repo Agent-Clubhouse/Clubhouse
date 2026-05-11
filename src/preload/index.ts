@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import { settingsChannels } from '../shared/settings-definitions';
-import { AgentHookEvent } from '../shared/types';
+import { AgentHookEvent, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings } from '../shared/types';
+import type { PluginUpdatesStatus } from '../shared/marketplace-types';
 
 const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -70,11 +71,11 @@ const api = {
       ipcRenderer.invoke(IPC.PROJECT.RESET_PROJECT, projectPath),
     readLaunchWrapper: (projectPath: string) =>
       ipcRenderer.invoke(IPC.PROJECT.READ_LAUNCH_WRAPPER, projectPath),
-    writeLaunchWrapper: (projectPath: string, wrapper: any) =>
+    writeLaunchWrapper: (projectPath: string, wrapper: LaunchWrapperConfig) =>
       ipcRenderer.invoke(IPC.PROJECT.WRITE_LAUNCH_WRAPPER, projectPath, wrapper),
     readMcpCatalog: (projectPath: string) =>
       ipcRenderer.invoke(IPC.PROJECT.READ_MCP_CATALOG, projectPath),
-    writeMcpCatalog: (projectPath: string, catalog: any[]) =>
+    writeMcpCatalog: (projectPath: string, catalog: McpCatalogEntry[]) =>
       ipcRenderer.invoke(IPC.PROJECT.WRITE_MCP_CATALOG, projectPath, catalog),
     readDefaultMcps: (projectPath: string) =>
       ipcRenderer.invoke(IPC.PROJECT.READ_DEFAULT_MCPS, projectPath),
@@ -118,7 +119,7 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.READ_QUICK_SUMMARY, agentId, projectPath),
     getDurableConfig: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_DURABLE_CONFIG, projectPath, agentId),
-    updateDurableConfig: (projectPath: string, agentId: string, updates: any) =>
+    updateDurableConfig: (projectPath: string, agentId: string, updates: DurableConfigUpdates) =>
       ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE_CONFIG, projectPath, agentId, updates),
 
     // New orchestrator-based methods
@@ -311,7 +312,7 @@ const api = {
       timestamp: number;
       data: unknown;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, agentId: string, structuredEvent: any) =>
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, structuredEvent: Parameters<typeof callback>[1]) =>
         callback(agentId, structuredEvent);
       ipcRenderer.on(IPC.AGENT.STRUCTURED_EVENT, listener);
       return () => { ipcRenderer.removeListener(IPC.AGENT.STRUCTURED_EVENT, listener); };
@@ -608,7 +609,7 @@ const api = {
       ipcRenderer.invoke(IPC.MARKETPLACE.CHECK_PLUGIN_UPDATES),
     updatePlugin: (req: { pluginId: string }) =>
       ipcRenderer.invoke(IPC.MARKETPLACE.UPDATE_PLUGIN, req),
-    getPluginUpdatesStatus: (): { updates: any[]; incompatibleUpdates: any[]; checking: boolean; lastCheck: string | null; updating: Record<string, string>; error: string | null } => ({
+    getPluginUpdatesStatus: (): PluginUpdatesStatus => ({
       updates: [],
       incompatibleUpdates: [],
       checking: false,
@@ -616,15 +617,8 @@ const api = {
       updating: {},
       error: null,
     }),
-    onPluginUpdatesChanged: (callback: (status: {
-      updates: any[];
-      incompatibleUpdates: any[];
-      checking: boolean;
-      lastCheck: string | null;
-      updating: Record<string, string>;
-      error: string | null;
-    }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, s: any) => callback(s);
+    onPluginUpdatesChanged: (callback: (status: PluginUpdatesStatus) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, s: PluginUpdatesStatus) => callback(s);
       ipcRenderer.on(IPC.MARKETPLACE.PLUGIN_UPDATES_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.MARKETPLACE.PLUGIN_UPDATES_CHANGED, listener); };
     },
@@ -684,7 +678,7 @@ const api = {
       ipcRenderer.invoke(IPC.APP.OPEN_EXTERNAL_URL, url),
     getNotificationSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_NOTIFICATION_SETTINGS),
-    saveNotificationSettings: (settings: any) =>
+    saveNotificationSettings: (settings: NotificationSettings) =>
       ipcRenderer.invoke(IPC.APP.SAVE_NOTIFICATION_SETTINGS, settings),
     sendNotification: (title: string, body: string, silent: boolean, agentId?: string, projectId?: string) =>
       ipcRenderer.invoke(IPC.APP.SEND_NOTIFICATION, title, body, silent, agentId, projectId),
@@ -742,7 +736,7 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SET_DOCK_BADGE, count),
     getBadgeSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_BADGE_SETTINGS),
-    saveBadgeSettings: (settings: any) =>
+    saveBadgeSettings: (settings: BadgeSettings) =>
       ipcRenderer.invoke(IPC.APP.SAVE_BADGE_SETTINGS, settings),
     getUpdateSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_UPDATE_SETTINGS),
@@ -838,7 +832,7 @@ const api = {
       artifactUrl: string | null;
       applyAttempted: boolean;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, s: any) => callback(s);
+      const listener = (_event: Electron.IpcRendererEvent, s: Parameters<typeof callback>[0]) => callback(s);
       ipcRenderer.on(IPC.APP.UPDATE_STATUS_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.APP.UPDATE_STATUS_CHANGED, listener); };
     },
@@ -888,7 +882,7 @@ const api = {
       icon: string;
       color: string;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, s: any) => callback(s);
+      const listener = (_event: Electron.IpcRendererEvent, s: Parameters<typeof callback>[0]) => callback(s);
       ipcRenderer.on(IPC.ANNEX.STATUS_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX.STATUS_CHANGED, listener); };
     },
@@ -905,7 +899,7 @@ const api = {
       projectId: string;
       headless: boolean;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, agent: any) => callback(agent);
+      const listener = (_event: Electron.IpcRendererEvent, agent: Parameters<typeof callback>[0]) => callback(agent);
       ipcRenderer.on(IPC.ANNEX.AGENT_SPAWNED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX.AGENT_SPAWNED, listener); };
     },
@@ -926,17 +920,17 @@ const api = {
       pairedAt: string;
       lastSeen: string;
     }>) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, peers: any) => callback(peers);
+      const listener = (_event: Electron.IpcRendererEvent, peers: Parameters<typeof callback>[0]) => callback(peers);
       ipcRenderer.on(IPC.ANNEX.PEERS_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX.PEERS_CHANGED, listener); };
     },
     onPairingLocked: (callback: (locked: boolean) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, locked: any) => callback(locked);
+      const listener = (_event: Electron.IpcRendererEvent, locked: boolean) => callback(locked);
       ipcRenderer.on(IPC.ANNEX.PAIRING_LOCKED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX.PAIRING_LOCKED, listener); };
     },
     onLockStateChanged: (callback: (state: { locked: boolean; remainingMs: number }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, state: any) => callback(state);
+      const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
       ipcRenderer.on(IPC.ANNEX.LOCK_STATE_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX.LOCK_STATE_CHANGED, listener); };
     },
@@ -1032,17 +1026,17 @@ const api = {
     pairWith: (fingerprint: string, pin: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.PAIR_WITH, fingerprint, pin),
     onSatellitesChanged: (callback: (satellites: unknown[]) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, sats: any) => callback(sats);
+      const listener = (_event: Electron.IpcRendererEvent, sats: Parameters<typeof callback>[0]) => callback(sats);
       ipcRenderer.on(IPC.ANNEX_CLIENT.SATELLITES_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX_CLIENT.SATELLITES_CHANGED, listener); };
     },
     onDiscoveredChanged: (callback: (services: unknown[]) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      const listener = (_event: Electron.IpcRendererEvent, data: Parameters<typeof callback>[0]) => callback(data);
       ipcRenderer.on(IPC.ANNEX_CLIENT.DISCOVERED_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX_CLIENT.DISCOVERED_CHANGED, listener); };
     },
     onSatelliteEvent: (callback: (event: { satelliteId: string; type: string; payload: unknown }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      const listener = (_event: Electron.IpcRendererEvent, data: Parameters<typeof callback>[0]) => callback(data);
       ipcRenderer.on(IPC.ANNEX_CLIENT.SATELLITE_EVENT, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX_CLIENT.SATELLITE_EVENT, listener); };
     },
@@ -1111,7 +1105,7 @@ const api = {
       agentDetailedStatus: Record<string, unknown>;
       agentIcons: Record<string, string>;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, state: any) => callback(state);
+      const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
       ipcRenderer.on(IPC.WINDOW.AGENT_STATE_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.WINDOW.AGENT_STATE_CHANGED, listener); };
     },
@@ -1143,7 +1137,7 @@ const api = {
       focusedPaneId: string;
       zoomedPaneId: string | null;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, state: any) => callback(state);
+      const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
       ipcRenderer.on(IPC.WINDOW.HUB_STATE_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.WINDOW.HUB_STATE_CHANGED, listener); };
     },
@@ -1196,7 +1190,7 @@ const api = {
       nextZIndex: number;
       zoomedViewId: string | null;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, state: any) => callback(state);
+      const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
       ipcRenderer.on(IPC.WINDOW.CANVAS_STATE_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.WINDOW.CANVAS_STATE_CHANGED, listener); };
     },
@@ -1249,7 +1243,7 @@ const api = {
       return () => { ipcRenderer.removeListener(IPC.AGENT_QUEUE.CHANGED, listener); };
     },
     onTaskChanged: (callback: (data: { queueId: string; taskId: string }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      const listener = (_event: Electron.IpcRendererEvent, data: Parameters<typeof callback>[0]) => callback(data);
       ipcRenderer.on(IPC.AGENT_QUEUE.TASK_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.AGENT_QUEUE.TASK_CHANGED, listener); };
     },
@@ -1322,7 +1316,7 @@ const api = {
       targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue';
       label: string;
     }>) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, bindings: any) => callback(bindings);
+      const listener = (_event: Electron.IpcRendererEvent, bindings: Parameters<typeof callback>[0]) => callback(bindings);
       ipcRenderer.on(IPC.MCP_BINDING.BINDINGS_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.MCP_BINDING.BINDINGS_CHANGED, listener); };
     },
@@ -1333,7 +1327,7 @@ const api = {
       toolSuffix: string;
       timestamp: number;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, activity: any) => callback(activity);
+      const listener = (_event: Electron.IpcRendererEvent, activity: Parameters<typeof callback>[0]) => callback(activity);
       ipcRenderer.on(IPC.MCP_BINDING.TOOL_ACTIVITY, listener);
       return () => { ipcRenderer.removeListener(IPC.MCP_BINDING.TOOL_ACTIVITY, listener); };
     },
@@ -1362,7 +1356,7 @@ const api = {
       ipcRenderer.invoke(IPC.ASSISTANT.SEND_STRUCTURED_FOLLOWUP, params),
     /** Listen for headless agent completion events. */
     onResult: (callback: (result: { agentId: string; exitCode: number }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, result: any) => callback(result);
+      const listener = (_event: Electron.IpcRendererEvent, result: Parameters<typeof callback>[0]) => callback(result);
       ipcRenderer.on(IPC.ASSISTANT.RESULT, listener);
       return () => { ipcRenderer.removeListener(IPC.ASSISTANT.RESULT, listener); };
     },
@@ -1370,16 +1364,16 @@ const api = {
     reset: (agentId: string) =>
       ipcRenderer.invoke(IPC.ASSISTANT.RESET, agentId),
     /** Save chat history to disk for session persistence. */
-    saveHistory: (items: any[]) =>
+    saveHistory: (items: unknown[]) =>
       ipcRenderer.invoke(IPC.ASSISTANT.SAVE_HISTORY, { items }),
     /** Load chat history from disk. */
     loadHistory: () =>
-      ipcRenderer.invoke(IPC.ASSISTANT.LOAD_HISTORY) as Promise<any[] | null>,
+      ipcRenderer.invoke(IPC.ASSISTANT.LOAD_HISTORY) as Promise<unknown[] | null>,
   },
   canvas: {
     /** Listen for canvas commands from the main process (assistant). */
     onCommand: (callback: (request: { callId: string; command: string; args: Record<string, unknown> }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, request: any) => callback(request);
+      const listener = (_event: Electron.IpcRendererEvent, request: Parameters<typeof callback>[0]) => callback(request);
       ipcRenderer.on(IPC.CANVAS_CMD.REQUEST, listener);
       return () => { ipcRenderer.removeListener(IPC.CANVAS_CMD.REQUEST, listener); };
     },
@@ -1401,7 +1395,7 @@ const api = {
   commandPalette: {
     /** Listen for command palette operations from the main process. */
     onRequest: (callback: (request: { callId: string; operation: string; args: Record<string, unknown> }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, request: any) => callback(request);
+      const listener = (_event: Electron.IpcRendererEvent, request: Parameters<typeof callback>[0]) => callback(request);
       ipcRenderer.on(IPC.CMD_PALETTE.REQUEST, listener);
       return () => { ipcRenderer.removeListener(IPC.CMD_PALETTE.REQUEST, listener); };
     },

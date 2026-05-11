@@ -1,6 +1,10 @@
 import { buildAssistantInstructions } from './system-prompt';
 import type { FeedItem } from './types';
 
+function isFeedItem(v: unknown): v is FeedItem {
+  return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).type === 'string';
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type AssistantStatus = 'idle' | 'starting' | 'active' | 'responding' | 'error';
@@ -546,7 +550,8 @@ export async function loadHistory(): Promise<void> {
     const items = await window.clubhouse.assistant.loadHistory();
     if (items && Array.isArray(items) && items.length > 0) {
       pendingItems.length = 0;
-      const capped = items.length > MAX_FEED_ITEMS ? items.slice(-MAX_FEED_ITEMS) : items;
+      const valid = items.filter(isFeedItem);
+      const capped = valid.length > MAX_FEED_ITEMS ? valid.slice(-MAX_FEED_ITEMS) : valid;
       for (const item of capped) {
         pendingItems.push(item);
       }

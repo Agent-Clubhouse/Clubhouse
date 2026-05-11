@@ -244,6 +244,17 @@ export interface McpCatalogEntry {
   description: string;
 }
 
+export interface DurableConfigUpdates {
+  quickAgentDefaults?: QuickAgentDefaults;
+  orchestrator?: OrchestratorId;
+  model?: string;
+  freeAgentMode?: boolean;
+  clubhouseModeOverride?: boolean;
+  lastSessionId?: string | null;
+  structuredMode?: boolean;
+  persona?: string;
+}
+
 export interface ClubhouseModeSettings {
   enabled: boolean;
   projectOverrides?: Record<string, boolean>;

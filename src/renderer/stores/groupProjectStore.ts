@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import type { GroupProject } from '../../shared/group-project-types';
 
+function isGroupProject(v: unknown): v is GroupProject {
+  return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).id === 'string' && typeof (v as Record<string, unknown>).name === 'string';
+}
+
 interface GroupProjectStoreState {
   projects: GroupProject[];
   loaded: boolean;
@@ -27,8 +31,9 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
 
   loadProjects: async () => {
     try {
-      const projects = await window.clubhouse.groupProject.list() as GroupProject[];
-      set({ projects: projects || [], loaded: true, loadError: null });
+      const raw = await window.clubhouse.groupProject.list() as unknown[];
+      const projects = Array.isArray(raw) ? raw.filter(isGroupProject) : [];
+      set({ projects, loaded: true, loadError: null });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('[group-project] loadProjects failed:', message);
@@ -37,9 +42,10 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   },
 
   create: async (name) => {
-    const project = await window.clubhouse.groupProject.create(name) as GroupProject;
-    set((state) => ({ projects: [...state.projects, project] }));
-    return project;
+    const raw = await window.clubhouse.groupProject.create(name);
+    if (!isGroupProject(raw)) throw new Error('create returned invalid GroupProject');
+    set((state) => ({ projects: [...state.projects, raw] }));
+    return raw;
   },
 
   update: async (id, fields) => {
@@ -104,8 +110,7 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
 /** Initialize listener for group project changes from main process. */
 export function initGroupProjectListener(): () => void {
   return window.clubhouse.groupProject.onChanged((projects) => {
-    useGroupProjectStore.setState({
-      projects: (projects || []) as GroupProject[],
-    });
+    const valid = Array.isArray(projects) ? (projects as unknown[]).filter(isGroupProject) : [];
+    useGroupProjectStore.setState({ projects: valid });
   });
 }
