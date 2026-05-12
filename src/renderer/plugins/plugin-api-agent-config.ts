@@ -359,6 +359,8 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
       env?: Record<string, string>;
       mcpCatalog: Array<{ id: string; name: string; description: string }>;
       defaultMcps?: string[];
+      refreshCommandId?: string;
+      contributingPluginId?: string;
     }): Promise<void> {
       const projectPath = ctx.projectPath;
       if (!projectPath) throw new Error('contributeWrapperPreset requires a project context');
@@ -367,11 +369,21 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
         separator: preset.separator,
         orchestratorMap: preset.orchestratorMap,
         env: preset.env,
+        refreshCommandId: preset.refreshCommandId,
+        contributingPluginId: preset.contributingPluginId ?? pluginId,
       });
       await window.clubhouse.project.writeMcpCatalog(projectPath, preset.mcpCatalog);
       if (preset.defaultMcps) {
         await window.clubhouse.project.writeDefaultMcps(projectPath, preset.defaultMcps);
       }
+    },
+
+    async removeWrapperPreset(opts?: AgentConfigTargetOptions): Promise<void> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      await window.clubhouse.project.writeLaunchWrapper(projectPath, undefined);
+      await window.clubhouse.project.writeMcpCatalog(projectPath, []);
+      await window.clubhouse.project.writeDefaultMcps(projectPath, []);
+      await window.clubhouse.project.writeWrapperCatalogSnapshot(projectPath, undefined);
     },
   };
 }

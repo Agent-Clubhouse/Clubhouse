@@ -5,7 +5,7 @@ import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
 import * as projectStore from '../services/project-store';
 import { ensureGitignore } from '../services/agent-config';
-import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog, readDefaultMcps, writeDefaultMcps } from '../services/agent-settings-service';
+import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog, readDefaultMcps, writeDefaultMcps, readMcpConfigs, writeMcpConfigs, readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot } from '../services/agent-settings-service';
 import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
 import { arrayArg, objectArg, stringArg, withValidatedArgs } from './validation';
@@ -230,6 +230,50 @@ export function registerProjectHandlers(): void {
       await writeDefaultMcps(projectPath, mcpIds);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to write default MCPs', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    }
+  }));
+
+  ipcMain.handle(IPC.PROJECT.READ_MCP_CONFIGS, withValidatedArgs([stringArg()], async (_event, projectPath: string) => {
+    try {
+      return await readMcpConfigs(projectPath);
+    } catch (err) {
+      appLog('core:project', 'error', 'Failed to read MCP configs', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
+      return {};
+    }
+  }));
+
+  ipcMain.handle(IPC.PROJECT.WRITE_MCP_CONFIGS, withValidatedArgs([stringArg(), objectArg()], async (_event, projectPath: string, configs: unknown) => {
+    try {
+      await writeMcpConfigs(projectPath, configs as Record<string, Record<string, string>>);
+    } catch (err) {
+      appLog('core:project', 'error', 'Failed to write MCP configs', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    }
+  }));
+
+  ipcMain.handle(IPC.PROJECT.READ_WRAPPER_CATALOG_SNAPSHOT, withValidatedArgs([stringArg()], async (_event, projectPath: string) => {
+    try {
+      return await readWrapperCatalogSnapshot(projectPath);
+    } catch (err) {
+      appLog('core:project', 'error', 'Failed to read wrapper catalog snapshot', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
+      return undefined;
+    }
+  }));
+
+  ipcMain.handle(IPC.PROJECT.WRITE_WRAPPER_CATALOG_SNAPSHOT, withValidatedArgs([stringArg(), objectArg({ optional: true })], async (_event, projectPath: string, snapshot: unknown) => {
+    try {
+      await writeWrapperCatalogSnapshot(projectPath, (snapshot as any) || undefined);
+    } catch (err) {
+      appLog('core:project', 'error', 'Failed to write wrapper catalog snapshot', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
       });
       throw err;

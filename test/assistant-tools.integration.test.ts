@@ -527,7 +527,7 @@ describe('Assistant Tools Integration Tests', () => {
       expect(result.isError).toBeFalsy();
       expect(mockCreateDurable).toHaveBeenCalledWith(
         '/home/user/my-app', 'my-worker', 'indigo', 'opus',
-        true, 'claude-code', undefined, undefined, undefined, undefined,
+        true, 'claude-code', undefined, undefined, undefined, undefined, undefined,
       );
       const data = parseJson(result);
       expect(data.id).toBe('durable_abc');

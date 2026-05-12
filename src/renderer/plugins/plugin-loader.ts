@@ -307,6 +307,11 @@ export async function activatePlugin(
     return;
   }
 
+  if (entry.manifest.scope === 'project' && !projectId) {
+    rendererLog('core:plugins', 'warn', `Skipping activation of project-scoped plugin "${pluginId}" without project context`);
+    return;
+  }
+
   const contextKey = projectId ? `${pluginId}:${projectId}` : pluginId;
   if (activeContexts.has(contextKey)) {
     return; // Already activated

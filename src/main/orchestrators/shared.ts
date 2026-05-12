@@ -144,6 +144,7 @@ export function applyLaunchWrapper(
   _originalBinary: string,
   originalArgs: string[],
   mcpIds: string[],
+  mcpConfigs?: Record<string, Record<string, string>>,
 ): { binary: string; args: string[] } {
   const mapping = config.orchestratorMap[orchestratorId];
   if (!mapping) {
@@ -156,7 +157,20 @@ export function applyLaunchWrapper(
   const args: string[] = [mapping.subcommand];
 
   for (const id of mcpIds) {
-    args.push('--mcp', id);
+    const conf = mcpConfigs?.[id];
+    if (conf && Object.keys(conf).length > 0) {
+      const parts = [id];
+      for (const [flag, value] of Object.entries(conf)) {
+        if (value === 'true') {
+          parts.push(flag);
+        } else if (value) {
+          parts.push(flag, value);
+        }
+      }
+      args.push('--mcp', parts.join(' '));
+    } else {
+      args.push('--mcp', id);
+    }
   }
 
   if (config.separator) {
@@ -166,6 +180,41 @@ export function applyLaunchWrapper(
   args.push(...originalArgs);
 
   return { binary: config.binary, args };
+}
+
+export type WrapperValidationResult =
+  | { ok: true }
+  | { ok: false; reason: string };
+
+export interface WrapperValidationContext {
+  /** Returns true if the named plugin is currently enabled. */
+  isPluginEnabled: (pluginId: string) => boolean;
+}
+
+/**
+ * Pre-flight validation before applying a launch wrapper transform at spawn time.
+ * Caller should skip wrapping (and surface the reason) when this returns ok: false.
+ */
+export function validateWrapperConfig(
+  config: LaunchWrapperConfig,
+  orchestratorId: string,
+  ctx: WrapperValidationContext,
+): WrapperValidationResult {
+  if (!config.orchestratorMap[orchestratorId]) {
+    return { ok: false, reason: `wrapper '${config.binary}' has no mapping for orchestrator '${orchestratorId}'` };
+  }
+  if (config.contributingPluginId && !ctx.isPluginEnabled(config.contributingPluginId)) {
+    return { ok: false, reason: `wrapper plugin '${config.contributingPluginId}' is not enabled` };
+  }
+  if (/[;&|`$(){}]/.test(config.binary)) {
+    return { ok: false, reason: `wrapper binary '${config.binary}' contains invalid characters` };
+  }
+  try {
+    findBinaryInPath([config.binary], []);
+  } catch {
+    return { ok: false, reason: `wrapper binary '${config.binary}' is not available on PATH` };
+  }
+  return { ok: true };
 }
 
 /**

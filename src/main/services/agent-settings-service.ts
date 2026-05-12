@@ -1,7 +1,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry } from '../../shared/types';
+import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../shared/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
 import { validateCommandPrefix } from './command-prefix-validation';
@@ -44,6 +44,8 @@ interface ProjectSettings {
   launchWrapper?: LaunchWrapperConfig;
   mcpCatalog?: McpCatalogEntry[];
   defaultMcps?: string[];
+  wrapperCatalogSnapshot?: WrapperCatalogSnapshot;
+  mcpConfigs?: Record<string, Record<string, string>>;
 }
 
 export async function readClaudeMd(worktreePath: string): Promise<string> {
@@ -668,5 +670,43 @@ export async function writeMcpCatalog(projectPath: string, catalog: McpCatalogEn
 export async function writeDefaultMcps(projectPath: string, mcpIds: string[]): Promise<void> {
   const settings = await readSettings(projectPath);
   settings.defaultMcps = mcpIds;
+  await writeSettings(projectPath, settings);
+}
+
+/**
+ * Read the last-acknowledged wrapper catalog snapshot from .clubhouse/settings.json.
+ * Returns undefined when no snapshot has been recorded.
+ */
+export async function readWrapperCatalogSnapshot(projectPath: string): Promise<WrapperCatalogSnapshot | undefined> {
+  const settings = await readSettings(projectPath);
+  return settings.wrapperCatalogSnapshot;
+}
+
+/**
+ * Write the wrapper catalog snapshot to .clubhouse/settings.json.
+ * Pass undefined to remove the snapshot.
+ */
+export async function writeWrapperCatalogSnapshot(projectPath: string, snapshot: WrapperCatalogSnapshot | undefined): Promise<void> {
+  const settings = await readSettings(projectPath);
+  if (snapshot) {
+    settings.wrapperCatalogSnapshot = snapshot;
+  } else {
+    delete settings.wrapperCatalogSnapshot;
+  }
+  await writeSettings(projectPath, settings);
+}
+
+export async function readMcpConfigs(projectPath: string): Promise<Record<string, Record<string, string>>> {
+  const settings = await readSettings(projectPath);
+  return settings.mcpConfigs || {};
+}
+
+export async function writeMcpConfigs(projectPath: string, configs: Record<string, Record<string, string>>): Promise<void> {
+  const settings = await readSettings(projectPath);
+  if (Object.keys(configs).length > 0) {
+    settings.mcpConfigs = configs;
+  } else {
+    delete settings.mcpConfigs;
+  }
   await writeSettings(projectPath, settings);
 }

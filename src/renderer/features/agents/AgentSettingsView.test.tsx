@@ -591,7 +591,7 @@ describe('AgentSettingsView', () => {
       await waitFor(() => {
         expect((window.clubhouse.agent as any).createDurable).toHaveBeenCalledWith(
           '/project', 'code-reviewer', 'indigo', undefined, true,
-          'claude-code', undefined, undefined, undefined,
+          'claude-code', undefined, undefined, undefined, undefined,
         );
       });
     });

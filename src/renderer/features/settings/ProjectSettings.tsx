@@ -1,11 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useAgentStore } from '../../stores/agentStore';
+import { useToastStore } from '../../stores/toastStore';
 import { AGENT_COLORS, getAgentColorHex } from '../../../shared/name-generator';
 import { ResetProjectDialog } from './ResetProjectDialog';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { EmojiPicker } from '../../components/EmojiPicker';
-import type { LaunchWrapperConfig, McpCatalogEntry } from '../../../shared/types';
+import { computeCatalogDiff } from '../../../shared/wrapper-diff';
+import { pluginCommandRegistry } from '../../plugins/plugin-commands';
+import type { LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../../shared/types';
 import { showConfirmDialog } from '../../plugins/PluginDialog';
 
 function NameAndPathSection({ projectId }: { projectId: string }) {
@@ -207,25 +211,52 @@ function AppearanceSection({ projectId }: { projectId: string }) {
   );
 }
 
-function LaunchWrapperSection({ projectPath }: { projectPath: string }) {
+function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; projectPath: string }) {
   const [wrapper, setWrapper] = useState<LaunchWrapperConfig | undefined>(undefined);
   const [catalog, setCatalog] = useState<McpCatalogEntry[]>([]);
   const [defaultMcps, setDefaultMcps] = useState<string[]>([]);
+  const [snapshot, setSnapshot] = useState<WrapperCatalogSnapshot | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const agents = useAgentStore((s) => s.agents);
+  const addToast = useToastStore((s) => s.addToast);
 
   const load = useCallback(async () => {
-    const [w, c, d] = await Promise.all([
+    const [w, c, d, snap] = await Promise.all([
       window.clubhouse.project.readLaunchWrapper(projectPath),
       window.clubhouse.project.readMcpCatalog(projectPath),
       window.clubhouse.project.readDefaultMcps(projectPath),
+      window.clubhouse.project.readWrapperCatalogSnapshot(projectPath),
     ]);
     setWrapper(w);
     setCatalog(c || []);
     setDefaultMcps(d || []);
+    setSnapshot(snap);
     setLoaded(true);
   }, [projectPath]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Compute mcpIds across all agents in this project (for "removed-only-if-selected" rule).
+  const anyAgentMcpIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const agent of Object.values(agents)) {
+      if (agent.projectId !== projectId) continue;
+      for (const id of agent.mcpIds || []) ids.add(id);
+    }
+    return Array.from(ids);
+  }, [agents, projectId]);
+
+  const diffEntries = useMemo(
+    () => computeCatalogDiff(catalog, snapshot, defaultMcps, anyAgentMcpIds),
+    [catalog, snapshot, defaultMcps, anyAgentMcpIds],
+  );
+
+  const newCount = diffEntries.filter((e) => e.state === 'new').length;
+  const changedCount = diffEntries.filter((e) => e.state === 'changed').length;
+  const removedCount = diffEntries.filter((e) => e.state === 'removed').length;
+  const hasDiff = newCount + changedCount + removedCount > 0;
 
   if (!loaded) return null;
   if (!wrapper) {
@@ -251,9 +282,59 @@ function LaunchWrapperSection({ projectPath }: { projectPath: string }) {
     await window.clubhouse.project.writeLaunchWrapper(projectPath, undefined);
     await window.clubhouse.project.writeMcpCatalog(projectPath, []);
     await window.clubhouse.project.writeDefaultMcps(projectPath, []);
+    await window.clubhouse.project.writeWrapperCatalogSnapshot(projectPath, undefined);
     setWrapper(undefined);
     setCatalog([]);
     setDefaultMcps([]);
+    setSnapshot(undefined);
+  };
+
+  const handleRefresh = async () => {
+    if (!wrapper?.refreshCommandId) return;
+    setRefreshing(true);
+    try {
+      const commandId = wrapper.refreshCommandId;
+      const pluginId = wrapper.contributingPluginId;
+      // Try the configured id directly first (covers ids the plugin registered raw,
+      // and ids the API stored as `${pluginId}:${commandId}`).
+      // Then fall back to the prefixed form.
+      const tryInvoke = async (): Promise<void> => {
+        if (pluginCommandRegistry.has(commandId)) {
+          await pluginCommandRegistry.execute(commandId);
+          return;
+        }
+        if (pluginId) {
+          const prefixed = `${pluginId}:${commandId}`;
+          if (pluginCommandRegistry.has(prefixed)) {
+            await pluginCommandRegistry.execute(prefixed);
+            return;
+          }
+        }
+        throw new Error(`Refresh command not registered: ${commandId}`);
+      };
+
+      await Promise.race([
+        tryInvoke(),
+        new Promise<void>((_, rej) =>
+          setTimeout(() => rej(new Error('refresh timed out after 15s')), 15000),
+        ),
+      ]);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[wrapper] refresh failed:', err);
+      addToast(`Refresh failed: ${message}`, 'error');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleAcknowledge = async () => {
+    await window.clubhouse.project.writeWrapperCatalogSnapshot(projectPath, {
+      lastSeenCatalog: catalog,
+      lastSeenAt: new Date().toISOString(),
+    });
+    await load();
   };
 
   return (
@@ -264,6 +345,16 @@ function LaunchWrapperSection({ projectPath }: { projectPath: string }) {
           <div className="flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-ctp-success" />
             <span className="text-sm text-ctp-text font-mono">{wrapper.binary}</span>
+            {wrapper.refreshCommandId && (
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                title="Refresh catalog"
+                className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-wait"
+              >
+                {refreshing ? '…' : '⟳'} Refresh
+              </button>
+            )}
           </div>
           <button
             onClick={handleRemoveWrapper}
@@ -272,29 +363,67 @@ function LaunchWrapperSection({ projectPath }: { projectPath: string }) {
             Remove
           </button>
         </div>
-        {catalog.length > 0 && (
+        {hasDiff && (
+          <div className="flex items-center justify-between rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-300">
+            <span>
+              {[
+                newCount && `${newCount} new`,
+                changedCount && `${changedCount} changed`,
+                removedCount && `${removedCount} removed`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            <button
+              onClick={handleAcknowledge}
+              className="text-xs text-amber-300 hover:text-amber-200 cursor-pointer"
+            >
+              Got it
+            </button>
+          </div>
+        )}
+        {diffEntries.length > 0 && (
           <div>
             <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
               Default MCPs
             </label>
             <div className="grid grid-cols-2 gap-1">
-              {catalog.map((entry) => {
+              {diffEntries.map((entry) => {
                 const checked = defaultMcps.includes(entry.id);
+                const isRemoved = entry.state === 'removed';
                 return (
-                  <label key={entry.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-surface-0 cursor-pointer">
+                  <label
+                    key={entry.id}
+                    className={`flex items-center gap-2 py-1 px-2 rounded hover:bg-surface-0 cursor-pointer ${
+                      isRemoved ? 'opacity-70' : ''
+                    }`}
+                    title={entry.description}
+                  >
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleMcp(entry.id)}
                       className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
                     />
-                    <span className="text-xs text-ctp-text truncate" title={entry.description}>
+                    <span className="text-xs text-ctp-text truncate flex items-center gap-1.5">
                       {entry.name}
+                      {entry.state === 'new' && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 uppercase tracking-wider">new</span>
+                      )}
+                      {entry.state === 'changed' && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 uppercase tracking-wider">changed</span>
+                      )}
+                      {entry.state === 'removed' && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 uppercase tracking-wider">removed</span>
+                      )}
                     </span>
                   </label>
                 );
               })}
             </div>
+            <p className="text-[10px] text-ctp-subtext0/50 mt-1.5 italic">
+              Configure per-MCP parameters in each agent&apos;s settings.
+            </p>
           </div>
         )}
       </div>
@@ -452,7 +581,7 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
         <h2 className="text-lg font-semibold text-ctp-text mb-4">Project Settings</h2>
         <NameAndPathSection projectId={project.id} />
         <AppearanceSection projectId={project.id} />
-        <LaunchWrapperSection projectPath={project.path} />
+        <LaunchWrapperSection projectId={project.id} projectPath={project.path} />
         <BlueprintBundleSection projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
         <DangerZone projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
       </div>

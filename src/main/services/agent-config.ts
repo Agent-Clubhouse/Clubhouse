@@ -3,7 +3,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
-import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, QuickAgentDefaults, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { resolveOrchestrator } from './agent-system';
@@ -472,7 +472,7 @@ export async function getDurableConfig(projectPath: string, agentId: string): Pr
 export async function updateDurableConfig(
   projectPath: string,
   agentId: string,
-  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string; freeAgentMode?: boolean; clubhouseModeOverride?: boolean; lastSessionId?: string | null },
+  updates: DurableConfigUpdates,
 ): Promise<void> {
   const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
@@ -509,6 +509,20 @@ export async function updateDurableConfig(
       agent.lastSessionId = updates.lastSessionId;
     } else {
       delete agent.lastSessionId;
+    }
+  }
+  if (updates.mcpIds !== undefined) {
+    if (updates.mcpIds && updates.mcpIds.length > 0) {
+      agent.mcpIds = updates.mcpIds;
+    } else {
+      delete agent.mcpIds;
+    }
+  }
+  if (updates.mcpConfigs !== undefined) {
+    if (updates.mcpConfigs && Object.keys(updates.mcpConfigs).length > 0) {
+      agent.mcpConfigs = updates.mcpConfigs;
+    } else {
+      delete agent.mcpConfigs;
     }
   }
   await writeAgents(projectPath, agents);
@@ -596,6 +610,7 @@ export async function createDurable(
   orchestrator?: OrchestratorId,
   freeAgentMode?: boolean,
   mcpIds?: string[],
+  mcpConfigs?: Record<string, Record<string, string>>,
   structuredMode?: boolean,
   persona?: string,
 ): Promise<DurableAgentConfig> {
@@ -681,6 +696,7 @@ export async function createDurable(
     ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
     ...(structuredMode ? { structuredMode } : {}),
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
+    ...(mcpConfigs && Object.keys(mcpConfigs).length > 0 ? { mcpConfigs } : {}),
     ...(persona ? { persona } : {}),
   };
 

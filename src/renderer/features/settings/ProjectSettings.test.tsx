@@ -1,10 +1,18 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProjectSettings } from './ProjectSettings';
 import { showConfirmDialog } from '../../plugins/PluginDialog';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
-import type { Project } from '../../../shared/types';
+import { useAgentStore } from '../../stores/agentStore';
+import { useToastStore } from '../../stores/toastStore';
+import { pluginCommandRegistry } from '../../plugins/plugin-commands';
+import type {
+  Project,
+  LaunchWrapperConfig,
+  McpCatalogEntry,
+  WrapperCatalogSnapshot,
+} from '../../../shared/types';
 
 vi.mock('../../plugins/PluginDialog', () => ({
   showConfirmDialog: vi.fn(() => ({ promise: Promise.resolve(true), cleanup: vi.fn() })),
@@ -357,6 +365,350 @@ describe('ProjectSettings', () => {
       resetStores();
       render(<ProjectSettings />);
       expect(screen.getByText(/Close removes the project from Clubhouse/)).toBeInTheDocument();
+    });
+  });
+
+  describe('LaunchWrapperSection', () => {
+    const wrapperWithRefresh: LaunchWrapperConfig = {
+      binary: 'mywrapper',
+      separator: '--',
+      orchestratorMap: { 'claude-code': { subcommand: 'claude' } },
+      refreshCommandId: 'mywrapper.refresh',
+      contributingPluginId: 'mywrapper',
+    };
+
+    const wrapperNoRefresh: LaunchWrapperConfig = {
+      binary: 'mywrapper',
+      separator: '--',
+      orchestratorMap: { 'claude-code': { subcommand: 'claude' } },
+    };
+
+    function setupWrapperState(opts: {
+      wrapper?: LaunchWrapperConfig;
+      catalog?: McpCatalogEntry[];
+      defaultMcps?: string[];
+      snapshot?: WrapperCatalogSnapshot;
+      agentMcpIds?: string[];
+    }) {
+      const reads = {
+        readLaunchWrapper: vi.fn().mockResolvedValue(opts.wrapper),
+        readMcpCatalog: vi.fn().mockResolvedValue(opts.catalog ?? []),
+        readDefaultMcps: vi.fn().mockResolvedValue(opts.defaultMcps ?? []),
+        readWrapperCatalogSnapshot: vi.fn().mockResolvedValue(opts.snapshot),
+      };
+      window.clubhouse.project.readLaunchWrapper = reads.readLaunchWrapper;
+      window.clubhouse.project.readMcpCatalog = reads.readMcpCatalog;
+      window.clubhouse.project.readDefaultMcps = reads.readDefaultMcps;
+      window.clubhouse.project.readWrapperCatalogSnapshot = reads.readWrapperCatalogSnapshot;
+      window.clubhouse.project.writeLaunchWrapper = vi.fn().mockResolvedValue(undefined);
+      window.clubhouse.project.writeMcpCatalog = vi.fn().mockResolvedValue(undefined);
+      window.clubhouse.project.writeDefaultMcps = vi.fn().mockResolvedValue(undefined);
+      window.clubhouse.project.writeWrapperCatalogSnapshot = vi.fn().mockResolvedValue(undefined);
+
+      // Seed a single durable agent that contributes mcpIds (when provided).
+      const agents: Record<string, any> = {};
+      if (opts.agentMcpIds) {
+        agents['agent-1'] = {
+          id: 'agent-1',
+          projectId: 'proj-1',
+          name: 'a1',
+          kind: 'durable',
+          status: 'idle',
+          color: 'indigo',
+          mcpIds: opts.agentMcpIds,
+        };
+      }
+      useAgentStore.setState({ agents });
+      useToastStore.setState({ toasts: [] });
+
+      return reads;
+    }
+
+    beforeEach(() => {
+      pluginCommandRegistry.clear();
+    });
+
+    it('renders no-wrapper message when no wrapper is configured', async () => {
+      setupWrapperState({});
+      resetStores();
+      render(<ProjectSettings />);
+      expect(
+        await screen.findByText(/No launch wrapper configured/i),
+      ).toBeInTheDocument();
+    });
+
+    it('renders binary name and Default MCPs when wrapper is configured', async () => {
+      setupWrapperState({
+        wrapper: wrapperNoRefresh,
+        catalog: [
+          { id: 'fs', name: 'Filesystem', description: 'Filesystem MCP' },
+        ],
+        defaultMcps: ['fs'],
+        // Snapshot equals catalog so no diff.
+        snapshot: {
+          lastSeenCatalog: [
+            { id: 'fs', name: 'Filesystem', description: 'Filesystem MCP' },
+          ],
+          lastSeenAt: '2026-05-07T00:00:00Z',
+        },
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      expect(await screen.findByText('mywrapper')).toBeInTheDocument();
+      expect(await screen.findByText('Default MCPs')).toBeInTheDocument();
+      expect(screen.getByText('Filesystem')).toBeInTheDocument();
+      expect(screen.queryByText('Refresh')).toBeNull();
+    });
+
+    it('does not render Refresh button when refreshCommandId is unset', async () => {
+      setupWrapperState({
+        wrapper: wrapperNoRefresh,
+        catalog: [{ id: 'a', name: 'A', description: 'A' }],
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      await screen.findByText('mywrapper');
+      expect(screen.queryByText(/Refresh/)).toBeNull();
+    });
+
+    it('renders Refresh button when refreshCommandId is set', async () => {
+      setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog: [{ id: 'a', name: 'A', description: 'A' }],
+        snapshot: {
+          lastSeenCatalog: [{ id: 'a', name: 'A', description: 'A' }],
+          lastSeenAt: '2026-05-07T00:00:00Z',
+        },
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      expect(await screen.findByTitle('Refresh catalog')).toBeInTheDocument();
+    });
+
+    it('shows NEW badge on entries that are not in snapshot', async () => {
+      setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog: [
+          { id: 'fs', name: 'Filesystem', description: 'old' },
+          { id: 'newone', name: 'New One', description: 'new' },
+        ],
+        defaultMcps: ['fs'],
+        snapshot: {
+          lastSeenCatalog: [
+            { id: 'fs', name: 'Filesystem', description: 'old' },
+          ],
+          lastSeenAt: '2026-05-07T00:00:00Z',
+        },
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      await screen.findByText('New One');
+      // NEW badge text appears
+      expect(screen.getByText('new')).toBeInTheDocument();
+    });
+
+    it('renders diff banner with correct count text when entries differ', async () => {
+      setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog: [
+          { id: 'a', name: 'A', description: 'A-new-desc' },
+          { id: 'b', name: 'B', description: 'B' },
+        ],
+        defaultMcps: ['a'],
+        snapshot: {
+          lastSeenCatalog: [
+            { id: 'a', name: 'A', description: 'A-old-desc' },
+          ],
+          lastSeenAt: '2026-05-07T00:00:00Z',
+        },
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      // 1 changed (a) + 1 new (b)
+      expect(await screen.findByText('1 new · 1 changed')).toBeInTheDocument();
+      expect(screen.getByText('Got it')).toBeInTheDocument();
+    });
+
+    it('shows REMOVED entry only when in selection', async () => {
+      setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog: [{ id: 'kept', name: 'Kept', description: 'k' }],
+        defaultMcps: ['gone'],
+        snapshot: {
+          lastSeenCatalog: [
+            { id: 'kept', name: 'Kept', description: 'k' },
+            { id: 'gone', name: 'Gone', description: 'g' },
+          ],
+          lastSeenAt: '2026-05-07T00:00:00Z',
+        },
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      await screen.findByText('Kept');
+      expect(screen.getByText('Gone')).toBeInTheDocument();
+      expect(screen.getByText('removed')).toBeInTheDocument();
+    });
+
+    it('hides banner when no diff exists', async () => {
+      const catalog = [{ id: 'a', name: 'A', description: 'a' }];
+      setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog,
+        defaultMcps: ['a'],
+        snapshot: { lastSeenCatalog: catalog, lastSeenAt: '2026-05-07T00:00:00Z' },
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      await screen.findByText('A');
+      expect(screen.queryByText('Got it')).toBeNull();
+    });
+
+    it('clicking Got it writes snapshot and reloads', async () => {
+      const catalog = [{ id: 'a', name: 'A', description: 'a' }];
+      setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog,
+        defaultMcps: ['a'],
+        snapshot: undefined, // no snapshot — everything is "new"
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      const button = await screen.findByText('Got it');
+      fireEvent.click(button);
+      await waitFor(() => {
+        expect(window.clubhouse.project.writeWrapperCatalogSnapshot).toHaveBeenCalledWith(
+          '/home/user/my-project',
+          expect.objectContaining({ lastSeenCatalog: catalog }),
+        );
+      });
+    });
+
+    it('Refresh invokes the registered command and reloads', async () => {
+      const reads = setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog: [{ id: 'a', name: 'A', description: 'a' }],
+        snapshot: {
+          lastSeenCatalog: [{ id: 'a', name: 'A', description: 'a' }],
+          lastSeenAt: '2026-05-07T00:00:00Z',
+        },
+      });
+      const handler = vi.fn().mockResolvedValue(undefined);
+      pluginCommandRegistry.register('mywrapper.refresh', handler);
+
+      resetStores();
+      render(<ProjectSettings />);
+      const refreshBtn = await screen.findByTitle('Refresh catalog');
+      await act(async () => {
+        fireEvent.click(refreshBtn);
+      });
+      expect(handler).toHaveBeenCalled();
+      // load() called once on mount, then again after refresh.
+      await waitFor(() => {
+        expect(reads.readLaunchWrapper.mock.calls.length).toBeGreaterThanOrEqual(2);
+      });
+    });
+
+    it('Refresh resolves prefixed command id when raw id misses', async () => {
+      // Real plugins register commands as `${pluginId}:${commandId}` (see plugin-api-ui.ts),
+      // so the renderer must fall back to the prefixed form when the raw id isn't found.
+      const reads = setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog: [{ id: 'a', name: 'A', description: 'a' }],
+        snapshot: {
+          lastSeenCatalog: [{ id: 'a', name: 'A', description: 'a' }],
+          lastSeenAt: '2026-05-07T00:00:00Z',
+        },
+      });
+      const handler = vi.fn().mockResolvedValue(undefined);
+      // Register ONLY under the prefixed name — the raw id 'mywrapper.refresh'
+      // must not resolve directly.
+      pluginCommandRegistry.register('mywrapper:mywrapper.refresh', handler);
+
+      resetStores();
+      render(<ProjectSettings />);
+      const refreshBtn = await screen.findByTitle('Refresh catalog');
+      await act(async () => {
+        fireEvent.click(refreshBtn);
+      });
+      expect(handler).toHaveBeenCalled();
+      // load() called once on mount, then again after refresh — confirms the
+      // fallback path completed successfully and triggered a catalog re-read.
+      await waitFor(() => {
+        expect(reads.readLaunchWrapper.mock.calls.length).toBeGreaterThanOrEqual(2);
+      });
+    });
+
+    it('Refresh shows toast on failure', async () => {
+      setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog: [{ id: 'a', name: 'A', description: 'a' }],
+        snapshot: {
+          lastSeenCatalog: [{ id: 'a', name: 'A', description: 'a' }],
+          lastSeenAt: '2026-05-07T00:00:00Z',
+        },
+      });
+      const handler = vi.fn().mockRejectedValue(new Error('boom'));
+      pluginCommandRegistry.register('mywrapper.refresh', handler);
+
+      resetStores();
+      render(<ProjectSettings />);
+      const refreshBtn = await screen.findByTitle('Refresh catalog');
+      await act(async () => {
+        fireEvent.click(refreshBtn);
+      });
+      await waitFor(() => {
+        const toasts = useToastStore.getState().toasts;
+        expect(toasts.some((t) => t.message.includes('boom') && t.type === 'error')).toBe(true);
+      });
+    });
+
+    it('Refresh fails gracefully when command not registered', async () => {
+      setupWrapperState({
+        wrapper: wrapperWithRefresh,
+        catalog: [],
+      });
+
+      resetStores();
+      render(<ProjectSettings />);
+      const refreshBtn = await screen.findByTitle('Refresh catalog');
+      await act(async () => {
+        fireEvent.click(refreshBtn);
+      });
+      await waitFor(() => {
+        const toasts = useToastStore.getState().toasts;
+        expect(toasts.some((t) => /not registered/i.test(t.message))).toBe(true);
+      });
+    });
+
+    it('Remove clears wrapper, catalog, defaults, and snapshot', async () => {
+      setupWrapperState({
+        wrapper: wrapperNoRefresh,
+        catalog: [{ id: 'a', name: 'A', description: 'a' }],
+        defaultMcps: ['a'],
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      // Two "Remove" buttons exist (one for icon if image set; here only the wrapper one).
+      const removeBtn = await screen.findByText('Remove');
+      fireEvent.click(removeBtn);
+      await waitFor(() => {
+        expect(window.clubhouse.project.writeLaunchWrapper).toHaveBeenCalledWith(
+          '/home/user/my-project',
+          undefined,
+        );
+        expect(window.clubhouse.project.writeMcpCatalog).toHaveBeenCalledWith(
+          '/home/user/my-project',
+          [],
+        );
+        expect(window.clubhouse.project.writeDefaultMcps).toHaveBeenCalledWith(
+          '/home/user/my-project',
+          [],
+        );
+        expect(window.clubhouse.project.writeWrapperCatalogSnapshot).toHaveBeenCalledWith(
+          '/home/user/my-project',
+          undefined,
+        );
+      });
     });
   });
 });

@@ -226,6 +226,7 @@ describe('AgentList dropdown', () => {
       'claude-code',        // orchestrator
       undefined,            // freeAgentMode (false → undefined)
       undefined,            // mcpIds
+      undefined,            // mcpConfigs
       undefined,            // structuredMode (false → undefined)
       'qa',                 // persona ID
     );

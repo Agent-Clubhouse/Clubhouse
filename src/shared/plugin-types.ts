@@ -1017,7 +1017,11 @@ export interface AgentConfigAPI {
     env?: Record<string, string>;
     mcpCatalog: Array<{ id: string; name: string; description: string }>;
     defaultMcps?: string[];
+    refreshCommandId?: string;
+    contributingPluginId?: string;
   }): Promise<void>;
+  /** Remove the wrapper preset, MCP catalog, default MCPs, and snapshot for this project. */
+  removeWrapperPreset(opts?: AgentConfigTargetOptions): Promise<void>;
 }
 
 // ── Badges API ────────────────────────────────────────────────────────
