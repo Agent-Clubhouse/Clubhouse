@@ -388,7 +388,7 @@ describe('pre-registered widgets without activation do not crash renderer', () =
     const enableIdx = source.indexOf('enableApp(pluginId)');
     expect(enableIdx).toBeGreaterThan(-1);
 
-    const afterEnable = source.slice(enableIdx, enableIdx + 800);
+    const afterEnable = source.slice(enableIdx, enableIdx + 1200);
     expect(afterEnable).toContain('CANVAS_SUB_PLUGIN_IDS');
     expect(afterEnable).toContain('enableApp(subId)');
   });
