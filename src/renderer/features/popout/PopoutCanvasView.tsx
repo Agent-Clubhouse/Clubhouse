@@ -77,8 +77,43 @@ function createPopoutApi(projectId?: string): PluginAPI {
       });
       return { dispose: unsub };
     },
-    // Stubs for methods not needed in pop-out
-    createDurable: () => Promise.reject(new Error('Not available in pop-out')),
+    // Durable agent creation: write the config via IPC (works from any
+    // renderer), spawn locally so the popout's own store/picker reflects
+    // it immediately, then ask the main window to reload its durables so
+    // its next broadcast doesn't overwrite our locally-added agent.
+    createDurable: async (options: {
+      projectId?: string;
+      name: string;
+      color: string;
+      model?: string;
+      useWorktree?: boolean;
+      orchestrator?: string;
+      freeAgentMode?: boolean;
+      mcpIds?: string[];
+    }): Promise<string> => {
+      const targetProjectId = options.projectId || projectId;
+      if (!targetProjectId) throw new Error('createDurable requires a project context');
+      const project = useProjectStore.getState().projects.find((p) => p.id === targetProjectId);
+      if (!project) throw new Error(`Project not found: ${targetProjectId}`);
+
+      const model = options.model && options.model !== 'default' ? options.model : undefined;
+      const config = await window.clubhouse.agent.createDurable(
+        project.path,
+        options.name,
+        options.color,
+        model,
+        options.useWorktree ?? false,
+        options.orchestrator,
+        options.freeAgentMode,
+        options.mcpIds,
+        undefined,
+      );
+      const agentId = await useAgentStore.getState().spawnDurableAgent(
+        targetProjectId, project.path, config, false,
+      );
+      window.clubhouse.window.requestDurableReload(targetProjectId);
+      return agentId;
+    },
     runQuick: () => Promise.reject(new Error('Not available in pop-out')),
     kill: () => Promise.reject(new Error('Not available in pop-out')),
     resume: () => Promise.reject(new Error('Not available in pop-out')),
@@ -257,14 +292,21 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   }, [sendMutation]);
 
   const handleRemoveView = useCallback((viewId: string) => {
+    setViews((prev) => prev.filter((v) => v.id !== viewId));
     sendMutation({ type: 'removeView', viewId });
   }, [sendMutation]);
 
+  // Optimistically update the local views state so drag/resize/zoom/pick
+  // don't visually snap back during the IPC roundtrip to the leader window.
+  // The leader's broadcast still arrives and overwrites with the authoritative
+  // state, but by then our local guess matches.
   const handleMoveView = useCallback((viewId: string, position: Position) => {
+    setViews((prev) => prev.map((v) => (v.id === viewId ? { ...v, position } : v)));
     sendMutation({ type: 'moveView', viewId, position });
   }, [sendMutation]);
 
   const handleResizeView = useCallback((viewId: string, size: Size) => {
+    setViews((prev) => prev.map((v) => (v.id === viewId ? { ...v, size } : v)));
     sendMutation({ type: 'resizeView', viewId, size });
   }, [sendMutation]);
 
@@ -273,15 +315,20 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   }, [sendMutation]);
 
   const handleUpdateView = useCallback((viewId: string, updates: Partial<CanvasView>) => {
+    setViews((prev) => prev.map((v) => (v.id === viewId ? { ...v, ...updates } as CanvasView : v)));
     sendMutation({ type: 'updateView', viewId, updates: updates as Record<string, unknown> });
   }, [sendMutation]);
 
   const handleZoomView = useCallback((viewId: string | null) => {
+    setZoomedViewId(viewId);
     sendMutation({ type: 'zoomView', viewId });
   }, [sendMutation]);
 
   const handleMoveViews = useCallback((positions: Map<string, Position>) => {
-    // Forward each move as individual mutations
+    setViews((prev) => prev.map((v) => {
+      const pos = positions.get(v.id);
+      return pos ? { ...v, position: pos } : v;
+    }));
     for (const [viewId, position] of positions) {
       sendMutation({ type: 'moveView', viewId, position });
     }

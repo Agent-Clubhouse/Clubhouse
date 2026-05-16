@@ -440,6 +440,16 @@ export function registerWindowHandlers(): void {
     }
   });
 
+  // Pop-out asks the main window to reload durable agents for a project.
+  // Used after a popout-initiated createDurable so the main window's agent
+  // store picks up the new agent and its subsequent broadcasts include it.
+  ipcMain.on(IPC.WINDOW.REQUEST_DURABLE_RELOAD, (_event, projectId: string) => {
+    const mainWindow = findMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send(IPC.WINDOW.REQUEST_DURABLE_RELOAD, projectId);
+    }
+  });
+
   // ELK layout — runs elkjs in the main process and returns positioned nodes + routed edges
   ipcMain.handle(IPC.CANVAS_CMD.ELK_LAYOUT, withValidatedArgs(
     [objectArg()],

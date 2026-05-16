@@ -647,6 +647,8 @@ export function FileTree({ api }: { api: PluginAPI }) {
       setWorktrees([]);
     }
   }, [api]);
+  const loadWorktreesRef = useRef(loadWorktrees);
+  loadWorktreesRef.current = loadWorktrees;
 
   // Reveal a file in the tree — expand parents, scroll to it, set selected
   const revealFile = useCallback(async (relPath: string) => {
@@ -760,6 +762,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         loadTreeRef.current();
         loadGitStatusRef.current();
         loadBranchRef.current();
+        loadWorktreesRef.current();
       }
 
       // Auto-reveal when the active file changes
@@ -791,6 +794,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         loadTreeRef.current();
         loadGitStatusRef.current();
         loadBranchRef.current();
+        loadWorktreesRef.current();
       }, 500);
     });
     return () => {
@@ -1361,7 +1365,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         // Refresh
         React.createElement('button', {
           className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
-          onClick: () => { loadTree(); loadGitStatus(); loadBranch(); },
+          onClick: () => { loadTree(); loadGitStatus(); loadBranch(); loadWorktrees(); },
           title: 'Refresh',
         }, RefreshIcon),
       ),

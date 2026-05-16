@@ -249,6 +249,42 @@ describe('FileTree', () => {
     expect(currentBranch).toHaveBeenCalledWith('.clubhouse/agents/my-agent');
   });
 
+  it('refresh button reloads the worktree dropdown so newly-created agent worktrees appear', async () => {
+    // Regression: clicking Refresh only reloaded the tree/git status/branch.
+    // The worktree dropdown was populated by a separate loadWorktrees() that
+    // only ran when rootPath changed, so a freshly created agent worktree
+    // didn't show up until you switched roots and back.
+    let agentDirs = [
+      { name: 'agent-one', path: '/project/.clubhouse/agents/agent-one', isDirectory: true },
+    ];
+    const readTree = vi.fn(async (path: string) => {
+      if (path === '.clubhouse/agents') return agentDirs;
+      if (path === '.') return MOCK_TREE;
+      return [];
+    });
+    const api = createFilesAPI({
+      files: { ...createMockAPI().files, readTree },
+      git: { ...createMockAPI().git, status: vi.fn(async () => []), currentBranch: vi.fn(async () => 'main') },
+    });
+
+    render(<FileTree api={api} />);
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'agent-one' })).toBeInTheDocument();
+    });
+
+    // Simulate a new agent worktree appearing on disk (created in another window).
+    agentDirs = [
+      { name: 'agent-one', path: '/project/.clubhouse/agents/agent-one', isDirectory: true },
+      { name: 'agent-two', path: '/project/.clubhouse/agents/agent-two', isDirectory: true },
+    ];
+
+    fireEvent.click(screen.getByTitle('Refresh'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'agent-two' })).toBeInTheDocument();
+    });
+  });
+
   it('shows "No Worktree" when agent directory has no git info', async () => {
     const currentBranch = vi.fn(async (subPath?: string) => {
       if (subPath === '.clubhouse/agents/no-wt-agent') return '';
