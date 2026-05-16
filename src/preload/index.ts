@@ -1219,6 +1219,13 @@ const api = {
       ipcRenderer.on(IPC.WINDOW.CANVAS_MUTATION, listener);
       return () => { ipcRenderer.removeListener(IPC.WINDOW.CANVAS_MUTATION, listener); };
     },
+    requestDurableReload: (projectId: string) =>
+      ipcRenderer.send(IPC.WINDOW.REQUEST_DURABLE_RELOAD, projectId),
+    onRequestDurableReload: (callback: (projectId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, projectId: string) => callback(projectId);
+      ipcRenderer.on(IPC.WINDOW.REQUEST_DURABLE_RELOAD, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_DURABLE_RELOAD, listener); };
+    },
     setTitle: (title: string) =>
       ipcRenderer.invoke(IPC.WINDOW.SET_TITLE, title),
     focusPopout: (windowId: number) =>

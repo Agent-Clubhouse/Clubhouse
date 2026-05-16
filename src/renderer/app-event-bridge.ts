@@ -178,6 +178,18 @@ function initWindowListeners(): (() => void)[] {
     }),
   );
 
+  // Popout asks the main window to reload durable agents for a project
+  // (e.g. after a popout-initiated createDurable, so the main window's
+  // store catches up before its next broadcast overwrites the popout).
+  removers.push(
+    window.clubhouse.window.onRequestDurableReload((projectId: string) => {
+      const project = useProjectStore.getState().projects.find((p) => p.id === projectId);
+      if (project) {
+        useAgentStore.getState().loadDurableAgents(projectId, project.path).catch(() => { /* best-effort */ });
+      }
+    }),
+  );
+
   return removers;
 }
 

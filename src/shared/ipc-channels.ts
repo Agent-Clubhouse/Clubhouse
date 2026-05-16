@@ -282,6 +282,10 @@ export const IPC = {
     CANVAS_STATE_CHANGED: 'window:canvas-state-changed',
     CANVAS_MUTATION: 'window:canvas-mutation',
     REQUEST_CANVAS_MUTATION: 'window:request-canvas-mutation',
+    // Popout → main: ask the main window to reload durable agents for a project.
+    // Used after a popout creates a durable agent so the main window's agent
+    // store catches up (otherwise its broadcast would overwrite the popout).
+    REQUEST_DURABLE_RELOAD: 'window:request-durable-reload',
     // Popout lifecycle
     FOCUS_POPOUT: 'window:focus-popout',
     POPOUTS_CHANGED: 'window:popouts-changed',

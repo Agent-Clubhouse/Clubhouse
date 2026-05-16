@@ -489,6 +489,8 @@ vi.stubGlobal('clubhouse', {
     broadcastCanvasState: noop,
     sendCanvasMutation: noop,
     onCanvasMutation: () => noop,
+    requestDurableReload: noop,
+    onRequestDurableReload: () => noop,
     setTitle: asyncNoop,
     focusPopout: asyncNoop,
     onPopoutsChanged: () => noop,
