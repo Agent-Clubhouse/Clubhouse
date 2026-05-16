@@ -3,7 +3,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
-import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, QuickAgentDefaults, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { resolveOrchestrator } from './agent-system';
