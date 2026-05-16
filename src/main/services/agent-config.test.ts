@@ -254,15 +254,32 @@ describe('createDurable', () => {
     expect(vi.mocked(fsp.mkdir)).toHaveBeenCalled();
   });
 
-  it('falls back to mkdir when worktree add fails', async () => {
+  it('throws when worktree add fails on a git repo (no silent fallback)', async () => {
+    // Regression: createDurable used to silently fall back to a plain mkdir
+    // when `git worktree add` failed, leaving the user with a folder that
+    // looked like a worktree in the UI but was not a real git worktree.
+    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
+      if (String(cmd).includes('git worktree add')) cb(new Error('fatal: \'foo/standby\' is already used by worktree'), '', '');
+      else cb(null, '', '');
+      return {} as any;
+    });
+    vi.mocked(fsp.rm).mockResolvedValue(undefined);
+    await expect(createDurable(PROJECT_PATH, 'wt-fail-agent', 'indigo'))
+      .rejects.toThrow(/Failed to create git worktree/);
+  });
+
+  it('cleans up the partial worktree directory after a failed worktree add', async () => {
     vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
       if (String(cmd).includes('git worktree add')) cb(new Error('worktree fail'), '', '');
       else cb(null, '', '');
       return {} as any;
     });
-    const config = await createDurable(PROJECT_PATH, 'wt-fail-agent', 'indigo');
-    expect(config.id).toMatch(/^durable_/);
-    expect(vi.mocked(fsp.mkdir)).toHaveBeenCalled();
+    const rmSpy = vi.mocked(fsp.rm).mockResolvedValue(undefined);
+    await expect(createDurable(PROJECT_PATH, 'wt-cleanup-agent', 'indigo')).rejects.toThrow();
+    expect(rmSpy).toHaveBeenCalledWith(
+      expect.stringContaining(path.join('agents', 'wt-cleanup-agent')),
+      expect.objectContaining({ recursive: true, force: true }),
+    );
   });
 
   it('creates initial commit with .gitignore when repo has no commits', async () => {
@@ -321,7 +338,7 @@ describe('createDurable', () => {
     expect(calls.some((c) => c.includes('git worktree add'))).toBe(true);
   });
 
-  it('falls back to mkdir when initial commit also fails', async () => {
+  it('throws when initial commit and worktree add both fail', async () => {
     vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
       const c = String(cmd);
       if (c.includes('git rev-parse HEAD')) cb(new Error('fatal: bad default revision'), '', '');
@@ -330,10 +347,8 @@ describe('createDurable', () => {
       else cb(null, '', '');
       return {} as any;
     });
-    const config = await createDurable(PROJECT_PATH, 'commit-fail-agent', 'indigo');
-    expect(config.id).toMatch(/^durable_/);
-    // Should still create the directory as fallback
-    expect(vi.mocked(fsp.mkdir)).toHaveBeenCalled();
+    vi.mocked(fsp.rm).mockResolvedValue(undefined);
+    await expect(createDurable(PROJECT_PATH, 'commit-fail-agent', 'indigo')).rejects.toThrow();
   });
 
   it('appends to existing config, does not overwrite', async () => {

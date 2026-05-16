@@ -665,15 +665,18 @@ export async function createDurable(
         await ensureDir(path.dirname(worktreePath));
         await execGitAsync(`git worktree add "${worktreePath}" "${branch}"`, projectPath);
       } catch (err) {
-        appLog('core:agent-config', 'warn', 'Git worktree creation failed, falling back to plain directory', {
-          meta: {
-            agentName: name,
-            branch,
-            worktreePath,
-            error: err instanceof Error ? err.message : String(err),
-          },
+        const errMsg = err instanceof Error ? err.message : String(err);
+        appLog('core:agent-config', 'error', 'Git worktree creation failed', {
+          meta: { agentName: name, branch, worktreePath, error: errMsg },
         });
-        await ensureDir(worktreePath);
+        // Clean up any partial state: remove the directory git may have created
+        // before failing, so a retry with the same name starts from a clean slate.
+        try { await fsp.rm(worktreePath, { recursive: true, force: true }); } catch { /* best-effort */ }
+        throw new Error(
+          `Failed to create git worktree for "${name}": ${errMsg}. ` +
+          `The branch "${branch}" may already be checked out elsewhere, or the path may conflict with an existing worktree. ` +
+          `Run \`git worktree list\` and \`git worktree prune\` to investigate.`
+        );
       }
     } else {
       await ensureDir(worktreePath);
