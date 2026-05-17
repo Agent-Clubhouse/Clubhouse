@@ -684,36 +684,40 @@ export function CanvasWorkspace({
         onNavigate={handleSearchSelect}
       />
 
-      {/* Canvas controls + pinned widgets */}
-      <CanvasControls
-        zoom={viewport.zoom}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onZoomReset={handleZoomReset}
-        onCenter={handleCenter}
-        onSizeToFit={handleSizeToFit}
-        onAutolayout={handleAutolayout}
-        hasSelection={selectedViewId !== null}
-        elkAlgorithm={elkAlgorithm}
-        elkDirection={elkDirection}
-        layoutCenterId={layoutCenterId}
-        onElkAlgorithmChange={onElkAlgorithmChange}
-        onElkDirectionChange={onElkDirectionChange}
-        hasViews={views.length > 0}
-        views={views}
-        onSelectView={handleSearchSelect}
-        attentionMap={attentionMap}
-        api={api}
-      />
+      {/* Canvas controls + pinned widgets — hidden while a view is maximized */}
+      {!zoomedView && (
+        <CanvasControls
+          zoom={viewport.zoom}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onZoomReset={handleZoomReset}
+          onCenter={handleCenter}
+          onSizeToFit={handleSizeToFit}
+          onAutolayout={handleAutolayout}
+          hasSelection={selectedViewId !== null}
+          elkAlgorithm={elkAlgorithm}
+          elkDirection={elkDirection}
+          layoutCenterId={layoutCenterId}
+          onElkAlgorithmChange={onElkAlgorithmChange}
+          onElkDirectionChange={onElkDirectionChange}
+          hasViews={views.length > 0}
+          views={views}
+          onSelectView={handleSearchSelect}
+          attentionMap={attentionMap}
+          api={api}
+        />
+      )}
 
-      <PinnedWidgetBar
-        views={views}
-        viewport={viewport}
-        containerRef={containerRef}
-        containerSize={containerSize}
-        api={api}
-        onUpdateView={onUpdateView}
-      />
+      {!zoomedView && (
+        <PinnedWidgetBar
+          views={views}
+          viewport={viewport}
+          containerRef={containerRef}
+          containerSize={containerSize}
+          api={api}
+          onUpdateView={onUpdateView}
+        />
+      )}
 
       {/* Context menu */}
       {contextMenu && (

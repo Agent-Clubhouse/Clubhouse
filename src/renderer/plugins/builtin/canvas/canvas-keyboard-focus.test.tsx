@@ -287,3 +287,73 @@ describe('canvas view pointer-events', () => {
     expect(window.getComputedStyle(contentWrapper).pointerEvents).not.toBe('none');
   });
 });
+
+// ── Tests: GH-1460 — zoomed view overlay hides canvas toolbar ───────────────
+
+describe('canvas zoomed-view toolbar suppression (GH-1460)', () => {
+  const wireDefProps = {
+    wireDefinitions: [],
+    onAddWireDefinition: vi.fn(),
+    onRemoveWireDefinition: vi.fn(),
+    onUpdateWireDefinition: vi.fn(),
+  };
+
+  it('canvas-controls renders when no view is zoomed', () => {
+    render(
+      <CanvasWorkspace
+        views={[baseView]}
+        viewport={defaultViewport}
+        zoomedViewId={null}
+        selectedViewId={null}
+        selectedViewIds={[]}
+        api={stubApi()}
+        onViewportChange={vi.fn()}
+        onAddView={vi.fn()}
+        onAddPluginView={vi.fn()}
+        onRemoveView={vi.fn()}
+        onMoveView={vi.fn()}
+        onMoveViews={vi.fn()}
+        onResizeView={vi.fn()}
+        onFocusView={vi.fn()}
+        onUpdateView={vi.fn()}
+        onZoomView={vi.fn()}
+        onSelectView={vi.fn()}
+        onToggleSelectView={vi.fn()}
+        onSetSelectedViewIds={vi.fn()}
+        onClearSelection={vi.fn()}
+        {...wireDefProps}
+      />,
+    );
+    expect(screen.getByTestId('canvas-controls')).toBeInTheDocument();
+  });
+
+  it('canvas-controls is removed from DOM when a view is zoomed (GH-1460)', () => {
+    render(
+      <CanvasWorkspace
+        views={[baseView]}
+        viewport={defaultViewport}
+        zoomedViewId={baseView.id}
+        selectedViewId={null}
+        selectedViewIds={[]}
+        api={stubApi()}
+        onViewportChange={vi.fn()}
+        onAddView={vi.fn()}
+        onAddPluginView={vi.fn()}
+        onRemoveView={vi.fn()}
+        onMoveView={vi.fn()}
+        onMoveViews={vi.fn()}
+        onResizeView={vi.fn()}
+        onFocusView={vi.fn()}
+        onUpdateView={vi.fn()}
+        onZoomView={vi.fn()}
+        onSelectView={vi.fn()}
+        onToggleSelectView={vi.fn()}
+        onSetSelectedViewIds={vi.fn()}
+        onClearSelection={vi.fn()}
+        {...wireDefProps}
+      />,
+    );
+    expect(screen.queryByTestId('canvas-controls')).not.toBeInTheDocument();
+    expect(screen.getByTestId('canvas-zoom-overlay')).toBeInTheDocument();
+  });
+});
