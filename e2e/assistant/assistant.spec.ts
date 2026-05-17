@@ -313,12 +313,12 @@ test('headless mode: multi-turn conversation retains context', async () => {
   // Follow-up that requires context
   await sendAssistantMessage(window, 'What is my name?');
 
-  // Wait for the second response
-  const allMsgs = window.locator('[data-testid="assistant-message"]');
-  // Should have at least 2 assistant messages now
-  await expect(allMsgs.nth(1)).toBeVisible({ timeout: 60_000 });
+  // Wait for the second response — filter out "Processing..." placeholders which
+  // are pushed immediately then replaced once the stub fires (300 ms).
+  const stableMsgs = window.locator('[data-testid="assistant-message"]').filter({ hasNotText: 'Processing' });
+  await expect(stableMsgs).toHaveCount(2, { timeout: 60_000 });
 
-  const secondResponse = (await allMsgs.nth(1).textContent()) || '';
+  const secondResponse = (await stableMsgs.nth(1).textContent()) || '';
   expect(secondResponse.length).toBeGreaterThan(0);
   // The response should reference "TestUser" if context is retained
   expect(/testuser/i.test(secondResponse)).toBe(true);
