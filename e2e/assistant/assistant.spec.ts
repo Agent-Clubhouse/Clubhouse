@@ -1,8 +1,8 @@
 /**
  * E2E tests for the Clubhouse Assistant feature.
  *
- * Tests 1-9 are UI-only and run everywhere (including CI without orchestrator).
- * Tests 10-15 require a live orchestrator and are skipped in CI.
+ * Tests 1-9 are UI-only. Tests 10-15 exercise the orchestrator path — in CI
+ * a stub is installed via installAssistantStub so they run without a live binary.
  *
  * Each test resets the assistant to ensure independence — no cascade failures.
  * All tests share one Electron instance for performance (~10s launch).
@@ -12,7 +12,6 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-const hasOrchestrator = !process.env.CI;
 import {
   AssistantInstance,
   launchAssistantInstance,
@@ -209,13 +208,12 @@ test('clicking suggestion chip sends message', async () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ORCHESTRATOR TESTS — Require live orchestrator (tests 10-15)
+// ORCHESTRATOR TESTS — Use stub in CI, live orchestrator locally (tests 10-15)
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── 10: Headless mode launch and response ────────────────────────────────
 
 test('headless mode: sends message and gets response', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'headless');
 
@@ -232,7 +230,6 @@ test('headless mode: sends message and gets response', async () => {
 // ─── 11: Structured mode streaming ────────────────────────────────────────
 
 test('structured mode: sends message and gets streaming response', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'structured');
 
@@ -248,7 +245,6 @@ test('structured mode: sends message and gets streaming response', async () => {
 // ─── 12: Tool execution shows action card ─────────────────────────────────
 
 test('headless mode: tool call produces action card or project response', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'headless');
 
@@ -271,7 +267,6 @@ test('headless mode: tool call produces action card or project response', async 
 // ─── 13: Meaningful conversation response ─────────────────────────────────
 
 test('headless mode: returns meaningful response to open question', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'headless');
 
@@ -284,7 +279,6 @@ test('headless mode: returns meaningful response to open question', async () => 
 // ─── 14: Search help integration ──────────────────────────────────────────
 
 test('headless mode: assistant uses search_help for feature questions', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'headless');
 
@@ -309,7 +303,6 @@ test('headless mode: assistant uses search_help for feature questions', async ()
 // ─── 15: Multi-turn conversation ──────────────────────────────────────────
 
 test('headless mode: multi-turn conversation retains context', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'headless');
 

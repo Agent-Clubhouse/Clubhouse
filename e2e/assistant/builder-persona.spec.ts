@@ -1,8 +1,8 @@
 /**
  * E2E tests for the Clubhouse Assistant — Builder persona flow.
  *
- * All tests require a live orchestrator and are skipped in CI.
- * Each test resets the assistant for independence.
+ * In CI a stub orchestrator is installed via installAssistantStub so these
+ * tests run without a live binary. Each test resets the assistant for independence.
  *
  * Run locally: npx playwright test e2e/assistant/builder-persona.spec.ts
  */
@@ -10,7 +10,6 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import * as fs from 'fs';
 
-const hasOrchestrator = !process.env.CI;
 import * as path from 'path';
 import * as os from 'os';
 import {
@@ -54,7 +53,6 @@ test.afterAll(async () => {
 // ─── 1: Add a project ─────────────────────────────────────────────────────
 
 test('assistant can add a project via tool call', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'headless');
 
@@ -78,7 +76,6 @@ test('assistant can add a project via tool call', async () => {
 // ─── 2: Create an agent ───────────────────────────────────────────────────
 
 test('assistant can create an agent via tool call', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'headless');
 
@@ -105,7 +102,6 @@ test('assistant can create an agent via tool call', async () => {
 // ─── 3: Create a canvas with cards ────────────────────────────────────────
 
 test('assistant can create a canvas with cards via tool call', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'headless');
 
@@ -132,7 +128,6 @@ test('assistant can create a canvas with cards via tool call', async () => {
 // ─── 4: Multi-step scaffolding ────────────────────────────────────────────
 
 test('assistant handles multi-step scaffolding request', async () => {
-  test.skip(!hasOrchestrator, 'Requires live orchestrator — skipped in CI');
   await resetAssistant(window);
   await switchMode(window, 'headless');
 

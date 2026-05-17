@@ -92,6 +92,11 @@ export async function launchAssistantInstance(): Promise<AssistantInstance> {
   const window = await findRendererWindow(electronApp);
   await window.waitForLoadState('load');
 
+  // Install stub IPC handlers in CI where no real orchestrator is available
+  if (process.env.CI) {
+    await installAssistantStub(electronApp);
+  }
+
   // Skip onboarding
   await window.evaluate(() => {
     localStorage.setItem('clubhouse_onboarding', JSON.stringify({ completed: true, cohort: null }));
@@ -107,6 +112,101 @@ export async function launchAssistantInstance(): Promise<AssistantInstance> {
   }
 
   return { electronApp, window, userDataDir };
+}
+
+/**
+ * Install stub IPC handlers that replace the real orchestrator with canned
+ * responses. Call this immediately after launching the app in CI so tests
+ * 10-15 can run without a live orchestrator binary.
+ *
+ * Overrides:
+ * - agent:check-orchestrator → always available
+ * - assistant:spawn          → writes fake JSONL (headless) or emits structured events
+ * - assistant:send-followup  → same as spawn, returns { agentId }
+ * - assistant:send-structured-followup → emits structured events, returns { agentId }
+ */
+async function installAssistantStub(
+  electronApp: Awaited<ReturnType<typeof electron.launch>>,
+): Promise<void> {
+  await electronApp.evaluate(async ({ ipcMain, app, BrowserWindow }) => {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+
+    const logsDir = path.join(app.getPath('userData'), 'agent-logs');
+    fs.mkdirSync(logsDir, { recursive: true });
+
+    function broadcast(channel: string, ...args: unknown[]): void {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send(channel, ...args);
+      }
+    }
+
+    function writeTranscript(agentId: string, responseText: string): void {
+      const transcriptPath = path.join(logsDir, `${agentId}.jsonl`);
+      const lines = [
+        JSON.stringify({ type: 'text', text: responseText }),
+        JSON.stringify({ type: 'result', result: responseText }),
+      ].join('\n') + '\n';
+      fs.writeFileSync(transcriptPath, lines, 'utf-8');
+    }
+
+    // Always report an orchestrator as available so startAgent proceeds
+    ipcMain.removeHandler('agent:check-orchestrator');
+    ipcMain.handle('agent:check-orchestrator', () => ({ available: true }));
+
+    // Stub assistant:spawn — handles headless and structured modes
+    ipcMain.removeHandler('assistant:spawn');
+    ipcMain.handle('assistant:spawn', async (_event: Electron.IpcMainInvokeEvent, params: Record<string, unknown>) => {
+      const agentId = params['agentId'] as string;
+      const executionMode = params['executionMode'] as string;
+
+      const responseText = 'Hello! I can help you with Clubhouse.';
+
+      if (executionMode === 'structured') {
+        setTimeout(() => {
+          broadcast('agent:structured-event', agentId, { type: 'text_delta', timestamp: Date.now(), data: { text: responseText } });
+          broadcast('agent:structured-event', agentId, { type: 'text_done', timestamp: Date.now(), data: { text: responseText } });
+          broadcast('agent:structured-event', agentId, { type: 'end', timestamp: Date.now(), data: { reason: 'done' } });
+        }, 300);
+      } else if (executionMode === 'headless') {
+        writeTranscript(agentId, responseText);
+        setTimeout(() => broadcast('assistant:result', { agentId, exitCode: 0 }), 300);
+      }
+
+      return { success: true };
+    });
+
+    // Stub assistant:send-followup — headless conversational follow-ups
+    ipcMain.removeHandler('assistant:send-followup');
+    ipcMain.handle('assistant:send-followup', async (_event: Electron.IpcMainInvokeEvent, params: Record<string, unknown>) => {
+      const message = (params['message'] as string) || '';
+      const agentId = `stub_followup_${Date.now()}`;
+
+      const responseText = /my name/i.test(message)
+        ? 'Your name is TestUser.'
+        : 'I understand your question.';
+
+      writeTranscript(agentId, responseText);
+      setTimeout(() => broadcast('assistant:result', { agentId, exitCode: 0 }), 300);
+
+      return { agentId };
+    });
+
+    // Stub assistant:send-structured-followup — structured follow-ups
+    ipcMain.removeHandler('assistant:send-structured-followup');
+    ipcMain.handle('assistant:send-structured-followup', async () => {
+      const agentId = `stub_structured_followup_${Date.now()}`;
+      const responseText = 'I understand your follow-up.';
+
+      setTimeout(() => {
+        broadcast('agent:structured-event', agentId, { type: 'text_delta', timestamp: Date.now(), data: { text: responseText } });
+        broadcast('agent:structured-event', agentId, { type: 'text_done', timestamp: Date.now(), data: { text: responseText } });
+        broadcast('agent:structured-event', agentId, { type: 'end', timestamp: Date.now(), data: { reason: 'done' } });
+      }, 300);
+
+      return { agentId };
+    });
+  });
 }
 
 /**
