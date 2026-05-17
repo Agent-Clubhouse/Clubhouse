@@ -109,7 +109,10 @@ export function useCanvasContextMenu({
     enabled: !!viewContextMenu,
   });
 
-  // Clamp view context menu to viewport bounds after render
+  // Clamp view context menu to viewport bounds after the menu element is rendered and measured.
+  // We update state (not the DOM directly) so React controls the final position consistently
+  // across re-renders. Direct el.style mutations would be silently reset whenever React
+  // reconciles the same JSX style prop from a parent re-render.
   useLayoutEffect(() => {
     const el = viewMenuRef.current;
     if (!el || !viewContextMenu) return;
@@ -119,8 +122,9 @@ export function useCanvasContextMenu({
       rect.width, rect.height,
       window.innerWidth, window.innerHeight,
     );
-    if (clamped.x !== viewContextMenu.x) el.style.left = `${clamped.x}px`;
-    if (clamped.y !== viewContextMenu.y) el.style.top = `${clamped.y}px`;
+    if (clamped.x !== viewContextMenu.x || clamped.y !== viewContextMenu.y) {
+      setViewContextMenu({ ...viewContextMenu, x: clamped.x, y: clamped.y });
+    }
   }, [viewContextMenu]);
 
   return {

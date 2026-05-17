@@ -96,6 +96,12 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
   });
   ctx.subscriptions.push({ dispose: () => setCanvasQueryProvider(null) });
 
+  // Commands are registered in the shared singleton pluginCommandRegistry. For 'dual'-scope
+  // plugins the loader calls activate() twice (app + project context). Skip registration in the
+  // project-scope activation to prevent duplicate entries, overwrite warnings, and the dispose
+  // race where one scope's teardown deletes commands the other scope still needs.
+  if (api.context.mode !== 'app') return;
+
   const addAgentCmd = api.commands.register('add-agent-view', () => {
     const store = getStore();
     store.getState().addView('agent', { x: 200, y: 200 });
