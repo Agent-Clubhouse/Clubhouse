@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { generateDurableName, AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
+import { Modal } from '../../components/Modal';
 import type { McpCatalogEntry } from '../../../shared/types';
 
 interface Props {
@@ -65,12 +65,8 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
     onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined, sm);
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[360px] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+  return (
+    <Modal open={true} onClose={onClose}>
         <h2 className="text-base font-semibold text-ctp-text mb-4">New Agent</h2>
         <form onSubmit={handleSubmit}>
           {/* Name */}
@@ -155,7 +151,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
               })}
             </select>
             {selectedAvail && !selectedAvail.available && (
-              <p className="mt-1 text-xs text-yellow-500">
+              <p className="mt-1 text-xs text-status-warning">
                 ⚠ {selectedAvail.error || 'CLI not found — agent may fail to start'}
               </p>
             )}
@@ -259,8 +255,6 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
             </button>
           </div>
         </form>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }

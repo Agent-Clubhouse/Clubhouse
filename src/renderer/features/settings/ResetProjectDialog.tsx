@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Modal } from '../../components/Modal';
 
 interface ResetProjectDialogProps {
   projectName: string;
@@ -22,12 +23,8 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
   const canConfirm = confirmText === projectName;
 
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60" onClick={onCancel}>
-      <div
-        className="bg-ctp-base border border-surface-2 rounded-xl shadow-2xl w-full max-w-md mx-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-6 space-y-4">
+    <Modal open={true} onClose={onCancel} width="w-full max-w-md mx-4">
+        <div className="space-y-4">
           <h3 className="text-lg font-semibold text-ctp-error">Reset Project</h3>
           <p className="text-sm text-ctp-subtext1">
             This will permanently delete all Clubhouse configuration for{' '}
@@ -72,7 +69,7 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 px-6 pb-6">
+        <div className="flex justify-end gap-2 mt-4">
           <button
             onClick={onCancel}
             className="px-4 py-2 text-sm rounded-lg bg-surface-0 border border-surface-2
@@ -92,7 +89,6 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
             Delete .clubhouse/ &amp; Close
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

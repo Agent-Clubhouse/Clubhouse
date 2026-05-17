@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useCallback } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useUpdateStore } from '../../stores/updateStore';
 import { renderMarkdownSafe } from '../../utils/safe-markdown';
+import { Modal } from '../../components/Modal';
 
 export function WhatsNewDialog() {
   const whatsNew = useUpdateStore((s) => s.whatsNew);
@@ -16,48 +17,31 @@ export function WhatsNewDialog() {
     dismissWhatsNew();
   }, [dismissWhatsNew]);
 
-  // Escape key support
-  useEffect(() => {
-    if (!showWhatsNew) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        handleDismiss();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [showWhatsNew, handleDismiss]);
-
-  if (!showWhatsNew || !whatsNew || !html) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-modal bg-black/50 flex items-center justify-center"
-      data-testid="whats-new-backdrop"
-      onClick={handleDismiss}
+    <Modal
+      open={!!showWhatsNew && !!whatsNew && !!html}
+      onClose={handleDismiss}
+      width="w-[520px]"
+      backdropTestId="whats-new-backdrop"
     >
-      <div
-        className="bg-ctp-mantle rounded-xl w-[520px] max-h-[70vh] flex flex-col shadow-xl"
-        data-testid="whats-new-dialog"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div data-testid="whats-new-dialog">
         {/* Header */}
-        <div className="px-6 pt-5 pb-3 border-b border-surface-0">
+        <div className="-mx-5 -mt-5 px-6 pt-5 pb-3 border-b border-surface-0 mb-4">
           <h2 className="text-lg font-semibold text-ctp-text">
-            What&apos;s New in v{whatsNew.version}
+            What&apos;s New in v{whatsNew?.version}
           </h2>
         </div>
 
         {/* Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="-mx-5 px-6 overflow-y-auto max-h-[50vh]">
           <div
             className="help-content"
-            dangerouslySetInnerHTML={{ __html: html }}
+            dangerouslySetInnerHTML={{ __html: html ?? '' }}
           />
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-surface-0 flex justify-end">
+        <div className="-mx-5 -mb-5 px-6 py-4 border-t border-surface-0 flex justify-end mt-4">
           <button
             onClick={handleDismiss}
             className="px-4 py-2 text-sm font-medium rounded-lg bg-ctp-accent hover:bg-ctp-accent/80 text-white transition-colors cursor-pointer"
@@ -67,6 +51,6 @@ export function WhatsNewDialog() {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
