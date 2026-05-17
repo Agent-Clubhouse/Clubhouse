@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -99,7 +100,7 @@ function ContextMenu({ actions, position, onClose }: {
     return { left: x, top: y };
   }, [position, actions.length]);
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       className="fixed z-dropdown min-w-[160px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle"
@@ -117,7 +118,8 @@ function ContextMenu({ actions, position, onClose }: {
           <span>{action.label}</span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
