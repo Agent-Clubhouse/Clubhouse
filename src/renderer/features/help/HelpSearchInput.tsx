@@ -33,7 +33,7 @@ export function HelpSearchInput({ query, onQueryChange }: HelpSearchInputProps) 
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         placeholder="Search help..."
-        className="flex-1 bg-transparent text-ctp-text text-sm outline-none placeholder:text-ctp-subtext0 min-w-0"
+        className="flex-1 bg-transparent text-ctp-text text-sm focus-ring placeholder:text-ctp-subtext0 min-w-0"
         spellCheck={false}
         autoComplete="off"
       />

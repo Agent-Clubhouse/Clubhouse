@@ -232,7 +232,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
           value={addressBar}
           onChange={(e) => setAddressBar(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 min-w-0 px-2 py-0.5 rounded bg-surface-0 text-[11px] text-ctp-text border border-surface-1 outline-none focus:border-ctp-accent"
+          className="flex-1 min-w-0 px-2 py-0.5 rounded bg-surface-0 text-[11px] text-ctp-text border border-surface-1 focus-ring"
           placeholder="Enter URL..."
           data-testid="canvas-browser-address"
         />

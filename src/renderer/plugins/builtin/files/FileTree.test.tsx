@@ -1182,8 +1182,8 @@ describe('FileTree — accessibility', () => {
     await screen.findByText('src');
 
     const treeContainer = container.querySelector('[role="tree"]');
-    expect(treeContainer?.className).toContain('focus:ring-1');
-    expect(treeContainer?.className).toContain('focus:ring-ctp-accent/50');
+    // Migrated to canonical focus-ring-inset utility (VQ-FI-01)
+    expect(treeContainer?.className).toContain('focus-ring-inset');
   });
 
   it('tree items have role="treeitem" and aria attributes', async () => {

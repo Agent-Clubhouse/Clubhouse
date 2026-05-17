@@ -332,14 +332,14 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
       },
         React.createElement('input', {
           type: 'text',
-          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-accent transition-colors',
+          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text focus-ring placeholder:text-ctp-subtext0 transition-colors',
           placeholder: 'Include (e.g. src/**/*.ts)',
           value: includePattern,
           onChange: (e: React.ChangeEvent<HTMLInputElement>) => setIncludePattern(e.target.value),
         }),
         React.createElement('input', {
           type: 'text',
-          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-accent transition-colors',
+          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text focus-ring placeholder:text-ctp-subtext0 transition-colors',
           placeholder: 'Exclude (e.g. dist,*.min.js)',
           value: excludePattern,
           onChange: (e: React.ChangeEvent<HTMLInputElement>) => setExcludePattern(e.target.value),

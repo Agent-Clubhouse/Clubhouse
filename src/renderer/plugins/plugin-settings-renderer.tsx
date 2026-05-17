@@ -70,7 +70,7 @@ export function PluginSettingsRenderer({ pluginId, settings, scope }: Props) {
               <select
                 value={String(value ?? '')}
                 onChange={(e) => handleChange(setting.key, e.target.value)}
-                className="w-full bg-surface-0 text-ctp-text text-sm px-2 py-1.5 rounded border border-surface-2 outline-none focus:border-ctp-accent"
+                className="w-full bg-surface-0 text-ctp-text text-sm px-2 py-1.5 rounded border border-surface-2 focus-ring"
               >
                 {setting.options.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -91,7 +91,7 @@ export function PluginSettingsRenderer({ pluginId, settings, scope }: Props) {
                 type="number"
                 value={String(value ?? '')}
                 onChange={(e) => handleChange(setting.key, Number(e.target.value))}
-                className="w-full bg-surface-0 text-ctp-text text-sm px-2 py-1.5 rounded border border-surface-2 outline-none focus:border-ctp-accent"
+                className="w-full bg-surface-0 text-ctp-text text-sm px-2 py-1.5 rounded border border-surface-2 focus-ring"
               />
             </div>
           );
@@ -110,7 +110,7 @@ export function PluginSettingsRenderer({ pluginId, settings, scope }: Props) {
                   value={String(value ?? '')}
                   onChange={(e) => handleChange(setting.key, e.target.value)}
                   placeholder="/path/to/directory"
-                  className="flex-1 bg-surface-0 text-ctp-text text-sm px-2 py-1.5 rounded border border-surface-2 outline-none focus:border-ctp-accent"
+                  className="flex-1 bg-surface-0 text-ctp-text text-sm px-2 py-1.5 rounded border border-surface-2 focus-ring"
                 />
                 <button
                   type="button"
@@ -140,7 +140,7 @@ export function PluginSettingsRenderer({ pluginId, settings, scope }: Props) {
               type="text"
               value={String(value ?? '')}
               onChange={(e) => handleChange(setting.key, e.target.value)}
-              className="w-full bg-surface-0 text-ctp-text text-sm px-2 py-1.5 rounded border border-surface-2 outline-none focus:border-ctp-accent"
+              className="w-full bg-surface-0 text-ctp-text text-sm px-2 py-1.5 rounded border border-surface-2 focus-ring"
             />
           </div>
         );

@@ -99,7 +99,7 @@ function McpConfigRow({
                 value={configs[arg.name] || ''}
                 onChange={(e) => onConfigChange(arg.name, e.target.value)}
                 placeholder={arg.description || ''}
-                className="flex-1 text-xs bg-surface-0 border border-surface-2 rounded px-2 py-1 text-ctp-text placeholder:text-ctp-subtext0/40 placeholder:italic focus:outline-none focus:border-ctp-blue/50 transition-colors"
+                className="flex-1 text-xs bg-surface-0 border border-surface-2 rounded px-2 py-1 text-ctp-text placeholder:text-ctp-subtext0/40 placeholder:italic focus-ring-dim transition-colors"
               />
             </div>
           ))}
@@ -1160,7 +1160,7 @@ export function AgentSettingsView({ agent }: Props) {
                   onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
                   disabled={isRunning}
                   placeholder={`Agent instructions written to ${instructionsFileLabel}...`}
-                  className={`w-full h-40 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`w-full h-40 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                   spellCheck={false}
                 />
               </section>
@@ -1251,7 +1251,7 @@ export function AgentSettingsView({ agent }: Props) {
                       onChange={(e) => { setPermAllow(e.target.value); setPermDirty(true); }}
                       disabled={isRunning}
                       placeholder={"Bash(git checkout:*)\nBash(git pull:*)\nBash(npm run:*)"}
-                      className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                       spellCheck={false}
                     />
                   </div>
@@ -1262,7 +1262,7 @@ export function AgentSettingsView({ agent }: Props) {
                       onChange={(e) => { setPermDeny(e.target.value); setPermDirty(true); }}
                       disabled={isRunning}
                       placeholder={"WebFetch\nBash(curl *)\nRead(./.env)"}
-                      className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                       spellCheck={false}
                     />
                   </div>
@@ -1299,7 +1299,7 @@ export function AgentSettingsView({ agent }: Props) {
                     onChange={(e) => { setQadSystemPrompt(e.target.value); setQadDirty(true); }}
                     disabled={isRunning}
                     placeholder="System prompt appended to quick agents spawned by this agent..."
-                    className={`w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                     spellCheck={false}
                   />
                 </div>
@@ -1310,7 +1310,7 @@ export function AgentSettingsView({ agent }: Props) {
                     onChange={(e) => { setQadAllowedTools(e.target.value); setQadDirty(true); }}
                     disabled={isRunning}
                     placeholder={"Bash(npm test:*)\nEdit\nWrite"}
-                    className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                     spellCheck={false}
                   />
                 </div>
@@ -1320,7 +1320,7 @@ export function AgentSettingsView({ agent }: Props) {
                     value={qadDefaultModel}
                     onChange={(e) => { setQadDefaultModel(e.target.value); setQadDirty(true); }}
                     disabled={isRunning}
-                    className={`w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus:border-ctp-accent focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {MODEL_OPTIONS.map((opt) => (
                       <option key={opt.id} value={opt.id}>{opt.label}</option>
@@ -1334,7 +1334,7 @@ export function AgentSettingsView({ agent }: Props) {
                       onChange={(e) => { setQadCustomModel(e.target.value); setQadDirty(true); }}
                       placeholder="e.g. claude-opus-4-6"
                       disabled={isRunning}
-                      className={`mt-1.5 w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus:border-ctp-accent focus:outline-none placeholder:text-ctp-overlay0 ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      className={`mt-1.5 w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus-ring placeholder:text-ctp-overlay0 ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                   )}
                 </div>

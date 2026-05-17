@@ -189,7 +189,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
                 <select
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  className="flex-1 px-2 py-1.5 bg-surface-0 border border-surface-2 rounded text-xs text-ctp-text focus:outline-none"
+                  className="flex-1 px-2 py-1.5 bg-surface-0 border border-surface-2 rounded text-xs text-ctp-text focus-ring"
                 >
                   {modelOptions.map((m) => (
                     <option key={m.id} value={m.id}>{m.label}</option>

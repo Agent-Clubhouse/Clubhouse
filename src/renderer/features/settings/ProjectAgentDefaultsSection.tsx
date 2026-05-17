@@ -658,7 +658,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               setDirty(true);
             }}
             placeholder="Default CLAUDE.md content for new agents..."
-            className="w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none"
+            className="w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring"
             spellCheck={false}
           />
         </div>
@@ -708,7 +708,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               value={userAllowRules}
               onChange={(e) => { setPermAllow(e.target.value); setDirty(true); }}
               placeholder={"Bash(git checkout:*)\nBash(git pull:*)\nBash(npm run:*)"}
-              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none"
+              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring"
               spellCheck={false}
             />
           </div>
@@ -718,7 +718,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               value={userDenyRules}
               onChange={(e) => { setPermDeny(e.target.value); setDirty(true); }}
               placeholder={"WebFetch\nBash(curl *)"}
-              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none"
+              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring"
               spellCheck={false}
             />
           </div>
@@ -760,7 +760,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             value={userMcpJson}
             onChange={(e) => { setMcpJson(e.target.value); setDirty(true); }}
             placeholder='{\n  "mcpServers": {}\n}'
-            className="w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-accent focus:outline-none"
+            className="w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring"
             spellCheck={false}
           />
         </div>

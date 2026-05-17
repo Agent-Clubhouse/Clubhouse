@@ -238,7 +238,7 @@ export function BlueprintGallery() {
             <select
               value={sortMode}
               onChange={(e) => setSortMode(e.target.value as SortMode)}
-              className="text-[10px] bg-ctp-mantle border border-surface-0 rounded px-1.5 py-0.5 text-ctp-subtext1 outline-none"
+              className="text-[10px] bg-ctp-mantle border border-surface-0 rounded px-1.5 py-0.5 text-ctp-subtext1 focus-ring"
               data-testid="blueprint-gallery-sort"
             >
               <option value="name">Sort: Name</option>
@@ -262,7 +262,7 @@ export function BlueprintGallery() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name, description, or agent name..."
-            className="w-full px-3 py-1.5 text-xs bg-ctp-mantle border border-surface-0 rounded-md text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:border-ctp-accent"
+            className="w-full px-3 py-1.5 text-xs bg-ctp-mantle border border-surface-0 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
             autoFocus
             data-testid="blueprint-gallery-search"
           />
