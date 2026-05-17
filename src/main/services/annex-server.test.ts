@@ -186,6 +186,11 @@ vi.mock('../../shared/name-generator', () => ({
   generateQuickName: vi.fn().mockReturnValue('swift-fox'),
 }));
 
+// Mock agent-id (generateQuickAgentId) — default returns a stable unique value per call
+vi.mock('../../shared/agent-id', () => ({
+  generateQuickAgentId: vi.fn().mockImplementation(() => `quick_${Date.now()}_test`),
+}));
+
 // Mock ipc-broadcast (used for notifying renderer of annex-spawned agents)
 const mockBroadcastToAllWindows = vi.fn();
 vi.mock('../util/ipc-broadcast', () => ({
@@ -209,6 +214,7 @@ import * as pluginManifestRegistry from './plugin-manifest-registry';
 import * as pluginStorage from './plugin-storage';
 import * as fileServiceModule from './file-service';
 import { generateQuickName } from '../../shared/name-generator';
+import * as agentIdModule from '../../shared/agent-id';
 import { appLog } from './log-service';
 import Bonjour from 'bonjour-service';
 
@@ -684,6 +690,60 @@ describe('annex-server', () => {
       expect(res.status).toBe(404);
       expect(JSON.parse(res.body)).toEqual({ error: 'agent_not_found' });
     });
+
+    // CQ-RC-01: regression — same-ID re-spawn within the 60s cleanup window must not
+    // delete the new entry when the stale timer fires.
+    it('CQ-RC-01: re-spawning with the same agentId within 60s cancels the stale cleanup timer', async () => {
+      const FIXED_ID = 'quick_race_regression_test';
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentIdModule.generateQuickAgentId).mockReturnValue(FIXED_ID);
+      vi.mocked(annexEventBus.onPtyExit).mockClear();
+
+      // Start with real timers so startAndPair() works
+      const { port, token } = await startAndPair();
+
+      // Capture the onPtyExit callback registered during start()
+      const ptyExitCb = vi.mocked(annexEventBus.onPtyExit).mock.calls[0][0] as (
+        agentId: string, exitCode: number,
+      ) => void;
+
+      // Switch to fake timers — only timers created from this point are synthetic
+      vi.useFakeTimers({ shouldAdvanceTime: false });
+      try {
+        // (a) Insert first entry via HTTP spawn
+        const res1 = await request(
+          port, 'POST', '/api/v1/projects/proj_1/agents/quick',
+          { prompt: 'First task' },
+          authHeaders(token),
+        );
+        expect(res1.status).toBe(201);
+
+        // Simulate PTY exit — starts the 60s cleanup timer bound to entry1
+        ptyExitCb(FIXED_ID, 0);
+
+        const { trackedQuickAgents } = annexServer._testing;
+        expect(trackedQuickAgents.has(FIXED_ID)).toBe(true);
+        expect(trackedQuickAgents.get(FIXED_ID)?.timerId).toBeDefined();
+
+        // (b) Insert second entry with the same ID — should cancel entry1's timer
+        const res2 = await request(
+          port, 'POST', '/api/v1/projects/proj_1/agents/quick',
+          { prompt: 'Second task' },
+          authHeaders(token),
+        );
+        expect(res2.status).toBe(201);
+
+        // (c) Advance past original 60s window — stale timer must NOT fire
+        vi.advanceTimersByTime(65_000);
+
+        expect(trackedQuickAgents.has(FIXED_ID)).toBe(true);
+        expect(trackedQuickAgents.get(FIXED_ID)?.prompt).toBe('Second task');
+      } finally {
+        vi.useRealTimers();
+      }
+    }, 15_000);
   });
 
   // -------------------------------------------------------------------------
