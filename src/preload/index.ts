@@ -1216,8 +1216,8 @@ const api = {
     onCanvasMutation: (callback: (canvasId: string, scope: string, mutation: unknown, projectId?: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, canvasId: string, scope: string, mutation: unknown, projectId?: string) =>
         callback(canvasId, scope, mutation, projectId);
-      ipcRenderer.on(IPC.WINDOW.CANVAS_MUTATION, listener);
-      return () => { ipcRenderer.removeListener(IPC.WINDOW.CANVAS_MUTATION, listener); };
+      ipcRenderer.on(IPC.WINDOW.REQUEST_CANVAS_MUTATION, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_CANVAS_MUTATION, listener); };
     },
     requestDurableReload: (projectId: string) =>
       ipcRenderer.send(IPC.WINDOW.REQUEST_DURABLE_RELOAD, projectId),
