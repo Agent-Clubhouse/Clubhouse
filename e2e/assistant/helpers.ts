@@ -129,11 +129,13 @@ async function installAssistantStub(
   electronApp: Awaited<ReturnType<typeof electron.launch>>,
 ): Promise<void> {
   await electronApp.evaluate(async ({ ipcMain, app, BrowserWindow }) => {
-    const fs = require('fs') as typeof import('fs');
-    const path = require('path') as typeof import('path');
+    // Dynamic import is required here — `require` is not available in
+    // Playwright's electronApp.evaluate() sandbox context.
+    const { writeFileSync, mkdirSync } = await import('node:fs');
+    const { join } = await import('node:path');
 
-    const logsDir = path.join(app.getPath('userData'), 'agent-logs');
-    fs.mkdirSync(logsDir, { recursive: true });
+    const logsDir = join(app.getPath('userData'), 'agent-logs');
+    mkdirSync(logsDir, { recursive: true });
 
     function broadcast(channel: string, ...args: unknown[]): void {
       for (const win of BrowserWindow.getAllWindows()) {
@@ -142,12 +144,12 @@ async function installAssistantStub(
     }
 
     function writeTranscript(agentId: string, responseText: string): void {
-      const transcriptPath = path.join(logsDir, `${agentId}.jsonl`);
+      const transcriptPath = join(logsDir, `${agentId}.jsonl`);
       const lines = [
         JSON.stringify({ type: 'text', text: responseText }),
         JSON.stringify({ type: 'result', result: responseText }),
       ].join('\n') + '\n';
-      fs.writeFileSync(transcriptPath, lines, 'utf-8');
+      writeFileSync(transcriptPath, lines, 'utf-8');
     }
 
     // Always report an orchestrator as available so startAgent proceeds
