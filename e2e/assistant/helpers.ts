@@ -119,23 +119,22 @@ export async function launchAssistantInstance(): Promise<AssistantInstance> {
  * responses. Call this immediately after launching the app in CI so tests
  * 10-15 can run without a live orchestrator binary.
  *
- * Overrides:
+ * Overrides (no fs I/O — responses stored in a closure Map):
  * - agent:check-orchestrator → always available
- * - assistant:spawn          → writes fake JSONL (headless) or emits structured events
- * - assistant:send-followup  → same as spawn, returns { agentId }
+ * - agent:read-transcript    → returns canned JSONL from in-memory Map
+ * - assistant:spawn          → stores response (headless) or emits structured events
+ * - assistant:send-followup  → stores response, returns { agentId }
  * - assistant:send-structured-followup → emits structured events, returns { agentId }
  */
 async function installAssistantStub(
   electronApp: Awaited<ReturnType<typeof electron.launch>>,
 ): Promise<void> {
-  await electronApp.evaluate(async ({ ipcMain, app, BrowserWindow }) => {
-    // Dynamic import is required here — `require` is not available in
-    // Playwright's electronApp.evaluate() sandbox context.
-    const { writeFileSync, mkdirSync } = await import('node:fs');
-    const { join } = await import('node:path');
-
-    const logsDir = join(app.getPath('userData'), 'agent-logs');
-    mkdirSync(logsDir, { recursive: true });
+  // NOTE: electronApp.evaluate() runs in a V8 sandbox that has NO access to
+  // CommonJS require() or ESM import(). Only JS built-ins and the objects
+  // passed as parameters are available. All state must be kept in closure.
+  await electronApp.evaluate(({ ipcMain, BrowserWindow }) => {
+    // In-memory transcript store — keyed by agentId, avoids any fs I/O.
+    const transcripts = new Map<string, string>();
 
     function broadcast(channel: string, ...args: unknown[]): void {
       for (const win of BrowserWindow.getAllWindows()) {
@@ -143,25 +142,25 @@ async function installAssistantStub(
       }
     }
 
-    function writeTranscript(agentId: string, responseText: string): void {
-      const transcriptPath = join(logsDir, `${agentId}.jsonl`);
-      const lines = [
-        JSON.stringify({ type: 'text', text: responseText }),
-        JSON.stringify({ type: 'result', result: responseText }),
-      ].join('\n') + '\n';
-      writeFileSync(transcriptPath, lines, 'utf-8');
-    }
-
     // Always report an orchestrator as available so startAgent proceeds
     ipcMain.removeHandler('agent:check-orchestrator');
     ipcMain.handle('agent:check-orchestrator', () => ({ available: true }));
 
+    // Intercept transcript reads — return the canned response stored in memory
+    ipcMain.removeHandler('agent:read-transcript');
+    ipcMain.handle('agent:read-transcript', (_event: Electron.IpcMainInvokeEvent, agentId: unknown) => {
+      const text = transcripts.get(agentId as string) ?? '';
+      return [
+        JSON.stringify({ type: 'text', text }),
+        JSON.stringify({ type: 'result', result: text }),
+      ].join('\n') + '\n';
+    });
+
     // Stub assistant:spawn — handles headless and structured modes
     ipcMain.removeHandler('assistant:spawn');
-    ipcMain.handle('assistant:spawn', async (_event: Electron.IpcMainInvokeEvent, params: Record<string, unknown>) => {
+    ipcMain.handle('assistant:spawn', (_event: Electron.IpcMainInvokeEvent, params: Record<string, unknown>) => {
       const agentId = params['agentId'] as string;
       const executionMode = params['executionMode'] as string;
-
       const responseText = 'Hello! I can help you with Clubhouse.';
 
       if (executionMode === 'structured') {
@@ -171,7 +170,7 @@ async function installAssistantStub(
           broadcast('agent:structured-event', agentId, { type: 'end', timestamp: Date.now(), data: { reason: 'done' } });
         }, 300);
       } else if (executionMode === 'headless') {
-        writeTranscript(agentId, responseText);
+        transcripts.set(agentId, responseText);
         setTimeout(() => broadcast('assistant:result', { agentId, exitCode: 0 }), 300);
       }
 
@@ -180,23 +179,21 @@ async function installAssistantStub(
 
     // Stub assistant:send-followup — headless conversational follow-ups
     ipcMain.removeHandler('assistant:send-followup');
-    ipcMain.handle('assistant:send-followup', async (_event: Electron.IpcMainInvokeEvent, params: Record<string, unknown>) => {
+    ipcMain.handle('assistant:send-followup', (_event: Electron.IpcMainInvokeEvent, params: Record<string, unknown>) => {
       const message = (params['message'] as string) || '';
       const agentId = `stub_followup_${Date.now()}`;
-
       const responseText = /my name/i.test(message)
         ? 'Your name is TestUser.'
         : 'I understand your question.';
 
-      writeTranscript(agentId, responseText);
+      transcripts.set(agentId, responseText);
       setTimeout(() => broadcast('assistant:result', { agentId, exitCode: 0 }), 300);
-
       return { agentId };
     });
 
     // Stub assistant:send-structured-followup — structured follow-ups
     ipcMain.removeHandler('assistant:send-structured-followup');
-    ipcMain.handle('assistant:send-structured-followup', async () => {
+    ipcMain.handle('assistant:send-structured-followup', () => {
       const agentId = `stub_structured_followup_${Date.now()}`;
       const responseText = 'I understand your follow-up.';
 
