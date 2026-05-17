@@ -12,6 +12,7 @@ import { useFileDrop } from '../terminal/useFileDrop';
 import { useTerminalFit } from '../terminal/useTerminalFit';
 import { ptyResize } from '../../services/project-proxy';
 import { rendererLog } from '../../plugins/renderer-logger';
+import { Spinner } from '../../components/Spinner';
 
 /** How long PTY output must be silent before we consider a resume "done". */
 const RESUME_SETTLE_MS = 1500;
@@ -681,7 +682,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           data-testid="resume-overlay"
           className="absolute inset-0 flex flex-col items-center justify-center bg-ctp-base/90 z-10"
         >
-          <div className="w-6 h-6 border-2 border-ctp-accent border-t-transparent rounded-full animate-spin mb-3" />
+          <Spinner size="lg" className="mb-3" />
           <span className="text-sm text-ctp-subtext0">Resuming session...</span>
         </div>
       )}

@@ -11,6 +11,7 @@ import { usePluginStore } from '../../plugin-store';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { LinkDropdown } from './LinkDropdown';
+import { Spinner } from '../../../components/Spinner';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -463,7 +464,7 @@ export function CanvasViewComponent({
           if (pluginKnown) {
             return (
               <div className="flex flex-col items-center justify-center h-full gap-2 text-ctp-overlay0 text-xs p-4 text-center" data-testid="widget-loading">
-                <span className="inline-block w-4 h-4 border-2 border-ctp-overlay0 border-t-transparent rounded-full animate-spin" />
+                <Spinner size="sm" />
                 <span>Loading&hellip;</span>
               </div>
             );
@@ -479,6 +480,7 @@ export function CanvasViewComponent({
           return (
             <div className="flex flex-col items-center justify-center h-full gap-2 text-ctp-overlay0 text-xs p-4 text-center" data-testid="widget-loading">
               <span className="font-medium text-ctp-subtext0">{registered.declaration.label}</span>
+              <Spinner size="sm" />
               <span>Loading…</span>
             </div>
           );

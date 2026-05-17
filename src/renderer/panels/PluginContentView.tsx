@@ -7,6 +7,7 @@ import { useProjectStore } from '../stores/projectStore';
 import { usePluginUpdateStore } from '../stores/pluginUpdateStore';
 import { rendererLog } from '../plugins/renderer-logger';
 import type { PluginRenderMode } from '../../shared/plugin-types';
+import { Spinner } from '../components/Spinner';
 
 export class PluginErrorBoundary extends React.Component<
   { pluginId: string; children: React.ReactNode },
@@ -151,6 +152,7 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
     if (activating) {
       return (
         <div className="flex items-center justify-center h-full bg-ctp-base">
+          <Spinner size="sm" />
           <p className="text-ctp-subtext0 text-xs">Loading plugin...</p>
         </div>
       );

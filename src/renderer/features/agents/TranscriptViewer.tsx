@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { formatDuration } from '../../utils/format';
+import { Spinner } from '../../components/Spinner';
 
 /** Page size for paginated transcript loading */
 const PAGE_SIZE = 100;
@@ -127,7 +128,7 @@ export function TranscriptViewer({ agentId }: Props) {
   }, [totalEvents, loadPage]);
 
   if (loading) {
-    return <div className="text-xs text-ctp-subtext0 p-3">Loading transcript...</div>;
+    return <div className="text-xs text-ctp-subtext0 p-3 flex items-center gap-2"><Spinner size="xs" /> Loading transcript...</div>;
   }
 
   if (error) {
@@ -162,7 +163,7 @@ export function TranscriptViewer({ agentId }: Props) {
     <div ref={scrollContainerRef} className="space-y-2 p-3 max-h-[400px] overflow-y-auto">
       {hasMore && (
         <div ref={sentinelRef} className="text-center py-1">
-          {loadingMore && <span className="text-[10px] text-ctp-subtext0">Loading earlier events...</span>}
+          {loadingMore && <span className="text-[10px] text-ctp-subtext0 flex items-center gap-1"><Spinner size="xs" /> Loading earlier events...</span>}
         </div>
       )}
       {items.map((item, i) => (

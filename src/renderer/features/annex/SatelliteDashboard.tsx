@@ -17,6 +17,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { getAgentColorHex } from '../../../shared/name-generator';
+import { EmptyState } from '../../components/EmptyState';
 import { AgentAvatar } from '../agents/AgentAvatar';
 import { STATUS_RING_COLORS as STATUS_RING_COLOR } from '../agents/status-colors';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
@@ -418,19 +419,10 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
         )}
 
         {projects.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-surface-0 flex items-center justify-center mb-4">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ctp-subtext0">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-            </div>
-            <h3 className="text-base font-semibold text-ctp-text mb-1">No projects on this satellite</h3>
-            <p className="text-sm text-ctp-subtext0">
-              Open a project on the remote machine to see it here.
-            </p>
-          </div>
+          <EmptyState
+            title="No projects on this satellite"
+            description="Open a project on the remote machine to see it here."
+          />
         )}
       </div>
     </div>

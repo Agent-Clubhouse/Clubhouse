@@ -32,7 +32,7 @@ export function ZoomedViewOverlay({
 }: ZoomedViewOverlayProps) {
   return (
     <div
-      className="absolute inset-0 z-canvas-overlay flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
+      className="absolute inset-0 z-canvas-dialog flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       data-testid="canvas-zoom-overlay"
     >

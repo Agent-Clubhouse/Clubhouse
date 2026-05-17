@@ -4,6 +4,7 @@ import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { Modal } from '../../components/Modal';
+import { Spinner } from '../../components/Spinner';
 import type { PersonaTemplate } from '../assistant/content/personas';
 import type { McpCatalogEntry } from '../../../shared/types';
 
@@ -156,7 +157,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
             {modelsLoading ? (
               <div className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
                 text-ctp-subtext0 flex items-center gap-2">
-                <span className="inline-block w-3 h-3 border-2 border-ctp-subtext0 border-t-transparent rounded-full animate-spin" />
+                <Spinner size="xs" />
                 Loading models...
               </div>
             ) : (

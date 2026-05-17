@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { EmptyState } from './EmptyState';
 
 // ── Emoji data ────────────────────────────────────────────────────────────────
 // Curated set of popular emojis organized by category.
@@ -238,7 +239,7 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
               {filtered.map(renderEmojiButton)}
             </div>
           ) : (
-            <p className="text-center text-xs text-ctp-overlay0 py-6">No results</p>
+            <EmptyState title="No results" compact />
           )
         ) : (
           // Categorized view

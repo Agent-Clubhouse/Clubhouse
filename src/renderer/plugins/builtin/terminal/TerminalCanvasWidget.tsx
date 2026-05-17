@@ -10,6 +10,7 @@ import type { TerminalIO } from '../../../features/terminal/ShellTerminal';
 import { ShellTerminal } from '../../../features/terminal/ShellTerminal';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { satellitePtyDataBus, satellitePtyExitBus } from '../../../stores/annexClientStore';
+import { EmptyState } from '../../../components/EmptyState';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
 
@@ -213,7 +214,7 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
           Select a project
         </div>
         {projects.length === 0 ? (
-          <div className="text-xs text-ctp-overlay0 italic">No projects open</div>
+          <EmptyState title="No projects open" compact />
         ) : (
           <div className="flex-1 overflow-y-auto space-y-1">
             {projects.map((p) => {

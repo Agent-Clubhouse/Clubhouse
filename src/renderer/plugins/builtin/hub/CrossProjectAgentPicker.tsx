@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { PluginAPI, AgentInfo, ProjectInfo, ModelOption } from '../../../../shared/plugin-types';
+import { EmptyState } from '../../../components/EmptyState';
 
 interface CrossProjectAgentPickerProps {
   api: PluginAPI;
@@ -81,7 +82,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
               Select a project
             </div>
             {projects.length === 0 ? (
-              <div className="text-xs text-ctp-overlay0 text-center py-4">No projects open</div>
+              <EmptyState title="No projects open" compact />
             ) : (
               projects.map((p) => {
                 const agentCount = agents.filter((a) => a.projectId === p.id).length;
@@ -169,7 +170,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
           )}
 
           {durableAgents.length === 0 && quickAgents.length === 0 && (
-            <div className="text-xs text-ctp-overlay0 text-center py-2">No agents in this project</div>
+            <EmptyState title="No agents in this project" compact />
           )}
 
           {showQuickForm ? (

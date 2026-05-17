@@ -141,8 +141,8 @@ describe('AssistantActionCard', () => {
     render(<AssistantActionCard action={makeAction({ status: 'running' })} />);
     const card = screen.getByTestId('assistant-action-card');
     expect(card).toHaveAttribute('data-status', 'running');
-    // The spinning SVG uses animate-spin class
-    expect(card.querySelector('svg.animate-spin')).toBeInTheDocument();
+    // <Spinner> renders a span with role="status" and animate-spin
+    expect(card.querySelector('[role="status"]')).toBeInTheDocument();
   });
 
   it('shows skipped text when expanded in skipped state', () => {

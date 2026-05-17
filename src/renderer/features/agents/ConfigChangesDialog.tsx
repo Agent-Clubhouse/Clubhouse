@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAgentStore } from '../../stores/agentStore';
 import { ConfigDiffCategory, ConfigDiffAction } from '../../../shared/types';
+import { Spinner } from '../../components/Spinner';
 
 interface DiffItem {
   id: string;
@@ -149,7 +150,7 @@ export function ConfigChangesDialog() {
       >
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <div className="w-5 h-5 border-2 border-ctp-subtext0 border-t-transparent rounded-full animate-spin" />
+            <Spinner />
           </div>
         ) : items.length === 0 ? (
           <>
@@ -270,7 +271,7 @@ export function ConfigChangesDialog() {
                   className="px-4 py-1.5 text-xs rounded bg-ctp-accent/80 text-ctp-base
                     hover:bg-ctp-accent cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {executing && <span className="w-3 h-3 border-2 border-ctp-base/50 border-t-ctp-base rounded-full animate-spin" />}
+                  {executing && <Spinner size="xs" />}
                   Save to Clubhouse
                 </button>
               </div>

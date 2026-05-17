@@ -6,6 +6,7 @@ import { useSoundStore } from '../../stores/soundStore';
 import { ALL_SOUND_EVENTS } from '../../../shared/types';
 import { Toggle } from '../../components/Toggle';
 import { SoundEventRow, SoundPackCard, ProjectSoundOverrideSection } from './sound-components';
+import { Spinner } from '../../components/Spinner';
 
 const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSettings, 'enabled' | 'playSound'>; label: string; description: string }[] = [
   { key: 'permissionNeeded', label: 'Permission Needed', description: 'Notify when an agent is waiting for approval' },
@@ -262,7 +263,7 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
   }, [loadSettings, loadBadgeSettings, loadSoundSettings, loadPacks]);
 
   if (!settings) {
-    return <div className="p-6 text-ctp-subtext0 text-sm">Loading\u2026</div>;
+    return <div className="p-6 flex items-center gap-2 text-ctp-subtext0 text-sm"><Spinner size="sm" /> Loading\u2026</div>;
   }
 
   // Project context: badges + sound overrides

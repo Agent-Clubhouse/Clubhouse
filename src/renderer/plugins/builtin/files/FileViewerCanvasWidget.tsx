@@ -12,6 +12,7 @@ import { ReadOnlyMonacoEditor } from '../canvas/ReadOnlyMonacoEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { ResizableSidebar } from '../canvas/ResizableSidebar';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
+import { EmptyState } from '../../../components/EmptyState';
 
 function isMarkdownFile(path: string): boolean {
   const lower = path.toLowerCase();
@@ -173,7 +174,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
           Select a project
         </div>
         {projects.length === 0 ? (
-          <div className="text-xs text-ctp-overlay0 italic">No projects open</div>
+          <EmptyState title="No projects open" compact />
         ) : (
           <div className="flex-1 overflow-y-auto space-y-1">
             {projects.map((p) => {
@@ -334,9 +335,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
               Loading&hellip;
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-ctp-overlay0 text-xs">
-              Select a file to view
-            </div>
+            <EmptyState title="Select a file to view" compact />
           )}
         </div>
       </div>

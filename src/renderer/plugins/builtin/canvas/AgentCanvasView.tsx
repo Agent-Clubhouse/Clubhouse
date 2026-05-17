@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canvas-types';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
+import { EmptyState } from '../../../components/EmptyState';
 
 interface AgentCanvasViewProps {
   view: AgentCanvasViewType;
@@ -178,7 +179,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
           </div>
           <div className="flex-1 overflow-y-auto space-y-1">
             {projects.length === 0 ? (
-              <div className="text-xs text-ctp-overlay0 italic">No projects open</div>
+              <EmptyState title="No projects open" compact />
             ) : (
               projects.map((p) => {
                 const agentCount = agents.filter((a) => a.projectId === p.id).length;
@@ -233,7 +234,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         </div>
         <div className="flex-1 overflow-y-auto space-y-1">
           {filteredAgents.length === 0 ? (
-            <div className="text-xs text-ctp-overlay0 italic">No agents{isAppMode ? ' in this project' : ' available'}</div>
+            <EmptyState title={isAppMode ? 'No agents in this project' : 'No agents available'} compact />
           ) : (
             filteredAgents.map((agent) => (
               <button
