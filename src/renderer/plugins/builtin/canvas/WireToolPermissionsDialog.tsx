@@ -132,7 +132,7 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
         {/* Header */}
         <div className="px-4 py-3 bg-ctp-base border-b border-surface-0">
           <div className="text-sm text-ctp-text font-medium">Tool Permissions</div>
-          <div className="text-[10px] text-ctp-subtext0 mt-0.5">
+          <div className="text-xs text-ctp-subtext0 mt-0.5">
             {binding.label} ({binding.targetKind})
           </div>
         </div>
@@ -141,15 +141,15 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
         <div className="px-4 pt-2 flex gap-2">
           <button
             onClick={handleEnableAll}
-            className="text-[10px] text-ctp-accent hover:underline"
+            className="text-xs text-ctp-accent hover:underline"
             data-testid="wire-permissions-enable-all"
           >
             Enable All
           </button>
-          <span className="text-[10px] text-ctp-overlay0">|</span>
+          <span className="text-xs text-ctp-overlay0">|</span>
           <button
             onClick={handleDisableAll}
-            className="text-[10px] text-ctp-red hover:underline"
+            className="text-xs text-ctp-red hover:underline"
             data-testid="wire-permissions-disable-all"
           >
             Disable All
@@ -171,7 +171,7 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
                     {toolLabel(suffix)}
                   </div>
                   {TOOL_HINTS[suffix] && (
-                    <div className="text-[10px] text-ctp-overlay0 truncate">
+                    <div className="text-xs text-ctp-overlay0 truncate">
                       {TOOL_HINTS[suffix]}
                     </div>
                   )}
@@ -184,7 +184,7 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
 
         {/* Footer */}
         <div className="px-4 py-3 border-t border-surface-0 flex items-center justify-between">
-          <span className="text-[10px] text-ctp-overlay0">
+          <span className="text-xs text-ctp-overlay0">
             {enabledCount}/{suffixes.length} enabled
           </span>
           <div className="flex gap-2">

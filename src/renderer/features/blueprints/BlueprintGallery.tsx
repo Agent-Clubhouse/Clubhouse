@@ -229,7 +229,7 @@ export function BlueprintGallery() {
             <button
               onClick={handleOpenFromFile}
               disabled={importing === '__open_from_file__'}
-              className="text-[10px] px-2 py-0.5 bg-ctp-mantle border border-surface-0 rounded text-ctp-subtext1 hover:text-ctp-text hover:border-ctp-accent disabled:opacity-50"
+              className="text-xs px-2 py-0.5 bg-ctp-mantle border border-surface-0 rounded text-ctp-subtext1 hover:text-ctp-text hover:border-ctp-accent disabled:opacity-50"
               data-testid="blueprint-gallery-open-from-file"
               title="Open a blueprint .json from anywhere on disk"
             >
@@ -239,7 +239,7 @@ export function BlueprintGallery() {
             <select
               value={sortMode}
               onChange={(e) => setSortMode(e.target.value as SortMode)}
-              className="text-[10px] bg-ctp-mantle border border-surface-0 rounded px-1.5 py-0.5 text-ctp-subtext1 focus-ring"
+              className="text-xs bg-ctp-mantle border border-surface-0 rounded px-1.5 py-0.5 text-ctp-subtext1 focus-ring"
               data-testid="blueprint-gallery-sort"
             >
               <option value="name">Sort: Name</option>
@@ -405,14 +405,14 @@ function BlueprintCard({
       >
         <div className="text-xs font-medium text-ctp-text truncate w-full">{bp.name}</div>
         {bp.description && (
-          <div className="text-[10px] text-ctp-subtext0 line-clamp-2">{bp.description}</div>
+          <div className="text-xs text-ctp-subtext0 line-clamp-2">{bp.description}</div>
         )}
-        <div className="flex items-center gap-2 text-[10px] text-ctp-overlay0 mt-auto">
+        <div className="flex items-center gap-2 text-xs text-ctp-overlay0 mt-auto">
           <span>{bp.viewCount} view{bp.viewCount !== 1 ? 's' : ''}</span>
           {bp.agentCount > 0 && <span>{bp.agentCount} agent{bp.agentCount !== 1 ? 's' : ''}</span>}
           {bp.wireCount > 0 && <span>{bp.wireCount} wire{bp.wireCount !== 1 ? 's' : ''}</span>}
         </div>
-        <div className="flex items-center gap-1 text-[10px] text-ctp-overlay0 truncate w-full">
+        <div className="flex items-center gap-1 text-xs text-ctp-overlay0 truncate w-full">
           <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="flex-shrink-0">
             <path d="M2 4l6-2 6 2v8l-6 2-6-2z" />
             <path d="M8 2v12" />
@@ -504,7 +504,7 @@ function PreviewPanel({
       <div className="px-4 py-3 border-b border-surface-0">
         <div className="text-xs font-semibold text-ctp-text mb-1">{bp.name}</div>
         {bp.description && (
-          <div className="text-[10px] text-ctp-subtext0 mb-2">{bp.description}</div>
+          <div className="text-xs text-ctp-subtext0 mb-2">{bp.description}</div>
         )}
         <button
           onClick={onImport}
@@ -517,7 +517,7 @@ function PreviewPanel({
       </div>
 
       {/* Metadata */}
-      <div className="px-4 py-2 border-b border-surface-0 text-[10px] text-ctp-subtext0 space-y-1">
+      <div className="px-4 py-2 border-b border-surface-0 text-xs text-ctp-subtext0 space-y-1">
         <div className="flex justify-between"><span>Source</span><span className="text-ctp-text">{bp.source}</span></div>
         <div className="flex justify-between"><span>Version</span><span className="text-ctp-text">{bp.version}</span></div>
         {bp.createdAt && (
@@ -527,15 +527,15 @@ function PreviewPanel({
 
       {/* View breakdown */}
       <div className="px-4 py-2 border-b border-surface-0">
-        <div className="text-[10px] font-medium text-ctp-subtext1 mb-1.5">Views ({bp.viewCount})</div>
+        <div className="text-xs font-medium text-ctp-subtext1 mb-1.5">Views ({bp.viewCount})</div>
         <div className="flex flex-wrap gap-1.5">
           {Object.entries(typeBreakdown).map(([type, count]) => (
-            <span key={type} className={`text-[10px] px-1.5 py-0.5 rounded ${typeColor(type)}`}>
+            <span key={type} className={`text-xs px-1.5 py-0.5 rounded ${typeColor(type)}`}>
               {count} {type}
             </span>
           ))}
           {bp.wireCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext0">
+            <span className="text-xs px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext0">
               {bp.wireCount} wire{bp.wireCount !== 1 ? 's' : ''}
             </span>
           )}
@@ -545,10 +545,10 @@ function PreviewPanel({
       {/* Agent list */}
       {bp.agentNames.length > 0 && (
         <div className="px-4 py-2 border-b border-surface-0">
-          <div className="text-[10px] font-medium text-ctp-subtext1 mb-1.5">Agents</div>
+          <div className="text-xs font-medium text-ctp-subtext1 mb-1.5">Agents</div>
           <div className="space-y-1">
             {bp.agentNames.map((name, i) => (
-              <div key={i} className="flex items-center gap-1.5 text-[10px] text-ctp-text">
+              <div key={i} className="flex items-center gap-1.5 text-xs text-ctp-text">
                 <div className="w-1.5 h-1.5 rounded-full bg-ctp-accent flex-shrink-0" />
                 {name}
               </div>
@@ -560,7 +560,7 @@ function PreviewPanel({
       {/* Mini layout preview */}
       {viewRects.length > 0 && (
         <div className="px-4 py-2">
-          <div className="text-[10px] font-medium text-ctp-subtext1 mb-1.5">Layout Preview</div>
+          <div className="text-xs font-medium text-ctp-subtext1 mb-1.5">Layout Preview</div>
           <MiniLayoutPreview views={viewRects} />
         </div>
       )}

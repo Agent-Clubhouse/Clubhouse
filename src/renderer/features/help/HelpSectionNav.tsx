@@ -15,7 +15,7 @@ export function HelpSectionNav({ sections, pluginSections, activeSectionId, onSe
       </div>
       <nav className="flex-1 py-1 flex flex-col overflow-y-auto">
         <div className="px-3 pt-2 pb-1">
-          <span className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider">Features</span>
+          <span className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Features</span>
         </div>
         {sections.map((section) => (
           <button
@@ -38,7 +38,7 @@ export function HelpSectionNav({ sections, pluginSections, activeSectionId, onSe
           <>
             <div className="w-full border-t border-surface-0 my-1" />
             <div className="px-3 pt-2 pb-1">
-              <span className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider">Plugins</span>
+              <span className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Plugins</span>
             </div>
             {pluginSections.map((section) => (
               <button

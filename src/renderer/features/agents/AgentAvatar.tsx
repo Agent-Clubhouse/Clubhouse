@@ -80,7 +80,7 @@ interface Props {
 const SIZE_CONFIG = {
   xs: { outer: 'w-7 h-7', inner: 'w-5 h-5', font: 'text-[8px]', icon: 20, bolt: 8 },
   sm: { outer: 'w-8 h-8', inner: 'w-6 h-6', font: 'text-[9px]', icon: 24, bolt: 10 },
-  md: { outer: 'w-9 h-9', inner: 'w-7 h-7', font: 'text-[10px]', icon: 28, bolt: 12 },
+  md: { outer: 'w-9 h-9', inner: 'w-7 h-7', font: 'text-xs', icon: 28, bolt: 12 },
   lg: { outer: 'w-14 h-14', inner: 'w-12 h-12', font: 'text-base', icon: 48, bolt: 16 },
 };
 

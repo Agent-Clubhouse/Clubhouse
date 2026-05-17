@@ -78,7 +78,7 @@ function SessionRow({
                 {session.friendlyName || `Session ${session.sessionId.slice(0, 8)}`}
               </span>
               {isLatest && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-ctp-accent/20 text-ctp-accent shrink-0">
+                <span className="text-xs px-1.5 py-0.5 rounded-full bg-ctp-accent/20 text-ctp-accent shrink-0">
                   latest
                 </span>
               )}
@@ -225,7 +225,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
           {!loading && sessions.length > 0 && (
             <>
               <div className="px-3 pt-1 pb-1">
-                <span className="text-[10px] uppercase tracking-wider text-ctp-subtext0 font-medium">Recent</span>
+                <span className="text-xs uppercase tracking-wider text-ctp-subtext0 font-medium">Recent</span>
               </div>
               {sessions.slice(0, RECENT_COUNT).map((session, idx) => (
                 <SessionRow
@@ -250,7 +250,7 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
           {!loading && sessions.length > RECENT_COUNT && (
             <>
               <div className="px-3 pt-3 pb-1">
-                <span className="text-[10px] uppercase tracking-wider text-ctp-subtext0 font-medium">Older</span>
+                <span className="text-xs uppercase tracking-wider text-ctp-subtext0 font-medium">Older</span>
               </div>
               {sessions.slice(RECENT_COUNT).map((session, idx) => (
                 <SessionRow

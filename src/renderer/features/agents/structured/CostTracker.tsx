@@ -14,7 +14,7 @@ export function CostTracker({ usage }: Props) {
 
   return (
     <div
-      className="relative inline-flex items-center gap-1.5 text-[10px] text-ctp-subtext0 tabular-nums"
+      className="relative inline-flex items-center gap-1.5 text-xs text-ctp-subtext0 tabular-nums"
       data-testid="cost-tracker"
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
@@ -30,7 +30,7 @@ export function CostTracker({ usage }: Props) {
 
       {/* Tooltip breakdown */}
       {showTooltip && (
-        <div className="absolute bottom-full left-0 mb-1 bg-ctp-crust border border-surface-0 rounded px-2 py-1.5 text-[10px] text-ctp-subtext1 shadow-lg whitespace-nowrap z-10">
+        <div className="absolute bottom-full left-0 mb-1 bg-ctp-crust border border-surface-0 rounded px-2 py-1.5 text-xs text-ctp-subtext1 shadow-lg whitespace-nowrap z-10">
           <div>Input: {usage.inputTokens.toLocaleString()}</div>
           <div>Output: {usage.outputTokens.toLocaleString()}</div>
           {usage.cacheReadTokens != null && (

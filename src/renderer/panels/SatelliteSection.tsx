@@ -128,7 +128,7 @@ export function SatelliteHostRow({ satellite, expanded, isActive, onClick }: {
             <span
               role="button"
               onClick={handleRetry}
-              className="text-[10px] text-ctp-subtext0 hover:text-ctp-text opacity-0 group-hover:opacity-100 transition-opacity pr-2 cursor-pointer"
+              className="text-xs text-ctp-subtext0 hover:text-ctp-text opacity-0 group-hover:opacity-100 transition-opacity pr-2 cursor-pointer"
               title="Retry connection"
             >
               retry

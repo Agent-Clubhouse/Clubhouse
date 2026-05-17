@@ -206,7 +206,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   return (
     <div className="flex flex-col h-full">
       {/* Header bar */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
+      <div className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 border-b border-surface-0 text-xs text-ctp-subtext0 flex-shrink-0">
         {isAppMode && (
           <button
             className="hover:text-ctp-text transition-colors mr-1"
@@ -228,7 +228,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
           <>
             <span className="text-ctp-overlay0 mx-0.5">/</span>
             <select
-              className="text-[10px] bg-surface-0 text-ctp-subtext1 border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none max-w-[120px]"
+              className="text-xs bg-surface-0 text-ctp-subtext1 border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none max-w-[120px]"
               value={rootPath}
               onChange={(e) => handleSelectWorktree(e.target.value)}
               title="Switch worktree root"
@@ -274,7 +274,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
           </>
         )}
         {filePath && isMarkdownFile(filePath) && fileContent !== null && (
-          <div className="flex items-center bg-surface-0 rounded text-[10px] ml-2">
+          <div className="flex items-center bg-surface-0 rounded text-xs ml-2">
             <button
               className={`px-2 py-0.5 rounded cursor-pointer ${previewMode === 'preview' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`}
               onClick={() => setPreviewMode('preview')}

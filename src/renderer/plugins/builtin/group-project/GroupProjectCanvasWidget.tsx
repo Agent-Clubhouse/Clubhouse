@@ -59,7 +59,7 @@ export function GroupProjectCanvasWidget({
         </div>
         <div className="space-y-1">
           <div className="text-xs font-medium text-ctp-subtext1">MCP Required</div>
-          <div className="text-[10px] text-ctp-overlay0 max-w-[200px]">
+          <div className="text-xs text-ctp-overlay0 max-w-[200px]">
             Group Project requires MCP to be enabled. Enable it in Settings &gt; MCP.
           </div>
         </div>
@@ -299,12 +299,12 @@ function ProjectCard({
           title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
         >
           <PollingIcon size={12} active={pollingEnabled} />
-          <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
+          <span className="text-xs font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
         </button>
       </div>
 
       {/* Activity summary */}
-      <div className="flex items-center gap-3 text-[10px] text-ctp-subtext0">
+      <div className="flex items-center gap-3 text-xs text-ctp-subtext0">
         <span>{topics.length} topic{topics.length !== 1 ? 's' : ''}</span>
         <span>{totalMessages} msg{totalMessages !== 1 ? 's' : ''}{totalNew > 0 && <span className="text-ctp-green ml-0.5">+{totalNew} new</span>}</span>
       </div>
@@ -322,7 +322,7 @@ function ProjectCard({
           {members.map((m) => (
             <span
               key={m.agentId}
-              className="px-2 py-0.5 text-[10px] bg-surface-0 text-ctp-subtext1 rounded-full"
+              className="px-2 py-0.5 text-xs bg-surface-0 text-ctp-subtext1 rounded-full"
             >
               {m.agentName || m.agentId}
             </span>
@@ -610,7 +610,7 @@ function ExpandedProjectView({
       {/* Inline Description & Instructions Editor */}
       <div className="flex gap-3 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/50">
         <div className="flex-1 min-w-0">
-          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0 mb-1">Description</label>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-ctp-subtext0 mb-1">Description</label>
           <textarea
             value={editDesc}
             onChange={(e) => setEditDesc(e.target.value)}
@@ -620,7 +620,7 @@ function ExpandedProjectView({
           />
         </div>
         <div className="flex-1 min-w-0">
-          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0 mb-1">Instructions</label>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-ctp-subtext0 mb-1">Instructions</label>
           <textarea
             value={editInstr}
             onChange={(e) => setEditInstr(e.target.value)}
@@ -631,8 +631,8 @@ function ExpandedProjectView({
         </div>
         <div className="flex flex-col justify-between flex-shrink-0 gap-1.5 w-44">
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0 mb-0.5">Default permissions</div>
-            <div className="text-[10px] text-ctp-subtext0 leading-snug">
+            <div className="text-xs font-semibold uppercase tracking-wider text-ctp-subtext0 mb-0.5">Default permissions</div>
+            <div className="text-xs text-ctp-subtext0 leading-snug">
               {GROUP_PROJECT_CORE_TOOL_SUFFIXES.length} message tools on.
               {' '}
               {enabledPrivilegedDefaults === 0
@@ -641,7 +641,7 @@ function ExpandedProjectView({
             </div>
             <button
               onClick={() => setShowDefaultPermissionsDialog(true)}
-              className="mt-1 px-2 py-1 text-[10px] font-medium rounded bg-surface-0 text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
+              className="mt-1 px-2 py-1 text-xs font-medium rounded bg-surface-0 text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
               data-testid="group-project-default-permissions-button"
             >
               Set defaults
@@ -664,14 +664,14 @@ function ExpandedProjectView({
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
-              <span className="text-[10px] text-ctp-overlay0 whitespace-nowrap" title={`${disabledDefaultCount} tools disabled by default`}>
+              <span className="text-xs text-ctp-overlay0 whitespace-nowrap" title={`${disabledDefaultCount} tools disabled by default`}>
                 {disabledDefaultCount} off
               </span>
             </div>
             {confirmClearAll ? (
               <button
                 onClick={handleClearAll}
-                className="w-full px-2 py-1.5 text-[10px] font-medium bg-ctp-red text-white rounded hover:opacity-90 transition-opacity"
+                className="w-full px-2 py-1.5 text-xs font-medium bg-ctp-red text-white rounded hover:opacity-90 transition-opacity"
                 data-testid="group-project-confirm-clear-all"
               >
                 Confirm Clear
@@ -679,7 +679,7 @@ function ExpandedProjectView({
             ) : (
               <button
                 onClick={() => setConfirmClearAll(true)}
-                className="w-full px-2 py-1.5 text-[10px] font-medium text-ctp-red bg-ctp-red/10 rounded hover:bg-ctp-red/20 transition-colors"
+                className="w-full px-2 py-1.5 text-xs font-medium text-ctp-red bg-ctp-red/10 rounded hover:bg-ctp-red/20 transition-colors"
                 title="Clear all messages (keeps description, instructions, and wires)"
                 data-testid="group-project-clear-all"
               >
@@ -699,7 +699,7 @@ function ExpandedProjectView({
           onResize={resizeTopics}
           onToggleCollapse={toggleTopicsCollapse}
         >
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-ctp-accent/10 text-ctp-accent sticky top-0 z-10">
+          <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider bg-ctp-accent/10 text-ctp-accent sticky top-0 z-10">
             Topics
           </div>
           {/* All virtual topic */}
@@ -712,7 +712,7 @@ function ExpandedProjectView({
             }`}
           >
             <div className="font-medium">All</div>
-            <div className="text-[10px] text-ctp-overlay0 mt-0.5">
+            <div className="text-xs text-ctp-overlay0 mt-0.5">
               {topics.reduce((sum, t) => sum + t.messageCount, 0)} msgs
             </div>
           </button>
@@ -733,7 +733,7 @@ function ExpandedProjectView({
                   {t.isProtected && <ShieldIcon size={10} />}
                   {t.topic}
                 </div>
-                <div className="text-[10px] text-ctp-overlay0 mt-0.5">
+                <div className="text-xs text-ctp-overlay0 mt-0.5">
                   {t.messageCount} msg{t.messageCount !== 1 ? 's' : ''}
                   {t.newMessageCount > 0 && (
                     <span className="ml-1 text-ctp-green">+{t.newMessageCount}</span>
@@ -797,10 +797,10 @@ function ExpandedProjectView({
                   className="w-full text-left px-3 py-2"
                 >
                   <div className="flex items-center gap-1.5 text-xs">
-                    <span className="bg-ctp-accent/15 text-ctp-accent rounded px-1 py-0.5 text-[10px] font-medium truncate max-w-[80px]">
+                    <span className="bg-ctp-accent/15 text-ctp-accent rounded px-1 py-0.5 text-xs font-medium truncate max-w-[80px]">
                       {senderShort(m.sender)}
                     </span>
-                    <span className="ml-auto text-[10px] text-ctp-overlay0 flex-shrink-0">
+                    <span className="ml-auto text-xs text-ctp-overlay0 flex-shrink-0">
                       {formatTime(m.timestamp)}
                     </span>
                   </div>
@@ -826,7 +826,7 @@ function ExpandedProjectView({
           {selectedMessage ? (
             <div className="text-xs space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="bg-ctp-accent/15 text-ctp-accent rounded px-1.5 py-0.5 text-[10px] font-medium">
+                <span className="bg-ctp-accent/15 text-ctp-accent rounded px-1.5 py-0.5 text-xs font-medium">
                   {selectedMessage.sender}
                 </span>
                 <span className="text-ctp-overlay0">
@@ -859,7 +859,7 @@ function ExpandedProjectView({
       {/* Action Bar (agent count only) */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-t border-surface-1 bg-ctp-mantle">
         <RobotIcon size={12} />
-        <span className="text-[10px] text-ctp-subtext0">
+        <span className="text-xs text-ctp-subtext0">
           {members.length} agent{members.length !== 1 ? 's' : ''} connected
         </span>
       </div>
@@ -984,7 +984,7 @@ function ExpandedHeader({
         title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
       >
         <PollingIcon size={12} active={pollingEnabled} />
-        <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
+        <span className="text-xs font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
       </button>
     </div>
   );
@@ -1160,7 +1160,7 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/30">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0">Retention</span>
+      <span className="text-xs font-semibold uppercase tracking-wider text-ctp-subtext0">Retention</span>
       <label className="flex items-center gap-1.5 text-xs text-ctp-subtext1">
         Per topic:
         <input
@@ -1182,7 +1182,7 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
         />
       </label>
       {trimEstimate != null && trimEstimate > 0 && (
-        <span className="text-[10px] text-ctp-red font-medium">
+        <span className="text-xs text-ctp-red font-medium">
           {trimEstimate} msg{trimEstimate !== 1 ? 's' : ''} will be removed
         </span>
       )}
@@ -1190,7 +1190,7 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-2 py-0.5 text-[10px] font-medium bg-ctp-red text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
+          className="px-2 py-0.5 text-xs font-medium bg-ctp-red text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
         >
           {saving ? 'Trimming...' : 'Confirm Trim'}
         </button>
@@ -1198,7 +1198,7 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-2 py-0.5 text-[10px] font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
+          className="px-2 py-0.5 text-xs font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
         >
           {saving ? 'Saving...' : 'Save'}
         </button>

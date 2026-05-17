@@ -29,7 +29,7 @@ export function AgentQueueCanvasWidget({
         </div>
         <div className="space-y-1">
           <div className="text-xs font-medium text-ctp-subtext1">MCP Required</div>
-          <div className="text-[10px] text-ctp-overlay0 max-w-[200px]">
+          <div className="text-xs text-ctp-overlay0 max-w-[200px]">
             Agent Queue requires MCP to be enabled. Enable it in Settings &gt; MCP.
           </div>
         </div>
@@ -210,7 +210,7 @@ function QueueView({
       <div className="flex items-center justify-between px-3 py-2 border-b border-surface-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-medium text-ctp-text truncate">{queue.name}</span>
-          <span className="text-[10px] text-ctp-overlay0">
+          <span className="text-xs text-ctp-overlay0">
             {runningCount > 0 && <span className="text-ctp-green mr-1">{runningCount} running</span>}
             {pendingCount > 0 && <span className="text-ctp-yellow mr-1">{pendingCount} pending</span>}
           </span>
@@ -235,7 +235,7 @@ function QueueView({
           {tasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-2 text-ctp-overlay0 p-4">
               <div className="text-sm">No tasks yet</div>
-              <div className="text-[10px] text-center max-w-[200px]">
+              <div className="text-xs text-center max-w-[200px]">
                 Wire an agent to this queue. The agent can then invoke tasks using MCP tools.
               </div>
             </div>
@@ -250,7 +250,7 @@ function QueueView({
       )}
 
       {/* Footer status bar */}
-      <div className="flex items-center gap-3 px-3 py-1.5 border-t border-surface-2 text-[10px] text-ctp-overlay0 shrink-0">
+      <div className="flex items-center gap-3 px-3 py-1.5 border-t border-surface-2 text-xs text-ctp-overlay0 shrink-0">
         <span>{tasks.length} total</span>
         {completedCount > 0 && <span className="text-ctp-green">{completedCount} done</span>}
         {failedCount > 0 && <span className="text-ctp-red">{failedCount} failed</span>}
@@ -278,10 +278,10 @@ function TaskRow({ task }: { task: AgentQueueTaskSummary }) {
         <span className="text-ctp-text truncate flex-1" title={task.mission}>
           {task.mission.length > 80 ? task.mission.slice(0, 80) + '...' : task.mission}
         </span>
-        <span className="text-[10px] text-ctp-overlay0 shrink-0">{task.status}</span>
+        <span className="text-xs text-ctp-overlay0 shrink-0">{task.status}</span>
       </div>
       {task.agentName && (
-        <div className="text-[10px] text-ctp-overlay0 ml-3.5 mt-0.5">
+        <div className="text-xs text-ctp-overlay0 ml-3.5 mt-0.5">
           {task.agentName}
           {task.completedAt && ` \u00b7 ${formatDuration(task.createdAt, task.completedAt)}`}
         </div>
@@ -328,7 +328,7 @@ function QueueSettings({
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
       <div>
-        <label className="block text-[10px] text-ctp-overlay0 mb-1">Concurrency</label>
+        <label className="block text-xs text-ctp-overlay0 mb-1">Concurrency</label>
         <input
           type="number"
           min="1"
@@ -341,7 +341,7 @@ function QueueSettings({
       </div>
       {enabledOrchestrators.length > 0 && (
         <div>
-          <label className="block text-[10px] text-ctp-overlay0 mb-1">Orchestrator</label>
+          <label className="block text-xs text-ctp-overlay0 mb-1">Orchestrator</label>
           <select
             value={orchestrator || enabledOrchestrators[0]?.id || ''}
             onChange={(e) => {
@@ -358,7 +358,7 @@ function QueueSettings({
         </div>
       )}
       <div>
-        <label className="block text-[10px] text-ctp-overlay0 mb-1">Model (optional)</label>
+        <label className="block text-xs text-ctp-overlay0 mb-1">Model (optional)</label>
         <input
           type="text"
           value={model}
@@ -369,7 +369,7 @@ function QueueSettings({
         />
       </div>
       <div className="flex items-center justify-between">
-        <label className="text-[10px] text-ctp-overlay0">Free Agent Mode</label>
+        <label className="text-xs text-ctp-overlay0">Free Agent Mode</label>
         <input
           type="checkbox"
           checked={freeAgent}
@@ -381,7 +381,7 @@ function QueueSettings({
         />
       </div>
       <div className="flex items-center justify-between">
-        <label className="text-[10px] text-ctp-overlay0">Auto Worktree</label>
+        <label className="text-xs text-ctp-overlay0">Auto Worktree</label>
         <input
           type="checkbox"
           checked={autoWorktree}

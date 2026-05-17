@@ -279,7 +279,7 @@ export function DeleteAgentDialog() {
                       const badge = STATUS_BADGE[f.status] || { label: f.status, cls: 'bg-gray-500/20 text-gray-300' };
                       return (
                         <div key={f.path} className="flex items-center gap-2 text-xs">
-                          <span className={`px-1 py-0.5 rounded text-[10px] font-mono font-bold ${badge.cls}`}>
+                          <span className={`px-1 py-0.5 rounded text-xs font-mono font-bold ${badge.cls}`}>
                             {badge.label}
                           </span>
                           <span className="text-ctp-subtext1 truncate">{f.path}</span>

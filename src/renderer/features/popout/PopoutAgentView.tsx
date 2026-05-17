@@ -83,7 +83,7 @@ export function PopoutAgentView({ agentId, projectId }: PopoutAgentViewProps) {
           <div className="flex items-center gap-1 ml-1 flex-shrink-0">
             <button
               onClick={handleView}
-              className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
+              className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
               title="View in main window"
               data-testid="popout-view-button"
             >
@@ -92,7 +92,7 @@ export function PopoutAgentView({ agentId, projectId }: PopoutAgentViewProps) {
             {isRunning && (
               <button
                 onClick={handleKill}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30"
+                className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30"
                 title="Stop agent"
                 data-testid="popout-stop-button"
               >
@@ -102,7 +102,7 @@ export function PopoutAgentView({ agentId, projectId }: PopoutAgentViewProps) {
             {!isRunning && agent.kind === 'durable' && (
               <button
                 onClick={handleWake}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success hover:bg-ctp-success/30"
+                className="text-xs px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success hover:bg-ctp-success/30"
                 title="Wake agent"
                 data-testid="popout-wake-button"
               >

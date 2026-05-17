@@ -65,13 +65,13 @@ function McpConfigRow({
           <span className="text-xs text-ctp-text truncate flex items-center gap-1.5">
             {entry.name}
             {entry.state === 'new' && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-green/15 text-ctp-green uppercase tracking-wider">new</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-green/15 text-ctp-green uppercase tracking-wider">new</span>
             )}
             {entry.state === 'changed' && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-yellow/15 text-ctp-yellow uppercase tracking-wider">changed</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-yellow/15 text-ctp-yellow uppercase tracking-wider">changed</span>
             )}
             {entry.state === 'removed' && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-red/15 text-ctp-red uppercase tracking-wider">removed</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-red/15 text-ctp-red uppercase tracking-wider">removed</span>
             )}
           </span>
         </label>
@@ -79,7 +79,7 @@ function McpConfigRow({
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
-            className="text-[10px] text-ctp-subtext0 hover:text-ctp-text transition-colors shrink-0 px-1"
+            className="text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors shrink-0 px-1"
             title="Configure parameters"
           >
             {expanded ? '▴' : '▾'}
@@ -90,7 +90,7 @@ function McpConfigRow({
         <div className="mt-1.5 ml-7 mb-2 space-y-1.5">
           {textArgs.map((arg) => (
             <div key={arg.name} className="flex items-center gap-2">
-              <span className="text-[10px] text-ctp-subtext0 font-mono w-28 text-right shrink-0 flex items-center justify-end gap-1">
+              <span className="text-xs text-ctp-subtext0 font-mono w-28 text-right shrink-0 flex items-center justify-end gap-1">
                 {arg.required && <span className="w-1 h-1 rounded-full bg-ctp-yellow inline-block" title="Required" />}
                 {arg.name.replace(/^--/, '')}
               </span>
@@ -113,7 +113,7 @@ function McpConfigRow({
                     type="button"
                     onClick={() => onConfigChange(arg.name, active ? '' : 'true')}
                     title={arg.description || ''}
-                    className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                    className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
                       active
                         ? 'border-ctp-blue/50 bg-ctp-blue/15 text-ctp-blue'
                         : 'border-surface-2 text-ctp-subtext0 hover:border-ctp-subtext0'
@@ -774,7 +774,7 @@ export function AgentSettingsView({ agent }: Props) {
               disabled={isRunning}
               className="w-3 h-3 rounded border-surface-2 bg-surface-0 accent-ctp-accent"
             />
-            <span className="text-[10px] text-ctp-subtext0">Enable local overrides</span>
+            <span className="text-xs text-ctp-subtext0">Enable local overrides</span>
           </label>
         </div>
       )}
@@ -962,7 +962,7 @@ export function AgentSettingsView({ agent }: Props) {
                     <span className="text-sm text-ctp-text">Structured Mode</span>
                   </label>
                   {structuredMode && (capabilities?.structuredMode ?? false) && (
-                    <p className="mt-1 text-[10px] text-ctp-subtext0 pl-6">
+                    <p className="mt-1 text-xs text-ctp-subtext0 pl-6">
                       This agent will run with rich event streaming instead of a PTY terminal.
                     </p>
                   )}
@@ -995,12 +995,12 @@ export function AgentSettingsView({ agent }: Props) {
                   <span className="text-sm text-ctp-text">Free Agent Mode</span>
                 </label>
                 {freeAgentMode && (capabilities?.permissions ?? false) && (
-                  <p className="mt-1 text-[10px] text-ctp-error pl-6">
+                  <p className="mt-1 text-xs text-ctp-error pl-6">
                     This agent will run with full access — no tool approvals required.
                   </p>
                 )}
                 {!(capabilities?.permissions ?? false) && (
-                  <p className="mt-1 text-[10px] text-ctp-subtext0/60 pl-6">
+                  <p className="mt-1 text-xs text-ctp-subtext0/60 pl-6">
                     Not supported by {orchestratorInfo?.displayName || 'this orchestrator'}.
                   </p>
                 )}
@@ -1049,7 +1049,7 @@ export function AgentSettingsView({ agent }: Props) {
         {activeTab === 'main' && (
           <div className="space-y-6">
             {/* Shared settings note */}
-            <div className="text-[10px] text-ctp-subtext0/60 flex items-start gap-1.5 bg-ctp-mantle border border-surface-0 rounded-lg px-3 py-2">
+            <div className="text-xs text-ctp-subtext0/60 flex items-start gap-1.5 bg-ctp-mantle border border-surface-0 rounded-lg px-3 py-2">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="16" x2="12" y2="12" />
@@ -1078,7 +1078,7 @@ export function AgentSettingsView({ agent }: Props) {
                     <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Resolved Permissions</h3>
                     {preview.permissions.allow && preview.permissions.allow.length > 0 && (
                       <div className="mb-2">
-                        <span className="text-[10px] text-ctp-subtext0/60">Allow</span>
+                        <span className="text-xs text-ctp-subtext0/60">Allow</span>
                         <pre className="bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-2 border border-surface-1 opacity-70">
                           {preview.permissions.allow.join('\n')}
                         </pre>
@@ -1086,7 +1086,7 @@ export function AgentSettingsView({ agent }: Props) {
                     )}
                     {preview.permissions.deny && preview.permissions.deny.length > 0 && (
                       <div>
-                        <span className="text-[10px] text-ctp-subtext0/60">Deny</span>
+                        <span className="text-xs text-ctp-subtext0/60">Deny</span>
                         <pre className="bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-2 border border-surface-1 opacity-70">
                           {preview.permissions.deny.join('\n')}
                         </pre>
@@ -1131,7 +1131,7 @@ export function AgentSettingsView({ agent }: Props) {
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Instructions</h3>
-                    <span className="text-[10px] text-ctp-subtext0/60 font-mono">{instructionsFileLabel}</span>
+                    <span className="text-xs text-ctp-subtext0/60 font-mono">{instructionsFileLabel}</span>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -1204,7 +1204,7 @@ export function AgentSettingsView({ agent }: Props) {
             {!isManagedByClubhouse && mcpLoaded && mcpCatalog.length > 0 && (
               <section>
                 <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Launch Wrapper MCPs</h3>
-                <p className="text-[10px] text-ctp-subtext0/60 mb-2">
+                <p className="text-xs text-ctp-subtext0/60 mb-2">
                   MCPs injected via the launch wrapper when this agent starts. Expand entries to configure parameters.
                 </p>
                 <div className="grid grid-cols-2 gap-1">
@@ -1228,7 +1228,7 @@ export function AgentSettingsView({ agent }: Props) {
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Permissions</h3>
-                    <span className="text-[10px] text-ctp-subtext0/60 font-mono">{permissionsPathLabel}</span>
+                    <span className="text-xs text-ctp-subtext0/60 font-mono">{permissionsPathLabel}</span>
                   </div>
                   <button
                     onClick={handleSavePermissions}
@@ -1363,7 +1363,7 @@ export function AgentSettingsView({ agent }: Props) {
                     <span className="text-xs text-ctp-subtext0">Free Agent Mode by default</span>
                   </label>
                   {!(capabilities?.permissions ?? false) && (
-                    <p className="mt-1 text-[10px] text-ctp-subtext0/60">
+                    <p className="mt-1 text-xs text-ctp-subtext0/60">
                       Not supported by {orchestratorInfo?.displayName || 'this orchestrator'}.
                     </p>
                   )}

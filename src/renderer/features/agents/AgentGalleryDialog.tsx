@@ -127,7 +127,7 @@ export function AgentGalleryDialog({ onClose, onCreate }: Props) {
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs font-semibold text-ctp-text truncate">{persona.name}</div>
-                      <div className="text-[10px] text-ctp-subtext0 mt-0.5 line-clamp-2 leading-tight">
+                      <div className="text-xs text-ctp-subtext0 mt-0.5 line-clamp-2 leading-tight">
                         {persona.description}
                       </div>
                     </div>

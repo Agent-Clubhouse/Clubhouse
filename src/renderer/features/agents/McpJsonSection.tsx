@@ -66,7 +66,7 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
       <div className="flex items-center justify-between mb-2">
         <div>
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">MCP Servers</h3>
-          <span className="text-[10px] text-ctp-subtext0/60 font-mono">{pathLabel || '.mcp.json'}</span>
+          <span className="text-xs text-ctp-subtext0/60 font-mono">{pathLabel || '.mcp.json'}</span>
         </div>
         <button
           onClick={handleSave}
@@ -99,7 +99,7 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
             <line x1="12" y1="9" x2="12" y2="13" />
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
-          <span className="text-[10px] text-ctp-warning">{error}</span>
+          <span className="text-xs text-ctp-warning">{error}</span>
         </div>
       )}
     </section>

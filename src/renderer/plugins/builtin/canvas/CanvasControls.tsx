@@ -166,7 +166,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
                 <line x1="12" y1="10" x2="12" y2="14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 <circle cx="12" cy="17.5" r="1" fill="currentColor" />
               </svg>
-              <span className="text-[10px] font-mono text-ctp-warning min-w-[2ch] text-center">
+              <span className="text-xs font-mono text-ctp-warning min-w-[2ch] text-center">
                 {count}
               </span>
             </div>
@@ -209,7 +209,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
                 <line x1="12" y1="8" x2="12" y2="22" />
                 <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
               </svg>
-              <span className="text-[10px] font-mono text-ctp-accent min-w-[2ch] text-center">
+              <span className="text-xs font-mono text-ctp-accent min-w-[2ch] text-center">
                 {anchorCount}
               </span>
             </div>
@@ -297,7 +297,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
               className="absolute top-full right-0 mt-1 w-56 bg-ctp-mantle border border-surface-0 rounded-lg shadow-lg p-2 z-dropdown"
               data-testid="canvas-auto-layout-menu"
             >
-              <div className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1.5 px-1">Auto Layout</div>
+              <div className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1.5 px-1">Auto Layout</div>
               {ALGORITHMS.map((alg) => (
                 <button
                   key={alg}
@@ -325,7 +325,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
               {(algorithm === 'layered' || algorithm === 'mrtree') && (
                 <>
                   <div className="w-full h-px bg-surface-0 my-1.5" />
-                  <div className="text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1 px-1">Direction</div>
+                  <div className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1 px-1">Direction</div>
                   <div className="flex gap-1 px-1" data-testid="layout-direction-picker">
                     {DIRECTIONS.map((dir) => (
                       <button
@@ -353,7 +353,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
               {algorithm === 'radial' && (
                 <>
                   <div className="w-full h-px bg-surface-0 my-1.5" />
-                  <div className="text-[10px] text-ctp-subtext0 px-1">
+                  <div className="text-xs text-ctp-subtext0 px-1">
                     {hasSelection
                       ? 'Radiates from selected card'
                       : layoutCenterId
@@ -383,7 +383,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
       </button>
       <button
         onClick={onZoomReset}
-        className="min-w-[3rem] h-6 flex items-center justify-center rounded text-[10px] text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors font-mono"
+        className="min-w-[3rem] h-6 flex items-center justify-center rounded text-xs text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors font-mono"
         title="Reset zoom"
         data-testid="canvas-zoom-reset"
       >

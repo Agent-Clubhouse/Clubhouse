@@ -68,7 +68,7 @@ export function ActionBar({ agentId: _agentId, elapsed, usage, isComplete, onSto
       {usage && <CostTracker usage={usage} />}
 
       {/* Elapsed time */}
-      <span className="text-[10px] text-ctp-subtext0 tabular-nums">{formatElapsed(elapsed)}</span>
+      <span className="text-xs text-ctp-subtext0 tabular-nums">{formatElapsed(elapsed)}</span>
 
       {/* Stop button */}
       {!isComplete && (

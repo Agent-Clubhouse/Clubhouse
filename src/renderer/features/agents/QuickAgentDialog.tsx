@@ -192,7 +192,7 @@ export function QuickAgentDialog() {
             className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
           />
           <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
-          <span className="text-[10px] text-ctp-subtext0/70 ml-1">
+          <span className="text-xs text-ctp-subtext0/70 ml-1">
             {supportsPermissions ? '(autonomous permissions)' : '(not supported)'}
           </span>
         </label>
@@ -210,7 +210,7 @@ export function QuickAgentDialog() {
               text-ctp-text placeholder:text-ctp-overlay0
               focus-ring resize-none"
           />
-          <span className="text-[10px] text-ctp-overlay0 mt-0.5 block">
+          <span className="text-xs text-ctp-overlay0 mt-0.5 block">
             {navigator.platform.includes('Mac') ? '\u2318' : 'Ctrl'}+Enter to submit
           </span>
         </label>

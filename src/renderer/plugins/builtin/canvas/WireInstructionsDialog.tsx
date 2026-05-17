@@ -100,14 +100,14 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
         {/* Header */}
         <div className="px-4 py-3 bg-ctp-base border-b border-surface-0">
           <div className="text-sm text-ctp-text font-medium">Wire Instructions</div>
-          <div className="text-[10px] text-ctp-subtext0 mt-0.5">
+          <div className="text-xs text-ctp-subtext0 mt-0.5">
             {binding.label} ({binding.targetKind})
           </div>
         </div>
 
         {/* Tool selector */}
         <div className="px-4 pt-3">
-          <label className="text-[10px] text-ctp-subtext1 uppercase tracking-wider font-medium">
+          <label className="text-xs text-ctp-subtext1 uppercase tracking-wider font-medium">
             Apply to
           </label>
           <select
@@ -135,7 +135,7 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
             className="w-full h-32 bg-ctp-base border border-surface-2 rounded px-2.5 py-2 text-xs text-ctp-text placeholder:text-ctp-overlay0 resize-none focus-ring"
             data-testid="wire-instructions-textarea"
           />
-          <div className="text-[10px] text-ctp-overlay0 mt-1">
+          <div className="text-xs text-ctp-overlay0 mt-1">
             {selectedTool === '*'
               ? 'Applied to all tools on this wire unless overridden per-tool.'
               : `Applied only to the ${toolLabel(selectedTool)} tool.`}
@@ -144,7 +144,7 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
 
         {/* Footer */}
         <div className="px-4 py-3 border-t border-surface-0 flex items-center justify-between">
-          <span className="text-[10px] text-ctp-overlay0">
+          <span className="text-xs text-ctp-overlay0">
             {instructionCount > 0 ? `${instructionCount} instruction${instructionCount > 1 ? 's' : ''} set` : 'No instructions set'}
           </span>
           <div className="flex gap-2">

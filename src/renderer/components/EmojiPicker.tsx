@@ -248,7 +248,7 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
               key={cat.id}
               ref={(el) => { categoryRefs.current[cat.id] = el; }}
             >
-              <div className="text-[10px] font-semibold text-ctp-overlay0 uppercase tracking-wider pt-2 pb-1 px-0.5 sticky top-0 bg-ctp-mantle">
+              <div className="text-xs font-semibold text-ctp-overlay0 uppercase tracking-wider pt-2 pb-1 px-0.5 sticky top-0 bg-ctp-mantle">
                 {cat.label}
               </div>
               <div className="flex flex-wrap gap-0.5">

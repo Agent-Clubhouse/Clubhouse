@@ -76,35 +76,35 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
             <span className="text-sm font-medium text-ctp-text">{plugin.name}</span>
             <span className="text-xs text-ctp-subtext0">v{plugin.latest}</span>
             {plugin.official && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success">Official</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success">Official</span>
             )}
             {plugin.marketplaceName && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
                 {plugin.marketplaceName}
               </span>
             )}
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">
+            <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">
               API {release.api}
             </span>
             {!compatible && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
             )}
             {compatible && deprecatedRemoval && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-status-warning/20 text-status-warning" title={`API ${release.api} will be removed in ${deprecatedRemoval}`}>Deprecated</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-status-warning/20 text-status-warning" title={`API ${release.api} will be removed in ${deprecatedRemoval}`}>Deprecated</span>
             )}
             {installed && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Installed</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Installed</span>
             )}
           </div>
           <p className="text-xs text-ctp-subtext0 mt-1">{plugin.description}</p>
-          <div className="flex items-center gap-3 mt-2 text-[10px] text-ctp-subtext0">
+          <div className="flex items-center gap-3 mt-2 text-xs text-ctp-subtext0">
             <span>by {plugin.author}</span>
             <span>{formatBytes(release.size)}</span>
           </div>
           {plugin.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
               {plugin.tags.map((tag) => (
-                <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext0">
+                <span key={tag} className="text-xs px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext0">
                   {tag}
                 </span>
               ))}
@@ -145,7 +145,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
                 )}
                 <button
                   onClick={() => setShowPerms(!showPerms)}
-                  className="text-[10px] text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
+                  className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
                 >
                   {showPerms ? 'Hide' : 'View'} permissions ({release.permissions.length})
                 </button>
@@ -162,7 +162,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
                 <span className="text-xs font-mono text-ctp-accent">{perm}</span>
                 <RiskBadge permission={perm} />
               </div>
-              <p className="text-[10px] text-ctp-subtext0">
+              <p className="text-xs text-ctp-subtext0">
                 {PERMISSION_DESCRIPTIONS[perm as PluginPermission] || 'Unknown permission'}
               </p>
             </div>
@@ -175,19 +175,19 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
         return (
           <div className="mt-3 pt-3 border-t border-surface-0 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-mauve/20 text-ctp-mauve font-medium">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-mauve/20 text-ctp-mauve font-medium">
                 Beta available: v{betaPlugin.latest}
               </span>
               {betaPlugin.marketplaceName && (
-                <span className="text-[10px] text-ctp-subtext0">from {betaPlugin.marketplaceName}</span>
+                <span className="text-xs text-ctp-subtext0">from {betaPlugin.marketplaceName}</span>
               )}
               {betaRelease && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">
+                <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">
                   API {betaRelease.api}
                 </span>
               )}
               {!betaCompatible && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
+                <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
               )}
             </div>
             <button
@@ -583,7 +583,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-surface-1 flex items-center justify-between">
-          <p className="text-[10px] text-ctp-subtext0">
+          <p className="text-xs text-ctp-subtext0">
             {data ? `${allPlugins.length} plugin(s) available` : ''}
             {customPlugins.length > 0 ? ` (${customPlugins.length} from custom registries)` : ''}
           </p>

@@ -91,6 +91,10 @@ export default tseslint.config(
           selector: "JSXAttribute[name.name='className'][value.value=/\\bz-modal\\b/]",
           message: 'Use <Modal> from src/renderer/components/Modal.tsx instead of a bespoke fixed overlay with z-modal.',
         },
+        {
+          selector: "JSXAttribute[name.name='className'][value.value=/text-\\[10px\\]/]",
+          message: 'Use text-xs (12px) instead of text-[10px] — WCAG minimum font-size requirement.',
+        },
       ],
     },
   },

@@ -129,7 +129,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
         {/* Header */}
         <div className="px-3 py-2 bg-ctp-base border-b border-surface-0">
           <div className="text-xs text-ctp-text font-medium">Wire Connection</div>
-          <div className="text-[10px] text-ctp-subtext0 mt-0.5">
+          <div className="text-xs text-ctp-subtext0 mt-0.5">
             {binding.label} ({binding.targetKind})
           </div>
         </div>
@@ -150,7 +150,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
               <span className="flex-1 text-xs text-ctp-subtext0">
                 Bidirectional
                 {forceBidirectional && !bidirectional && (
-                  <span className="ml-1 text-[10px] text-ctp-subtext1">(project setting)</span>
+                  <span className="ml-1 text-xs text-ctp-subtext1">(project setting)</span>
                 )}
               </span>
               <Toggle
@@ -175,7 +175,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
               Tool Permissions
             </span>
             {hasDisabledTools && (
-              <span className="text-[10px] text-ctp-overlay0 flex-shrink-0">
+              <span className="text-xs text-ctp-overlay0 flex-shrink-0">
                 {liveBinding.disabledTools!.length} off
               </span>
             )}

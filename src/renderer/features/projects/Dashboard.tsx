@@ -337,7 +337,7 @@ function ProjectCard({ project }: { project: Project }) {
           {statusDots.map((d) => (
             <span
               key={d.label}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-0 text-[10px] text-ctp-subtext1"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-0 text-xs text-ctp-subtext1"
               title={`${d.count} ${d.label}`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${d.color} ${d.pulse ? 'animate-pulse' : ''}`} />

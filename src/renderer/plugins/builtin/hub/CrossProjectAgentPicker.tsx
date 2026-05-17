@@ -95,7 +95,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-0 hover:bg-surface-1 text-left transition-colors"
                   >
                     <div
-                      className="w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                      className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
                       style={{ backgroundColor: color }}
                     >
                       {initials}
@@ -104,7 +104,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
                       <div className="text-xs text-ctp-text truncate">{p.name}</div>
                     </div>
                     {agentCount > 0 && (
-                      <span className="text-[10px] text-ctp-overlay0">{agentCount}</span>
+                      <span className="text-xs text-ctp-overlay0">{agentCount}</span>
                     )}
                   </button>
                 );
@@ -123,7 +123,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
         <div className="w-full max-w-xs space-y-3">
           <button
             onClick={handleBack}
-            className="text-[10px] text-ctp-overlay0 hover:text-ctp-text flex items-center gap-1 mb-1"
+            className="text-xs text-ctp-overlay0 hover:text-ctp-text flex items-center gap-1 mb-1"
           >
             &larr; Back
           </button>
@@ -133,7 +133,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
 
           {durableAgents.length > 0 && (
             <div className="space-y-1">
-              <div className="text-[10px] uppercase tracking-wider text-ctp-overlay0 mb-1">Durable</div>
+              <div className="text-xs uppercase tracking-wider text-ctp-overlay0 mb-1">Durable</div>
               {durableAgents.map((a) => (
                 <button
                   key={a.id}
@@ -144,7 +144,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
                   <span className="text-xs text-ctp-text truncate flex-1">
                     {a.name}
                   </span>
-                  <span className={`text-[10px] ${a.status === 'running' ? 'text-ctp-success' : a.status === 'error' ? 'text-ctp-error' : 'text-ctp-overlay0'}`}>
+                  <span className={`text-xs ${a.status === 'running' ? 'text-ctp-success' : a.status === 'error' ? 'text-ctp-error' : 'text-ctp-overlay0'}`}>
                     {a.status}
                   </span>
                 </button>
@@ -154,7 +154,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
 
           {quickAgents.length > 0 && (
             <div className="space-y-1">
-              <div className="text-[10px] uppercase tracking-wider text-ctp-overlay0 mb-1">Quick</div>
+              <div className="text-xs uppercase tracking-wider text-ctp-overlay0 mb-1">Quick</div>
               {quickAgents.map((a) => (
                 <button
                   key={a.id}
@@ -163,7 +163,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
                 >
                   <AgentAvatar agentId={a.id} size="sm" showStatusRing />
                   <span className="text-xs text-ctp-text truncate flex-1">{a.name}</span>
-                  <span className="text-[10px] text-ctp-success">running</span>
+                  <span className="text-xs text-ctp-success">running</span>
                 </button>
               ))}
             </div>
@@ -206,7 +206,7 @@ export function CrossProjectAgentPicker({ api, agents, onPick }: CrossProjectAge
               </div>
               <button
                 onClick={() => setShowQuickForm(false)}
-                className="text-[10px] text-ctp-overlay0 hover:text-ctp-text"
+                className="text-xs text-ctp-overlay0 hover:text-ctp-text"
               >
                 Cancel
               </button>

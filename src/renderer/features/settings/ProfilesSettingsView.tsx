@@ -38,7 +38,7 @@ function EnvVarEditor({ entries, suggestedKeys, onChange }: EnvEditorProps) {
   return (
     <div className="space-y-2">
       {suggestedKeys.length > 0 && (
-        <p className="text-[10px] text-ctp-subtext0/60">
+        <p className="text-xs text-ctp-subtext0/60">
           Suggested keys: {suggestedKeys.map((k) => (
             <code key={k} className="bg-surface-0/30 px-1 rounded mx-0.5">{k}</code>
           ))}
@@ -115,7 +115,7 @@ function OrchestratorSection({ orchestratorName, entry, suggestedKeys, onUpdate,
         <span className="text-xs font-medium text-ctp-text">{orchestratorName}</span>
         <button
           onClick={onRemove}
-          className="text-[10px] text-ctp-red hover:underline cursor-pointer"
+          className="text-xs text-ctp-red hover:underline cursor-pointer"
         >
           Remove
         </button>
@@ -336,7 +336,7 @@ export function ProfilesSettingsView() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-ctp-text font-medium">{p.name}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-1 text-ctp-subtext0">
+                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-surface-1 text-ctp-subtext0">
                         {getOrchestratorNames(p)}
                       </span>
                     </div>

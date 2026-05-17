@@ -182,7 +182,7 @@ const ZoneThemePicker = React.forwardRef<HTMLDivElement, ZoneThemePickerProps>(
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme.colors.text }} />
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme.colors.accent }} />
                 </div>
-                <span className="text-[10px] font-medium text-left truncate w-full" style={{ color: theme.colors.text }}>
+                <span className="text-xs font-medium text-left truncate w-full" style={{ color: theme.colors.text }}>
                   {theme.name}
                 </span>
               </button>

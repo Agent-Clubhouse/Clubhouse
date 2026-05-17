@@ -123,7 +123,7 @@ interface EditorStatusBarProps {
 
 function EditorStatusBar({ line, column, language }: EditorStatusBarProps) {
   return React.createElement('div', {
-    className: 'flex items-center justify-between px-3 py-0.5 border-t border-surface-0 bg-ctp-mantle flex-shrink-0 text-[10px] text-ctp-subtext0 select-none',
+    className: 'flex items-center justify-between px-3 py-0.5 border-t border-surface-0 bg-ctp-mantle flex-shrink-0 text-xs text-ctp-subtext0 select-none',
   },
     React.createElement('span', null, `Ln ${line}, Col ${column}`),
     React.createElement('div', { className: 'flex items-center gap-3' },
@@ -455,7 +455,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
           React.createElement('polyline', { points: '14 2 14 8 20 8' }),
         ),
         React.createElement('p', { className: 'text-xs' }, 'Select a file to view'),
-        React.createElement('p', { className: 'text-[10px] mt-1 opacity-60' }, 'Click a file in the sidebar'),
+        React.createElement('p', { className: 'text-xs mt-1 opacity-60' }, 'Click a file in the sidebar'),
       ),
     );
   }
@@ -489,14 +489,14 @@ export function FileViewer({ api }: { api: PluginAPI }) {
         : null,
       lang !== 'plaintext'
         ? React.createElement('span', {
-            className: 'text-[10px] px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext0 flex-shrink-0',
+            className: 'text-xs px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext0 flex-shrink-0',
           }, lang)
         : null,
     ),
     React.createElement('div', { className: 'flex items-center gap-2 flex-shrink-0' },
       // Preview/Source toggle for markdown and SVG
       (loadedFile.fileType === 'markdown' || loadedFile.fileType === 'svg')
-        ? React.createElement('div', { className: 'flex items-center bg-surface-0 rounded text-[10px]' },
+        ? React.createElement('div', { className: 'flex items-center bg-surface-0 rounded text-xs' },
             React.createElement('button', {
               className: `px-2 py-0.5 rounded ${previewMode === 'preview' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`,
               onClick: () => setPreviewMode('preview'),
@@ -508,7 +508,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
           )
         : null,
       React.createElement('span', {
-        className: 'text-[10px] text-ctp-subtext0 truncate max-w-[200px]',
+        className: 'text-xs text-ctp-subtext0 truncate max-w-[200px]',
         title: activeTab.filePath,
       }, activeTab.filePath),
       React.createElement(OpenInFinderButton, { api, relativePath: activeTab.filePath }),

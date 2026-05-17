@@ -194,7 +194,7 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
         </div>
         {/* Match counter — shown when cycling through multiple results */}
         {cycling && query.trim() && filteredViews.length > 1 && (
-          <span className="text-[10px] text-ctp-overlay0 tabular-nums whitespace-nowrap" data-testid="canvas-search-match-count">
+          <span className="text-xs text-ctp-overlay0 tabular-nums whitespace-nowrap" data-testid="canvas-search-match-count">
             {((selectedIndex - 1 + filteredViews.length) % filteredViews.length) + 1} / {filteredViews.length}
           </span>
         )}

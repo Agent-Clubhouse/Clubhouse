@@ -206,8 +206,8 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       gitInfo.ahead > 0 && h('span', { className: 'text-[9px] text-ctp-green' }, `↑${gitInfo.ahead}`),
       gitInfo.behind > 0 && h('span', { className: 'text-[9px] text-ctp-red' }, `↓${gitInfo.behind}`),
       h('span', { className: 'flex-1' }),
-      h('button', { className: 'text-[10px] text-ctp-subtext0 hover:text-ctp-text px-1', onClick: handlePull, title: 'Pull' }, '↓'),
-      h('button', { className: 'text-[10px] text-ctp-subtext0 hover:text-ctp-text px-1', onClick: handlePush, title: 'Push' }, '↑'),
+      h('button', { className: 'text-xs text-ctp-subtext0 hover:text-ctp-text px-1', onClick: handlePull, title: 'Pull' }, '↓'),
+      h('button', { className: 'text-xs text-ctp-subtext0 hover:text-ctp-text px-1', onClick: handlePush, title: 'Push' }, '↑'),
     ),
     // Staged
     renderFileSection('Staged', 'staged', staged, expandedSections, handleSelectFile, handleUnstage, null),
@@ -218,11 +218,11 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     // Stage all / Unstage all buttons
     (staged.length > 0 || unstaged.length > 0 || untracked.length > 0) && h('div', { className: 'px-3 py-1 flex gap-1 border-b border-surface-0' },
       (unstaged.length > 0 || untracked.length > 0) && h('button', {
-        className: 'text-[10px] px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
+        className: 'text-xs px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
         onClick: handleStageAll,
       }, 'Stage All'),
       staged.length > 0 && h('button', {
-        className: 'text-[10px] px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
+        className: 'text-xs px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
         onClick: handleUnstageAll,
       }, 'Unstage All'),
     ),
@@ -261,11 +261,11 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     gitInfo.stashCount > 0 && renderCollapseSection(`Stash (${gitInfo.stashCount})`, 'stash', expandedSections, () =>
       h('div', { className: 'px-3 py-1 flex gap-1' },
         h('button', {
-          className: 'text-[10px] px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
+          className: 'text-xs px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
           onClick: handleStash,
         }, 'Stash'),
         h('button', {
-          className: 'text-[10px] px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
+          className: 'text-xs px-2 py-0.5 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors',
           onClick: handleStashPop,
         }, 'Pop'),
       ),
@@ -458,7 +458,7 @@ function renderFileSection(
   const expanded = expandedSections[sectionKey] !== false;
   return h(React.Fragment, null,
     h('button', {
-      className: 'w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0 hover:bg-surface-0',
+      className: 'w-full flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0 hover:bg-surface-0',
       onClick: () => gitState.toggleSection(sectionKey),
     },
       h('span', { className: `transition-transform ${expanded ? 'rotate-90' : ''}` }, '▸'),
@@ -506,7 +506,7 @@ function renderCollapseSection(
   const expanded = expandedSections[sectionKey] !== false;
   return h(React.Fragment, null,
     h('button', {
-      className: 'w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0 hover:bg-surface-0',
+      className: 'w-full flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0 hover:bg-surface-0',
       onClick: () => gitState.toggleSection(sectionKey),
     },
       h('span', { className: `transition-transform ${expanded ? 'rotate-90' : ''}` }, '▸'),

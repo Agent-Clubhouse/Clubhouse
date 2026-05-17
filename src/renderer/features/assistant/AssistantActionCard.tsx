@@ -107,10 +107,10 @@ export function AssistantActionCard({ action, onApprove, onSkip }: Props) {
         )}
         <span className="ml-auto flex items-center gap-2 shrink-0">
           {action.status === 'completed' && summary && (
-            <span className="text-[10px] text-ctp-success truncate max-w-[140px]">{summary}</span>
+            <span className="text-xs text-ctp-success truncate max-w-[140px]">{summary}</span>
           )}
           {action.durationMs != null && action.status === 'completed' && (
-            <span className="text-[10px] text-ctp-subtext0 tabular-nums">
+            <span className="text-xs text-ctp-subtext0 tabular-nums">
               {action.durationMs < 1000 ? `${action.durationMs}ms` : `${(action.durationMs / 1000).toFixed(1)}s`}
             </span>
           )}
@@ -147,7 +147,7 @@ export function AssistantActionCard({ action, onApprove, onSkip }: Props) {
           {/* Input parameters */}
           {action.input && Object.keys(action.input).length > 0 && (
             <details className="group">
-              <summary className="px-3 py-1.5 text-[10px] text-ctp-subtext0 cursor-pointer hover:text-ctp-subtext1 select-none">
+              <summary className="px-3 py-1.5 text-xs text-ctp-subtext0 cursor-pointer hover:text-ctp-subtext1 select-none">
                 Parameters
               </summary>
               <pre className="px-3 pb-2 text-xs text-ctp-subtext1 font-mono overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap break-words">
@@ -159,7 +159,7 @@ export function AssistantActionCard({ action, onApprove, onSkip }: Props) {
           {/* Output */}
           {action.output && action.status !== 'error' && (
             <details className="group" open={action.status === 'completed' && !!summary}>
-              <summary className="px-3 py-1.5 text-[10px] text-ctp-subtext0 cursor-pointer hover:text-ctp-subtext1 select-none">
+              <summary className="px-3 py-1.5 text-xs text-ctp-subtext0 cursor-pointer hover:text-ctp-subtext1 select-none">
                 Result
               </summary>
               <pre className="px-3 pb-2 text-xs text-ctp-subtext1 font-mono overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap break-words">

@@ -56,7 +56,7 @@ export function AgentPicker({ api, agents, onPick }: AgentPickerProps) {
 
           {durableAgents.length > 0 && (
             <div className="space-y-1">
-              <div className="text-[10px] uppercase tracking-wider text-ctp-overlay0 mb-1">Durable</div>
+              <div className="text-xs uppercase tracking-wider text-ctp-overlay0 mb-1">Durable</div>
               {durableAgents.map((a) => (
                 <button
                   key={a.id}
@@ -67,7 +67,7 @@ export function AgentPicker({ api, agents, onPick }: AgentPickerProps) {
                   <span className="text-xs text-ctp-text truncate flex-1">
                     {a.name}
                   </span>
-                  <span className={`text-[10px] ${a.status === 'running' ? 'text-ctp-success' : a.status === 'error' ? 'text-ctp-error' : 'text-ctp-overlay0'}`}>
+                  <span className={`text-xs ${a.status === 'running' ? 'text-ctp-success' : a.status === 'error' ? 'text-ctp-error' : 'text-ctp-overlay0'}`}>
                     {a.status}
                   </span>
                 </button>
@@ -77,7 +77,7 @@ export function AgentPicker({ api, agents, onPick }: AgentPickerProps) {
 
           {quickAgents.length > 0 && (
             <div className="space-y-1">
-              <div className="text-[10px] uppercase tracking-wider text-ctp-overlay0 mb-1">Quick</div>
+              <div className="text-xs uppercase tracking-wider text-ctp-overlay0 mb-1">Quick</div>
               {quickAgents.map((a) => (
                 <button
                   key={a.id}
@@ -86,7 +86,7 @@ export function AgentPicker({ api, agents, onPick }: AgentPickerProps) {
                 >
                   <AgentAvatar agentId={a.id} size="sm" showStatusRing />
                   <span className="text-xs text-ctp-text truncate flex-1">{a.name}</span>
-                  <span className="text-[10px] text-ctp-success">running</span>
+                  <span className="text-xs text-ctp-success">running</span>
                 </button>
               ))}
             </div>
@@ -129,7 +129,7 @@ export function AgentPicker({ api, agents, onPick }: AgentPickerProps) {
               </div>
               <button
                 onClick={() => setShowQuickForm(false)}
-                className="text-[10px] text-ctp-overlay0 hover:text-ctp-text"
+                className="text-xs text-ctp-overlay0 hover:text-ctp-text"
               >
                 Cancel
               </button>

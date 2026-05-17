@@ -129,7 +129,7 @@ export function SourceSkillsSection({ projectPath }: Props) {
       <div className="flex items-center justify-between mb-2">
         <div>
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Skills</h3>
-          <span className="text-[10px] text-ctp-subtext0/60 font-mono">.clubhouse/skills/</span>
+          <span className="text-xs text-ctp-subtext0/60 font-mono">.clubhouse/skills/</span>
         </div>
         <button
           onClick={handleCreate}

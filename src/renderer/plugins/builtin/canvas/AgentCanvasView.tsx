@@ -163,7 +163,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
       <div className="flex flex-col items-center justify-center h-full gap-2 p-4">
         <div className="w-8 h-8 rounded-full bg-surface-1 animate-pulse" />
         <span className="text-xs text-ctp-subtext0 truncate max-w-full">{name}</span>
-        <span className="text-[10px] text-ctp-overlay0">Connecting...</span>
+        <span className="text-xs text-ctp-overlay0">Connecting...</span>
       </div>
     );
   }
@@ -199,7 +199,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
                     </div>
                     <span className="text-[11px] text-ctp-text truncate flex-1">{p.name}</span>
                     {agentCount > 0 && (
-                      <span className="text-[10px] text-ctp-overlay0">{agentCount}</span>
+                      <span className="text-xs text-ctp-overlay0">{agentCount}</span>
                     )}
                   </button>
                 );
@@ -224,7 +224,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         {isAppMode && selectedProjectId && (
           <button
             onClick={handleBackToProjects}
-            className="text-[10px] text-ctp-overlay0 hover:text-ctp-text flex items-center gap-1 mb-2"
+            className="text-xs text-ctp-overlay0 hover:text-ctp-text flex items-center gap-1 mb-2"
           >
             &larr; Back
           </button>
@@ -247,7 +247,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
                 <span className="text-xs text-ctp-text truncate flex-1">
                   {agent.name || agent.id}
                 </span>
-                <span className={`text-[10px] ${
+                <span className={`text-xs ${
                   agent.status === 'running' ? 'text-ctp-success' :
                   agent.status === 'error' ? 'text-ctp-error' :
                   'text-ctp-overlay0'

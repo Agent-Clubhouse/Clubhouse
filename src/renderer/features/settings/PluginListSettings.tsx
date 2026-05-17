@@ -81,7 +81,7 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
       <button
         ref={btnRef}
         onClick={handleToggle}
-        className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold text-ctp-subtext0 hover:text-ctp-text bg-surface-1 hover:bg-surface-2 cursor-pointer"
+        className="flex items-center justify-center w-4 h-4 rounded-full text-xs font-semibold text-ctp-subtext0 hover:text-ctp-text bg-surface-1 hover:bg-surface-2 cursor-pointer"
         title="View permissions"
       >
         i
@@ -94,7 +94,7 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
         >
           <p className="text-xs font-semibold text-ctp-subtext1 mb-2">Permissions</p>
           {isAppScoped && hasCrossProjectPerm && (
-            <p className="text-[10px] text-ctp-peach mb-2" data-testid="app-scope-cross-project-note">
+            <p className="text-xs text-ctp-peach mb-2" data-testid="app-scope-cross-project-note">
               This is an app-scoped plugin — cross-project access is implicit and does not require per-project enablement.
             </p>
           )}
@@ -112,7 +112,7 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-ctp-subtext0">
+                  <p className="text-xs text-ctp-subtext0">
                     {isAppScoped && isCrossProject
                       ? PERMISSION_DESCRIPTIONS[perm].replace(
                           /where the plugin is (?:also )?enabled/,
@@ -133,17 +133,17 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
 function SourceBadge({ entry }: { entry: PluginRegistryEntry }) {
   if (entry.source === 'builtin') {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Built-in</span>
+      <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Built-in</span>
     );
   }
   if (entry.source === 'marketplace') {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success">Official</span>
+      <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success">Official</span>
     );
   }
   if (entry.source === 'community') {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0">Community</span>
+      <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0">Community</span>
     );
   }
   return null;
@@ -246,11 +246,11 @@ function OrphanInjectionsBanner({
           <div className="flex flex-wrap gap-2">
             {orphans.map((id) => (
               <div key={id} className="flex items-center gap-1">
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach">{id}</span>
+                <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach">{id}</span>
                 <button
                   onClick={() => handleClean(id)}
                   disabled={cleaning !== null}
-                  className="text-[10px] px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
+                  className="text-xs px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
                   data-testid={`clean-orphan-btn-${id}`}
                 >
                   {cleaning === id ? 'Cleaning…' : 'Clean up'}
@@ -326,14 +326,14 @@ function PluginInjectionsPanel({
         <button
           onClick={handleClean}
           disabled={cleaning}
-          className="text-[10px] px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
+          className="text-xs px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
           data-testid={`clean-injections-btn-${pluginId}`}
         >
           {cleaning ? 'Cleaning...' : 'Remove all'}
         </button>
       </div>
       {cleanError && (
-        <p className="text-[10px] text-ctp-error mb-1">{cleanError}</p>
+        <p className="text-xs text-ctp-error mb-1">{cleanError}</p>
       )}
       <ul className="space-y-0.5 list-disc list-inside">
         {injections.skills.map((s) => (
@@ -396,29 +396,29 @@ function PluginRow({
             <span className="text-sm font-medium text-ctp-text">{entry.manifest.name}</span>
             <span className="text-xs text-ctp-subtext0">v{entry.manifest.version}</span>
             <SourceBadge entry={entry} />
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">API {entry.manifest.engine.api}</span>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">API {entry.manifest.engine.api}</span>
             <PermissionInfoPopup entry={entry} />
             {isIncompatible && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
             )}
             {!isIncompatible && DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api] && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400" title={`API ${entry.manifest.engine.api} will be removed in ${DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api]}`}>Deprecated API</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400" title={`API ${entry.manifest.engine.api} will be removed in ${DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api]}`}>Deprecated API</span>
             )}
             {isErrored && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Error</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Error</span>
             )}
             {isPendingApproval && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach" data-testid={`pending-badge-${entry.manifest.id}`}>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach" data-testid={`pending-badge-${entry.manifest.id}`}>
                 New permissions
               </span>
             )}
             {updateVersion && !isUpdating && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success" data-testid={`update-badge-${entry.manifest.id}`}>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success" data-testid={`update-badge-${entry.manifest.id}`}>
                 v{updateVersion} available
               </span>
             )}
             {isUpdating && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent animate-pulse" data-testid={`update-phase-${entry.manifest.id}`}>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent animate-pulse" data-testid={`update-phase-${entry.manifest.id}`}>
                 {UPDATE_PHASE_LABELS[updatePhase] || 'Updating...'}
               </span>
             )}
@@ -438,8 +438,8 @@ function PluginRow({
                 <p className="text-xs text-ctp-error">{message}</p>
                 {stack && (
                   <details className="mt-1">
-                    <summary className="text-[10px] text-ctp-error/70 cursor-pointer">View details</summary>
-                    <pre className="text-[10px] text-ctp-error/70 bg-surface-0 p-2 rounded mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{stack}</pre>
+                    <summary className="text-xs text-ctp-error/70 cursor-pointer">View details</summary>
+                    <pre className="text-xs text-ctp-error/70 bg-surface-0 p-2 rounded mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{stack}</pre>
                   </details>
                 )}
               </div>
@@ -456,7 +456,7 @@ function PluginRow({
                   return (
                     <span
                       key={perm}
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                      className={`text-xs px-1.5 py-0.5 rounded font-mono ${
                         risk === 'dangerous'
                           ? 'bg-ctp-error/20 text-ctp-error'
                           : 'bg-yellow-500/20 text-yellow-400'
@@ -660,10 +660,10 @@ function CustomMarketplaceManager() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-ctp-text">{m.name}</span>
                       {!m.enabled && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0">Disabled</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0">Disabled</span>
                       )}
                     </div>
-                    <p className="text-[10px] text-ctp-subtext0 truncate mt-0.5" title={m.url}>{m.url}</p>
+                    <p className="text-xs text-ctp-subtext0 truncate mt-0.5" title={m.url}>{m.url}</p>
                   </div>
                   <div className="flex items-center gap-2 ml-3">
                     <button
@@ -1224,7 +1224,7 @@ export function PluginListSettings() {
                 )}
               </div>
               {lastCheck && (
-                <p className="text-[10px] text-ctp-subtext0/70 mb-2" data-testid="last-check-time">
+                <p className="text-xs text-ctp-subtext0/70 mb-2" data-testid="last-check-time">
                   Last checked: {new Date(lastCheck).toLocaleString()}
                 </p>
               )}

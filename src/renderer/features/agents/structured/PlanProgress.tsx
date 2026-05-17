@@ -23,7 +23,7 @@ export function PlanProgress({ plan }: Props) {
           <line x1="5" y1="10" x2="9" y2="10" />
         </svg>
         <span className="text-xs font-medium text-ctp-text">Plan</span>
-        <span className="text-[10px] text-ctp-subtext0 ml-auto tabular-nums">
+        <span className="text-xs text-ctp-subtext0 ml-auto tabular-nums">
           {completed}/{plan.steps.length} complete
         </span>
       </div>

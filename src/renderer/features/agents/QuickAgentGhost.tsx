@@ -81,7 +81,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
           <div className="flex items-center gap-2 flex-wrap">
             <ExitBadge exitCode={completed.exitCode} cancelled={completed.cancelled} />
             {completed.headless && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-accent/20 text-ctp-accent">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-ctp-accent/20 text-ctp-accent">
                 Headless
               </span>
             )}
@@ -89,7 +89,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
               const orchId = completed.orchestrator || 'claude-code';
               const c = getOrchestratorColor(orchId);
               return (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px]"
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs"
                   style={{ backgroundColor: c.bg, color: c.text }}>
                   {getOrchestratorLabel(orchId, allOrchestrators)}
                 </span>
@@ -98,7 +98,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
             {completed.model && (() => {
               const c = getModelColor(completed.model);
               return (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono"
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono"
                   style={{ backgroundColor: c.bg, color: c.text }}>
                   {formatModelLabel(completed.model)}
                 </span>
@@ -114,12 +114,12 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
           {(completed.durationMs != null || (completed.toolsUsed && completed.toolsUsed.length > 0)) && (
             <div className="flex items-center gap-2 flex-wrap">
               {completed.durationMs != null && (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-surface-0 text-ctp-subtext1">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-surface-0 text-ctp-subtext1">
                   {formatDuration(completed.durationMs)}
                 </span>
               )}
               {completed.toolsUsed && completed.toolsUsed.map((tool) => (
-                <span key={tool} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-surface-0 text-ctp-subtext0 font-mono">
+                <span key={tool} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-surface-0 text-ctp-subtext0 font-mono">
                   {tool}
                 </span>
               ))}
@@ -268,7 +268,7 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete: _onDele
               </span>
             );
           })()}
-          <span className="text-[10px] text-ctp-subtext0 truncate">
+          <span className="text-xs text-ctp-subtext0 truncate">
             {completed.summary || 'Interrupted'}
             {completed.filesModified.length > 0 && ` · ${completed.filesModified.length} file${completed.filesModified.length === 1 ? '' : 's'}`}
             {completed.durationMs != null && ` · ${formatDuration(completed.durationMs)}`}
@@ -277,7 +277,7 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete: _onDele
       </div>
 
       {/* Timestamp */}
-      <span className="text-[10px] text-ctp-overlay0 flex-shrink-0">{relativeTime(completed.completedAt)}</span>
+      <span className="text-xs text-ctp-overlay0 flex-shrink-0">{relativeTime(completed.completedAt)}</span>
 
       {/* Dismiss (trash icon) */}
       <button

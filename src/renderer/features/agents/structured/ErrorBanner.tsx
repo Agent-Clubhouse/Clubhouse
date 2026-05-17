@@ -28,7 +28,7 @@ export function ErrorBanner({ error }: Props) {
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-ctp-red">{error.code}</span>
             {error.toolId && (
-              <span className="text-[10px] text-ctp-subtext0 font-mono">({error.toolId})</span>
+              <span className="text-xs text-ctp-subtext0 font-mono">({error.toolId})</span>
             )}
           </div>
           <p className="text-xs text-ctp-subtext1 mt-0.5 break-words">{error.message}</p>
