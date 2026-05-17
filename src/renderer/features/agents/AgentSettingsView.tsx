@@ -60,18 +60,18 @@ function McpConfigRow({
             type="checkbox"
             checked={checked}
             onChange={onToggle}
-            className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500 shrink-0"
+            className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-ctp-blue focus:ring-ctp-blue shrink-0"
           />
           <span className="text-xs text-ctp-text truncate flex items-center gap-1.5">
             {entry.name}
             {entry.state === 'new' && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 uppercase tracking-wider">new</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-green/15 text-ctp-green uppercase tracking-wider">new</span>
             )}
             {entry.state === 'changed' && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 uppercase tracking-wider">changed</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-yellow/15 text-ctp-yellow uppercase tracking-wider">changed</span>
             )}
             {entry.state === 'removed' && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 uppercase tracking-wider">removed</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-red/15 text-ctp-red uppercase tracking-wider">removed</span>
             )}
           </span>
         </label>
@@ -91,7 +91,7 @@ function McpConfigRow({
           {textArgs.map((arg) => (
             <div key={arg.name} className="flex items-center gap-2">
               <span className="text-[10px] text-ctp-subtext0 font-mono w-28 text-right shrink-0 flex items-center justify-end gap-1">
-                {arg.required && <span className="w-1 h-1 rounded-full bg-amber-400 inline-block" title="Required" />}
+                {arg.required && <span className="w-1 h-1 rounded-full bg-ctp-yellow inline-block" title="Required" />}
                 {arg.name.replace(/^--/, '')}
               </span>
               <input
@@ -99,7 +99,7 @@ function McpConfigRow({
                 value={configs[arg.name] || ''}
                 onChange={(e) => onConfigChange(arg.name, e.target.value)}
                 placeholder={arg.description || ''}
-                className="flex-1 text-xs bg-surface-0 border border-surface-2 rounded px-2 py-1 text-ctp-text placeholder:text-ctp-subtext0/40 placeholder:italic focus:outline-none focus:border-indigo-500/50 transition-colors"
+                className="flex-1 text-xs bg-surface-0 border border-surface-2 rounded px-2 py-1 text-ctp-text placeholder:text-ctp-subtext0/40 placeholder:italic focus:outline-none focus:border-ctp-blue/50 transition-colors"
               />
             </div>
           ))}
@@ -115,7 +115,7 @@ function McpConfigRow({
                     title={arg.description || ''}
                     className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
                       active
-                        ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-300'
+                        ? 'border-ctp-blue/50 bg-ctp-blue/15 text-ctp-blue'
                         : 'border-surface-2 text-ctp-subtext0 hover:border-ctp-subtext0'
                     }`}
                   >

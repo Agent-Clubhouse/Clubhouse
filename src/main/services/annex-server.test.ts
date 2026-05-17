@@ -2420,4 +2420,56 @@ describe('annex-server', () => {
       expect(_testing.isValidToken('nonexistent')).toBe(false);
     });
   });
+
+  describe('readBody — chunked accumulation (P-C-1)', () => {
+    it('correctly assembles a body delivered in many small chunks', async () => {
+      const { _testing } = await import('./annex-server');
+      const { EventEmitter } = await import('events');
+
+      const mockReq = new EventEmitter() as any;
+      const resultPromise = _testing.readBody(mockReq);
+
+      // 900 chunks × 1 KB = ~900 KB (well under the 1 MB limit)
+      const chunkCount = 900;
+      const chunkSize = 1024;
+      const chunk = Buffer.alloc(chunkSize, 'x');
+      for (let i = 0; i < chunkCount; i++) {
+        mockReq.emit('data', chunk);
+      }
+      mockReq.emit('end');
+
+      const result = await resultPromise;
+      expect(result).toBe('x'.repeat(chunkCount * chunkSize));
+      expect(result.length).toBe(chunkCount * chunkSize);
+    });
+
+    it('rejects when body exceeds MAX_BODY_SIZE', async () => {
+      const { _testing } = await import('./annex-server');
+      const { EventEmitter } = await import('events');
+
+      const mockReq = new EventEmitter() as any;
+      mockReq.destroy = vi.fn();
+      const resultPromise = _testing.readBody(mockReq);
+
+      // Send chunks exceeding 1 MB
+      const bigChunk = Buffer.alloc(600 * 1024, 'y'); // 600 KB
+      mockReq.emit('data', bigChunk);
+      mockReq.emit('data', bigChunk); // total 1200 KB > 1 MB limit
+
+      await expect(resultPromise).rejects.toThrow('Body exceeded maximum allowed size');
+      expect(mockReq.destroy).toHaveBeenCalled();
+    });
+
+    it('rejects on stream error', async () => {
+      const { _testing } = await import('./annex-server');
+      const { EventEmitter } = await import('events');
+
+      const mockReq = new EventEmitter() as any;
+      const resultPromise = _testing.readBody(mockReq);
+
+      mockReq.emit('error', new Error('connection reset'));
+
+      await expect(resultPromise).rejects.toThrow('connection reset');
+    });
+  });
 });
