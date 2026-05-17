@@ -689,3 +689,32 @@ describe('AgentList isThinking callback stability', () => {
     expect(lastCapture).toBe(false);
   });
 });
+
+describe('P-C-3: AgentList polling-tick re-render optimization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+    isThinkingCaptures.length = 0;
+    Object.keys(activityTimestamps).forEach((k) => delete activityTimestamps[k]);
+    window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+  });
+
+  it('renders only once when 5 polling ticks fire with no agent state changes (P-C-3)', () => {
+    render(<AgentList />);
+
+    // Initial render: 1 agent → 1 isThinking capture
+    expect(isThinkingCaptures).toHaveLength(1);
+
+    // Simulate 5 polling ticks: new agents object reference, same content
+    const currentAgents = useAgentStore.getState().agents;
+    for (let i = 0; i < 5; i++) {
+      act(() => {
+        useAgentStore.setState({ agents: { ...currentAgents } });
+      });
+    }
+
+    // With shallow selector: no re-renders → still exactly 1 capture
+    // Without fix: 6 captures (1 initial + 5 spurious re-renders)
+    expect(isThinkingCaptures).toHaveLength(1);
+  });
+});
