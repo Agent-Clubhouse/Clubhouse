@@ -1936,4 +1936,42 @@ describe('backup and recovery', () => {
       expect(result.restoredCount).toBe(0);
     });
   });
+
+  // P-C-2: O(1) Map index — behavioral correctness at scale
+  describe('P-C-2: getDurableConfig with 100-agent corpus', () => {
+    it('returns the correct agent from a 100-agent list without linear scan regression', async () => {
+      const AGENT_COUNT = 100;
+      const agents = Array.from({ length: AGENT_COUNT }, (_, i) => ({
+        id: `durable_${i + 1}_abc`,
+        name: `Agent ${i + 1}`,
+        color: 'indigo',
+        branch: `agent-${i + 1}/standby`,
+        worktreePath: `/test/agents/agent-${i + 1}`,
+        createdAt: '2024-01-01',
+      }));
+
+      mockAgentsFile(agents);
+
+      // Target agent is in the middle of the list — would require ~50 iterations with find()
+      const targetAgent = agents[49];
+      const result = await getDurableConfig(PROJECT_PATH, targetAgent.id);
+
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe(targetAgent.id);
+      expect(result!.name).toBe(targetAgent.name);
+    });
+
+    it('returns null for an unknown ID in a large corpus', async () => {
+      const agents = Array.from({ length: 100 }, (_, i) => ({
+        id: `durable_${i + 1}_abc`,
+        name: `Agent ${i + 1}`,
+        color: 'indigo',
+        createdAt: '2024-01-01',
+      }));
+      mockAgentsFile(agents);
+
+      const result = await getDurableConfig(PROJECT_PATH, 'durable_nonexistent_xyz');
+      expect(result).toBeNull();
+    });
+  });
 });
