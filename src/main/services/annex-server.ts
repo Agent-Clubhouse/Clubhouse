@@ -119,6 +119,17 @@ let sessionPaused = false;
 /** Fingerprint of the controller that owns the current session pause (lock). */
 let sessionPauseOwner: string | null = null;
 
+/**
+ * CAS claim: set sessionPauseOwner to `fingerprint` only if no owner is
+ * currently registered. Returns true if the lock was claimed, false if
+ * another controller already owns it (LB-OA-2026-05-01).
+ */
+function tryClaimSessionPauseOwner(fingerprint: string | null): boolean {
+  if (sessionPauseOwner) return false;
+  sessionPauseOwner = fingerprint;
+  return true;
+}
+
 /** Unsubscribe all event bus listeners to prevent accumulation on restart cycles. */
 function unsubscribeEventBus(): void {
   unsubPtyData?.();
@@ -2583,12 +2594,8 @@ export function start(): void {
     if (authType === 'mtls') {
       const fingerprint = wsPeerFingerprints.get(ws);
       const peer = fingerprint ? annexPeers.getPeer(fingerprint) : null;
-      // CAS guard: only claim the lock if no owner is already set.
-      // Prevents a second mTLS connection from stealing the lock and leaving
-      // the first controller's disconnect unable to release it (LB-OA-2026-05-01).
-      if (!sessionPauseOwner) {
-        sessionPauseOwner = fingerprint || null;
-      }
+      // CAS: only the first mTLS controller to connect claims the lock.
+      tryClaimSessionPauseOwner(fingerprint || null);
       broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
         locked: true,
         controllerAlias: peer?.alias || 'Remote Controller',
@@ -3275,4 +3282,7 @@ export const _testing = {
   wsAlive,
   get heartbeatInterval() { return heartbeatInterval; },
   get trackedQuickAgents() { return trackedQuickAgents; },
+  tryClaimSessionPauseOwner,
+  get sessionPauseOwner() { return sessionPauseOwner; },
+  resetSessionPauseOwner() { sessionPauseOwner = null; },
 };

@@ -2535,58 +2535,49 @@ describe('annex-server', () => {
 
   // ── LB-OA-2026-05-01: sessionPauseOwner CAS guard ──────────────────────
   describe('LB-OA-2026-05-01: sessionPauseOwner CAS guard prevents lock theft', () => {
-    it('sets sessionPauseOwner only when no owner is currently set (structural)', () => {
-      const fs = require('fs');
-      const path = require('path');
-      const source = fs.readFileSync(
-        path.resolve(__dirname, 'annex-server.ts'),
-        'utf-8',
-      );
+    it('first mTLS controller claims the lock and second does not overwrite it', async () => {
+      const { _testing } = await import('./annex-server');
+      const { tryClaimSessionPauseOwner, resetSessionPauseOwner } = _testing;
 
-      // Locate the mTLS connection block inside wss.on('connection', ...)
-      const connStart = source.indexOf("wss.on('connection', async (ws) => {");
-      expect(connStart).toBeGreaterThan(-1);
+      // Start clean
+      resetSessionPauseOwner();
+      expect(_testing.sessionPauseOwner).toBeNull();
 
-      const mtlsBlockStart = source.indexOf("if (authType === 'mtls') {", connStart);
-      const lockBroadcastPos = source.indexOf('IPC.ANNEX.LOCK_STATE_CHANGED', mtlsBlockStart);
-      const mtlsBlock = source.slice(mtlsBlockStart, lockBroadcastPos + 80);
+      // First controller connects — should claim the lock
+      const claimed1 = tryClaimSessionPauseOwner('fp-controller-1');
+      expect(claimed1).toBe(true);
+      expect(_testing.sessionPauseOwner).toBe('fp-controller-1');
 
-      // CAS guard must be present — assignment is wrapped in !sessionPauseOwner check
-      expect(mtlsBlock).toContain('!sessionPauseOwner');
-      expect(mtlsBlock).toContain('sessionPauseOwner =');
+      // Second controller connects — CAS must reject (owner already set)
+      const claimed2 = tryClaimSessionPauseOwner('fp-controller-2');
+      expect(claimed2).toBe(false);
+      // Owner must remain the first controller, not be overwritten
+      expect(_testing.sessionPauseOwner).toBe('fp-controller-1');
 
-      // Verify the guard appears BEFORE the assignment (CAS ordering)
-      const guardPos = mtlsBlock.indexOf('!sessionPauseOwner');
-      const assignPos = mtlsBlock.indexOf('sessionPauseOwner =');
-      expect(guardPos).toBeLessThan(assignPos);
+      // Cleanup
+      resetSessionPauseOwner();
     });
 
-    it('does not unconditionally overwrite sessionPauseOwner on mTLS connect (structural)', () => {
-      const fs = require('fs');
-      const path = require('path');
-      const source = fs.readFileSync(
-        path.resolve(__dirname, 'annex-server.ts'),
-        'utf-8',
-      );
+    it('lock becomes claimable again after owner is released', async () => {
+      const { _testing } = await import('./annex-server');
+      const { tryClaimSessionPauseOwner, resetSessionPauseOwner } = _testing;
 
-      // The bare unconditional assignment pattern that caused the bug must not exist
-      // inside the connection handler's mTLS block. Any assignment must be inside
-      // a conditional guard (preceded by if (!sessionPauseOwner)).
-      const connStart = source.indexOf("wss.on('connection', async (ws) => {");
-      const mtlsBlockStart = source.indexOf("if (authType === 'mtls') {", connStart);
-      const lockBroadcastPos = source.indexOf('IPC.ANNEX.LOCK_STATE_CHANGED', mtlsBlockStart);
-      const mtlsBlock = source.slice(mtlsBlockStart, lockBroadcastPos + 80);
+      resetSessionPauseOwner();
 
-      // The unconditional pattern: a line where sessionPauseOwner = ... is NOT
-      // inside an if (!sessionPauseOwner) block. We check by verifying that every
-      // occurrence of "sessionPauseOwner =" is preceded by the guard on the same
-      // or a previous line within the block.
-      const guardIdx = mtlsBlock.indexOf('if (!sessionPauseOwner)');
-      const assignIdx = mtlsBlock.indexOf('sessionPauseOwner =');
+      // Controller 1 claims
+      tryClaimSessionPauseOwner('fp-controller-1');
+      expect(_testing.sessionPauseOwner).toBe('fp-controller-1');
 
-      // Guard must exist and precede the assignment
-      expect(guardIdx).toBeGreaterThan(-1);
-      expect(assignIdx).toBeGreaterThan(guardIdx);
+      // Controller 1 disconnects — owner is cleared
+      resetSessionPauseOwner();
+      expect(_testing.sessionPauseOwner).toBeNull();
+
+      // Controller 2 can now claim
+      const claimed = tryClaimSessionPauseOwner('fp-controller-2');
+      expect(claimed).toBe(true);
+      expect(_testing.sessionPauseOwner).toBe('fp-controller-2');
+
+      resetSessionPauseOwner();
     });
   });
 });
