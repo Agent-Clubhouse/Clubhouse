@@ -1835,12 +1835,13 @@ describe('annex-server', () => {
       );
 
       // When the last mTLS client disconnects and locked=false is broadcast,
-      // sessionPaused must also be reset
-      const unlockBlock = source.slice(
-        source.indexOf('if (!hasMtlsClient)'),
-        source.indexOf('locked: false,') + 100,
-      );
-      expect(unlockBlock).toContain('sessionPaused = false');
+      // sessionPaused must also be reset. After LB-OA-2026-05-01 the unlock
+      // logic lives in releaseMtlsLockIfLastClient() — verify it resets state.
+      const fnStart = source.indexOf('function releaseMtlsLockIfLastClient');
+      const fnEnd = source.indexOf('\n}', fnStart) + 2;
+      const fnBody = source.slice(fnStart, fnEnd);
+      expect(fnBody).toContain('sessionPaused = false');
+      expect(fnBody).toContain('sessionPauseOwner = null');
     });
   });
 
@@ -2578,6 +2579,36 @@ describe('annex-server', () => {
       mockReq.emit('error', new Error('connection reset'));
 
       await expect(resultPromise).rejects.toThrow('connection reset');
+    });
+  });
+
+  // ── LB-OA-2026-05-01: mTLS lock release — only on last client disconnect ─
+  describe('LB-OA-2026-05-01: mTLS lock persists until all controllers disconnect', () => {
+    it('does not release lock when a controller disconnects but another mTLS client remains', async () => {
+      const { _testing } = await import('./annex-server');
+      _testing.resetSessionPauseOwner();
+      _testing.setSessionPauseOwner('fp-controller-b');
+
+      // Controller B (owner) disconnects — but Controller A is still connected
+      const released = _testing.releaseMtlsLockIfLastClient(true /* hasMtlsClient */);
+
+      // Pre-fix: else-if (isLockOwner) branch released the lock here. Post-fix: no release.
+      expect(released).toBe(false);
+      expect(_testing.sessionPauseOwner).toBe('fp-controller-b');
+
+      _testing.resetSessionPauseOwner();
+    });
+
+    it('releases lock when the last mTLS controller disconnects', async () => {
+      const { _testing } = await import('./annex-server');
+      _testing.resetSessionPauseOwner();
+      _testing.setSessionPauseOwner('fp-controller-a');
+
+      // Controller A disconnects — no other mTLS clients remain
+      const released = _testing.releaseMtlsLockIfLastClient(false /* hasMtlsClient */);
+
+      expect(released).toBe(true);
+      expect(_testing.sessionPauseOwner).toBeNull();
     });
   });
 });

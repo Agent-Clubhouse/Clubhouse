@@ -119,6 +119,22 @@ let sessionPaused = false;
 /** Fingerprint of the controller that owns the current session pause (lock). */
 let sessionPauseOwner: string | null = null;
 
+/**
+ * Release the mTLS session-pause lock only when no mTLS clients remain.
+ * Returns true if the lock was released, false if other clients are still
+ * connected and the lock is kept (LB-OA-2026-05-01).
+ *
+ * The lock must NOT be released just because the "owner" fingerprint
+ * disconnects — other controllers may still be connected, so the satellite
+ * should remain locked until ALL mTLS clients are gone.
+ */
+function releaseMtlsLockIfLastClient(hasMtlsClient: boolean): boolean {
+  if (hasMtlsClient) return false;
+  sessionPaused = false;
+  sessionPauseOwner = null;
+  return true;
+}
+
 /** Unsubscribe all event bus listeners to prevent accumulation on restart cycles. */
 function unsubscribeEventBus(): void {
   unsubPtyData?.();
@@ -2583,7 +2599,7 @@ export function start(): void {
     if (authType === 'mtls') {
       const fingerprint = wsPeerFingerprints.get(ws);
       const peer = fingerprint ? annexPeers.getPeer(fingerprint) : null;
-      // Track lock owner so only the owning controller's disconnect releases it
+      // Track the latest connecting controller as lock owner.
       sessionPauseOwner = fingerprint || null;
       broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
         locked: true,
@@ -2602,23 +2618,14 @@ export function start(): void {
         meta: { authType, code, reason: reason?.toString() || '' },
       });
       if (authType === 'mtls') {
-        const disconnectedFingerprint = wsPeerFingerprints.get(ws);
         // Check if any other mTLS connections are still open
         const hasMtlsClient = Array.from(wss?.clients || []).some(
           (client) => client !== ws && client.readyState === WebSocket.OPEN && wsAuthTypes.get(client) === 'mtls',
         );
-        // Release lock if no mTLS clients remain, or if the lock owner disconnected
-        const isLockOwner = !sessionPauseOwner || sessionPauseOwner === disconnectedFingerprint;
-        if (!hasMtlsClient) {
-          sessionPaused = false;
-          sessionPauseOwner = null;
-          broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
-            locked: false,
-            remainingMs: 0,
-          });
-        } else if (isLockOwner) {
-          sessionPaused = false;
-          sessionPauseOwner = null;
+        // Only release the lock when no mTLS clients remain — a disconnecting
+        // controller that "owned" the lock must not unlock while others are
+        // still connected (LB-OA-2026-05-01).
+        if (releaseMtlsLockIfLastClient(hasMtlsClient)) {
           broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
             locked: false,
             remainingMs: 0,
@@ -3274,4 +3281,8 @@ export const _testing = {
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },
   get trackedQuickAgents() { return trackedQuickAgents; },
+  releaseMtlsLockIfLastClient,
+  get sessionPauseOwner() { return sessionPauseOwner; },
+  setSessionPauseOwner(fp: string | null) { sessionPauseOwner = fp; },
+  resetSessionPauseOwner() { sessionPauseOwner = null; sessionPaused = false; },
 };

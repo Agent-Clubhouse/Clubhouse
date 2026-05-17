@@ -528,3 +528,67 @@ describe('LB-CB-004: exportCanvasToBlueprint guards against undefined refIds', (
     expect(typeof manifest.canvas.wires[0].targetRef).toBe('string');
   });
 });
+
+// ── LB-CB-2026-05-05: stable refIds when agents are removed ────────────
+
+describe('LB-CB-2026-05-05: refId stability when canvas composition changes', () => {
+  it('agent B retains the same refId whether or not agent A is on the canvas', () => {
+    const agentA = makeAgent({ id: 'durable_aaa', name: 'Agent A' });
+    const agentB = makeAgent({ id: 'durable_bbb', name: 'Agent B' });
+    const viewA = makeAgentView({ id: 'cv_aaa', agentId: 'durable_aaa', title: 'A', displayName: 'A', metadata: { agentId: 'durable_aaa', agentName: 'A' } });
+    const viewB = makeAgentView({ id: 'cv_bbb', agentId: 'durable_bbb', title: 'B', displayName: 'B', metadata: { agentId: 'durable_bbb', agentName: 'B' } });
+
+    // Export with both agents present
+    const manifestFull = exportCanvasToBlueprint(
+      makeCanvas([viewA, viewB]),
+      makeContext({ agents: { durable_aaa: agentA, durable_bbb: agentB } }),
+    );
+    const refIdBFull = manifestFull.canvas.views.find((v) => v.displayName === 'B')!.refId;
+
+    // Export again with only agent B (agent A was removed)
+    const manifestBOnly = exportCanvasToBlueprint(
+      makeCanvas([viewB]),
+      makeContext({ agents: { durable_bbb: agentB } }),
+    );
+    const refIdBOnly = manifestBOnly.canvas.views[0].refId;
+
+    // Pre-fix: refIdBFull = 'v_2', refIdBOnly = 'v_1' (counter resets) — not equal.
+    // Post-fix: both derive from view.id 'cv_bbb' — equal.
+    expect(refIdBFull).toBe(refIdBOnly);
+  });
+
+  it('wire refs are identical regardless of whether a third agent is on the canvas', () => {
+    const agentA = makeAgent({ id: 'durable_aaa', name: 'Agent A' });
+    const agentB = makeAgent({ id: 'durable_bbb', name: 'Agent B' });
+    const agentC = makeAgent({ id: 'durable_ccc', name: 'Agent C' });
+    const viewA = makeAgentView({ id: 'cv_aaa', agentId: 'durable_aaa', title: 'A', displayName: 'A', metadata: { agentId: 'durable_aaa', agentName: 'A' } });
+    const viewB = makeAgentView({ id: 'cv_bbb', agentId: 'durable_bbb', title: 'B', displayName: 'B', metadata: { agentId: 'durable_bbb', agentName: 'B' } });
+    const viewC = makeAgentView({ id: 'cv_ccc', agentId: 'durable_ccc', title: 'C', displayName: 'C', metadata: { agentId: 'durable_ccc', agentName: 'C' } });
+    const wire = makeWire({ agentId: 'durable_bbb', targetId: 'durable_ccc' });
+
+    // Full canvas: A, B, C with wire B→C
+    const manifestFull = exportCanvasToBlueprint(
+      makeCanvas([viewA, viewB, viewC]),
+      makeContext({
+        agents: { durable_aaa: agentA, durable_bbb: agentB, durable_ccc: agentC },
+        wireDefinitions: [wire],
+      }),
+    );
+
+    // Reduced canvas: B, C with wire B→C (agent A removed)
+    const manifestReduced = exportCanvasToBlueprint(
+      makeCanvas([viewB, viewC]),
+      makeContext({
+        agents: { durable_bbb: agentB, durable_ccc: agentC },
+        wireDefinitions: [wire],
+      }),
+    );
+
+    expect(manifestFull.canvas.wires).toHaveLength(1);
+    expect(manifestReduced.canvas.wires).toHaveLength(1);
+
+    // Wire refs must be identical — removing agent A must not shift B or C's refId
+    expect(manifestFull.canvas.wires[0].sourceRef).toBe(manifestReduced.canvas.wires[0].sourceRef);
+    expect(manifestFull.canvas.wires[0].targetRef).toBe(manifestReduced.canvas.wires[0].targetRef);
+  });
+});
