@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
 import type { GitInfo, GitStatusFile } from '../../../../shared/types';
 import { createGitOps } from './remote-git';
+import { Spinner } from '../../../../components/Spinner';
 
 const GIT_POLL_INTERVAL_MS = 3000;
 
@@ -174,7 +175,10 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
   if (!gitInfo) {
     return (
       <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs">
-        Loading git status…
+        <div className="flex items-center gap-2">
+          <Spinner size="sm" />
+          Loading git status…
+        </div>
       </div>
     );
   }
@@ -233,10 +237,13 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
           <div className="flex-1 min-w-0" data-testid="diff-pane">
             {diffLoading ? (
               <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs">
-                Loading diff…
+                <div className="flex items-center gap-2">
+                  <Spinner size="sm" />
+                  Loading diff…
+                </div>
               </div>
             ) : diffData ? (
-              <React.Suspense fallback={<div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs">Loading editor…</div>}>
+              <React.Suspense fallback={<div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs"><div className="flex items-center gap-2"><Spinner size="sm" />Loading editor…</div></div>}>
                 <MonacoDiffEditorLazy original={diffData.original} modified={diffData.modified} filePath={selectedFile || ''} />
               </React.Suspense>
             ) : (

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Spinner } from '../../components/Spinner';
 
 export type ResumeStatus = 'pending' | 'resuming' | 'resumed' | 'failed' | 'manual' | 'timed_out';
 
@@ -53,7 +54,7 @@ export function ResumeBanner({ sessions, onManualResume, onDismiss }: ResumeBann
     >
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-xs font-medium text-ctp-green flex items-center gap-1.5">
-          <span className="animate-spin inline-block" style={{ animationDuration: '2s' }}>↻</span>
+          <Spinner size="xs" />
           Resuming {sessions.length} session{sessions.length !== 1 ? 's' : ''} after update
         </span>
         <button

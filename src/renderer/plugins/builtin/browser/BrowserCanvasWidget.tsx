@@ -9,6 +9,7 @@ import type { ProtocolSettings } from './url-validation';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
+import { EmptyState } from '../../../../components/EmptyState';
 
 function projectColor(name: string): string {
   let hash = 0;
@@ -164,7 +165,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
           Select a project
         </div>
         {projects.length === 0 ? (
-          <div className="text-xs text-ctp-overlay0 italic">No projects open</div>
+          <EmptyState title="No projects open" compact />
         ) : (
           <div className="flex-1 overflow-y-auto space-y-1">
             {projects.map((p) => {
@@ -270,9 +271,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
             } as any}
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-xs text-ctp-overlay0">
-            Enter a URL above to browse
-          </div>
+          <EmptyState title="Enter a URL above to browse" compact />
         )}
       </div>
     </div>

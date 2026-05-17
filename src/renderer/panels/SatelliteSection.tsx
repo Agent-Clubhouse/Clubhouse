@@ -9,6 +9,7 @@ import { useCallback } from 'react';
 import { getAgentColorHex } from '../../shared/name-generator';
 import type { SatelliteConnection } from '../stores/annexClientStore';
 import { useRemoteProjectStore, type RemoteProject } from '../stores/remoteProjectStore';
+import { EmptyState } from '../components/EmptyState';
 
 
 // ---------------------------------------------------------------------------
@@ -155,7 +156,7 @@ export function SatelliteProjectList({ satellite, projects, activeProjectId, exp
 
   if (projects.length === 0) {
     return expanded ? (
-      <div className="pl-4 py-2 text-xs text-ctp-subtext0 italic">No projects</div>
+      <div className="pl-4 py-2"><EmptyState title="No projects" compact /></div>
     ) : null;
   }
 

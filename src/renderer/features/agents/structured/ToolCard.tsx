@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { ToolStart, ToolEnd } from '../../../../shared/structured-events';
+import { Spinner } from '../../../components/Spinner';
 
 export type ToolStatus = 'running' | 'completed' | 'error';
 
@@ -106,10 +107,7 @@ export function ToolCard({ tool, output, end, status }: Props) {
 function StatusIcon({ status }: { status: ToolStatus }) {
   if (status === 'running') {
     return (
-      <svg className="w-3.5 h-3.5 text-ctp-accent animate-spin" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.3" />
-        <path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </svg>
+      <Spinner size="xs" />
     );
   }
   if (status === 'error') {

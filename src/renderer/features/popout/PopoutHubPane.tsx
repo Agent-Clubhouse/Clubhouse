@@ -13,6 +13,7 @@ import { QuickAgentGhost } from '../agents/QuickAgentGhost';
 import { useAgentStore } from '../../stores/agentStore';
 import type { LeafPane } from '../../plugins/builtin/hub/pane-tree';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent } from '../../../shared/types';
+import { EmptyState } from '../../components/EmptyState';
 
 type SplitEdge = 'top' | 'bottom' | 'left' | 'right';
 
@@ -309,7 +310,7 @@ function PopoutAgentPicker({ agents, onPick }: {
             </div>
           )}
           {durableAgents.length === 0 && quickAgents.length === 0 && (
-            <div className="text-xs text-ctp-overlay0 text-center py-4">No agents available</div>
+            <EmptyState title="No agents available" compact />
           )}
         </div>
       </div>

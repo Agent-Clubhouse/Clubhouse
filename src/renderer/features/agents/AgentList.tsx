@@ -18,6 +18,7 @@ import { useToastStore } from '../../stores/toastStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 import type { PersonaTemplate } from '../assistant/content/personas';
+import { EmptyState } from '../../components/EmptyState';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
@@ -520,8 +521,8 @@ function AgentListInner() {
 
   if (!activeProject) {
     return (
-      <div className="p-3 text-ctp-subtext0 text-sm">
-        Select a project to manage agents
+      <div className="p-3">
+        <EmptyState title="Select a project to manage agents" compact />
       </div>
     );
   }
@@ -695,10 +696,11 @@ function AgentListInner() {
         )}
 
         {durableAgents.length === 0 && quickAgents.length === 0 && completedAgents.length === 0 && (
-          <div className="p-4 text-ctp-subtext0 text-xs text-center">
-            <p className="mb-2">No agents yet</p>
-            <p>Click <span className="text-ctp-accent">+ Agent</span> to create a durable agent, or use the dropdown for a quick session.</p>
-          </div>
+          <EmptyState
+            title="No agents yet"
+            description='Click + Agent to create a durable agent, or use the dropdown for a quick session.'
+            compact
+          />
         )}
       </div>
 

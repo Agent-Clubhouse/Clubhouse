@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { PluginAPI, AgentInfo, ModelOption } from '../../../../shared/plugin-types';
+import { EmptyState } from '../../../../components/EmptyState';
 
 interface AgentPickerProps {
   api: PluginAPI;
@@ -92,7 +93,7 @@ export function AgentPicker({ api, agents, onPick }: AgentPickerProps) {
           )}
 
           {durableAgents.length === 0 && quickAgents.length === 0 && (
-            <div className="text-xs text-ctp-overlay0 text-center py-4">No agents available</div>
+            <EmptyState title="No agents available" compact />
           )}
 
           {showQuickForm ? (

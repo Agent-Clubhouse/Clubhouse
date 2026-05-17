@@ -13,6 +13,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { refreshCommunityPlugins } from '../../plugins/plugin-loader';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { PluginPermission, PermissionRiskLevel } from '../../../shared/plugin-types';
+import { Spinner } from '../../components/Spinner';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -529,6 +530,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto p-6 pt-4">
           {loading && (
             <div className="flex items-center justify-center py-12">
+              <Spinner />
               <p className="text-sm text-ctp-subtext0">Loading marketplace...</p>
             </div>
           )}

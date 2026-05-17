@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../../components/Modal';
+import { Spinner } from '../../components/Spinner';
 
 interface ResetProjectDialogProps {
   projectName: string;
@@ -38,7 +39,7 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
             </label>
             <div className="max-h-40 overflow-y-auto rounded-lg bg-ctp-mantle border border-surface-0 p-2">
               {loading ? (
-                <span className="text-xs text-ctp-subtext0">Loading...</span>
+                <><Spinner size="xs" /><span className="text-xs text-ctp-subtext0">Loading...</span></>
               ) : files.length === 0 ? (
                 <span className="text-xs text-ctp-subtext0">No .clubhouse/ directory found</span>
               ) : (

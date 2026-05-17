@@ -3,6 +3,7 @@ import { useLoggingStore } from '../../stores/loggingStore';
 import type { LogLevel, LogRetention } from '../../../shared/types';
 import { LOG_LEVEL_PRIORITY } from '../../../shared/types';
 import { Toggle } from '../../components/Toggle';
+import { Spinner } from '../../components/Spinner';
 
 export function LoggingSettingsView() {
   const { settings, namespaces, logPath, loadSettings, saveSettings } = useLoggingStore();
@@ -12,7 +13,7 @@ export function LoggingSettingsView() {
   }, [loadSettings]);
 
   if (!settings) {
-    return <div className="p-6 text-ctp-subtext0 text-sm">Loading…</div>;
+    return <div className="p-6 flex items-center gap-2 text-ctp-subtext0 text-sm"><Spinner size="sm" /> Loading…</div>;
   }
 
   const handleNamespaceToggle = (ns: string, value: boolean) => {

@@ -8,6 +8,7 @@ interface Props {
 }
 
 import { CREATION_TOOLS } from '../../../shared/mutating-tools';
+import { Spinner } from '../../components/Spinner';
 
 /** Map raw tool names to human-friendly labels. */
 const TOOL_LABELS: Record<string, string> = {
@@ -219,10 +220,7 @@ function StatusIcon({ status }: { status: ActionCardStatus }) {
     case 'pending':
     case 'running':
       return (
-        <svg className="w-3.5 h-3.5 text-ctp-accent animate-spin" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.3" />
-          <path d="M14 8a6 6 0 00-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
+        <Spinner size="xs" />
       );
     case 'completed':
       return (
