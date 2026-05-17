@@ -161,7 +161,7 @@ async function installAssistantStub(
     ipcMain.handle('assistant:spawn', (_event: Electron.IpcMainInvokeEvent, params: Record<string, unknown>) => {
       const agentId = params['agentId'] as string;
       const executionMode = params['executionMode'] as string;
-      const responseText = 'Hello! I can help you with Clubhouse.';
+      const responseText = 'Hello! I can help you with your Clubhouse projects, canvases, agents, and workflows.';
 
       if (executionMode === 'structured') {
         setTimeout(() => {
