@@ -277,6 +277,57 @@ describe('config-diff-service', () => {
       expect(instrItem!.defaultValue).toContain('Original');
     });
 
+    it('uses provider localInstructionsFile in instructions diff label (claude-code → CLAUDE.local.md)', async () => {
+      mockFileSystem({
+        'agents.json': agentsJsonWith(testAgent),
+        'settings.json': settingsJsonWith({ instructions: 'default' }),
+      });
+      vi.mocked(mockProvider.readInstructions).mockReturnValue('different');
+
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+
+      const instrItem = result.items.find((i) => i.category === 'instructions');
+      expect(instrItem!.label).toBe('Instructions (CLAUDE.local.md)');
+    });
+
+    it('uses provider localInstructionsFile in instructions diff label (codex → AGENTS.md)', async () => {
+      const codexProvider: typeof mockProvider = {
+        ...mockProvider,
+        id: 'codex-cli',
+        displayName: 'Codex',
+        conventions: { ...testConventions, localInstructionsFile: 'AGENTS.md' },
+        readInstructions: vi.fn(() => 'different'),
+      };
+      mockFileSystem({
+        'agents.json': agentsJsonWith(testAgent),
+        'settings.json': settingsJsonWith({ instructions: 'default' }),
+      });
+
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: codexProvider });
+
+      const instrItem = result.items.find((i) => i.category === 'instructions');
+      expect(instrItem!.label).toBe('Instructions (AGENTS.md)');
+    });
+
+    it('uses provider localInstructionsFile in instructions diff label (copilot → copilot-instructions.md)', async () => {
+      const copilotProvider: typeof mockProvider = {
+        ...mockProvider,
+        id: 'copilot-cli',
+        displayName: 'GitHub Copilot',
+        conventions: { ...testConventions, localInstructionsFile: 'copilot-instructions.md' },
+        readInstructions: vi.fn(() => 'different'),
+      };
+      mockFileSystem({
+        'agents.json': agentsJsonWith(testAgent),
+        'settings.json': settingsJsonWith({ instructions: 'default' }),
+      });
+
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: copilotProvider });
+
+      const instrItem = result.items.find((i) => i.category === 'instructions');
+      expect(instrItem!.label).toBe('Instructions (copilot-instructions.md)');
+    });
+
     it('detects added MCP servers', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),

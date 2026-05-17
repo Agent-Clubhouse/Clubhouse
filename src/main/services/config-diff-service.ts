@@ -176,7 +176,7 @@ async function diffInstructions(
         id: 'instructions:modified',
         category: 'instructions',
         action: 'modified',
-        label: 'Instructions (CLAUDE.md)',
+        label: `Instructions (${provider.conventions.localInstructionsFile})`,
         agentValue: agentInstructions,
         defaultValue: resolvedDefault,
       });

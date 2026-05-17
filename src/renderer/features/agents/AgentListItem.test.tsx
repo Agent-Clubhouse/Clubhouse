@@ -233,6 +233,19 @@ describe('AgentListItem context menu', () => {
     fireEvent.contextMenu(row);
     expect(screen.queryByTestId('ctx-wake-resume')).toBeNull();
   });
+
+  it('context menu portals to document.body so it is not trapped by stacking contexts', () => {
+    const { container } = renderItem({ status: 'sleeping' });
+    const row = screen.getByTestId('agent-item-agent-1');
+    fireEvent.contextMenu(row);
+
+    const menu = screen.getByTestId('agent-context-menu');
+    expect(menu).toBeInTheDocument();
+    // Must be a direct child of body, not inside the component's render container,
+    // so PTY/content-view stacking contexts cannot obscure it.
+    expect(document.body.contains(menu)).toBe(true);
+    expect(container.contains(menu)).toBe(false);
+  });
 });
 
 describe('AgentListItem fine-grained selectors', () => {
