@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- TODO(TC-CRIT-03): structural readFileSync tests pending behavioral conversion */
 import { describe, it, expect, vi } from 'vitest';
 import { validateBuiltinPlugin } from '../builtin-plugin-testing';
 import { manifest } from './manifest';

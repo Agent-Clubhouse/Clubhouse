@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- TODO(TC-CRIT-03): structural readFileSync tests pending behavioral conversion */
 /**
  * Tests that widget adapters (SleepingAgent, AgentAvatar) resolve agents
  * from both local and remote agent stores — fixing the issue where

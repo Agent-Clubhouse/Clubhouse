@@ -250,6 +250,51 @@ describe('PopoutCanvasView', () => {
     });
   });
 
+  // ─── LB-CB-2026-05-02 — mutation race: no IPC before initial state resolves ──
+
+  it('suppresses sendCanvasMutation until the initial IPC snapshot resolves', async () => {
+    // Regression: mutations fired before getCanvasState resolved could reach the
+    // leader window before it had a chance to apply the initial state, causing
+    // out-of-order updates. sendMutation must be gated on initialization.
+    let resolveSnapshot!: (v: any) => void;
+    vi.mocked(window.clubhouse.window.getCanvasState).mockReturnValueOnce(
+      new Promise((r) => { resolveSnapshot = r; }),
+    );
+
+    render(<PopoutCanvasView canvasId="canvas-1" projectId="proj-1" />);
+
+    // Component is still loading — no snapshot yet, so sendMutation is suppressed
+    if (capturedProps) {
+      capturedProps.onMoveView('view-1', { x: 999, y: 999 });
+    }
+    expect(window.clubhouse.window.sendCanvasMutation).not.toHaveBeenCalled();
+
+    // Resolve the snapshot — initialization completes
+    resolveSnapshot({
+      canvasId: 'canvas-1',
+      name: 'main',
+      views: [
+        { id: 'view-1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, title: 'Card 1' },
+      ],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 1,
+      zoomedViewId: null,
+      selectedViewId: null,
+    });
+
+    // Wait for the component to finish loading and re-render with new props
+    await waitFor(() => expect(capturedProps).not.toBeNull());
+    await waitFor(() => expect(screen.queryByText('Loading canvas...')).not.toBeInTheDocument());
+
+    // Now mutations should be forwarded
+    capturedProps.onMoveView('view-1', { x: 200, y: 300 });
+    expect(window.clubhouse.window.sendCanvasMutation).toHaveBeenCalledWith(
+      'canvas-1', 'project-local',
+      expect.objectContaining({ type: 'moveView', viewId: 'view-1' }),
+      'proj-1',
+    );
+  });
+
   // Avoid unused-var warning on imported helper
   void fireEvent;
 });

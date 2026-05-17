@@ -65,6 +65,24 @@ export default tseslint.config(
     },
   },
   {
+    files: [
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/*.spec.ts',
+      '**/*.spec.tsx',
+      'test/**/*.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'CallExpression[callee.object.name="fs"][callee.property.name="readFileSync"]',
+          message: 'Use behavioral tests (spies, output assertions) instead of reading source files in tests.',
+        },
+      ],
+    },
+  },
+  {
     ignores: [
       '.webpack/**',
       'out/**',
