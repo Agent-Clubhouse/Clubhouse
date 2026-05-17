@@ -3,6 +3,7 @@ import { generateDurableName, AGENT_COLORS, getAgentColorHex } from '../../../sh
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
+import { Modal } from '../../components/Modal';
 import type { PersonaTemplate } from '../assistant/content/personas';
 import type { McpCatalogEntry } from '../../../shared/types';
 
@@ -87,11 +88,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
   };
 
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[360px] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal open={true} onClose={onClose}>
         {/* Template badge */}
         <div className="flex items-center gap-2 mb-4">
           <div
@@ -192,7 +189,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
               })}
             </select>
             {selectedAvail && !selectedAvail.available && (
-              <p className="mt-1 text-xs text-yellow-500">
+              <p className="mt-1 text-xs text-status-warning">
                 {selectedAvail.error || 'CLI not found — agent may fail to start'}
               </p>
             )}
@@ -294,7 +291,6 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

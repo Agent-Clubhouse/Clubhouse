@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useUpdateStore } from '../../stores/updateStore';
 import { WhatsNewDialog } from './WhatsNewDialog';
@@ -101,18 +101,6 @@ describe('WhatsNewDialog', () => {
   });
 
   it('Escape key dismisses the dialog', () => {
-    // We need real event listeners for the escape key test
-    const listeners: Record<string, ((e: any) => void)[]> = {};
-    (window.addEventListener as any) = vi.fn((event: string, handler: any) => {
-      if (!listeners[event]) listeners[event] = [];
-      listeners[event].push(handler);
-    });
-    (window.removeEventListener as any) = vi.fn((event: string, handler: any) => {
-      if (listeners[event]) {
-        listeners[event] = listeners[event].filter((h) => h !== handler);
-      }
-    });
-
     useUpdateStore.setState({
       showWhatsNew: true,
       whatsNew: {
@@ -123,10 +111,9 @@ describe('WhatsNewDialog', () => {
 
     render(<WhatsNewDialog />);
 
-    // Simulate Escape key
-    const handler = listeners['keydown']?.[0];
-    expect(handler).toBeDefined();
-    handler({ key: 'Escape' });
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
 
     const state = useUpdateStore.getState();
     expect(state.showWhatsNew).toBe(false);

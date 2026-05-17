@@ -159,6 +159,7 @@ function AppAgentSettings() {
 
       {/* Confirmation dialog */}
       {showConfirm && (
+        // eslint-disable-next-line no-restricted-syntax
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
           <div className="bg-ctp-base border border-surface-1 rounded-xl p-6 max-w-md mx-4 shadow-xl">
             <h3 className="text-sm font-semibold text-ctp-text mb-2">Enable Clubhouse Mode?</h3>

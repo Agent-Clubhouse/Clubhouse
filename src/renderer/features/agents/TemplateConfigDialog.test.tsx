@@ -139,8 +139,8 @@ describe('TemplateConfigDialog', () => {
   });
 
   it('calls onClose when backdrop is clicked', () => {
-    const { container } = render(<TemplateConfigDialog {...defaultProps} />);
-    const backdrop = container.querySelector('.fixed.inset-0');
+    render(<TemplateConfigDialog {...defaultProps} />);
+    const backdrop = document.querySelector('.fixed.inset-0');
     fireEvent.click(backdrop!);
     expect(defaultProps.onClose).toHaveBeenCalled();
   });

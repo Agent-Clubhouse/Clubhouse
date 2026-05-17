@@ -30,6 +30,12 @@
   --color-ctp-mauve: rgb(var(--ctp-accent2));
   --color-ctp-yellow: rgb(var(--ctp-warning));
 
+  /* Semantic status tokens — use these instead of raw palette classes like text-yellow-400 */
+  --color-status-warning: rgb(var(--ctp-warning));
+  --color-status-error: rgb(var(--ctp-error));
+  --color-status-info: rgb(var(--ctp-info));
+  --color-status-success: rgb(var(--ctp-success));
+
   /* Named z-index scale — use z-modal, z-toast, etc. instead of ad-hoc z-50/z-[9999] */
   --z-raised: 10;
   --z-dropdown-backdrop: 40;

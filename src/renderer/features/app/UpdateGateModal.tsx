@@ -1,3 +1,5 @@
+import { Modal } from '../../components/Modal';
+
 export interface UpdateGateAgent {
   agentId: string;
   agentName: string;
@@ -20,11 +22,7 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
   const hasWorking = workingAgents.length > 0;
 
   return (
-    <div className="fixed inset-0 z-modal bg-black/50 flex items-center justify-center" onClick={onCancel}>
-      <div
-        className="bg-ctp-mantle border border-surface-0 rounded-xl shadow-2xl max-w-lg w-full mx-4 p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal open={true} onClose={onCancel} width="w-full max-w-lg mx-4">
         <h2 className="text-base font-semibold text-ctp-text mb-4">Update Ready — Active Agents</h2>
 
         {workingAgents.length > 0 && (
@@ -109,7 +107,6 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
             Restart Now
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

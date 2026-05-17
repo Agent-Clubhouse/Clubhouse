@@ -24,6 +24,7 @@ export function UpgradeToCanvasDialog({
 
   return (
     <div
+      // eslint-disable-next-line no-restricted-syntax
       className="fixed inset-0 z-modal flex items-center justify-center bg-black/50"
       onClick={onClose}
       data-testid="upgrade-to-canvas-backdrop"

@@ -55,6 +55,7 @@ export function OnboardingModal() {
 
   return (
     <div
+      // eslint-disable-next-line no-restricted-syntax
       className="fixed inset-0 z-modal bg-black/50 flex items-center justify-center"
       data-testid="onboarding-backdrop"
       onClick={handleDismiss}

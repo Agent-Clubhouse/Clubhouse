@@ -81,6 +81,7 @@ export function AgentGalleryDialog({ onClose, onCreate }: Props) {
   };
 
   return (
+    // eslint-disable-next-line no-restricted-syntax
     <div className="fixed inset-0 z-modal flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative bg-ctp-base border border-surface-0 rounded-xl shadow-2xl w-[520px] max-h-[80vh] flex flex-col">

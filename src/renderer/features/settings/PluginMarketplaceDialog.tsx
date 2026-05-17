@@ -24,7 +24,7 @@ const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, 
 
 const RISK_COLORS: Record<PermissionRiskLevel, string> = {
   safe: 'bg-ctp-success/20 text-ctp-success',
-  elevated: 'bg-yellow-500/20 text-yellow-400',
+  elevated: 'bg-status-warning/20 text-status-warning',
   dangerous: 'bg-ctp-error/20 text-ctp-error',
 };
 
@@ -89,7 +89,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
             )}
             {compatible && deprecatedRemoval && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400" title={`API ${release.api} will be removed in ${deprecatedRemoval}`}>Deprecated</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-status-warning/20 text-status-warning" title={`API ${release.api} will be removed in ${deprecatedRemoval}`}>Deprecated</span>
             )}
             {installed && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Installed</span>
@@ -439,6 +439,7 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div
+      // eslint-disable-next-line no-restricted-syntax
       className="fixed inset-0 z-modal flex items-center justify-center bg-black/60"
       onClick={onClose}
       data-testid="marketplace-overlay"
