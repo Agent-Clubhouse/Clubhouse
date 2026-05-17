@@ -98,7 +98,7 @@ function SettingsContextPicker() {
             `}
           >
             <span
-              className="w-[18px] h-[18px] rounded flex items-center justify-center text-[10px] font-bold flex-shrink-0 overflow-hidden"
+              className="w-[18px] h-[18px] rounded flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden"
               style={p.icon && projectIcons[p.id] ? undefined : { backgroundColor: `${getAgentColorHex(p.color)}20`, color: getAgentColorHex(p.color) }}
             >
               {p.icon && projectIcons[p.id] ? (

@@ -93,7 +93,7 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
       onMouseDown={(e) => e.stopPropagation()}
       data-testid="link-dropdown"
     >
-      <div className="px-3 py-2 text-[10px] text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0">
+      <div className="px-3 py-2 text-xs text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0">
         Link to Widget
       </div>
       {targets.length === 0 ? (
@@ -119,7 +119,7 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
                   bound ? 'bg-ctp-accent' : 'bg-ctp-overlay0'
                 }`} />
                 <span className="truncate">{targetLabel(target)}</span>
-                <span className="text-[10px] text-ctp-overlay0 flex-shrink-0 ml-auto">
+                <span className="text-xs text-ctp-overlay0 flex-shrink-0 ml-auto">
                   {targetKind(target)}
                 </span>
               </button>

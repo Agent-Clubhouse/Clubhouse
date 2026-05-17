@@ -221,7 +221,7 @@ function TabItem({
       // Show close button on hover, dirty dot otherwise
       (hovered || isActive)
         ? React.createElement('button', {
-            className: `w-4 h-4 flex items-center justify-center rounded text-[10px]
+            className: `w-4 h-4 flex items-center justify-center rounded text-xs
               ${tab.isDirty
                 ? 'text-ctp-warning hover:bg-surface-1'
                 : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'

@@ -154,17 +154,17 @@ function OrphanBanner({
           <p className="text-xs font-medium text-ctp-peach mb-1">
             Orphaned plugin injections detected
           </p>
-          <p className="text-[10px] text-ctp-subtext0 mb-2">
+          <p className="text-xs text-ctp-subtext0 mb-2">
             These uninstalled plugins left configs in your project defaults:
           </p>
           <div className="flex flex-wrap gap-2">
             {orphanedPluginIds.map((id) => (
               <div key={id} className="flex items-center gap-1">
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach">{id}</span>
+                <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach">{id}</span>
                 <button
                   onClick={() => handleClean(id)}
                   disabled={cleaning !== null}
-                  className="text-[10px] px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
+                  className="text-xs px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
                 >
                   {cleaning === id ? 'Cleaning...' : 'Clean up'}
                 </button>
@@ -176,7 +176,7 @@ function OrphanBanner({
           <button
             onClick={handleCleanAll}
             disabled={cleaning !== null}
-            className="shrink-0 text-[10px] px-2 py-1 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
+            className="shrink-0 text-xs px-2 py-1 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
           >
             {cleaning ? 'Cleaning...' : 'Clean all'}
           </button>
@@ -494,7 +494,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
 
       <div className="space-y-4">
         {/* Mode note */}
-        <div className={`text-[10px] flex items-start gap-1.5 rounded-lg px-3 py-2 ${
+        <div className={`text-xs flex items-start gap-1.5 rounded-lg px-3 py-2 ${
           clubhouseMode
             ? 'text-ctp-success bg-ctp-success/10 border border-ctp-success/20'
             : 'text-ctp-subtext0/60 bg-ctp-mantle border border-surface-0'
@@ -535,7 +535,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             <option value="github">GitHub (gh CLI)</option>
             <option value="azure-devops">Azure DevOps (az CLI)</option>
           </select>
-          <p className="text-[10px] text-ctp-subtext0/60 mt-1">
+          <p className="text-xs text-ctp-subtext0/60 mt-1">
             Replaces <code className="bg-surface-0 px-0.5 rounded">@@SourceControlProvider</code> in skill templates and controls conditional blocks.
           </p>
         </div>
@@ -562,12 +562,12 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
-              <p className="text-[10px] text-ctp-subtext0/60 mt-1">
+              <p className="text-xs text-ctp-subtext0/60 mt-1">
                 Profile env vars are injected when agents in this project spawn.
                 {activeProfile && ' Only orchestrators configured in the profile appear in agent creation.'}
               </p>
               {coveredNames.length > 0 && (
-                <p className="text-[10px] text-ctp-accent/80 mt-1">
+                <p className="text-xs text-ctp-accent/80 mt-1">
                   Covers: {coveredNames.join(', ')}
                 </p>
               )}
@@ -585,7 +585,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
             spellCheck={false}
           />
-          <p className="text-[10px] text-ctp-subtext0/60 mt-1">
+          <p className="text-xs text-ctp-subtext0/60 mt-1">
             Shell command prepended before the agent CLI binary. Use this to source environment setup scripts (e.g. <code className="bg-surface-0 px-0.5 rounded">. ./init.ps1</code>). Runs in the same shell so exported variables and PATH changes are inherited by the agent.
           </p>
         </div>
@@ -593,12 +593,12 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         {/* Build / Test / Lint Commands */}
         <div>
           <label className="block text-xs text-ctp-subtext0 mb-1">Project Commands</label>
-          <p className="text-[10px] text-ctp-subtext0/60 mb-2">
+          <p className="text-xs text-ctp-subtext0/60 mb-2">
             Configure the commands agents use to build, test, and lint your project. These replace <code className="bg-surface-0 px-0.5 rounded">@@BuildCommand</code>, <code className="bg-surface-0 px-0.5 rounded">@@TestCommand</code>, and <code className="bg-surface-0 px-0.5 rounded">@@LintCommand</code> in skills.
           </p>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Build</label>
+              <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Build</label>
               <input
                 value={buildCommand}
                 onChange={(e) => { setBuildCommand(e.target.value); setDirty(true); }}
@@ -608,7 +608,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               />
             </div>
             <div>
-              <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Test</label>
+              <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Test</label>
               <input
                 value={testCommand}
                 onChange={(e) => { setTestCommand(e.target.value); setDirty(true); }}
@@ -618,7 +618,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               />
             </div>
             <div>
-              <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Lint</label>
+              <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Lint</label>
               <input
                 value={lintCommand}
                 onChange={(e) => { setLintCommand(e.target.value); setDirty(true); }}
@@ -641,7 +641,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           <span className="text-xs text-ctp-subtext0">Free Agent Mode by default</span>
         </label>
         {freeAgentMode && (
-          <p className="text-[10px] text-ctp-error pl-6">
+          <p className="text-xs text-ctp-error pl-6">
             New agents will skip all permission prompts by default.
           </p>
         )}
@@ -704,7 +704,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         <div className="space-y-2">
           <label className="block text-xs text-ctp-subtext0">Default Permissions</label>
           <div>
-            <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Allowed tools (one per line)</label>
+            <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Allowed tools (one per line)</label>
             <textarea
               value={userAllowRules}
               onChange={(e) => { setPermAllow(e.target.value); setDirty(true); }}
@@ -714,7 +714,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             />
           </div>
           <div>
-            <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Auto-deny tools (one per line)</label>
+            <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Auto-deny tools (one per line)</label>
             <textarea
               value={userDenyRules}
               onChange={(e) => { setPermDeny(e.target.value); setDirty(true); }}
@@ -731,7 +731,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             <label className="block text-xs text-ctp-subtext0 mb-1">Plugin Permissions</label>
             {pluginAllowRules.length > 0 && (
               <div className="mb-2">
-                <span className="text-[10px] text-ctp-subtext0/60">Allow rules:</span>
+                <span className="text-xs text-ctp-subtext0/60">Allow rules:</span>
                 <ConfigItemList
                   items={pluginAllowRules}
                   orphanedPluginIds={orphanedPluginIds}
@@ -742,7 +742,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             )}
             {pluginDenyRules.length > 0 && (
               <div>
-                <span className="text-[10px] text-ctp-subtext0/60">Deny rules:</span>
+                <span className="text-xs text-ctp-subtext0/60">Deny rules:</span>
                 <ConfigItemList
                   items={pluginDenyRules}
                   orphanedPluginIds={orphanedPluginIds}

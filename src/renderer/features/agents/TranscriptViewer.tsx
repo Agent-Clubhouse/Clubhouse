@@ -163,13 +163,13 @@ export function TranscriptViewer({ agentId }: Props) {
     <div ref={scrollContainerRef} className="space-y-2 p-3 max-h-[400px] overflow-y-auto">
       {hasMore && (
         <div ref={sentinelRef} className="text-center py-1">
-          {loadingMore && <span className="text-[10px] text-ctp-subtext0 flex items-center gap-1"><Spinner size="xs" /> Loading earlier events...</span>}
+          {loadingMore && <span className="text-xs text-ctp-subtext0 flex items-center gap-1"><Spinner size="xs" /> Loading earlier events...</span>}
         </div>
       )}
       {items.map((item, i) => (
         <TranscriptItem key={i} item={item} />
       ))}
-      <div className="text-[10px] text-ctp-subtext0 text-right">
+      <div className="text-xs text-ctp-subtext0 text-right">
         {events.length} of {totalEvents} events loaded
       </div>
     </div>
@@ -290,7 +290,7 @@ function TranscriptItem({ item }: { item: DisplayItem }) {
   return (
     <div className="border-t border-surface-0 pt-2 mt-2">
       {item.text && <p className="text-xs text-ctp-text mb-1">{item.text}</p>}
-      <div className="flex gap-3 text-[10px] text-ctp-subtext0">
+      <div className="flex gap-3 text-xs text-ctp-subtext0">
         {item.costUsd != null && <span>${item.costUsd.toFixed(4)}</span>}
         {item.durationMs != null && <span>{formatDuration(item.durationMs)}</span>}
       </div>

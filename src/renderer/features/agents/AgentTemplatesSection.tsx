@@ -155,7 +155,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
       <div className="flex items-center justify-between mb-2">
         <div>
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Agent Definitions</h3>
-          <span className="text-[10px] text-ctp-subtext0/60 font-mono">{pathLabel || '.claude/agents/'}</span>
+          <span className="text-xs text-ctp-subtext0/60 font-mono">{pathLabel || '.claude/agents/'}</span>
         </div>
         <button
           onClick={handleCreate}
@@ -172,7 +172,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
 
       {/* Built-in (filesystem) templates */}
       {hasPluginTemplates && templates.length > 0 && (
-        <p className="text-[10px] text-ctp-subtext0/50 uppercase tracking-wider mb-1 mt-2">Built-in</p>
+        <p className="text-xs text-ctp-subtext0/50 uppercase tracking-wider mb-1 mt-2">Built-in</p>
       )}
       {templates.length === 0 && !hasPluginTemplates ? (
         <p className="text-xs text-ctp-subtext0/60 py-2">No agent definitions found.</p>
@@ -227,7 +227,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
         const groupName = pluginTemplates[0]?.pluginName || pluginId;
         return (
           <div key={pluginId} className="mt-3" data-testid={`plugin-template-group-${pluginId}`}>
-            <p className="text-[10px] text-ctp-subtext0/50 uppercase tracking-wider mb-1">
+            <p className="text-xs text-ctp-subtext0/50 uppercase tracking-wider mb-1">
               {groupName}
             </p>
             <div className="space-y-1">
@@ -248,7 +248,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
                         {entry.template.name}
                       </span>
                       {entry.template.description && (
-                        <span className="text-[10px] text-ctp-subtext0/60 truncate block">
+                        <span className="text-xs text-ctp-subtext0/60 truncate block">
                           {entry.template.description}
                         </span>
                       )}

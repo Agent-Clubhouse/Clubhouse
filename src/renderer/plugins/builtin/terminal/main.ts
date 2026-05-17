@@ -126,7 +126,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
           className: 'mx-3 my-2 border-t border-surface-0',
         }),
         React.createElement('div', {
-          className: 'px-3 py-1 text-[10px] text-ctp-subtext0 uppercase tracking-wider',
+          className: 'px-3 py-1 text-xs text-ctp-subtext0 uppercase tracking-wider',
         }, 'No worktree'),
         noWorktreeAgents.map((name) =>
           React.createElement('div', {

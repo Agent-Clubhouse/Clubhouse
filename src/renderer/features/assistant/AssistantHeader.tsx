@@ -76,7 +76,7 @@ export function AssistantHeader({ onReset, mode, onModeChange, orchestrator, onO
           <select
             value={orchestrator || ''}
             onChange={(e) => onOrchestratorChange(e.target.value || null)}
-            className="bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-subtext0 outline-none cursor-pointer"
+            className="bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-xs text-ctp-subtext0 outline-none cursor-pointer"
             title="Orchestrator"
             data-testid="orchestrator-select"
           >
@@ -93,7 +93,7 @@ export function AssistantHeader({ onReset, mode, onModeChange, orchestrator, onO
             <button
               key={m}
               onClick={() => onModeChange(m)}
-              className={`px-2 py-1 text-[10px] font-medium transition-colors cursor-pointer ${
+              className={`px-2 py-1 text-xs font-medium transition-colors cursor-pointer ${
                 mode === m
                   ? 'bg-ctp-accent text-white shadow-sm'
                   : 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0'

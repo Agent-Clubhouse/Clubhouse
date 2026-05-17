@@ -243,7 +243,7 @@ export function HubPane({
                 <div className="flex items-center gap-1 ml-1 flex-shrink-0">
                   <button
                     onClick={(e) => { e.stopPropagation(); handleViewInAgents(); }}
-                    className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
+                    className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
                     title="View in Agents"
                   >
                     View
@@ -251,7 +251,7 @@ export function HubPane({
                   {onZoom && (
                     <button
                       onClick={(e) => { e.stopPropagation(); onZoom(pane.id); }}
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
+                      className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
                       title={isZoomed ? 'Restore pane' : 'Zoom pane'}
                       data-testid="zoom-button"
                     >
@@ -260,7 +260,7 @@ export function HubPane({
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handlePopOut(); }}
-                    className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
+                    className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
                     title="Pop out in new window"
                     data-testid="popout-button"
                   >
@@ -269,7 +269,7 @@ export function HubPane({
                   {agent.status === 'running' && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleKill(); }}
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30"
+                      className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30"
                       title="Stop agent"
                     >
                       Stop
@@ -277,7 +277,7 @@ export function HubPane({
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleUnassign(); }}
-                    className="text-[10px] px-1 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-ctp-error/20 hover:text-ctp-error"
+                    className="text-xs px-1 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-ctp-error/20 hover:text-ctp-error"
                     title="Remove from pane"
                   >
                     &times;
@@ -334,7 +334,7 @@ function EdgeIndicator({ edge, active, onSplit }: {
       <button
         className={`
           absolute ${positionClass} z-20 flex items-center justify-center w-5 h-5 rounded-full
-          text-[10px] font-bold transition-all duration-100 cursor-pointer
+          text-xs font-bold transition-all duration-100 cursor-pointer
           ${active
             ? 'bg-ctp-accent text-white shadow-md scale-110'
             : 'bg-surface-1/60 text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-subtext0'

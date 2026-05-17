@@ -70,14 +70,14 @@ export function CommandOutputPanel({ command, defaultExpanded = true }: Props) {
         <span className="text-xs font-mono text-ctp-text truncate">{command.command}</span>
         <span className="ml-auto">
           {isRunning ? (
-            <span className="text-[10px] text-ctp-accent flex items-center gap-1">
+            <span className="text-xs text-ctp-accent flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-ctp-accent animate-pulse" />
               Running
             </span>
           ) : isFailed ? (
-            <span className="text-[10px] text-ctp-red">exit {command.exitCode ?? '?'}</span>
+            <span className="text-xs text-ctp-red">exit {command.exitCode ?? '?'}</span>
           ) : (
-            <span className="text-[10px] text-ctp-green">exit 0</span>
+            <span className="text-xs text-ctp-green">exit 0</span>
           )}
         </span>
       </button>
@@ -92,7 +92,7 @@ export function CommandOutputPanel({ command, defaultExpanded = true }: Props) {
           />
           {isTruncated && (
             <button
-              className="w-full py-1 text-[10px] text-ctp-subtext0 hover:text-ctp-text border-t border-surface-0 transition-colors cursor-pointer"
+              className="w-full py-1 text-xs text-ctp-subtext0 hover:text-ctp-text border-t border-surface-0 transition-colors cursor-pointer"
               onClick={() => setShowAll(true)}
             >
               Show all ({outputLines.length} lines)

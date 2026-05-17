@@ -583,7 +583,7 @@ export function CanvasViewComponent({
         {/* Expanded content — hidden when collapsed */}
         {!isCollapsedVisually && (
           <>
-            <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none flex-shrink-0">
+            <span className="text-xs text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none flex-shrink-0">
               Anchor
             </span>
 
@@ -713,7 +713,7 @@ export function CanvasViewComponent({
         {/* Agent identity chip */}
         {agentInfo && <AgentAvatar agentId={agentInfo.id} size="sm" showStatusRing />}
 
-        <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
+        <span className="text-xs text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
           {formatViewType(view.type === 'plugin' ? (view as PluginCanvasViewType).pluginWidgetType.split(':').pop() || '' : view.type)}
         </span>
         <InlineRename
@@ -723,7 +723,7 @@ export function CanvasViewComponent({
           }}
         />
         {projectContext && (
-          <span className="text-[10px] text-ctp-overlay0 truncate flex-shrink-0">({projectContext})</span>
+          <span className="text-xs text-ctp-overlay0 truncate flex-shrink-0">({projectContext})</span>
         )}
 
         {/* Quick action buttons */}

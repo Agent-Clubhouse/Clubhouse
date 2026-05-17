@@ -438,7 +438,7 @@ function AgentListInner() {
     return (
       <div className={`py-3 border-b border-surface-0/50 space-y-2 ${isNested ? 'pl-7 pr-3' : 'px-3'}`}>
         {targetParentAgent && (
-          <div className="text-[10px] text-ctp-overlay0">
+          <div className="text-xs text-ctp-overlay0">
             Quick agent in {targetParentAgent.name}'s worktree
           </div>
         )}
@@ -460,7 +460,7 @@ function AgentListInner() {
           <select
             value={quickModel}
             onChange={(e) => setQuickModel(e.target.value)}
-            className="flex-1 min-w-0 px-1.5 py-1 text-[10px] rounded bg-surface-0 border border-surface-2
+            className="flex-1 min-w-0 px-1.5 py-1 text-xs rounded bg-surface-0 border border-surface-2
               text-ctp-text focus-ring"
           >
             {MODEL_OPTIONS.map((opt) => (
@@ -471,7 +471,7 @@ function AgentListInner() {
             <select
               value={quickOrchestrator || enabledOrchestrators[0]?.id}
               onChange={(e) => setQuickOrchestrator(e.target.value)}
-              className="flex-1 min-w-0 px-1.5 py-1 text-[10px] rounded bg-surface-0 border border-surface-2
+              className="flex-1 min-w-0 px-1.5 py-1 text-xs rounded bg-surface-0 border border-surface-2
                 text-ctp-text focus-ring"
             >
               {enabledOrchestrators.map((o) => (
@@ -492,16 +492,16 @@ function AgentListInner() {
             disabled={!supportsPermissions}
             className="w-3 h-3 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
           />
-          <span className="text-[10px] text-ctp-subtext0">Free Agent Mode</span>
+          <span className="text-xs text-ctp-subtext0">Free Agent Mode</span>
           {quickFreeAgentMode && supportsPermissions && (
-            <span className="text-[10px] text-ctp-error">skip all permissions</span>
+            <span className="text-xs text-ctp-error">skip all permissions</span>
           )}
         </label>
         <div className="flex gap-1.5">
           <button
             onClick={handleMissionSubmit}
             disabled={!mission.trim()}
-            className="flex-1 px-2 py-1 text-[10px] rounded bg-ctp-accent/20 text-ctp-accent
+            className="flex-1 px-2 py-1 text-xs rounded bg-ctp-accent/20 text-ctp-accent
               hover:bg-ctp-accent/30 transition-colors cursor-pointer
               disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -509,7 +509,7 @@ function AgentListInner() {
           </button>
           <button
             onClick={handleCancelMission}
-            className="px-2 py-1 text-[10px] rounded border border-surface-0
+            className="px-2 py-1 text-xs rounded border border-surface-0
               hover:bg-surface-0 transition-colors cursor-pointer text-ctp-subtext1"
           >
             Cancel
@@ -637,7 +637,7 @@ function AgentListInner() {
                     />
                     {activeProfile && durable.orchestrator && !isOrchestratorInProfile(durable.orchestrator) && (
                       <span
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-yellow-500"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-yellow-500"
                         title={`${durable.orchestrator} is not configured in the "${activeProfile.name}" profile`}
                       >
                         ⚠
@@ -725,7 +725,7 @@ function AgentListInner() {
             <button
               onClick={() => activeProjectId && clearCompleted(activeProjectId)}
               data-testid="completed-clear-all"
-              className="text-[10px] normal-case tracking-normal text-ctp-overlay0 hover:text-ctp-text cursor-pointer font-normal"
+              className="text-xs normal-case tracking-normal text-ctp-overlay0 hover:text-ctp-text cursor-pointer font-normal"
             >
               Clear all
             </button>

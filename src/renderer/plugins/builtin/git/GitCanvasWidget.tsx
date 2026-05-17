@@ -277,7 +277,7 @@ function FileSection({ title, sectionKey, files, collapsed, selectedFile, onSele
   return (
     <>
       <button
-        className="w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0 hover:bg-surface-0"
+        className="w-full flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0 hover:bg-surface-0"
         onClick={() => onToggle(sectionKey)}
         data-testid={`section-${sectionKey}`}
       >

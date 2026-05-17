@@ -215,7 +215,7 @@ export function ConfigChangesDialog() {
                               onChange={() => toggleItem(item.id)}
                               className="accent-ctp-accent flex-shrink-0"
                             />
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold flex-shrink-0 ${badge.cls}`}>
+                            <span className={`px-1.5 py-0.5 rounded text-xs font-mono font-bold flex-shrink-0 ${badge.cls}`}>
                               {badge.label}
                             </span>
                             <span className="text-xs text-ctp-text truncate flex-1">
@@ -224,7 +224,7 @@ export function ConfigChangesDialog() {
                             {canExpand && (
                               <button
                                 onClick={() => toggleExpand(item.id)}
-                                className="text-[10px] text-ctp-subtext0 hover:text-ctp-text cursor-pointer flex-shrink-0"
+                                className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer flex-shrink-0"
                               >
                                 {isExpanded ? 'Hide diff' : 'View diff'}
                               </button>

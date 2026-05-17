@@ -139,7 +139,7 @@ function AppAgentSettings() {
               <option value="github">GitHub (gh CLI)</option>
               <option value="azure-devops">Azure DevOps (az CLI)</option>
             </select>
-            <p className="text-[10px] text-ctp-subtext0/60">
+            <p className="text-xs text-ctp-subtext0/60">
               App-wide default. Projects can override in their own settings.
             </p>
           </div>
@@ -214,7 +214,7 @@ function AppAgentSettings() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-ctp-text">{o.displayName}</span>
                     {o.badge && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full bg-ctp-accent/20 text-ctp-accent border border-ctp-accent/30 shadow-[0_0_6px_rgba(var(--ctp-accent),0.3)]">
+                      <span className="px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider rounded-full bg-ctp-accent/20 text-ctp-accent border border-ctp-accent/30 shadow-[0_0_6px_rgba(var(--ctp-accent),0.3)]">
                         {o.badge}
                       </span>
                     )}

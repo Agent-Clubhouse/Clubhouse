@@ -47,7 +47,7 @@ export function ToolCard({ tool, output, end, status }: Props) {
         )}
         <span className="ml-auto flex items-center gap-2">
           {end && (
-            <span className="text-[10px] text-ctp-subtext0 tabular-nums">
+            <span className="text-xs text-ctp-subtext0 tabular-nums">
               {formatDuration(end.durationMs)}
             </span>
           )}
@@ -60,7 +60,7 @@ export function ToolCard({ tool, output, end, status }: Props) {
         <div className="border-t border-surface-0">
           {/* Input section */}
           <button
-            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-ctp-subtext0 hover:bg-surface-0/30 transition-colors cursor-pointer"
+            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-0/30 transition-colors cursor-pointer"
             onClick={() => setInputExpanded((e) => !e)}
           >
             <ChevronIcon expanded={inputExpanded} />
@@ -75,7 +75,7 @@ export function ToolCard({ tool, output, end, status }: Props) {
           {/* Output section */}
           {(output || status === 'running') && (
             <div className="border-t border-surface-0">
-              <div className="px-3 py-1.5 text-[10px] text-ctp-subtext0 flex items-center gap-1.5">
+              <div className="px-3 py-1.5 text-xs text-ctp-subtext0 flex items-center gap-1.5">
                 Output
                 {status === 'running' && (
                   <span className="text-ctp-accent animate-pulse">(streaming...)</span>

@@ -42,16 +42,16 @@ export function ZoomedViewOverlay({
       >
         {/* Title bar */}
         <div className="flex items-center gap-1.5 px-3 py-2 bg-ctp-mantle border-b border-surface-0 flex-shrink-0">
-          <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
+          <span className="text-xs text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
             {formatViewType(view.type)}
           </span>
           <span className="text-xs text-ctp-subtext0 truncate flex-1">{view.title}</span>
           {(() => {
             const ctx = buildProjectContext(view, api.projects.list());
-            return ctx ? <span className="text-[10px] text-ctp-overlay0 truncate flex-shrink-0">({ctx})</span> : null;
+            return ctx ? <span className="text-xs text-ctp-overlay0 truncate flex-shrink-0">({ctx})</span> : null;
           })()}
           <button
-            className="text-[10px] px-2 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text transition-colors"
+            className="text-xs px-2 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text transition-colors"
             onClick={onClose}
             data-testid="canvas-zoom-restore"
           >

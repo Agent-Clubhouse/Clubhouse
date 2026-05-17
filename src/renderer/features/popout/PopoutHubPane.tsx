@@ -204,14 +204,14 @@ export function PopoutHubPane({
                 <div className="flex items-center gap-1 ml-1 flex-shrink-0">
                   <button
                     onClick={(e) => { e.stopPropagation(); handleViewInApp(); }}
-                    className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
+                    className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
                     title="View in main window"
                   >
                     View
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); onZoom(pane.id); }}
-                    className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
+                    className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
                     title={isZoomed ? 'Restore pane' : 'Zoom pane'}
                     data-testid="zoom-button"
                   >
@@ -220,7 +220,7 @@ export function PopoutHubPane({
                   {agent.status === 'running' && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleKill(); }}
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30"
+                      className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30"
                       title="Stop agent"
                     >
                       Stop
@@ -228,7 +228,7 @@ export function PopoutHubPane({
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleUnassign(); }}
-                    className="text-[10px] px-1 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-ctp-error/20 hover:text-ctp-error"
+                    className="text-xs px-1 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-ctp-error/20 hover:text-ctp-error"
                     title="Remove from pane"
                   >
                     &times;
@@ -277,7 +277,7 @@ function PopoutAgentPicker({ agents, onPick }: {
           </div>
           {durableAgents.length > 0 && (
             <div className="space-y-1">
-              <div className="text-[10px] uppercase tracking-wider text-ctp-overlay0 mb-1">Durable</div>
+              <div className="text-xs uppercase tracking-wider text-ctp-overlay0 mb-1">Durable</div>
               {durableAgents.map((a) => (
                 <button
                   key={a.id}
@@ -286,7 +286,7 @@ function PopoutAgentPicker({ agents, onPick }: {
                 >
                   <AgentAvatarWithRing agent={a} />
                   <span className="text-xs text-ctp-text truncate flex-1">{a.name}</span>
-                  <span className={`text-[10px] ${a.status === 'running' ? 'text-ctp-success' : a.status === 'error' ? 'text-ctp-error' : 'text-ctp-overlay0'}`}>
+                  <span className={`text-xs ${a.status === 'running' ? 'text-ctp-success' : a.status === 'error' ? 'text-ctp-error' : 'text-ctp-overlay0'}`}>
                     {a.status}
                   </span>
                 </button>
@@ -295,7 +295,7 @@ function PopoutAgentPicker({ agents, onPick }: {
           )}
           {quickAgents.length > 0 && (
             <div className="space-y-1">
-              <div className="text-[10px] uppercase tracking-wider text-ctp-overlay0 mb-1">Quick</div>
+              <div className="text-xs uppercase tracking-wider text-ctp-overlay0 mb-1">Quick</div>
               {quickAgents.map((a) => (
                 <button
                   key={a.id}
@@ -304,7 +304,7 @@ function PopoutAgentPicker({ agents, onPick }: {
                 >
                   <AgentAvatarWithRing agent={a} />
                   <span className="text-xs text-ctp-text truncate flex-1">{a.name}</span>
-                  <span className="text-[10px] text-ctp-success">running</span>
+                  <span className="text-xs text-ctp-success">running</span>
                 </button>
               ))}
             </div>
@@ -347,7 +347,7 @@ function EdgeIndicator({ edge, active, onSplit }: {
       <button
         className={`
           absolute ${positionClass} z-20 flex items-center justify-center w-5 h-5 rounded-full
-          text-[10px] font-bold transition-all duration-100 cursor-pointer
+          text-xs font-bold transition-all duration-100 cursor-pointer
           ${active
             ? 'bg-ctp-accent text-white shadow-md scale-110'
             : 'bg-surface-1/60 text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-subtext0'

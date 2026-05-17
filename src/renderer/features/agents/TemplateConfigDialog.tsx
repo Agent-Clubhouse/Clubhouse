@@ -103,7 +103,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
           </div>
           <div>
             <h2 className="text-base font-semibold text-ctp-text">Configure {persona.name}</h2>
-            <p className="text-[10px] text-ctp-subtext0">{persona.description}</p>
+            <p className="text-xs text-ctp-subtext0">{persona.description}</p>
           </div>
         </div>
 
@@ -205,7 +205,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
               className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
             />
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use git worktree</span>
-            <span className="text-[10px] text-ctp-subtext0/70 ml-1">(isolated branch + directory)</span>
+            <span className="text-xs text-ctp-subtext0/70 ml-1">(isolated branch + directory)</span>
           </label>
 
           {/* Structured Mode (experimental — hidden unless opted in) */}
@@ -223,7 +223,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
                 className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
               />
               <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use Structured Mode</span>
-              <span className="text-[10px] text-ctp-subtext0/70 ml-1">
+              <span className="text-xs text-ctp-subtext0/70 ml-1">
                 {supportsStructured ? '(rich event UI)' : '(not supported)'}
               </span>
             </label>
@@ -242,7 +242,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
               className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
             />
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
-            <span className="text-[10px] text-ctp-subtext0/70 ml-1">
+            <span className="text-xs text-ctp-subtext0/70 ml-1">
               {supportsPermissions ? '(skip all permissions)' : '(not supported)'}
             </span>
           </label>

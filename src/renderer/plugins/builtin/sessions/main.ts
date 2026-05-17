@@ -202,7 +202,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
 
               // Expand indicator
               React.createElement('span', {
-                className: 'text-[10px] text-ctp-overlay0 flex-shrink-0 transition-transform',
+                className: 'text-xs text-ctp-overlay0 flex-shrink-0 transition-transform',
                 style: { transform: isExpanded ? 'rotate(90deg)' : 'none' },
               }, '\u25B8'),
             ),
@@ -235,7 +235,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
                       React.createElement('span', { className: 'truncate' },
                         session.friendlyName || `Session ${session.sessionId.slice(0, 8)}...`
                       ),
-                      React.createElement('span', { className: 'text-[10px] text-ctp-overlay0 flex-shrink-0' },
+                      React.createElement('span', { className: 'text-xs text-ctp-overlay0 flex-shrink-0' },
                         formatRelativeTime(session.lastActiveAt),
                       ),
                     ),
@@ -254,7 +254,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
           className: 'mx-3 my-2 border-t border-surface-0',
         }),
         React.createElement('div', {
-          className: 'px-3 py-1 text-[10px] text-ctp-subtext0 uppercase tracking-wider',
+          className: 'px-3 py-1 text-xs text-ctp-subtext0 uppercase tracking-wider',
         }, 'Completed'),
         completedAgents.map((completed) => React.createElement('button', {
           key: completed.id,
@@ -273,7 +273,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
               style: { borderColor: 'rgb(var(--ctp-overlay0))' },
             },
               React.createElement('div', {
-                className: 'w-6 h-6 rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0 text-[10px]',
+                className: 'w-6 h-6 rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0 text-xs',
               }, '\u26A1'),
             ),
             React.createElement('div', { className: 'flex-1 min-w-0' },
@@ -519,13 +519,13 @@ function CompletedAgentDetail({ api, agentId, agentName }: { api: PluginAPI; age
       },
         // Mission
         completed.mission && React.createElement('div', { className: 'mb-3' },
-          React.createElement('div', { className: 'text-[10px] text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Mission'),
+          React.createElement('div', { className: 'text-xs text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Mission'),
           React.createElement('div', { className: 'text-xs text-ctp-text' }, completed.mission),
         ),
 
         // Summary
         completed.summary && React.createElement('div', { className: 'mb-3' },
-          React.createElement('div', { className: 'text-[10px] text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Summary'),
+          React.createElement('div', { className: 'text-xs text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Summary'),
           React.createElement('div', { className: 'text-xs text-ctp-subtext1 line-clamp-5' }, completed.summary),
         ),
 
@@ -537,16 +537,16 @@ function CompletedAgentDetail({ api, agentId, agentName }: { api: PluginAPI; age
 
         // Completed time
         React.createElement('div', {
-          className: 'text-[10px] text-ctp-overlay0',
+          className: 'text-xs text-ctp-overlay0',
         }, `Completed ${formatRelativeTime(new Date(completed.completedAt).toISOString())}`),
 
         // File list
         completed.filesModified.length > 0 && React.createElement('div', { className: 'mt-2 pt-2 border-t border-surface-0' },
-          React.createElement('div', { className: 'text-[10px] text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Modified files'),
+          React.createElement('div', { className: 'text-xs text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Modified files'),
           React.createElement('div', { className: 'space-y-0.5' },
             completed.filesModified.map((f) => React.createElement('div', {
               key: f,
-              className: 'text-[10px] text-ctp-subtext0 truncate',
+              className: 'text-xs text-ctp-subtext0 truncate',
               title: f,
             }, f)),
           ),
@@ -582,7 +582,7 @@ function SessionSummaryCard({ summary }: { summary: SessionSummary }) {
 
     // Additional info row
     React.createElement('div', {
-      className: 'flex items-center gap-3 mt-2 pt-2 border-t border-surface-0 text-[10px] text-ctp-overlay0',
+      className: 'flex items-center gap-3 mt-2 pt-2 border-t border-surface-0 text-xs text-ctp-overlay0',
     },
       summary.model && React.createElement('span', null, `Model: ${summary.model}`),
       summary.orchestrator && React.createElement('span', null, `Provider: ${getOrchestratorLabel(summary.orchestrator)}`),
@@ -592,10 +592,10 @@ function SessionSummaryCard({ summary }: { summary: SessionSummary }) {
     // Expandable file list
     summary.filesModified.length > 0 && React.createElement('div', { className: 'mt-2' },
       React.createElement('button', {
-        className: 'text-[10px] text-ctp-info hover:underline cursor-pointer',
+        className: 'text-xs text-ctp-info hover:underline cursor-pointer',
         onClick: () => setFilesExpanded(!filesExpanded),
       }, filesExpanded ? 'Hide files' : `Show ${summary.filesModified.length} modified files`),
-      filesExpanded && React.createElement('div', { className: 'mt-1 text-[10px] text-ctp-subtext0 space-y-0.5' },
+      filesExpanded && React.createElement('div', { className: 'mt-1 text-xs text-ctp-subtext0 space-y-0.5' },
         summary.filesModified.map((f) => React.createElement('div', {
           key: f,
           className: 'truncate',
@@ -612,7 +612,7 @@ function StatBadge(label: string, value: string) {
     className: 'px-2 py-1.5 rounded bg-ctp-crust',
   },
     React.createElement('div', { className: 'text-xs font-medium text-ctp-text' }, value),
-    React.createElement('div', { className: 'text-[10px] text-ctp-overlay0' }, label),
+    React.createElement('div', { className: 'text-xs text-ctp-overlay0' }, label),
   );
 }
 
@@ -665,7 +665,7 @@ function TimelineSection({ events, playback }: {
       ([1, 3, 5] as const).map((speed) =>
         React.createElement('button', {
           key: speed,
-          className: `px-1.5 py-0.5 text-[10px] rounded cursor-pointer transition-colors ${
+          className: `px-1.5 py-0.5 text-xs rounded cursor-pointer transition-colors ${
             playback.speed === speed
               ? 'bg-ctp-accent text-ctp-base font-medium'
               : 'bg-surface-0 text-ctp-subtext0 hover:bg-surface-1'
@@ -676,7 +676,7 @@ function TimelineSection({ events, playback }: {
 
       // Time display
       React.createElement('span', {
-        className: 'ml-auto text-[10px] text-ctp-overlay0',
+        className: 'ml-auto text-xs text-ctp-overlay0',
       }, `${currentOffset} / ${totalDuration}`),
     ),
 
@@ -760,7 +760,7 @@ function EventList({ events, totalEvents, playback, onLoadMore, listRef }: {
     'data-testid': 'session-event-list',
   },
     React.createElement('div', {
-      className: 'text-[10px] text-ctp-subtext0 mb-1 uppercase tracking-wider',
+      className: 'text-xs text-ctp-subtext0 mb-1 uppercase tracking-wider',
     }, `Events (${events.length}${events.length < totalEvents ? ` of ${totalEvents}` : ''})`),
 
     events.map((event, idx) => {
@@ -788,16 +788,16 @@ function EventList({ events, totalEvents, playback, onLoadMore, listRef }: {
         onClick: () => sessionsState.setPlaybackIndex(idx),
       },
         React.createElement('div', { className: 'flex items-center gap-2' },
-          React.createElement('span', { className: 'flex-shrink-0 text-[10px]' }, icon),
+          React.createElement('span', { className: 'flex-shrink-0 text-xs' }, icon),
           React.createElement('span', {
             className: `flex-1 truncate ${isActive ? 'text-ctp-text' : 'text-ctp-subtext1'}`,
           }, label),
           React.createElement('span', {
-            className: 'flex-shrink-0 text-[10px] text-ctp-overlay0',
+            className: 'flex-shrink-0 text-xs text-ctp-overlay0',
           }, offset),
         ),
         event.filePath && React.createElement('div', {
-          className: 'ml-5 text-[10px] text-ctp-overlay0 truncate',
+          className: 'ml-5 text-xs text-ctp-overlay0 truncate',
         }, event.filePath),
       );
     }),
@@ -805,7 +805,7 @@ function EventList({ events, totalEvents, playback, onLoadMore, listRef }: {
     // Load more sentinel
     events.length < totalEvents && React.createElement('div', {
       ref: sentinelRef,
-      className: 'py-2 text-center text-[10px] text-ctp-overlay0',
+      className: 'py-2 text-center text-xs text-ctp-overlay0',
     }, 'Loading more events...'),
   );
 }

@@ -667,7 +667,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           onClick={handleScrollToBottom}
           className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2 py-1 rounded-md
             bg-surface-0/90 hover:bg-ctp-surface1 text-ctp-subtext0 hover:text-ctp-text
-            text-[10px] font-medium shadow-lg backdrop-blur-sm transition-all duration-150
+            text-xs font-medium shadow-lg backdrop-blur-sm transition-all duration-150
             border border-ctp-surface1/50"
           title="Scroll to bottom"
         >

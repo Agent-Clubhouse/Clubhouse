@@ -411,7 +411,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
               const orchId = agent.orchestrator || 'claude-code';
               const c = getOrchestratorColor(orchId);
               return (
-                <span className="text-[10px] px-1.5 py-0.5 rounded truncate"
+                <span className="text-xs px-1.5 py-0.5 rounded truncate"
                   style={{ backgroundColor: c.bg, color: c.text }}>
                   {getOrchestratorLabel(orchId, allOrchestrators)}
                 </span>
@@ -423,20 +423,20 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
                 ? getModelColor(agent.model)
                 : { bg: 'rgb(var(--ctp-overlay1) / 0.15)', text: 'rgb(var(--ctp-overlay1))' };
               return (
-                <span className="text-[10px] px-1.5 py-0.5 rounded truncate font-mono"
+                <span className="text-xs px-1.5 py-0.5 rounded truncate font-mono"
                   style={{ backgroundColor: c.bg, color: c.text }}>
                   {modelLabel}
                 </span>
               );
             })()}
             {agent.freeAgentMode && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded truncate"
+              <span className="text-xs px-1.5 py-0.5 rounded truncate"
                 style={{ backgroundColor: 'rgb(var(--ctp-error) / 0.15)', color: 'rgb(var(--ctp-error))' }}>
                 Free
               </span>
             )}
             {agent.mcpIds && agent.mcpIds.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded truncate"
+              <span className="text-xs px-1.5 py-0.5 rounded truncate"
                 style={{ backgroundColor: 'rgb(var(--ctp-accent2) / 0.15)', color: 'rgb(var(--ctp-accent2))' }}
                 title={agent.mcpIds.join(', ')}>
                 {agent.mcpIds.length} MCP{agent.mcpIds.length !== 1 ? 's' : ''}

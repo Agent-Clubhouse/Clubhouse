@@ -129,7 +129,7 @@ export function SourceAgentTemplatesSection({ projectPath }: Props) {
       <div className="flex items-center justify-between mb-2">
         <div>
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Agent Definitions</h3>
-          <span className="text-[10px] text-ctp-subtext0/60 font-mono">.clubhouse/agent-templates/</span>
+          <span className="text-xs text-ctp-subtext0/60 font-mono">.clubhouse/agent-templates/</span>
         </div>
         <button
           onClick={handleCreate}

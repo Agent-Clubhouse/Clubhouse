@@ -133,7 +133,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
       <div className="flex items-center justify-between mb-2">
         <div>
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Skills</h3>
-          <span className="text-[10px] text-ctp-subtext0/60 font-mono">{pathLabel || '.claude/skills/'}</span>
+          <span className="text-xs text-ctp-subtext0/60 font-mono">{pathLabel || '.claude/skills/'}</span>
         </div>
         <button
           onClick={handleCreate}

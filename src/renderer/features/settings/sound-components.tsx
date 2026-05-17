@@ -169,7 +169,7 @@ export function SoundPackCard({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-ctp-text">{pack.name}</span>
           {pack.source === 'plugin' && (
-            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-surface-2 text-ctp-subtext0 rounded">Plugin</span>
+            <span className="px-1.5 py-0.5 text-xs font-medium bg-surface-2 text-ctp-subtext0 rounded">Plugin</span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -199,7 +199,7 @@ export function SoundPackCard({
       )}
       <div className="flex gap-1.5 flex-wrap">
         {events.map((event) => (
-          <span key={event} className="px-1.5 py-0.5 text-[10px] bg-surface-1 text-ctp-subtext0 rounded">
+          <span key={event} className="px-1.5 py-0.5 text-xs bg-surface-1 text-ctp-subtext0 rounded">
             {SOUND_EVENT_LABELS[event]}
           </span>
         ))}

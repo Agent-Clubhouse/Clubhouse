@@ -425,7 +425,7 @@ export function HeadlessAgentView({ agent }: Props) {
         {/* Agent info */}
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 mb-1">
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-accent/20 text-ctp-accent">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-ctp-accent/20 text-ctp-accent">
               Headless
             </span>
             <span className="text-xs text-ctp-subtext0 font-mono tabular-nums">
@@ -440,7 +440,7 @@ export function HeadlessAgentView({ agent }: Props) {
         {/* Live transcript feed */}
         <div className="w-full bg-ctp-mantle border border-surface-0 rounded-lg overflow-hidden">
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-surface-0">
-            <span className="text-[10px] text-ctp-subtext0 uppercase tracking-wider">Live Activity</span>
+            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Live Activity</span>
             <span className="w-1.5 h-1.5 rounded-full bg-ctp-success animate-pulse" />
           </div>
           <div

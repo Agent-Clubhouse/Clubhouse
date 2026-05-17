@@ -101,7 +101,7 @@ function GitBadge({ status }: { status: string }) {
   }
 
   return React.createElement('span', {
-    className: `text-[10px] font-bold ${color} ml-auto flex-shrink-0 pl-1`,
+    className: `text-xs font-bold ${color} ml-auto flex-shrink-0 pl-1`,
   }, letter);
 }
 
@@ -1287,7 +1287,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         // Branch indicator — show worktree branch or "No Worktree" for agent dirs without one
         (currentBranch || rootPath !== '.')
           ? React.createElement('div', {
-              className: 'flex items-center gap-1 text-[10px] text-ctp-subtext0 flex-shrink-0',
+              className: 'flex items-center gap-1 text-xs text-ctp-subtext0 flex-shrink-0',
               title: currentBranch ? `Branch: ${currentBranch}` : 'No worktree',
             },
               GitBranchIcon,
@@ -1299,7 +1299,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         // Worktree selector
         worktrees.length > 0
           ? React.createElement('select', {
-              className: 'flex-1 min-w-0 text-[10px] bg-surface-0 text-ctp-text border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none',
+              className: 'flex-1 min-w-0 text-xs bg-surface-0 text-ctp-text border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none',
               value: rootPath,
               onChange: (e: React.ChangeEvent<HTMLSelectElement>) => handleRootChange(e.target.value),
               title: 'Switch worktree root',
@@ -1322,7 +1322,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         // Selection count badge
         selectionCount > 1
           ? React.createElement('span', {
-              className: 'text-[10px] text-ctp-accent font-medium mr-auto pl-1',
+              className: 'text-xs text-ctp-accent font-medium mr-auto pl-1',
               title: `${selectionCount} items selected`,
             }, `${selectionCount} selected`)
           : null,

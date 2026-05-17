@@ -275,7 +275,7 @@ const ActionGroupCard = React.memo(function ActionGroupCard({ group, actions, on
           {group.status === 'running' ? '...' : group.status === 'completed' ? '\u2713' : group.status === 'error' ? '\u2717' : '\u25CB'}
         </span>
         <span className="text-xs font-medium text-ctp-text">{group.label}</span>
-        <span className="ml-auto text-[10px] text-ctp-subtext0 tabular-nums">
+        <span className="ml-auto text-xs text-ctp-subtext0 tabular-nums">
           {completedCount}/{actions.length}
         </span>
         <svg

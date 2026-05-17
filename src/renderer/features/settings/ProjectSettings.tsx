@@ -422,20 +422,20 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
                     <span className="text-xs text-ctp-text truncate flex items-center gap-1.5">
                       {entry.name}
                       {entry.state === 'new' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-green/15 text-ctp-green uppercase tracking-wider">new</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-green/15 text-ctp-green uppercase tracking-wider">new</span>
                       )}
                       {entry.state === 'changed' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-yellow/15 text-ctp-yellow uppercase tracking-wider">changed</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-yellow/15 text-ctp-yellow uppercase tracking-wider">changed</span>
                       )}
                       {entry.state === 'removed' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-red/15 text-ctp-red uppercase tracking-wider">removed</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-red/15 text-ctp-red uppercase tracking-wider">removed</span>
                       )}
                     </span>
                   </label>
                 );
               })}
             </div>
-            <p className="text-[10px] text-ctp-subtext0/50 mt-1.5 italic">
+            <p className="text-xs text-ctp-subtext0/50 mt-1.5 italic">
               Configure per-MCP parameters in each agent&apos;s settings.
             </p>
           </div>

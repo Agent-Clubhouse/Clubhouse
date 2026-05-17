@@ -194,7 +194,7 @@ function RemoteProjectCard({ project, agents, satelliteId, agentIcons, detailedS
           {statusDots.map((d) => (
             <span
               key={d.label}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-0 text-[10px] text-ctp-subtext1"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-0 text-xs text-ctp-subtext1"
               title={`${d.count} ${d.label}`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${d.color} ${d.pulse ? 'animate-pulse' : ''}`} />
@@ -381,7 +381,7 @@ export function SatelliteDashboard({ activeHostId }: SatelliteDashboardProps) {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold text-ctp-text">{satelliteName}</h1>
-              <span className="text-[10px] font-medium text-ctp-peach bg-ctp-peach/10 px-2 py-0.5 rounded-full">
+              <span className="text-xs font-medium text-ctp-peach bg-ctp-peach/10 px-2 py-0.5 rounded-full">
                 Remote
               </span>
             </div>

@@ -58,7 +58,7 @@ function ToggleButton({ label, active, onClick, title }: {
   title: string;
 }) {
   return React.createElement('button', {
-    className: `px-1 py-0 text-[10px] font-mono rounded border transition-colors ${
+    className: `px-1 py-0 text-xs font-mono rounded border transition-colors ${
       active
         ? 'bg-surface-1 border-ctp-accent text-ctp-accent'
         : 'bg-transparent border-surface-0 text-ctp-subtext0 hover:text-ctp-text hover:border-surface-1'
@@ -114,7 +114,7 @@ function FileResultGroup({ result, onMatchClick }: {
         title: result.filePath,
       }, result.filePath),
       React.createElement('span', {
-        className: 'text-[10px] text-ctp-subtext0 flex-shrink-0 ml-1',
+        className: 'text-xs text-ctp-subtext0 flex-shrink-0 ml-1',
       }, String(result.matches.length)),
     ),
 
@@ -127,10 +127,10 @@ function FileResultGroup({ result, onMatchClick }: {
           onClick: () => onMatchClick(result.filePath, match.line),
         },
           React.createElement('span', {
-            className: 'text-ctp-subtext0 flex-shrink-0 w-8 text-right font-mono text-[10px]',
+            className: 'text-ctp-subtext0 flex-shrink-0 w-8 text-right font-mono text-xs',
           }, String(match.line)),
           React.createElement('span', {
-            className: 'truncate font-mono text-[10px] leading-4',
+            className: 'truncate font-mono text-xs leading-4',
           },
             React.createElement(HighlightedLine, {
               lineContent: match.lineContent,
@@ -142,7 +142,7 @@ function FileResultGroup({ result, onMatchClick }: {
       ),
       result.matches.length > 100
         ? React.createElement('div', {
-            className: 'px-2 py-0.5 text-[10px] text-ctp-subtext0 italic',
+            className: 'px-2 py-0.5 text-xs text-ctp-subtext0 italic',
           }, `... and ${result.matches.length - 100} more matches`)
         : null,
     ),
@@ -316,7 +316,7 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
         }),
         React.createElement('div', { className: 'flex-1' }),
         React.createElement('button', {
-          className: `text-[10px] px-1 rounded transition-colors ${
+          className: `text-xs px-1 rounded transition-colors ${
             showFilters
               ? 'text-ctp-accent'
               : 'text-ctp-subtext0 hover:text-ctp-text'
@@ -332,14 +332,14 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
       },
         React.createElement('input', {
           type: 'text',
-          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text focus-ring placeholder:text-ctp-subtext0 transition-colors',
+          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-xs text-ctp-text focus-ring placeholder:text-ctp-subtext0 transition-colors',
           placeholder: 'Include (e.g. src/**/*.ts)',
           value: includePattern,
           onChange: (e: React.ChangeEvent<HTMLInputElement>) => setIncludePattern(e.target.value),
         }),
         React.createElement('input', {
           type: 'text',
-          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text focus-ring placeholder:text-ctp-subtext0 transition-colors',
+          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-xs text-ctp-text focus-ring placeholder:text-ctp-subtext0 transition-colors',
           placeholder: 'Exclude (e.g. dist,*.min.js)',
           value: excludePattern,
           onChange: (e: React.ChangeEvent<HTMLInputElement>) => setExcludePattern(e.target.value),
@@ -349,7 +349,7 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
 
     // Status line
     (results || searching) && React.createElement('div', {
-      className: 'flex items-center gap-1 px-2 py-0.5 text-[10px] text-ctp-subtext0 border-b border-surface-0 flex-shrink-0',
+      className: 'flex items-center gap-1 px-2 py-0.5 text-xs text-ctp-subtext0 border-b border-surface-0 flex-shrink-0',
     },
       searching
         ? React.createElement(React.Fragment, null, SpinnerIcon, ' Searching...')

@@ -27,7 +27,7 @@ export function AnnexUnsupportedPlaceholder({ widgetType, reason }: AnnexUnsuppo
         <div className="text-xs font-medium text-ctp-subtext1">
           {widgetType} unavailable over Annex
         </div>
-        <div className="text-[10px] text-ctp-overlay0 max-w-[200px]">
+        <div className="text-xs text-ctp-overlay0 max-w-[200px]">
           {reason || 'This widget type cannot be viewed over a remote connection.'}
         </div>
       </div>

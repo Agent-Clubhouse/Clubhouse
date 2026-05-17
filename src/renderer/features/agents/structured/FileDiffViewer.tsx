@@ -38,7 +38,7 @@ export function FileDiffViewer({ diff, defaultExpanded = false }: Props) {
       >
         <ChangeTypeBadge type={diff.changeType} />
         <span className="text-xs font-mono text-ctp-text truncate">{diff.path}</span>
-        <span className="ml-auto flex items-center gap-1.5 text-[10px] tabular-nums">
+        <span className="ml-auto flex items-center gap-1.5 text-xs tabular-nums">
           {stats.added > 0 && <span className="text-ctp-green">+{stats.added}</span>}
           {stats.removed > 0 && <span className="text-ctp-red">-{stats.removed}</span>}
         </span>
@@ -91,7 +91,7 @@ function ChangeTypeBadge({ type }: { type: FileDiff['changeType'] }) {
   }[type];
 
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded ${color}`}>{label}</span>
+    <span className={`text-xs px-1.5 py-0.5 rounded ${color}`}>{label}</span>
   );
 }
 
