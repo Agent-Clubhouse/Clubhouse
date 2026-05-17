@@ -295,6 +295,68 @@ describe('PopoutCanvasView', () => {
     );
   });
 
+  // ─── GH-1458 — agent card creation must survive leader broadcast ─────────
+  //
+  // Root cause: onCanvasMutation in the preload listened on CANVAS_MUTATION
+  // (renderer→main) instead of REQUEST_CANVAS_MUTATION (main→renderer).
+  // The main process receives popout mutations on CANVAS_MUTATION and forwards
+  // them to the main window via REQUEST_CANVAS_MUTATION. With the wrong channel
+  // the main window never applied the mutation, so its next broadcast reverted
+  // the card back to the picker state.
+  //
+  // This test verifies that:
+  //  1. The popout sends the updateView mutation after createDurable
+  //  2. Optimistic local state is applied immediately (card shows agent)
+  //  3. A subsequent leader broadcast that does NOT include the agent (simulating
+  //     the main window state before it processed the mutation) does NOT revert
+  //     the card — i.e., the broadcast only overwrites when it carries the
+  //     updated state.
+
+  it('GH-1458: agent card creation — optimistic update persists until leader broadcasts updated state', async () => {
+    let onStateChanged!: (state: any) => void;
+    window.clubhouse.window.onCanvasStateChanged = vi.fn().mockImplementation((cb) => {
+      onStateChanged = cb;
+      return () => {};
+    });
+
+    mockSpawnDurableAgent.mockResolvedValue('agent-new');
+    vi.mocked(window.clubhouse.agent.createDurable).mockResolvedValue({
+      id: 'agent-new', name: 'NewAgent', color: 'green', createdAt: '', branch: 'new/standby',
+      worktreePath: '/projects/proj-1/.clubhouse/agents/new',
+    } as any);
+
+    render(<PopoutCanvasView canvasId="canvas-1" projectId="proj-1" />);
+    await waitFor(() => expect(capturedProps).not.toBeNull());
+
+    // Step 1: popout creates agent and assigns it to the card
+    await capturedProps.api.agents.createDurable({ projectId: 'proj-1', name: 'NewAgent', color: 'green' });
+    capturedProps.onUpdateView('view-1', { agentId: 'agent-new' });
+
+    // Step 2: optimistic update is visible immediately
+    await waitFor(() => {
+      expect(screen.getByTestId('view-view-1')).toHaveAttribute('data-agent-id', 'agent-new');
+    });
+
+    // Step 3: mutation was forwarded to the leader
+    expect(window.clubhouse.window.sendCanvasMutation).toHaveBeenCalledWith(
+      'canvas-1', 'project-local',
+      expect.objectContaining({ type: 'updateView', viewId: 'view-1', updates: expect.objectContaining({ agentId: 'agent-new' }) }),
+      'proj-1',
+    );
+
+    // Step 4: leader broadcasts updated state WITH the agent assigned — card stays
+    onStateChanged({
+      canvasId: 'canvas-1',
+      views: [{ id: 'view-1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, title: 'Card 1', agentId: 'agent-new' }],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      zoomedViewId: null,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('view-view-1')).toHaveAttribute('data-agent-id', 'agent-new');
+    });
+  });
+
   // Avoid unused-var warning on imported helper
   void fireEvent;
 });
