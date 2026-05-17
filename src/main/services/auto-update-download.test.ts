@@ -2,6 +2,9 @@
  * LB-SP-001: downloadFile must reject when fewer bytes are received than
  * the Content-Length header indicates (partial/truncated downloads).
  *
+ * LB-PS-2026-05-01: downloadFile must limit redirect hops and reject
+ * redirects to disallowed hosts (SSRF / DoS prevention).
+ *
  * Kept in a separate file because mocking the ESM `http` module requires
  * vi.mock() hoisting, which would interfere with the real-fs tests in
  * auto-update-service.test.ts (e.g. verifySHA256 writes real temp files).
@@ -120,5 +123,78 @@ describe('LB-SP-001: downloadFile partial-download detection', () => {
     fakeFile.emit('finish');
 
     await expect(promise).rejects.toThrow('Partial download: expected 100 bytes, received 70');
+  });
+});
+
+describe('LB-PS-2026-05-01: downloadFile redirect safety', () => {
+  function makeRedirectRes(location: string): FakeRes {
+    return Object.assign(new EventEmitter(), {
+      statusCode: 302,
+      headers: { location } as Record<string, string>,
+      pipe: vi.fn(),
+      resume: vi.fn(),
+    }) as FakeRes;
+  }
+
+  beforeEach(() => {
+    vi.mocked(http.get).mockReset();
+    vi.mocked(fs.createWriteStream).mockReset();
+    vi.mocked(fs.unlink).mockReset();
+  });
+
+  it('rejects after exceeding 5 redirect hops', async () => {
+    const fakeReq = Object.assign(new EventEmitter(), { destroy: vi.fn() }) as FakeReq;
+    // Every call returns a 302 redirect back to the same allowed host
+    vi.mocked(http.get).mockImplementation((_url: any, _opts: any, callback: any) => {
+      callback(makeRedirectRes('http://stclubhousereleases.blob.core.windows.net/file'));
+      return fakeReq as any;
+    });
+
+    await expect(
+      downloadFile('http://stclubhousereleases.blob.core.windows.net/file', '/tmp/out', undefined, vi.fn()),
+    ).rejects.toThrow('Too many redirects');
+  });
+
+  it('rejects on redirect to a disallowed host', async () => {
+    const fakeReq = Object.assign(new EventEmitter(), { destroy: vi.fn() }) as FakeReq;
+    vi.mocked(http.get).mockImplementationOnce((_url: any, _opts: any, callback: any) => {
+      callback(makeRedirectRes('http://evil.attacker.com/malware'));
+      return fakeReq as any;
+    });
+
+    await expect(
+      downloadFile('http://stclubhousereleases.blob.core.windows.net/file', '/tmp/out', undefined, vi.fn()),
+    ).rejects.toThrow('Redirect to disallowed host: evil.attacker.com');
+  });
+
+  it('follows up to 5 redirects to allowed hosts before resolving', async () => {
+    const fakeReq = Object.assign(new EventEmitter(), { destroy: vi.fn() }) as FakeReq;
+    const fakeFile = Object.assign(new EventEmitter(), { close: vi.fn() }) as FakeFile;
+    const finalRes = Object.assign(new EventEmitter(), {
+      statusCode: 200,
+      headers: {} as Record<string, string>,
+      pipe: vi.fn(),
+      resume: vi.fn(),
+    }) as FakeRes;
+
+    let callCount = 0;
+    vi.mocked(http.get).mockImplementation((_url: any, _opts: any, callback: any) => {
+      callCount++;
+      if (callCount <= 3) {
+        callback(makeRedirectRes('http://stclubhousereleases.blob.core.windows.net/file'));
+      } else {
+        callback(finalRes);
+      }
+      return fakeReq as any;
+    });
+
+    vi.mocked(fs.createWriteStream).mockReturnValue(fakeFile as any);
+
+    const promise = downloadFile('http://stclubhousereleases.blob.core.windows.net/file', '/tmp/out', undefined, vi.fn());
+    finalRes.emit('finish');
+    fakeFile.emit('finish');
+
+    await expect(promise).resolves.toBeUndefined();
+    expect(callCount).toBe(4); // 3 redirects + 1 final
   });
 });

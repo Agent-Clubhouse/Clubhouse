@@ -78,6 +78,16 @@ describe('applyWindowSecurityGuards', () => {
       const result = mockWin._triggerWindowOpen({ url: 'https://evil.com' });
       expect(result).toEqual({ action: 'deny' });
     });
+
+    it('allows allowed URLs (LB-IPC-2026-05-01)', () => {
+      const result = mockWin._triggerWindowOpen({ url: 'file:///app/index.html' });
+      expect(result).toEqual({ action: 'allow' });
+    });
+
+    it('allows localhost URLs', () => {
+      const result = mockWin._triggerWindowOpen({ url: 'http://localhost:3000/page' });
+      expect(result).toEqual({ action: 'allow' });
+    });
   });
 
   describe('will-attach-webview', () => {
