@@ -364,7 +364,7 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
           </button>
         </div>
         {hasDiff && (
-          <div className="flex items-center justify-between rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-300">
+          <div className="flex items-center justify-between rounded border border-ctp-yellow/30 bg-ctp-yellow/10 px-2 py-1.5 text-xs text-ctp-yellow">
             <span>
               {[
                 newCount && `${newCount} new`,
@@ -376,7 +376,7 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
             </span>
             <button
               onClick={handleAcknowledge}
-              className="text-xs text-amber-300 hover:text-amber-200 cursor-pointer"
+              className="text-xs text-ctp-yellow hover:text-ctp-yellow/70 cursor-pointer"
             >
               Got it
             </button>
@@ -408,13 +408,13 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
                     <span className="text-xs text-ctp-text truncate flex items-center gap-1.5">
                       {entry.name}
                       {entry.state === 'new' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 uppercase tracking-wider">new</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-green/15 text-ctp-green uppercase tracking-wider">new</span>
                       )}
                       {entry.state === 'changed' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 uppercase tracking-wider">changed</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-yellow/15 text-ctp-yellow uppercase tracking-wider">changed</span>
                       )}
                       {entry.state === 'removed' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 uppercase tracking-wider">removed</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-red/15 text-ctp-red uppercase tracking-wider">removed</span>
                       )}
                     </span>
                   </label>

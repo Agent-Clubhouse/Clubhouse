@@ -335,16 +335,18 @@ const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
     req.on('data', (chunk: Buffer) => {
-      if (body.length + chunk.length > MAX_BODY_SIZE) {
+      if (totalSize + chunk.length > MAX_BODY_SIZE) {
         req.destroy();
         reject(new Error('Body exceeded maximum allowed size'));
         return;
       }
-      body += chunk;
+      totalSize += chunk.length;
+      chunks.push(chunk);
     });
-    req.on('end', () => resolve(body));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString()));
     req.on('error', (err) => reject(err));
   });
 }
@@ -3256,6 +3258,7 @@ export function getWsAuthType(ws: WebSocket): WsAuthType {
 export const _testing = {
   get sessionTokens() { return sessionTokens; },
   isValidToken,
+  readBody,
   TOKEN_TTL_MS,
   SERVER_HEARTBEAT_INTERVAL_MS,
   wsAlive,
