@@ -308,6 +308,21 @@ describe('settings-store', () => {
       expect(result.name).toBe('default');
     });
 
+    it('concurrent updates both apply without losing either write (LB-PS-2026-05-02)', async () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ name: 'initial', count: 0, nested: { flag: false } }));
+
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+
+      await Promise.all([
+        store.update((current) => ({ ...current, name: 'from-update-1' })),
+        store.update((current) => ({ ...current, count: 99 })),
+      ]);
+
+      const final = store.get();
+      expect(final.name).toBe('from-update-1');
+      expect(final.count).toBe(99);
+    });
+
     it('sequential updates each see the result of the previous update', async () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ name: 'v1', count: 1, nested: { flag: false } }));
 

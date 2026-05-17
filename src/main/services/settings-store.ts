@@ -46,6 +46,8 @@ export function createSettingsStore<T>(
   let cachedSettings: T | null = null;
   let cacheLoaded = false;
   let pendingWrite: Promise<void> = Promise.resolve();
+  // Serializes concurrent update() calls so each read sees the prior write's result.
+  let updateLock: Promise<unknown> = Promise.resolve();
 
   function parseSettings(raw: string): T {
     const merged = {
@@ -106,9 +108,13 @@ export function createSettingsStore<T>(
       return queueWrite(cachedSettings);
     },
     update(fn: (current: T) => T): Promise<T> {
-      const current = store.get();
-      const updated = fn(current);
-      return store.save(updated).then(() => cloneSettings(updated));
+      const result = updateLock.catch(() => {}).then((): Promise<T> => {
+        const current = store.get();
+        const updated = fn(current);
+        return store.save(updated).then(() => cloneSettings(updated));
+      });
+      updateLock = result;
+      return result;
     },
   };
 
@@ -116,6 +122,7 @@ export function createSettingsStore<T>(
     cachedSettings = null;
     cacheLoaded = false;
     pendingWrite = Promise.resolve();
+    updateLock = Promise.resolve();
   });
 
   return store;
