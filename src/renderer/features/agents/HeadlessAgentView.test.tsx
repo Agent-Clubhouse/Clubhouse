@@ -1,4 +1,4 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HeadlessAgentView, MAX_FEED_ITEMS } from './HeadlessAgentView';
 import { useAgentStore } from '../../stores/agentStore';
@@ -417,5 +417,32 @@ describe('HeadlessAgentView', () => {
     // Advance time — should NOT change because agent is stopped
     act(() => { vi.advanceTimersByTime(5000); });
     expect(screen.getByText('1m 0s')).toBeInTheDocument();
+  });
+
+  it('clicking Stop Agent shows confirm dialog without calling killAgent', () => {
+    const mockKillAgent = vi.fn();
+    useAgentStore.setState({ killAgent: mockKillAgent });
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    fireEvent.click(screen.getByTestId('stop-agent-button'));
+    expect(screen.getByText(`Kill ${headlessAgent.name}?`)).toBeInTheDocument();
+    expect(mockKillAgent).not.toHaveBeenCalled();
+  });
+
+  it('cancelling kill confirm dialog does not call killAgent', () => {
+    const mockKillAgent = vi.fn();
+    useAgentStore.setState({ killAgent: mockKillAgent });
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    fireEvent.click(screen.getByTestId('stop-agent-button'));
+    fireEvent.click(screen.getByTestId('confirm-destructive-cancel'));
+    expect(mockKillAgent).not.toHaveBeenCalled();
+  });
+
+  it('confirming kill dialog calls killAgent with agent id', () => {
+    const mockKillAgent = vi.fn();
+    useAgentStore.setState({ killAgent: mockKillAgent });
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    fireEvent.click(screen.getByTestId('stop-agent-button'));
+    fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+    expect(mockKillAgent).toHaveBeenCalledWith(headlessAgent.id);
   });
 });
