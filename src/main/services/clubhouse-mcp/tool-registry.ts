@@ -34,6 +34,39 @@ const globalTools = new Map<string, {
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
 }>();
 
+/** Maximum length for wire instruction strings before truncation. */
+const WIRE_INSTRUCTION_MAX_LENGTH = 500;
+
+/**
+ * Patterns that could be used to inject system prompt overrides via wire instructions.
+ * Matches common jailbreak / override sequences.
+ */
+const PROMPT_INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|context)/gi,
+  /<\s*system\s*>/gi,
+  /<\/\s*system\s*>/gi,
+  /\n{2,}[-=]{3,}/g,       // double-newline + horizontal rule (common delimiter attack)
+  /\[\s*system\s*\]/gi,
+  /\bACT\s+AS\b/gi,
+  /\bDAN\b/gi,
+  /\bJAILBREAK\b/gi,
+];
+
+/**
+ * Sanitize a wire instruction string to prevent prompt injection.
+ * Strips injection patterns and enforces a maximum length.
+ */
+export function sanitizeWireInstruction(instruction: string): string {
+  let sanitized = instruction;
+  for (const pattern of PROMPT_INJECTION_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '[removed]');
+  }
+  if (sanitized.length > WIRE_INSTRUCTION_MAX_LENGTH) {
+    sanitized = sanitized.slice(0, WIRE_INSTRUCTION_MAX_LENGTH);
+  }
+  return sanitized;
+}
+
 /**
  * Register a tool template for a target kind.
  * When an agent is bound to a target of this kind, a tool will be generated
@@ -50,7 +83,26 @@ export function registerToolTemplate(
     templates = [];
     toolTemplates.set(targetKind, templates);
   }
+  if (templates.some(t => t.nameSuffix === nameSuffix)) {
+    throw new Error(`Duplicate tool template nameSuffix "${nameSuffix}" for targetKind "${targetKind}"`);
+  }
   templates.push({ nameSuffix, definition, handler });
+}
+
+/**
+ * Unregister a specific tool template (reverse of registerToolTemplate).
+ * Used when plugin tools are removed or re-registered.
+ */
+export function unregisterToolTemplate(targetKind: BindingTargetKind, nameSuffix: string): void {
+  const templates = toolTemplates.get(targetKind);
+  if (!templates) return;
+  const idx = templates.findIndex(t => t.nameSuffix === nameSuffix);
+  if (idx !== -1) {
+    templates.splice(idx, 1);
+    if (templates.length === 0) {
+      toolTemplates.delete(targetKind);
+    }
+  }
 }
 
 /**
@@ -170,9 +222,10 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       if (binding.instructions) {
         const specificInstruction = binding.instructions[template.nameSuffix];
         const globalInstruction = binding.instructions['*'];
-        const instruction = specificInstruction || globalInstruction;
-        if (instruction) {
-          description += `\n\nWIRE INSTRUCTIONS: ${instruction}`;
+        const raw = specificInstruction || globalInstruction;
+        if (raw) {
+          const safe = sanitizeWireInstruction(raw);
+          description += `\n\n[WIRE INSTRUCTIONS — user-supplied]\n${safe}\n[END WIRE INSTRUCTIONS]`;
         }
       }
 

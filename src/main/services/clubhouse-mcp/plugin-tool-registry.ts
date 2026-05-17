@@ -8,7 +8,7 @@
  */
 
 import type { McpToolDefinition, McpToolResult } from './types';
-import { registerToolTemplate, sanitizeId } from './tool-registry';
+import { registerToolTemplate, unregisterToolTemplate, sanitizeId } from './tool-registry';
 import { appLog } from '../log-service';
 import { IPC } from '../../../shared/ipc-channels';
 
@@ -85,6 +85,9 @@ export function registerPluginTools(
 export function removePluginTools(pluginId: string): void {
   const existing = pluginTools.get(pluginId);
   if (existing) {
+    for (const entry of existing) {
+      unregisterToolTemplate('plugin', entry.name);
+    }
     pluginTools.delete(pluginId);
     appLog('core:mcp', 'info', `Plugin ${pluginId} removed ${existing.length} MCP tools`);
   }
