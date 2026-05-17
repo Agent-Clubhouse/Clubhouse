@@ -309,11 +309,11 @@ export async function switchMode(window: Page, mode: 'interactive' | 'headless' 
  * Wait for any feed content (action card or assistant message) to appear.
  */
 export async function waitForFeedContent(window: Page, timeout = 60_000): Promise<void> {
-  // Filter out "Processing…" placeholders — they are pushed immediately when a
-  // message is sent and replaced once the stub/agent responds. Resolving on a
-  // placeholder causes downstream textContent() reads to race the 300 ms stub.
+  // Require a feed item with real content — no "Processing…" placeholder and
+  // at least one non-whitespace character. An empty element passes hasNotText
+  // but still races the 300 ms stub timer, so hasText: /\S/ is also required.
   const feedContent = window.locator(
     '[data-testid="assistant-action-card"], [data-testid="assistant-message"]',
-  ).filter({ hasNotText: 'Processing' }).first();
+  ).filter({ hasNotText: 'Processing' }).filter({ hasText: /\S/ }).first();
   await feedContent.waitFor({ state: 'visible', timeout });
 }
