@@ -1832,12 +1832,13 @@ describe('annex-server', () => {
       );
 
       // When the last mTLS client disconnects and locked=false is broadcast,
-      // sessionPaused must also be reset
-      const unlockBlock = source.slice(
-        source.indexOf('if (!hasMtlsClient)'),
-        source.indexOf('locked: false,') + 100,
-      );
-      expect(unlockBlock).toContain('sessionPaused = false');
+      // sessionPaused must also be reset. After LB-OA-2026-05-01 the unlock
+      // logic lives in releaseMtlsLockIfLastClient() — verify it resets state.
+      const fnStart = source.indexOf('function releaseMtlsLockIfLastClient');
+      const fnEnd = source.indexOf('\n}', fnStart) + 2;
+      const fnBody = source.slice(fnStart, fnEnd);
+      expect(fnBody).toContain('sessionPaused = false');
+      expect(fnBody).toContain('sessionPauseOwner = null');
     });
   });
 
@@ -2533,51 +2534,33 @@ describe('annex-server', () => {
     });
   });
 
-  // ── LB-OA-2026-05-01: sessionPauseOwner CAS guard ──────────────────────
-  describe('LB-OA-2026-05-01: sessionPauseOwner CAS guard prevents lock theft', () => {
-    it('first mTLS controller claims the lock and second does not overwrite it', async () => {
+  // ── LB-OA-2026-05-01: mTLS lock release — only on last client disconnect ─
+  describe('LB-OA-2026-05-01: mTLS lock persists until all controllers disconnect', () => {
+    it('does not release lock when a controller disconnects but another mTLS client remains', async () => {
       const { _testing } = await import('./annex-server');
-      const { tryClaimSessionPauseOwner, resetSessionPauseOwner } = _testing;
+      _testing.resetSessionPauseOwner();
+      _testing.setSessionPauseOwner('fp-controller-b');
 
-      // Start clean
-      resetSessionPauseOwner();
-      expect(_testing.sessionPauseOwner).toBeNull();
+      // Controller B (owner) disconnects — but Controller A is still connected
+      const released = _testing.releaseMtlsLockIfLastClient(true /* hasMtlsClient */);
 
-      // First controller connects — should claim the lock
-      const claimed1 = tryClaimSessionPauseOwner('fp-controller-1');
-      expect(claimed1).toBe(true);
-      expect(_testing.sessionPauseOwner).toBe('fp-controller-1');
+      // Pre-fix: else-if (isLockOwner) branch released the lock here. Post-fix: no release.
+      expect(released).toBe(false);
+      expect(_testing.sessionPauseOwner).toBe('fp-controller-b');
 
-      // Second controller connects — CAS must reject (owner already set)
-      const claimed2 = tryClaimSessionPauseOwner('fp-controller-2');
-      expect(claimed2).toBe(false);
-      // Owner must remain the first controller, not be overwritten
-      expect(_testing.sessionPauseOwner).toBe('fp-controller-1');
-
-      // Cleanup
-      resetSessionPauseOwner();
+      _testing.resetSessionPauseOwner();
     });
 
-    it('lock becomes claimable again after owner is released', async () => {
+    it('releases lock when the last mTLS controller disconnects', async () => {
       const { _testing } = await import('./annex-server');
-      const { tryClaimSessionPauseOwner, resetSessionPauseOwner } = _testing;
+      _testing.resetSessionPauseOwner();
+      _testing.setSessionPauseOwner('fp-controller-a');
 
-      resetSessionPauseOwner();
+      // Controller A disconnects — no other mTLS clients remain
+      const released = _testing.releaseMtlsLockIfLastClient(false /* hasMtlsClient */);
 
-      // Controller 1 claims
-      tryClaimSessionPauseOwner('fp-controller-1');
-      expect(_testing.sessionPauseOwner).toBe('fp-controller-1');
-
-      // Controller 1 disconnects — owner is cleared
-      resetSessionPauseOwner();
+      expect(released).toBe(true);
       expect(_testing.sessionPauseOwner).toBeNull();
-
-      // Controller 2 can now claim
-      const claimed = tryClaimSessionPauseOwner('fp-controller-2');
-      expect(claimed).toBe(true);
-      expect(_testing.sessionPauseOwner).toBe('fp-controller-2');
-
-      resetSessionPauseOwner();
     });
   });
 });
