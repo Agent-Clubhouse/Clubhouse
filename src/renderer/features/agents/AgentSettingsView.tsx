@@ -990,7 +990,7 @@ export function AgentSettingsView({ agent }: Props) {
                     checked={freeAgentMode}
                     onChange={(e) => handleFreeAgentModeChange(e.target.checked)}
                     disabled={isRunning || !(capabilities?.permissions ?? false)}
-                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
+                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-ctp-error"
                   />
                   <span className="text-sm text-ctp-text">Free Agent Mode</span>
                 </label>
@@ -1358,7 +1358,7 @@ export function AgentSettingsView({ agent }: Props) {
                       checked={qadFreeAgentMode}
                       onChange={(e) => { setQadFreeAgentMode(e.target.checked); setQadDirty(true); }}
                       disabled={isRunning || !(capabilities?.permissions ?? false)}
-                      className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
+                      className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-ctp-error"
                     />
                     <span className="text-xs text-ctp-subtext0">Free Agent Mode by default</span>
                   </label>
