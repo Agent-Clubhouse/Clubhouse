@@ -9,7 +9,7 @@
  *   the main window via IPC — no local state modification.
  * - Periodic reconciliation (every 30 seconds) catches any missed events.
  */
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { CanvasWorkspace } from '../../plugins/builtin/canvas/CanvasWorkspace';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from '../../plugins/builtin/canvas/canvas-types';
 import { clampViewport } from '../../plugins/builtin/canvas/canvas-operations';
@@ -188,6 +188,8 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   const popoutWireDefinitions = useMcpBindingStore((s) => s.bindings);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Guard against mutations firing before the initial IPC snapshot resolves.
+  const initializedRef = useRef(false);
 
   const loadProjects = useProjectStore((s) => s.loadProjects);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
@@ -227,6 +229,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
       } else {
         setError(`Canvas "${canvasId}" not found`);
       }
+      initializedRef.current = true;
       setLoading(false);
     })().catch((err) => {
       if (!cancelled) {
@@ -270,7 +273,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   // ── Mutation forwarding via IPC ───────────────────────────────────
 
   const sendMutation = useCallback((mutation: CanvasMutation) => {
-    if (!canvasId) return;
+    if (!canvasId || !initializedRef.current) return;
     window.clubhouse.window.sendCanvasMutation(canvasId, scope, mutation, projectId);
   }, [canvasId, scope, projectId]);
 

@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- TODO(TC-CRIT-03): structural readFileSync tests pending behavioral conversion */
 /**
  * Tests for M-PLUG-01: CanvasWorkspace decomposition.
  *

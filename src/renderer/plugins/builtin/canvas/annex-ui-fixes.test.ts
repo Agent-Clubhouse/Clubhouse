@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- TODO(TC-CRIT-03): structural readFileSync tests pending behavioral conversion */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';

@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- TODO(TC-CRIT-03): structural readFileSync tests pending behavioral conversion */
 /**
  * Automated check that test/setup-renderer.ts stays in sync with src/preload/index.ts.
  *

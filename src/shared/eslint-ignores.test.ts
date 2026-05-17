@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- TODO(TC-CRIT-03): structural readFileSync tests pending behavioral conversion */
 /**
  * Validates that eslint.config.mjs ignores generated output directories,
  * including those inside agent worktrees (.clubhouse/agents/**).

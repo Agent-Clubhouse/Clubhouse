@@ -3269,6 +3269,9 @@ export const _testing = {
   TOKEN_TTL_MS,
   SERVER_HEARTBEAT_INTERVAL_MS,
   wsAlive,
+  wsAuthTypes,
+  wsPeerFingerprints,
+  get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },
   get trackedQuickAgents() { return trackedQuickAgents; },
 };

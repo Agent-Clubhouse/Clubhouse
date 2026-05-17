@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- TODO(TC-CRIT-03): structural readFileSync tests pending behavioral conversion */
 /**
  * IPC Channel Sync Test — structural test verifying that every channel defined
  * in ipc-channels.ts is wired up in both handler registration (main process)

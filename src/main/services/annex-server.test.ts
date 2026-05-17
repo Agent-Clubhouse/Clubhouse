@@ -1794,6 +1794,7 @@ describe('annex-server', () => {
     it('notifySessionPause tracks sessionPaused state (structural)', () => {
       const fs = require('fs');
       const path = require('path');
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       const source = fs.readFileSync(
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
@@ -1810,6 +1811,7 @@ describe('annex-server', () => {
     it('buildSnapshot includes sessionPaused in payload (structural)', () => {
       const fs = require('fs');
       const path = require('path');
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       const source = fs.readFileSync(
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
@@ -1826,6 +1828,7 @@ describe('annex-server', () => {
     it('resets sessionPaused when last mTLS controller disconnects (structural)', () => {
       const fs = require('fs');
       const path = require('path');
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       const source = fs.readFileSync(
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
@@ -1848,6 +1851,7 @@ describe('annex-server', () => {
       // This structural test reads the source to confirm the fix is in place.
       const fs = require('fs');
       const path = require('path');
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       const source = fs.readFileSync(
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
@@ -1873,6 +1877,7 @@ describe('annex-server', () => {
     it('canvas:mutation handler calls broadcastSnapshotRefresh on success (structural)', () => {
       const fs = require('fs');
       const path = require('path');
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       const source = fs.readFileSync(
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
@@ -1903,6 +1908,7 @@ describe('annex-server', () => {
     beforeAll(() => {
       const fs = require('fs');
       const path = require('path');
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       source = fs.readFileSync(
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
@@ -2004,6 +2010,7 @@ describe('annex-server', () => {
 
   describe('theme broadcast includes terminal colors', () => {
     it('snapshot includes terminalColors field', async () => {
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       const source = await import('fs').then(fs => fs.readFileSync(
         path.join(__dirname, 'annex-server.ts'), 'utf-8',
       ));
@@ -2012,6 +2019,7 @@ describe('annex-server', () => {
     });
 
     it('broadcastThemeChanged includes terminalColors', async () => {
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       const source = await import('fs').then(fs => fs.readFileSync(
         path.join(__dirname, 'annex-server.ts'), 'utf-8',
       ));
@@ -2026,6 +2034,7 @@ describe('annex-server', () => {
 
     beforeAll(() => {
       const fs = require('fs');
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       source = fs.readFileSync(
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
@@ -2148,6 +2157,7 @@ describe('annex-server', () => {
       // handles wireDefinitions. Full behavioral tests exist in
       // remote-canvas-wire-sync.test.ts (5 tests covering restore, non-overwrite,
       // and replacement). This ensures the contract is stable.
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       const source = await import('fs').then(fs => fs.readFileSync(
         path.join(__dirname, '../../renderer/plugins/builtin/canvas/canvas-store.ts'), 'utf-8',
       ));
@@ -2248,6 +2258,7 @@ describe('annex-server', () => {
     beforeAll(() => {
       const fs = require('fs');
       const path = require('path');
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       source = fs.readFileSync(
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
@@ -2291,6 +2302,7 @@ describe('annex-server', () => {
     it('handleWakeAgentWs calls waitForAgentRunning before broadcastSnapshotRefresh', () => {
       const fs = require('fs');
       const path = require('path');
+      // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion
       const source = fs.readFileSync(
         path.resolve(__dirname, 'annex-server.ts'),
         'utf-8',
@@ -2407,47 +2419,83 @@ describe('annex-server', () => {
 
   // --- LB-AN-006: Lock overlay timing fix ---
   describe('mTLS lock state broadcast ordering', () => {
-    it('broadcasts LOCK_STATE_CHANGED before awaiting buildSnapshot in connection handler', () => {
-      const fs = require('fs');
-      const path = require('path');
-      const source = fs.readFileSync(
-        path.resolve(__dirname, 'annex-server.ts'),
-        'utf-8',
+    it('broadcasts LOCK_STATE_CHANGED before buildSnapshot resolves (LB-AN-006 behavioral)', async () => {
+      // Regression: LOCK_STATE_CHANGED must fire synchronously at connection start,
+      // before the async buildSnapshot() I/O completes, so the satellite UI locks
+      // immediately without waiting for snapshot data.
+      const { _testing } = await import('./annex-server');
+      await startAndPair();
+
+      // Stall buildSnapshot's first async step so we can observe the race window
+      let resolveProjectList!: (v: any[]) => void;
+      vi.mocked(projectStore.list).mockReturnValueOnce(
+        new Promise<any[]>((r) => { resolveProjectList = r; }),
       );
 
-      // Find the wss.on('connection', ...) handler body
-      const connStart = source.indexOf("wss.on('connection', async (ws) => {");
-      expect(connStart).toBeGreaterThan(-1);
+      const { EventEmitter } = await import('events');
+      const mockWs = Object.assign(new EventEmitter(), {
+        send: vi.fn(),
+        ping: vi.fn(),
+        readyState: 1, // WebSocket.OPEN
+      }) as any;
 
-      // Locate the positions of the critical operations within the handler
-      const lockBroadcastPos = source.indexOf('broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {', connStart);
-      const buildSnapshotPos = source.indexOf('await buildSnapshot()', connStart);
+      // Pre-mark this WS as mTLS-authenticated (normally done by handleUpgrade)
+      _testing.wsAuthTypes.set(mockWs, 'mtls');
+      _testing.wsPeerFingerprints.set(mockWs, 'aa:bb:cc:dd');
+      mockBroadcastToAllWindows.mockClear();
 
-      expect(lockBroadcastPos).toBeGreaterThan(-1);
-      expect(buildSnapshotPos).toBeGreaterThan(-1);
+      // Emit 'connection' — triggers the wss.on('connection', ...) handler
+      _testing.wss!.emit('connection', mockWs);
 
-      // LOCK_STATE_CHANGED must be broadcast BEFORE buildSnapshot is awaited
-      expect(lockBroadcastPos).toBeLessThan(buildSnapshotPos);
-    });
+      // LOCK_STATE_CHANGED fires synchronously (before any await in the handler)
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+        'annex:lock-state-changed',
+        expect.objectContaining({ locked: true }),
+      );
+      // buildSnapshot hasn't resolved yet — snapshot message not sent
+      expect(mockWs.send).not.toHaveBeenCalled();
 
-    it('registers ws.on(close) before awaiting buildSnapshot in connection handler', () => {
-      const fs = require('fs');
-      const path = require('path');
-      const source = fs.readFileSync(
-        path.resolve(__dirname, 'annex-server.ts'),
-        'utf-8',
+      // Let buildSnapshot complete (cleanup)
+      resolveProjectList([]);
+      await new Promise((r) => setTimeout(r, 20));
+    }, 10_000);
+
+    it('registers ws.on(close) before buildSnapshot resolves (LB-AN-006 behavioral)', async () => {
+      // Regression: the close handler must be registered synchronously (before any
+      // await) so a disconnect during buildSnapshot I/O still releases the lock.
+      const { _testing } = await import('./annex-server');
+      await startAndPair();
+
+      let resolveProjectList!: (v: any[]) => void;
+      vi.mocked(projectStore.list).mockReturnValueOnce(
+        new Promise<any[]>((r) => { resolveProjectList = r; }),
       );
 
-      const connStart = source.indexOf("wss.on('connection', async (ws) => {");
-      const closeHandlerPos = source.indexOf("ws.on('close',", connStart);
-      const buildSnapshotPos = source.indexOf('await buildSnapshot()', connStart);
+      const { EventEmitter } = await import('events');
+      const registeredEvents: string[] = [];
+      const base = new EventEmitter() as any;
+      const origOn = base.on.bind(base);
+      const mockWs = Object.assign(base, {
+        send: vi.fn(),
+        ping: vi.fn(),
+        readyState: 1,
+        on: vi.fn().mockImplementation((event: string, handler: (...args: any[]) => void) => {
+          registeredEvents.push(event);
+          origOn(event, handler);
+          return mockWs;
+        }),
+      });
 
-      expect(closeHandlerPos).toBeGreaterThan(-1);
-      expect(buildSnapshotPos).toBeGreaterThan(-1);
+      _testing.wsAuthTypes.set(mockWs, 'bearer');
+      _testing.wss!.emit('connection', mockWs);
 
-      // close handler must be registered BEFORE buildSnapshot is awaited
-      expect(closeHandlerPos).toBeLessThan(buildSnapshotPos);
-    });
+      // close handler registered synchronously — before buildSnapshot awaits
+      expect(registeredEvents).toContain('close');
+      expect(mockWs.send).not.toHaveBeenCalled(); // buildSnapshot still pending
+
+      resolveProjectList([]);
+      await new Promise((r) => setTimeout(r, 20));
+    }, 10_000);
   });
 
   // --- SEC-11: Session token expiry ---
