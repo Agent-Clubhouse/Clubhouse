@@ -540,7 +540,7 @@ function AgentRow({ agent, project, navigateToAgent }: {
         id: 'stop',
         label: 'Stop',
         icon: <span>{'\u25A0'}</span>,
-        hoverColor: 'hover:text-yellow-400',
+        hoverColor: 'hover:text-status-warning',
         handler: handleStop,
       });
     } else if (isDurable && (agent.status === 'sleeping' || agent.status === 'error')) {
@@ -585,7 +585,7 @@ function AgentRow({ agent, project, navigateToAgent }: {
 
   // Inline buttons: primary action + settings
   const primaryAction = agent.status === 'running'
-    ? { id: 'stop', title: 'Stop', icon: <span>{'\u25A0'}</span>, hoverColor: 'hover:text-yellow-400', handler: handleStop }
+    ? { id: 'stop', title: 'Stop', icon: <span>{'\u25A0'}</span>, hoverColor: 'hover:text-status-warning', handler: handleStop }
     : isDurable && (agent.status === 'sleeping' || agent.status === 'error')
       ? { id: 'wake', title: 'Wake', icon: <span>{'\u25B6'}</span>, hoverColor: 'hover:text-ctp-success', handler: handleWake }
       : null;
