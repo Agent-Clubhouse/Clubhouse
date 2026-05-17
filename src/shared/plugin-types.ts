@@ -635,7 +635,7 @@ export interface EventsAPI {
 }
 
 export interface SettingsAPI {
-  get<T = unknown>(key: string): T | undefined;
+  get<T = unknown>(key: string, guard?: (v: unknown) => v is T): T | undefined;
   getAll(): Record<string, unknown>;
   set(key: string, value: unknown): void;
   onChange(callback: (key: string, value: unknown) => void): Disposable;

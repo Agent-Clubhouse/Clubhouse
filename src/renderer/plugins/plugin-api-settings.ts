@@ -26,9 +26,14 @@ export function createSettingsAPI(ctx: PluginContext): SettingsAPI {
   ctx.subscriptions.push({ dispose: unsub });
 
   return {
-    get<T = unknown>(key: string): T | undefined {
+    get<T = unknown>(key: string, guard?: (v: unknown) => v is T): T | undefined {
       const allSettings = usePluginStore.getState().pluginSettings[settingsKey];
-      return allSettings?.[key] as T | undefined;
+      const value = allSettings?.[key];
+      if (value === undefined) return undefined;
+      if (guard !== undefined && !guard(value)) {
+        throw new Error(`[plugin:${ctx.pluginId}] settings.get("${key}"): stored value failed type validation`);
+      }
+      return value as T | undefined;
     },
     getAll(): Record<string, unknown> {
       return usePluginStore.getState().pluginSettings[settingsKey] || {};

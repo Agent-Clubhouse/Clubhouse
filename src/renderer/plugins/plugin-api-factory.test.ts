@@ -595,6 +595,45 @@ describe('plugin-api-factory', () => {
 
       expect(cb).toHaveBeenCalledWith('color', 'red');
     });
+
+    // CQ-TS-01: settings.get with type guard validation
+    describe('CQ-TS-01: get with type guard', () => {
+      it('returns value when no guard is provided (backward-compatible)', () => {
+        usePluginStore.setState({
+          pluginSettings: { 'proj-1:test-plugin': { count: 42 } },
+        });
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        expect(api.settings.get('count')).toBe(42);
+      });
+
+      it('returns value when guard passes', () => {
+        usePluginStore.setState({
+          pluginSettings: { 'proj-1:test-plugin': { config: { enabled: true } } },
+        });
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const isObj = (v: unknown): v is { enabled: boolean } =>
+          typeof v === 'object' && v !== null && 'enabled' in v;
+        expect(api.settings.get('config', isObj)).toEqual({ enabled: true });
+      });
+
+      it('CQ-TS-01 regression: throws with plugin name when guard fails instead of returning mistyped value', () => {
+        usePluginStore.setState({
+          pluginSettings: { 'proj-1:test-plugin': { config: 'not-an-object' } },
+        });
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const isObj = (v: unknown): v is { enabled: boolean } =>
+          typeof v === 'object' && v !== null;
+        expect(() => api.settings.get('config', isObj)).toThrow(
+          '[plugin:test-plugin] settings.get("config"): stored value failed type validation',
+        );
+      });
+
+      it('returns undefined without throwing when value is absent, even with a guard', () => {
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const isObj = (v: unknown): v is object => typeof v === 'object' && v !== null;
+        expect(api.settings.get('missing', isObj)).toBeUndefined();
+      });
+    });
   });
 
   // ── UIAPI ─────────────────────────────────────────────────────────────

@@ -291,9 +291,16 @@ interface TrackedQuickAgent {
   parentAgentId: string | null;
   projectId: string;
   spawnedAt: number;
+  timerId?: ReturnType<typeof setTimeout>;
 }
 
 const trackedQuickAgents = new Map<string, TrackedQuickAgent>();
+
+function setTrackedQuickAgent(agentId: string, entry: TrackedQuickAgent): void {
+  const existing = trackedQuickAgents.get(agentId);
+  if (existing?.timerId !== undefined) clearTimeout(existing.timerId);
+  trackedQuickAgents.set(agentId, entry);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -821,7 +828,7 @@ async function handleSpawnQuickAgent(
     projectId,
     spawnedAt: Date.now(),
   };
-  trackedQuickAgents.set(agentId, tracked);
+  setTrackedQuickAgent(agentId, tracked);
 
   // Broadcast agent:spawned
   broadcastAndBuffer('agent:spawned', {
@@ -2353,7 +2360,7 @@ async function handleSpawnQuickAgentWs(
     model: model || null, orchestrator, freeAgentMode,
     parentAgentId: parentAgentId || null, projectId: project.id, spawnedAt: Date.now(),
   };
-  trackedQuickAgents.set(agentId, tracked);
+  setTrackedQuickAgent(agentId, tracked);
 
   broadcastAndBuffer('agent:spawned', {
     id: agentId, name, kind: 'quick', status: 'starting', prompt,
@@ -2682,7 +2689,7 @@ export function start(): void {
         projectId: tracked.projectId,
         parentAgentId: tracked.parentAgentId,
       });
-      setTimeout(() => { trackedQuickAgents.delete(agentId); }, 60_000);
+      tracked.timerId = setTimeout(() => { trackedQuickAgents.delete(agentId); }, 60_000);
     }
   });
 
@@ -3263,4 +3270,5 @@ export const _testing = {
   SERVER_HEARTBEAT_INTERVAL_MS,
   wsAlive,
   get heartbeatInterval() { return heartbeatInterval; },
+  get trackedQuickAgents() { return trackedQuickAgents; },
 };
