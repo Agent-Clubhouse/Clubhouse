@@ -72,15 +72,18 @@ describe('preload bridge sync check', () => {
   it('onHubMutation and onCanvasMutation listen on correct IPC channels', () => {
     const preloadSource = fs.readFileSync(preloadPath, 'utf-8');
 
-    // onHubMutation must use HUB_MUTATION (not REQUEST_HUB_MUTATION)
+    // onHubMutation still uses HUB_MUTATION (renderer→main); fix tracked separately
     const hubMutationMatch = preloadSource.match(/onHubMutation[\s\S]*?ipcRenderer\.on\(IPC\.WINDOW\.(\w+)/);
     expect(hubMutationMatch).not.toBeNull();
     expect(hubMutationMatch![1]).toBe('HUB_MUTATION');
 
-    // onCanvasMutation must use CANVAS_MUTATION (not REQUEST_CANVAS_MUTATION)
+    // GH-1458 fix: onCanvasMutation must use REQUEST_CANVAS_MUTATION (main→renderer).
+    // The main process receives popout mutations on CANVAS_MUTATION and forwards them
+    // to the main window renderer via REQUEST_CANVAS_MUTATION — so the preload listener
+    // in the main window must subscribe to the REQUEST_* channel.
     const canvasMutationMatch = preloadSource.match(/onCanvasMutation[\s\S]*?ipcRenderer\.on\(IPC\.WINDOW\.(\w+)/);
     expect(canvasMutationMatch).not.toBeNull();
-    expect(canvasMutationMatch![1]).toBe('CANVAS_MUTATION');
+    expect(canvasMutationMatch![1]).toBe('REQUEST_CANVAS_MUTATION');
   });
 
   it('setup-renderer.ts mock covers all preload API methods', () => {
