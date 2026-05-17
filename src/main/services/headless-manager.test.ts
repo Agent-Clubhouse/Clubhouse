@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 const mockWriteStream = {
   write: vi.fn(),
   end: vi.fn(),
+  on: vi.fn(),
 };
 const mockCreateReadStream = vi.hoisted(() => vi.fn());
 vi.mock('fs', async () => {
@@ -277,6 +278,25 @@ describe('headless-manager', () => {
         IPC.AGENT.HOOK_EVENT,
         'test-agent',
         expect.objectContaining({ kind: 'post_tool' })
+      );
+    });
+
+    it('registers an error handler on the log stream and logs via appLog on stream error', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Find the error handler registered on the write stream
+      const errorCall = mockWriteStream.on.mock.calls.find(([event]) => event === 'error');
+      expect(errorCall).toBeDefined();
+      const errorHandler = errorCall![1] as (err: Error) => void;
+
+      // Invoke the handler with a fake error
+      errorHandler(new Error('ENOSPC: no space left on device'));
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:headless',
+        'error',
+        'transcript stream error',
+        expect.objectContaining({ meta: expect.objectContaining({ agentId: 'test-agent' }) }),
       );
     });
   });

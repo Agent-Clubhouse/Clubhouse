@@ -92,6 +92,11 @@ export async function launchAssistantInstance(): Promise<AssistantInstance> {
   const window = await findRendererWindow(electronApp);
   await window.waitForLoadState('load');
 
+  // Install stub IPC handlers in CI where no real orchestrator is available
+  if (process.env.CI) {
+    await installAssistantStub(electronApp);
+  }
+
   // Skip onboarding
   await window.evaluate(() => {
     localStorage.setItem('clubhouse_onboarding', JSON.stringify({ completed: true, cohort: null }));
@@ -107,6 +112,100 @@ export async function launchAssistantInstance(): Promise<AssistantInstance> {
   }
 
   return { electronApp, window, userDataDir };
+}
+
+/**
+ * Install stub IPC handlers that replace the real orchestrator with canned
+ * responses. Call this immediately after launching the app in CI so tests
+ * 10-15 can run without a live orchestrator binary.
+ *
+ * Overrides (no fs I/O — responses stored in a closure Map):
+ * - agent:check-orchestrator → always available
+ * - agent:read-transcript    → returns canned JSONL from in-memory Map
+ * - assistant:spawn          → stores response (headless) or emits structured events
+ * - assistant:send-followup  → stores response, returns { agentId }
+ * - assistant:send-structured-followup → emits structured events, returns { agentId }
+ */
+async function installAssistantStub(
+  electronApp: Awaited<ReturnType<typeof electron.launch>>,
+): Promise<void> {
+  // NOTE: electronApp.evaluate() runs in a V8 sandbox that has NO access to
+  // CommonJS require() or ESM import(). Only JS built-ins and the objects
+  // passed as parameters are available. All state must be kept in closure.
+  await electronApp.evaluate(({ ipcMain, BrowserWindow }) => {
+    // In-memory transcript store — keyed by agentId, avoids any fs I/O.
+    const transcripts = new Map<string, string>();
+
+    function broadcast(channel: string, ...args: unknown[]): void {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send(channel, ...args);
+      }
+    }
+
+    // Always report an orchestrator as available so startAgent proceeds
+    ipcMain.removeHandler('agent:check-orchestrator');
+    ipcMain.handle('agent:check-orchestrator', () => ({ available: true }));
+
+    // Intercept transcript reads — return the canned response stored in memory
+    ipcMain.removeHandler('agent:read-transcript');
+    ipcMain.handle('agent:read-transcript', (_event: Electron.IpcMainInvokeEvent, agentId: unknown) => {
+      const text = transcripts.get(agentId as string) ?? '';
+      return [
+        JSON.stringify({ type: 'text', text }),
+        JSON.stringify({ type: 'result', result: text }),
+      ].join('\n') + '\n';
+    });
+
+    // Stub assistant:spawn — handles headless and structured modes
+    ipcMain.removeHandler('assistant:spawn');
+    ipcMain.handle('assistant:spawn', (_event: Electron.IpcMainInvokeEvent, params: Record<string, unknown>) => {
+      const agentId = params['agentId'] as string;
+      const executionMode = params['executionMode'] as string;
+      const responseText = 'Hello! I can help you with your Clubhouse projects, canvases, agents, and workflows.';
+
+      if (executionMode === 'structured') {
+        setTimeout(() => {
+          broadcast('agent:structured-event', agentId, { type: 'text_delta', timestamp: Date.now(), data: { text: responseText } });
+          broadcast('agent:structured-event', agentId, { type: 'text_done', timestamp: Date.now(), data: { text: responseText } });
+          broadcast('agent:structured-event', agentId, { type: 'end', timestamp: Date.now(), data: { reason: 'done' } });
+        }, 300);
+      } else if (executionMode === 'headless') {
+        transcripts.set(agentId, responseText);
+        setTimeout(() => broadcast('assistant:result', { agentId, exitCode: 0 }), 300);
+      }
+
+      return { success: true };
+    });
+
+    // Stub assistant:send-followup — headless conversational follow-ups
+    ipcMain.removeHandler('assistant:send-followup');
+    ipcMain.handle('assistant:send-followup', (_event: Electron.IpcMainInvokeEvent, params: Record<string, unknown>) => {
+      const message = (params['message'] as string) || '';
+      const agentId = `stub_followup_${Date.now()}`;
+      const responseText = /my name/i.test(message)
+        ? 'Your name is TestUser.'
+        : 'I understand your question.';
+
+      transcripts.set(agentId, responseText);
+      setTimeout(() => broadcast('assistant:result', { agentId, exitCode: 0 }), 300);
+      return { agentId };
+    });
+
+    // Stub assistant:send-structured-followup — structured follow-ups
+    ipcMain.removeHandler('assistant:send-structured-followup');
+    ipcMain.handle('assistant:send-structured-followup', () => {
+      const agentId = `stub_structured_followup_${Date.now()}`;
+      const responseText = 'I understand your follow-up.';
+
+      setTimeout(() => {
+        broadcast('agent:structured-event', agentId, { type: 'text_delta', timestamp: Date.now(), data: { text: responseText } });
+        broadcast('agent:structured-event', agentId, { type: 'text_done', timestamp: Date.now(), data: { text: responseText } });
+        broadcast('agent:structured-event', agentId, { type: 'end', timestamp: Date.now(), data: { reason: 'done' } });
+      }, 300);
+
+      return { agentId };
+    });
+  });
 }
 
 /**
@@ -210,8 +309,11 @@ export async function switchMode(window: Page, mode: 'interactive' | 'headless' 
  * Wait for any feed content (action card or assistant message) to appear.
  */
 export async function waitForFeedContent(window: Page, timeout = 60_000): Promise<void> {
+  // Require a feed item with real content — no "Processing…" placeholder and
+  // at least one non-whitespace character. An empty element passes hasNotText
+  // but still races the 300 ms stub timer, so hasText: /\S/ is also required.
   const feedContent = window.locator(
     '[data-testid="assistant-action-card"], [data-testid="assistant-message"]',
-  ).first();
+  ).filter({ hasNotText: 'Processing' }).filter({ hasText: /\S/ }).first();
   await feedContent.waitFor({ state: 'visible', timeout });
 }

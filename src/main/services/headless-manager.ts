@@ -523,6 +523,9 @@ export async function spawnHeadless(
   sessions.set(agentId, session);
 
   const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });
+  logStream.on('error', (err: Error) => {
+    appLog('core:headless', 'error', 'transcript stream error', { meta: { agentId, error: err.message } });
+  });
   const io: IOState = { stdoutBytes: 0, stderrChunks: [], stderrChunkSizes: [], stderrBytes: 0 };
 
   setupTranscriptPipeline(session, logStream, agentId);
