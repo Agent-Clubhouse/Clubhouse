@@ -25,7 +25,7 @@ export function applyWindowSecurityGuards(win: BrowserWindow): void {
       appLog('core:security', 'warn', `Blocked window.open to external URL: ${url}`);
       return { action: 'deny' };
     }
-    return { action: 'deny' };
+    return { action: 'allow' };
   });
 
   // Restrict webview creation to safe URL schemes

@@ -323,6 +323,13 @@ function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
   });
 }
 
+const MAX_REDIRECTS = 5;
+
+// Hosts that downloadFile is permitted to follow redirects to.
+const ALLOWED_DOWNLOAD_HOSTS = new Set([
+  'stclubhousereleases.blob.core.windows.net',
+]);
+
 export function downloadFile(
   url: string,
   destPath: string,
@@ -330,51 +337,76 @@ export function downloadFile(
   onProgress: (percent: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const mod = url.startsWith('https') ? https : http;
-    const req = mod.get(url, { timeout: 300_000 }, (res) => {
-      // Follow redirects (Azure CDN may redirect)
-      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        downloadFile(res.headers.location, destPath, expectedSize, onProgress)
-          .then(resolve)
-          .catch(reject);
-        res.resume();
-        return;
-      }
-      if (res.statusCode !== 200) {
-        reject(new Error(`Download failed: HTTP ${res.statusCode}`));
-        res.resume();
-        return;
-      }
+    let hopsLeft = MAX_REDIRECTS;
 
-      const totalSize = expectedSize || parseInt(res.headers['content-length'] || '0', 10);
-      let downloadedBytes = 0;
-      const file = fs.createWriteStream(destPath);
+    function attempt(currentUrl: string): void {
+      const mod = currentUrl.startsWith('https') ? https : http;
+      const req = mod.get(currentUrl, { timeout: 300_000 }, (res) => {
+        // Follow redirects (Azure CDN may redirect)
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
 
-      res.on('data', (chunk: Buffer) => {
-        downloadedBytes += chunk.length;
-        if (totalSize > 0) {
-          onProgress(Math.min(99, Math.round((downloadedBytes / totalSize) * 100)));
-        }
-      });
+          if (hopsLeft <= 0) {
+            reject(new Error('Too many redirects'));
+            return;
+          }
 
-      res.pipe(file);
-      file.on('finish', () => {
-        file.close();
-        if (totalSize > 0 && downloadedBytes !== totalSize) {
-          fs.unlink(destPath, () => {});
-          reject(new Error(`Partial download: expected ${totalSize} bytes, received ${downloadedBytes}`));
+          let redirectUrl: URL;
+          try {
+            redirectUrl = new URL(res.headers.location, currentUrl);
+          } catch {
+            reject(new Error(`Invalid redirect URL: ${res.headers.location}`));
+            return;
+          }
+
+          if (!ALLOWED_DOWNLOAD_HOSTS.has(redirectUrl.hostname)) {
+            reject(new Error(`Redirect to disallowed host: ${redirectUrl.hostname}`));
+            return;
+          }
+
+          hopsLeft--;
+          attempt(redirectUrl.href);
           return;
         }
-        onProgress(100);
-        resolve();
+
+        if (res.statusCode !== 200) {
+          reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          res.resume();
+          return;
+        }
+
+        const totalSize = expectedSize || parseInt(res.headers['content-length'] || '0', 10);
+        let downloadedBytes = 0;
+        const file = fs.createWriteStream(destPath);
+
+        res.on('data', (chunk: Buffer) => {
+          downloadedBytes += chunk.length;
+          if (totalSize > 0) {
+            onProgress(Math.min(99, Math.round((downloadedBytes / totalSize) * 100)));
+          }
+        });
+
+        res.pipe(file);
+        file.on('finish', () => {
+          file.close();
+          if (totalSize > 0 && downloadedBytes !== totalSize) {
+            fs.unlink(destPath, () => {});
+            reject(new Error(`Partial download: expected ${totalSize} bytes, received ${downloadedBytes}`));
+            return;
+          }
+          onProgress(100);
+          resolve();
+        });
+        file.on('error', (err) => {
+          fs.unlink(destPath, () => {});
+          reject(err);
+        });
       });
-      file.on('error', (err) => {
-        fs.unlink(destPath, () => {});
-        reject(err);
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Download timed out')); });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Download timed out')); });
+    }
+
+    attempt(url);
   });
 }
 
@@ -1233,14 +1265,18 @@ export async function startPeriodicChecks(): Promise<void> {
 
   // Check on startup (delayed to let the app settle)
   setTimeout(() => {
-    checkForUpdates().catch(() => {});
+    checkForUpdates().catch((err: unknown) => {
+      appLog('update:check', 'error', `Startup update check failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
   }, 30_000); // 30 second delay after startup
 
   // Periodic checks
   checkTimer = setInterval(() => {
     const currentSettings = getSettings();
     if (currentSettings.autoUpdate) {
-      checkForUpdates().catch(() => {});
+      checkForUpdates().catch((err: unknown) => {
+        appLog('update:check', 'error', `Periodic update check failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     }
   }, CHECK_INTERVAL_MS);
 }
