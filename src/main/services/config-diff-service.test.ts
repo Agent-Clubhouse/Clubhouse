@@ -522,4 +522,49 @@ describe('config-diff-service', () => {
       expect(result.message).toContain('not found');
     });
   });
+
+  describe('NF-003: TOML-format agents (Codex) produce no false diff items', () => {
+    const tomlConventions = {
+      ...testConventions,
+      settingsFormat: 'toml' as const,
+    };
+
+    const tomlProvider: OrchestratorProvider = {
+      ...mockProvider,
+      id: 'codex-cli',
+      conventions: tomlConventions,
+    };
+
+    it('diffPermissions produces no items for TOML agents even when project defaults have permissions', async () => {
+      mockFileSystem({
+        'agents.json': agentsJsonWith(testAgent),
+        'settings.json': settingsJsonWith({
+          permissions: { allow: ['Read(@@Path**)', 'Bash(npm test:*)'] },
+        }),
+        // No settings.local.json — agent uses TOML config, not JSON
+      });
+      vi.mocked(mockProvider.readInstructions).mockReturnValue('');
+
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: tomlProvider });
+
+      const permItems = result.items.filter((i) => i.category === 'permissions-allow' || i.category === 'permissions-deny');
+      expect(permItems).toHaveLength(0);
+    });
+
+    it('diffMcp produces no items for TOML agents even when project defaults have MCP servers', async () => {
+      mockFileSystem({
+        'agents.json': agentsJsonWith(testAgent),
+        'settings.json': settingsJsonWith({
+          mcpJson: JSON.stringify({ mcpServers: { 'my-server': { command: 'node', args: ['server.js'] } } }),
+        }),
+        // No .mcp.json — agent uses TOML config, not JSON
+      });
+      vi.mocked(mockProvider.readInstructions).mockReturnValue('');
+
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: tomlProvider });
+
+      const mcpItems = result.items.filter((i) => i.category === 'mcp');
+      expect(mcpItems).toHaveLength(0);
+    });
+  });
 });

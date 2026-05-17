@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { screenToCanvas, canvasToScreen } from './canvas-operations';
+import { screenToCanvas, canvasToScreen, clampMenuPosition } from './canvas-operations';
 
 /**
  * These tests verify that context menu positioning coordinates are correctly
@@ -153,5 +153,45 @@ describe('Context menu coordinate correctness', () => {
       expect(canvasPos.x).toBe(300); // (350-100)/0.5 - 200 = 500 - 200 = 300
       expect(canvasPos.y).toBe(240); // (250-80)/0.5 - 100 = 340 - 100 = 240
     });
+  });
+});
+
+describe('GH-1454: clampMenuPosition — view context menu stays within viewport', () => {
+  const viewportWidth = 1280;
+  const viewportHeight = 800;
+
+  it('returns unchanged position when menu fits within viewport', () => {
+    const result = clampMenuPosition(100, 100, 180, 90, viewportWidth, viewportHeight);
+    expect(result.x).toBe(100);
+    expect(result.y).toBe(100);
+  });
+
+  it('clamps x when menu would overflow the right edge', () => {
+    // click at x=1200, menu is 180px wide + 8px padding → needs 1388 > 1280 → overflow
+    const result = clampMenuPosition(1200, 100, 180, 90, viewportWidth, viewportHeight);
+    expect(result.x).toBeLessThan(1200);
+    expect(result.x + 180 + 8).toBeLessThanOrEqual(viewportWidth);
+  });
+
+  it('clamps y when menu would overflow the bottom edge', () => {
+    // click at y=750, menu is 90px tall + 8px padding → needs 848 > 800 → overflow
+    const result = clampMenuPosition(100, 750, 180, 90, viewportWidth, viewportHeight);
+    expect(result.y).toBeLessThan(750);
+    expect(result.y + 90 + 8).toBeLessThanOrEqual(viewportHeight);
+  });
+
+  it('clamps both axes when menu overflows corner', () => {
+    const result = clampMenuPosition(1250, 780, 180, 90, viewportWidth, viewportHeight);
+    expect(result.x + 180 + 8).toBeLessThanOrEqual(viewportWidth);
+    expect(result.y + 90 + 8).toBeLessThanOrEqual(viewportHeight);
+  });
+
+  it('positions menu at (clientX, clientY) when well within bounds', () => {
+    // Clicking near the center — no clamping should occur
+    const clientX = 640;
+    const clientY = 400;
+    const result = clampMenuPosition(clientX, clientY, 180, 90, viewportWidth, viewportHeight);
+    expect(result.x).toBe(clientX);
+    expect(result.y).toBe(clientY);
   });
 });

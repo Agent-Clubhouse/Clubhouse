@@ -12,11 +12,12 @@ describe('canvas main', () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it('activate registers add-agent-view command', () => {
+  it('activate registers add-agent-view command (app scope)', () => {
     const ctx = createMockContext({ pluginId: 'canvas', scope: 'dual' });
     const registerFn = vi.fn(() => ({ dispose: () => {} }));
     const api = createMockAPI({
       commands: { register: registerFn, execute: async () => {}, registerWithHotkey: () => ({ dispose: () => {} }), getBinding: () => null, clearBinding: () => {} },
+      context: { mode: 'app', projectId: undefined, projectPath: undefined },
     });
 
     canvasModule.activate(ctx, api);
@@ -27,9 +28,11 @@ describe('canvas main', () => {
     expect(registerFn).toHaveBeenCalledWith('reset-viewport', expect.any(Function));
   });
 
-  it('activate pushes disposables to ctx.subscriptions', () => {
+  it('activate pushes disposables to ctx.subscriptions (app scope)', () => {
     const ctx = createMockContext({ pluginId: 'canvas', scope: 'dual' });
-    const api = createMockAPI();
+    const api = createMockAPI({
+      context: { mode: 'app', projectId: undefined, projectPath: undefined },
+    });
 
     canvasModule.activate(ctx, api);
 
@@ -261,5 +264,57 @@ describe('canvas main', () => {
 
     // Store B should be unaffected
     expect(storeB.getState().views).toHaveLength(0);
+  });
+
+  describe('GH-1453: dual-scope activation does not register commands twice', () => {
+    it('app-scope activation registers commands', () => {
+      const ctx = createMockContext({ pluginId: 'canvas', scope: 'dual' });
+      const registerFn = vi.fn(() => ({ dispose: vi.fn() }));
+      const api = createMockAPI({
+        commands: { register: registerFn, execute: async () => {}, registerWithHotkey: () => ({ dispose: () => {} }), getBinding: () => null, clearBinding: () => {} },
+        context: { mode: 'app', projectId: undefined, projectPath: undefined },
+      });
+
+      canvasModule.activate(ctx, api);
+
+      expect(registerFn).toHaveBeenCalled();
+      expect(registerFn).toHaveBeenCalledWith('add-agent-view', expect.any(Function));
+    });
+
+    it('project-scope activation does NOT register commands', () => {
+      const ctx = createMockContext({ pluginId: 'canvas', scope: 'dual', projectId: 'proj-123' });
+      const registerFn = vi.fn(() => ({ dispose: vi.fn() }));
+      const api = createMockAPI({
+        commands: { register: registerFn, execute: async () => {}, registerWithHotkey: () => ({ dispose: () => {} }), getBinding: () => null, clearBinding: () => {} },
+        context: { mode: 'project', projectId: 'proj-123', projectPath: '/tmp/proj-123' },
+      });
+
+      canvasModule.activate(ctx, api);
+
+      expect(registerFn).not.toHaveBeenCalled();
+    });
+
+    it('dual activation emits no overwrite warning', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const appCtx = createMockContext({ pluginId: 'canvas', scope: 'dual' });
+      const appApi = createMockAPI({
+        context: { mode: 'app', projectId: undefined, projectPath: undefined },
+      });
+      canvasModule.activate(appCtx, appApi);
+
+      const projCtx = createMockContext({ pluginId: 'canvas', scope: 'dual', projectId: 'proj-456' });
+      const projApi = createMockAPI({
+        context: { mode: 'project', projectId: 'proj-456', projectPath: '/tmp/proj-456' },
+      });
+      canvasModule.activate(projCtx, projApi);
+
+      const overwriteWarnings = warnSpy.mock.calls.filter(
+        (args) => String(args[0]).includes('Overwriting existing command'),
+      );
+      expect(overwriteWarnings).toHaveLength(0);
+
+      warnSpy.mockRestore();
+    });
   });
 });

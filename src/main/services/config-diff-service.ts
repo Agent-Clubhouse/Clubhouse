@@ -191,6 +191,10 @@ async function diffPermissions(
   conv: OrchestratorProvider['conventions'],
   ctx: ReturnType<typeof buildWildcardContext>,
 ): Promise<void> {
+  // Non-JSON settings files (e.g. TOML for Codex) store permissions in a format
+  // we cannot compare against JSON defaults — skip diff to avoid false "removed" entries.
+  if (conv.settingsFormat && conv.settingsFormat !== 'json') return;
+
   const resolvedAllow = new Set(
     (defaultPermissions?.allow || []).map((r) => replaceWildcards(r, ctx)),
   );
@@ -266,6 +270,10 @@ async function diffMcp(
   conv: OrchestratorProvider['conventions'],
   ctx: ReturnType<typeof buildWildcardContext>,
 ): Promise<void> {
+  // Non-JSON MCP config files (e.g. TOML for Codex) cannot be compared against
+  // JSON defaults — skip diff to avoid false "removed" entries.
+  if (conv.settingsFormat && conv.settingsFormat !== 'json') return;
+
   let defaultServers: Record<string, unknown> = {};
   if (defaultMcpJson) {
     try {
