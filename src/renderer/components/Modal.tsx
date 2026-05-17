@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Props {
   open: boolean;
@@ -24,7 +25,7 @@ export function Modal({ open, onClose, title, width = 'w-[360px]', backdrop = 'd
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className={`fixed inset-0 z-modal flex items-center justify-center ${backdrop === 'heavy' ? 'bg-black/70' : 'bg-black/50'}`}
       onClick={onClose}
@@ -52,6 +53,7 @@ export function Modal({ open, onClose, title, width = 'w-[360px]', backdrop = 'd
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

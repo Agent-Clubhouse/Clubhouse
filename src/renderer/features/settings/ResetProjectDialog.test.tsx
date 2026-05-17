@@ -76,8 +76,8 @@ describe('ResetProjectDialog', () => {
   });
 
   it('calls onCancel when backdrop is clicked', () => {
-    const { container } = render(<ResetProjectDialog {...defaultProps} />);
-    const backdrop = container.querySelector('.fixed.inset-0');
+    render(<ResetProjectDialog {...defaultProps} />);
+    const backdrop = document.querySelector('.fixed.inset-0');
     fireEvent.click(backdrop!);
     expect(defaultProps.onCancel).toHaveBeenCalled();
   });
