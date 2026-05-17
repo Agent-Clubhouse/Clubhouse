@@ -478,7 +478,18 @@ describe('CopilotCliProvider', () => {
       expect(written.hooks.userPromptSubmitted).toBeDefined();
     });
 
-    it('writes all 6 hook events', async () => {
+    // NF-001 regression: sessionEnd must be registered so GHCP agents signal "stopped"
+    it('NF-001: includes sessionEnd hook with 5s timeout', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
+      expect(written.hooks.sessionEnd).toBeDefined();
+      expect(written.hooks.sessionEnd[0].type).toBe('command');
+      expect(written.hooks.sessionEnd[0].timeoutSec).toBe(5);
+    });
+
+    it('writes all 7 hook events', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
@@ -489,8 +500,9 @@ describe('CopilotCliProvider', () => {
       expect(hookKeys).toContain('errorOccurred');
       expect(hookKeys).toContain('permissionRequest');
       expect(hookKeys).toContain('sessionStart');
+      expect(hookKeys).toContain('sessionEnd');
       expect(hookKeys).toContain('userPromptSubmitted');
-      expect(hookKeys).toHaveLength(6);
+      expect(hookKeys).toHaveLength(7);
     });
   });
 

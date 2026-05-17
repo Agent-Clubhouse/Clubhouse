@@ -86,9 +86,20 @@ export async function ensureGitignore(projectPath: string): Promise<void> {
 
 interface CacheEntry {
   agents: DurableAgentConfig[];
+  agentsById: Map<string, DurableAgentConfig>;
   dirty: boolean;
   flushTimer: ReturnType<typeof setTimeout> | null;
   pendingFlush: Promise<void> | null;
+}
+
+function buildAgentsById(agents: DurableAgentConfig[]): Map<string, DurableAgentConfig> {
+  return new Map(agents.map((a) => [a.id, a]));
+}
+
+/** Populate cache if needed, then return both the agents array and the O(1) ID index. */
+async function readAgentsEntry(projectPath: string): Promise<{ agents: DurableAgentConfig[]; agentsById: Map<string, DurableAgentConfig> }> {
+  const agents = await readAgents(projectPath);
+  return { agents, agentsById: configCache.get(projectPath)!.agentsById };
 }
 
 const configCache = new Map<string, CacheEntry>();
@@ -334,7 +345,7 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
   let entry = configCache.get(projectPath);
   if (!entry) {
     const agents = await readAgentsFromDisk(projectPath);
-    entry = { agents, dirty: false, flushTimer: null, pendingFlush: null };
+    entry = { agents, agentsById: buildAgentsById(agents), dirty: false, flushTimer: null, pendingFlush: null };
     configCache.set(projectPath, entry);
     appLog('core:agent-config', 'info', `Cache initialized with ${agents.length} agent(s)`, {
       meta: { projectPath, agentIds: agents.map((a) => a.id) },
@@ -346,7 +357,7 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
 async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
   let entry = configCache.get(projectPath);
   if (!entry) {
-    entry = { agents, dirty: true, flushTimer: null, pendingFlush: null };
+    entry = { agents, agentsById: buildAgentsById(agents), dirty: true, flushTimer: null, pendingFlush: null };
     configCache.set(projectPath, entry);
   } else {
     // Log when agent count decreases — this is the signal for data loss
@@ -363,6 +374,7 @@ async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): P
       });
     }
     entry.agents = agents;
+    entry.agentsById = buildAgentsById(agents);
   }
   entry.dirty = true;
   scheduleFlush(projectPath, entry);
@@ -465,8 +477,8 @@ export async function restoreFromBackup(projectPath: string): Promise<{ restored
 }
 
 export async function getDurableConfig(projectPath: string, agentId: string): Promise<DurableAgentConfig | null> {
-  const agents = await readAgents(projectPath);
-  return agents.find((a) => a.id === agentId) || null;
+  const { agentsById } = await readAgentsEntry(projectPath);
+  return agentsById.get(agentId) ?? null;
 }
 
 export async function updateDurableConfig(
@@ -474,8 +486,8 @@ export async function updateDurableConfig(
   agentId: string,
   updates: DurableConfigUpdates,
 ): Promise<void> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent) return;
   if (updates.quickAgentDefaults !== undefined) {
     agent.quickAgentDefaults = updates.quickAgentDefaults;
@@ -538,8 +550,8 @@ const MAX_SESSION_HISTORY = 50;
 
 /** Add or update a session entry in the agent's session history */
 export async function addSessionEntry(projectPath: string, agentId: string, entry: SessionInfo): Promise<void> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent) return;
 
   if (!agent.sessionHistory) {
@@ -575,8 +587,8 @@ export async function addSessionEntry(projectPath: string, agentId: string, entr
 
 /** Set or clear the friendly name for a session */
 export async function updateSessionName(projectPath: string, agentId: string, sessionId: string, friendlyName: string | null): Promise<void> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent?.sessionHistory) return;
 
   const session = agent.sessionHistory.find((s) => s.sessionId === sessionId);
@@ -750,8 +762,8 @@ export async function reorderDurable(projectPath: string, orderedIds: string[]):
 }
 
 export async function renameDurable(projectPath: string, agentId: string, newName: string): Promise<void> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent) return;
   agent.name = newName;
   await writeAgents(projectPath, agents);
@@ -762,8 +774,8 @@ export async function updateDurable(
   agentId: string,
   updates: { name?: string; color?: string; icon?: string | null; emoji?: string | null },
 ): Promise<void> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent) return;
   if (updates.name !== undefined) agent.name = updates.name;
   if (updates.color !== undefined) agent.color = updates.color;
@@ -787,8 +799,8 @@ export async function updateDurable(
 }
 
 export async function deleteDurable(projectPath: string, agentId: string): Promise<void> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent) return;
 
   // If no worktree, just unregister
@@ -867,8 +879,8 @@ function parseLogLine(line: string): GitLogEntry | null {
 }
 
 export async function getWorktreeStatus(projectPath: string, agentId: string): Promise<WorktreeStatus> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent) {
     return { isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
   }
@@ -923,8 +935,8 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
 }
 
 export async function deleteCommitAndPush(projectPath: string, agentId: string): Promise<DeleteResult> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
 
   const wt = agent.worktreePath;
@@ -965,8 +977,8 @@ export async function deleteCommitAndPush(projectPath: string, agentId: string):
 }
 
 export async function deleteWithCleanupBranch(projectPath: string, agentId: string): Promise<DeleteResult> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
 
   const wt = agent.worktreePath;
@@ -1017,8 +1029,8 @@ export async function deleteWithCleanupBranch(projectPath: string, agentId: stri
 }
 
 export async function deleteSaveAsPatch(projectPath: string, agentId: string, savePath: string): Promise<DeleteResult> {
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
 
   const wt = agent.worktreePath;
@@ -1128,8 +1140,8 @@ export async function saveAgentIcon(projectPath: string, agentId: string, dataUr
   await fsp.writeFile(dest, Buffer.from(base64, 'base64'));
 
   // Update agents.json
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (agent) {
     agent.icon = filename;
     await writeAgents(projectPath, agents);
@@ -1164,8 +1176,8 @@ export async function removeAgentIconFile(agentId: string): Promise<void> {
 /** Remove agent icon metadata and file. */
 export async function removeAgentIcon(projectPath: string, agentId: string): Promise<void> {
   await removeAgentIconFile(agentId);
-  const agents = await readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
   if (agent) {
     delete agent.icon;
     await writeAgents(projectPath, agents);

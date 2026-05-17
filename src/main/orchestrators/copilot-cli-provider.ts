@@ -243,6 +243,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       // PermissionRequest uses a long timeout to allow for remote approval via Annex
       permissionRequest: [{ type: 'command', bash: makeCurl('permissionRequest'), timeoutSec: 120 }],
       sessionStart: [{ type: 'command', bash: makeCurl('sessionStart'), timeoutSec: 5 }],
+      sessionEnd: [{ type: 'command', bash: makeCurl('sessionEnd'), timeoutSec: 5 }],
       userPromptSubmitted: [{ type: 'command', bash: makeCurl('userPromptSubmitted'), timeoutSec: 5 }],
     };
 
