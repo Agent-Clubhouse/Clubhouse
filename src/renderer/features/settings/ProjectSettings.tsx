@@ -11,6 +11,7 @@ import { computeCatalogDiff } from '../../../shared/wrapper-diff';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import type { LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../../shared/types';
 import { showConfirmDialog } from '../../plugins/PluginDialog';
+import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
 
 function NameAndPathSection({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
@@ -218,6 +219,7 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
   const [snapshot, setSnapshot] = useState<WrapperCatalogSnapshot | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const agents = useAgentStore((s) => s.agents);
   const addToast = useToastStore((s) => s.addToast);
@@ -357,12 +359,24 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
             )}
           </div>
           <button
-            onClick={handleRemoveWrapper}
-            className="text-xs text-ctp-subtext0 hover:text-ctp-error cursor-pointer transition-colors"
+            onClick={() => setConfirmRemove(true)}
+            className="flex items-center gap-1 text-xs text-ctp-error/70 hover:text-ctp-error cursor-pointer transition-colors"
+            data-testid="remove-wrapper-button"
           >
-            Remove
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
+            </svg>
+            Remove Wrapper
           </button>
         </div>
+        <ConfirmDestructiveAction
+          open={confirmRemove}
+          title="Remove Launch Wrapper?"
+          description="This will permanently remove: wrapper configuration, environment overrides, command arguments, and tool filters."
+          confirmLabel="Remove Wrapper"
+          onConfirm={() => { setConfirmRemove(false); void handleRemoveWrapper(); }}
+          onCancel={() => setConfirmRemove(false)}
+        />
         {hasDiff && (
           <div className="flex items-center justify-between rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-300">
             <span>

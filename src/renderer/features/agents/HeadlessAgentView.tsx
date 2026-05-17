@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Agent, AgentHookEvent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
+import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
 
 export const MAX_FEED_ITEMS = 200;
 const TRANSCRIPT_PAGE_SIZE = 100;
@@ -273,6 +274,7 @@ export function HeadlessAgentView({ agent }: Props) {
   const feedBufferRef = useRef<FeedItem[]>([]);
   const killAgent = useAgentStore((s) => s.killAgent);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
+  const [confirmKill, setConfirmKill] = useState(false);
 
   // Batch feed-item state updates: push to buffer ref (O(1)), flush to state
   // once per animation frame to avoid copying the full array on every event.
@@ -459,12 +461,21 @@ export function HeadlessAgentView({ agent }: Props) {
 
         {/* Stop button */}
         <button
-          onClick={() => killAgent(agent.id)}
+          onClick={() => setConfirmKill(true)}
           className="px-4 py-1.5 text-xs rounded-lg border border-ctp-error/30
             hover:bg-ctp-error/20 transition-colors cursor-pointer text-ctp-error"
+          data-testid="stop-agent-button"
         >
           Stop Agent
         </button>
+        <ConfirmDestructiveAction
+          open={confirmKill}
+          title={`Kill ${agent.name}?`}
+          description="This will immediately end the current session. Work in progress may be lost."
+          confirmLabel="Kill Agent"
+          onConfirm={() => { setConfirmKill(false); killAgent(agent.id); }}
+          onCancel={() => setConfirmKill(false)}
+        />
       </div>
     </div>
   );

@@ -680,7 +680,33 @@ describe('ProjectSettings', () => {
       });
     });
 
-    it('Remove clears wrapper, catalog, defaults, and snapshot', async () => {
+    it('clicking Remove Wrapper button shows confirm dialog without firing delete', async () => {
+      setupWrapperState({
+        wrapper: wrapperNoRefresh,
+        catalog: [],
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      const removeBtn = await screen.findByTestId('remove-wrapper-button');
+      fireEvent.click(removeBtn);
+      expect(screen.getByText('Remove Launch Wrapper?')).toBeInTheDocument();
+      expect(window.clubhouse.project.writeLaunchWrapper).not.toHaveBeenCalled();
+    });
+
+    it('cancelling the confirm dialog does not remove wrapper', async () => {
+      setupWrapperState({
+        wrapper: wrapperNoRefresh,
+        catalog: [],
+      });
+      resetStores();
+      render(<ProjectSettings />);
+      const removeBtn = await screen.findByTestId('remove-wrapper-button');
+      fireEvent.click(removeBtn);
+      fireEvent.click(screen.getByTestId('confirm-destructive-cancel'));
+      expect(window.clubhouse.project.writeLaunchWrapper).not.toHaveBeenCalled();
+    });
+
+    it('confirming remove dialog clears wrapper, catalog, defaults, and snapshot', async () => {
       setupWrapperState({
         wrapper: wrapperNoRefresh,
         catalog: [{ id: 'a', name: 'A', description: 'a' }],
@@ -688,9 +714,11 @@ describe('ProjectSettings', () => {
       });
       resetStores();
       render(<ProjectSettings />);
-      // Two "Remove" buttons exist (one for icon if image set; here only the wrapper one).
-      const removeBtn = await screen.findByText('Remove');
+      const removeBtn = await screen.findByTestId('remove-wrapper-button');
       fireEvent.click(removeBtn);
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+      });
       await waitFor(() => {
         expect(window.clubhouse.project.writeLaunchWrapper).toHaveBeenCalledWith(
           '/home/user/my-project',
