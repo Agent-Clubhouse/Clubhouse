@@ -12,7 +12,7 @@ import { ReadOnlyMonacoEditor } from '../canvas/ReadOnlyMonacoEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { ResizableSidebar } from '../canvas/ResizableSidebar';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
-import { EmptyState } from '../../../../components/EmptyState';
+import { EmptyState } from '../../../components/EmptyState';
 
 function isMarkdownFile(path: string): boolean {
   const lower = path.toLowerCase();

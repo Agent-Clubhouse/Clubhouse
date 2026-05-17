@@ -9,7 +9,7 @@ import type { ProtocolSettings } from './url-validation';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
-import { EmptyState } from '../../../../components/EmptyState';
+import { EmptyState } from '../../../components/EmptyState';
 
 function projectColor(name: string): string {
   let hash = 0;

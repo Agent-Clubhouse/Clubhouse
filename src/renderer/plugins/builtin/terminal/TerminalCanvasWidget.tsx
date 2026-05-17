@@ -10,7 +10,7 @@ import type { TerminalIO } from '../../../features/terminal/ShellTerminal';
 import { ShellTerminal } from '../../../features/terminal/ShellTerminal';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { satellitePtyDataBus, satellitePtyExitBus } from '../../../stores/annexClientStore';
-import { EmptyState } from '../../../../components/EmptyState';
+import { EmptyState } from '../../../components/EmptyState';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
 

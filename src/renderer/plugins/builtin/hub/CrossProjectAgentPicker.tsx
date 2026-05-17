@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { PluginAPI, AgentInfo, ProjectInfo, ModelOption } from '../../../../shared/plugin-types';
-import { EmptyState } from '../../../../components/EmptyState';
+import { EmptyState } from '../../../components/EmptyState';
 
 interface CrossProjectAgentPickerProps {
   api: PluginAPI;

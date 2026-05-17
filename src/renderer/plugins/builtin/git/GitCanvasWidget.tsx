@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
 import type { GitInfo, GitStatusFile } from '../../../../shared/types';
 import { createGitOps } from './remote-git';
-import { Spinner } from '../../../../components/Spinner';
+import { Spinner } from '../../../components/Spinner';
 
 const GIT_POLL_INTERVAL_MS = 3000;
 

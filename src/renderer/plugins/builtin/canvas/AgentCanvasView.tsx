@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canvas-types';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
-import { EmptyState } from '../../../../components/EmptyState';
+import { EmptyState } from '../../../components/EmptyState';
 
 interface AgentCanvasViewProps {
   view: AgentCanvasViewType;

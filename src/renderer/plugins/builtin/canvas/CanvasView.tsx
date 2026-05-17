@@ -11,7 +11,7 @@ import { usePluginStore } from '../../plugin-store';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { LinkDropdown } from './LinkDropdown';
-import { Spinner } from '../../../../components/Spinner';
+import { Spinner } from '../../../components/Spinner';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
