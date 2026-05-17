@@ -7,6 +7,9 @@ import { validateBlueprint } from './blueprint-validation';
 // Public API
 // ---------------------------------------------------------------------------
 
+/** The highest schemaVersion this code fully understands. */
+export const BLUEPRINT_SCHEMA_VERSION = 1;
+
 /**
  * Serialize a BlueprintManifest to deterministic JSON (sorted keys, 2-space
  * indent). The output is stable across runs for the same input, which makes
@@ -20,6 +23,9 @@ export function serializeBlueprint(manifest: BlueprintManifest): string {
  * Parse a JSON string into a validated BlueprintManifest.
  *
  * Throws if the JSON is malformed or fails blueprint validation.
+ * Warns (does not throw) when schemaVersion is newer than BLUEPRINT_SCHEMA_VERSION
+ * so future blueprints degrade gracefully rather than crashing.
+ * A missing schemaVersion is treated as version 1 for backward compatibility.
  */
 export function deserializeBlueprint(json: string): BlueprintManifest {
   let parsed: unknown;
@@ -27,6 +33,18 @@ export function deserializeBlueprint(json: string): BlueprintManifest {
     parsed = JSON.parse(json);
   } catch (err) {
     throw new Error(`Invalid blueprint JSON: ${(err as Error).message}`);
+  }
+
+  if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const bp = parsed as Record<string, unknown>;
+    if (bp.schemaVersion === undefined || bp.schemaVersion === null) {
+      bp.schemaVersion = BLUEPRINT_SCHEMA_VERSION;
+    } else if (typeof bp.schemaVersion === 'number' && bp.schemaVersion > BLUEPRINT_SCHEMA_VERSION) {
+      console.warn(
+        `[blueprint-serialization] Blueprint schemaVersion ${bp.schemaVersion} is newer than supported version ${BLUEPRINT_SCHEMA_VERSION}. Some fields may be ignored.`,
+      );
+      bp.schemaVersion = BLUEPRINT_SCHEMA_VERSION;
+    }
   }
 
   const result = validateBlueprint(parsed);

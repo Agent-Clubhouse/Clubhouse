@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   serializeBlueprint,
   deserializeBlueprint,
   generateBlueprintId,
+  BLUEPRINT_SCHEMA_VERSION,
 } from './blueprint-serialization';
 import type { BlueprintManifest } from './blueprint-types';
 
@@ -118,11 +119,21 @@ describe('deserializeBlueprint', () => {
     expect(() => deserializeBlueprint('{}')).toThrow('Invalid blueprint');
   });
 
-  it('throws on blueprint with wrong schemaVersion', () => {
+  it('warns on future schemaVersion instead of throwing (LB-PS-2026-05-03)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const bp = validBlueprint() as Record<string, unknown>;
-    bp.schemaVersion = 99;
-    const json = JSON.stringify(bp);
-    expect(() => deserializeBlueprint(json)).toThrow('schemaVersion must be 1');
+    bp.schemaVersion = 9999;
+    expect(() => deserializeBlueprint(JSON.stringify(bp))).not.toThrow();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('9999'));
+    warnSpy.mockRestore();
+  });
+
+  it('treats missing schemaVersion as version 1 (LB-PS-2026-05-03)', () => {
+    const bp = validBlueprint() as Record<string, unknown>;
+    delete bp.schemaVersion;
+    expect(() => deserializeBlueprint(JSON.stringify(bp))).not.toThrow();
+    const result = deserializeBlueprint(JSON.stringify(bp));
+    expect(result.schemaVersion).toBe(BLUEPRINT_SCHEMA_VERSION);
   });
 
   it('throws on blueprint with dangling wire refs', () => {
