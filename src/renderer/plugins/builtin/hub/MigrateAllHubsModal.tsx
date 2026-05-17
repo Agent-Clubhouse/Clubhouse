@@ -18,6 +18,7 @@ export function MigrateAllHubsModal({ hubCount, onConfirm, onCancel }: MigrateAl
 
   return (
     <div
+      // eslint-disable-next-line no-restricted-syntax
       className="fixed inset-0 z-modal flex items-center justify-center bg-black/50"
       onClick={onCancel}
       data-testid="migrate-all-hubs-backdrop"

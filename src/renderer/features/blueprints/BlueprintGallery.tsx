@@ -213,6 +213,7 @@ export function BlueprintGallery() {
 
   return (
     <div
+      // eslint-disable-next-line no-restricted-syntax
       className="fixed inset-0 z-modal flex items-center justify-center bg-black/50"
       onClick={(e) => { if (e.target === e.currentTarget) close(); }}
       data-testid="blueprint-gallery-overlay"
@@ -572,7 +573,7 @@ function typeColor(type: string): string {
     case 'agent': return 'bg-ctp-accent/15 text-ctp-accent';
     case 'anchor': return 'bg-ctp-warning/15 text-ctp-warning';
     case 'plugin': return 'bg-ctp-success/15 text-ctp-success';
-    case 'sticky-note': return 'bg-yellow-500/15 text-yellow-400';
+    case 'sticky-note': return 'bg-status-warning/15 text-status-warning';
     case 'zone': return 'bg-purple-500/15 text-purple-400';
     default: return 'bg-surface-0 text-ctp-subtext0';
   }

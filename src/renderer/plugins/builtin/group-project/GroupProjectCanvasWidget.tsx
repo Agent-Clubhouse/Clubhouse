@@ -1038,6 +1038,7 @@ function ShoulderTapModal({
 
   return (
     <div
+      // eslint-disable-next-line no-restricted-syntax
       className="absolute inset-0 bg-ctp-crust/80 flex items-center justify-center z-modal"
       onClick={onClose}
     >
