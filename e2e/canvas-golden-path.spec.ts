@@ -243,12 +243,29 @@ test.describe('Canvas golden path', () => {
     const workspace = window.locator('[data-testid="canvas-workspace"]');
     await expect(workspace).toBeVisible({ timeout: 5_000 });
 
+    // Wait for the workspace background to be the topmost element at the target
+    // click position before right-clicking. The canvas context-menu handler guards
+    // e.target === e.currentTarget — any transient child element (canvas-tab
+    // transition overlay, initializing component) at (120,120) silently suppresses
+    // the menu. This was the root cause of the TC-FLAKE-01 intermittent failure
+    // that appeared on retry1 across two separate CI runs (#1464, #1466).
+    await window.waitForFunction(
+      () => {
+        const ws = document.querySelector('[data-testid="canvas-workspace"]') as HTMLElement | null;
+        if (!ws) return false;
+        const { left, top } = ws.getBoundingClientRect();
+        const el = document.elementFromPoint(left + 120, top + 120);
+        return el === ws;
+      },
+      { timeout: 5_000 },
+    ).catch(() => {});
+
     // Create zone at a known position — use x:120,y:120 to stay clear of the rail
     // which can overlap the workspace at small x offsets on Windows CI (causing the
     // rail's Review button to intercept the synthetic click at that viewport coordinate).
     // force:true bypasses the macOS CI stability check (element visible but not yet "stable").
     await workspace.click({ button: 'right', position: { x: 120, y: 120 }, force: true });
-    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 8_000 });
+    await expect(window.locator('[data-testid="canvas-context-menu"]')).toBeVisible({ timeout: 10_000 });
     await window.locator('[data-testid="canvas-context-menu-zone"]').click();
 
     const zoneCard = workspace.locator('[data-testid^="zone-card-"]').first();
