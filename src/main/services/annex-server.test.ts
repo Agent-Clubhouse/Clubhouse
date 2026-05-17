@@ -2532,4 +2532,61 @@ describe('annex-server', () => {
       await expect(resultPromise).rejects.toThrow('connection reset');
     });
   });
+
+  // ── LB-OA-2026-05-01: sessionPauseOwner CAS guard ──────────────────────
+  describe('LB-OA-2026-05-01: sessionPauseOwner CAS guard prevents lock theft', () => {
+    it('sets sessionPauseOwner only when no owner is currently set (structural)', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // Locate the mTLS connection block inside wss.on('connection', ...)
+      const connStart = source.indexOf("wss.on('connection', async (ws) => {");
+      expect(connStart).toBeGreaterThan(-1);
+
+      const mtlsBlockStart = source.indexOf("if (authType === 'mtls') {", connStart);
+      const lockBroadcastPos = source.indexOf('IPC.ANNEX.LOCK_STATE_CHANGED', mtlsBlockStart);
+      const mtlsBlock = source.slice(mtlsBlockStart, lockBroadcastPos + 80);
+
+      // CAS guard must be present — assignment is wrapped in !sessionPauseOwner check
+      expect(mtlsBlock).toContain('!sessionPauseOwner');
+      expect(mtlsBlock).toContain('sessionPauseOwner =');
+
+      // Verify the guard appears BEFORE the assignment (CAS ordering)
+      const guardPos = mtlsBlock.indexOf('!sessionPauseOwner');
+      const assignPos = mtlsBlock.indexOf('sessionPauseOwner =');
+      expect(guardPos).toBeLessThan(assignPos);
+    });
+
+    it('does not unconditionally overwrite sessionPauseOwner on mTLS connect (structural)', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // The bare unconditional assignment pattern that caused the bug must not exist
+      // inside the connection handler's mTLS block. Any assignment must be inside
+      // a conditional guard (preceded by if (!sessionPauseOwner)).
+      const connStart = source.indexOf("wss.on('connection', async (ws) => {");
+      const mtlsBlockStart = source.indexOf("if (authType === 'mtls') {", connStart);
+      const lockBroadcastPos = source.indexOf('IPC.ANNEX.LOCK_STATE_CHANGED', mtlsBlockStart);
+      const mtlsBlock = source.slice(mtlsBlockStart, lockBroadcastPos + 80);
+
+      // The unconditional pattern: a line where sessionPauseOwner = ... is NOT
+      // inside an if (!sessionPauseOwner) block. We check by verifying that every
+      // occurrence of "sessionPauseOwner =" is preceded by the guard on the same
+      // or a previous line within the block.
+      const guardIdx = mtlsBlock.indexOf('if (!sessionPauseOwner)');
+      const assignIdx = mtlsBlock.indexOf('sessionPauseOwner =');
+
+      // Guard must exist and precede the assignment
+      expect(guardIdx).toBeGreaterThan(-1);
+      expect(assignIdx).toBeGreaterThan(guardIdx);
+    });
+  });
 });

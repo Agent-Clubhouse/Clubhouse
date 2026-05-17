@@ -2583,8 +2583,12 @@ export function start(): void {
     if (authType === 'mtls') {
       const fingerprint = wsPeerFingerprints.get(ws);
       const peer = fingerprint ? annexPeers.getPeer(fingerprint) : null;
-      // Track lock owner so only the owning controller's disconnect releases it
-      sessionPauseOwner = fingerprint || null;
+      // CAS guard: only claim the lock if no owner is already set.
+      // Prevents a second mTLS connection from stealing the lock and leaving
+      // the first controller's disconnect unable to release it (LB-OA-2026-05-01).
+      if (!sessionPauseOwner) {
+        sessionPauseOwner = fingerprint || null;
+      }
       broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
         locked: true,
         controllerAlias: peer?.alias || 'Remote Controller',

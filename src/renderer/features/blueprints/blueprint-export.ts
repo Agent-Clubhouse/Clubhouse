@@ -16,15 +16,18 @@ import type {
 
 // ── RefId generation ────────────────────────────────────────────────
 
-let refCounter = 0;
-function generateRefId(prefix: string): string {
-  return `${prefix}_${(++refCounter).toString(36)}`;
+/**
+ * Derive a stable, compact refId from the entity's own stable ID.
+ * Strips non-alphanumeric chars and takes the first 16 characters so refIds
+ * remain human-readable in exported JSON while never shifting when other
+ * entities are added or removed from the canvas (LB-CB-2026-05-05).
+ */
+function generateRefId(prefix: string, entityId: string): string {
+  return `${prefix}_${entityId.replace(/[^a-z0-9]/gi, '').slice(0, 16)}`;
 }
 
-/** Reset counter (for tests). */
-export function resetRefCounter(): void {
-  refCounter = 0;
-}
+/** Kept for backward compatibility; no-op since the counter was removed. */
+export function resetRefCounter(): void {}
 
 // ── Slugify ─────────────────────────────────────────────────────────
 
@@ -92,8 +95,6 @@ export function exportCanvasToBlueprint(
   canvas: CanvasInstance,
   ctx: ExportContext,
 ): BlueprintManifest {
-  resetRefCounter();
-
   // Build viewId → refId mapping
   const viewIdToRefId = new Map<string, string>();
   // Also map agentId → refId for wire remapping (wires use agentId, not viewId)
@@ -109,7 +110,7 @@ export function exportCanvasToBlueprint(
   // ── Phase 1: Generate refIds for all views ──────────────────────
 
   for (const view of canvas.views) {
-    const refId = generateRefId('v');
+    const refId = generateRefId('v', view.id);
     viewIdToRefId.set(view.id, refId);
 
     if (view.type === 'agent') {
@@ -135,7 +136,7 @@ export function exportCanvasToBlueprint(
     // Skip if we already have a def for this agent (dedup)
     if (agentIdToAgentRef.has(agent.id)) continue;
 
-    const agentRefId = generateRefId('a');
+    const agentRefId = generateRefId('a', agent.id);
     agentIdToAgentRef.set(agent.id, agentRefId);
 
     agentDefs.push({
@@ -159,7 +160,7 @@ export function exportCanvasToBlueprint(
   if (ctx.projectId) {
     const project = ctx.projects[ctx.projectId];
     if (project) {
-      const projRefId = generateRefId('p');
+      const projRefId = generateRefId('p', project.id);
       projectIdToProjectRef.set(project.id, projRefId);
       projectRefs.push({
         refId: projRefId,
@@ -182,7 +183,7 @@ export function exportCanvasToBlueprint(
     const project = ctx.projects[agentView.projectId];
     if (!project) continue;
 
-    const projRefId = generateRefId('p');
+    const projRefId = generateRefId('p', project.id);
     projectIdToProjectRef.set(project.id, projRefId);
     projectRefs.push({
       refId: projRefId,
