@@ -111,7 +111,7 @@ export function ExportBundleDialog({
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-2 py-1.5 text-[12px] bg-surface-0 border border-surface-1 rounded text-ctp-text outline-none focus:border-ctp-accent"
+              className="w-full px-2 py-1.5 text-[12px] bg-surface-0 border border-surface-1 rounded text-ctp-text focus-ring"
               placeholder={projectName}
               data-testid="export-bundle-name"
             />
@@ -122,7 +122,7 @@ export function ExportBundleDialog({
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-2 py-1.5 text-[12px] bg-surface-0 border border-surface-1 rounded text-ctp-text outline-none focus:border-ctp-accent"
+              className="w-full px-2 py-1.5 text-[12px] bg-surface-0 border border-surface-1 rounded text-ctp-text focus-ring"
               placeholder="Brief description of this bundle"
             />
           </div>

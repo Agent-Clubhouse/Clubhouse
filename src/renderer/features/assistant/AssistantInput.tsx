@@ -66,7 +66,7 @@ export function AssistantInput({ onSend, disabled = false, status }: Props) {
       <div className="max-w-[600px] mx-auto flex items-end gap-2">
         <textarea
           ref={textareaRef}
-          className="flex-1 bg-ctp-base border border-surface-0 rounded-lg px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-subtext0 outline-none focus:border-ctp-accent/50 transition-colors resize-none overflow-hidden"
+          className="flex-1 bg-ctp-base border border-surface-0 rounded-lg px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-subtext0 focus-ring-dim transition-colors resize-none overflow-hidden"
           placeholder={placeholder}
           value={message}
           onChange={(e) => setMessage(e.target.value)}

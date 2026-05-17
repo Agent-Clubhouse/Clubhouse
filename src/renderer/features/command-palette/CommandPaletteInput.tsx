@@ -42,7 +42,7 @@ export function CommandPaletteInput() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Type to search..."
-          className="flex-1 bg-transparent text-ctp-text text-sm outline-none placeholder:text-ctp-subtext0"
+          className="flex-1 bg-transparent text-ctp-text text-sm focus-ring placeholder:text-ctp-subtext0"
           spellCheck={false}
           autoComplete="off"
         />

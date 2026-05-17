@@ -705,7 +705,7 @@ function CustomMarketplaceManager() {
                 value={addName}
                 onChange={(e) => setAddName(e.target.value)}
                 placeholder="Store name"
-                className="flex-1 px-2 py-1.5 rounded bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder:text-ctp-subtext0 outline-none focus:border-ctp-accent"
+                className="flex-1 px-2 py-1.5 rounded bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder:text-ctp-subtext0 focus-ring"
                 data-testid="custom-marketplace-name"
               />
               <input
@@ -713,7 +713,7 @@ function CustomMarketplaceManager() {
                 value={addUrl}
                 onChange={(e) => setAddUrl(e.target.value)}
                 placeholder="Registry URL (e.g. https://...registry.json)"
-                className="flex-[2] px-2 py-1.5 rounded bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder:text-ctp-subtext0 outline-none focus:border-ctp-accent"
+                className="flex-[2] px-2 py-1.5 rounded bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder:text-ctp-subtext0 focus-ring"
                 data-testid="custom-marketplace-url"
                 onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
               />

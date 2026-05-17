@@ -303,7 +303,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         value: addressBar,
         onChange: (e: React.ChangeEvent<HTMLInputElement>) => setAddressBar(e.target.value),
         onKeyDown: handleKeyDown,
-        className: 'flex-1 min-w-0 px-2 py-0.5 rounded bg-surface-0 text-xs text-ctp-text border border-surface-1 outline-none focus:border-ctp-accent',
+        className: 'flex-1 min-w-0 px-2 py-0.5 rounded bg-surface-0 text-xs text-ctp-text border border-surface-1 focus-ring',
         placeholder: 'Enter URL (https://example.com, localhost:3000, file:///path)...',
         'data-testid': 'browser-address-bar',
       }),
