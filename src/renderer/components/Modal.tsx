@@ -9,10 +9,12 @@ interface Props {
   width?: string;
   /** Darker backdrop for image/media dialogs. */
   backdrop?: 'default' | 'heavy';
+  /** Optional data-testid for the backdrop overlay div. */
+  backdropTestId?: string;
   children: ReactNode;
 }
 
-export function Modal({ open, onClose, title, width = 'w-[360px]', backdrop = 'default', children }: Props) {
+export function Modal({ open, onClose, title, width = 'w-[360px]', backdrop = 'default', backdropTestId, children }: Props) {
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -26,6 +28,7 @@ export function Modal({ open, onClose, title, width = 'w-[360px]', backdrop = 'd
     <div
       className={`fixed inset-0 z-modal flex items-center justify-center ${backdrop === 'heavy' ? 'bg-black/70' : 'bg-black/50'}`}
       onClick={onClose}
+      data-testid={backdropTestId}
     >
       <div
         className={`bg-ctp-mantle border border-surface-0 rounded-xl shadow-2xl ${width}`}

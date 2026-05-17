@@ -83,6 +83,18 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/**/*.tsx', 'src/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXAttribute[name.name='className'][value.value=/\\bz-modal\\b/]",
+          message: 'Use <Modal> from src/renderer/components/Modal.tsx instead of a bespoke fixed overlay with z-modal.',
+        },
+      ],
+    },
+  },
+  {
     ignores: [
       '.webpack/**',
       'out/**',
