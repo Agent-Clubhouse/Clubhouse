@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
-import { useShallow } from 'zustand/react/shallow';
+import { useOrderedShallow } from '../../hooks/useOrderedShallow';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
@@ -64,7 +64,7 @@ export function useProjectAgentBuckets(
 }
 
 function AgentListInner() {
-  const localAgents = useAgentStore(useShallow((s) => s.agents));
+  const localAgents = useAgentStore(useOrderedShallow((s) => s.agents));
   const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
   const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
