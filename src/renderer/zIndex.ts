@@ -2,7 +2,7 @@
  * Named z-index scale — use these instead of ad-hoc numeric values.
  *
  * Tailwind utilities are also available (e.g. z-modal, z-toast) via @theme in index.css.
- * Use the CSS custom property form (style={{ zIndex: 'var(--z-top)' }}) or these constants
+ * Use the CSS custom property form (style={{ zIndex: 'var(--z-index-top)' }}) or these constants
  * for inline styles where Tailwind classes aren't available.
  */
 export const Z_INDEX = {

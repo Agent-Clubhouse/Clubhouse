@@ -36,15 +36,17 @@
   --color-status-info: rgb(var(--ctp-info));
   --color-status-success: rgb(var(--ctp-success));
 
-  /* Named z-index scale — use z-modal, z-toast, etc. instead of ad-hoc z-50/z-[9999] */
-  --z-raised: 10;
-  --z-dropdown-backdrop: 40;
-  --z-dropdown: 50;
-  --z-modal: 200;
-  --z-toast: 300;
-  --z-canvas-overlay: 9999;
-  --z-canvas-dialog: 10000;
-  --z-top: 100000;
+  /* Named z-index scale — use z-modal, z-toast, etc. instead of ad-hoc z-50/z-[9999].
+     Tailwind v4 requires the --z-index-* namespace to generate z-* utilities; the prior --z-*
+     prefix produced no CSS at all, leaving modals/dropdowns/overlays at z-auto. */
+  --z-index-raised: 10;
+  --z-index-dropdown-backdrop: 40;
+  --z-index-dropdown: 50;
+  --z-index-modal: 200;
+  --z-index-toast: 300;
+  --z-index-canvas-overlay: 9999;
+  --z-index-canvas-dialog: 10000;
+  --z-index-top: 100000;
 }
 
 @import '@xterm/xterm/css/xterm.css';
