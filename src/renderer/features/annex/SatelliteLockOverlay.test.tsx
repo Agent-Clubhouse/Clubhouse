@@ -97,4 +97,24 @@ describe('SatelliteLockOverlay – pause floatie positioning', () => {
 
     expect(container.innerHTML).toBe('');
   });
+
+  it('uses fixed positioning and the z-canvas-overlay class (regression: overlay rendered behind explorer/content panels)', () => {
+    const { container } = render(
+      <SatelliteLockOverlay
+        lockState={{ ...baseLockState, paused: false }}
+        onDisconnect={noop}
+        onPause={noop}
+        onDisableAndDisconnect={noop}
+      />,
+    );
+
+    const root = container.firstElementChild as HTMLElement;
+    expect(root).not.toBeNull();
+    // Without z-canvas-overlay compiling to z-index: 9999, the overlay falls
+    // back to z-index: auto and is occluded by later siblings (explorer +
+    // content panels), so its buttons can't be clicked.
+    expect(root.classList.contains('fixed')).toBe(true);
+    expect(root.classList.contains('inset-0')).toBe(true);
+    expect(root.classList.contains('z-canvas-overlay')).toBe(true);
+  });
 });

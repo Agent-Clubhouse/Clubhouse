@@ -718,3 +718,37 @@ describe('P-C-3: AgentList polling-tick re-render optimization', () => {
     expect(isThinkingCaptures).toHaveLength(1);
   });
 });
+
+describe('AgentList drag-reorder re-render', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+    isThinkingCaptures.length = 0;
+    Object.keys(activityTimestamps).forEach((k) => delete activityTimestamps[k]);
+    window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+  });
+
+  it('re-renders the list in the new order after agents are reordered (regression: useShallow swallowed key-order changes)', () => {
+    const a: Agent = { id: 'a', projectId: 'proj-1', name: 'alpha', kind: 'durable', status: 'sleeping', color: 'indigo' };
+    const b: Agent = { id: 'b', projectId: 'proj-1', name: 'bravo', kind: 'durable', status: 'sleeping', color: 'indigo' };
+    const c: Agent = { id: 'c', projectId: 'proj-1', name: 'charlie', kind: 'durable', status: 'sleeping', color: 'indigo' };
+
+    useAgentStore.setState({ agents: { a, b, c } });
+
+    render(<AgentList />);
+
+    // Initial visible order: alpha, bravo, charlie
+    const initialNames = screen.getAllByTestId(/^agent-item-/).map((el) => el.textContent);
+    expect(initialNames).toEqual(['alpha', 'bravo', 'charlie']);
+
+    // Reorder via the same shape reorderAgents produces — keys reshuffled,
+    // value references identical to the previous render. Pre-fix this slipped
+    // past zustand's shallow equality and the list stayed in the old order.
+    act(() => {
+      useAgentStore.setState({ agents: { c, a, b } });
+    });
+
+    const reorderedNames = screen.getAllByTestId(/^agent-item-/).map((el) => el.textContent);
+    expect(reorderedNames).toEqual(['charlie', 'alpha', 'bravo']);
+  });
+});
