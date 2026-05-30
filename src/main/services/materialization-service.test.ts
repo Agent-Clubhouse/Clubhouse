@@ -65,8 +65,10 @@ import {
   previewMaterialization,
   ensureDefaultTemplates,
   ensureDefaultSkills,
+  ensureClubhouseModeReadme,
   resetDefaultSkills,
   resetProjectAgentDefaults,
+  resolveMissionId,
   getDefaultAgentTemplates,
   resolveSourceControlProvider,
   enableExclusions,
@@ -78,6 +80,7 @@ import {
   TEST_SKILL_CONTENT,
   LINT_SKILL_CONTENT,
   VALIDATE_CHANGES_SKILL_CONTENT,
+  CLUBHOUSE_MODE_README_CONTENT,
 } from './materialization-service';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as gitExcludeManager from './git-exclude-manager';
@@ -199,6 +202,38 @@ describe('materialization-service', () => {
       expect(ctx.buildCommand).toBeUndefined();
       expect(ctx.testCommand).toBeUndefined();
       expect(ctx.lintCommand).toBeUndefined();
+    });
+
+    it('passes through mission content when provided', () => {
+      const ctx = buildWildcardContext(testAgent, '/project', undefined, undefined, '# Mission body');
+      expect(ctx.mission).toBe('# Mission body');
+    });
+
+    it('omits mission when not provided', () => {
+      const ctx = buildWildcardContext(testAgent, '/project');
+      expect(ctx.mission).toBeUndefined();
+    });
+  });
+
+  describe('resolveMissionId', () => {
+    it('returns per-agent mission when set', () => {
+      const agent = { ...testAgent, mission: 'per-agent' };
+      expect(resolveMissionId(agent, { mission: 'project-default' })).toBe('per-agent');
+    });
+
+    it('falls back to project default when agent mission unset', () => {
+      expect(resolveMissionId(testAgent, { mission: 'project-default' })).toBe('project-default');
+    });
+
+    it('returns undefined when neither is set', () => {
+      expect(resolveMissionId(testAgent, {})).toBeUndefined();
+    });
+
+    it('treats empty-string per-agent mission as a deliberate clear (not unset)', () => {
+      // agent.mission === '' is unusual but should not fall through to defaults
+      // (?? only falls through on null/undefined)
+      const agent = { ...testAgent, mission: '' };
+      expect(resolveMissionId(agent, { mission: 'project-default' })).toBe('');
     });
   });
 
@@ -505,6 +540,93 @@ describe('materialization-service', () => {
 
       expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
     });
+
+    it('substitutes @@mission with project default mission file content', async () => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const fp = String(p).replace(/\\/g, '/');
+        if (fp.includes('settings.json')) {
+          return JSON.stringify({
+            defaults: {},
+            quickOverrides: {},
+            agentDefaults: {
+              instructions: 'Agent @@AgentName\n\n@@mission',
+              mission: 'do-the-thing',
+            },
+          });
+        }
+        if (fp.endsWith('missions/do-the-thing.md')) return '# Mission body content';
+        throw new Error('ENOENT');
+      });
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written).toContain('Agent bold-falcon');
+      expect(written).toContain('# Mission body content');
+    });
+
+    it('per-agent mission overrides project default mission', async () => {
+      const agentWithMission = { ...testAgent, mission: 'agent-override' };
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const fp = String(p).replace(/\\/g, '/');
+        if (fp.includes('settings.json')) {
+          return JSON.stringify({
+            defaults: {},
+            quickOverrides: {},
+            agentDefaults: {
+              instructions: '@@mission',
+              mission: 'project-default',
+            },
+          });
+        }
+        if (fp.endsWith('missions/agent-override.md')) return 'AGENT BODY';
+        if (fp.endsWith('missions/project-default.md')) return 'PROJECT BODY';
+        throw new Error('ENOENT');
+      });
+
+      await materializeAgent({ projectPath: '/project', agent: agentWithMission, provider: mockProvider });
+
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written).toBe('AGENT BODY');
+    });
+
+    it('resolves @@mission to empty when mission file is missing', async () => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const fp = String(p).replace(/\\/g, '/');
+        if (fp.includes('settings.json')) {
+          return JSON.stringify({
+            defaults: {},
+            quickOverrides: {},
+            agentDefaults: {
+              instructions: 'Mission:\n@@mission\nEnd.',
+              mission: 'missing-file',
+            },
+          });
+        }
+        throw new Error('ENOENT'); // mission file does not exist
+      });
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written).toBe('Mission:\n\nEnd.');
+    });
+
+    it('does not attempt to read mission file when neither agent nor defaults set mission', async () => {
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: { instructions: 'No mission here' },
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+
+      // No fsp.readFile calls should target .clubhouse/missions/
+      const missionReads = vi.mocked(fsp.readFile).mock.calls.filter(
+        (call) => String(call[0]).replace(/\\/g, '/').includes('/missions/'),
+      );
+      expect(missionReads).toHaveLength(0);
+    });
   });
 
   describe('previewMaterialization', () => {
@@ -673,6 +795,56 @@ describe('materialization-service', () => {
         (call) => (call[0] as string).includes('SKILL.md'),
       );
       expect(skillWrites).toHaveLength(0);
+    });
+
+    it('writes clubhouse-mode.md self-edit guide when missing', async () => {
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
+
+      await ensureDefaultTemplates('/project');
+
+      const readmeWrite = vi.mocked(fsp.writeFile).mock.calls.find(
+        (call) => (call[0] as string).endsWith('clubhouse-mode.md'),
+      );
+      expect(readmeWrite).toBeDefined();
+      expect(readmeWrite![1]).toBe(CLUBHOUSE_MODE_README_CONTENT);
+    });
+  });
+
+  describe('ensureClubhouseModeReadme', () => {
+    it('writes the readme when missing', async () => {
+      vi.mocked(pathExists).mockResolvedValue(false);
+
+      await ensureClubhouseModeReadme('/project');
+
+      const readmeWrite = vi.mocked(fsp.writeFile).mock.calls.find(
+        (call) => (call[0] as string).endsWith('clubhouse-mode.md'),
+      );
+      expect(readmeWrite).toBeDefined();
+      expect((readmeWrite![0] as string).replace(/\\/g, '/')).toBe('/project/.clubhouse/clubhouse-mode.md');
+    });
+
+    it('no-ops when the readme already exists (never overwrites user edits)', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: string) =>
+        p.endsWith('clubhouse-mode.md'),
+      );
+
+      await ensureClubhouseModeReadme('/project');
+
+      const readmeWrite = vi.mocked(fsp.writeFile).mock.calls.find(
+        (call) => (call[0] as string).endsWith('clubhouse-mode.md'),
+      );
+      expect(readmeWrite).toBeUndefined();
+    });
+
+    it('readme content documents all settings layers', () => {
+      // Sanity check: the guide actually mentions the load-bearing files
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('.clubhouse/settings.json');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('.clubhouse/agents.json');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('clubhouse-mode-settings.json');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('.clubhouse/skills/');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('.clubhouse/missions/');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('@@mission');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('clubhouseModeOverride');
     });
   });
 

@@ -537,6 +537,13 @@ export async function updateDurableConfig(
       delete agent.mcpConfigs;
     }
   }
+  if (updates.mission !== undefined) {
+    if (updates.mission) {
+      agent.mission = updates.mission;
+    } else {
+      delete agent.mission;
+    }
+  }
   await writeAgents(projectPath, agents);
 }
 

@@ -1207,6 +1207,58 @@ describe('updateDurableConfig', () => {
     expect(result).not.toBeNull();
     expect(result!.lastSessionId).toBeUndefined();
   });
+
+  it('persists mission field and round-trips', async () => {
+    const agents = [
+      { id: 'durable_mission', name: 'msn', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => writtenData[String(p)] || '[]');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_mission', { mission: 'investigate-and-report' });
+
+    const result = await getDurableConfig(PROJECT_PATH, 'durable_mission');
+    expect(result).not.toBeNull();
+    expect(result!.mission).toBe('investigate-and-report');
+  });
+
+  it('removes mission field when set to empty string', async () => {
+    const agents = [
+      { id: 'durable_clearmsn', name: 'clearmsn', color: 'indigo', mission: 'old-mission', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => writtenData[String(p)] || '[]');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_clearmsn', { mission: '' });
+
+    const result = await getDurableConfig(PROJECT_PATH, 'durable_clearmsn');
+    expect(result).not.toBeNull();
+    expect(result!.mission).toBeUndefined();
+  });
 });
 
 describe('updateSessionId', () => {

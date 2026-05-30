@@ -30,6 +30,7 @@ import {
   readProjectAgentDefaults, writeProjectAgentDefaults, applyAgentDefaults,
   readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot,
   readMcpConfigs, writeMcpConfigs,
+  listSourceMissions, readSourceMissionContent,
   SettingsConventions,
 } from './agent-settings-service';
 import type { WrapperCatalogSnapshot } from '../../shared/types';
@@ -224,6 +225,50 @@ describe('writePermissions', () => {
 });
 
 // --- Skill content CRUD ---
+
+describe('listSourceMissions', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('lists .md files from .clubhouse/missions/ with id derived from filename', async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue([
+      { name: 'implement.md', isFile: () => true, isDirectory: () => false } as any,
+      { name: 'investigate.md', isFile: () => true, isDirectory: () => false } as any,
+      { name: 'README', isFile: () => true, isDirectory: () => false } as any, // ignored — no .md
+      { name: 'sub', isFile: () => false, isDirectory: () => true } as any,    // ignored — directory
+    ]);
+    const missions = await listSourceMissions('/project');
+    expect(missions.map((m) => m.id).sort()).toEqual(['implement', 'investigate']);
+  });
+
+  it('returns empty array when missions dir is missing', async () => {
+    vi.mocked(fsp.readdir).mockRejectedValue(makeEnoent('/project/.clubhouse/missions'));
+    expect(await listSourceMissions('/project')).toEqual([]);
+  });
+});
+
+describe('readSourceMissionContent', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('reads the mission .md file body', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('# Mission steps');
+    const result = await readSourceMissionContent('/project', 'implement');
+    expect(result).toBe('# Mission steps');
+    expect(fsp.readFile).toHaveBeenCalledWith(
+      path.join('/project', '.clubhouse', 'missions', 'implement.md'),
+      'utf-8',
+    );
+  });
+
+  it('returns empty string when mission file does not exist', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent('/project/.clubhouse/missions/missing.md'));
+    expect(await readSourceMissionContent('/project', 'missing')).toBe('');
+  });
+
+  it('returns empty string for empty mission id without touching disk', async () => {
+    expect(await readSourceMissionContent('/project', '')).toBe('');
+    expect(fsp.readFile).not.toHaveBeenCalled();
+  });
+});
 
 describe('readSkillContent', () => {
   beforeEach(() => { vi.clearAllMocks(); });
