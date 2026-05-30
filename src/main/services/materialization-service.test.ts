@@ -543,7 +543,7 @@ describe('materialization-service', () => {
 
     it('substitutes @@mission with project default mission file content', async () => {
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const fp = String(p);
+        const fp = String(p).replace(/\\/g, '/');
         if (fp.includes('settings.json')) {
           return JSON.stringify({
             defaults: {},
@@ -568,7 +568,7 @@ describe('materialization-service', () => {
     it('per-agent mission overrides project default mission', async () => {
       const agentWithMission = { ...testAgent, mission: 'agent-override' };
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const fp = String(p);
+        const fp = String(p).replace(/\\/g, '/');
         if (fp.includes('settings.json')) {
           return JSON.stringify({
             defaults: {},
@@ -592,7 +592,7 @@ describe('materialization-service', () => {
 
     it('resolves @@mission to empty when mission file is missing', async () => {
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const fp = String(p);
+        const fp = String(p).replace(/\\/g, '/');
         if (fp.includes('settings.json')) {
           return JSON.stringify({
             defaults: {},
@@ -623,7 +623,7 @@ describe('materialization-service', () => {
 
       // No fsp.readFile calls should target .clubhouse/missions/
       const missionReads = vi.mocked(fsp.readFile).mock.calls.filter(
-        (call) => String(call[0]).includes('/missions/'),
+        (call) => String(call[0]).replace(/\\/g, '/').includes('/missions/'),
       );
       expect(missionReads).toHaveLength(0);
     });
