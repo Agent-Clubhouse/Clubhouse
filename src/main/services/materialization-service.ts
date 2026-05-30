@@ -10,6 +10,7 @@ import {
   listSourceSkills,
   listSourceAgentTemplates,
   writeProjectAgentDefaults,
+  readSourceMissionContent,
 } from './agent-settings-service';
 import { SettingsConventions } from './agent-settings-service';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
@@ -211,6 +212,7 @@ export function buildWildcardContext(
   projectPath: string,
   sourceControlProvider?: SourceControlProvider,
   commands?: { buildCommand?: string; testCommand?: string; lintCommand?: string },
+  mission?: string,
 ): WildcardContext {
   const agentPath = agent.worktreePath
     ? path.relative(projectPath, agent.worktreePath).replace(/\\/g, '/') + '/'
@@ -223,7 +225,20 @@ export function buildWildcardContext(
     buildCommand: commands?.buildCommand,
     testCommand: commands?.testCommand,
     lintCommand: commands?.lintCommand,
+    mission,
   };
+}
+
+/**
+ * Resolve the effective mission ID for an agent.
+ * Per-agent override (`agent.mission`) wins; otherwise falls back to project default
+ * (`defaults.mission`). Returns undefined when neither is set.
+ */
+export function resolveMissionId(
+  agent: DurableAgentConfig,
+  defaults: ProjectAgentDefaults,
+): string | undefined {
+  return agent.mission ?? defaults.mission;
 }
 
 // ── Source control provider resolution ───────────────────────────────────
@@ -261,7 +276,8 @@ export async function materializeAgent(params: {
   if (!worktreePath) return;
 
   const defaults = await readProjectAgentDefaults(projectPath);
-  if (!defaults.instructions && !defaults.permissions && !defaults.mcpJson && !agent.persona) {
+  const missionId = resolveMissionId(agent, defaults);
+  if (!defaults.instructions && !defaults.permissions && !defaults.mcpJson && !agent.persona && !missionId) {
     // Also check source skills/templates
     const sourceSkills = await listSourceSkills(projectPath);
     const sourceTemplates = await listSourceAgentTemplates(projectPath);
@@ -274,7 +290,8 @@ export async function materializeAgent(params: {
     testCommand: defaults.testCommand,
     lintCommand: defaults.lintCommand,
   };
-  const ctx = buildWildcardContext(agent, projectPath, scp, commands);
+  const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent);
   const conv = provider.conventions;
 
   // 0. Clean up stale JSON content in TOML config files (legacy migration)
@@ -422,7 +439,9 @@ export async function previewMaterialization(params: {
     testCommand: defaults.testCommand,
     lintCommand: defaults.lintCommand,
   };
-  const ctx = buildWildcardContext(agent, projectPath, scp, commands);
+  const missionId = resolveMissionId(agent, defaults);
+  const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent);
   const _conv = provider.conventions;
 
   let instructions = defaults.instructions
@@ -582,7 +601,9 @@ When given a mission:
 3. Implement the work, committing frequently with descriptive messages
 4. Validate changes using \`/validate-changes\` (build, test, lint)
 5. Push changes and open a PR to main with descriptive details
-6. Return to your standby branch and pull latest from main`;
+6. Return to your standby branch and pull latest from main
+
+@@mission`;
 
   const defaultPermissions = {
     allow: [
@@ -640,6 +661,9 @@ export async function ensureDefaultTemplates(projectPath: string): Promise<void>
 
   // Always ensure default skills exist (even when defaults already exist)
   await ensureDefaultSkills(projectPath);
+
+  // Always ensure the self-edit guide exists (idempotent — never overwrites edits)
+  await ensureClubhouseModeReadme(projectPath);
 }
 
 /**
@@ -704,6 +728,213 @@ async function writeDefaultSkills(projectPath: string, force: boolean): Promise<
   } catch {
     // Best effort
   }
+}
+
+/**
+ * Self-edit guide written to .clubhouse/clubhouse-mode.md on enable.
+ * Documents where every Clubhouse-mode setting lives on disk so an agent
+ * (or the user) can edit configuration without needing the UI.
+ */
+export const CLUBHOUSE_MODE_README_CONTENT = `# Clubhouse Mode — Self-Edit Guide
+
+This file is generated when Clubhouse Mode is enabled. It documents where
+settings live on disk and how to change them without using the UI.
+
+It is safe to edit. Clubhouse will never overwrite it once it exists.
+
+---
+
+## Settings layers
+
+Three layers, all editable from disk:
+
+| Layer            | File                                                  | Scope                          |
+|------------------|-------------------------------------------------------|--------------------------------|
+| App-wide         | \`<userData>/clubhouse-mode-settings.json\`             | enabled flag, project overrides|
+| Project          | \`.clubhouse/settings.json\`                            | defaults applied to all agents |
+| Per-agent        | \`.clubhouse/agents.json\`                              | overrides for a single agent   |
+
+\`<userData>\` is Electron's per-user app data dir:
+- macOS: \`~/Library/Application Support/Clubhouse/\`
+- Linux: \`~/.config/Clubhouse/\`
+- Windows: \`%APPDATA%\\Clubhouse\\\`
+
+**Precedence** (highest first): per-agent → project override → app-wide.
+
+### Toggle Clubhouse Mode for this project (override)
+
+Edit \`<userData>/clubhouse-mode-settings.json\`:
+
+\`\`\`json
+{
+  "enabled": true,
+  "projectOverrides": {
+    "/absolute/path/to/this/project": true
+  }
+}
+\`\`\`
+
+Set the override to \`false\` to disable just this project while keeping the
+app-wide setting unchanged. Delete the key to clear the override.
+
+### Toggle per-agent override
+
+Find the agent in \`.clubhouse/agents.json\` and add:
+
+\`\`\`json
+{ "clubhouseModeOverride": true }
+\`\`\`
+
+Setting it to \`false\` opts that agent out of materialization on wake.
+
+---
+
+## Project defaults (\`.clubhouse/settings.json\`)
+
+The \`agentDefaults\` object is what gets materialized into each agent worktree
+when Clubhouse Mode runs:
+
+\`\`\`json
+{
+  "agentDefaults": {
+    "instructions": "...CLAUDE.md template with @@wildcards...",
+    "permissions": { "allow": ["Read(@@Path**)"], "deny": ["Read(../**)"] },
+    "mcpJson": "{ \\"mcpServers\\": { ... } }",
+    "freeAgentMode": false,
+    "sourceControlProvider": "github",
+    "buildCommand": "npm run build",
+    "testCommand": "npm test",
+    "lintCommand": "npm run lint",
+    "mission": "implement-and-ship"
+  }
+}
+\`\`\`
+
+Any agent without an explicit override inherits these.
+
+---
+
+## Per-agent overrides (\`.clubhouse/agents.json\`)
+
+Each entry in the \`agents\` array supports per-agent overrides:
+
+\`\`\`json
+{
+  "id": "durable_...",
+  "name": "bold-falcon",
+  "branch": "bold-falcon/standby",
+  "persona": "qa",
+  "mission": "investigate-and-report",
+  "clubhouseModeOverride": true,
+  "mcpIds": ["github"],
+  "model": "claude-opus-4-7"
+}
+\`\`\`
+
+Editable fields: \`persona\`, \`mission\`, \`clubhouseModeOverride\`,
+\`freeAgentMode\`, \`model\`, \`orchestrator\`, \`structuredMode\`, \`mcpIds\`,
+\`mcpConfigs\`, \`mcpOverride\`.
+
+Edits take effect on the next agent wake (which re-materializes the worktree).
+
+---
+
+## Preserved skills (\`.clubhouse/skills/\`)
+
+Skills live in \`.clubhouse/skills/<skill-name>/SKILL.md\`. On materialization
+they are copied to each agent worktree at \`.claude/skills/<skill-name>/\`
+with \`@@\` wildcards substituted.
+
+- **Edit** an existing skill: change \`.clubhouse/skills/<name>/SKILL.md\`.
+- **Add** a new skill: create \`.clubhouse/skills/<new-name>/SKILL.md\` with a
+  YAML frontmatter \`name:\` and \`description:\`, then a markdown body.
+- **Delete**: remove the directory. On next wake, the skill is pruned from
+  every agent worktree automatically.
+
+Default skills (\`mission\`, \`test\`, \`build\`, \`lint\`, \`validate-changes\`,
+\`create-pr\`, \`go-standby\`) are written on enable but never overwritten —
+edit them freely.
+
+---
+
+## Missions (\`.clubhouse/missions/\`)
+
+A **mission** is a reusable end-to-end task flow (e.g. \`look at spec → fix →
+add tests → run until green → open PR → return to standby\`). Missions are
+flat markdown files under \`.clubhouse/missions/\`; the filename (minus
+\`.md\`) is the mission ID.
+
+\`\`\`
+.clubhouse/missions/
+  implement-and-ship.md
+  investigate-and-report.md
+  quick-bugfix.md
+\`\`\`
+
+At materialization, the content of the active mission file is substituted
+for the \`@@mission\` wildcard everywhere it appears (default CLAUDE.md
+template, skills, permissions, etc.).
+
+**Selecting a mission**:
+- Set \`agentDefaults.mission\` in \`.clubhouse/settings.json\` for the
+  project-wide default.
+- Set \`mission\` on an agent in \`.clubhouse/agents.json\` to override per-agent.
+- Per-agent wins. Either value is the mission ID (filename without \`.md\`).
+
+If the mission file does not exist, \`@@mission\` resolves to an empty string —
+the rest of materialization still succeeds.
+
+---
+
+## Wildcards available to all templates
+
+| Token                       | Resolves to                                          |
+|-----------------------------|------------------------------------------------------|
+| \`@@AgentName\`               | e.g. \`bold-falcon\`                                   |
+| \`@@StandbyBranch\`           | e.g. \`bold-falcon/standby\`                           |
+| \`@@Path\`                    | e.g. \`.clubhouse/agents/bold-falcon/\`                |
+| \`@@SourceControlProvider\`   | \`github\` or \`azure-devops\`                           |
+| \`@@BuildCommand\`            | from project defaults                                |
+| \`@@TestCommand\`             | from project defaults                                |
+| \`@@LintCommand\`             | from project defaults                                |
+| \`@@mission\`                 | full markdown content of the active mission file     |
+| \`@@If(github)…@@EndIf\`      | conditional block, kept only when provider matches   |
+
+---
+
+## Common edits
+
+| Goal                                       | Edit                                                       |
+|--------------------------------------------|------------------------------------------------------------|
+| Change project default mission             | \`agentDefaults.mission\` in \`.clubhouse/settings.json\`     |
+| Give one agent a different mission         | \`mission\` in that agent's entry in \`.clubhouse/agents.json\`|
+| Tweak a skill body                         | Edit the file under \`.clubhouse/skills/<name>/SKILL.md\`    |
+| Add a new wildcard target                  | (Code change — see \`src/shared/wildcard-replacer.ts\`)      |
+| Disable Clubhouse Mode for this project    | \`projectOverrides[<path>] = false\` in user settings        |
+| Opt one agent out of materialization       | \`clubhouseModeOverride: false\` in that agent's entry       |
+
+---
+
+## What gets pruned vs preserved
+
+On every wake, materialization:
+
+- **Overwrites** the agent's \`CLAUDE.md\`, \`.claude/settings.local.json\` permissions block, and \`.mcp.json\` from the project defaults.
+- **Copies** every \`.clubhouse/skills/*\` and \`.clubhouse/agent-templates/*\` into the worktree with wildcards resolved.
+- **Prunes** worktree skills/templates that no longer exist in source.
+- **Never touches** any other file in the worktree, including agent-local edits to skills that don't exist in source.
+`;
+
+/**
+ * Write the Clubhouse Mode self-edit guide to \`.clubhouse/clubhouse-mode.md\`.
+ * Idempotent — never overwrites an existing file so user edits survive.
+ */
+export async function ensureClubhouseModeReadme(projectPath: string): Promise<void> {
+  const clubhouseDir = path.join(projectPath, '.clubhouse');
+  const readmePath = path.join(clubhouseDir, 'clubhouse-mode.md');
+  if (await pathExists(readmePath)) return;
+  await fsp.mkdir(clubhouseDir, { recursive: true });
+  await fsp.writeFile(readmePath, CLUBHOUSE_MODE_README_CONTENT, 'utf-8');
 }
 
 /**

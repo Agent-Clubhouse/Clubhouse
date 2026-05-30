@@ -6,6 +6,7 @@ export interface WildcardContext {
   buildCommand?: string;   // e.g. "npm run build"
   testCommand?: string;    // e.g. "npm test"
   lintCommand?: string;    // e.g. "npm run lint"
+  mission?: string;        // resolved mission content (full markdown body)
 }
 
 /**
@@ -21,7 +22,8 @@ export function replaceWildcards(text: string, ctx: WildcardContext): string {
     .replace(/@@SourceControlProvider/g, ctx.sourceControlProvider || '')
     .replace(/@@BuildCommand/g, ctx.buildCommand || 'npm run build')
     .replace(/@@TestCommand/g, ctx.testCommand || 'npm test')
-    .replace(/@@LintCommand/g, ctx.lintCommand || 'npm run lint');
+    .replace(/@@LintCommand/g, ctx.lintCommand || 'npm run lint')
+    .replace(/@@mission/g, ctx.mission || '');
 
   // Process @@If(value)...@@EndIf conditional blocks
   result = processConditionalBlocks(result, ctx);
@@ -55,6 +57,9 @@ export function unreplaceWildcards(text: string, ctx: WildcardContext): string {
   }
   if (ctx.lintCommand) {
     pairs.push({ value: ctx.lintCommand, token: '@@LintCommand' });
+  }
+  if (ctx.mission) {
+    pairs.push({ value: ctx.mission, token: '@@mission' });
   }
 
   // Sort longest-value-first to avoid partial matches

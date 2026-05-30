@@ -171,6 +171,8 @@ export interface ProjectAgentDefaults {
   profileId?: string;
   /** Shell command prefix prepended before the CLI binary (e.g. ". ./init.ps1 &&") */
   commandPrefix?: string;
+  /** Default mission ID. Resolved at materialization to .clubhouse/missions/<id>.md content; substituted for @@mission. */
+  mission?: string;
 }
 
 /** A recorded CLI session for a durable agent */
@@ -213,6 +215,8 @@ export interface DurableAgentConfig {
   mcpOverride?: boolean;
   /** Persona template ID applied at creation. Used to re-inject instructions on materialization. */
   persona?: string;
+  /** Mission ID overriding the project default. Resolved to .clubhouse/missions/<id>.md content; substituted for @@mission. */
+  mission?: string;
   /** CLI agent name to load (e.g. "k8s-assistant" → --agent k8s-assistant) */
   agentFile?: string;
   /** Directory to search for the agent file (e.g. "~/.copilot/agents/" → --source ...) */
@@ -289,6 +293,7 @@ export interface DurableConfigUpdates {
   mcpConfigs?: Record<string, Record<string, string>> | null;
   structuredMode?: boolean;
   persona?: string;
+  mission?: string;
 }
 
 export interface ClubhouseModeSettings {

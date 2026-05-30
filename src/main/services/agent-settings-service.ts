@@ -226,6 +226,42 @@ export async function deleteSourceSkill(projectPath: string, skillName: string):
 }
 
 /**
+ * List source mission files under .clubhouse/missions/.
+ * Each mission is a single .md file; the mission ID is the basename without extension.
+ */
+export async function listSourceMissions(projectPath: string): Promise<Array<{ id: string; path: string }>> {
+  const missionsDir = path.join(projectPath, '.clubhouse', 'missions');
+  try {
+    const entries = await fsp.readdir(missionsDir, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isFile() && e.name.endsWith('.md'))
+      .map((e) => ({ id: e.name.replace(/\.md$/, ''), path: path.join(missionsDir, e.name) }));
+  } catch (err) {
+    if (!isEnoent(err)) {
+      appLog(LOG_NS, 'warn', `Failed to list missions from ${missionsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
+    return [];
+  }
+}
+
+/**
+ * Read the content of a mission file at .clubhouse/missions/<id>.md.
+ * Returns empty string when the mission file does not exist or fails to read.
+ */
+export async function readSourceMissionContent(projectPath: string, missionId: string): Promise<string> {
+  if (!missionId) return '';
+  const filePath = path.join(projectPath, '.clubhouse', 'missions', `${missionId}.md`);
+  try {
+    return await fsp.readFile(filePath, 'utf-8');
+  } catch (err) {
+    if (!isEnoent(err)) {
+      appLog(LOG_NS, 'warn', `Failed to read mission "${missionId}" at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
+    return '';
+  }
+}
+
+/**
  * Read the content of a source agent template's README.md file (project-level .clubhouse/agent-templates/).
  */
 export async function readSourceAgentTemplateContent(projectPath: string, agentName: string): Promise<string> {

@@ -232,3 +232,40 @@ describe('@@BuildCommand / @@TestCommand / @@LintCommand replacement', () => {
     expect(replaceWildcards(input, ctxWithCmds)).toBe('1. make build\n2. make test\n3. make lint');
   });
 });
+
+describe('@@mission replacement', () => {
+  it('substitutes mission content body', () => {
+    const ctxWithMission = { ...ctx, mission: '# Steps\n1. Investigate\n2. Report' };
+    expect(replaceWildcards('Mission:\n@@mission', ctxWithMission)).toBe(
+      'Mission:\n# Steps\n1. Investigate\n2. Report',
+    );
+  });
+
+  it('resolves to empty string when mission is unset', () => {
+    expect(replaceWildcards('Mission:\n@@mission', ctx)).toBe('Mission:\n');
+  });
+
+  it('resolves to empty string when mission is empty string', () => {
+    expect(replaceWildcards('@@mission', { ...ctx, mission: '' })).toBe('');
+  });
+
+  it('substitutes multiple occurrences', () => {
+    const ctxWithMission = { ...ctx, mission: 'do the thing' };
+    expect(replaceWildcards('@@mission and @@mission', ctxWithMission)).toBe(
+      'do the thing and do the thing',
+    );
+  });
+
+  it('does not consume the @@ prefix of other tokens', () => {
+    // @@mission must not match @@missionFoo or similar — guard against future tokens
+    const ctxWithMission = { ...ctx, mission: 'X' };
+    expect(replaceWildcards('@@mission and @@AgentName', ctxWithMission)).toBe('X and bold-falcon');
+  });
+
+  it('unreplaceWildcards reverses mission content back to @@mission', () => {
+    const ctxWithMission = { ...ctx, mission: 'unique-mission-marker-12345' };
+    expect(unreplaceWildcards('Here: unique-mission-marker-12345', ctxWithMission)).toBe(
+      'Here: @@mission',
+    );
+  });
+});
