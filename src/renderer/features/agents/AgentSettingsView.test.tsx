@@ -312,6 +312,75 @@ describe('AgentSettingsView', () => {
     });
   });
 
+  describe('orchestrator dropdown', () => {
+    // Make sure two orchestrators are enabled so the <select> renders (the
+    // single-orchestrator path shows a static label instead).
+    function setupMultiOrch() {
+      useOrchestratorStore.setState({
+        enabled: ['claude-code', 'github-copilot'],
+        allOrchestrators: [
+          {
+            id: 'claude-code',
+            displayName: 'Claude Code',
+            shortName: 'CC',
+            capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true },
+            conventions: {
+              configDir: '.claude',
+              localInstructionsFile: 'CLAUDE.md',
+              legacyInstructionsFile: 'CLAUDE.md',
+              mcpConfigFile: '.mcp.json',
+              skillsDir: 'skills',
+              agentTemplatesDir: 'agents',
+              localSettingsFile: 'settings.local.json',
+            },
+          },
+          {
+            id: 'github-copilot',
+            displayName: 'GitHub Copilot',
+            shortName: 'GHCP',
+            capabilities: { headless: false, structuredOutput: false, hooks: false, sessionResume: false, permissions: false },
+            conventions: {
+              configDir: '.github',
+              localInstructionsFile: '.github/copilot-instructions.md',
+              legacyInstructionsFile: '.github/copilot-instructions.md',
+              mcpConfigFile: 'mcp.json',
+              skillsDir: 'skills',
+              agentTemplatesDir: 'agents',
+              localSettingsFile: 'settings.json',
+            },
+          },
+        ],
+      } as any);
+    }
+
+    it('patches the agent store after change so the controlled dropdown reflects the new value (regression: dropdown stuck on previous value)', async () => {
+      setupMultiOrch();
+      renderSettings({ orchestrator: 'claude-code' });
+
+      const select = screen.getByDisplayValue('Claude Code') as HTMLSelectElement;
+      expect(select.value).toBe('claude-code');
+
+      fireEvent.change(select, { target: { value: 'github-copilot' } });
+
+      // IPC persistence happens
+      await waitFor(() => {
+        expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(
+          '/project',
+          'agent-1',
+          { orchestrator: 'github-copilot' },
+        );
+      });
+
+      // CRITICAL: the in-memory store is patched in the same handler. The
+      // parent panel re-derives the `agent` prop from this store, so without
+      // this update the dropdown shows the old orchestrator even though the
+      // next agent start uses the new one.
+      await waitFor(() => {
+        expect(useAgentStore.getState().agents['agent-1'].orchestrator).toBe('github-copilot');
+      });
+    });
+  });
+
   describe('clubhouse mode', () => {
     beforeEach(() => {
       useClubhouseModeStore.setState({

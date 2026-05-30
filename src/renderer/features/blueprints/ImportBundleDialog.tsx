@@ -55,7 +55,7 @@ export function ImportBundleDialog({ bundle, onImport, onClose }: ImportBundleDi
     <div
       ref={backdropRef}
       className="fixed inset-0 bg-black/50 flex items-center justify-center"
-      style={{ zIndex: "var(--z-top)" }}
+      style={{ zIndex: "var(--z-index-top)" }}
       onClick={handleBackdropClick}
       data-testid="import-bundle-dialog"
     >

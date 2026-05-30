@@ -123,7 +123,7 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
     <div
       ref={backdropRef}
       className="fixed inset-0 bg-black/50 flex items-center justify-center"
-      style={{ zIndex: "var(--z-top)" }}
+      style={{ zIndex: "var(--z-index-top)" }}
       onMouseDown={handleBackdropMouseDown}
       onClick={handleBackdropClick}
       data-testid="wire-tool-permissions-dialog"

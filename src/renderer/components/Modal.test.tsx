@@ -66,4 +66,21 @@ describe('Modal', () => {
     fireEvent.click(screen.getByTestId('inner'));
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('portals the backdrop directly under document.body with the z-modal class (regression: settings rows above modal)', () => {
+    render(
+      <Modal open={true} onClose={vi.fn()}>
+        <span>content</span>
+      </Modal>
+    );
+    const backdrop = document.querySelector('.fixed.inset-0') as HTMLElement;
+    expect(backdrop).not.toBeNull();
+    // Must portal to body so it escapes ancestor stacking contexts in
+    // settings/explorer panels.
+    expect(backdrop.parentElement).toBe(document.body);
+    // Must carry the named z-index utility — if this class disappears (or
+    // its Tailwind utility stops compiling) the modal falls back to
+    // z-index: auto and settings content renders above it.
+    expect(backdrop.classList.contains('z-modal')).toBe(true);
+  });
 });

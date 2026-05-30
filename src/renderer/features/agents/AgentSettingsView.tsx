@@ -267,6 +267,16 @@ export function AgentSettingsView({ agent }: Props) {
   const handleOrchestratorChange = async (value: string) => {
     if (!projectPath) return;
     await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value });
+    useAgentStore.setState((s) => {
+      const existing = s.agents[agent.id];
+      if (!existing) return s;
+      return {
+        agents: {
+          ...s.agents,
+          [agent.id]: { ...existing, orchestrator: value },
+        },
+      };
+    });
   };
 
   // Agent model state
