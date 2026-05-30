@@ -9,6 +9,8 @@ export type AgentRuntime = 'pty' | 'headless' | 'structured';
 
 export interface AgentRegistration {
   projectPath: string;
+  /** Worktree path for the agent — where hook/MCP configs are written. */
+  cwd?: string;
   orchestrator: OrchestratorId;
   runtime: AgentRuntime;
   nonce?: string;
@@ -58,6 +60,10 @@ export function getAgentOrchestrator(agentId: string): OrchestratorId | undefine
 
 export function getAgentNonce(agentId: string): string | undefined {
   return agentRegistry.get(agentId)?.nonce;
+}
+
+export function getAgentCwd(agentId: string): string | undefined {
+  return agentRegistry.get(agentId)?.cwd;
 }
 
 export function untrackAgent(agentId: string): void {

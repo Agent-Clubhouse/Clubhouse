@@ -100,6 +100,9 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   // Command palette bridge: REQUEST is main→renderer push, RESULT is handled in command-palette-bridge.ts
   'IPC.CMD_PALETTE.REQUEST',
   'IPC.CMD_PALETTE.RESULT',
+  // Hook server toggle: AGENTS_NEED_RESTART is broadcast main→renderer when
+  // the user flips the global hook server toggle (see hook-server-toggle.ts).
+  'IPC.HOOK_SERVER.AGENTS_NEED_RESTART',
   'IPC.WINDOW.NAVIGATE_TO_AGENT',
   'IPC.WINDOW.NAVIGATE_TO_PLUGIN_SETTINGS',
   'IPC.WINDOW.REQUEST_AGENT_STATE',

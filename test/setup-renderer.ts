@@ -461,6 +461,9 @@ vi.stubGlobal('clubhouse', {
     onRequest: () => noop,
     sendResult: noop,
   },
+  hookServer: {
+    onAgentsNeedRestart: () => noop,
+  },
   window: {
     createPopout: asyncNoop,
     closePopout: asyncNoop,

@@ -9,9 +9,41 @@ import * as permissionQueue from './annex-permission-queue';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 
+/**
+ * Interval at which we scan for pending permissions older than
+ * STUCK_PERMISSION_AGE_MS and log them at WARN.  Helps diagnose stuck-state
+ * bugs (the kind that motivated this whole logging pass) by surfacing the
+ * stuck queue state instead of leaving it invisible until a user reports it.
+ */
+const STUCK_PERMISSION_SCAN_INTERVAL_MS = 30_000;
+const STUCK_PERMISSION_AGE_MS = 30_000;
+
 let server: any = null;
 let serverPort = 0;
 let readyPromise: Promise<number> | null = null;
+let stuckScanTimer: ReturnType<typeof setInterval> | null = null;
+let enabled = true;
+
+/**
+ * Toggle whether the hook server processes incoming hook callbacks.  When
+ * disabled, the server keeps listening (so existing curls don't dangle on
+ * connection refused) but returns 200 immediately for every `/hook/*` route.
+ *
+ * The toggle is the durable escape hatch for users whose orchestrator hook
+ * integration gets stuck.  See hook-server-toggle.ts for the side effects
+ * (stripping injected hooks from running agents' configs).
+ */
+export function setEnabled(value: boolean): void {
+  if (enabled === value) return;
+  enabled = value;
+  appLog('core:hook-server', 'info', `Hook server ${value ? 'enabled' : 'disabled'}`, {
+    meta: { enabled: value },
+  });
+}
+
+export function isEnabled(): boolean {
+  return enabled;
+}
 
 export function getPort(): number {
   return serverPort;
@@ -99,7 +131,9 @@ function buildHookEvent(
 
 /**
  * Handle permission request lifecycle — holds the HTTP response open
- * until the Annex client sends a decision (allow/deny) or the request times out.
+ * until the Annex client sends a decision (allow/deny) or the request times
+ * out.  Queue timeout < orchestrator hook timeout (see PERMISSION_QUEUE_TIMEOUT_MS)
+ * so we always respond before the orchestrator kills the curl child.
  */
 function handlePermissionRequest(
   agentId: string,
@@ -107,12 +141,12 @@ function handlePermissionRequest(
   res: http.ServerResponse,
 ): void {
   const toolName = normalized.toolName || 'unknown';
-  const { decision } = permissionQueue.createPermission(
+  const startedAt = Date.now();
+  const { requestId, decision } = permissionQueue.createPermission(
     agentId,
     toolName,
     normalized.toolInput,
     normalized.message,
-    120_000, // 120 second timeout
   );
 
   decision.then((result) => {
@@ -120,11 +154,29 @@ function handlePermissionRequest(
     const responseBody = JSON.stringify({
       hookSpecificOutput: { permissionDecision },
     });
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(responseBody),
-    });
-    res.end(responseBody);
+    const elapsedMs = Date.now() - startedAt;
+    try {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(responseBody),
+      });
+      res.end(responseBody);
+      appLog('core:hook-server', 'info', 'Permission hook decision sent to orchestrator', {
+        meta: { agentId, requestId, toolName, decision: permissionDecision, queueResult: result, elapsedMs },
+      });
+    } catch (err) {
+      appLog('core:hook-server', 'error', 'Failed to write permission response', {
+        meta: {
+          agentId,
+          requestId,
+          toolName,
+          decision: permissionDecision,
+          elapsedMs,
+          error: err instanceof Error ? err.message : String(err),
+          writableEnded: res.writableEnded,
+        },
+      });
+    }
 
     // Broadcast permission_resolved so the renderer clears the
     // needs_permission status.  Without this, denied / timed-out
@@ -138,8 +190,8 @@ function handlePermissionRequest(
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, resolvedEvent);
     annexEventBus.emitHookEvent(agentId, resolvedEvent as any);
   }).catch((err) => {
-    appLog('core:hook-server', 'error', 'Failed to send permission response', {
-      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    appLog('core:hook-server', 'error', 'Permission decision promise rejected', {
+      meta: { agentId, requestId, toolName, error: err instanceof Error ? err.message : String(err) },
     });
     try { if (!res.writableEnded) res.end(); } catch { /* response already closed */ }
   });
@@ -149,6 +201,17 @@ function handlePermissionRequest(
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   if (req.method !== 'POST' || !req.url?.startsWith('/hook/')) {
     res.writeHead(404);
+    res.end();
+    return;
+  }
+
+  // When disabled, short-circuit every hook route with a fast 200.  The
+  // orchestrator's curl child returns immediately and the orchestrator
+  // falls through to its own permission UI.  We deliberately don't drain
+  // the body — saves time, and the orchestrator doesn't care about response
+  // body content for non-permission hooks.
+  if (!enabled) {
+    res.writeHead(200);
     res.end();
     return;
   }
@@ -164,6 +227,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (body === null) return; // size limit exceeded, response already sent
 
   const { agentId, eventHint } = route;
+  const bodyBytes = Buffer.byteLength(body);
 
   try {
     const raw = JSON.parse(body);
@@ -175,41 +239,101 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const projectPath = getAgentProjectPath(agentId);
     const orchestrator = getAgentOrchestrator(agentId);
 
-    if (projectPath) {
-      if (!validateNonce(agentId, req)) {
-        res.writeHead(200);
-        res.end();
-        return;
-      }
+    if (!projectPath) {
+      appLog('core:hook-server', 'warn', 'Hook event ignored (no project path for agent)', {
+        meta: { agentId, eventHint, orchestrator, bodyBytes },
+      });
+      res.writeHead(200);
+      res.end();
+      return;
+    }
 
-      const provider = await resolveOrchestrator(projectPath, orchestrator);
-      if (!isHookCapable(provider)) {
-        res.writeHead(200);
-        res.end();
-        return;
-      }
-      const normalized = provider.parseHookEvent(raw);
+    if (!validateNonce(agentId, req)) {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
 
-      if (normalized) {
-        const hookEvent = buildHookEvent(provider, normalized);
-        broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
-        annexEventBus.emitHookEvent(agentId, hookEvent as any);
+    const provider = await resolveOrchestrator(projectPath, orchestrator);
+    if (!isHookCapable(provider)) {
+      appLog('core:hook-server', 'warn', 'Hook event ignored (provider not hook-capable)', {
+        meta: { agentId, eventHint, orchestrator: provider?.id, bodyBytes },
+      });
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+    const normalized = provider.parseHookEvent(raw);
 
-        if (normalized.kind === 'permission_request') {
-          handlePermissionRequest(agentId, normalized, res);
-          return; // Don't respond yet — the promise will handle it
-        }
-      }
+    if (!normalized) {
+      appLog('core:hook-server', 'warn', 'Hook event ignored (unknown event for orchestrator)', {
+        meta: {
+          agentId,
+          eventHint,
+          orchestrator: provider.id,
+          rawEventName: raw?.hook_event_name,
+          bodyBytes,
+        },
+      });
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+
+    appLog('core:hook-server', 'info', 'Hook event received', {
+      meta: {
+        agentId,
+        eventHint,
+        orchestrator: provider.id,
+        kind: normalized.kind,
+        toolName: normalized.toolName,
+        bodyBytes,
+      },
+    });
+
+    const hookEvent = buildHookEvent(provider, normalized);
+    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
+    annexEventBus.emitHookEvent(agentId, hookEvent as any);
+
+    if (normalized.kind === 'permission_request') {
+      handlePermissionRequest(agentId, normalized, res);
+      return; // Don't respond yet — the promise will handle it
     }
   } catch (err) {
     appLog('core:hook-server', 'error', 'Failed to parse hook event', {
-      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      meta: { agentId, eventHint, bodyBytes, error: err instanceof Error ? err.message : String(err) },
     });
   }
 
   // For non-permission events, respond immediately
   res.writeHead(200);
   res.end();
+}
+
+/**
+ * Periodic scan for stuck pending permissions.  Logs a WARN line for any
+ * permission that has been pending longer than STUCK_PERMISSION_AGE_MS.
+ * Without this, a stuck queue is silent until a user reports the symptom.
+ */
+function scanForStuckPermissions(): void {
+  const now = Date.now();
+  const pending = permissionQueue.listPending();
+  for (const p of pending) {
+    const ageMs = now - p.createdAt;
+    if (ageMs >= STUCK_PERMISSION_AGE_MS) {
+      const remainingMs = (p.createdAt + p.timeoutMs) - now;
+      appLog('core:permission-queue', 'warn', 'Stuck pending permission', {
+        meta: {
+          requestId: p.requestId,
+          agentId: p.agentId,
+          toolName: p.toolName,
+          ageMs,
+          timeoutMs: p.timeoutMs,
+          remainingMs,
+        },
+      });
+    }
+  }
 }
 
 export function start(): Promise<number> {
@@ -223,6 +347,11 @@ export function start(): Promise<number> {
         appLog('core:hook-server', 'info', `Hook server listening on 127.0.0.1:${serverPort}`, {
           meta: { port: serverPort },
         });
+        if (!stuckScanTimer) {
+          stuckScanTimer = setInterval(scanForStuckPermissions, STUCK_PERMISSION_SCAN_INTERVAL_MS);
+          // Don't keep the event loop alive on the scan timer alone
+          if (typeof stuckScanTimer.unref === 'function') stuckScanTimer.unref();
+        }
         resolve(serverPort);
       } else {
         const err = new Error('Failed to get hook server address');
@@ -243,6 +372,10 @@ export function start(): Promise<number> {
 }
 
 export function stop(): void {
+  if (stuckScanTimer) {
+    clearInterval(stuckScanTimer);
+    stuckScanTimer = null;
+  }
   if (server) {
     server.close();
     server = null;

@@ -466,6 +466,10 @@ export const IPC = {
      */
     OPEN_AND_READ: 'blueprint:open-and-read',
   },
+  HOOK_SERVER: {
+    /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */
+    AGENTS_NEED_RESTART: 'hook-server:agents-need-restart',
+  },
   AGENT_QUEUE: {
     CREATE: 'agent-queue:create',
     GET: 'agent-queue:get',

@@ -102,6 +102,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
 
   agentRegistry.register(params.agentId, {
     projectPath: params.projectPath,
+    cwd: params.cwd,
     orchestrator: provider.id as OrchestratorId,
     runtime: 'pty',
   });
