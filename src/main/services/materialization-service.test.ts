@@ -541,7 +541,52 @@ describe('materialization-service', () => {
       expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
     });
 
-    it('substitutes @@mission with project default mission file content', async () => {
+    it('substitutes @@Persona inline and skips the auto-append (no double-injection)', async () => {
+      const agentWithPersona = { ...testAgent, persona: 'qa' };
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: {
+          instructions: 'Agent @@AgentName\n\n## Role\n@@Persona\n\n## Done',
+        },
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
+
+      expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      // Persona content appears after the ## Role section header (inline substitution)...
+      const personaMarker = written.indexOf('Quality Assurance');
+      const roleMarker = written.indexOf('## Role');
+      const doneMarker = written.lastIndexOf('## Done');
+      expect(personaMarker).toBeGreaterThan(roleMarker);
+      // ...and before the ## Done section, proving no auto-append happens after it.
+      expect(personaMarker).toBeLessThan(doneMarker);
+      // The trailing ## Done section is preserved at the end.
+      expect(written.endsWith('## Done')).toBe(true);
+      // Persona body should appear exactly once — no double injection.
+      expect(written.match(/Quality Assurance/g)?.length).toBe(1);
+    });
+
+    it('still auto-appends persona when @@Persona is NOT in the template (backwards compat)', async () => {
+      const agentWithPersona = { ...testAgent, persona: 'qa' };
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: {
+          // No @@Persona token — preserve the pre-feature behavior.
+          instructions: 'Agent @@AgentName at @@Path',
+        },
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
+
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written.startsWith('Agent bold-falcon at .clubhouse/agents/bold-falcon/')).toBe(true);
+      expect(written).toContain('Quality Assurance'); // appended at the end
+    });
+
+    it('substitutes @@Mission with project default mission file content', async () => {
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
         const fp = String(p).replace(/\\/g, '/');
         if (fp.includes('settings.json')) {
@@ -549,7 +594,7 @@ describe('materialization-service', () => {
             defaults: {},
             quickOverrides: {},
             agentDefaults: {
-              instructions: 'Agent @@AgentName\n\n@@mission',
+              instructions: 'Agent @@AgentName\n\n@@Mission',
               mission: 'do-the-thing',
             },
           });
@@ -574,7 +619,7 @@ describe('materialization-service', () => {
             defaults: {},
             quickOverrides: {},
             agentDefaults: {
-              instructions: '@@mission',
+              instructions: '@@Mission',
               mission: 'project-default',
             },
           });
@@ -590,7 +635,7 @@ describe('materialization-service', () => {
       expect(written).toBe('AGENT BODY');
     });
 
-    it('resolves @@mission to empty when mission file is missing', async () => {
+    it('resolves @@Mission to empty when mission file is missing', async () => {
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
         const fp = String(p).replace(/\\/g, '/');
         if (fp.includes('settings.json')) {
@@ -598,7 +643,7 @@ describe('materialization-service', () => {
             defaults: {},
             quickOverrides: {},
             agentDefaults: {
-              instructions: 'Mission:\n@@mission\nEnd.',
+              instructions: 'Mission:\n@@Mission\nEnd.',
               mission: 'missing-file',
             },
           });
@@ -843,7 +888,7 @@ describe('materialization-service', () => {
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('clubhouse-mode-settings.json');
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('.clubhouse/skills/');
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('.clubhouse/missions/');
-      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('@@mission');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('@@Mission');
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('clubhouseModeOverride');
     });
   });
@@ -854,6 +899,12 @@ describe('materialization-service', () => {
       expect(templates.instructions).toContain('@@AgentName');
       expect(templates.instructions).toContain('@@StandbyBranch');
       expect(templates.instructions).toContain('@@Path');
+    });
+
+    it('does NOT include @@Mission or @@Persona in the default body (opt-in tokens)', () => {
+      const templates = getDefaultAgentTemplates();
+      expect(templates.instructions).not.toContain('@@Mission');
+      expect(templates.instructions).not.toContain('@@Persona');
     });
 
     it('returns permissions with allow and deny lists', () => {

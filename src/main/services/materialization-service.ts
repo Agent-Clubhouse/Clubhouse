@@ -213,6 +213,7 @@ export function buildWildcardContext(
   sourceControlProvider?: SourceControlProvider,
   commands?: { buildCommand?: string; testCommand?: string; lintCommand?: string },
   mission?: string,
+  persona?: string,
 ): WildcardContext {
   const agentPath = agent.worktreePath
     ? path.relative(projectPath, agent.worktreePath).replace(/\\/g, '/') + '/'
@@ -226,6 +227,7 @@ export function buildWildcardContext(
     testCommand: commands?.testCommand,
     lintCommand: commands?.lintCommand,
     mission,
+    persona,
   };
 }
 
@@ -291,7 +293,8 @@ export async function materializeAgent(params: {
     lintCommand: defaults.lintCommand,
   };
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent);
+  const personaContent = agent.persona ? getPersonaTemplate(agent.persona)?.content : undefined;
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
   const conv = provider.conventions;
 
   // 0. Clean up stale JSON content in TOML config files (legacy migration)
@@ -302,23 +305,17 @@ export async function materializeAgent(params: {
   // 1. Instructions (project defaults + persona layer)
   if (defaults.instructions) {
     const resolved = replaceWildcards(defaults.instructions, ctx);
-    // If agent has a persona, append persona instructions after project defaults
-    if (agent.persona) {
-      const persona = getPersonaTemplate(agent.persona);
-      if (persona) {
-        await provider.writeInstructions(worktreePath, `${resolved}\n\n${persona.content}`);
-      } else {
-        await provider.writeInstructions(worktreePath, resolved);
-      }
+    // Auto-append persona only when the template doesn't already use @@Persona,
+    // so users who opt into the wildcard don't get the persona injected twice.
+    const templateUsesPersonaToken = defaults.instructions.includes('@@Persona');
+    if (personaContent && !templateUsesPersonaToken) {
+      await provider.writeInstructions(worktreePath, `${resolved}\n\n${personaContent}`);
     } else {
       await provider.writeInstructions(worktreePath, resolved);
     }
-  } else if (agent.persona) {
+  } else if (personaContent) {
     // No project defaults but agent has a persona — write persona instructions alone
-    const persona = getPersonaTemplate(agent.persona);
-    if (persona) {
-      await provider.writeInstructions(worktreePath, persona.content);
-    }
+    await provider.writeInstructions(worktreePath, personaContent);
   }
 
   // 2. Permissions
@@ -441,21 +438,20 @@ export async function previewMaterialization(params: {
   };
   const missionId = resolveMissionId(agent, defaults);
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent);
+  const personaContent = agent.persona ? getPersonaTemplate(agent.persona)?.content : undefined;
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
   const _conv = provider.conventions;
 
   let instructions = defaults.instructions
     ? replaceWildcards(defaults.instructions, ctx)
     : '';
 
-  // Append persona instructions to preview if agent has a persona
-  if (agent.persona) {
-    const persona = getPersonaTemplate(agent.persona);
-    if (persona) {
-      instructions = instructions
-        ? `${instructions}\n\n${persona.content}`
-        : persona.content;
-    }
+  // Auto-append persona only when the template doesn't already use @@Persona.
+  const templateUsesPersonaToken = defaults.instructions?.includes('@@Persona') ?? false;
+  if (personaContent && !templateUsesPersonaToken) {
+    instructions = instructions
+      ? `${instructions}\n\n${personaContent}`
+      : personaContent;
   }
 
   const permissions = defaults.permissions
@@ -601,9 +597,7 @@ When given a mission:
 3. Implement the work, committing frequently with descriptive messages
 4. Validate changes using \`/validate-changes\` (build, test, lint)
 5. Push changes and open a PR to main with descriptive details
-6. Return to your standby branch and pull latest from main
-
-@@mission`;
+6. Return to your standby branch and pull latest from main`;
 
   const defaultPermissions = {
     allow: [
@@ -872,7 +866,7 @@ flat markdown files under \`.clubhouse/missions/\`; the filename (minus
 \`\`\`
 
 At materialization, the content of the active mission file is substituted
-for the \`@@mission\` wildcard everywhere it appears (default CLAUDE.md
+for the \`@@Mission\` wildcard everywhere it appears (default CLAUDE.md
 template, skills, permissions, etc.).
 
 **Selecting a mission**:
@@ -881,7 +875,7 @@ template, skills, permissions, etc.).
 - Set \`mission\` on an agent in \`.clubhouse/agents.json\` to override per-agent.
 - Per-agent wins. Either value is the mission ID (filename without \`.md\`).
 
-If the mission file does not exist, \`@@mission\` resolves to an empty string —
+If the mission file does not exist, \`@@Mission\` resolves to an empty string —
 the rest of materialization still succeeds.
 
 ---
@@ -897,8 +891,11 @@ the rest of materialization still succeeds.
 | \`@@BuildCommand\`            | from project defaults                                |
 | \`@@TestCommand\`             | from project defaults                                |
 | \`@@LintCommand\`             | from project defaults                                |
-| \`@@mission\`                 | full markdown content of the active mission file     |
+| \`@@Mission\`                 | full markdown content of the active mission file     |
+| \`@@Persona\`                 | full markdown content of the active persona template |
 | \`@@If(github)…@@EndIf\`      | conditional block, kept only when provider matches   |
+
+Neither \`@@Mission\` nor \`@@Persona\` appear in the built-in default template — add them to your customized \`agentDefaults.instructions\` if you want the content inlined at a specific position. \`@@Persona\` also acts as an "opt out" of the default auto-append behavior: when your template contains the token, the persona content is substituted in place and not appended again at the bottom.
 
 ---
 
