@@ -23,9 +23,15 @@ describe('terminal plugin manifest', () => {
 
   it('declares required permissions including canvas', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['terminal', 'commands', 'agents', 'canvas', 'annex']),
+      expect.arrayContaining(['terminal', 'commands', 'agents', 'canvas', 'annex', 'projects']),
     );
-    expect(manifest.permissions).toHaveLength(5);
+    expect(manifest.permissions).toHaveLength(6);
+  });
+
+  it('declares the projects permission required by its canvas widget', () => {
+    // TerminalCanvasWidget calls api.projects.list() to populate the project
+    // picker; without this permission the canvas widget is disabled at runtime.
+    expect(manifest.permissions).toContain('projects');
   });
 
   it('contributes tab.title', () => {
