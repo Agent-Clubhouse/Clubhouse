@@ -421,6 +421,7 @@ const api = {
       testCommand?: string;
       lintCommand?: string;
       mission?: string;
+      persona?: string;
       profileId?: string;
       commandPrefix?: string;
     }> =>
@@ -435,6 +436,7 @@ const api = {
       testCommand?: string;
       lintCommand?: string;
       mission?: string;
+      persona?: string;
       profileId?: string;
       commandPrefix?: string;
     }) =>

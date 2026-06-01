@@ -6,6 +6,7 @@ import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { usePluginStore } from '../../plugins/plugin-store';
+import { PERSONA_TEMPLATES } from '../assistant/content/personas';
 
 interface ProjectAgentDefaults {
   instructions?: string;
@@ -17,6 +18,7 @@ interface ProjectAgentDefaults {
   testCommand?: string;
   lintCommand?: string;
   mission?: string;
+  persona?: string;
   profileId?: string;
   commandPrefix?: string;
 }
@@ -251,6 +253,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [testCommand, setTestCommand] = useState('');
   const [lintCommand, setLintCommand] = useState('');
   const [mission, setMission] = useState('');
+  const [persona, setPersona] = useState('');
   const [profileId, setProfileId] = useState<string | undefined>(undefined);
   const [commandPrefix, setCommandPrefix] = useState('');
   const [dirty, setDirty] = useState(false);
@@ -288,6 +291,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
       setTestCommand(d.testCommand || '');
       setLintCommand(d.lintCommand || '');
       setMission(d.mission || '');
+      setPersona(d.persona || '');
       setProfileId(d.profileId);
       setCommandPrefix(d.commandPrefix || '');
       setLoaded(true);
@@ -364,6 +368,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
     if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
     if (mission.trim()) newDefaults.mission = mission.trim();
+    if (persona) newDefaults.persona = persona;
     if (profileId) newDefaults.profileId = profileId;
     if (commandPrefix.trim()) newDefaults.commandPrefix = commandPrefix.trim();
 
@@ -647,6 +652,24 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
             spellCheck={false}
           />
+        </div>
+
+        {/* Default Persona */}
+        <div>
+          <label className="block text-xs text-ctp-subtext0 mb-1">Default Persona</label>
+          <select
+            value={persona}
+            onChange={(e) => { setPersona(e.target.value); setDirty(true); }}
+            className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2 text-ctp-text focus-ring-dim"
+          >
+            <option value="">None</option>
+            {PERSONA_TEMPLATES.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <p className="text-xs text-ctp-subtext0/60 mt-1">
+            Applied to every agent in this project unless an agent has its own persona set. Override per-agent in agent settings, or by editing <code className="bg-surface-0 px-0.5 rounded">.clubhouse/agents.json</code> — see <code className="bg-surface-0 px-0.5 rounded">.clubhouse/clubhouse-mode.md</code>. Resolves to <code className="bg-surface-0 px-0.5 rounded">@@Persona</code> and (when the template lacks that token) is auto-appended to CLAUDE.md.
+          </p>
         </div>
 
         {/* Default Free Agent Mode */}

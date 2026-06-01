@@ -243,6 +243,18 @@ export function resolveMissionId(
   return agent.mission ?? defaults.mission;
 }
 
+/**
+ * Resolve the effective persona ID for an agent.
+ * Per-agent override (`agent.persona`) wins; otherwise falls back to project default
+ * (`defaults.persona`). Returns undefined when neither is set.
+ */
+export function resolvePersonaId(
+  agent: DurableAgentConfig,
+  defaults: ProjectAgentDefaults,
+): string | undefined {
+  return agent.persona ?? defaults.persona;
+}
+
 // ── Source control provider resolution ───────────────────────────────────
 
 /**
@@ -279,7 +291,8 @@ export async function materializeAgent(params: {
 
   const defaults = await readProjectAgentDefaults(projectPath);
   const missionId = resolveMissionId(agent, defaults);
-  if (!defaults.instructions && !defaults.permissions && !defaults.mcpJson && !agent.persona && !missionId) {
+  const personaId = resolvePersonaId(agent, defaults);
+  if (!defaults.instructions && !defaults.permissions && !defaults.mcpJson && !personaId && !missionId) {
     // Also check source skills/templates
     const sourceSkills = await listSourceSkills(projectPath);
     const sourceTemplates = await listSourceAgentTemplates(projectPath);
@@ -293,7 +306,7 @@ export async function materializeAgent(params: {
     lintCommand: defaults.lintCommand,
   };
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const personaContent = agent.persona ? getPersonaTemplate(agent.persona)?.content : undefined;
+  const personaContent = personaId ? getPersonaTemplate(personaId)?.content : undefined;
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
   const conv = provider.conventions;
 
@@ -437,8 +450,9 @@ export async function previewMaterialization(params: {
     lintCommand: defaults.lintCommand,
   };
   const missionId = resolveMissionId(agent, defaults);
+  const personaId = resolvePersonaId(agent, defaults);
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const personaContent = agent.persona ? getPersonaTemplate(agent.persona)?.content : undefined;
+  const personaContent = personaId ? getPersonaTemplate(personaId)?.content : undefined;
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
   const _conv = provider.conventions;
 

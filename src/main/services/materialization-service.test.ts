@@ -69,6 +69,7 @@ import {
   resetDefaultSkills,
   resetProjectAgentDefaults,
   resolveMissionId,
+  resolvePersonaId,
   getDefaultAgentTemplates,
   resolveSourceControlProvider,
   enableExclusions,
@@ -234,6 +235,21 @@ describe('materialization-service', () => {
       // (?? only falls through on null/undefined)
       const agent = { ...testAgent, mission: '' };
       expect(resolveMissionId(agent, { mission: 'project-default' })).toBe('');
+    });
+  });
+
+  describe('resolvePersonaId', () => {
+    it('returns per-agent persona when set', () => {
+      const agent = { ...testAgent, persona: 'qa' };
+      expect(resolvePersonaId(agent, { persona: 'project-manager' })).toBe('qa');
+    });
+
+    it('falls back to project default when agent persona unset', () => {
+      expect(resolvePersonaId(testAgent, { persona: 'project-manager' })).toBe('project-manager');
+    });
+
+    it('returns undefined when neither is set', () => {
+      expect(resolvePersonaId(testAgent, {})).toBeUndefined();
     });
   });
 
@@ -584,6 +600,42 @@ describe('materialization-service', () => {
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
       expect(written.startsWith('Agent bold-falcon at .clubhouse/agents/bold-falcon/')).toBe(true);
       expect(written).toContain('Quality Assurance'); // appended at the end
+    });
+
+    it('applies project-default persona when the agent has none of its own', async () => {
+      // Agent with NO persona; project default sets qa.
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: {
+          instructions: 'Agent @@AgentName',
+          persona: 'qa',
+        },
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written).toContain('Agent bold-falcon');
+      expect(written).toContain('Quality Assurance');
+    });
+
+    it('per-agent persona overrides project-default persona', async () => {
+      const agentWithPersona = { ...testAgent, persona: 'project-manager' };
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: {
+          instructions: 'Agent @@AgentName',
+          persona: 'qa', // project default — should be overridden
+        },
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
+
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written).toContain('Project Manager');
+      expect(written).not.toContain('Quality Assurance');
     });
 
     it('substitutes @@Mission with project default mission file content', async () => {
