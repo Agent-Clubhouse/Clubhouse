@@ -420,6 +420,7 @@ const api = {
       buildCommand?: string;
       testCommand?: string;
       lintCommand?: string;
+      mission?: string;
       profileId?: string;
       commandPrefix?: string;
     }> =>
@@ -433,6 +434,7 @@ const api = {
       buildCommand?: string;
       testCommand?: string;
       lintCommand?: string;
+      mission?: string;
       profileId?: string;
       commandPrefix?: string;
     }) =>

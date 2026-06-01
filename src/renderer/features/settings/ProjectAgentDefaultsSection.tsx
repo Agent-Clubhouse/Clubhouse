@@ -16,6 +16,7 @@ interface ProjectAgentDefaults {
   buildCommand?: string;
   testCommand?: string;
   lintCommand?: string;
+  mission?: string;
   profileId?: string;
   commandPrefix?: string;
 }
@@ -249,6 +250,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [buildCommand, setBuildCommand] = useState('');
   const [testCommand, setTestCommand] = useState('');
   const [lintCommand, setLintCommand] = useState('');
+  const [mission, setMission] = useState('');
   const [profileId, setProfileId] = useState<string | undefined>(undefined);
   const [commandPrefix, setCommandPrefix] = useState('');
   const [dirty, setDirty] = useState(false);
@@ -285,6 +287,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
       setBuildCommand(d.buildCommand || '');
       setTestCommand(d.testCommand || '');
       setLintCommand(d.lintCommand || '');
+      setMission(d.mission || '');
       setProfileId(d.profileId);
       setCommandPrefix(d.commandPrefix || '');
       setLoaded(true);
@@ -360,6 +363,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     if (buildCommand.trim()) newDefaults.buildCommand = buildCommand.trim();
     if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
     if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
+    if (mission.trim()) newDefaults.mission = mission.trim();
     if (profileId) newDefaults.profileId = profileId;
     if (commandPrefix.trim()) newDefaults.commandPrefix = commandPrefix.trim();
 
@@ -507,7 +511,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           <span>
             {clubhouseMode
               ? <>
-                  <strong>Clubhouse Mode active.</strong> These settings are live-managed and pushed to agent worktrees on each wake. Use wildcards: <code className="bg-ctp-success/10 px-0.5 rounded">@@AgentName</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@StandbyBranch</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@Path</code>.
+                  <strong>Clubhouse Mode active.</strong> These settings are live-managed and pushed to agent worktrees on each wake. Wildcards: <code className="bg-ctp-success/10 px-0.5 rounded">@@AgentName</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@StandbyBranch</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@Path</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@BuildCommand</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@TestCommand</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@LintCommand</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@SourceControlProvider</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@Mission</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@Persona</code>. Full reference: <code className="bg-ctp-success/10 px-0.5 rounded">.clubhouse/clubhouse-mode.md</code> in this project.
                 </>
               : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'
             }
@@ -628,6 +632,21 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               />
             </div>
           </div>
+        </div>
+
+        {/* Default Mission */}
+        <div>
+          <label className="block text-xs text-ctp-subtext0 mb-1">Default Mission</label>
+          <p className="text-xs text-ctp-subtext0/60 mb-2">
+            ID of a markdown file under <code className="bg-surface-0 px-0.5 rounded">.clubhouse/missions/</code> (e.g. <code className="bg-surface-0 px-0.5 rounded">implement-and-ship</code>). Its content replaces <code className="bg-surface-0 px-0.5 rounded">@@Mission</code> wherever it appears in instructions, skills, or permissions. Per-agent <code className="bg-surface-0 px-0.5 rounded">mission</code> in <code className="bg-surface-0 px-0.5 rounded">.clubhouse/agents.json</code> overrides this. Leave blank for no mission.
+          </p>
+          <input
+            value={mission}
+            onChange={(e) => { setMission(e.target.value); setDirty(true); }}
+            placeholder="implement-and-ship"
+            className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
+            spellCheck={false}
+          />
         </div>
 
         {/* Default Free Agent Mode */}

@@ -148,6 +148,75 @@ describe('ProjectAgentDefaultsSection', () => {
       expect(screen.getByText('@@StandbyBranch')).toBeInTheDocument();
       expect(screen.getByText('@@Path')).toBeInTheDocument();
     });
+
+    it('lists @@Mission and @@Persona in the active banner', async () => {
+      renderSection({ clubhouseMode: true });
+      await screen.findByText(/Clubhouse Mode active/);
+      // @@Mission appears in both the banner and the Default Mission helper text;
+      // @@Persona only in the banner. Either way both must be on the page.
+      expect(screen.getAllByText('@@Mission').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('@@Persona')).toBeInTheDocument();
+    });
+
+    it('references the self-edit guide path when clubhouse mode is on', async () => {
+      renderSection({ clubhouseMode: true });
+      await screen.findByText(/Clubhouse Mode active/);
+      expect(screen.getByText('.clubhouse/clubhouse-mode.md')).toBeInTheDocument();
+    });
+  });
+
+  describe('default mission', () => {
+    it('renders the Default Mission input', async () => {
+      renderSection();
+      expect(await screen.findByText('Default Mission')).toBeInTheDocument();
+    });
+
+    it('loads a saved mission value', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({
+        instructions: 'test',
+        mission: 'implement-and-ship',
+      });
+      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
+        userInstructions: 'test',
+        pluginInstructionBlocks: [],
+        allowRules: [],
+        denyRules: [],
+        skills: [],
+        agentTemplates: [],
+        mcpServers: [],
+        orphanedPluginIds: [],
+      });
+      renderSection();
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('implement-and-ship')).toBeInTheDocument();
+      });
+    });
+
+    it('saves mission when set', async () => {
+      renderSection();
+      const input = await screen.findByPlaceholderText('implement-and-ship');
+      fireEvent.change(input, { target: { value: 'my-mission' } });
+      fireEvent.click(screen.getByText('Save Defaults'));
+
+      await waitFor(() => {
+        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
+        expect(call[1].mission).toBe('my-mission');
+      });
+    });
+
+    it('omits mission when left blank', async () => {
+      renderSection();
+      await screen.findByText('Default Mission');
+      // Trigger dirty without setting mission
+      const textarea = screen.getByDisplayValue('Default instructions');
+      fireEvent.change(textarea, { target: { value: 'Updated' } });
+      fireEvent.click(screen.getByText('Save Defaults'));
+
+      await waitFor(() => {
+        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
+        expect(call[1].mission).toBeUndefined();
+      });
+    });
   });
 
   describe('source control provider', () => {
