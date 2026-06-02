@@ -123,8 +123,22 @@ function AppAgentSettings() {
           </button>
         </div>
         {clubhouseEnabled && (
-          <div className="px-3 py-2 rounded-lg bg-ctp-warning/10 border border-ctp-warning/20 text-xs text-ctp-warning">
-            Wildcards <code className="bg-ctp-warning/10 px-1 rounded">@@AgentName</code>, <code className="bg-ctp-warning/10 px-1 rounded">@@StandbyBranch</code>, and <code className="bg-ctp-warning/10 px-1 rounded">@@Path</code> in project defaults are resolved per-agent on each wake.
+          <div className="px-3 py-2 rounded-lg bg-ctp-warning/10 border border-ctp-warning/20 text-xs text-ctp-warning space-y-1">
+            <div>
+              Wildcards in project defaults are resolved per-agent on each wake:{' '}
+              <code className="bg-ctp-warning/10 px-1 rounded">@@AgentName</code>,{' '}
+              <code className="bg-ctp-warning/10 px-1 rounded">@@StandbyBranch</code>,{' '}
+              <code className="bg-ctp-warning/10 px-1 rounded">@@Path</code>,{' '}
+              <code className="bg-ctp-warning/10 px-1 rounded">@@SourceControlProvider</code>,{' '}
+              <code className="bg-ctp-warning/10 px-1 rounded">@@BuildCommand</code>,{' '}
+              <code className="bg-ctp-warning/10 px-1 rounded">@@TestCommand</code>,{' '}
+              <code className="bg-ctp-warning/10 px-1 rounded">@@LintCommand</code>,{' '}
+              <code className="bg-ctp-warning/10 px-1 rounded">@@Mission</code>,{' '}
+              <code className="bg-ctp-warning/10 px-1 rounded">@@Persona</code>.
+            </div>
+            <div>
+              Each Clubhouse-enabled project gets a generated self-edit guide at <code className="bg-ctp-warning/10 px-1 rounded">.clubhouse/clubhouse-mode.md</code> covering every setting on disk.
+            </div>
           </div>
         )}
         {clubhouseEnabled && (

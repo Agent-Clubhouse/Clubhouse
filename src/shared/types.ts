@@ -173,6 +173,8 @@ export interface ProjectAgentDefaults {
   commandPrefix?: string;
   /** Default mission ID. Resolved at materialization to .clubhouse/missions/<id>.md content; substituted for @@mission. */
   mission?: string;
+  /** Default persona template ID. Applied to every agent in the project unless the agent has its own `persona` set. */
+  persona?: string;
 }
 
 /** A recorded CLI session for a durable agent */

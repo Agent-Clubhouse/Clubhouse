@@ -544,6 +544,13 @@ export async function updateDurableConfig(
       delete agent.mission;
     }
   }
+  if (updates.persona !== undefined) {
+    if (updates.persona) {
+      agent.persona = updates.persona;
+    } else {
+      delete agent.persona;
+    }
+  }
   await writeAgents(projectPath, agents);
 }
 

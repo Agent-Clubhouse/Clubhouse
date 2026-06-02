@@ -381,6 +381,51 @@ describe('AgentSettingsView', () => {
     });
   });
 
+  describe('persona dropdown', () => {
+    it('renders with "Project default" selected when agent has no persona', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
+      renderSettings();
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Project default')).toBeInTheDocument();
+      });
+    });
+
+    it('loads the agent\'s current persona', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });
+      renderSettings();
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Quality Assurance')).toBeInTheDocument();
+      });
+    });
+
+    it('persists the new persona via updateDurableConfig (independent of override)', async () => {
+      // No clubhouseModeOverride manipulation — persona should be settable regardless.
+      const updateMock = vi.fn().mockResolvedValue(undefined);
+      (window.clubhouse.agent as any).updateDurableConfig = updateMock;
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
+      renderSettings();
+      const select = await screen.findByDisplayValue('Project default') as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: 'qa' } });
+
+      await waitFor(() => {
+        expect(updateMock).toHaveBeenCalledWith('/project', 'agent-1', { persona: 'qa' });
+      });
+    });
+
+    it('clears the persona when set back to "Project default"', async () => {
+      const updateMock = vi.fn().mockResolvedValue(undefined);
+      (window.clubhouse.agent as any).updateDurableConfig = updateMock;
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });
+      renderSettings();
+      const select = await screen.findByDisplayValue('Quality Assurance') as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: '' } });
+
+      await waitFor(() => {
+        expect(updateMock).toHaveBeenCalledWith('/project', 'agent-1', { persona: '' });
+      });
+    });
+  });
+
   describe('clubhouse mode', () => {
     beforeEach(() => {
       useClubhouseModeStore.setState({

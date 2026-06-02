@@ -17,6 +17,7 @@ import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialo
 import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-template-registry';
 import { exportAgentAsTemplate } from '../blueprints/agent-template-export';
 import { serializeManifest } from '../blueprints/blueprint-export';
+import { PERSONA_TEMPLATES } from '../assistant/content/personas';
 
 type SettingsTab = 'main' | 'quick';
 
@@ -380,22 +381,32 @@ export function AgentSettingsView({ agent }: Props) {
   const clubhouseActive = projectPath ? isClubhouseModeEnabled(projectPath) : false;
   const isManagedByClubhouse = clubhouseActive && !clubhouseModeOverride;
 
+  // Persona state (per-agent override of project default)
+  const [agentPersona, setAgentPersona] = useState('');
+
   useEffect(() => {
     loadClubhouseSettings();
   }, [loadClubhouseSettings]);
 
-  // Load clubhouse mode override state from durable config
+  // Load clubhouse mode override + persona from durable config
   useEffect(() => {
     if (!projectPath) return;
     (async () => {
       try {
         const config = await window.clubhouse.agent.getDurableConfig(projectPath, agent.id);
         setClubhouseModeOverride(config?.clubhouseModeOverride ?? false);
+        setAgentPersona(config?.persona ?? '');
       } catch {
         // ignore
       }
     })();
   }, [projectPath, agent.id]);
+
+  const handlePersonaChange = async (value: string) => {
+    if (!projectPath) return;
+    setAgentPersona(value);
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { persona: value });
+  };
 
   // Load materialization preview when managed
   useEffect(() => {
@@ -943,6 +954,24 @@ export function AgentSettingsView({ agent }: Props) {
                     className="mt-1.5 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 )}
+              </div>
+
+              {/* Persona */}
+              <div>
+                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Persona</span>
+                <select
+                  value={agentPersona}
+                  onChange={(e) => handlePersonaChange(e.target.value)}
+                  className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring"
+                >
+                  <option value="">Project default</option>
+                  {PERSONA_TEMPLATES.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-ctp-subtext0/60">
+                  Overrides the project default persona. Applied on the next agent wake. Effective only when Clubhouse Mode is on for this project — see <code className="bg-surface-0 px-0.5 rounded">.clubhouse/clubhouse-mode.md</code>.
+                </p>
               </div>
 
               {/* Structured Mode (experimental — hidden unless opted in) */}

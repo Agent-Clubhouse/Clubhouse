@@ -179,6 +179,20 @@ describe('OrchestratorSettingsView', () => {
         expect(screen.getByText('@@AgentName')).toBeInTheDocument();
         expect(screen.getByText('@@StandbyBranch')).toBeInTheDocument();
         expect(screen.getByText('@@Path')).toBeInTheDocument();
+        // Newly surfaced wildcards
+        expect(screen.getByText('@@SourceControlProvider')).toBeInTheDocument();
+        expect(screen.getByText('@@BuildCommand')).toBeInTheDocument();
+        expect(screen.getByText('@@TestCommand')).toBeInTheDocument();
+        expect(screen.getByText('@@LintCommand')).toBeInTheDocument();
+        expect(screen.getByText('@@Mission')).toBeInTheDocument();
+        expect(screen.getByText('@@Persona')).toBeInTheDocument();
+      });
+
+      it('references the self-edit guide path when enabled', () => {
+        useClubhouseModeStore.setState({ enabled: true });
+        render(<OrchestratorSettingsView />);
+
+        expect(screen.getByText('.clubhouse/clubhouse-mode.md')).toBeInTheDocument();
       });
 
       it('hides wildcard banner when disabled', () => {
