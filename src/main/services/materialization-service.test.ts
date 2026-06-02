@@ -65,7 +65,9 @@ import {
   previewMaterialization,
   ensureDefaultTemplates,
   ensureDefaultSkills,
-  ensureClubhouseModeReadme,
+  writeClubhouseModeReadme,
+  refreshClubhouseModeReadme,
+  _resetReadmeRefreshTracking,
   resetDefaultSkills,
   resetProjectAgentDefaults,
   resolveMissionId,
@@ -150,6 +152,10 @@ describe('materialization-service', () => {
     vi.mocked(fsp.rm).mockResolvedValue(undefined);
     vi.mocked(fsp.unlink).mockResolvedValue(undefined);
     vi.mocked(pathExists).mockResolvedValue(false);
+
+    // The readme refresh tracker is module-level state — clear it so each test
+    // starts with no projects refreshed, regardless of prior test interactions.
+    _resetReadmeRefreshTracking();
   });
 
   describe('buildWildcardContext', () => {
@@ -356,6 +362,22 @@ describe('materialization-service', () => {
       await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
 
       expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
+    });
+
+    it('refreshes the self-edit guide even when no other materialization work runs', async () => {
+      // No defaults, no persona, no mission, no source dirs — early-out path.
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+
+      // The readme write should still happen because the refresh runs before the early-out.
+      const readmeWrites = vi.mocked(fsp.writeFile).mock.calls.filter(
+        (call) => (call[0] as string).endsWith('clubhouse-mode.md'),
+      );
+      expect(readmeWrites).toHaveLength(1);
     });
 
     it('skips agent without worktreePath', async () => {
@@ -907,30 +929,81 @@ describe('materialization-service', () => {
     });
   });
 
-  describe('ensureClubhouseModeReadme', () => {
-    it('writes the readme when missing', async () => {
-      vi.mocked(pathExists).mockResolvedValue(false);
-
-      await ensureClubhouseModeReadme('/project');
+  describe('writeClubhouseModeReadme', () => {
+    it('writes the readme at .clubhouse/clubhouse-mode.md', async () => {
+      await writeClubhouseModeReadme('/project');
 
       const readmeWrite = vi.mocked(fsp.writeFile).mock.calls.find(
         (call) => (call[0] as string).endsWith('clubhouse-mode.md'),
       );
       expect(readmeWrite).toBeDefined();
       expect((readmeWrite![0] as string).replace(/\\/g, '/')).toBe('/project/.clubhouse/clubhouse-mode.md');
+      expect(readmeWrite![1]).toBe(CLUBHOUSE_MODE_README_CONTENT);
     });
 
-    it('no-ops when the readme already exists (never overwrites user edits)', async () => {
-      vi.mocked(pathExists).mockImplementation(async (p: string) =>
-        p.endsWith('clubhouse-mode.md'),
-      );
+    it('overwrites unconditionally (does not check existence)', async () => {
+      // Even when pathExists returns true (file present), the write should still happen.
+      vi.mocked(pathExists).mockResolvedValue(true);
 
-      await ensureClubhouseModeReadme('/project');
+      await writeClubhouseModeReadme('/project');
 
-      const readmeWrite = vi.mocked(fsp.writeFile).mock.calls.find(
+      const readmeWrites = vi.mocked(fsp.writeFile).mock.calls.filter(
         (call) => (call[0] as string).endsWith('clubhouse-mode.md'),
       );
-      expect(readmeWrite).toBeUndefined();
+      expect(readmeWrites).toHaveLength(1);
+    });
+  });
+
+  describe('refreshClubhouseModeReadme', () => {
+    beforeEach(() => {
+      _resetReadmeRefreshTracking();
+    });
+
+    it('writes on first call for a project', async () => {
+      await refreshClubhouseModeReadme('/project');
+
+      const readmeWrites = vi.mocked(fsp.writeFile).mock.calls.filter(
+        (call) => (call[0] as string).endsWith('clubhouse-mode.md'),
+      );
+      expect(readmeWrites).toHaveLength(1);
+    });
+
+    it('deduplicates within a session — second call is a no-op', async () => {
+      await refreshClubhouseModeReadme('/project');
+      await refreshClubhouseModeReadme('/project');
+      await refreshClubhouseModeReadme('/project');
+
+      const readmeWrites = vi.mocked(fsp.writeFile).mock.calls.filter(
+        (call) => (call[0] as string).endsWith('clubhouse-mode.md'),
+      );
+      expect(readmeWrites).toHaveLength(1);
+    });
+
+    it('tracks projects independently', async () => {
+      await refreshClubhouseModeReadme('/project-a');
+      await refreshClubhouseModeReadme('/project-b');
+      await refreshClubhouseModeReadme('/project-a'); // already refreshed
+      await refreshClubhouseModeReadme('/project-b'); // already refreshed
+
+      const writePaths = vi.mocked(fsp.writeFile).mock.calls
+        .map((call) => (call[0] as string).replace(/\\/g, '/'))
+        .filter((p) => p.endsWith('clubhouse-mode.md'))
+        .sort();
+      expect(writePaths).toEqual([
+        '/project-a/.clubhouse/clubhouse-mode.md',
+        '/project-b/.clubhouse/clubhouse-mode.md',
+      ]);
+    });
+
+    it('_resetReadmeRefreshTracking allows re-refresh of a previously refreshed project', async () => {
+      await refreshClubhouseModeReadme('/project');
+      _resetReadmeRefreshTracking();
+      await refreshClubhouseModeReadme('/project');
+
+      const readmeWrites = vi.mocked(fsp.writeFile).mock.calls.filter(
+        (call) => (call[0] as string).endsWith('clubhouse-mode.md'),
+      );
+      expect(readmeWrites).toHaveLength(2);
     });
 
     it('readme content documents all settings layers', () => {

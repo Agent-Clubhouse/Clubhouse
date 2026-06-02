@@ -77,6 +77,14 @@ vi.mock('../../renderer/features/assistant/content/personas', () => ({
   }),
 }));
 
+vi.mock('../services/materialization-service', () => ({
+  refreshClubhouseModeReadme: vi.fn(async () => undefined),
+}));
+
+vi.mock('../services/clubhouse-mode-settings', () => ({
+  isClubhouseModeEnabled: vi.fn(() => false),
+}));
+
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAgentHandlers } from './agent-handlers';
@@ -85,6 +93,8 @@ import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { appLog } from '../services/log-service';
+import { refreshClubhouseModeReadme } from '../services/materialization-service';
+import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 
 describe('agent-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -120,6 +130,22 @@ describe('agent-handlers', () => {
   });
 
   // --- CRUD ---
+
+  it('LIST_DURABLE refreshes the CH-mode readme when CH mode is enabled', async () => {
+    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValue(true);
+    const handler = handlers.get(IPC.AGENT.LIST_DURABLE)!;
+    await handler({}, '/project');
+
+    expect(refreshClubhouseModeReadme).toHaveBeenCalledWith('/project');
+  });
+
+  it('LIST_DURABLE does NOT refresh the CH-mode readme when CH mode is disabled', async () => {
+    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValue(false);
+    const handler = handlers.get(IPC.AGENT.LIST_DURABLE)!;
+    await handler({}, '/project');
+
+    expect(refreshClubhouseModeReadme).not.toHaveBeenCalled();
+  });
 
   it('LIST_DURABLE delegates to agentConfig.listDurable', async () => {
     const handler = handlers.get(IPC.AGENT.LIST_DURABLE)!;
