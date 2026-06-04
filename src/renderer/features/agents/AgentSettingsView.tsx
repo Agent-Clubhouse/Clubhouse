@@ -12,6 +12,7 @@ import { EmojiPicker } from '../../components/EmojiPicker';
 import { SkillsSection } from './SkillsSection';
 import { AgentTemplatesSection } from './AgentTemplatesSection';
 import { McpJsonSection } from './McpJsonSection';
+import { WildcardSettingsForm } from './WildcardSettingsForm';
 import { AgentAvatar } from './AgentAvatar';
 import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialog';
 import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-template-registry';
@@ -378,6 +379,7 @@ export function AgentSettingsView({ agent }: Props) {
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
   const [clubhouseModeOverride, setClubhouseModeOverride] = useState(false);
   const [preview, setPreview] = useState<MaterializationPreview | null>(null);
+  const [showResolvedPreview, setShowResolvedPreview] = useState(false);
   const clubhouseActive = projectPath ? isClubhouseModeEnabled(projectPath) : false;
   const isManagedByClubhouse = clubhouseActive && !clubhouseModeOverride;
 
@@ -1096,13 +1098,39 @@ export function AgentSettingsView({ agent }: Props) {
               </svg>
               <span>
                 {isManagedByClubhouse
-                  ? 'These values are resolved from project defaults. Wildcards have been replaced with this agent\'s actual values.'
+                  ? 'Clubhouse Mode manages this agent. Personalize it by editing the wildcard values below — saved as per-agent overrides. Enable local overrides above for the full settings editor.'
                   : 'Skills, agent definitions, and MCP settings are stored in the agent worktree. Agents sharing the same root directory will pick up and share these settings.'}
               </span>
             </div>
 
-            {/* Materialization Preview (read-only when managed) */}
+            {/* Per-agent wildcard settings form (editable when managed) */}
+            {isManagedByClubhouse && projectPath && (
+              <WildcardSettingsForm
+                projectPath={projectPath}
+                agentId={agent.id}
+                disabled={isRunning}
+                refreshKey={refreshKey}
+              />
+            )}
+
+            {/* Resolved materialization preview (read-only, collapsible) */}
             {isManagedByClubhouse && preview && (
+              <button
+                type="button"
+                onClick={() => setShowResolvedPreview((v) => !v)}
+                className="text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <svg
+                  width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  className={`transition-transform ${showResolvedPreview ? 'rotate-90' : ''}`}
+                >
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+                {showResolvedPreview ? 'Hide resolved preview' : 'Show resolved preview'}
+              </button>
+            )}
+            {isManagedByClubhouse && preview && showResolvedPreview && (
               <div className="space-y-4">
                 {preview.instructions && (
                   <section>

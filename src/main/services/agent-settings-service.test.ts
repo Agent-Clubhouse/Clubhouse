@@ -31,6 +31,9 @@ import {
   readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot,
   readMcpConfigs, writeMcpConfigs,
   listSourceMissions, readSourceMissionContent,
+  writeSourceMissionContent, deleteSourceMission,
+  listSourcePersonaFiles, readSourcePersonaContent,
+  writeSourcePersonaContent, deleteSourcePersona,
   SettingsConventions,
 } from './agent-settings-service';
 import type { WrapperCatalogSnapshot } from '../../shared/types';
@@ -267,6 +270,102 @@ describe('readSourceMissionContent', () => {
   it('returns empty string for empty mission id without touching disk', async () => {
     expect(await readSourceMissionContent('/project', '')).toBe('');
     expect(fsp.readFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('writeSourceMissionContent', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('creates the missions dir and writes <id>.md', async () => {
+    await writeSourceMissionContent('/project', 'implement', '# Mission body');
+    expect(fsp.mkdir).toHaveBeenCalledWith(path.join('/project', '.clubhouse', 'missions'), { recursive: true });
+    expect(fsp.writeFile).toHaveBeenCalledWith(
+      path.join('/project', '.clubhouse', 'missions', 'implement.md'),
+      '# Mission body',
+      'utf-8',
+    );
+  });
+});
+
+describe('deleteSourceMission', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('removes the mission file with force (no-op when missing)', async () => {
+    await deleteSourceMission('/project', 'old');
+    expect(fsp.rm).toHaveBeenCalledWith(
+      path.join('/project', '.clubhouse', 'missions', 'old.md'),
+      { force: true },
+    );
+  });
+});
+
+describe('listSourcePersonaFiles', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('lists .md files from .clubhouse/personas/ with id derived from filename', async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue([
+      { name: 'qa.md', isFile: () => true, isDirectory: () => false } as any,
+      { name: 'reviewer.md', isFile: () => true, isDirectory: () => false } as any,
+      { name: 'notes.txt', isFile: () => true, isDirectory: () => false } as any, // ignored — no .md
+      { name: 'sub', isFile: () => false, isDirectory: () => true } as any,        // ignored — directory
+    ]);
+    const personas = await listSourcePersonaFiles('/project');
+    expect(personas.map((p) => p.id).sort()).toEqual(['qa', 'reviewer']);
+  });
+
+  it('returns empty array when personas dir is missing', async () => {
+    vi.mocked(fsp.readdir).mockRejectedValue(makeEnoent('/project/.clubhouse/personas'));
+    expect(await listSourcePersonaFiles('/project')).toEqual([]);
+  });
+});
+
+describe('readSourcePersonaContent', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('reads the persona .md file body', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('# Persona body');
+    const result = await readSourcePersonaContent('/project', 'qa');
+    expect(result).toBe('# Persona body');
+    expect(fsp.readFile).toHaveBeenCalledWith(
+      path.join('/project', '.clubhouse', 'personas', 'qa.md'),
+      'utf-8',
+    );
+  });
+
+  it('returns empty string when persona file does not exist', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent('/project/.clubhouse/personas/missing.md'));
+    expect(await readSourcePersonaContent('/project', 'missing')).toBe('');
+  });
+
+  it('returns empty string for empty persona id without touching disk', async () => {
+    expect(await readSourcePersonaContent('/project', '')).toBe('');
+    expect(fsp.readFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('writeSourcePersonaContent', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('creates the personas dir and writes <id>.md', async () => {
+    await writeSourcePersonaContent('/project', 'qa', '# Persona body');
+    expect(fsp.mkdir).toHaveBeenCalledWith(path.join('/project', '.clubhouse', 'personas'), { recursive: true });
+    expect(fsp.writeFile).toHaveBeenCalledWith(
+      path.join('/project', '.clubhouse', 'personas', 'qa.md'),
+      '# Persona body',
+      'utf-8',
+    );
+  });
+});
+
+describe('deleteSourcePersona', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('removes the persona file with force (no-op when missing)', async () => {
+    await deleteSourcePersona('/project', 'qa');
+    expect(fsp.rm).toHaveBeenCalledWith(
+      path.join('/project', '.clubhouse', 'personas', 'qa.md'),
+      { force: true },
+    );
   });
 });
 

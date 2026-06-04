@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import { settingsChannels } from '../shared/settings-definitions';
-import { AgentHookEvent, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings, WrapperCatalogSnapshot } from '../shared/types';
+import { AgentHookEvent, AgentWildcardSettings, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings, WrapperCatalogSnapshot } from '../shared/types';
 import type { PluginUpdatesStatus } from '../shared/marketplace-types';
 
 const api = {
@@ -385,6 +385,25 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, projectPath, agentName, content),
     deleteSourceAgentTemplate: (projectPath: string, agentName: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE, projectPath, agentName),
+    // Clubhouse-mode wildcard library (missions + personas) + per-agent actuals
+    getAgentWildcards: (projectPath: string, agentId: string): Promise<AgentWildcardSettings | null> =>
+      ipcRenderer.invoke(IPC.AGENT.GET_AGENT_WILDCARDS, projectPath, agentId),
+    listSourceMissions: (projectPath: string): Promise<Array<{ id: string; path: string }>> =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_MISSIONS, projectPath),
+    readSourceMissionContent: (projectPath: string, missionId: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_SOURCE_MISSION_CONTENT, projectPath, missionId),
+    writeSourceMissionContent: (projectPath: string, missionId: string, content: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_MISSION_CONTENT, projectPath, missionId, content),
+    deleteSourceMission: (projectPath: string, missionId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_MISSION, projectPath, missionId),
+    listSourcePersonas: (projectPath: string): Promise<Array<{ id: string; name: string; source: 'builtin' | 'disk' }>> =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_PERSONAS, projectPath),
+    readSourcePersonaContent: (projectPath: string, personaId: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_SOURCE_PERSONA_CONTENT, projectPath, personaId),
+    writeSourcePersonaContent: (projectPath: string, personaId: string, content: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_PERSONA_CONTENT, projectPath, personaId, content),
+    deleteSourcePersona: (projectPath: string, personaId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_PERSONA, projectPath, personaId),
     createSkill: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
       ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource, projectPath),
     createAgentTemplate: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>

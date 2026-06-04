@@ -4,7 +4,7 @@ import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import { getDurableConfig } from '../services/agent-config';
-import { materializeAgent, previewMaterialization, resetProjectAgentDefaults } from '../services/materialization-service';
+import { getAgentWildcards, listAvailablePersonas, materializeAgent, previewMaterialization, readPersonaForEdit, resetProjectAgentDefaults } from '../services/materialization-service';
 import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
 import { getProjectConfigBreakdown, removePluginInjectionItem } from '../services/config-provenance-service';
 import { appLog } from '../services/log-service';
@@ -260,6 +260,73 @@ export function registerAgentSettingsHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, agentName) => {
       await agentSettings.deleteSourceAgentTemplate(projectPath, agentName);
+    },
+  ));
+
+  // --- Clubhouse-mode wildcard library (missions + personas) + per-agent actuals ---
+
+  ipcMain.handle(IPC.AGENT.GET_AGENT_WILDCARDS, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, agentId) => {
+      const agent = await getDurableConfig(projectPath, agentId);
+      if (!agent) return null;
+      return getAgentWildcards(projectPath, agent);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.LIST_SOURCE_MISSIONS, withValidatedArgs(
+    [stringArg()],
+    async (_event, projectPath) => {
+      return agentSettings.listSourceMissions(projectPath);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.READ_SOURCE_MISSION_CONTENT, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, missionId) => {
+      return agentSettings.readSourceMissionContent(projectPath, missionId);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_MISSION_CONTENT, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ minLength: 0 })],
+    async (_event, projectPath, missionId, content) => {
+      await agentSettings.writeSourceMissionContent(projectPath, missionId, content);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_MISSION, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, missionId) => {
+      await agentSettings.deleteSourceMission(projectPath, missionId);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.LIST_SOURCE_PERSONAS, withValidatedArgs(
+    [stringArg()],
+    async (_event, projectPath) => {
+      return listAvailablePersonas(projectPath);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.READ_SOURCE_PERSONA_CONTENT, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, personaId) => {
+      return readPersonaForEdit(projectPath, personaId);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_PERSONA_CONTENT, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ minLength: 0 })],
+    async (_event, projectPath, personaId, content) => {
+      await agentSettings.writeSourcePersonaContent(projectPath, personaId, content);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_PERSONA, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, personaId) => {
+      await agentSettings.deleteSourcePersona(projectPath, personaId);
     },
   ));
 
