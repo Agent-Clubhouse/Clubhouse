@@ -14,6 +14,7 @@ vi.mock('electron', () => ({
     getAllWindows: vi.fn(() => []),
   },
   ipcMain: { handle: vi.fn(), on: vi.fn() },
+  clipboard: { readText: vi.fn(() => 'native clipboard text') },
   shell: { openExternal: vi.fn(async () => {}) },
 }));
 
@@ -148,7 +149,7 @@ vi.mock('./mcp-binding-handlers', () => ({
   onMcpSettingsChanged: vi.fn(),
 }));
 
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAppHandlers } from './app-handlers';
 import * as notificationService from '../services/notification-service';
@@ -193,6 +194,7 @@ describe('app-handlers', () => {
       IPC.APP.GET_HEADLESS_SETTINGS, IPC.APP.SAVE_HEADLESS_SETTINGS,
       IPC.APP.GET_BADGE_SETTINGS, IPC.APP.SAVE_BADGE_SETTINGS,
       IPC.APP.GET_CLIPBOARD_SETTINGS, IPC.APP.SAVE_CLIPBOARD_SETTINGS,
+      IPC.APP.READ_CLIPBOARD_TEXT, IPC.APP.READ_CLIPBOARD_IMAGE,
       IPC.APP.SET_DOCK_BADGE,
       IPC.APP.GET_UPDATE_SETTINGS, IPC.APP.SAVE_UPDATE_SETTINGS,
       IPC.APP.CHECK_FOR_UPDATES, IPC.APP.GET_UPDATE_STATUS, IPC.APP.APPLY_UPDATE,
@@ -421,6 +423,13 @@ describe('app-handlers', () => {
     const handler = handleHandlers.get(IPC.APP.SAVE_CLIPBOARD_SETTINGS)!;
     await handler({}, { clipboardCompat: true });
     expect(clipboardSettings.saveSettings).toHaveBeenCalledWith({ clipboardCompat: true });
+  });
+
+  it('READ_CLIPBOARD_TEXT reads text through Electron native clipboard', async () => {
+    const handler = handleHandlers.get(IPC.APP.READ_CLIPBOARD_TEXT)!;
+    const result = await handler({});
+    expect(clipboard.readText).toHaveBeenCalled();
+    expect(result).toBe('native clipboard text');
   });
 
   // --- Dock Badge ---

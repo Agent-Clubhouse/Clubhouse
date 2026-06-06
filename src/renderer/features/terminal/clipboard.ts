@@ -6,11 +6,20 @@ function platformIsMac(): boolean {
 
 /**
  * Read text from the system clipboard.
- * Falls back to empty string on failure (e.g. permission denied).
+ * Falls back to Electron's native clipboard when the browser Clipboard API
+ * returns empty or fails; some macOS pasteboard producers expose large
+ * plaintext more reliably through the native API.
  */
 export async function readClipboard(): Promise<string> {
   try {
-    return await navigator.clipboard.readText();
+    const text = await navigator.clipboard.readText();
+    if (text) return text;
+  } catch {
+    // Try the native Electron clipboard fallback below.
+  }
+
+  try {
+    return await window.clubhouse.app.readClipboardText();
   } catch {
     return '';
   }

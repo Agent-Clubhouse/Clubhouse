@@ -814,6 +814,8 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_CLIPBOARD_SETTINGS),
     saveClipboardSettings: (settings: { clipboardCompat: boolean }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_CLIPBOARD_SETTINGS, settings),
+    readClipboardText: (): Promise<string> =>
+      ipcRenderer.invoke(IPC.APP.READ_CLIPBOARD_TEXT),
     readClipboardImage: (): Promise<{ base64: string; mimeType: string } | null> =>
       ipcRenderer.invoke(IPC.APP.READ_CLIPBOARD_IMAGE),
     getSessionSettings: () =>

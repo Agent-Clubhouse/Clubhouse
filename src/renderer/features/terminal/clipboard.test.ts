@@ -4,6 +4,7 @@ import { attachClipboardHandlers, readClipboard, readClipboardImage, writeClipbo
 // --- Mocks ---
 
 let mockPlatform = 'win32' as string;
+const mockReadClipboardText = vi.fn<() => Promise<string>>(async () => '');
 const mockReadClipboardImage = vi.fn<() => Promise<{ base64: string; mimeType: string } | null>>(async () => null);
 
 // Override the default setup-renderer stub with a getter so tests can swap platform
@@ -12,7 +13,7 @@ Object.defineProperty(window, 'clubhouse', {
   get: () => ({
     platform: mockPlatform,
     pty: { write: vi.fn(), resize: vi.fn(), getBuffer: vi.fn(async () => ''), onData: () => vi.fn(), onExit: () => vi.fn() },
-    app: { readClipboardImage: mockReadClipboardImage },
+    app: { readClipboardText: mockReadClipboardText, readClipboardImage: mockReadClipboardImage },
   }),
 });
 
@@ -61,6 +62,7 @@ describe('clipboard — keyboard shortcuts', () => {
     mockPlatform = 'win32';
     writeToPty = vi.fn();
     clipboardReadText.mockReset().mockResolvedValue('pasted text');
+    mockReadClipboardText.mockReset().mockResolvedValue('');
     clipboardWriteText.mockReset().mockResolvedValue(undefined);
   });
 
@@ -300,6 +302,7 @@ describe('clipboard — right-click context menu', () => {
     mockPlatform = 'win32';
     writeToPty = vi.fn();
     clipboardReadText.mockReset().mockResolvedValue('right-click paste');
+    mockReadClipboardText.mockReset().mockResolvedValue('');
     clipboardWriteText.mockReset().mockResolvedValue(undefined);
   });
 
@@ -372,6 +375,7 @@ describe('clipboard — native paste event suppression', () => {
     mockPlatform = 'win32';
     writeToPty = vi.fn();
     clipboardReadText.mockReset().mockResolvedValue('pasted text');
+    mockReadClipboardText.mockReset().mockResolvedValue('');
     clipboardWriteText.mockReset().mockResolvedValue(undefined);
   });
 
@@ -518,15 +522,34 @@ describe('readClipboardImage', () => {
 describe('readClipboard', () => {
   beforeEach(() => {
     clipboardReadText.mockReset();
+    mockReadClipboardText.mockReset().mockResolvedValue('');
   });
 
   it('returns clipboard text on success', async () => {
     clipboardReadText.mockResolvedValue('hello');
     expect(await readClipboard()).toBe('hello');
+    expect(mockReadClipboardText).not.toHaveBeenCalled();
   });
 
-  it('returns empty string on failure', async () => {
+  it('falls back to Electron native text when browser clipboard is empty', async () => {
+    const largeTextEditPlaintext = 'TextEdit plaintext block\n'.repeat(10_000);
+    clipboardReadText.mockResolvedValue('');
+    mockReadClipboardText.mockResolvedValue(largeTextEditPlaintext);
+
+    expect(await readClipboard()).toBe(largeTextEditPlaintext);
+    expect(mockReadClipboardText).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to Electron native text when browser clipboard read fails', async () => {
     clipboardReadText.mockRejectedValue(new Error('denied'));
+    mockReadClipboardText.mockResolvedValue('native text');
+
+    expect(await readClipboard()).toBe('native text');
+  });
+
+  it('returns empty string when both browser and native reads fail', async () => {
+    clipboardReadText.mockRejectedValue(new Error('denied'));
+    mockReadClipboardText.mockRejectedValue(new Error('pasteboard unavailable'));
     expect(await readClipboard()).toBe('');
   });
 });
@@ -550,6 +573,7 @@ describe('writeClipboard', () => {
 describe('pasteIntoTerminal', () => {
   beforeEach(() => {
     clipboardReadText.mockReset().mockResolvedValue('paste me');
+    mockReadClipboardText.mockReset().mockResolvedValue('');
   });
 
   it('reads clipboard and calls writeToPty', async () => {
@@ -570,6 +594,7 @@ describe('pasteIntoTerminal', () => {
 
   it('does not call writeToPty when clipboard is empty', async () => {
     clipboardReadText.mockResolvedValue('');
+    mockReadClipboardText.mockResolvedValue('');
     const term = createMockTerminal();
     const writeToPty = vi.fn();
     pasteIntoTerminal(term as any, writeToPty);
@@ -579,6 +604,7 @@ describe('pasteIntoTerminal', () => {
 
   it('calls onImagePaste when clipboard has image but no text', async () => {
     clipboardReadText.mockResolvedValue('');
+    mockReadClipboardText.mockResolvedValue('');
     // Mock the native Electron clipboard to return an image
     mockReadClipboardImage.mockResolvedValue({ base64: 'abc123', mimeType: 'image/png' });
 

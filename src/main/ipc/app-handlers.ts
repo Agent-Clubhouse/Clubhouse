@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings, ThemeId } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
@@ -202,6 +202,12 @@ export function registerAppHandlers(): void {
       await clipboardSettings.saveSettings(settings);
     },
   ));
+
+  // Read text from the system clipboard using Electron's native API.
+  // Browser clipboard reads can return empty for some macOS pasteboard
+  // producers (for example large plain-text copies from TextEdit), so expose
+  // Electron's native text reader as a fallback for terminal paste.
+  ipcMain.handle(IPC.APP.READ_CLIPBOARD_TEXT, () => clipboard.readText());
 
   // Read image from the system clipboard using Electron's native API.
   // navigator.clipboard.read() is unreliable for images in Electron,
