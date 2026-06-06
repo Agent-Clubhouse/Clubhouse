@@ -30,7 +30,7 @@ describe('uiStore', () => {
     useUIStore.setState({
       explorerTab: 'agents',
       previousExplorerTab: null,
-      settingsSubPage: 'display',
+      settingsSubPage: 'orchestrators',
       settingsContext: 'app',
       showHome: true,
       projectExplorerTab: {},
@@ -40,8 +40,8 @@ describe('uiStore', () => {
   });
 
   describe('settingsSubPage default', () => {
-    it('defaults to display', () => {
-      expect(getState().settingsSubPage).toBe('display');
+    it('defaults to orchestrators', () => {
+      expect(getState().settingsSubPage).toBe('orchestrators');
     });
   });
 
@@ -51,8 +51,19 @@ describe('uiStore', () => {
       getState().toggleSettings();
       expect(getState().explorerTab).toBe('settings');
       expect(getState().previousExplorerTab).toBe('agents');
-      expect(getState().settingsSubPage).toBe('orchestrators');
-      expect(getState().settingsContext).toBe('app');
+    });
+
+    it('restores the last-viewed section and context when re-entering settings', () => {
+      // User was last on a project-scoped Notifications page, then left settings.
+      useUIStore.setState({
+        explorerTab: 'agents',
+        settingsSubPage: 'notifications',
+        settingsContext: 'proj-1',
+      });
+      getState().toggleSettings();
+      expect(getState().explorerTab).toBe('settings');
+      expect(getState().settingsSubPage).toBe('notifications');
+      expect(getState().settingsContext).toBe('proj-1');
     });
 
     it('exits settings mode and restores previous tab', () => {
@@ -208,10 +219,37 @@ describe('uiStore', () => {
       expect(getState().settingsSubPage).toBe('project');
     });
 
-    it('toggleSettings resets context to app', () => {
+    it('toggleSettings preserves context across re-entry', () => {
       useUIStore.setState({ explorerTab: 'agents', settingsContext: 'proj-1' });
       getState().toggleSettings();
-      expect(getState().settingsContext).toBe('app');
+      expect(getState().settingsContext).toBe('proj-1');
+    });
+  });
+
+  describe('openProjectSettings', () => {
+    it('enters settings scoped to the given project on the project page', () => {
+      useUIStore.setState({ explorerTab: 'agents', settingsContext: 'app', settingsSubPage: 'orchestrators' });
+      getState().openProjectSettings('proj-1');
+      expect(getState().explorerTab).toBe('settings');
+      expect(getState().settingsContext).toBe('proj-1');
+      expect(getState().settingsSubPage).toBe('project');
+      expect(getState().previousExplorerTab).toBe('agents');
+    });
+
+    it('preserves previousExplorerTab when already in settings', () => {
+      useUIStore.setState({ explorerTab: 'settings', previousExplorerTab: 'agents', settingsContext: 'app' });
+      getState().openProjectSettings('proj-2');
+      expect(getState().settingsContext).toBe('proj-2');
+      expect(getState().settingsSubPage).toBe('project');
+      // Coming from another settings page must not overwrite the saved origin tab.
+      expect(getState().previousExplorerTab).toBe('agents');
+    });
+
+    it('switches directly between two projects settings', () => {
+      getState().openProjectSettings('proj-1');
+      getState().openProjectSettings('proj-2');
+      expect(getState().settingsContext).toBe('proj-2');
+      expect(getState().settingsSubPage).toBe('project');
     });
   });
 

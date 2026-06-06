@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Project } from '../../shared/types';
 import { useBadgeStore } from './badgeStore';
+import { useUIStore } from './uiStore';
 
 interface ProjectState {
   projects: Project[];
@@ -78,6 +79,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return { projects, activeProjectId, gitStatus, projectIcons };
     });
     useBadgeStore.getState().clearProjectBadges(id);
+    // If settings was scoped to the removed project, fall back to app-level
+    // so re-entering settings doesn't land on an empty "Select a project" state.
+    if (useUIStore.getState().settingsContext === id) {
+      useUIStore.getState().setSettingsContext('app');
+    }
   },
 
   pickAndAddProject: async () => {

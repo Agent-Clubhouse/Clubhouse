@@ -50,6 +50,7 @@ interface UIState {
   setSettingsSubPage: (page: SettingsSubPage) => void;
   setSettingsContext: (context: 'app' | string) => void;
   toggleSettings: () => void;
+  openProjectSettings: (projectId: string) => void;
   toggleHelp: () => void;
   toggleAssistant: () => void;
   setHelpSection: (id: string) => void;
@@ -80,7 +81,9 @@ function loadActiveHost(): string | null {
 export const useUIStore = create<UIState>((set, get) => ({
   explorerTab: 'agents',
   previousExplorerTab: null,
-  settingsSubPage: 'display',
+  // Initial section shown the first time settings is opened in a session.
+  // After that, toggleSettings restores whatever section/context was last viewed.
+  settingsSubPage: 'orchestrators',
   settingsContext: 'app',
   showHome: initialPrefs.showHome,
   pluginSettingsId: null,
@@ -124,10 +127,21 @@ export const useUIStore = create<UIState>((set, get) => ({
   toggleSettings: () => {
     const { explorerTab, previousExplorerTab } = get();
     if (explorerTab !== 'settings') {
-      set({ previousExplorerTab: explorerTab, explorerTab: 'settings', settingsSubPage: 'orchestrators', settingsContext: 'app' });
+      // Re-enter settings on the last-viewed section/context (kept in store for the session)
+      // rather than resetting to the root every time.
+      set({ previousExplorerTab: explorerTab, explorerTab: 'settings' });
     } else {
       set({ explorerTab: previousExplorerTab || 'agents', previousExplorerTab: null });
     }
+  },
+  openProjectSettings: (projectId) => {
+    const { explorerTab, previousExplorerTab } = get();
+    set({
+      previousExplorerTab: explorerTab !== 'settings' ? explorerTab : previousExplorerTab,
+      explorerTab: 'settings',
+      settingsContext: projectId,
+      settingsSubPage: 'project',
+    });
   },
   toggleHelp: () => {
     const { explorerTab, previousExplorerTab } = get();

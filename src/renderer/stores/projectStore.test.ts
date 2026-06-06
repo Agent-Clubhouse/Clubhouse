@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Project } from '../../shared/types';
 import { useBadgeStore } from './badgeStore';
 import { useBadgeSettingsStore } from './badgeSettingsStore';
+import { useUIStore } from './uiStore';
 
 // ---------- IPC mock ----------
 const mockProject = {
@@ -215,6 +216,27 @@ describe('projectStore', () => {
       await getState().removeProject('proj_2');
 
       expect(getState().activeProjectId).toBe('proj_1');
+    });
+
+    it('resets settings context to app when the removed project was the settings scope', async () => {
+      const p = makeProject();
+      useProjectStore.setState({ projects: [p], activeProjectId: 'proj_1' });
+      useUIStore.setState({ settingsContext: 'proj_1', settingsSubPage: 'project' });
+
+      await getState().removeProject('proj_1');
+
+      expect(useUIStore.getState().settingsContext).toBe('app');
+    });
+
+    it('leaves settings context untouched when a different project is removed', async () => {
+      const p1 = makeProject();
+      const p2 = makeProject({ id: 'proj_2', name: 'other', path: '/other' });
+      useProjectStore.setState({ projects: [p1, p2], activeProjectId: 'proj_1' });
+      useUIStore.setState({ settingsContext: 'proj_1', settingsSubPage: 'project' });
+
+      await getState().removeProject('proj_2');
+
+      expect(useUIStore.getState().settingsContext).toBe('proj_1');
     });
 
     it('LB-SM-002: clears badge store entries for the removed project', async () => {
