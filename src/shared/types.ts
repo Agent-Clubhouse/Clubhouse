@@ -339,7 +339,7 @@ export interface AgentWildcardSettings {
   mission: { override: string | null; projectDefault: string | null; resolved: string | null };
   persona: { override: string | null; projectDefault: string | null; resolved: string | null };
   missions: Array<{ id: string }>;
-  personas: Array<{ id: string; name: string; source: 'builtin' | 'disk' }>;
+  personas: Array<{ id: string; name: string; source: 'builtin' | 'user' | 'project' }>;
 }
 
 export interface ClubhouseModeSettings {

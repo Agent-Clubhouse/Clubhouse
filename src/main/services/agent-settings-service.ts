@@ -280,12 +280,31 @@ export async function deleteSourceMission(projectPath: string, missionId: string
 }
 
 /**
- * List user-authored persona files under .clubhouse/personas/.
+ * The scope of an on-disk persona store.
+ * - 'project': <projectPath>/.clubhouse/personas/ — scoped to one project.
+ * - 'user': ~/.clubhouse/personas/ — the user's personal library, reusable across projects.
+ */
+export type PersonaScope = 'project' | 'user';
+
+/**
+ * Resolve the personas directory for a given scope. The user-global library
+ * lives under the home directory (consistent with ~/.clubhouse/group-projects,
+ * ~/.clubhouse/agent-icons); the project library lives under the project's
+ * .clubhouse directory. `projectPath` is ignored for the 'user' scope.
+ */
+export function personasDirFor(projectPath: string, scope: PersonaScope = 'project'): string {
+  return scope === 'user'
+    ? path.join(os.homedir(), '.clubhouse', 'personas')
+    : path.join(projectPath, '.clubhouse', 'personas');
+}
+
+/**
+ * List user-authored persona files for a scope (project or user-global).
  * Each persona is a single .md file; the persona ID is the basename without extension.
  * Built-in persona templates are layered on top of these by the materialization service.
  */
-export async function listSourcePersonaFiles(projectPath: string): Promise<Array<{ id: string; path: string }>> {
-  const personasDir = path.join(projectPath, '.clubhouse', 'personas');
+export async function listSourcePersonaFiles(projectPath: string, scope: PersonaScope = 'project'): Promise<Array<{ id: string; path: string }>> {
+  const personasDir = personasDirFor(projectPath, scope);
   try {
     const entries = await fsp.readdir(personasDir, { withFileTypes: true });
     return entries
@@ -300,13 +319,12 @@ export async function listSourcePersonaFiles(projectPath: string): Promise<Array
 }
 
 /**
- * Read the on-disk content of a persona file at .clubhouse/personas/<id>.md.
- * Returns empty string when the file does not exist (callers fall back to the
- * built-in persona template).
+ * Read the on-disk content of a persona file for a scope. Returns empty string
+ * when the file does not exist (callers fall back to the next layer / built-in).
  */
-export async function readSourcePersonaContent(projectPath: string, personaId: string): Promise<string> {
+export async function readSourcePersonaContent(projectPath: string, personaId: string, scope: PersonaScope = 'project'): Promise<string> {
   if (!personaId) return '';
-  const filePath = path.join(projectPath, '.clubhouse', 'personas', `${personaId}.md`);
+  const filePath = path.join(personasDirFor(projectPath, scope), `${personaId}.md`);
   try {
     return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
@@ -318,22 +336,23 @@ export async function readSourcePersonaContent(projectPath: string, personaId: s
 }
 
 /**
- * Write the content of a persona file at .clubhouse/personas/<id>.md, creating
- * the directory if needed. A disk persona overrides the built-in template of the
- * same ID at materialization.
+ * Write the content of a persona file for a scope, creating the directory if
+ * needed. A project persona overrides a user persona overrides the built-in
+ * template of the same ID at materialization.
  */
-export async function writeSourcePersonaContent(projectPath: string, personaId: string, content: string): Promise<void> {
-  const dir = path.join(projectPath, '.clubhouse', 'personas');
+export async function writeSourcePersonaContent(projectPath: string, personaId: string, content: string, scope: PersonaScope = 'project'): Promise<void> {
+  const dir = personasDirFor(projectPath, scope);
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(path.join(dir, `${personaId}.md`), content, 'utf-8');
 }
 
 /**
- * Delete a persona file at .clubhouse/personas/<id>.md. No-op if missing.
- * Built-in persona templates of the same ID remain available afterward.
+ * Delete a persona file for a scope. No-op if missing. Built-in persona
+ * templates of the same ID remain available afterward, as do personas in other
+ * scopes.
  */
-export async function deleteSourcePersona(projectPath: string, personaId: string): Promise<void> {
-  const filePath = path.join(projectPath, '.clubhouse', 'personas', `${personaId}.md`);
+export async function deleteSourcePersona(projectPath: string, personaId: string, scope: PersonaScope = 'project'): Promise<void> {
+  const filePath = path.join(personasDirFor(projectPath, scope), `${personaId}.md`);
   await fsp.rm(filePath, { force: true });
 }
 

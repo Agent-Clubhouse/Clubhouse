@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
+import * as os from 'os';
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
@@ -341,12 +342,22 @@ describe('readSourcePersonaContent', () => {
     expect(await readSourcePersonaContent('/project', '')).toBe('');
     expect(fsp.readFile).not.toHaveBeenCalled();
   });
+
+  it('reads from the user-global library under the home dir for scope "user"', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('# User persona');
+    const result = await readSourcePersonaContent('/project', 'qa', 'user');
+    expect(result).toBe('# User persona');
+    expect(fsp.readFile).toHaveBeenCalledWith(
+      path.join(os.homedir(), '.clubhouse', 'personas', 'qa.md'),
+      'utf-8',
+    );
+  });
 });
 
 describe('writeSourcePersonaContent', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('creates the personas dir and writes <id>.md', async () => {
+  it('creates the project personas dir and writes <id>.md', async () => {
     await writeSourcePersonaContent('/project', 'qa', '# Persona body');
     expect(fsp.mkdir).toHaveBeenCalledWith(path.join('/project', '.clubhouse', 'personas'), { recursive: true });
     expect(fsp.writeFile).toHaveBeenCalledWith(
@@ -355,15 +366,30 @@ describe('writeSourcePersonaContent', () => {
       'utf-8',
     );
   });
+
+  it('writes to the user-global library under the home dir for scope "user"', async () => {
+    await writeSourcePersonaContent('/project', 'qa', '# User persona', 'user');
+    const userDir = path.join(os.homedir(), '.clubhouse', 'personas');
+    expect(fsp.mkdir).toHaveBeenCalledWith(userDir, { recursive: true });
+    expect(fsp.writeFile).toHaveBeenCalledWith(path.join(userDir, 'qa.md'), '# User persona', 'utf-8');
+  });
 });
 
 describe('deleteSourcePersona', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('removes the persona file with force (no-op when missing)', async () => {
+  it('removes the project persona file with force (no-op when missing)', async () => {
     await deleteSourcePersona('/project', 'qa');
     expect(fsp.rm).toHaveBeenCalledWith(
       path.join('/project', '.clubhouse', 'personas', 'qa.md'),
+      { force: true },
+    );
+  });
+
+  it('removes the user-global persona file for scope "user"', async () => {
+    await deleteSourcePersona('/project', 'qa', 'user');
+    expect(fsp.rm).toHaveBeenCalledWith(
+      path.join(os.homedir(), '.clubhouse', 'personas', 'qa.md'),
       { force: true },
     );
   });
