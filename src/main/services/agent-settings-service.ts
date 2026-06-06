@@ -262,6 +262,82 @@ export async function readSourceMissionContent(projectPath: string, missionId: s
 }
 
 /**
+ * Write the content of a mission file at .clubhouse/missions/<id>.md, creating
+ * the directory if needed.
+ */
+export async function writeSourceMissionContent(projectPath: string, missionId: string, content: string): Promise<void> {
+  const dir = path.join(projectPath, '.clubhouse', 'missions');
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(path.join(dir, `${missionId}.md`), content, 'utf-8');
+}
+
+/**
+ * Delete a mission file at .clubhouse/missions/<id>.md. No-op if missing.
+ */
+export async function deleteSourceMission(projectPath: string, missionId: string): Promise<void> {
+  const filePath = path.join(projectPath, '.clubhouse', 'missions', `${missionId}.md`);
+  await fsp.rm(filePath, { force: true });
+}
+
+/**
+ * List user-authored persona files under .clubhouse/personas/.
+ * Each persona is a single .md file; the persona ID is the basename without extension.
+ * Built-in persona templates are layered on top of these by the materialization service.
+ */
+export async function listSourcePersonaFiles(projectPath: string): Promise<Array<{ id: string; path: string }>> {
+  const personasDir = path.join(projectPath, '.clubhouse', 'personas');
+  try {
+    const entries = await fsp.readdir(personasDir, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isFile() && e.name.endsWith('.md'))
+      .map((e) => ({ id: e.name.replace(/\.md$/, ''), path: path.join(personasDir, e.name) }));
+  } catch (err) {
+    if (!isEnoent(err)) {
+      appLog(LOG_NS, 'warn', `Failed to list personas from ${personasDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
+    return [];
+  }
+}
+
+/**
+ * Read the on-disk content of a persona file at .clubhouse/personas/<id>.md.
+ * Returns empty string when the file does not exist (callers fall back to the
+ * built-in persona template).
+ */
+export async function readSourcePersonaContent(projectPath: string, personaId: string): Promise<string> {
+  if (!personaId) return '';
+  const filePath = path.join(projectPath, '.clubhouse', 'personas', `${personaId}.md`);
+  try {
+    return await fsp.readFile(filePath, 'utf-8');
+  } catch (err) {
+    if (!isEnoent(err)) {
+      appLog(LOG_NS, 'warn', `Failed to read persona "${personaId}" at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
+    return '';
+  }
+}
+
+/**
+ * Write the content of a persona file at .clubhouse/personas/<id>.md, creating
+ * the directory if needed. A disk persona overrides the built-in template of the
+ * same ID at materialization.
+ */
+export async function writeSourcePersonaContent(projectPath: string, personaId: string, content: string): Promise<void> {
+  const dir = path.join(projectPath, '.clubhouse', 'personas');
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(path.join(dir, `${personaId}.md`), content, 'utf-8');
+}
+
+/**
+ * Delete a persona file at .clubhouse/personas/<id>.md. No-op if missing.
+ * Built-in persona templates of the same ID remain available afterward.
+ */
+export async function deleteSourcePersona(projectPath: string, personaId: string): Promise<void> {
+  const filePath = path.join(projectPath, '.clubhouse', 'personas', `${personaId}.md`);
+  await fsp.rm(filePath, { force: true });
+}
+
+/**
  * Read the content of a source agent template's README.md file (project-level .clubhouse/agent-templates/).
  */
 export async function readSourceAgentTemplateContent(projectPath: string, agentName: string): Promise<string> {

@@ -1,7 +1,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { pathExists } from './fs-utils';
-import { DurableAgentConfig, MaterializationPreview, ProjectAgentDefaults, SourceControlProvider } from '../../shared/types';
+import { AgentWildcardSettings, DurableAgentConfig, MaterializationPreview, ProjectAgentDefaults, SourceControlProvider } from '../../shared/types';
 import { WildcardContext, replaceWildcards } from '../../shared/wildcard-replacer';
 import { OrchestratorProvider } from '../orchestrators/types';
 import {
@@ -10,14 +10,17 @@ import {
   listSourceSkills,
   listSourceAgentTemplates,
   writeProjectAgentDefaults,
+  listSourceMissions,
   readSourceMissionContent,
+  listSourcePersonaFiles,
+  readSourcePersonaContent,
 } from './agent-settings-service';
 import { SettingsConventions } from './agent-settings-service';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as gitExcludeManager from './git-exclude-manager';
 import { appLog } from './log-service';
 import { jsonMcpToToml } from './toml-utils';
-import { getPersonaTemplate } from '../../renderer/features/assistant/content/personas';
+import { PERSONA_TEMPLATES, getPersonaTemplate } from '../../renderer/features/assistant/content/personas';
 
 const EXCLUDE_TAG = 'clubhouse-mode';
 
@@ -255,13 +258,53 @@ export function resolvePersonaId(
   return agent.persona ?? defaults.persona;
 }
 
+/**
+ * Resolve the effective persona content for a persona ID.
+ * Prefers a user-authored on-disk persona (.clubhouse/personas/<id>.md) and
+ * falls back to the built-in persona template of the same ID. Returns undefined
+ * when neither exists.
+ */
+export async function resolvePersonaContent(
+  projectPath: string,
+  personaId: string | undefined,
+): Promise<string | undefined> {
+  if (!personaId) return undefined;
+  const onDisk = await readSourcePersonaContent(projectPath, personaId);
+  if (onDisk) return onDisk;
+  return getPersonaTemplate(personaId)?.content;
+}
+
+/**
+ * Resolve the effective build/test/lint commands for an agent.
+ * Per-agent override (`agent.*Command`) wins; otherwise falls back to project
+ * defaults. Undefined fields are left undefined so the wildcard replacer can
+ * apply its built-in fallbacks.
+ */
+export function resolveAgentCommands(
+  agent: DurableAgentConfig,
+  defaults: ProjectAgentDefaults,
+): { buildCommand?: string; testCommand?: string; lintCommand?: string } {
+  return {
+    buildCommand: agent.buildCommand ?? defaults.buildCommand,
+    testCommand: agent.testCommand ?? defaults.testCommand,
+    lintCommand: agent.lintCommand ?? defaults.lintCommand,
+  };
+}
+
 // ── Source control provider resolution ───────────────────────────────────
 
 /**
- * Resolve the effective source control provider for a project.
- * Priority: project-level agentDefaults → app-level clubhouse mode settings → 'github'.
+ * Resolve the effective source control provider.
+ * Priority: per-agent override → project-level agentDefaults → app-level
+ * clubhouse mode settings → 'github'.
  */
-export async function resolveSourceControlProvider(projectPath: string): Promise<SourceControlProvider> {
+export async function resolveSourceControlProvider(
+  projectPath: string,
+  agent?: DurableAgentConfig,
+): Promise<SourceControlProvider> {
+  // 0. Per-agent override
+  if (agent?.sourceControlProvider) return agent.sourceControlProvider;
+
   // 1. Project-level
   const defaults = await readProjectAgentDefaults(projectPath);
   if (defaults.sourceControlProvider) return defaults.sourceControlProvider;
@@ -272,6 +315,80 @@ export async function resolveSourceControlProvider(projectPath: string): Promise
 
   // 3. Default
   return 'github';
+}
+
+/**
+ * List persona options available to an agent: the built-in templates plus any
+ * user-authored on-disk personas. When a disk persona shares an ID with a
+ * built-in, the disk version wins (source reported as 'disk').
+ */
+export async function listAvailablePersonas(
+  projectPath: string,
+): Promise<Array<{ id: string; name: string; source: 'builtin' | 'disk' }>> {
+  const diskFiles = await listSourcePersonaFiles(projectPath);
+  const diskIds = new Set(diskFiles.map((f) => f.id));
+  const builtins = PERSONA_TEMPLATES
+    .filter((p) => !diskIds.has(p.id))
+    .map((p) => ({ id: p.id, name: p.name, source: 'builtin' as const }));
+  const disk = diskFiles.map((f) => ({
+    id: f.id,
+    name: getPersonaTemplate(f.id)?.name ?? f.id,
+    source: 'disk' as const,
+  }));
+  return [...disk, ...builtins].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Read persona content for editing in the UI: the on-disk file if present,
+ * otherwise the built-in template content as a starting point. Returns empty
+ * string when neither exists.
+ */
+export async function readPersonaForEdit(projectPath: string, personaId: string): Promise<string> {
+  const onDisk = await readSourcePersonaContent(projectPath, personaId);
+  if (onDisk) return onDisk;
+  return getPersonaTemplate(personaId)?.content ?? '';
+}
+
+/**
+ * Build the resolved per-agent wildcard actuals used to populate the simple
+ * settings form when an agent is managed by Clubhouse Mode. Resolution mirrors
+ * materialization exactly so the form shows what would actually be substituted.
+ */
+export async function getAgentWildcards(
+  projectPath: string,
+  agent: DurableAgentConfig,
+): Promise<AgentWildcardSettings> {
+  const defaults = await readProjectAgentDefaults(projectPath);
+  const agentPath = agent.worktreePath
+    ? path.relative(projectPath, agent.worktreePath).replace(/\\/g, '/') + '/'
+    : `.clubhouse/agents/${agent.name}/`;
+
+  const resolvedScp = await resolveSourceControlProvider(projectPath, agent);
+  const commands = resolveAgentCommands(agent, defaults);
+
+  const missionOverride = agent.mission ?? null;
+  const missionDefault = defaults.mission ?? null;
+  const personaOverride = agent.persona ?? null;
+  const personaDefault = defaults.persona ?? null;
+
+  const [missions, personas] = await Promise.all([
+    listSourceMissions(projectPath),
+    listAvailablePersonas(projectPath),
+  ]);
+
+  return {
+    agentName: agent.name,
+    standbyBranch: agent.branch || `${agent.name}/standby`,
+    agentPath,
+    sourceControlProvider: { override: agent.sourceControlProvider ?? null, resolved: resolvedScp },
+    buildCommand: { override: agent.buildCommand ?? null, resolved: commands.buildCommand || 'npm run build' },
+    testCommand: { override: agent.testCommand ?? null, resolved: commands.testCommand || 'npm test' },
+    lintCommand: { override: agent.lintCommand ?? null, resolved: commands.lintCommand || 'npm run lint' },
+    mission: { override: missionOverride, projectDefault: missionDefault, resolved: missionOverride ?? missionDefault },
+    persona: { override: personaOverride, projectDefault: personaDefault, resolved: personaOverride ?? personaDefault },
+    missions: missions.map((m) => ({ id: m.id })),
+    personas,
+  };
 }
 
 // ── Materialization ──────────────────────────────────────────────────────
@@ -304,14 +421,10 @@ export async function materializeAgent(params: {
     if (sourceSkills.length === 0 && sourceTemplates.length === 0) return;
   }
 
-  const scp = await resolveSourceControlProvider(projectPath);
-  const commands = {
-    buildCommand: defaults.buildCommand,
-    testCommand: defaults.testCommand,
-    lintCommand: defaults.lintCommand,
-  };
+  const scp = await resolveSourceControlProvider(projectPath, agent);
+  const commands = resolveAgentCommands(agent, defaults);
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const personaContent = personaId ? getPersonaTemplate(personaId)?.content : undefined;
+  const personaContent = await resolvePersonaContent(projectPath, personaId);
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
   const conv = provider.conventions;
 
@@ -448,16 +561,12 @@ export async function previewMaterialization(params: {
 }): Promise<MaterializationPreview> {
   const { projectPath, agent, provider } = params;
   const defaults = await readProjectAgentDefaults(projectPath);
-  const scp = await resolveSourceControlProvider(projectPath);
-  const commands = {
-    buildCommand: defaults.buildCommand,
-    testCommand: defaults.testCommand,
-    lintCommand: defaults.lintCommand,
-  };
+  const scp = await resolveSourceControlProvider(projectPath, agent);
+  const commands = resolveAgentCommands(agent, defaults);
   const missionId = resolveMissionId(agent, defaults);
   const personaId = resolvePersonaId(agent, defaults);
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const personaContent = personaId ? getPersonaTemplate(personaId)?.content : undefined;
+  const personaContent = await resolvePersonaContent(projectPath, personaId);
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
   const _conv = provider.conventions;
 
@@ -756,7 +865,8 @@ disk and how to change them without using the UI.
 > **Note:** This file is regenerated whenever Clubhouse refreshes it (on
 > agent wake and on project open during a session). Local edits will be
 > overwritten — treat \`.clubhouse/settings.json\`, \`.clubhouse/agents.json\`,
-> \`.clubhouse/skills/\`, and \`.clubhouse/missions/\` as the editable surfaces.
+> \`.clubhouse/skills/\`, \`.clubhouse/missions/\`, and \`.clubhouse/personas/\` as
+> the editable surfaces.
 
 ---
 
@@ -841,15 +951,26 @@ Each entry in the \`agents\` array supports per-agent overrides:
   "branch": "bold-falcon/standby",
   "persona": "qa",
   "mission": "investigate-and-report",
+  "buildCommand": "npm run build",
+  "testCommand": "npm test",
+  "lintCommand": "npm run lint",
+  "sourceControlProvider": "github",
   "clubhouseModeOverride": true,
   "mcpIds": ["github"],
   "model": "claude-opus-4-7"
 }
 \`\`\`
 
-Editable fields: \`persona\`, \`mission\`, \`clubhouseModeOverride\`,
+Editable fields: \`persona\`, \`mission\`, \`buildCommand\`, \`testCommand\`,
+\`lintCommand\`, \`sourceControlProvider\`, \`clubhouseModeOverride\`,
 \`freeAgentMode\`, \`model\`, \`orchestrator\`, \`structuredMode\`, \`mcpIds\`,
 \`mcpConfigs\`, \`mcpOverride\`.
+
+Each of \`buildCommand\`, \`testCommand\`, \`lintCommand\`, and
+\`sourceControlProvider\` is a per-agent override of the matching wildcard; when
+unset the agent inherits the project default from \`agentDefaults\`. These same
+overrides are what the per-agent **Wildcards** settings form writes when an
+agent is managed by Clubhouse Mode (override disabled).
 
 Edits take effect on the next agent wake (which re-materializes the worktree).
 
@@ -902,6 +1023,35 @@ the rest of materialization still succeeds.
 
 ---
 
+## Personas (\`.clubhouse/personas/\`)
+
+A **persona** layers a role (e.g. \`qa\`, \`researcher\`, \`judge\`) onto an
+agent. The content is substituted for the \`@@Persona\` wildcard, or appended to
+the instructions when the template doesn't reference the token.
+
+Clubhouse ships a built-in persona library. To customize, author an on-disk
+persona file — a flat markdown file under \`.clubhouse/personas/\`, where the
+filename (minus \`.md\`) is the persona ID:
+
+\`\`\`
+.clubhouse/personas/
+  qa.md            # overrides the built-in "qa" persona
+  my-reviewer.md   # a brand-new persona
+\`\`\`
+
+At materialization, persona content resolves **disk-first**: if
+\`.clubhouse/personas/<id>.md\` exists it wins; otherwise the built-in template
+of the same ID is used. Built-ins are never written to disk automatically — they
+remain available until you shadow one with a file of the same name.
+
+**Selecting a persona** works exactly like missions:
+- Set \`agentDefaults.persona\` in \`.clubhouse/settings.json\` for the
+  project-wide default.
+- Set \`persona\` on an agent in \`.clubhouse/agents.json\` to override per-agent.
+- Per-agent wins. Either value is the persona ID.
+
+---
+
 ## Wildcards available to all templates
 
 | Token                       | Resolves to                                          |
@@ -927,6 +1077,10 @@ Neither \`@@Mission\` nor \`@@Persona\` appear in the built-in default template 
 |--------------------------------------------|------------------------------------------------------------|
 | Change project default mission             | \`agentDefaults.mission\` in \`.clubhouse/settings.json\`     |
 | Give one agent a different mission         | \`mission\` in that agent's entry in \`.clubhouse/agents.json\`|
+| Change project default persona             | \`agentDefaults.persona\` in \`.clubhouse/settings.json\`     |
+| Give one agent a different persona         | \`persona\` in that agent's entry in \`.clubhouse/agents.json\`|
+| Customize a persona's content              | Author \`.clubhouse/personas/<id>.md\` (overrides built-in)  |
+| Override a command for one agent           | \`buildCommand\`/\`testCommand\`/\`lintCommand\` in \`.clubhouse/agents.json\` |
 | Tweak a skill body                         | Edit the file under \`.clubhouse/skills/<name>/SKILL.md\`    |
 | Add a new wildcard target                  | (Code change — see \`src/shared/wildcard-replacer.ts\`)      |
 | Disable Clubhouse Mode for this project    | \`projectOverrides[<path>] = false\` in user settings        |

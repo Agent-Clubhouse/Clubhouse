@@ -219,6 +219,14 @@ export interface DurableAgentConfig {
   persona?: string;
   /** Mission ID overriding the project default. Resolved to .clubhouse/missions/<id>.md content; substituted for @@mission. */
   mission?: string;
+  /** Per-agent override for @@BuildCommand (falls back to project default when unset). */
+  buildCommand?: string;
+  /** Per-agent override for @@TestCommand (falls back to project default when unset). */
+  testCommand?: string;
+  /** Per-agent override for @@LintCommand (falls back to project default when unset). */
+  lintCommand?: string;
+  /** Per-agent override for @@SourceControlProvider (falls back to project/app resolution when unset). */
+  sourceControlProvider?: SourceControlProvider;
   /** CLI agent name to load (e.g. "k8s-assistant" → --agent k8s-assistant) */
   agentFile?: string;
   /** Directory to search for the agent file (e.g. "~/.copilot/agents/" → --source ...) */
@@ -296,6 +304,42 @@ export interface DurableConfigUpdates {
   structuredMode?: boolean;
   persona?: string;
   mission?: string;
+  buildCommand?: string;
+  testCommand?: string;
+  lintCommand?: string;
+  sourceControlProvider?: SourceControlProvider | null;
+}
+
+/**
+ * A single per-agent wildcard override, paired with the effective resolved value.
+ * `override` is the value stored on the agent record (null when inheriting);
+ * `resolved` is what the wildcard actually substitutes to (override → project
+ * default → built-in fallback).
+ */
+export interface WildcardOverride {
+  override: string | null;
+  resolved: string;
+}
+
+/**
+ * Resolved wildcard actuals for a single agent, used to populate the per-agent
+ * simple settings form when Clubhouse Mode manages the agent. Identity fields
+ * are read-only computed actuals; command/provider fields carry per-agent
+ * overrides; mission/persona expose the override, the project default, and the
+ * lists of authorable library items.
+ */
+export interface AgentWildcardSettings {
+  agentName: string;
+  standbyBranch: string;
+  agentPath: string;
+  sourceControlProvider: { override: SourceControlProvider | null; resolved: SourceControlProvider };
+  buildCommand: WildcardOverride;
+  testCommand: WildcardOverride;
+  lintCommand: WildcardOverride;
+  mission: { override: string | null; projectDefault: string | null; resolved: string | null };
+  persona: { override: string | null; projectDefault: string | null; resolved: string | null };
+  missions: Array<{ id: string }>;
+  personas: Array<{ id: string; name: string; source: 'builtin' | 'disk' }>;
 }
 
 export interface ClubhouseModeSettings {

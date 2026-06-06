@@ -459,19 +459,42 @@ describe('AgentSettingsView', () => {
       });
     });
 
-    it('shows materialization preview when managed', async () => {
+    it('shows the wildcard settings form when managed', async () => {
+      (window.clubhouse.agentSettings as any).getAgentWildcards = vi.fn().mockResolvedValue({
+        agentName: 'bold-falcon',
+        standbyBranch: 'bold-falcon/standby',
+        agentPath: '.clubhouse/agents/bold-falcon/',
+        sourceControlProvider: { override: null, resolved: 'github' },
+        buildCommand: { override: null, resolved: 'npm run build' },
+        testCommand: { override: null, resolved: 'npm test' },
+        lintCommand: { override: null, resolved: 'npm run lint' },
+        mission: { override: null, projectDefault: null, resolved: null },
+        persona: { override: null, projectDefault: null, resolved: null },
+        missions: [],
+        personas: [],
+      });
       renderSettings();
+      expect(await screen.findByText('Wildcards')).toBeInTheDocument();
+      expect(screen.getByText('@@BuildCommand')).toBeInTheDocument();
+      expect(screen.getByText('@@Mission')).toBeInTheDocument();
+    });
+
+    it('shows materialization preview behind the collapsible toggle when managed', async () => {
+      renderSettings();
+      fireEvent.click(await screen.findByText('Show resolved preview'));
       expect(await screen.findByText('Resolved Instructions')).toBeInTheDocument();
       expect(screen.getByText('You are bold-falcon.')).toBeInTheDocument();
     });
 
     it('shows resolved permissions in preview', async () => {
       renderSettings();
+      fireEvent.click(await screen.findByText('Show resolved preview'));
       expect(await screen.findByText('Resolved Permissions')).toBeInTheDocument();
     });
 
     it('shows managed skills in preview', async () => {
       renderSettings();
+      fireEvent.click(await screen.findByText('Show resolved preview'));
       expect(await screen.findByText('Managed Skills')).toBeInTheDocument();
       expect(screen.getByText('mission')).toBeInTheDocument();
       expect(screen.getByText('review')).toBeInTheDocument();
@@ -479,6 +502,7 @@ describe('AgentSettingsView', () => {
 
     it('shows managed agent templates in preview', async () => {
       renderSettings();
+      fireEvent.click(await screen.findByText('Show resolved preview'));
       expect(await screen.findByText('Managed Agent Templates')).toBeInTheDocument();
       expect(screen.getByText('researcher')).toBeInTheDocument();
     });
@@ -519,9 +543,9 @@ describe('AgentSettingsView', () => {
       });
     });
 
-    it('shows resolved info note when managed', () => {
+    it('shows the personalize info note when managed', () => {
       renderSettings();
-      expect(screen.getByText(/resolved from project defaults/)).toBeInTheDocument();
+      expect(screen.getByText(/Personalize it by editing the wildcard values/)).toBeInTheDocument();
     });
   });
 

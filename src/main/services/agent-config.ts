@@ -551,6 +551,34 @@ export async function updateDurableConfig(
       delete agent.persona;
     }
   }
+  if (updates.buildCommand !== undefined) {
+    if (updates.buildCommand) {
+      agent.buildCommand = updates.buildCommand;
+    } else {
+      delete agent.buildCommand;
+    }
+  }
+  if (updates.testCommand !== undefined) {
+    if (updates.testCommand) {
+      agent.testCommand = updates.testCommand;
+    } else {
+      delete agent.testCommand;
+    }
+  }
+  if (updates.lintCommand !== undefined) {
+    if (updates.lintCommand) {
+      agent.lintCommand = updates.lintCommand;
+    } else {
+      delete agent.lintCommand;
+    }
+  }
+  if (updates.sourceControlProvider !== undefined) {
+    if (updates.sourceControlProvider) {
+      agent.sourceControlProvider = updates.sourceControlProvider;
+    } else {
+      delete agent.sourceControlProvider;
+    }
+  }
   await writeAgents(projectPath, agents);
 }
 

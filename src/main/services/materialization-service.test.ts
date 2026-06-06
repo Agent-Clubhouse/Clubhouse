@@ -72,6 +72,10 @@ import {
   resetProjectAgentDefaults,
   resolveMissionId,
   resolvePersonaId,
+  resolvePersonaContent,
+  resolveAgentCommands,
+  listAvailablePersonas,
+  getAgentWildcards,
   getDefaultAgentTemplates,
   resolveSourceControlProvider,
   enableExclusions,
@@ -292,6 +296,108 @@ describe('materialization-service', () => {
       vi.mocked(clubhouseModeSettings.getSettings).mockReturnValue({ enabled: false });
 
       expect(await resolveSourceControlProvider('/project')).toBe('github');
+    });
+
+    it('honors a per-agent override over project/app settings', async () => {
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: { sourceControlProvider: 'github' },
+      }));
+      const agent = { ...testAgent, sourceControlProvider: 'azure-devops' as const };
+      expect(await resolveSourceControlProvider('/project', agent)).toBe('azure-devops');
+    });
+  });
+
+  describe('resolveAgentCommands', () => {
+    it('uses per-agent overrides when set', () => {
+      const agent = { ...testAgent, buildCommand: 'make build', testCommand: 'make test', lintCommand: 'make lint' };
+      expect(resolveAgentCommands(agent, { buildCommand: 'npm run build' })).toEqual({
+        buildCommand: 'make build', testCommand: 'make test', lintCommand: 'make lint',
+      });
+    });
+
+    it('falls back to project defaults when agent override unset', () => {
+      expect(resolveAgentCommands(testAgent, { buildCommand: 'npm run build', testCommand: 'npm test' })).toEqual({
+        buildCommand: 'npm run build', testCommand: 'npm test', lintCommand: undefined,
+      });
+    });
+  });
+
+  describe('resolvePersonaContent', () => {
+    it('returns undefined for an empty persona id', async () => {
+      expect(await resolvePersonaContent('/project', undefined)).toBeUndefined();
+    });
+
+    it('prefers the on-disk persona file when present', async () => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        if (String(p).replace(/\\/g, '/').endsWith('.clubhouse/personas/qa.md')) return 'CUSTOM QA PERSONA';
+        throw new Error('ENOENT');
+      });
+      expect(await resolvePersonaContent('/project', 'qa')).toBe('CUSTOM QA PERSONA');
+    });
+
+    it('falls back to the built-in template when no disk file exists', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      const content = await resolvePersonaContent('/project', 'qa');
+      expect(content).toContain('Quality Assurance');
+    });
+
+    it('returns undefined for an unknown persona with no disk file', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      expect(await resolvePersonaContent('/project', 'nonexistent')).toBeUndefined();
+    });
+  });
+
+  describe('listAvailablePersonas', () => {
+    it('returns the built-in templates when no disk personas exist', async () => {
+      vi.mocked(fsp.readdir).mockResolvedValue([]);
+      const personas = await listAvailablePersonas('/project');
+      expect(personas.length).toBeGreaterThan(0);
+      expect(personas.every((p) => p.source === 'builtin')).toBe(true);
+      expect(personas.map((p) => p.id)).toContain('qa');
+    });
+
+    it('lets a disk persona shadow a built-in of the same id', async () => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p: unknown) => {
+        if (String(p).replace(/\\/g, '/').includes('.clubhouse/personas')) {
+          return [{ name: 'qa.md', isFile: () => true, isDirectory: () => false }] as any;
+        }
+        return [] as any;
+      });
+      const personas = await listAvailablePersonas('/project');
+      const qa = personas.filter((p) => p.id === 'qa');
+      expect(qa).toHaveLength(1);
+      expect(qa[0].source).toBe('disk');
+    });
+  });
+
+  describe('getAgentWildcards', () => {
+    it('builds resolved actuals, overrides, and library lists for an agent', async () => {
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: { buildCommand: 'npm run build', mission: 'project-mission', persona: 'qa' },
+      }));
+      const agent = { ...testAgent, testCommand: 'make test', mission: 'agent-mission' };
+
+      const w = await getAgentWildcards('/project', agent);
+
+      // Identity actuals
+      expect(w.agentName).toBe('bold-falcon');
+      expect(w.standbyBranch).toBe('bold-falcon/standby');
+      expect(w.agentPath).toBe('.clubhouse/agents/bold-falcon/');
+      // Commands: override wins, else project default, else built-in fallback
+      expect(w.buildCommand).toEqual({ override: null, resolved: 'npm run build' });
+      expect(w.testCommand).toEqual({ override: 'make test', resolved: 'make test' });
+      expect(w.lintCommand).toEqual({ override: null, resolved: 'npm run lint' });
+      // Mission: per-agent override wins for resolved; project default surfaced
+      expect(w.mission).toEqual({ override: 'agent-mission', projectDefault: 'project-mission', resolved: 'agent-mission' });
+      // Persona: inherits project default
+      expect(w.persona).toEqual({ override: null, projectDefault: 'qa', resolved: 'qa' });
+      // Library lists present
+      expect(Array.isArray(w.missions)).toBe(true);
+      expect(w.personas.map((p) => p.id)).toContain('qa');
     });
   });
 
@@ -926,6 +1032,17 @@ describe('materialization-service', () => {
       );
       expect(readmeWrite).toBeDefined();
       expect(readmeWrite![1]).toBe(CLUBHOUSE_MODE_README_CONTENT);
+    });
+  });
+
+  describe('CLUBHOUSE_MODE_README_CONTENT', () => {
+    it('documents the personas surface and per-agent command/provider overrides', () => {
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('.clubhouse/personas/');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('@@Persona');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('buildCommand');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('testCommand');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('lintCommand');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('sourceControlProvider');
     });
   });
 

@@ -1311,6 +1311,68 @@ describe('updateDurableConfig', () => {
     expect(result).not.toBeNull();
     expect(result!.persona).toBeUndefined();
   });
+
+  it('persists per-agent command + provider wildcard overrides', async () => {
+    const agents = [
+      { id: 'durable_wc', name: 'wc', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => writtenData[String(p)] || '[]');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => { writtenData[String(p)] = String(data); });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_wc', {
+      buildCommand: 'make build',
+      testCommand: 'make test',
+      lintCommand: 'make lint',
+      sourceControlProvider: 'azure-devops',
+    });
+
+    const result = await getDurableConfig(PROJECT_PATH, 'durable_wc');
+    expect(result!.buildCommand).toBe('make build');
+    expect(result!.testCommand).toBe('make test');
+    expect(result!.lintCommand).toBe('make lint');
+    expect(result!.sourceControlProvider).toBe('azure-devops');
+  });
+
+  it('clears command + provider overrides when blank/null', async () => {
+    const agents = [
+      {
+        id: 'durable_wc_clear', name: 'wcc', color: 'indigo', createdAt: '2024-01-01',
+        buildCommand: 'make build', testCommand: 'make test', lintCommand: 'make lint', sourceControlProvider: 'azure-devops',
+      },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => writtenData[String(p)] || '[]');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => { writtenData[String(p)] = String(data); });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_wc_clear', {
+      buildCommand: '', testCommand: '', lintCommand: '', sourceControlProvider: null,
+    });
+
+    const result = await getDurableConfig(PROJECT_PATH, 'durable_wc_clear');
+    expect(result!.buildCommand).toBeUndefined();
+    expect(result!.testCommand).toBeUndefined();
+    expect(result!.lintCommand).toBeUndefined();
+    expect(result!.sourceControlProvider).toBeUndefined();
+  });
 });
 
 describe('updateSessionId', () => {
