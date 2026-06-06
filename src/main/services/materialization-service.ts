@@ -259,18 +259,20 @@ export function resolvePersonaId(
 }
 
 /**
- * Resolve the effective persona content for a persona ID.
- * Prefers a user-authored on-disk persona (.clubhouse/personas/<id>.md) and
- * falls back to the built-in persona template of the same ID. Returns undefined
- * when neither exists.
+ * Resolve the effective persona content for a persona ID, layered by scope.
+ * Precedence: project (.clubhouse/personas/<id>.md) → user
+ * (~/.clubhouse/personas/<id>.md) → built-in persona template. Returns undefined
+ * when none exists.
  */
 export async function resolvePersonaContent(
   projectPath: string,
   personaId: string | undefined,
 ): Promise<string | undefined> {
   if (!personaId) return undefined;
-  const onDisk = await readSourcePersonaContent(projectPath, personaId);
-  if (onDisk) return onDisk;
+  const project = await readSourcePersonaContent(projectPath, personaId, 'project');
+  if (project) return project;
+  const user = await readSourcePersonaContent(projectPath, personaId, 'user');
+  if (user) return user;
   return getPersonaTemplate(personaId)?.content;
 }
 
@@ -324,29 +326,35 @@ export async function resolveSourceControlProvider(
  */
 export async function listAvailablePersonas(
   projectPath: string,
-): Promise<Array<{ id: string; name: string; source: 'builtin' | 'disk' }>> {
-  const diskFiles = await listSourcePersonaFiles(projectPath);
-  const diskIds = new Set(diskFiles.map((f) => f.id));
-  const builtins = PERSONA_TEMPLATES
-    .filter((p) => !diskIds.has(p.id))
-    .map((p) => ({ id: p.id, name: p.name, source: 'builtin' as const }));
-  const disk = diskFiles.map((f) => ({
-    id: f.id,
-    name: getPersonaTemplate(f.id)?.name ?? f.id,
-    source: 'disk' as const,
-  }));
-  return [...disk, ...builtins].sort((a, b) => a.name.localeCompare(b.name));
+): Promise<Array<{ id: string; name: string; source: 'builtin' | 'user' | 'project' }>> {
+  const [projectFiles, userFiles] = await Promise.all([
+    listSourcePersonaFiles(projectPath, 'project'),
+    listSourcePersonaFiles(projectPath, 'user'),
+  ]);
+
+  // Merge layered by precedence: project > user > built-in. The effective source
+  // tag is the highest-precedence layer that defines the id.
+  const byId = new Map<string, { id: string; name: string; source: 'builtin' | 'user' | 'project' }>();
+  for (const p of PERSONA_TEMPLATES) {
+    byId.set(p.id, { id: p.id, name: p.name, source: 'builtin' });
+  }
+  for (const f of userFiles) {
+    byId.set(f.id, { id: f.id, name: getPersonaTemplate(f.id)?.name ?? f.id, source: 'user' });
+  }
+  for (const f of projectFiles) {
+    byId.set(f.id, { id: f.id, name: getPersonaTemplate(f.id)?.name ?? f.id, source: 'project' });
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
- * Read persona content for editing in the UI: the on-disk file if present,
- * otherwise the built-in template content as a starting point. Returns empty
- * string when neither exists.
+ * Read persona content for editing in the UI: the effective layered content
+ * (project → user → built-in) as a starting point. Returns empty string when
+ * none exists.
  */
 export async function readPersonaForEdit(projectPath: string, personaId: string): Promise<string> {
-  const onDisk = await readSourcePersonaContent(projectPath, personaId);
-  if (onDisk) return onDisk;
-  return getPersonaTemplate(personaId)?.content ?? '';
+  const resolved = await resolvePersonaContent(projectPath, personaId);
+  return resolved ?? '';
 }
 
 /**
@@ -1030,19 +1038,25 @@ agent. The content is substituted for the \`@@Persona\` wildcard, or appended to
 the instructions when the template doesn't reference the token.
 
 Clubhouse ships a built-in persona library. To customize, author an on-disk
-persona file — a flat markdown file under \`.clubhouse/personas/\`, where the
-filename (minus \`.md\`) is the persona ID:
+persona file — a flat markdown file where the filename (minus \`.md\`) is the
+persona ID. There are two on-disk scopes:
 
 \`\`\`
-.clubhouse/personas/
-  qa.md            # overrides the built-in "qa" persona
-  my-reviewer.md   # a brand-new persona
+.clubhouse/personas/        # project-scoped — this project only
+  qa.md                     # overrides the built-in "qa" persona here
+  my-reviewer.md            # a project-specific persona
+
+~/.clubhouse/personas/      # user-global — reusable across ALL your projects
+  my-reviewer.md            # author once, use in any project
 \`\`\`
 
-At materialization, persona content resolves **disk-first**: if
-\`.clubhouse/personas/<id>.md\` exists it wins; otherwise the built-in template
-of the same ID is used. Built-ins are never written to disk automatically — they
-remain available until you shadow one with a file of the same name.
+At materialization, persona content resolves by precedence: **project →
+user-global → built-in**. A \`.clubhouse/personas/<id>.md\` wins; otherwise a
+\`~/.clubhouse/personas/<id>.md\` is used; otherwise the built-in template of the
+same ID. Built-ins are never written to disk automatically — they remain
+available until you shadow one with a file of the same name. Put personas you
+want everywhere in \`~/.clubhouse/personas/\`; use \`.clubhouse/personas/\` to
+tweak one only for this project.
 
 **Selecting a persona** works exactly like missions:
 - Set \`agentDefaults.persona\` in \`.clubhouse/settings.json\` for the

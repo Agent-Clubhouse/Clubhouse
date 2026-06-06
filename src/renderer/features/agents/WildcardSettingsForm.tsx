@@ -131,6 +131,16 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
   const missionOptions: LibraryOption[] = data.missions.map((m) => ({ id: m.id }));
   const personaOptions: LibraryOption[] = data.personas.map((p) => ({ id: p.id, label: `${p.name} (${p.id})`, source: p.source }));
 
+  // Personas can be authored project-scoped or in the user-global library
+  // (reusable across projects). Default the editor's scope to where the
+  // currently-selected persona already lives.
+  const personaScopeOptions = [
+    { value: 'project', label: 'This project (.clubhouse/personas/)' },
+    { value: 'user', label: 'All my projects (~/.clubhouse/personas/)' },
+  ];
+  const selectedPersonaSource = data.personas.find((p) => p.id === form.persona)?.source;
+  const personaInitialScope = selectedPersonaSource === 'user' ? 'user' : 'project';
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -221,16 +231,18 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
         />
         <WildcardLibraryField
           token="@@Persona"
-          help="The persona body substituted for @@Persona. Built-ins seed the list; edits save to .clubhouse/personas/ and override the built-in."
+          help="The persona body substituted for @@Persona. Built-ins seed the list; save to this project or to your user-global library (~/.clubhouse/personas/) to reuse across projects. Project overrides user overrides built-in."
           noun="persona"
           value={form.persona}
           projectDefault={data.persona.projectDefault}
           options={personaOptions}
           disabled={disabled}
+          scopeOptions={personaScopeOptions}
+          initialScope={personaInitialScope}
           onChange={(id) => update({ persona: id })}
           loadContent={(id) => window.clubhouse.agentSettings.readSourcePersonaContent(projectPath, id)}
-          saveContent={(id, content) => window.clubhouse.agentSettings.writeSourcePersonaContent(projectPath, id, content)}
-          deleteItem={(id) => window.clubhouse.agentSettings.deleteSourcePersona(projectPath, id)}
+          saveContent={(id, content, scope) => window.clubhouse.agentSettings.writeSourcePersonaContent(projectPath, id, content, scope === 'user' ? 'user' : 'project')}
+          deleteItem={(id, scope) => window.clubhouse.agentSettings.deleteSourcePersona(projectPath, id, scope === 'user' ? 'user' : 'project')}
           onLibraryChanged={() => setInternalRefresh((n) => n + 1)}
         />
       </section>

@@ -1,4 +1,5 @@
 import projectManager from './project-manager.md';
+import groupProjectPm from './group-project-pm.md';
 import qa from './qa.md';
 import uiLead from './ui-lead.md';
 import qualityAuditor from './quality-auditor.md';
@@ -21,6 +22,12 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
     name: 'Project Manager',
     description: 'Delegator and planner. Dispatches work via the group project board. Does not write code.',
     content: projectManager,
+  },
+  {
+    id: 'group-project-pm',
+    name: 'Group Project PM',
+    description: 'Project manager who actively operates the group-project board: dispatches work, wakes/sleeps agents, manages polling, shoulder-taps, and keeps channels lean. Assumes privileged (admin) tools.',
+    content: groupProjectPm,
   },
   {
     id: 'qa',

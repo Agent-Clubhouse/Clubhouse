@@ -317,16 +317,16 @@ export function registerAgentSettingsHandlers(): void {
   ));
 
   ipcMain.handle(IPC.AGENT.WRITE_SOURCE_PERSONA_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ minLength: 0 })],
-    async (_event, projectPath, personaId, content) => {
-      await agentSettings.writeSourcePersonaContent(projectPath, personaId, content);
+    [stringArg(), stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true })],
+    async (_event, projectPath, personaId, content, scope) => {
+      await agentSettings.writeSourcePersonaContent(projectPath, personaId, content, scope === 'user' ? 'user' : 'project');
     },
   ));
 
   ipcMain.handle(IPC.AGENT.DELETE_SOURCE_PERSONA, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, personaId) => {
-      await agentSettings.deleteSourcePersona(projectPath, personaId);
+    [stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, projectPath, personaId, scope) => {
+      await agentSettings.deleteSourcePersona(projectPath, personaId, scope === 'user' ? 'user' : 'project');
     },
   ));
 

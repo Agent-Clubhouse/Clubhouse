@@ -5,8 +5,14 @@ export interface LibraryOption {
   id: string;
   /** Display label (falls back to id). */
   label?: string;
-  /** Origin marker shown as a chip; e.g. 'builtin' | 'disk'. */
+  /** Origin marker shown as a chip; e.g. 'builtin' | 'user' | 'project'. */
   source?: string;
+}
+
+/** A writable storage scope for authored items (e.g. project vs user-global). */
+export interface ScopeOption {
+  value: string;
+  label: string;
 }
 
 interface Props {
@@ -27,12 +33,16 @@ interface Props {
   onChange: (id: string) => void;
   /** Load the editable content for an id. */
   loadContent: (id: string) => Promise<string>;
-  /** Persist content for an id (create or overwrite). */
-  saveContent: (id: string, content: string) => Promise<void>;
-  /** Delete a library item by id. */
-  deleteItem: (id: string) => Promise<void>;
+  /** Persist content for an id (create or overwrite), to the given scope when provided. */
+  saveContent: (id: string, content: string, scope?: string) => Promise<void>;
+  /** Delete a library item by id, from the given scope when provided. */
+  deleteItem: (id: string, scope?: string) => Promise<void>;
   /** Called after the library changes so the parent can refresh option lists. */
   onLibraryChanged: () => void;
+  /** When set, the editor shows a storage-scope selector (e.g. project vs user-global). */
+  scopeOptions?: ScopeOption[];
+  /** Initial/selected scope value when the editor opens (defaults to the first scope option). */
+  initialScope?: string;
 }
 
 const ID_PATTERN = /^[a-zA-Z0-9._-]+$/;
@@ -58,6 +68,8 @@ export function WildcardLibraryField({
   saveContent,
   deleteItem,
   onLibraryChanged,
+  scopeOptions,
+  initialScope,
 }: Props) {
   const [mode, setMode] = useState<EditorMode>('closed');
   const [content, setContent] = useState('');
@@ -65,6 +77,9 @@ export function WildcardLibraryField({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [scope, setScope] = useState<string>(initialScope ?? scopeOptions?.[0]?.value ?? '');
+
+  const resetScope = () => setScope(initialScope ?? scopeOptions?.[0]?.value ?? '');
 
   // Close the editor whenever the field is disabled (e.g. agent starts running).
   useEffect(() => {
@@ -78,6 +93,7 @@ export function WildcardLibraryField({
   const openEdit = async () => {
     if (!value) return;
     setError('');
+    resetScope();
     setLoading(true);
     setMode('edit');
     setCopyId('');
@@ -92,6 +108,7 @@ export function WildcardLibraryField({
 
   const openNew = () => {
     setError('');
+    resetScope();
     setContent('');
     setCopyId('');
     setMode('new');
@@ -116,7 +133,7 @@ export function WildcardLibraryField({
     setSaving(true);
     setError('');
     try {
-      await saveContent(value, content);
+      await saveContent(value, content, scopeOptions ? scope : undefined);
       onLibraryChanged();
       setMode('closed');
     } catch (e) {
@@ -141,7 +158,7 @@ export function WildcardLibraryField({
     setSaving(true);
     setError('');
     try {
-      await saveContent(id, content);
+      await saveContent(id, content, scopeOptions ? scope : undefined);
       onLibraryChanged();
       onChange(id);
       setMode('closed');
@@ -157,7 +174,7 @@ export function WildcardLibraryField({
     setSaving(true);
     setError('');
     try {
-      await deleteItem(value);
+      await deleteItem(value, scopeOptions ? scope : undefined);
       onLibraryChanged();
       onChange('');
       setMode('closed');
@@ -184,7 +201,7 @@ export function WildcardLibraryField({
           <option value="">{inheritLabel}</option>
           {options.map((o) => (
             <option key={o.id} value={o.id}>
-              {(o.label || o.id) + (o.source === 'disk' ? ' · custom' : '')}
+              {(o.label || o.id) + (o.source && o.source !== 'builtin' ? ` · ${o.source}` : '')}
             </option>
           ))}
         </select>
@@ -239,6 +256,21 @@ export function WildcardLibraryField({
                 placeholder={`${value}-copy`}
                 className="w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
               />
+            </div>
+          )}
+          {scopeOptions && scopeOptions.length > 0 && (
+            <div>
+              <label className="block text-xs text-ctp-subtext0 mb-1">Save scope</label>
+              <select
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+                disabled={saving}
+                className="w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring"
+              >
+                {scopeOptions.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
             </div>
           )}
           {error && <p className="text-xs text-ctp-error">{error}</p>}

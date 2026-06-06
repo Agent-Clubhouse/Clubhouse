@@ -329,12 +329,32 @@ describe('materialization-service', () => {
       expect(await resolvePersonaContent('/project', undefined)).toBeUndefined();
     });
 
-    it('prefers the on-disk persona file when present', async () => {
+    it('prefers the project on-disk persona file when present', async () => {
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        if (String(p).replace(/\\/g, '/').endsWith('.clubhouse/personas/qa.md')) return 'CUSTOM QA PERSONA';
+        const fp = String(p).replace(/\\/g, '/');
+        if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) return 'PROJECT QA PERSONA';
         throw new Error('ENOENT');
       });
-      expect(await resolvePersonaContent('/project', 'qa')).toBe('CUSTOM QA PERSONA');
+      expect(await resolvePersonaContent('/project', 'qa')).toBe('PROJECT QA PERSONA');
+    });
+
+    it('falls back to the user-global persona when no project file exists', async () => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const fp = String(p).replace(/\\/g, '/');
+        // Project layer (under /project) misses; user-global layer (under home) hits.
+        if (!fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) return 'USER QA PERSONA';
+        throw new Error('ENOENT');
+      });
+      expect(await resolvePersonaContent('/project', 'qa')).toBe('USER QA PERSONA');
+    });
+
+    it('project layer wins over user-global layer for the same id', async () => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const fp = String(p).replace(/\\/g, '/');
+        if (!fp.endsWith('.clubhouse/personas/qa.md')) throw new Error('ENOENT');
+        return fp.startsWith('/project') ? 'PROJECT QA PERSONA' : 'USER QA PERSONA';
+      });
+      expect(await resolvePersonaContent('/project', 'qa')).toBe('PROJECT QA PERSONA');
     });
 
     it('falls back to the built-in template when no disk file exists', async () => {
@@ -358,17 +378,26 @@ describe('materialization-service', () => {
       expect(personas.map((p) => p.id)).toContain('qa');
     });
 
-    it('lets a disk persona shadow a built-in of the same id', async () => {
+    it('tags a user-global persona and lets a project persona shadow it', async () => {
       vi.mocked(fsp.readdir).mockImplementation(async (p: unknown) => {
-        if (String(p).replace(/\\/g, '/').includes('.clubhouse/personas')) {
+        const fp = String(p).replace(/\\/g, '/');
+        if (!fp.endsWith('.clubhouse/personas')) return [] as any;
+        if (fp.startsWith('/project')) {
+          // Project layer defines only "qa" (shadows built-in + user)
           return [{ name: 'qa.md', isFile: () => true, isDirectory: () => false }] as any;
         }
-        return [] as any;
+        // User-global layer defines "qa" and a brand-new "my-reviewer"
+        return [
+          { name: 'qa.md', isFile: () => true, isDirectory: () => false },
+          { name: 'my-reviewer.md', isFile: () => true, isDirectory: () => false },
+        ] as any;
       });
       const personas = await listAvailablePersonas('/project');
       const qa = personas.filter((p) => p.id === 'qa');
       expect(qa).toHaveLength(1);
-      expect(qa[0].source).toBe('disk');
+      expect(qa[0].source).toBe('project'); // project layer wins the source tag
+      const reviewer = personas.find((p) => p.id === 'my-reviewer');
+      expect(reviewer?.source).toBe('user'); // only in user-global layer
     });
   });
 
@@ -1043,6 +1072,11 @@ describe('materialization-service', () => {
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('testCommand');
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('lintCommand');
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('sourceControlProvider');
+    });
+
+    it('documents the user-global persona library and precedence', () => {
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('~/.clubhouse/personas/');
+      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('user-global → built-in');
     });
   });
 

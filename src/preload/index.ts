@@ -396,14 +396,14 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_MISSION_CONTENT, projectPath, missionId, content),
     deleteSourceMission: (projectPath: string, missionId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_MISSION, projectPath, missionId),
-    listSourcePersonas: (projectPath: string): Promise<Array<{ id: string; name: string; source: 'builtin' | 'disk' }>> =>
+    listSourcePersonas: (projectPath: string): Promise<Array<{ id: string; name: string; source: 'builtin' | 'user' | 'project' }>> =>
       ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_PERSONAS, projectPath),
     readSourcePersonaContent: (projectPath: string, personaId: string): Promise<string> =>
       ipcRenderer.invoke(IPC.AGENT.READ_SOURCE_PERSONA_CONTENT, projectPath, personaId),
-    writeSourcePersonaContent: (projectPath: string, personaId: string, content: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_PERSONA_CONTENT, projectPath, personaId, content),
-    deleteSourcePersona: (projectPath: string, personaId: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_PERSONA, projectPath, personaId),
+    writeSourcePersonaContent: (projectPath: string, personaId: string, content: string, scope?: 'project' | 'user'): Promise<void> =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_PERSONA_CONTENT, projectPath, personaId, content, scope),
+    deleteSourcePersona: (projectPath: string, personaId: string, scope?: 'project' | 'user'): Promise<void> =>
+      ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_PERSONA, projectPath, personaId, scope),
     createSkill: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
       ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource, projectPath),
     createAgentTemplate: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
