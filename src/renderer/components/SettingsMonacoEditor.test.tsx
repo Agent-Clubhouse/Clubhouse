@@ -9,6 +9,9 @@ vi.mock('../themes/index', () => ({
 
 vi.mock('../plugins/builtin/files/monaco-theme', () => ({
   generateMonacoTheme: () => ({ base: 'vs-dark', inherit: true, rules: [], colors: {} }),
+  loadMonaco: () => import('monaco-editor'),
+  ensureThemes: async () => {},
+  applyMonacoTheme: () => {},
 }));
 
 vi.mock('../stores/themeStore', () => ({
