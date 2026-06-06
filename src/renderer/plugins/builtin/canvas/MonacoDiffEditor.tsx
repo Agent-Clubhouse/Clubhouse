@@ -1,27 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { generateMonacoTheme } from '../files/monaco-theme';
+import { loadMonaco, ensureThemes, applyMonacoTheme } from '../files/monaco-theme';
 import { useThemeStore } from '../../../stores/themeStore';
 import { languageFromPath } from './ReadOnlyMonacoEditor';
-
-// Cached module reference — populated on first dynamic import
-let monacoModule: any | null = null;
-let themesRegistered = false;
-
-async function loadMonaco() {
-  if (!monacoModule) {
-    monacoModule = await import('monaco-editor');
-  }
-  return monacoModule;
-}
-
-async function ensureThemes(m: any): Promise<void> {
-  if (themesRegistered) return;
-  const { THEMES } = await import('../../../themes/index');
-  for (const [id, theme] of Object.entries(THEMES)) {
-    m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
-  }
-  themesRegistered = true;
-}
 
 interface MonacoDiffEditorProps {
   original: string;
@@ -111,7 +91,7 @@ export function MonacoDiffEditor({ original, modified, filePath }: MonacoDiffEdi
   // React to theme changes
   useEffect(() => {
     if (!monacoRef.current) return;
-    monacoRef.current.editor.setTheme(`clubhouse-${themeId}`);
+    applyMonacoTheme(monacoRef.current, themeId);
   }, [themeId]);
 
   return React.createElement('div', {

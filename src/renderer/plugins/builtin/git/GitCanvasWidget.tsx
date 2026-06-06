@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
 import type { GitInfo, GitStatusFile } from '../../../../shared/types';
 import { createGitOps } from './remote-git';
+import { evaluateSelectionPersistence } from './selection';
 import { Spinner } from '../../../components/Spinner';
 
 const GIT_POLL_INTERVAL_MS = 3000;
@@ -63,6 +64,9 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
   // a real file switch (show "Loading diff…") from a background poll refresh
   // (silently update so the diff doesn't flash).
   const diffFetchKeyRef = useRef<string | null>(null);
+  // Consecutive polls in which the selected file was absent from a non-empty
+  // status. Used to avoid dropping the selection on a single transient read.
+  const selectionMissesRef = useRef(0);
 
   const git = useMemo(
     () => effectivePath ? createGitOps(effectivePath, projectId) : null,
@@ -83,11 +87,17 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
   }, [git]);
 
-  // Clear selection when file disappears from status
+  // Clear selection when the file genuinely disappears from status — but tolerate
+  // transient/empty poll results so a flaky read doesn't reset the diff view.
   useEffect(() => {
     if (!selectedFile || !gitInfo) return;
-    const exists = gitInfo.status.some((f) => f.path === selectedFile);
-    if (!exists) {
+    const { drop, misses } = evaluateSelectionPersistence(
+      gitInfo.status,
+      selectedFile,
+      selectionMissesRef.current,
+    );
+    selectionMissesRef.current = misses;
+    if (drop) {
       setSelectedFile(null);
       setDiffData(null);
     }

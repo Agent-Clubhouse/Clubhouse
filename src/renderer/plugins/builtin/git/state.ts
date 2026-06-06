@@ -86,7 +86,11 @@ export const gitState = {
   },
 
   reset(): void {
+    // Reset data/UI state but keep listeners: components subscribe via
+    // useSyncExternalStore on mount and don't re-subscribe afterwards, so
+    // clearing listeners here would leave any still-mounted panel frozen
+    // (no re-render on subsequent updates).
     Object.assign(this, defaultState);
-    this.listeners.clear();
+    this.notify();
   },
 };

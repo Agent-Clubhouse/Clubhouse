@@ -1,27 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { generateMonacoTheme } from '../files/monaco-theme';
+import { loadMonaco, ensureThemes, applyMonacoTheme } from '../files/monaco-theme';
 import { EXT_TO_LANG } from '../files/file-icons';
 import { useThemeStore } from '../../../stores/themeStore';
-
-// Cached module reference — populated on first dynamic import
-let monacoModule: any | null = null;
-let themesRegistered = false;
-
-async function loadMonaco() {
-  if (!monacoModule) {
-    monacoModule = await import('monaco-editor');
-  }
-  return monacoModule;
-}
-
-async function ensureThemes(m: any): Promise<void> {
-  if (themesRegistered) return;
-  const { THEMES } = await import('../../../themes/index');
-  for (const [id, theme] of Object.entries(THEMES)) {
-    m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
-  }
-  themesRegistered = true;
-}
 
 /** Detect Monaco language from a file path's extension */
 export function languageFromPath(filePath: string): string {
@@ -147,7 +127,7 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
   // React to theme changes
   useEffect(() => {
     if (!monacoRef.current) return;
-    monacoRef.current.editor.setTheme(`clubhouse-${themeId}`);
+    applyMonacoTheme(monacoRef.current, themeId);
   }, [themeId]);
 
   return React.createElement('div', {
