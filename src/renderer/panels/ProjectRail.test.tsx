@@ -231,6 +231,26 @@ describe('ProjectRail context menu', () => {
     render(<ProjectRail />);
     expect(screen.queryByTestId('project-context-menu')).not.toBeInTheDocument();
   });
+
+  it('opens that project\'s settings when Settings is clicked (GH context-menu fix)', () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' }), makeProject({ id: 'p2', name: 'Beta' })],
+      activeProjectId: 'p2',
+    });
+
+    render(<ProjectRail />);
+    const projectButton = screen.getByTestId('project-p1');
+    fireEvent.contextMenu(projectButton.parentElement!);
+    fireEvent.click(screen.getByTestId('ctx-project-settings'));
+
+    const ui = useUIStore.getState();
+    expect(ui.explorerTab).toBe('settings');
+    // Must scope to the right-clicked project, not the literal string 'project'.
+    expect(ui.settingsContext).toBe('p1');
+    expect(ui.settingsSubPage).toBe('project');
+    // Also makes it the active project.
+    expect(useProjectStore.getState().activeProjectId).toBe('p1');
+  });
 });
 
 describe('ProjectRail pin button', () => {

@@ -256,8 +256,7 @@ function AnnexGatedPluginRailButton({ entry, pluginMatches, isActive, onClick, e
 export function ProjectRail() {
   const { projects, activeProjectId, setActiveProject, pickAndAddProject, reorderProjects, removeProject } =
     useProjectStore();
-  const setSettingsContext = useUIStore((s) => s.setSettingsContext);
-  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
+  const openProjectSettings = useUIStore((s) => s.openProjectSettings);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
   const toggleAssistant = useUIStore((s) => s.toggleAssistant);
   const toggleHelp = useUIStore((s) => s.toggleHelp);
@@ -844,9 +843,7 @@ export function ProjectRail() {
           onClose={() => setContextMenu(null)}
           onSettings={() => {
             setActiveProject(contextMenu.projectId);
-            toggleSettings();
-            setSettingsContext('project');
-            setSettingsSubPage('project');
+            openProjectSettings(contextMenu.projectId);
           }}
           onCloseProject={async () => {
             const { promise } = showConfirmDialog('Close this project? Project-specific settings may need to be reconfigured.');
