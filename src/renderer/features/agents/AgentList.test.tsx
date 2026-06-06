@@ -751,4 +751,32 @@ describe('AgentList drag-reorder re-render', () => {
     const reorderedNames = screen.getAllByTestId(/^agent-item-/).map((el) => el.textContent);
     expect(reorderedNames).toEqual(['charlie', 'alpha', 'bravo']);
   });
+
+  it('fires reorderAgents with the new order when a durable row is dragged onto another', () => {
+    const a: Agent = { id: 'a', projectId: 'proj-1', name: 'alpha', kind: 'durable', status: 'sleeping', color: 'indigo' };
+    const b: Agent = { id: 'b', projectId: 'proj-1', name: 'bravo', kind: 'durable', status: 'sleeping', color: 'indigo' };
+    const c: Agent = { id: 'c', projectId: 'proj-1', name: 'charlie', kind: 'durable', status: 'sleeping', color: 'indigo' };
+    const reorderAgents = vi.fn();
+    useAgentStore.setState({ agents: { a, b, c }, reorderAgents });
+
+    render(<AgentList />);
+
+    // Minimal DataTransfer stub — jsdom does not provide one.
+    const store: Record<string, string> = {};
+    const dataTransfer = {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: (k: string, v: string) => { store[k] = v; },
+      getData: (k: string) => store[k] ?? '',
+    } as unknown as DataTransfer;
+
+    const src = screen.getByTestId('durable-drag-0');
+    const tgt = screen.getByTestId('durable-drag-2');
+    fireEvent.dragStart(src, { dataTransfer });
+    fireEvent.dragOver(tgt, { dataTransfer });
+    fireEvent.drop(tgt, { dataTransfer });
+
+    // alpha (idx 0) moved to idx 2 → bravo, charlie, alpha
+    expect(reorderAgents).toHaveBeenCalledWith('/project', ['b', 'c', 'a']);
+  });
 });

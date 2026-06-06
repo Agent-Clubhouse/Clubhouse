@@ -148,6 +148,7 @@ const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick
             <img
               src={iconDataUrl}
               alt={label}
+              draggable={false}
               className={`w-full h-full object-cover ${isActive ? 'ring-2 ring-white/30 rounded-lg' : ''}`}
             />
           ) : (
