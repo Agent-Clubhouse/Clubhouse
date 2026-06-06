@@ -31,7 +31,7 @@ const mockApp = {
 
 vi.stubGlobal('window', {
   ...globalThis.window,
-  clubhouse: { annexClient: mockAnnexClient, app: mockApp },
+  clubhouse: { ...globalThis.window.clubhouse, annexClient: mockAnnexClient, app: { ...globalThis.window.clubhouse.app, ...mockApp } },
 });
 
 function makeProject(overrides: Partial<Project> = {}): Project {
