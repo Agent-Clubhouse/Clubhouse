@@ -55,6 +55,20 @@ describe('AgentAvatar', () => {
     expect(img).toHaveAttribute('src', 'data:image/png;base64,abc');
   });
 
+  it('icon image is not natively draggable (regression: img hijacked agent-list drag-to-reorder)', () => {
+    // Native <img> elements are draggable by default in Chromium. When an
+    // agent row shows an image avatar, grabbing the row starts a native image
+    // drag and the row's HTML5 drag-to-reorder never fires. draggable={false}
+    // on the avatar image lets the row drag win.
+    useAgentStore.setState({
+      agentIcons: { 'agent-1': 'data:image/png;base64,abc' },
+    });
+
+    render(<AgentAvatar agent={makeAgent({ icon: 'custom.png' })} />);
+    const img = screen.getByAltText('bold-falcon');
+    expect(img).toHaveAttribute('draggable', 'false');
+  });
+
   it('falls back to initials when icon name set but data missing', () => {
     render(<AgentAvatar agent={makeAgent({ icon: 'custom.png' })} />);
     expect(screen.getByText('BF')).toBeInTheDocument();

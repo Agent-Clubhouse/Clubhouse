@@ -123,7 +123,7 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
     if (agent.icon && iconDataUrl) {
       return (
         <div className={`${innerSize} rounded-full overflow-hidden flex-shrink-0`}>
-          <img src={iconDataUrl} alt={agent.name} className="w-full h-full object-cover" />
+          <img src={iconDataUrl} alt={agent.name} draggable={false} className="w-full h-full object-cover" />
         </div>
       );
     }
