@@ -313,6 +313,7 @@ vi.stubGlobal('clubhouse', {
     getVersionHistory: async () => [],
     getClipboardSettings: async () => ({ clipboardCompat: false }),
     saveClipboardSettings: asyncNoop,
+    readClipboardText: async () => '',
     readClipboardImage: async () => null,
     getSessionSettings: async () => ({ promptForName: false, projectOverrides: {} }),
     saveSessionSettings: asyncNoop,

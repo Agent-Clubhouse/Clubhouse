@@ -1,4 +1,4 @@
-import { _electron as electron } from '@playwright/test';
+import { _electron as electron, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -72,18 +72,20 @@ export async function launchApp(opts: LaunchOptions = {}) {
 async function findRendererWindow(
   electronApp: Awaited<ReturnType<typeof electron.launch>>,
 ) {
-  // Fast path: pick the first non-devtools window already open.
-  // DevTools may briefly have a non-devtools:// URL on startup, so after
-  // the URL check we verify the page has our renderer's <div id="root">.
+  // Fast path: pick the first renderer window already open.
+  // Avoid evaluating inside candidate pages here: a not-yet-ready renderer can
+  // hang evaluation while DevTools is open. The app renderer has a stable file
+  // URL under the webpack renderer bundle; DevTools never does.
   // If verification fails, we wait for the next window.
   const seen = new Set<Awaited<ReturnType<typeof electronApp.firstWindow>>>();
 
   for (const page of electronApp.windows()) {
     if (page.url().startsWith('devtools://')) { seen.add(page); continue; }
-    // Validate: wait for load so evaluate() has a JS context, then check #root.
     try {
       await page.waitForLoadState('load');
-      if (await page.evaluate(() => !!document.getElementById('root'))) return page;
+      await page.waitForTimeout(250);
+      if (page.url().startsWith('devtools://')) { seen.add(page); continue; }
+      if (isClubhouseRenderer(page)) return page;
     } catch { /* not ready */ }
     seen.add(page);
   }
@@ -100,9 +102,16 @@ async function findRendererWindow(
     if (page.url().startsWith('devtools://')) continue;
     try {
       await page.waitForLoadState('load');
-      if (await page.evaluate(() => !!document.getElementById('root'))) return page;
+      await page.waitForTimeout(250);
+      if (page.url().startsWith('devtools://')) continue;
+      if (isClubhouseRenderer(page)) return page;
     } catch { /* not ready */ }
   }
 
   throw new Error('Timed out waiting for renderer window (30 s)');
+}
+
+function isClubhouseRenderer(page: Page): boolean {
+  const url = page.url();
+  return url.startsWith('file://') && url.includes('/renderer/main_window/');
 }
