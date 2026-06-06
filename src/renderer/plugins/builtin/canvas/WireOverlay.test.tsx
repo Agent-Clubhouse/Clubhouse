@@ -606,4 +606,72 @@ describe('WireOverlay', () => {
     const group = container.querySelector('[data-testid^="wire-group-"]');
     expect(group?.getAttribute('data-dimmed')).toBeNull();
   });
+
+  describe('zone wires', () => {
+    function makeZoneView(id: string, x = 0, y = 0): CanvasView {
+      return {
+        id, type: 'zone',
+        position: { x, y }, size: { width: 400, height: 300 },
+        title: id, displayName: id, zIndex: 0, metadata: {},
+        themeId: 'catppuccin-mocha', containedViewIds: [],
+      };
+    }
+
+    it('renders a single zone wire to the zone (not one per member)', () => {
+      const views: CanvasView[] = [
+        makeZoneView('z1', 0, 0),
+        makeAgentView('a1', 'agent-1', 700, 0),
+      ];
+      const { container } = render(
+        <WireOverlay
+          views={views}
+          bindings={[]}
+          zoneWireDefinitions={[{ id: 'zw1', sourceZoneId: 'z1', targetId: 'agent-1', targetType: 'agent' }]}
+        />,
+      );
+      const zonePaths = container.querySelectorAll('[data-testid^="zone-wire-path-"]');
+      expect(zonePaths).toHaveLength(1);
+      expect(container.querySelector('[data-testid="zone-wire-group-zw1"]')).not.toBeNull();
+    });
+
+    it('renders the SVG even when there are only zone wires and no bindings', () => {
+      const views: CanvasView[] = [makeZoneView('z1'), makeAgentView('a1', 'agent-1', 700, 0)];
+      const { container } = render(
+        <WireOverlay
+          views={views}
+          bindings={[]}
+          zoneWireDefinitions={[{ id: 'zw1', sourceZoneId: 'z1', targetId: 'agent-1', targetType: 'agent' }]}
+        />,
+      );
+      expect(container.querySelector('svg')).not.toBeNull();
+    });
+
+    it('invokes onZoneWireClick when a zone wire hitbox is clicked', () => {
+      const onZoneWireClick = vi.fn();
+      const views: CanvasView[] = [makeZoneView('z1'), makeAgentView('a1', 'agent-1', 700, 0)];
+      const { container } = render(
+        <WireOverlay
+          views={views}
+          bindings={[]}
+          zoneWireDefinitions={[{ id: 'zw1', sourceZoneId: 'z1', targetId: 'agent-1', targetType: 'agent' }]}
+          onZoneWireClick={onZoneWireClick}
+        />,
+      );
+      const hitbox = container.querySelector('[data-testid="zone-wire-hitbox-zw1"]') as SVGPathElement;
+      hitbox.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(onZoneWireClick).toHaveBeenCalledWith('zw1', expect.anything());
+    });
+
+    it('drops a zone wire whose target view is missing', () => {
+      const views: CanvasView[] = [makeZoneView('z1')];
+      const { container } = render(
+        <WireOverlay
+          views={views}
+          bindings={[]}
+          zoneWireDefinitions={[{ id: 'zw1', sourceZoneId: 'z1', targetId: 'agent-missing', targetType: 'agent' }]}
+        />,
+      );
+      expect(container.querySelector('svg')).toBeNull();
+    });
+  });
 });

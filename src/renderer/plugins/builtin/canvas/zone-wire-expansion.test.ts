@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { expandZoneWires, reconcileZoneBindings } from './zone-wire-expansion';
+import { expandZoneWires, reconcileZoneBindings, diffZoneBindings, type ExpandedBinding } from './zone-wire-expansion';
 import type { AgentCanvasView, ZoneCanvasView, PluginCanvasView } from './canvas-types';
 import type { ZoneWireDefinition } from './zone-wire-store';
 
@@ -167,5 +167,49 @@ describe('reconcileZoneBindings', () => {
     // this individual binding is preserved
     expect(toRemove.length).toBe(1);
     expect(toRemove[0].targetId).toBe('a3');
+  });
+});
+
+describe('diffZoneBindings (containment auto-update)', () => {
+  const eb = (agentId: string, targetId: string): ExpandedBinding => ({
+    agentId, targetId, targetKind: 'agent', label: targetId, agentName: agentId, targetName: targetId,
+  });
+
+  it('adds bindings for an agent that joined the zone', () => {
+    const prev = [eb('durable_1', 'durable_t')];
+    const next = [eb('durable_1', 'durable_t'), eb('durable_2', 'durable_t')];
+    const current = new Set(['durable_1:durable_t']);
+    const { toAdd, toRemove } = diffZoneBindings(prev, next, current);
+    expect(toAdd.map((b) => b.agentId)).toEqual(['durable_2']);
+    expect(toRemove).toHaveLength(0);
+  });
+
+  it('removes bindings for an agent that left the zone', () => {
+    const prev = [eb('durable_1', 'durable_t'), eb('durable_2', 'durable_t')];
+    const next = [eb('durable_1', 'durable_t')];
+    const current = new Set(['durable_1:durable_t', 'durable_2:durable_t']);
+    const { toAdd, toRemove } = diffZoneBindings(prev, next, current);
+    expect(toAdd).toHaveLength(0);
+    expect(toRemove).toEqual([{ agentId: 'durable_2', targetId: 'durable_t' }]);
+  });
+
+  it('never removes a manual binding (one never in prevDesired)', () => {
+    // The zone wire is removed entirely: prev had one zone binding, next is empty.
+    const prev = [eb('durable_1', 'durable_t')];
+    const next: ExpandedBinding[] = [];
+    // current also contains a manual wire durable_9 -> durable_manual
+    const current = new Set(['durable_1:durable_t', 'durable_9:durable_manual']);
+    const { toAdd, toRemove } = diffZoneBindings(prev, next, current);
+    expect(toAdd).toHaveLength(0);
+    // Only the zone-derived binding is removed; the manual one is untouched.
+    expect(toRemove).toEqual([{ agentId: 'durable_1', targetId: 'durable_t' }]);
+  });
+
+  it('does not re-add a binding already present in current', () => {
+    const prev: ExpandedBinding[] = [];
+    const next = [eb('durable_1', 'durable_t')];
+    const current = new Set(['durable_1:durable_t']);
+    const { toAdd } = diffZoneBindings(prev, next, current);
+    expect(toAdd).toHaveLength(0);
   });
 });

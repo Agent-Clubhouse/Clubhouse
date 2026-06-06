@@ -157,6 +157,16 @@ export function broadcastCanvasState(
         ...(w.disabledTools && w.disabledTools.length > 0 ? { disabledTools: w.disabledTools } : {}),
       }))
       : undefined,
+    // Zone wire definitions for annex controllers — zone wires render as a
+    // single visual wire to the zone and must survive the round-trip.
+    zoneWireDefinitions: state.zoneWireDefinitions.length > 0
+      ? state.zoneWireDefinitions.map((w) => ({
+        id: w.id,
+        sourceZoneId: w.sourceZoneId,
+        targetId: w.targetId,
+        targetType: w.targetType,
+      }))
+      : undefined,
   };
 
   window.clubhouse.window.broadcastCanvasState(snapshot);

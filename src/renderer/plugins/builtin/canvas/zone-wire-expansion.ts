@@ -269,6 +269,34 @@ export function expandZoneWires(
 }
 
 /**
+ * Diff zone-derived bindings across a containment / zone-wire change.
+ *
+ * This is the auto-update mechanism: when an agent joins or leaves a zone, the
+ * zone's expansion changes and we must add the new bindings and remove the ones
+ * that no longer apply — without disturbing manually-created wires.
+ *
+ * Only bindings that were *previously* zone-derived (`prevDesired`) are eligible
+ * for removal, so manual wires (which never appear in `prevDesired`) are
+ * preserved. Bindings already present in `currentKeys` are not re-added.
+ */
+export function diffZoneBindings(
+  prevDesired: ExpandedBinding[],
+  newDesired: ExpandedBinding[],
+  currentKeys: Set<string>,
+): {
+  toAdd: ExpandedBinding[];
+  toRemove: Array<{ agentId: string; targetId: string }>;
+} {
+  const keyOf = (b: { agentId: string; targetId: string }) => `${b.agentId}:${b.targetId}`;
+  const newKeys = new Set(newDesired.map(keyOf));
+  const toAdd = newDesired.filter((b) => !currentKeys.has(keyOf(b)));
+  const toRemove = prevDesired
+    .filter((b) => !newKeys.has(keyOf(b)))
+    .map((b) => ({ agentId: b.agentId, targetId: b.targetId }));
+  return { toAdd, toRemove };
+}
+
+/**
  * Reconcile expanded zone bindings with current MCP bindings.
  * Returns lists of bindings to add and remove.
  */

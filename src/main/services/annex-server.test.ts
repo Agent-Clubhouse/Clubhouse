@@ -2163,7 +2163,8 @@ describe('annex-server', () => {
         path.join(__dirname, '../../renderer/plugins/builtin/canvas/canvas-store.ts'), 'utf-8',
       ));
       // hydrateFromRemote accepts wireDefinitions as third parameter
-      expect(source).toContain('hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?)');
+      // (and zone wire definitions as a fourth)
+      expect(source).toContain('hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?)');
     });
   });
 

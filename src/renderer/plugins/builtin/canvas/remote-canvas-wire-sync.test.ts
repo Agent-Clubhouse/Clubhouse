@@ -248,4 +248,59 @@ describe('remote canvas wire sync', () => {
       expect(namespaced[1].targetId).toBe('remote||sat-xyz||gp-123');
     });
   });
+
+  // ── Zone wire sync (item 8: survive the annex round-trip) ───────────
+
+  describe('broadcastCanvasState zone wire definitions', () => {
+    it('includes zoneWireDefinitions in the snapshot when zone wires exist', () => {
+      const canvasId = store.getState().activeCanvasId;
+      store.getState().addZoneWireDefinition({ sourceZoneId: 'z1', targetId: 'agent-2', targetType: 'agent' });
+
+      broadcastCanvasState(store, canvasId);
+
+      const snapshot = broadcastSpy.mock.calls[0][0];
+      expect(snapshot.zoneWireDefinitions).toHaveLength(1);
+      expect(snapshot.zoneWireDefinitions[0]).toEqual(expect.objectContaining({
+        sourceZoneId: 'z1', targetId: 'agent-2', targetType: 'agent',
+      }));
+    });
+
+    it('omits zoneWireDefinitions when no zone wires exist', () => {
+      broadcastCanvasState(store, store.getState().activeCanvasId);
+      expect(broadcastSpy.mock.calls[0][0].zoneWireDefinitions).toBeUndefined();
+    });
+  });
+
+  describe('zone wire namespacing', () => {
+    // Mirrors the zone-wire namespacing in annexClientStore's canvas:state handler.
+    function namespaceZoneWires(
+      wires: Array<{ id: string; sourceZoneId: string; targetId: string; targetType: string }>,
+      satelliteId: string,
+    ) {
+      const ns = (id: string) => id.startsWith('remote||') ? id : `remote||${satelliteId}||${id}`;
+      return wires.map((w) => {
+        const patched = { ...w };
+        if (patched.targetType === 'agent' || patched.targetType === 'group-project') {
+          patched.targetId = ns(patched.targetId);
+        }
+        return patched;
+      });
+    }
+
+    it('namespaces agent and group-project targets but not zone/browser/queue', () => {
+      const wires = [
+        { id: 'a', sourceZoneId: 'z1', targetId: 'agent-2', targetType: 'agent' },
+        { id: 'b', sourceZoneId: 'z1', targetId: 'gp-1', targetType: 'group-project' },
+        { id: 'c', sourceZoneId: 'z1', targetId: 'z2', targetType: 'zone' },
+        { id: 'd', sourceZoneId: 'z1', targetId: 'browser-1', targetType: 'browser' },
+      ];
+      const ns = namespaceZoneWires(wires, 'sat-1');
+      expect(ns[0].targetId).toBe('remote||sat-1||agent-2');
+      expect(ns[1].targetId).toBe('remote||sat-1||gp-1');
+      expect(ns[2].targetId).toBe('z2');
+      expect(ns[3].targetId).toBe('browser-1');
+      // sourceZoneId (a view id) is never namespaced
+      expect(ns.every((w) => w.sourceZoneId === 'z1')).toBe(true);
+    });
+  });
 });

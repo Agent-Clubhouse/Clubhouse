@@ -19,8 +19,8 @@ import { WireDragOverlay } from './WireDragOverlay';
 import { WireConfigPopover } from './WireConfigPopover';
 import { CanvasMinimap } from './CanvasMinimap';
 import { useWiring, type ZoneWireCallback } from './useWiring';
-import { useZoneWireStore } from './zone-wire-store';
-import { expandZoneWires, reconcileZoneBindings } from './zone-wire-expansion';
+import type { ZoneWireDefinition } from './zone-wire-store';
+import { expandZoneWires, diffZoneBindings, type ExpandedBinding } from './zone-wire-expansion';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
@@ -48,6 +48,10 @@ interface CanvasWorkspaceProps {
   onAddWireDefinition: (entry: McpBindingEntry) => void;
   onRemoveWireDefinition: (agentId: string, targetId: string) => void;
   onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
+  /** Persisted zone-level wires (zone → target). Source of truth in canvas store. */
+  zoneWireDefinitions?: ZoneWireDefinition[];
+  onAddZoneWireDefinition?: (wire: Omit<ZoneWireDefinition, 'id'>) => ZoneWireDefinition;
+  onRemoveZoneWireDefinition?: (wireId: string) => void;
   api: PluginAPI;
   onViewportChange: (viewport: Viewport) => void;
   onAddView: (type: CanvasViewType, position: Position) => void;
@@ -88,6 +92,9 @@ export function CanvasWorkspace({
   onAddWireDefinition,
   onRemoveWireDefinition,
   onUpdateWireDefinition,
+  zoneWireDefinitions = [],
+  onAddZoneWireDefinition,
+  onRemoveZoneWireDefinition,
   api,
   onViewportChange,
   onAddView,
@@ -124,7 +131,6 @@ export function CanvasWorkspace({
   // ── MCP / wire store subscriptions ───────────────────────────────
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
   const mcpBindings = useMcpBindingStore((s) => s.bindings);
-  const addZoneWire = useZoneWireStore((s) => s.addWire);
   const mcpBind = useMcpBindingStore((s) => s.bind);
 
   const mergedWireBindings = useMemo(() => {
@@ -133,14 +139,29 @@ export function CanvasWorkspace({
     return extras.length > 0 ? [...wireDefinitions, ...extras] : wireDefinitions;
   }, [wireDefinitions, mcpBindings]);
 
+  // Creating a zone wire only records the definition; the reconcile effect
+  // below expands it into per-agent MCP bindings and keeps them in sync as
+  // members join/leave the zone.
   const handleZoneWire: ZoneWireCallback = useCallback((sourceZoneId, targetId, targetType) => {
-    addZoneWire({ sourceZoneId, targetId, targetType });
-    const allWires = [...useZoneWireStore.getState().wires];
-    const expanded = expandZoneWires(allWires, views);
-    const current = useMcpBindingStore.getState().bindings;
-    const { toAdd } = reconcileZoneBindings(expanded, current);
+    onAddZoneWireDefinition?.({ sourceZoneId, targetId, targetType });
+  }, [onAddZoneWireDefinition]);
+
+  // Auto-reconcile zone-derived bindings whenever the zone wires or the canvas
+  // views (containment) change. This re-expands every zone wire and applies the
+  // delta against the previous expansion: new memberships are bound, departed
+  // memberships are unbound, and manual wires are never touched. It also runs on
+  // hydration, re-deriving runtime bindings from the persisted zone wires.
+  const prevExpandedRef = useRef<ExpandedBinding[]>([]);
+  useEffect(() => {
+    if (!mcpEnabled) return;
+    const desired = expandZoneWires(zoneWireDefinitions, views);
+    const currentKeys = new Set(
+      useMcpBindingStore.getState().bindings.map((b) => `${b.agentId}:${b.targetId}`),
+    );
+    const { toAdd, toRemove } = diffZoneBindings(prevExpandedRef.current, desired, currentKeys);
+    prevExpandedRef.current = desired;
     for (const b of toAdd) {
-      mcpBind(b.agentId, {
+      void mcpBind(b.agentId, {
         targetId: b.targetId,
         targetKind: b.targetKind,
         label: b.label,
@@ -148,7 +169,10 @@ export function CanvasWorkspace({
         targetName: b.targetName,
       });
     }
-  }, [views, addZoneWire, mcpBind]);
+    for (const b of toRemove) {
+      void useMcpBindingStore.getState().unbind(b.agentId, b.targetId);
+    }
+  }, [zoneWireDefinitions, views, mcpEnabled, mcpBind]);
 
   const handleAddWireDef = useCallback((entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => {
     onAddWireDefinition(entry as McpBindingEntry);
@@ -503,9 +527,11 @@ export function CanvasWorkspace({
             <WireOverlay
               views={views}
               bindings={mergedWireBindings}
+              zoneWireDefinitions={zoneWireDefinitions}
               viewPositions={wireViewPositions}
               sleepingAgentIds={sleepingAgentIds}
               onWireClick={handleWireClick}
+              onZoneWireClick={onRemoveZoneWireDefinition}
               forceBidirectional={bidirectionalWires}
             />
           </div>

@@ -434,6 +434,10 @@ export function initAnnexClientListener(): () => void {
             agentName?: string; targetName?: string; projectName?: string;
             instructions?: Record<string, string>; disabledTools?: string[];
           }>;
+          zoneWireDefinitions?: Array<{
+            id: string; sourceZoneId: string; targetId: string;
+            targetType: 'zone' | 'agent' | 'group-project' | 'agent-queue' | 'browser';
+          }>;
         };
 
         // Re-namespace agent/project IDs in views — the satellite stores
@@ -476,10 +480,23 @@ export function initAnnexClientListener(): () => void {
           return patched;
         });
 
+        // Re-namespace zone wires. Source is always a zone view id (view ids are
+        // not namespaced). The target is namespaced only when it is an agent or
+        // group-project id — those are namespaced in remoteAgents/view metadata;
+        // zone/browser targets are view ids and agent-queue ids stay verbatim.
+        const ns = (id: string) => id.startsWith('remote||') ? id : `remote||${satelliteId}||${id}`;
+        const namespacedZoneWires = cs.zoneWireDefinitions?.map((w) => {
+          const patched = { ...w };
+          if (patched.targetType === 'agent' || patched.targetType === 'group-project') {
+            patched.targetId = ns(patched.targetId);
+          }
+          return patched;
+        });
+
         // Helper to route canvas data to the correct store based on scope.
         // Deferred via requestIdleCallback to avoid blocking the event loop
         // with deep object cloning during rapid canvas:state bursts.
-        const commitCanvasData = (data: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }) => {
+        const commitCanvasData = (data: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }) => {
           const commit = () => {
             if (isAppLevel) {
               useRemoteProjectStore.getState().updateRemoteAppCanvasState(satelliteId, data);
@@ -497,7 +514,7 @@ export function initAnnexClientListener(): () => void {
         const existingStore = isAppLevel
           ? useRemoteProjectStore.getState().remoteAppCanvasState[satelliteId]
           : useRemoteProjectStore.getState().remoteCanvasState[nsProjId];
-        const existing = existingStore as { canvases: any[]; activeCanvasId: string; wireDefinitions?: unknown[] } | undefined;
+        const existing = existingStore as { canvases: any[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] } | undefined;
 
         if (cs.allCanvasTabs) {
           // Full tab metadata available — build complete canvas list.
@@ -522,6 +539,7 @@ export function initAnnexClientListener(): () => void {
             canvases,
             activeCanvasId: cs.activeCanvasId || cs.canvasId,
             wireDefinitions: namespacedWires,
+            zoneWireDefinitions: namespacedZoneWires,
           });
         } else if (existing) {
           // No tab metadata — merge single canvas into existing state
@@ -542,6 +560,7 @@ export function initAnnexClientListener(): () => void {
             canvases,
             activeCanvasId: existing.activeCanvasId,
             wireDefinitions: namespacedWires ?? existing.wireDefinitions,
+            zoneWireDefinitions: namespacedZoneWires ?? existing.zoneWireDefinitions,
           });
         } else {
           // First canvas state for this project/app
@@ -554,6 +573,7 @@ export function initAnnexClientListener(): () => void {
             }],
             activeCanvasId: cs.canvasId,
             wireDefinitions: namespacedWires,
+            zoneWireDefinitions: namespacedZoneWires,
           });
         }
       }
