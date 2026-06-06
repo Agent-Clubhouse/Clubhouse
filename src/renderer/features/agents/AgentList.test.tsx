@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act, renderHook } from '@testing-library/react';
+import { render, screen, fireEvent, act, renderHook, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -257,7 +257,7 @@ describe('AgentList completed selector stability', () => {
     });
 
     render(<AgentList />);
-    // The completed footer shows count of orphan completed agents
+    // The completed footer shows the count of all completed agents for the project
     expect(screen.getByText('Completed (1)')).toBeInTheDocument();
   });
 
@@ -424,7 +424,7 @@ describe('AgentList child agent grouping', () => {
     expect(screen.getByTestId('agent-item-quick-orphan-1')).toBeInTheDocument();
   });
 
-  it('renders child completed ghosts under their parent durable', () => {
+  it('moves a completed quick child into the Completed footer instead of nesting it under its parent', () => {
     const durable: Agent = {
       ...defaultAgent,
       id: 'durable-1',
@@ -459,10 +459,54 @@ describe('AgentList child agent grouping', () => {
 
     // Parent durable should render
     expect(screen.getByTestId('agent-item-durable-1')).toBeInTheDocument();
-    // Child completed ghost should render (nested under parent)
-    expect(screen.getByTestId('quick-agent-ghost')).toBeInTheDocument();
-    // Completed footer should show 0 orphan completed (the child belongs to a parent)
-    expect(screen.getByText('Completed (0)')).toBeInTheDocument();
+    // The completed child should render exactly once — in the footer, not nested
+    expect(screen.getAllByTestId('quick-agent-ghost')).toHaveLength(1);
+    // The single ghost lives inside the Completed footer
+    const footer = screen.getByTestId('completed-footer');
+    expect(within(footer).getByTestId('quick-agent-ghost')).toBeInTheDocument();
+    // Completed count now includes the parented child
+    expect(screen.getByText('Completed (1)')).toBeInTheDocument();
+  });
+
+  it('counts both parented and orphan completed agents in the footer', () => {
+    const durable: Agent = {
+      ...defaultAgent,
+      id: 'durable-1',
+      name: 'parent-durable',
+      kind: 'durable',
+    };
+
+    useAgentStore.setState({
+      agents: { [durable.id]: durable },
+      activeAgentId: durable.id,
+      agentActivity: {},
+    });
+
+    const base = {
+      projectId: 'proj-1',
+      summary: null,
+      filesModified: [],
+      exitCode: 0,
+      completedAt: Date.now(),
+    };
+    const parentedCompleted: CompletedQuickAgent = {
+      ...base, id: 'completed-child-1', name: 'done-child', mission: 'child task', parentAgentId: 'durable-1',
+    };
+    const orphanCompleted: CompletedQuickAgent = {
+      ...base, id: 'completed-orphan-1', name: 'done-orphan', mission: 'orphan task',
+    };
+
+    useQuickAgentStore.setState({
+      completedAgents: { 'proj-1': [parentedCompleted, orphanCompleted] },
+      selectedCompletedId: null,
+    });
+
+    render(<AgentList />);
+
+    // Both completed agents live in the footer
+    const footer = screen.getByTestId('completed-footer');
+    expect(within(footer).getAllByTestId('quick-agent-ghost')).toHaveLength(2);
+    expect(screen.getByText('Completed (2)')).toBeInTheDocument();
   });
 });
 

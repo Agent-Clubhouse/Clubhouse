@@ -221,22 +221,6 @@ function AgentListInner() {
     return map;
   }, [quickAgents]);
 
-  const childCompletedByParent = useMemo(() => {
-    const map = new Map<string, CompletedQuickAgent[]>();
-    for (const completed of completedAgents) {
-      if (completed.parentAgentId) {
-        const list = map.get(completed.parentAgentId);
-        if (list) list.push(completed);
-        else map.set(completed.parentAgentId, [completed]);
-      }
-    }
-    return map;
-  }, [completedAgents]);
-
-  const orphanCompleted = useMemo(
-    () => completedAgents.filter((r) => !r.parentAgentId),
-    [completedAgents]
-  );
 
   useEffect(() => {
     if (showMissionInput && missionInputRef.current) {
@@ -609,7 +593,6 @@ function AgentListInner() {
             </div>
             {durableAgents.map((durable, i) => {
               const childQuick = childQuickByParent.get(durable.id) ?? [];
-              const childCompleted = childCompletedByParent.get(durable.id) ?? [];
               const isMissionTarget = showMissionInput && quickTargetParentId === durable.id;
 
               return (
@@ -646,7 +629,8 @@ function AgentListInner() {
                   </div>
                   {/* Inline mission input targeting this durable */}
                   {isMissionTarget && renderMissionInput(true)}
-                  {/* Child quick agents (indented) */}
+                  {/* Child quick agents (indented). Completed children are not
+                      nested here — they move to the Completed footer below. */}
                   {childQuick.map((child) => (
                     <AgentListItem
                       key={child.id}
@@ -654,17 +638,6 @@ function AgentListInner() {
                       isActive={child.id === activeAgentId}
                       isThinking={isThinking(child.id)}
                       onSelect={() => { selectCompleted(null); setActiveAgent(child.id, activeProjectId ?? undefined); }}
-                      isNested
-                    />
-                  ))}
-                  {/* Child completed ghosts (indented) */}
-                  {childCompleted.map((completed) => (
-                    <QuickAgentGhostCompact
-                      key={completed.id}
-                      completed={completed}
-                      onDismiss={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
-                      onDelete={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
-                      onSelect={() => { setActiveAgent(null, activeProjectId ?? undefined); selectCompleted(completed.id); }}
                       isNested
                     />
                   ))}
@@ -719,9 +692,9 @@ function AgentListInner() {
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
-            <span>Completed ({orphanCompleted.length})</span>
+            <span>Completed ({completedAgents.length})</span>
           </button>
-          {!completedCollapsed && orphanCompleted.length > 0 && (
+          {!completedCollapsed && completedAgents.length > 0 && (
             <button
               onClick={() => activeProjectId && clearCompleted(activeProjectId)}
               data-testid="completed-clear-all"
@@ -736,11 +709,11 @@ function AgentListInner() {
           className="overflow-hidden transition-[max-height,min-height] duration-300 ease-in-out"
           style={{
             maxHeight: completedCollapsed ? 0 : '33vh',
-            minHeight: completedCollapsed ? 0 : (orphanCompleted.length > 0 ? '120px' : 0),
+            minHeight: completedCollapsed ? 0 : (completedAgents.length > 0 ? '120px' : 0),
           }}
         >
           <div className="overflow-y-auto pb-2" style={{ maxHeight: '33vh' }}>
-            {orphanCompleted.map((completed) => (
+            {completedAgents.map((completed) => (
               <QuickAgentGhostCompact
                 key={completed.id}
                 completed={completed}
