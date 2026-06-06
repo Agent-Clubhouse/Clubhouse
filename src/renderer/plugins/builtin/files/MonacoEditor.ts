@@ -1,27 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
-import { generateMonacoTheme } from './monaco-theme';
+import { loadMonaco, ensureThemes, applyMonacoTheme } from './monaco-theme';
 import { useThemeStore } from '../../../stores/themeStore';
 import type { ScrollState } from './state';
-
-// Cached module reference — populated on first dynamic import
-let monacoModule: any | null = null;
-let themesRegistered = false;
-
-async function loadMonaco() {
-  if (!monacoModule) {
-    monacoModule = await import('monaco-editor');
-  }
-  return monacoModule;
-}
-
-async function ensureThemes(m: any): Promise<void> {
-  if (themesRegistered) return;
-  const { THEMES } = await import('../../../themes/index');
-  for (const [id, theme] of Object.entries(THEMES)) {
-    m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
-  }
-  themesRegistered = true;
-}
 
 // ── Model Cache ──────────────────────────────────────────────────────
 // Maintain one ITextModel per file path for efficient tab switching.
@@ -342,7 +322,7 @@ export function MonacoEditor({
   // React to theme changes
   useEffect(() => {
     if (!editorRef.current || !monacoRef.current) return;
-    monacoRef.current.editor.setTheme(`clubhouse-${themeId}`);
+    applyMonacoTheme(monacoRef.current, themeId);
   }, [themeId]);
 
   // When value prop changes externally (e.g., file reloaded from disk), update model

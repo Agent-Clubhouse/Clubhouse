@@ -1,4 +1,5 @@
 import type { ThemeDefinition } from '../../../../shared/types';
+import { getAllThemes, getTheme, onRegistryChange } from '../../../themes';
 
 function stripHash(hex: string): string {
   return hex.replace(/^#/, '');
@@ -81,4 +82,65 @@ export function generateMonacoTheme(theme: ThemeDefinition): IStandaloneThemeDat
       'inputOption.hoverBackground': theme.colors.surface1,
     },
   };
+}
+
+// ── Shared Monaco runtime ────────────────────────────────────────────
+//
+// Every Monaco surface (file editor, diff viewer, read-only viewer, settings
+// editor) needs the same two things before it can render with a Clubhouse
+// theme: the Monaco module loaded, and every Clubhouse theme defined inside
+// Monaco. Centralising this here ensures all surfaces register the *full*
+// theme registry — builtins AND plugin-contributed themes.
+//
+// Previously each surface only registered the builtin themes, so selecting a
+// plugin theme left Monaco on its default light ('vs') theme, rendering the
+// editor bright white in an otherwise dark app.
+
+let monacoModule: any | null = null;
+let themesRegistered = false;
+let registryListenerAttached = false;
+
+export async function loadMonaco(): Promise<any> {
+  if (!monacoModule) {
+    monacoModule = await import('monaco-editor');
+  }
+  return monacoModule;
+}
+
+/** Define every theme in the dynamic registry (builtins + plugin-contributed) with Monaco. */
+export function registerAllMonacoThemes(m: any): void {
+  for (const [id, theme] of Object.entries(getAllThemes())) {
+    m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as ThemeDefinition) as any);
+  }
+}
+
+/**
+ * Ensure all known themes are registered with Monaco and stay in sync with the
+ * registry. Idempotent: the heavy registration runs once, but a registry
+ * listener re-registers whenever plugin themes are added/removed/updated so a
+ * later-contributed theme is always defined before it can be selected.
+ */
+export async function ensureThemes(m: any): Promise<void> {
+  if (!registryListenerAttached) {
+    registryListenerAttached = true;
+    onRegistryChange(() => {
+      if (monacoModule) registerAllMonacoThemes(monacoModule);
+    });
+  }
+  if (themesRegistered) return;
+  registerAllMonacoThemes(m);
+  themesRegistered = true;
+}
+
+/**
+ * Apply a Clubhouse theme by id. Defines the theme just-in-time (so a plugin
+ * theme that wasn't registered at editor-creation time still resolves) and then
+ * sets it. Falls back to a plain setTheme if the id is unknown.
+ */
+export function applyMonacoTheme(m: any, themeId: string): void {
+  const theme = getTheme(themeId);
+  if (theme) {
+    m.editor.defineTheme(`clubhouse-${themeId}`, generateMonacoTheme(theme) as any);
+  }
+  m.editor.setTheme(`clubhouse-${themeId}`);
 }

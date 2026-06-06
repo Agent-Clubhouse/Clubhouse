@@ -1,4 +1,6 @@
-import { generateMonacoTheme } from './monaco-theme';
+import { describe, it, expect, vi } from 'vitest';
+import { generateMonacoTheme, registerAllMonacoThemes, applyMonacoTheme } from './monaco-theme';
+import { registerTheme, unregisterTheme, BUILTIN_THEMES } from '../../../themes';
 import type { ThemeDefinition } from '../../../../shared/types';
 
 const mockTheme: ThemeDefinition = {
@@ -74,5 +76,54 @@ describe('generateMonacoTheme', () => {
     const lightTheme = { ...mockTheme, type: 'light' as const };
     const result = generateMonacoTheme(lightTheme);
     expect(result.base).toBe('vs');
+  });
+});
+
+function mockMonaco() {
+  return { editor: { defineTheme: vi.fn(), setTheme: vi.fn() } };
+}
+
+describe('registerAllMonacoThemes', () => {
+  it('defines a Monaco theme for every builtin theme', () => {
+    const m = mockMonaco();
+    registerAllMonacoThemes(m);
+    for (const id of Object.keys(BUILTIN_THEMES)) {
+      expect(m.editor.defineTheme).toHaveBeenCalledWith(`clubhouse-${id}`, expect.anything());
+    }
+  });
+
+  it('also defines plugin-contributed themes (the bug fix)', () => {
+    const pluginTheme: ThemeDefinition = { ...mockTheme, id: 'plugin-dark' as any, name: 'Plugin Dark' };
+    registerTheme(pluginTheme);
+    try {
+      const m = mockMonaco();
+      registerAllMonacoThemes(m);
+      // Without this, plugin themes were never defined in Monaco, so selecting
+      // one fell back to Monaco's default light theme (white editor).
+      expect(m.editor.defineTheme).toHaveBeenCalledWith('clubhouse-plugin-dark', expect.anything());
+    } finally {
+      unregisterTheme('plugin-dark' as any);
+    }
+  });
+});
+
+describe('applyMonacoTheme', () => {
+  it('defines the theme before applying it so plugin themes resolve', () => {
+    const pluginTheme: ThemeDefinition = { ...mockTheme, id: 'plugin-apply' as any, name: 'Plugin Apply' };
+    registerTheme(pluginTheme);
+    try {
+      const m = mockMonaco();
+      applyMonacoTheme(m, 'plugin-apply');
+      expect(m.editor.defineTheme).toHaveBeenCalledWith('clubhouse-plugin-apply', expect.anything());
+      expect(m.editor.setTheme).toHaveBeenCalledWith('clubhouse-plugin-apply');
+    } finally {
+      unregisterTheme('plugin-apply' as any);
+    }
+  });
+
+  it('still applies a theme id that is not in the registry', () => {
+    const m = mockMonaco();
+    applyMonacoTheme(m, 'catppuccin-mocha');
+    expect(m.editor.setTheme).toHaveBeenCalledWith('clubhouse-catppuccin-mocha');
   });
 });

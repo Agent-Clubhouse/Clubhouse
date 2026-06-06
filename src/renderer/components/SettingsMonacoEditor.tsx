@@ -1,26 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useThemeStore } from '../stores/themeStore';
-
-// Cached module reference — populated on first dynamic import
-let monacoModule: any | null = null;
-let themesRegistered = false;
-
-async function loadMonaco() {
-  if (!monacoModule) {
-    monacoModule = await import('monaco-editor');
-  }
-  return monacoModule;
-}
-
-async function ensureThemes(m: any): Promise<void> {
-  if (themesRegistered) return;
-  const { THEMES } = await import('../themes/index');
-  const { generateMonacoTheme } = await import('../plugins/builtin/files/monaco-theme');
-  for (const [id, theme] of Object.entries(THEMES)) {
-    m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
-  }
-  themesRegistered = true;
-}
+import { loadMonaco, ensureThemes, applyMonacoTheme } from '../plugins/builtin/files/monaco-theme';
 
 interface SettingsMonacoEditorProps {
   value: string;
@@ -106,7 +86,7 @@ export function SettingsMonacoEditor({
   // React to theme changes
   useEffect(() => {
     if (!editorRef.current || !monacoRef.current) return;
-    monacoRef.current.editor.setTheme(`clubhouse-${themeId}`);
+    applyMonacoTheme(monacoRef.current, themeId);
   }, [themeId]);
 
   // Sync value changes from outside
