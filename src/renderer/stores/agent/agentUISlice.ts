@@ -5,6 +5,8 @@ export function createUISlice(set: SetAgentState, get: GetAgentState): AgentUISl
     activeAgentId: null,
     agentSettingsOpenFor: null,
     deleteDialogAgent: null,
+    applyPersonaDialogAgent: null,
+    extractPatternDialogAgent: null,
     configChangesDialogAgent: null,
     configChangesProjectPath: null,
     sessionNamePromptFor: null,
@@ -42,6 +44,14 @@ export function createUISlice(set: SetAgentState, get: GetAgentState): AgentUISl
     openDeleteDialog: (agentId) => set({ deleteDialogAgent: agentId }),
 
     closeDeleteDialog: () => set({ deleteDialogAgent: null }),
+
+    openApplyPersonaDialog: (agentId) => set({ applyPersonaDialogAgent: agentId }),
+
+    closeApplyPersonaDialog: () => set({ applyPersonaDialogAgent: null }),
+
+    openExtractPatternDialog: (agentId) => set({ extractPatternDialogAgent: agentId }),
+
+    closeExtractPatternDialog: () => set({ extractPatternDialogAgent: null }),
 
     openConfigChangesDialog: (agentId, projectPath) =>
       set({

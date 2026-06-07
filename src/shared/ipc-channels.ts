@@ -115,6 +115,8 @@ export const IPC = {
     READ_SOURCE_PERSONA_CONTENT: 'agent:read-source-persona-content',
     WRITE_SOURCE_PERSONA_CONTENT: 'agent:write-source-persona-content',
     DELETE_SOURCE_PERSONA: 'agent:delete-source-persona',
+    APPLY_PERSONA_TO_AGENT: 'agent:apply-persona-to-agent',
+    EXTRACT_AGENT_PATTERN: 'agent:extract-agent-pattern',
     GET_PROJECT_CONFIG_BREAKDOWN: 'agent:get-project-config-breakdown',
     REMOVE_PLUGIN_INJECTION_ITEM: 'agent:remove-plugin-injection-item',
     COMPUTE_CONFIG_DIFF: 'agent:compute-config-diff',

@@ -2,7 +2,8 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { pathExists } from './fs-utils';
 import { AgentWildcardSettings, DurableAgentConfig, MaterializationPreview, ProjectAgentDefaults, SourceControlProvider } from '../../shared/types';
-import { WildcardContext, replaceWildcards } from '../../shared/wildcard-replacer';
+import { WildcardContext, replaceWildcards, unreplaceWildcards } from '../../shared/wildcard-replacer';
+import { PatternSettings, stripPersonaFrontMatter } from '../../shared/persona-pattern';
 import { OrchestratorProvider } from '../orchestrators/types';
 import {
   readProjectAgentDefaults,
@@ -268,6 +269,20 @@ export async function resolvePersonaContent(
   projectPath: string,
   personaId: string | undefined,
 ): Promise<string | undefined> {
+  const raw = await readLayeredPersonaRaw(projectPath, personaId);
+  // Strip any pattern front-matter so only the markdown body is substituted.
+  return raw === undefined ? undefined : stripPersonaFrontMatter(raw);
+}
+
+/**
+ * Read the raw persona file content (front-matter included) layered by scope:
+ * project (.clubhouse/personas) → user (~/.clubhouse/personas) → built-in.
+ * Returns undefined when none exists.
+ */
+export async function readLayeredPersonaRaw(
+  projectPath: string,
+  personaId: string | undefined,
+): Promise<string | undefined> {
   if (!personaId) return undefined;
   const project = await readSourcePersonaContent(projectPath, personaId, 'project');
   if (project) return project;
@@ -348,13 +363,88 @@ export async function listAvailablePersonas(
 }
 
 /**
- * Read persona content for editing in the UI: the effective layered content
- * (project → user → built-in) as a starting point. Returns empty string when
- * none exists.
+ * Read persona content for editing in the UI: the effective layered RAW content
+ * (project → user → built-in), front-matter included so pattern settings
+ * round-trip through the editor. Returns empty string when none exists.
  */
 export async function readPersonaForEdit(projectPath: string, personaId: string): Promise<string> {
-  const resolved = await resolvePersonaContent(projectPath, personaId);
-  return resolved ?? '';
+  const raw = await readLayeredPersonaRaw(projectPath, personaId);
+  return raw ?? '';
+}
+
+// ── Apply / extract persona patterns ─────────────────────────────────────
+
+/** Pick the pattern-settings subset from an agent's durable config. */
+function pickPatternSettings(agent: DurableAgentConfig): PatternSettings {
+  const s: PatternSettings = {};
+  if (agent.model) s.model = agent.model;
+  if (agent.orchestrator) s.orchestrator = agent.orchestrator;
+  if (agent.mcpIds && agent.mcpIds.length > 0) s.mcpIds = agent.mcpIds;
+  if (agent.mcpConfigs && Object.keys(agent.mcpConfigs).length > 0) s.mcpConfigs = agent.mcpConfigs;
+  if (agent.freeAgentMode) s.freeAgentMode = true;
+  if (agent.structuredMode) s.structuredMode = true;
+  if (agent.mission) s.mission = agent.mission;
+  if (agent.buildCommand) s.buildCommand = agent.buildCommand;
+  if (agent.testCommand) s.testCommand = agent.testCommand;
+  if (agent.lintCommand) s.lintCommand = agent.lintCommand;
+  if (agent.sourceControlProvider) s.sourceControlProvider = agent.sourceControlProvider;
+  return s;
+}
+
+/**
+ * Extract a reusable pattern from an agent: its instruction content (with this
+ * agent's resolved values turned back into @@wildcards so the pattern is
+ * portable) plus the pattern-settings subset of its config. The persona/mission
+ * content is intentionally NOT folded into the wildcard context here — the
+ * instructions themselves become the persona body.
+ */
+export async function extractAgentPattern(params: {
+  projectPath: string;
+  agent: DurableAgentConfig;
+  provider: OrchestratorProvider;
+}): Promise<{ content: string; settings: PatternSettings }> {
+  const { projectPath, agent, provider } = params;
+  const defaults = await readProjectAgentDefaults(projectPath);
+  const scp = await resolveSourceControlProvider(projectPath, agent);
+  const commands = resolveAgentCommands(agent, defaults);
+  // No mission/persona content in the context: we re-genericize only identity,
+  // commands, and provider so the body isn't accidentally collapsed to a token.
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands);
+
+  let instructions = '';
+  if (agent.worktreePath) {
+    try {
+      instructions = await provider.readInstructions(agent.worktreePath);
+    } catch {
+      instructions = '';
+    }
+  }
+  const content = instructions ? unreplaceWildcards(instructions, ctx) : '';
+  return { content, settings: pickPatternSettings(agent) };
+}
+
+/**
+ * Write the agent's resolved persona body to its instructions (overwrite).
+ * Used when applying a persona outside Clubhouse mode, where materialization
+ * does not run on wake. Mirrors the persona-only branch of materializeAgent.
+ */
+export async function writeResolvedPersonaInstructions(params: {
+  projectPath: string;
+  agent: DurableAgentConfig;
+  provider: OrchestratorProvider;
+}): Promise<void> {
+  const { projectPath, agent, provider } = params;
+  if (!agent.worktreePath) return;
+  const defaults = await readProjectAgentDefaults(projectPath);
+  const personaId = resolvePersonaId(agent, defaults);
+  const personaContent = await resolvePersonaContent(projectPath, personaId);
+  if (!personaContent) return;
+  const scp = await resolveSourceControlProvider(projectPath, agent);
+  const commands = resolveAgentCommands(agent, defaults);
+  const missionId = resolveMissionId(agent, defaults);
+  const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
+  await provider.writeInstructions(agent.worktreePath, replaceWildcards(personaContent, ctx));
 }
 
 /**
