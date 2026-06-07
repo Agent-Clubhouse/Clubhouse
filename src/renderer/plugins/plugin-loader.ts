@@ -376,7 +376,9 @@ export async function activatePlugin(
       }
     } else {
       // Dynamic import for community plugins
-      const mainPath = entry.manifest.main || 'main.js';
+      // Strip leading "./" from manifest.main so joining doesn't create an
+      // unresolvable "./"-prefixed segment in the final file:// URL.
+      const mainPath = (entry.manifest.main || 'main.js').replace(/^\.\//, '');
       const fullModulePath = `${entry.pluginPath}/${mainPath}`;
 
       // Convert filesystem path to file:// URL for ESM import resolution.
