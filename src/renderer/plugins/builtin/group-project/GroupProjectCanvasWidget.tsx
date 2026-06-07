@@ -8,6 +8,7 @@ import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { pollingStartMsg, pollingStopMsg, pollingNudgeMsg } from '../../../../shared/polling-messages';
+import { getProjectAdmins, isProjectAdmin, addAdmin, removeAdmin } from '../../../../shared/group-project-admin';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
@@ -233,6 +234,15 @@ function ProjectCard({
   const totalMessages = topics.reduce((sum, t) => sum + t.messageCount, 0);
   const totalNew = topics.reduce((sum, t) => sum + t.newMessageCount, 0);
 
+  const admins = getProjectAdmins(project?.metadata);
+  const handleToggleAdmin = useCallback(async (agentId: string) => {
+    const next = isProjectAdmin(project?.metadata, agentId)
+      ? removeAdmin(project?.metadata, agentId)
+      : addAdmin(project?.metadata, agentId);
+    await update(groupProjectId, { metadata: { admins: next } });
+    onUpdateMetadata({ admins: next });
+  }, [project?.metadata, groupProjectId, update, onUpdateMetadata]);
+
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } });
@@ -316,17 +326,28 @@ function ProjectCard({
         </div>
       )}
 
-      {/* Agent list */}
+      {/* Agent list — click a member to toggle their project-lead (admin) role.
+          Admins show a star and get the privileged group-project tools. */}
       {members.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-1">
-          {members.map((m) => (
-            <span
-              key={m.agentId}
-              className="px-2 py-0.5 text-xs bg-surface-0 text-ctp-subtext1 rounded-full"
-            >
-              {m.agentName || m.agentId}
-            </span>
-          ))}
+          {members.map((m) => {
+            const admin = admins.includes(m.agentId);
+            return (
+              <button
+                key={m.agentId}
+                onClick={(e) => { e.stopPropagation(); void handleToggleAdmin(m.agentId); }}
+                title={admin ? 'Project lead — click to remove admin' : 'Click to make project lead (admin)'}
+                className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded-full transition-colors ${
+                  admin
+                    ? 'bg-ctp-accent/20 text-ctp-accent'
+                    : 'bg-surface-0 text-ctp-subtext1 hover:bg-surface-1'
+                }`}
+              >
+                {admin && <StarIcon size={9} filled />}
+                {m.agentName || m.agentId}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -1261,6 +1282,14 @@ function ShieldIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function StarIcon({ size = 14, filled = false }: { size?: number; filled?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
     </svg>
   );
 }
