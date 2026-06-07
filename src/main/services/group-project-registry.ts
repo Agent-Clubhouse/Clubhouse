@@ -172,6 +172,12 @@ class GroupProjectRegistry {
     return () => { this.listeners.delete(listener); };
   }
 
+  /** For testing: seed a project directly into the in-memory cache. */
+  _setForTesting(project: GroupProject): void {
+    this.loaded = true;
+    this.projects.set(project.id, project);
+  }
+
   /** For testing: reset all state. */
   _resetForTesting(): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);

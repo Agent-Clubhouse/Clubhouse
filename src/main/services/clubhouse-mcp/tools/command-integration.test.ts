@@ -28,6 +28,8 @@ vi.mock('../../agent-registry', () => ({
 vi.mock('../../group-project-registry', () => ({
   groupProjectRegistry: {
     getAll: vi.fn().mockReturnValue([]),
+    getSync: vi.fn().mockReturnValue(null),
+    onChange: vi.fn().mockReturnValue(() => {}),
     _resetForTesting: vi.fn(),
   },
 }));

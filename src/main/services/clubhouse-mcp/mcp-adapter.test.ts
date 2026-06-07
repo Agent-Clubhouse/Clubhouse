@@ -27,6 +27,7 @@ vi.mock('../group-project-registry', () => ({
   groupProjectRegistry: {
     getAll: vi.fn().mockReturnValue([]),
     getSync: vi.fn().mockReturnValue(undefined),
+    onChange: vi.fn().mockReturnValue(() => {}),
     _resetForTesting: vi.fn(),
   },
 }));

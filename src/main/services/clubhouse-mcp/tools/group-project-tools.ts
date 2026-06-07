@@ -7,6 +7,7 @@ import { bindingManager } from '../binding-manager';
 import { mcpAdapter } from '../mcp-adapter';
 import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
+import { isProjectAdmin } from '../../../../shared/group-project-admin';
 import { isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
 import * as ptyManager from '../../pty-manager';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
@@ -1059,6 +1060,53 @@ export function registerGroupProjectTools(): void {
 
       return {
         content: [{ type: 'text', text: JSON.stringify({ deleted: deletedCount, requested: messageIds.length }) }],
+      };
+    },
+  });
+
+  // group__<name>_<hash>__set_project_info
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.set_project_info',
+    category: 'group-project',
+    label: 'Set Project Info',
+    mcp: { targetKind: 'group-project', nameSuffix: 'set_project_info' },
+    description:
+      'Update the group project description and/or instructions (project-lead tool).\n\n' +
+      'The description explains the purpose of the group; the instructions are directives ' +
+      'every member must follow (returned by get_project_info). Provide either or both — ' +
+      'omitted fields are left unchanged. Returns the updated { description, instructions }.\n\n' +
+      'This is a privileged, admin-only tool; it is only available to project leads.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        description: { type: 'string', description: 'New project description (purpose of the group).' },
+        instructions: { type: 'string', description: 'New project instructions (rules members must follow).' },
+      },
+    },
+    handler: async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const project = await groupProjectRegistry.get(targetId);
+      if (!project) {
+        return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
+      }
+      // Defense in depth: the tool is already role-gated out of non-admins' tool
+      // lists, but reject here too in case it is ever invoked directly.
+      if (!isProjectAdmin(project.metadata, agentId)) {
+        return { content: [{ type: 'text', text: 'Only a project admin can update the project description or instructions.' }], isError: true };
+      }
+
+      const description = optionalString(args, 'description');
+      const instructions = optionalString(args, 'instructions');
+      if (description === undefined && instructions === undefined) {
+        return { content: [{ type: 'text', text: 'Provide at least one of description or instructions.' }], isError: true };
+      }
+
+      const updated = await groupProjectRegistry.update(targetId, {
+        ...(description !== undefined ? { description } : {}),
+        ...(instructions !== undefined ? { instructions } : {}),
+      });
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ description: updated?.description, instructions: updated?.instructions }) }],
       };
     },
   });

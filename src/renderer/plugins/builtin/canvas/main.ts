@@ -16,9 +16,7 @@ import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBin
 import { usePluginStore } from '../../plugin-store';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
-import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { ExportBlueprintDialog } from '../../../features/blueprints/ExportBlueprintDialog';
-import { getDefaultGroupProjectDisabledToolsFromMetadata } from '../../../../shared/group-project-permissions';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -635,17 +633,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             selectedViewIds,
             wireDefinitions,
             onAddWireDefinition: (entry: McpBindingEntry) => {
-              let wireEntry = entry;
-              if (entry.targetKind === 'group-project' && !entry.disabledTools?.length) {
-                const { projects } = useGroupProjectStore.getState();
-                const project = projects.find(p => p.id === entry.targetId);
-                const disabledTools = getDefaultGroupProjectDisabledToolsFromMetadata(project?.metadata);
-                if (disabledTools.length > 0) {
-                  wireEntry = { ...entry, disabledTools };
-                  void window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, disabledTools);
-                }
-              }
-              store.getState().addWireDefinition(wireEntry);
+              // Group-project privileged-tool access is governed by the project's
+              // admin role (see shared/group-project-admin.ts), not by a per-wire
+              // default — so new wires start clean and the role sets the baseline.
+              store.getState().addWireDefinition(entry);
             },
             onRemoveWireDefinition: (agentId: string, targetId: string) => store.getState().removeWireDefinition(agentId, targetId),
             onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => store.getState().updateWireDefinition(agentId, targetId, updates),

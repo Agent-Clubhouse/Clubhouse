@@ -15,6 +15,7 @@ import { registerAssistantTools } from '../services/clubhouse-mcp/tools/assistan
 import { registerCanvasCommandHandler } from '../services/clubhouse-mcp/canvas-command';
 import { registerCommandPaletteHandler } from '../services/clubhouse-mcp/command-palette-bridge';
 import { agentRegistry } from '../services/agent-registry';
+import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
@@ -90,6 +91,12 @@ export function registerMcpBindingHandlers(): void {
       }
       assertValidTargetKind(target.targetKind);
       const isNew = bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
+      // Bootstrap the project lead: the first agent to join a group project
+      // becomes its admin (no-op once an admin exists). The registry change
+      // invalidates the scoped tool cache so role gating applies immediately.
+      if (target.targetKind === 'group-project') {
+        void bootstrapGroupProjectAdmin(target.targetId, agentId as string);
+      }
       if (!isNew) {
         // Duplicate binding — notifyChange was skipped by bind(), so the
         // renderer's mcpBindingStore won't receive a BINDINGS_CHANGED event.
