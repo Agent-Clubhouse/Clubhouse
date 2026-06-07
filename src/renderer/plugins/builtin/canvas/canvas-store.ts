@@ -4,6 +4,7 @@ import { generateHubName } from '../../../../shared/name-generator';
 import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, ZoneCanvasView, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { generateZoneWireId, type ZoneWireDefinition } from './zone-wire-store';
 import {
   createView as createViewOp,
   createPluginView as createPluginViewOp,
@@ -33,7 +34,7 @@ export interface CanvasState {
   // Lifecycle
   loadCanvas: (storage: ScopedStorage) => Promise<void>;
   saveCanvas: (storage: ScopedStorage) => Promise<void>;
-  hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string, wireDefinitions?: unknown[]) => void;
+  hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string, wireDefinitions?: unknown[], zoneWireDefinitions?: unknown[]) => void;
 
   // Wire persistence — wireDefinitions is the canvas-owned source of truth for
   // wires, independent of the MCP binding runtime.  Wires survive agent sleep
@@ -44,6 +45,13 @@ export interface CanvasState {
   addWireDefinition: (entry: McpBindingEntry) => void;
   removeWireDefinition: (agentId: string, targetId: string) => void;
   updateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
+
+  // Zone wire persistence — zone wires are conceptual wires from a zone to a
+  // target that expand into per-agent bindings. Persisted + synced alongside
+  // wireDefinitions so they survive reload and the annex round-trip.
+  zoneWireDefinitions: ZoneWireDefinition[];
+  addZoneWireDefinition: (wire: Omit<ZoneWireDefinition, 'id'>) => ZoneWireDefinition;
+  removeZoneWireDefinition: (wireId: string) => void;
 
   // Canvas tab management
   addCanvas: () => string;
@@ -118,6 +126,7 @@ export interface CanvasState {
 const STORAGE_KEY_INSTANCES = 'canvas-instances';
 const STORAGE_KEY_ACTIVE = 'canvas-active-id';
 const STORAGE_KEY_WIRES = 'canvas-wires';
+const STORAGE_KEY_ZONE_WIRES = 'canvas-zone-wires';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -185,6 +194,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     selectedViewId: null,
     selectedViewIds: [],
     wireDefinitions: [],
+    zoneWireDefinitions: [],
     minimapAutoHide: true,
     elkAlgorithm: 'layered',
     elkDirection: 'RIGHT',
@@ -201,6 +211,21 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     loadCanvas: async (storage) => {
       try {
+        // Restore zone wire definitions alongside the canvas. They expand into
+        // bindings at runtime (no MCP state of their own), so they belong with
+        // the canvas data rather than the MCP wire restore.
+        let loadedZoneWires: ZoneWireDefinition[] = [];
+        try {
+          const savedZoneWires = await storage.read(STORAGE_KEY_ZONE_WIRES) as ZoneWireDefinition[] | null;
+          if (savedZoneWires && Array.isArray(savedZoneWires)) {
+            loadedZoneWires = savedZoneWires.filter(
+              (w) => w && w.id && w.sourceZoneId && w.targetId && w.targetType,
+            );
+          }
+        } catch {
+          // ignore zone wire restore failure
+        }
+
         const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as CanvasInstanceData[] | null;
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
           const canvases: CanvasInstance[] = savedInstances.map((s): CanvasInstance => {
@@ -236,13 +261,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
             ? savedActive
             : canvases[0].id;
 
-          set({ canvases, activeCanvasId, loaded: true, ...syncDerivedState(canvases, activeCanvasId) });
+          set({ canvases, activeCanvasId, zoneWireDefinitions: loadedZoneWires, loaded: true, ...syncDerivedState(canvases, activeCanvasId) });
           return;
         }
 
         // Fresh start
         const canvas = createCanvasInstance();
-        set({ canvases: [canvas], activeCanvasId: canvas.id, loaded: true, ...syncDerivedState([canvas], canvas.id) });
+        set({ canvases: [canvas], activeCanvasId: canvas.id, zoneWireDefinitions: loadedZoneWires, loaded: true, ...syncDerivedState([canvas], canvas.id) });
       } catch {
         const canvas = createCanvasInstance();
         set({ canvases: [canvas], activeCanvasId: canvas.id, loaded: true, ...syncDerivedState([canvas], canvas.id) });
@@ -264,6 +289,16 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
       await storage.write(STORAGE_KEY_INSTANCES, data);
       await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
+
+      // Persist zone wire definitions — the canvas-owned source of truth for
+      // zone-level wires. They survive reload and feed the annex snapshot.
+      const zoneData = get().zoneWireDefinitions.map((w) => ({
+        id: w.id,
+        sourceZoneId: w.sourceZoneId,
+        targetId: w.targetId,
+        targetType: w.targetType,
+      }));
+      await storage.write(STORAGE_KEY_ZONE_WIRES, zoneData);
     },
 
     loadWires: async (storage) => {
@@ -390,7 +425,24 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
     },
 
-    hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?) => {
+    addZoneWireDefinition: (wire) => {
+      // Deduplicate on (sourceZone, target) so re-dragging the same wire is a no-op.
+      const existing = get().zoneWireDefinitions.find(
+        (w) => w.sourceZoneId === wire.sourceZoneId && w.targetId === wire.targetId,
+      );
+      if (existing) return existing;
+      const newWire: ZoneWireDefinition = { ...wire, id: generateZoneWireId() };
+      set((state) => ({ zoneWireDefinitions: [...state.zoneWireDefinitions, newWire] }));
+      return newWire;
+    },
+
+    removeZoneWireDefinition: (wireId) => {
+      set((state) => ({
+        zoneWireDefinitions: state.zoneWireDefinitions.filter((w) => w.id !== wireId),
+      }));
+    },
+
+    hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
       const existingState = get();
       const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
@@ -435,7 +487,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         ? { wireDefinitions: remoteWireDefinitions as McpBindingEntry[] }
         : {};
 
-      set({ canvases, activeCanvasId: resolvedActive, loaded: true, wiresLoaded: true, ...wireUpdate, ...syncDerivedState(canvases, resolvedActive) });
+      // Restore zone wire definitions from remote state. Unlike bindings, an
+      // empty array is meaningful (all zone wires removed), so only skip when
+      // the field is absent entirely.
+      const zoneWireUpdate = remoteZoneWireDefinitions && Array.isArray(remoteZoneWireDefinitions)
+        ? { zoneWireDefinitions: remoteZoneWireDefinitions as ZoneWireDefinition[] }
+        : {};
+
+      set({ canvases, activeCanvasId: resolvedActive, loaded: true, wiresLoaded: true, ...wireUpdate, ...zoneWireUpdate, ...syncDerivedState(canvases, resolvedActive) });
     },
 
     // ── Canvas tab management ────────────────────────────────────
@@ -544,9 +603,22 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       const wires = get().wireDefinitions;
       const filtered = wires.filter((w) => w.agentId !== wireId && w.targetId !== wireId);
 
+      // Remove orphaned zone wires referencing the removed view. The view may be
+      // referenced by its view id (zone/browser source/target) or by a resolved
+      // id (agentId / groupProjectId / queueId) when it is a wire target.
+      const removedIds = new Set<string>([viewId, wireId]);
+      const gpId = removedView?.metadata?.groupProjectId as string | undefined;
+      if (gpId) removedIds.add(gpId);
+      const queueId = removedView?.metadata?.queueId as string | undefined;
+      if (queueId) removedIds.add(queueId);
+      const zoneFiltered = get().zoneWireDefinitions.filter(
+        (w) => !removedIds.has(w.sourceZoneId) && !removedIds.has(w.targetId),
+      );
+
       set({
         ...canvasUpdate,
         wireDefinitions: filtered,
+        zoneWireDefinitions: zoneFiltered,
       });
     },
 
@@ -659,7 +731,15 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         (w) => !removedWireIds.has(w.agentId) && !removedWireIds.has(w.targetId),
       );
 
-      set({ ...canvasUpdate, wireDefinitions: filtered });
+      // Remove zone wires originating from or targeting this zone (and, when
+      // removeContents, any contained views identified above).
+      const removedZoneIds = new Set<string>(removedWireIds);
+      removedZoneIds.add(zoneId);
+      const zoneFiltered = state.zoneWireDefinitions.filter(
+        (w) => !removedZoneIds.has(w.sourceZoneId) && !removedZoneIds.has(w.targetId),
+      );
+
+      set({ ...canvasUpdate, wireDefinitions: filtered, zoneWireDefinitions: zoneFiltered });
     },
 
     updateZoneTheme: (zoneId, themeId) => {

@@ -1,9 +1,15 @@
 /**
- * Zone wire store — manages zone-level wire definitions (conceptual wires
- * between zones and targets). These expand into individual MCP bindings.
+ * Zone wire definitions — conceptual wires between a zone and a target.
+ *
+ * A zone wire is "shorthand" for wiring every agent inside the zone to the
+ * target; it expands into individual MCP bindings (see `zone-wire-expansion.ts`)
+ * and renders as a single visual wire to the zone (see `wire-render-contract.ts`).
+ *
+ * The canvas store (`canvas-store.ts`) is the single source of truth for zone
+ * wires — it persists them to storage and serialises them in the annex
+ * snapshot so they survive the annex round-trip. This module only owns the
+ * shape and id generation.
  */
-
-import { create } from 'zustand';
 
 export interface ZoneWireDefinition {
   id: string;
@@ -15,51 +21,6 @@ export interface ZoneWireDefinition {
   targetType: 'zone' | 'agent' | 'group-project' | 'agent-queue' | 'browser';
 }
 
-interface ZoneWireState {
-  wires: ZoneWireDefinition[];
-  addWire: (wire: Omit<ZoneWireDefinition, 'id'>) => ZoneWireDefinition;
-  removeWire: (wireId: string) => void;
-  removeWiresForZone: (zoneId: string) => void;
-  removeWiresForTarget: (targetId: string) => void;
-  loadWires: (wires: ZoneWireDefinition[]) => void;
-}
-
-function generateWireId(): string {
+export function generateZoneWireId(): string {
   return `zw_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
 }
-
-export const useZoneWireStore = create<ZoneWireState>((set, get) => ({
-  wires: [],
-
-  addWire: (wire) => {
-    // Deduplicate: skip if identical source+target already exists
-    const existing = get().wires.find(
-      (w) => w.sourceZoneId === wire.sourceZoneId && w.targetId === wire.targetId,
-    );
-    if (existing) return existing;
-
-    const newWire: ZoneWireDefinition = { ...wire, id: generateWireId() };
-    set((s) => ({ wires: [...s.wires, newWire] }));
-    return newWire;
-  },
-
-  removeWire: (wireId) => {
-    set((s) => ({ wires: s.wires.filter((w) => w.id !== wireId) }));
-  },
-
-  removeWiresForZone: (zoneId) => {
-    set((s) => ({
-      wires: s.wires.filter((w) => w.sourceZoneId !== zoneId && w.targetId !== zoneId),
-    }));
-  },
-
-  removeWiresForTarget: (targetId) => {
-    set((s) => ({
-      wires: s.wires.filter((w) => w.targetId !== targetId && w.sourceZoneId !== targetId),
-    }));
-  },
-
-  loadWires: (wires) => {
-    set({ wires });
-  },
-}));

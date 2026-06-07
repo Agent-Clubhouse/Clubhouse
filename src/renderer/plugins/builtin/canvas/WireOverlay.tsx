@@ -13,6 +13,8 @@ import type { EdgeMidpoint } from './wire-utils';
 import { WireFlowDots, WireFlowDotFilters } from './WireFlowDots';
 import { useWirePhysics } from './useWirePhysics';
 import { useWireActivity } from './useWireActivity';
+import type { ZoneWireDefinition } from './zone-wire-store';
+import { buildViewIndex as buildContractIndex, resolveZoneWireViews } from './wire-render-contract';
 
 /** CSS animations for wire glow — ambient is subtle, active is vivid */
 const WIRE_GLOW_KEYFRAMES = `
@@ -42,14 +44,66 @@ function isBidirectional(binding: McpBindingEntry, allBindings: McpBindingEntry[
 interface WireOverlayProps {
   views: CanvasView[];
   bindings: McpBindingEntry[];
+  /** Zone-level wires — rendered as a single visual wire to the zone. */
+  zoneWireDefinitions?: ZoneWireDefinition[];
   /** Optional per-view position overrides (e.g. during drag). */
   viewPositions?: Map<string, { x: number; y: number }>;
   /** Agent IDs whose status is sleeping or error — wires to/from them render dimmed. */
   sleepingAgentIds?: Set<string>;
   onWireClick?: (binding: McpBindingEntry, event: React.MouseEvent) => void;
+  /** Click handler for a zone wire (e.g. to remove it). Receives the wire id. */
+  onZoneWireClick?: (wireId: string, event: React.MouseEvent) => void;
   /** When true, all agent-to-agent wires render as bidirectional regardless of binding direction. */
   forceBidirectional?: boolean;
 }
+
+/** Zone wires use a distinct accent so the "bundle to a zone" reads differently. */
+const ZONE_WIRE_COLOR = 'rgb(var(--ctp-mauve, 203 166 247))';
+
+/** A single zone wire — a bundled connection drawn to the zone itself. */
+const ZoneWireGroup = React.memo(function ZoneWireGroup({
+  wireId,
+  path,
+  onZoneWireClick,
+}: {
+  wireId: string;
+  path: string;
+  onZoneWireClick?: (wireId: string, event: React.MouseEvent) => void;
+}) {
+  return (
+    <g data-testid={`zone-wire-group-${wireId}`} data-zone-wire="true">
+      {/* Invisible thick hitbox for click interaction */}
+      <path
+        d={path}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={10}
+        style={{ pointerEvents: onZoneWireClick ? 'stroke' : 'none', cursor: onZoneWireClick ? 'pointer' : 'default' }}
+        onClick={(e) => onZoneWireClick?.(wireId, e)}
+        data-testid={`zone-wire-hitbox-${wireId}`}
+      />
+      {/* Outer "bundle" stroke — wider, translucent */}
+      <path
+        d={path}
+        fill="none"
+        strokeWidth={6}
+        strokeLinecap="round"
+        style={{ stroke: ZONE_WIRE_COLOR, opacity: 0.25, pointerEvents: 'none' }}
+      />
+      {/* Inner dashed stroke */}
+      <path
+        d={path}
+        fill="none"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeDasharray="2 5"
+        markerEnd="url(#zone-wire-arrow)"
+        style={{ stroke: ZONE_WIRE_COLOR, pointerEvents: 'none' }}
+        data-testid={`zone-wire-path-${wireId}`}
+      />
+    </g>
+  );
+});
 
 /** Index maps for O(1) binding resolution instead of linear scans. */
 interface ViewIndex {
@@ -173,9 +227,11 @@ const WireGroup = React.memo(function WireGroup({
 export const WireOverlay = React.memo(function WireOverlay({
   views,
   bindings,
+  zoneWireDefinitions,
   viewPositions,
   sleepingAgentIds,
   onWireClick,
+  onZoneWireClick,
   forceBidirectional,
 }: WireOverlayProps) {
   const viewIndex = useMemo(() => {
@@ -183,6 +239,24 @@ export const WireOverlay = React.memo(function WireOverlay({
     for (const v of views) m.set(v.id, v);
     return buildViewIndex(m);
   }, [views]);
+
+  // Zone wires render as a single bundled wire to the zone, resolved via the
+  // shared wire rendering contract so local and annex paths agree.
+  const zoneWires = useMemo(() => {
+    if (!zoneWireDefinitions || zoneWireDefinitions.length === 0) return [];
+    const index = buildContractIndex(views);
+    const result: Array<{ id: string; path: string }> = [];
+    for (const wire of zoneWireDefinitions) {
+      const resolved = resolveZoneWireViews(wire, index);
+      if (!resolved) continue;
+      const { source, target } = resolved;
+      const srcPos = viewPositions?.get(source.id) ?? source.position;
+      const tgtPos = viewPositions?.get(target.id) ?? target.position;
+      const { path } = computeWirePath(viewRect(srcPos, source.size), viewRect(tgtPos, target.size));
+      result.push({ id: wire.id, path });
+    }
+    return result;
+  }, [zoneWireDefinitions, views, viewPositions]);
 
   const wires = useMemo(() => {
     // Track already-rendered pairs so bidirectional bindings only emit one wire
@@ -279,7 +353,7 @@ export const WireOverlay = React.memo(function WireOverlay({
     return result;
   }, [wires, wireOffsets]);
 
-  if (wires.length === 0) return null;
+  if (wires.length === 0 && zoneWires.length === 0) return null;
 
   return (
     <svg
@@ -301,11 +375,19 @@ export const WireOverlay = React.memo(function WireOverlay({
         <marker id="wire-arrow-rev-bidir" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto" markerUnits="userSpaceOnUse">
           <path d="M 7 1 L 1 4 L 7 7" fill="none" style={{ stroke: BIDIR_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
+        {/* Zone wire arrowhead (mauve) */}
+        <marker id="zone-wire-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+          <path d="M 1 1 L 7 4 L 1 7" fill="none" style={{ stroke: ZONE_WIRE_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </marker>
         {/* Wire path definitions (referenced by flow dots via <mpath>) */}
         {wires.map(({ key }) => (
           <path key={`def-${key}`} id={`wire-path-${key}`} d={resolvedPaths.get(key)!} fill="none" />
         ))}
       </defs>
+      {/* Zone wires drawn first so per-agent binding wires sit visually on top */}
+      {zoneWires.map(({ id, path }) => (
+        <ZoneWireGroup key={`zone-${id}`} wireId={id} path={path} onZoneWireClick={onZoneWireClick} />
+      ))}
       {wires.map(({ key, binding, bidir }) => (
         <WireGroup
           key={key}

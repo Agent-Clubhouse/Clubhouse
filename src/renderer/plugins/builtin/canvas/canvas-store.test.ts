@@ -1140,4 +1140,76 @@ describe('hydrateFromRemote', () => {
       expect(store.getState().wireDefinitions).toHaveLength(1);
     });
   });
+
+  describe('zone wire definitions', () => {
+    it('addZoneWireDefinition adds a wire and assigns an id; dedupes on (zone,target)', () => {
+      const w1 = store.getState().addZoneWireDefinition({ sourceZoneId: 'z1', targetId: 'durable_2', targetType: 'agent' });
+      expect(w1.id).toMatch(/^zw_/);
+      expect(store.getState().zoneWireDefinitions).toHaveLength(1);
+      // Same source+target → returns existing, no duplicate
+      const w2 = store.getState().addZoneWireDefinition({ sourceZoneId: 'z1', targetId: 'durable_2', targetType: 'agent' });
+      expect(w2.id).toBe(w1.id);
+      expect(store.getState().zoneWireDefinitions).toHaveLength(1);
+    });
+
+    it('removeZoneWireDefinition removes by id', () => {
+      const w = store.getState().addZoneWireDefinition({ sourceZoneId: 'z1', targetId: 'durable_2', targetType: 'agent' });
+      store.getState().removeZoneWireDefinition(w.id);
+      expect(store.getState().zoneWireDefinitions).toHaveLength(0);
+    });
+
+    it('persists and restores zone wires via saveCanvas/loadCanvas', async () => {
+      const storage = createMockStorage();
+      await store.getState().loadCanvas(storage);
+      store.getState().addZoneWireDefinition({ sourceZoneId: 'z1', targetId: 'durable_2', targetType: 'agent' });
+      await store.getState().saveCanvas(storage);
+
+      const store2 = createCanvasStore();
+      await store2.getState().loadCanvas(storage);
+      expect(store2.getState().zoneWireDefinitions).toHaveLength(1);
+      expect(store2.getState().zoneWireDefinitions[0].targetId).toBe('durable_2');
+    });
+
+    it('hydrateFromRemote restores zone wires from a remote snapshot', () => {
+      const zoneWires = [{ id: 'zw_1', sourceZoneId: 'z1', targetId: 'durable_2', targetType: 'agent' }];
+      store.getState().hydrateFromRemote(
+        [{ id: 'c1', name: 'C', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null }],
+        'c1',
+        undefined,
+        zoneWires,
+      );
+      expect(store.getState().zoneWireDefinitions).toEqual(zoneWires);
+    });
+
+    it('removeZone removes zone wires sourced from or targeting the zone', () => {
+      store.getState().addView('zone', { x: 0, y: 0 });
+      const zone = store.getState().views.find((v) => v.type === 'zone')!;
+      store.setState({
+        zoneWireDefinitions: [
+          { id: 'zw_a', sourceZoneId: zone.id, targetId: 'durable_2', targetType: 'agent' },
+          { id: 'zw_b', sourceZoneId: 'other-zone', targetId: zone.id, targetType: 'zone' },
+          { id: 'zw_c', sourceZoneId: 'other-zone', targetId: 'durable_9', targetType: 'agent' },
+        ],
+      });
+      store.getState().removeZone(zone.id, false);
+      const ids = store.getState().zoneWireDefinitions.map((w) => w.id);
+      expect(ids).toEqual(['zw_c']);
+    });
+
+    it('removeView removes zone wires referencing the removed agent view', () => {
+      store.getState().addView('agent', { x: 0, y: 0 });
+      const agent = store.getState().views.find((v) => v.type === 'agent') as { id: string; agentId: string | null };
+      // Give the agent a stable agentId so the zone wire can reference it.
+      store.getState().updateView(agent.id, { agentId: 'durable_x' } as never);
+      store.setState({
+        zoneWireDefinitions: [
+          { id: 'zw_a', sourceZoneId: 'z1', targetId: 'durable_x', targetType: 'agent' },
+          { id: 'zw_b', sourceZoneId: 'z1', targetId: 'durable_keep', targetType: 'agent' },
+        ],
+      });
+      store.getState().removeView(agent.id);
+      const ids = store.getState().zoneWireDefinitions.map((w) => w.id);
+      expect(ids).toEqual(['zw_b']);
+    });
+  });
 });

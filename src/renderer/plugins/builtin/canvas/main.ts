@@ -158,6 +158,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const loaded = store((s) => s.loaded);
   const wiresLoaded = store((s) => s.wiresLoaded);
   const wireDefinitions = store((s) => s.wireDefinitions);
+  const zoneWireDefinitions = store((s) => s.zoneWireDefinitions);
   const minimapAutoHide = store((s) => s.minimapAutoHide);
   const elkAlgorithm = store((s) => s.elkAlgorithm);
   const elkDirection = store((s) => s.elkDirection);
@@ -193,14 +194,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (isRemoteApp && activeHostId) {
       const remoteState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
       if (remoteState) {
-        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions);
+        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
         return;
       }
     }
     if (isRemote && projectId) {
       const remoteState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
       if (remoteState) {
-        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions);
+        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
         return;
       }
     }
@@ -220,7 +221,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const newState = state.remoteCanvasState[projectId];
       if (newState && newState !== prevState && store.getState().loaded) {
         prevState = newState;
-        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions);
+        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions, (newState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
       }
     });
   }, [store, isRemote, projectId]);
@@ -233,7 +234,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const newState = state.remoteAppCanvasState[activeHostId];
       if (newState && newState !== prevState && store.getState().loaded) {
         prevState = newState;
-        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions);
+        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId, newState.wireDefinitions, (newState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
       }
     });
   }, [store, isRemoteApp, activeHostId]);
@@ -263,7 +264,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         saveTimerRef.current = null;
       }
     };
-  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave]);
+  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave]);
 
   // ── Agent wake reconciliation ────────────────────────────────────
   // When an agent wakes up (bindings appear in MCP store that match wire
@@ -353,7 +354,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       isAppMode ? undefined : api.context.projectId,
       scope,
     );
-  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded, isAppMode, isRemote, isRemoteApp, api, scope]);
+  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, wireDefinitions, zoneWireDefinitions, loaded, isAppMode, isRemote, isRemoteApp, api, scope]);
 
   // ── Remote mutation helper ──────────────────────────────────────
 
@@ -649,6 +650,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             },
             onRemoveWireDefinition: (agentId: string, targetId: string) => store.getState().removeWireDefinition(agentId, targetId),
             onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => store.getState().updateWireDefinition(agentId, targetId, updates),
+            zoneWireDefinitions,
+            onAddZoneWireDefinition: (wire) => store.getState().addZoneWireDefinition(wire),
+            onRemoveZoneWireDefinition: (wireId: string) => store.getState().removeZoneWireDefinition(wireId),
             api,
             onViewportChange: handleViewportChange,
             onAddView: handleAddView,

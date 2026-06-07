@@ -94,10 +94,10 @@ interface RemoteProjectStoreState {
   remoteAgentIcons: Record<string, string>;
 
   /** Remote canvas state keyed by namespaced project ID */
-  remoteCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }>;
+  remoteCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }>;
 
   /** App-level (global) canvas state keyed by satelliteId */
-  remoteAppCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }>;
+  remoteAppCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }>;
 
   /** Remote group projects keyed by satelliteId */
   remoteGroupProjects: Record<string, unknown[]>;
@@ -127,10 +127,10 @@ interface RemoteProjectStoreState {
   removeRemoteAgent: (satelliteId: string, agentId: string) => void;
 
   /** Update canvas state for a remote project. */
-  updateRemoteCanvasState: (namespacedProjectId: string, state: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }) => void;
+  updateRemoteCanvasState: (namespacedProjectId: string, state: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }) => void;
 
   /** Update app-level (global scope) canvas state for a satellite. */
-  updateRemoteAppCanvasState: (satelliteId: string, state: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }) => void;
+  updateRemoteAppCanvasState: (satelliteId: string, state: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }) => void;
 
   /** Update a remote group project (create/update/delete). */
   updateRemoteGroupProject: (satelliteId: string, action: string, project: unknown) => void;
@@ -240,8 +240,8 @@ function namespaceCanvasViews(satelliteId: string, views: unknown[]): unknown[] 
 /** Namespace views inside an entire canvas state object (canvases + views). */
 function namespaceCanvasData(
   satelliteId: string,
-  data: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] },
-): { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] } {
+  data: { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] },
+): { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] } {
   const canvases = (data.canvases as Array<{ views?: unknown[] } & Record<string, unknown>>).map((canvas) => {
     if (!canvas.views || !Array.isArray(canvas.views)) return canvas;
     return { ...canvas, views: namespaceCanvasViews(satelliteId, canvas.views) };
@@ -310,7 +310,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
     // Namespace canvas state by project ID, including agentId/projectId
     // fields within each canvas view so they match the namespaced IDs
     // used in remoteAgents.
-    const newCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[] }> = {};
+    const newCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string; wireDefinitions?: unknown[]; zoneWireDefinitions?: unknown[] }> = {};
     if (snapshot.canvasState) {
       for (const [projId, cs] of Object.entries(snapshot.canvasState)) {
         const typed = cs as { canvases: Array<{ views?: unknown[] } & Record<string, unknown>>; activeCanvasId: string; wireDefinitions?: unknown[] };

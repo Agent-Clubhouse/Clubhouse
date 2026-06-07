@@ -1198,6 +1198,8 @@ const api = {
       viewport: { panX: number; panY: number; zoom: number };
       nextZIndex: number;
       zoomedViewId: string | null;
+      wireDefinitions?: unknown[];
+      zoneWireDefinitions?: unknown[];
     } | null> =>
       ipcRenderer.invoke(IPC.WINDOW.GET_CANVAS_STATE, canvasId, scope, projectId),
     onRequestCanvasState: (callback: (requestId: string, canvasId: string, scope: string, projectId?: string) => void) => {
@@ -1222,6 +1224,8 @@ const api = {
       viewport: { panX: number; panY: number; zoom: number };
       nextZIndex: number;
       zoomedViewId: string | null;
+      wireDefinitions?: unknown[];
+      zoneWireDefinitions?: unknown[];
     }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
       ipcRenderer.on(IPC.WINDOW.CANVAS_STATE_CHANGED, listener);

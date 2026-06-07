@@ -1146,6 +1146,14 @@ export interface CanvasStateSnapshot {
     instructions?: Record<string, string>;
     disabledTools?: string[];
   }>;
+  /** Zone wire definitions for remote canvas sync — ensures zone wires (and
+   *  their single visual wire to the zone) survive the annex round-trip. */
+  zoneWireDefinitions?: Array<{
+    id: string;
+    sourceZoneId: string;
+    targetId: string;
+    targetType: 'zone' | 'agent' | 'group-project' | 'agent-queue' | 'browser';
+  }>;
 }
 
 // --- Session Resume on Update types ---

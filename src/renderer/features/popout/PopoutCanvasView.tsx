@@ -13,6 +13,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { CanvasWorkspace } from '../../plugins/builtin/canvas/CanvasWorkspace';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from '../../plugins/builtin/canvas/canvas-types';
 import { clampViewport } from '../../plugins/builtin/canvas/canvas-operations';
+import type { ZoneWireDefinition } from '../../plugins/builtin/canvas/zone-wire-store';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { createWidgetsAPI } from '../../plugins/plugin-api-ui';
@@ -186,6 +187,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   // Popout uses live MCP bindings as wire definitions — persistence is handled
   // by the main window's canvas store via the wireDefinitions system.
   const popoutWireDefinitions = useMcpBindingStore((s) => s.bindings);
+  const [zoneWireDefinitions, setZoneWireDefinitions] = useState<ZoneWireDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Guard against mutations firing before the initial IPC snapshot resolves.
@@ -226,6 +228,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         setViews(snapshot.views as CanvasView[]);
         setViewport(clampViewport(snapshot.viewport));
         setZoomedViewId(snapshot.zoomedViewId);
+        setZoneWireDefinitions((snapshot.zoneWireDefinitions as ZoneWireDefinition[] | undefined) ?? []);
       } else {
         setError(`Canvas "${canvasId}" not found`);
       }
@@ -250,6 +253,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
       setViews(state.views as CanvasView[]);
       setViewport(clampViewport(state.viewport));
       setZoomedViewId(state.zoomedViewId);
+      setZoneWireDefinitions((state.zoneWireDefinitions as ZoneWireDefinition[] | undefined) ?? []);
     });
     return remove;
   }, [canvasId]);
@@ -264,6 +268,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
           setViews(snapshot.views as CanvasView[]);
           setViewport(clampViewport(snapshot.viewport));
           setZoomedViewId(snapshot.zoomedViewId);
+          setZoneWireDefinitions((snapshot.zoneWireDefinitions as ZoneWireDefinition[] | undefined) ?? []);
         }
       }).catch(() => { /* silent — main window may be busy */ });
     }, RECONCILE_INTERVAL_MS);
@@ -386,6 +391,9 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         onAddWireDefinition={() => {}}
         onRemoveWireDefinition={() => {}}
         onUpdateWireDefinition={() => {}}
+        zoneWireDefinitions={zoneWireDefinitions}
+        onAddZoneWireDefinition={(wire) => ({ ...wire, id: '' })}
+        onRemoveZoneWireDefinition={() => {}}
         api={api}
         onViewportChange={handleViewportChange}
         onAddView={handleAddView}
