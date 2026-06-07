@@ -135,6 +135,8 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const openDeleteDialog = useAgentStore((s) => s.openDeleteDialog);
+  const openApplyPersonaDialog = useAgentStore((s) => s.openApplyPersonaDialog);
+  const openExtractPatternDialog = useAgentStore((s) => s.openExtractPatternDialog);
   const localDetailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus[agent.id]);
   const detailed = isRemote ? remoteDetailed : localDetailed;
@@ -206,6 +208,14 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   const handleDelete = useCallback(() => {
     openDeleteDialog(agent.id);
   }, [agent.id, openDeleteDialog]);
+
+  const handleApplyPersona = useCallback(() => {
+    openApplyPersonaDialog(agent.id);
+  }, [agent.id, openApplyPersonaDialog]);
+
+  const handleExtractPattern = useCallback(() => {
+    openExtractPatternDialog(agent.id);
+  }, [agent.id, openExtractPatternDialog]);
 
   const handlePopOut = useCallback(async () => {
     await window.clubhouse.window.createPopout({
@@ -309,6 +319,39 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
       });
     }
 
+    // Priority 4b: Apply persona / Extract pattern (local durable agents)
+    if (isDurable && !isRemote) {
+      list.push({
+        id: 'apply-persona',
+        label: 'Apply persona…',
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <line x1="19" y1="8" x2="19" y2="14" />
+            <line x1="22" y1="11" x2="16" y2="11" />
+          </svg>
+        ),
+        hoverColor: 'hover:text-ctp-accent',
+        visible: true,
+        handler: handleApplyPersona,
+      });
+      list.push({
+        id: 'extract-pattern',
+        label: 'Extract pattern…',
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        ),
+        hoverColor: 'hover:text-ctp-accent',
+        visible: true,
+        handler: handleExtractPattern,
+      });
+    }
+
     // Priority 5: Delete / Remove (lowest — collapses first)
     if (isDurable && agent.status !== 'running') {
       list.push({
@@ -331,7 +374,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeAndResume, handlePopOut, handleSpawnChild, handleSettings, handleDelete]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeAndResume, handlePopOut, handleSpawnChild, handleSettings, handleDelete, handleApplyPersona, handleExtractPattern]);
 
   // ── Responsive action collapse ─────────────────────────────────
 

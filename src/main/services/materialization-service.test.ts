@@ -73,6 +73,9 @@ import {
   resolveMissionId,
   resolvePersonaId,
   resolvePersonaContent,
+  readPersonaForEdit,
+  extractAgentPattern,
+  writeResolvedPersonaInstructions,
   resolveAgentCommands,
   listAvailablePersonas,
   getAgentWildcards,
@@ -321,6 +324,54 @@ describe('materialization-service', () => {
       expect(resolveAgentCommands(testAgent, { buildCommand: 'npm run build', testCommand: 'npm test' })).toEqual({
         buildCommand: 'npm run build', testCommand: 'npm test', lintCommand: undefined,
       });
+    });
+  });
+
+  describe('persona pattern front-matter + apply/extract', () => {
+    it('resolvePersonaContent strips pattern front-matter to the body', async () => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const fp = String(p).replace(/\\/g, '/');
+        if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) {
+          return '---\nmodel: "claude-opus-4-8"\n---\n# Role: QA';
+        }
+        throw new Error('ENOENT');
+      });
+      expect(await resolvePersonaContent('/project', 'qa')).toBe('# Role: QA');
+    });
+
+    it('readPersonaForEdit returns the raw file including front-matter', async () => {
+      const raw = '---\nmodel: "claude-opus-4-8"\n---\n# Role: QA';
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const fp = String(p).replace(/\\/g, '/');
+        if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) return raw;
+        throw new Error('ENOENT');
+      });
+      expect(await readPersonaForEdit('/project', 'qa')).toBe(raw);
+    });
+
+    it('extractAgentPattern re-genericizes wildcards and captures settings', async () => {
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
+      const agent = { ...testAgent, model: 'claude-opus-4-8', mcpIds: ['github'], freeAgentMode: true };
+      const provider = {
+        ...mockProvider,
+        readInstructions: vi.fn(async () => 'Agent bold-falcon at .clubhouse/agents/bold-falcon/'),
+      };
+      const { content, settings } = await extractAgentPattern({ projectPath: '/project', agent, provider });
+      expect(content).toBe('Agent @@AgentName at @@Path');
+      expect(settings).toEqual({ model: 'claude-opus-4-8', mcpIds: ['github'], freeAgentMode: true });
+    });
+
+    it('writeResolvedPersonaInstructions writes the resolved persona body', async () => {
+      const agent = { ...testAgent, persona: 'qa' };
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const fp = String(p).replace(/\\/g, '/');
+        if (fp.endsWith('settings.json')) return JSON.stringify({ defaults: {}, quickOverrides: {} });
+        if (fp.endsWith('.clubhouse/personas/qa.md')) return '---\nmodel: "x"\n---\nPersona for @@AgentName';
+        throw new Error('ENOENT');
+      });
+      const provider = { ...mockProvider, writeInstructions: vi.fn() };
+      await writeResolvedPersonaInstructions({ projectPath: '/project', agent, provider });
+      expect(provider.writeInstructions).toHaveBeenCalledWith(agent.worktreePath, 'Persona for bold-falcon');
     });
   });
 
