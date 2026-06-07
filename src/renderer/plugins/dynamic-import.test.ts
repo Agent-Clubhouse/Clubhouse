@@ -119,25 +119,54 @@ describe('dynamicImportModule', () => {
   describe('production mode (file: origin)', () => {
     beforeEach(() => {
       setupProdModeGlobals();
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:unused');
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue(FAKE_BLOB_URL);
       vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
     });
 
-    it('does not call loadModuleSource for file: origin', async () => {
-      const loadModuleSource = vi.fn();
+    it('reads module source via IPC for file: origin (same as dev mode)', async () => {
+      const fakeModule: PluginModule = { activate: vi.fn() };
+      const { loadModuleSource } = setupDevModeGlobals(fakeModule);
+      // Override location back to production after setupDevModeGlobals set it to http:
+      setupProdModeGlobals();
+
+      const fn = await loadFn();
+      await fn('file:///Users/masonallen/.clubhouse/plugins/automations/dist/main.js').catch(() => {});
+
+      expect(loadModuleSource).toHaveBeenCalledWith(
+        '/Users/masonallen/.clubhouse/plugins/automations/dist/main.js',
+      );
+    });
+
+    it('creates a blob URL for file: origin — avoids ?v= query-param failure', async () => {
+      const loadModuleSource = vi.fn().mockResolvedValue(FAKE_SOURCE);
       (window as any).clubhouse = { plugin: { loadModuleSource } };
 
       const fn = await loadFn();
-      await fn('file:///app/.webpack/renderer/plugin/main.js').catch(() => {});
+      await fn('file:///plugins/automations/dist/main.js?v=1780813375562').catch(() => {});
 
-      expect(loadModuleSource).not.toHaveBeenCalled();
+      expect(URL.createObjectURL).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'text/javascript' }),
+      );
     });
 
-    it('does not create a blob URL for file: origin', async () => {
-      const fn = await loadFn();
-      await fn('file:///app/.webpack/renderer/plugin/main.js').catch(() => {});
+    it('strips ?v= cache-busting query param from file path in production', async () => {
+      const loadModuleSource = vi.fn().mockResolvedValue(FAKE_SOURCE);
+      (window as any).clubhouse = { plugin: { loadModuleSource } };
 
-      expect(URL.createObjectURL).not.toHaveBeenCalled();
+      const fn = await loadFn();
+      await fn('file:///plugins/automations/dist/main.js?v=1780813375562').catch(() => {});
+
+      expect(loadModuleSource).toHaveBeenCalledWith('/plugins/automations/dist/main.js');
+    });
+
+    it('revokes the blob URL after import in production (cleanup)', async () => {
+      const loadModuleSource = vi.fn().mockResolvedValue(FAKE_SOURCE);
+      (window as any).clubhouse = { plugin: { loadModuleSource } };
+
+      const fn = await loadFn();
+      await fn('file:///plugins/automations/dist/main.js').catch(() => {});
+
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith(FAKE_BLOB_URL);
     });
   });
 });

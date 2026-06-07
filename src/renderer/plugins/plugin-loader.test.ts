@@ -1112,6 +1112,47 @@ describe('plugin-loader', () => {
       expect(importedUrl).toMatch(/^file:\/\/\/plugins\/comm-main\/dist\/index\.js\?v=\d+$/);
     });
 
+    it('normalizes ./ prefix in manifest main path', async () => {
+      // Regression: manifest.main of "./dist/main.js" was producing the path
+      // "pluginPath/./dist/main.js" which Chromium's ESM loader cannot resolve.
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'comm-dotslash', main: './dist/main.js' }),
+        'community',
+        '/Users/masonallen/.clubhouse/plugins/automations',
+        'registered',
+      );
+
+      await activatePlugin('comm-dotslash', 'proj-1', '/p1');
+
+      const importedUrl = mockDynamicImport.mock.calls[0][0] as string;
+      // Must NOT contain "/./": the ./ prefix must be stripped before joining.
+      expect(importedUrl).not.toContain('/./');
+      expect(importedUrl).toMatch(
+        /^file:\/\/\/Users\/masonallen\/.clubhouse\/plugins\/automations\/dist\/main\.js\?v=\d+$/,
+      );
+    });
+
+    it('normalizes nested ./ prefix in manifest main — e.g. ./lib/index.js', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'comm-nested', main: './lib/index.js' }),
+        'community',
+        '/plugins/comm-nested',
+        'registered',
+      );
+
+      await activatePlugin('comm-nested', 'proj-1', '/p1');
+
+      const importedUrl = mockDynamicImport.mock.calls[0][0] as string;
+      expect(importedUrl).not.toContain('/./');
+      expect(importedUrl).toMatch(/^file:\/\/\/plugins\/comm-nested\/lib\/index\.js\?v=\d+$/);
+    });
+
     it('sets errored status when dynamic import fails', async () => {
       mockDynamicImport.mockRejectedValue(new Error('Module not found'));
 
