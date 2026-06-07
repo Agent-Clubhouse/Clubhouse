@@ -233,12 +233,14 @@ describe('canvas main', () => {
     expect(source).toContain('mcpBinding.bind');
   });
 
-  it('group-project wire defaults use shared migration-aware helper (structural)', () => {
+  it('group-project privileged access is governed by admin role, not a per-wire default (structural)', () => {
     const fs = require('fs');
     const path = require('path');
     const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
 
-    expect(source).toContain('getDefaultGroupProjectDisabledToolsFromMetadata');
+    // New group-project wires no longer pre-disable privileged tools — the
+    // project's admin role sets the baseline (see shared/group-project-admin.ts).
+    expect(source).not.toContain('getDefaultGroupProjectDisabledToolsFromMetadata');
     expect(source).not.toContain("const allAdvanced = ['shoulder_tap'");
   });
 

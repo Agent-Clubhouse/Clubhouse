@@ -14,6 +14,7 @@ vi.mock('fs/promises', () => ({
 import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
+import { groupProjectRegistry } from '../group-project-registry';
 import type { McpBinding } from './types';
 
 function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string; targetKind: McpBinding['targetKind'] }): McpBinding {
@@ -725,8 +726,9 @@ describe('ToolRegistry', () => {
     });
   });
 
-  describe('group-project tool gating (wire-level only)', () => {
+  describe('group-project tool gating (admin role + wire-level)', () => {
     beforeEach(() => {
+      groupProjectRegistry._resetForTesting();
       registerToolTemplate('group-project', 'list_members', { description: 'List', inputSchema: { type: 'object' } }, vi.fn());
       registerToolTemplate('group-project', 'shoulder_tap', { description: 'Tap', inputSchema: { type: 'object' } }, vi.fn());
       registerToolTemplate('group-project', 'broadcast', { description: 'Broadcast', inputSchema: { type: 'object' } }, vi.fn());
@@ -736,7 +738,11 @@ describe('ToolRegistry', () => {
       registerToolTemplate('group-project', 'compact_agent', { description: 'Compact agent', inputSchema: { type: 'object' } }, vi.fn());
     });
 
-    it('exposes all group-project tools when no wire-level disabledTools', () => {
+    it('exposes all group-project tools to an admin with no wire-level disabledTools', () => {
+      groupProjectRegistry._setForTesting({
+        id: 'gp_test_1', name: 'TestProj', description: '', instructions: '',
+        createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+      });
       bindingManager.bind('agent-1', {
         targetId: 'gp_test_1', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });
@@ -767,7 +773,11 @@ describe('ToolRegistry', () => {
       expect(suffixes).not.toContain('compact_agent');
     });
 
-    it('can disable individual tools without affecting others', () => {
+    it('an admin wire can disable individual tools without affecting others', () => {
+      groupProjectRegistry._setForTesting({
+        id: 'gp_test_3', name: 'TestProj', description: '', instructions: '',
+        createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+      });
       bindingManager.bind('agent-1', {
         targetId: 'gp_test_3', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
       });

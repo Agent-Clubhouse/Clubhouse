@@ -101,7 +101,11 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
-  it('registers all 16 tools by default (gating is per-wire only)', () => {
+  it('exposes all 17 tools to an admin member', () => {
+    groupProjectRegistry._setForTesting({
+      id: 'gp_123', name: 'My Project', description: '', instructions: '',
+      createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+    });
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -111,7 +115,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(16);
+    expect(tools).toHaveLength(17);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('list_members');
@@ -130,6 +134,25 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('compact_agent');
     expect(suffixes).toContain('clear_topic');
     expect(suffixes).toContain('delete_messages');
+    expect(suffixes).toContain('set_project_info');
+  });
+
+  it('exposes only the 6 core tools to a non-admin member', () => {
+    groupProjectRegistry._setForTesting({
+      id: 'gp_core', name: 'Core', description: '', instructions: '',
+      createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['someone-else'] },
+    });
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_core', targetKind: 'group-project', label: 'Core', agentName: 'robin',
+    });
+
+    const suffixes = getScopedToolList('agent-1').map(t => t.name.split('__').pop());
+    expect(suffixes.sort()).toEqual(
+      ['get_project_info', 'list_members', 'post_bulletin', 'read_bulletin', 'read_message', 'read_topic'].sort(),
+    );
+    for (const priv of ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'delete_messages', 'set_project_info']) {
+      expect(suffixes).not.toContain(priv);
+    }
   });
 
   it('hides tools disabled at the wire level', () => {
@@ -432,8 +455,9 @@ describe('GroupProjectTools', () => {
     agentRegistry.untrack('agent-1');
   });
 
-  it('shoulder_tap and broadcast are always available (no project-level flag needed)', async () => {
+  it('shoulder_tap and broadcast are available to an admin member', async () => {
     const project = await groupProjectRegistry.create('TapProj');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -638,7 +662,11 @@ describe('GroupProjectTools', () => {
 
   /* ---------- Agent Control Tools (wake, sleep, start/stop polling) ---------- */
 
-  it('wake_agent, sleep_agent, start_polling, stop_polling are available when enabled', () => {
+  it('wake_agent, sleep_agent, start_polling, stop_polling are available to an admin', () => {
+    groupProjectRegistry._setForTesting({
+      id: 'gp_123', name: 'My Project', description: '', instructions: '',
+      createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+    });
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -1141,7 +1169,11 @@ describe('GroupProjectTools', () => {
 
   /* ---------- Agent deletion tools ---------- */
 
-  it('clear_topic and delete_messages are always available (wire-level gating only)', () => {
+  it('clear_topic and delete_messages are available to an admin (message curation)', () => {
+    groupProjectRegistry._setForTesting({
+      id: 'gp_123', name: 'GP', description: '', instructions: '',
+      createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
+    });
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -1246,6 +1278,75 @@ describe('GroupProjectTools', () => {
     const remaining = JSON.parse(readResult.content[0].text!);
     expect(remaining).toHaveLength(1);
     expect(remaining[0].body).toBe('keep me');
+  });
+
+  describe('set_project_info', () => {
+    it('updates description and instructions for an admin', async () => {
+      const project = await groupProjectRegistry.create('InfoEditProj');
+      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'IE', agentName: 'lead', targetName: 'InfoEditProj',
+      });
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'InfoEditProj' });
+      const name = buildToolName(binding, 'set_project_info');
+      const result = await callTool('agent-1', name, {
+        description: 'New purpose', instructions: 'Follow these rules',
+      });
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text!);
+      expect(parsed.description).toBe('New purpose');
+      expect(parsed.instructions).toBe('Follow these rules');
+      const updated = await groupProjectRegistry.get(project.id);
+      expect(updated?.description).toBe('New purpose');
+      expect(updated?.instructions).toBe('Follow these rules');
+    });
+
+    it('leaves omitted fields unchanged', async () => {
+      const project = await groupProjectRegistry.create('PartialProj');
+      await groupProjectRegistry.update(project.id, {
+        description: 'orig desc', instructions: 'orig instr', metadata: { admins: ['agent-1'] },
+      });
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'PP', agentName: 'lead', targetName: 'PartialProj',
+      });
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PartialProj' });
+      const name = buildToolName(binding, 'set_project_info');
+      await callTool('agent-1', name, { instructions: 'updated instr' });
+
+      const updated = await groupProjectRegistry.get(project.id);
+      expect(updated?.description).toBe('orig desc');
+      expect(updated?.instructions).toBe('updated instr');
+    });
+
+    it('is rejected for a non-admin caller (defense in depth)', async () => {
+      const project = await groupProjectRegistry.create('GuardProj');
+      await groupProjectRegistry.update(project.id, { metadata: { admins: ['someone-else'] } });
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'member', targetName: 'GuardProj',
+      });
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'GuardProj' });
+      const name = buildToolName(binding, 'set_project_info');
+      const result = await callTool('agent-1', name, { description: 'hijack' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('admin');
+    });
+
+    it('is hidden from a non-admin’s scoped tool list', () => {
+      groupProjectRegistry._setForTesting({
+        id: 'gp_hidden', name: 'H', description: '', instructions: '',
+        createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['someone-else'] },
+      });
+      bindingManager.bind('agent-1', {
+        targetId: 'gp_hidden', targetKind: 'group-project', label: 'H', agentName: 'member',
+      });
+      const suffixes = getScopedToolList('agent-1').map(t => t.name.split('__').pop());
+      expect(suffixes).not.toContain('set_project_info');
+    });
   });
 
   describe('clear_agent', () => {

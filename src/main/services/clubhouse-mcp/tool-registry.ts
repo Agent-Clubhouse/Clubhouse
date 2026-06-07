@@ -6,6 +6,8 @@
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
+import { groupProjectRegistry } from '../group-project-registry';
+import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 
 /** Check if a value matches a JSON Schema type (handles array vs object correctly). */
@@ -206,13 +208,24 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     // When target agent is sleeping (not in registry), only expose status tools.
     const isTargetSleeping = binding.targetKind === 'agent' && !agentRegistry.get(binding.targetId);
 
+    // For group projects, the project's admin role governs the privileged
+    // toolset (admins get them, non-admins don't), combined with any per-wire
+    // disables. For all other targets, only per-wire disables apply.
+    const deniedTools = binding.targetKind === 'group-project'
+      ? deniedGroupProjectTools(
+          groupProjectRegistry.getSync(binding.targetId)?.metadata,
+          binding.agentId,
+          binding.disabledTools,
+        )
+      : new Set<string>(binding.disabledTools ?? []);
+
     for (const template of templates) {
       if (isTargetSleeping && template.nameSuffix !== 'get_status') {
         continue;
       }
 
-      // Skip tools disabled at the wire level
-      if (binding.disabledTools?.includes(template.nameSuffix)) {
+      // Skip tools disabled by role gating and/or at the wire level
+      if (deniedTools.has(template.nameSuffix)) {
         continue;
       }
 
@@ -359,6 +372,11 @@ export async function callTool(
 
   return template.handler(binding.targetId, agentId, args);
 }
+
+// Admin membership lives in group-project metadata (not in bindingManager, so
+// its version counter doesn't change). Refresh scoped tool lists whenever a
+// group project changes so role-based gating takes effect immediately.
+groupProjectRegistry.onChange(() => invalidateToolListCache());
 
 /** For testing: clear all registered templates and global tools. */
 export function _resetForTesting(): void {

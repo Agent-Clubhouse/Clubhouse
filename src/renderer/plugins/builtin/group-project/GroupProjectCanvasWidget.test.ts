@@ -594,3 +594,24 @@ describe('GroupProjectCanvasWidget — snapshot data richness', () => {
     expect(serverSource).toContain("type: 'group-project:list'");
   });
 });
+
+// ── Admin (project lead) role in the agent list ─────────────────────
+
+describe('GroupProjectCanvasWidget — admin star + toggle', () => {
+  it('renders a StarIcon for members who are project admins', () => {
+    expect(source).toContain('function StarIcon');
+    expect(source).toMatch(/admin && <StarIcon/);
+  });
+
+  it('toggles admin membership via the project metadata.admins list', () => {
+    expect(source).toContain('handleToggleAdmin');
+    expect(source).toMatch(/update\(groupProjectId, \{ metadata: \{ admins: next \} \}\)/);
+    // Uses the shared add/remove helpers
+    expect(source).toContain('addAdmin(project?.metadata');
+    expect(source).toContain('removeAdmin(project?.metadata');
+  });
+
+  it('computes the admin list from project metadata via the shared helper', () => {
+    expect(source).toContain('getProjectAdmins(project?.metadata)');
+  });
+});

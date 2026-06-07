@@ -18,6 +18,7 @@ export const GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES = [
   'compact_agent',
   'clear_topic',
   'delete_messages',
+  'set_project_info',
 ] as const;
 
 export const GROUP_PROJECT_TOOL_SUFFIXES = [
