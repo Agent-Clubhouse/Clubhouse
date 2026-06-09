@@ -295,6 +295,7 @@ vi.stubGlobal('clubhouse', {
     updateTitleBarOverlay: asyncNoop,
     getOrchestratorSettings: async () => ({ enabled: ['claude-code'] }),
     saveOrchestratorSettings: asyncNoop,
+    setOrchestratorHookServer: asyncNoop,
     getVersion: async () => '0.0.0-test',
     isPreviewEligible: async () => false,
     getArchInfo: async () => ({ arch: 'arm64', platform: 'darwin', rosetta: false }),

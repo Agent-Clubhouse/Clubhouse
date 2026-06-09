@@ -5,6 +5,7 @@ import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSetting
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
+import { onOrchestratorHookServerChanged } from '../services/hook-server-toggle';
 import * as headlessSettings from '../services/headless-settings';
 import * as freeAgentSettings from '../services/free-agent-settings';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
@@ -151,9 +152,20 @@ export function registerAppHandlers(): void {
   });
 
   ipcMain.handle(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, withValidatedArgs(
-    [objectArg<orchestratorSettings.OrchestratorSettings>()],
+    [objectArg<Partial<orchestratorSettings.OrchestratorSettings>>()],
     async (_event, settings) => {
-      await orchestratorSettings.saveSettings(settings);
+      // Merge into existing settings so a partial save (e.g. just `enabled`)
+      // never clobbers sibling fields such as `hookServerEnabled`.
+      await orchestratorSettings.updateSettings((current) => ({ ...current, ...settings }));
+    },
+  ));
+
+  ipcMain.handle(IPC.APP.SET_ORCHESTRATOR_HOOK_SERVER, withValidatedArgs(
+    [stringArg(), booleanArg()],
+    async (_event, orchestratorId, enabled) => {
+      await orchestratorSettings.setHookServerEnabled(orchestratorId, enabled);
+      // Strip/re-inject hooks for that orchestrator's running agents.
+      await onOrchestratorHookServerChanged(orchestratorId, enabled);
     },
   ));
 

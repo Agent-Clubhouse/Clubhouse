@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useOrchestratorStore, DEFAULT_HOOK_SERVER_ORCHESTRATOR } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
@@ -22,6 +22,9 @@ function AppAgentSettings() {
   const availability = useOrchestratorStore((s) => s.availability);
   const loadSettings = useOrchestratorStore((s) => s.loadSettings);
   const setEnabled = useOrchestratorStore((s) => s.setEnabled);
+  const setHookServerEnabled = useOrchestratorStore((s) => s.setHookServerEnabled);
+  // Subscribe to the raw prefs map so rows re-render when a hook pref flips.
+  const hookServerPrefs = useOrchestratorStore((s) => s.hookServerEnabled);
   const checkAllAvailability = useOrchestratorStore((s) => s.checkAllAvailability);
   const defaultMode = useHeadlessStore((s) => s.defaultMode);
   const setDefaultMode = useHeadlessStore((s) => s.setDefaultMode);
@@ -214,39 +217,67 @@ function AppAgentSettings() {
           // 1. turning ON something not installed
           // 2. turning OFF the last working (available) orchestrator
           const toggleDisabled = (isOnlyEnabled && !notInstalled) || (!!notInstalled && !isEnabled);
+          // The expansion only renders when the orchestrator is enabled, and the
+          // hook server option only for hook-capable orchestrators.  Resolve the
+          // effective hook pref reactively from the subscribed prefs map.
+          const hookCapable = !!o.capabilities?.hooks;
+          const showExpansion = isEnabled && hookCapable;
+          const hookServerOn = hookServerPrefs[o.id] ?? (o.id === DEFAULT_HOOK_SERVER_ORCHESTRATOR);
 
           return (
-            <div key={o.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                    avail?.available ? 'bg-ctp-success' : avail ? 'bg-ctp-error' : 'bg-ctp-overlay0'
-                  }`}
-                  title={avail?.available ? 'CLI found' : avail?.error || 'Checking...'}
-                />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-ctp-text">{o.displayName}</span>
-                    {o.badge && (
-                      <span className="px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider rounded-full bg-ctp-accent/20 text-ctp-accent border border-ctp-accent/30 shadow-[0_0_6px_rgba(var(--ctp-accent),0.3)]">
-                        {o.badge}
-                      </span>
+            <div key={o.id} className="rounded-lg bg-ctp-mantle border border-surface-0">
+              <div className="flex items-center justify-between py-2 px-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                      avail?.available ? 'bg-ctp-success' : avail ? 'bg-ctp-error' : 'bg-ctp-overlay0'
+                    }`}
+                    title={avail?.available ? 'CLI found' : avail?.error || 'Checking...'}
+                  />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-ctp-text">{o.displayName}</span>
+                      {o.badge && (
+                        <span className="px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider rounded-full bg-ctp-accent/20 text-ctp-accent border border-ctp-accent/30 shadow-[0_0_6px_rgba(var(--ctp-accent),0.3)]">
+                          {o.badge}
+                        </span>
+                      )}
+                    </div>
+                    {avail && !avail.available && avail.error && (
+                      <div className="text-xs text-ctp-subtext0 mt-0.5">{avail.error}</div>
                     )}
                   </div>
-                  {avail && !avail.available && avail.error && (
-                    <div className="text-xs text-ctp-subtext0 mt-0.5">{avail.error}</div>
-                  )}
                 </div>
+                <button
+                  onClick={() => setEnabled(o.id, !isEnabled)}
+                  disabled={toggleDisabled}
+                  className="toggle-track"
+                  data-on={String(isEnabled)}
+                  title={!!notInstalled && !isEnabled ? 'CLI not found — install to enable' : isOnlyEnabled && !notInstalled ? 'At least one orchestrator must be enabled' : undefined}
+                >
+                  <span className="toggle-knob" />
+                </button>
               </div>
-              <button
-                onClick={() => setEnabled(o.id, !isEnabled)}
-                disabled={toggleDisabled}
-                className="toggle-track"
-                data-on={String(isEnabled)}
-                title={!!notInstalled && !isEnabled ? 'CLI not found — install to enable' : isOnlyEnabled && !notInstalled ? 'At least one orchestrator must be enabled' : undefined}
-              >
-                <span className="toggle-knob" />
-              </button>
+
+              {showExpansion && (
+                <div className="border-t border-surface-0 px-3 py-2.5 pl-8 space-y-2.5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-xs text-ctp-text font-medium">Hook server</div>
+                      <div className="text-[11px] text-ctp-subtext0 mt-0.5">
+                        Receives this orchestrator's hook callbacks (permission requests, tool
+                        events). When off, no hooks are injected into its agents and remote
+                        permissions/observability are unavailable. Toggling off strips hooks from
+                        running agents, which need a restart to take full effect.
+                      </div>
+                    </div>
+                    <Toggle
+                      checked={hookServerOn}
+                      onChange={(v) => setHookServerEnabled(o.id, v)}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}

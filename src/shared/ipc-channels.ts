@@ -189,6 +189,7 @@ export const IPC = {
     UPDATE_TITLE_BAR_OVERLAY: 'app:update-title-bar-overlay',
     GET_ORCHESTRATOR_SETTINGS: 'app:get-orchestrator-settings',
     SAVE_ORCHESTRATOR_SETTINGS: 'app:save-orchestrator-settings',
+    SET_ORCHESTRATOR_HOOK_SERVER: 'app:set-orchestrator-hook-server',
     GET_VERSION: 'app:get-version',
     IS_PREVIEW_ELIGIBLE: 'app:is-preview-eligible',
     GET_ARCH_INFO: 'app:get-arch-info',

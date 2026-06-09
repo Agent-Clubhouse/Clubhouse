@@ -749,10 +749,12 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SYNC_PLUGIN_THEMES, themes),
     updateTitleBarOverlay: (colors: { color: string; symbolColor: string }) =>
       ipcRenderer.invoke(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, colors),
-    getOrchestratorSettings: () =>
+    getOrchestratorSettings: (): Promise<{ enabled: string[]; hookServerEnabled?: Record<string, boolean> }> =>
       ipcRenderer.invoke(IPC.APP.GET_ORCHESTRATOR_SETTINGS),
-    saveOrchestratorSettings: (settings: { enabled: string[] }) =>
+    saveOrchestratorSettings: (settings: { enabled?: string[]; hookServerEnabled?: Record<string, boolean> }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, settings),
+    setOrchestratorHookServer: (orchestratorId: string, enabled: boolean): Promise<void> =>
+      ipcRenderer.invoke(IPC.APP.SET_ORCHESTRATOR_HOOK_SERVER, orchestratorId, enabled),
     getVersion: (): Promise<string> =>
       ipcRenderer.invoke(IPC.APP.GET_VERSION),
     isPreviewEligible: (): Promise<boolean> =>

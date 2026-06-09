@@ -569,21 +569,6 @@ export interface EditorSettings {
   editorName: string;
 }
 
-/**
- * Hook server settings — global toggle for the in-process HTTP server that
- * receives orchestrator hook callbacks (preToolUse, permissionRequest, etc.).
- *
- * Disabling is the durable escape hatch when an orchestrator's hook integration
- * gets stuck.  Disabled means: hook-server short-circuits all `/hook/*`
- * requests with an immediate 200, AND Clubhouse-injected hook entries are
- * stripped from each running agent's hook config file.  Running agents
- * continue executing but lose remote-permission/observability features until
- * their next restart.
- */
-export interface HookServerSettings {
-  enabled: boolean;
-}
-
 // --- Experimental settings ---
 
 export interface ExperimentalSettings {

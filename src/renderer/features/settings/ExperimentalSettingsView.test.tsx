@@ -1,24 +1,15 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ExperimentalSettingsView } from './ExperimentalSettingsView';
-import { useHookServerSettingsStore } from '../../stores/hookServerSettingsStore';
 
 const mockGetExperimentalSettings = vi.fn();
 const mockSaveExperimentalSettings = vi.fn();
 const mockRestart = vi.fn();
-const mockSettingsGet = vi.fn();
-const mockSettingsSave = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetExperimentalSettings.mockResolvedValue({});
   mockSaveExperimentalSettings.mockResolvedValue(undefined);
   mockRestart.mockResolvedValue(undefined);
-  mockSettingsGet.mockResolvedValue({ enabled: true });
-  mockSettingsSave.mockResolvedValue(undefined);
-
-  // Reset the Zustand store to a fresh state — it's module-level and
-  // persists across tests otherwise.
-  useHookServerSettingsStore.setState({ enabled: true, loaded: false });
 
   (window as any).clubhouse = {
     ...(window as any).clubhouse,
@@ -27,11 +18,6 @@ beforeEach(() => {
       getExperimentalSettings: mockGetExperimentalSettings,
       saveExperimentalSettings: mockSaveExperimentalSettings,
       restart: mockRestart,
-    },
-    settings: {
-      ...(window as any).clubhouse?.settings,
-      get: mockSettingsGet,
-      save: mockSettingsSave,
     },
   };
 });
@@ -114,40 +100,12 @@ describe('ExperimentalSettingsView', () => {
     });
   });
 
-  describe('Diagnostics — hook server toggle', () => {
-    it('renders the Diagnostics section with the Hook server toggle', async () => {
-      render(<ExperimentalSettingsView />);
-      await waitFor(() => {
-        expect(screen.getByText('Diagnostics')).toBeInTheDocument();
-      });
-      expect(screen.getByText('Hook server')).toBeInTheDocument();
-      expect(screen.getByText(/escape hatch/)).toBeInTheDocument();
+  it('no longer renders the global Diagnostics hook server escape hatch', async () => {
+    render(<ExperimentalSettingsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Experimental')).toBeInTheDocument();
     });
-
-    it('loads hook server settings on mount', async () => {
-      render(<ExperimentalSettingsView />);
-      await waitFor(() => {
-        expect(mockSettingsGet).toHaveBeenCalledWith('hook-server');
-      });
-    });
-
-    it('saves the toggle change to the hook-server settings key', async () => {
-      mockSettingsGet.mockResolvedValue({ enabled: true });
-      render(<ExperimentalSettingsView />);
-      await waitFor(() => {
-        expect(screen.getByText('Hook server')).toBeInTheDocument();
-      });
-
-      // Click the toggle next to "Hook server".  All toggles render as
-      // `button.rounded-full`; the Diagnostics one is the last (after the
-      // experimental feature toggles).
-      const toggles = document.querySelectorAll('button.rounded-full');
-      const hookToggle = toggles[toggles.length - 1] as HTMLElement;
-      fireEvent.click(hookToggle);
-
-      await waitFor(() => {
-        expect(mockSettingsSave).toHaveBeenCalledWith('hook-server', { enabled: false });
-      });
-    });
+    expect(screen.queryByText('Diagnostics')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hook server')).not.toBeInTheDocument();
   });
 });

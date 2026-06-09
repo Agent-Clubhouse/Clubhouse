@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 vi.mock('electron', () => ({
   app: {
@@ -38,6 +38,13 @@ vi.mock('../services/theme-service', () => ({
 vi.mock('../services/orchestrator-settings', () => ({
   getSettings: vi.fn(() => ({ enabled: ['claude-code'] })),
   saveSettings: vi.fn(),
+  // Run the updater against existing settings so tests can assert the merge.
+  updateSettings: vi.fn((fn: (cur: unknown) => unknown) => fn({ enabled: ['claude-code'], hookServerEnabled: { 'claude-code': true } })),
+  setHookServerEnabled: vi.fn(() => Promise.resolve({ enabled: ['claude-code'] })),
+}));
+
+vi.mock('../services/hook-server-toggle', () => ({
+  onOrchestratorHookServerChanged: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../services/headless-settings', () => ({
@@ -155,6 +162,7 @@ import { registerAppHandlers } from './app-handlers';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
+import { onOrchestratorHookServerChanged } from '../services/hook-server-toggle';
 import * as headlessSettings from '../services/headless-settings';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
@@ -190,7 +198,7 @@ describe('app-handlers', () => {
       IPC.APP.GET_NOTIFICATION_SETTINGS, IPC.APP.SAVE_NOTIFICATION_SETTINGS,
       IPC.APP.SEND_NOTIFICATION, IPC.APP.CLOSE_NOTIFICATION,
       IPC.APP.GET_THEME, IPC.APP.SAVE_THEME, IPC.APP.SYNC_PLUGIN_THEMES, IPC.APP.UPDATE_TITLE_BAR_OVERLAY,
-      IPC.APP.GET_ORCHESTRATOR_SETTINGS, IPC.APP.SAVE_ORCHESTRATOR_SETTINGS,
+      IPC.APP.GET_ORCHESTRATOR_SETTINGS, IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, IPC.APP.SET_ORCHESTRATOR_HOOK_SERVER,
       IPC.APP.GET_HEADLESS_SETTINGS, IPC.APP.SAVE_HEADLESS_SETTINGS,
       IPC.APP.GET_BADGE_SETTINGS, IPC.APP.SAVE_BADGE_SETTINGS,
       IPC.APP.GET_CLIPBOARD_SETTINGS, IPC.APP.SAVE_CLIPBOARD_SETTINGS,
@@ -374,10 +382,23 @@ describe('app-handlers', () => {
     expect(result).toEqual({ enabled: ['claude-code'] });
   });
 
-  it('SAVE_ORCHESTRATOR_SETTINGS delegates to orchestratorSettings.saveSettings', async () => {
+  it('SAVE_ORCHESTRATOR_SETTINGS merges into existing settings (preserving siblings)', async () => {
     const handler = handleHandlers.get(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS)!;
     await handler({}, { enabled: ['claude-code', 'aider'] });
-    expect(orchestratorSettings.saveSettings).toHaveBeenCalledWith({ enabled: ['claude-code', 'aider'] });
+    expect(orchestratorSettings.updateSettings).toHaveBeenCalledTimes(1);
+    // The updater merges the partial over existing settings, so hookServerEnabled survives.
+    const updater = (orchestratorSettings.updateSettings as unknown as Mock).mock.calls[0][0];
+    expect(updater({ enabled: ['claude-code'], hookServerEnabled: { 'claude-code': true } })).toEqual({
+      enabled: ['claude-code', 'aider'],
+      hookServerEnabled: { 'claude-code': true },
+    });
+  });
+
+  it('SET_ORCHESTRATOR_HOOK_SERVER persists the pref and runs the side effect', async () => {
+    const handler = handleHandlers.get(IPC.APP.SET_ORCHESTRATOR_HOOK_SERVER)!;
+    await handler({}, 'copilot-cli', true);
+    expect(orchestratorSettings.setHookServerEnabled).toHaveBeenCalledWith('copilot-cli', true);
+    expect(onOrchestratorHookServerChanged).toHaveBeenCalledWith('copilot-cli', true);
   });
 
   // --- Headless ---

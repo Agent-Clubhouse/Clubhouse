@@ -7,6 +7,7 @@ import { appLog } from './log-service';
 import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
 import * as freeAgentSettings from './free-agent-settings';
+import * as orchestratorSettings from './orchestrator-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry } from './agent-config';
@@ -353,7 +354,10 @@ async function spawnPtyAgent(
   let mcpPort = 0;
   const [, , spawnCmd] = await Promise.all([
     waitHookServerReady().then(async (port) => {
-      if (isHookCapable(provider)) {
+      // Inject Clubhouse hooks only when the provider supports them AND the
+      // user has opted this orchestrator into the hook server (app-level).
+      // Default: on for Claude Code, off for every other orchestrator.
+      if (isHookCapable(provider) && orchestratorSettings.isHookServerEnabled(provider.id)) {
         const hookUrl = `http://127.0.0.1:${port}/hook`;
         await provider.writeHooksConfig(params.cwd, hookUrl);
       }
