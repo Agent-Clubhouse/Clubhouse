@@ -12,10 +12,12 @@ describe('orchestratorStore', () => {
       enabled: ['claude-code'],
       allOrchestrators: [],
       availability: {},
+      hookServerEnabled: {},
     });
     // Set up spies on the centralized mock
     (window as any).clubhouse.app.getOrchestratorSettings = vi.fn();
     (window as any).clubhouse.app.saveOrchestratorSettings = vi.fn();
+    (window as any).clubhouse.app.setOrchestratorHookServer = vi.fn();
     (window as any).clubhouse.agent.getOrchestrators = vi.fn();
     (window as any).clubhouse.agent.checkOrchestrator = vi.fn();
   });
@@ -158,6 +160,52 @@ describe('orchestratorStore', () => {
       expect((window as any).clubhouse.app.saveOrchestratorSettings).toHaveBeenCalledWith({
         enabled: ['claude-code', 'codex-cli'],
       });
+    });
+  });
+
+  describe('hook server preferences', () => {
+    it('loads persisted hook server prefs', async () => {
+      (window as any).clubhouse.app.getOrchestratorSettings.mockResolvedValue({
+        enabled: ['claude-code', 'copilot-cli'],
+        hookServerEnabled: { 'copilot-cli': true },
+      });
+      (window as any).clubhouse.agent.getOrchestrators.mockResolvedValue([]);
+
+      await useOrchestratorStore.getState().loadSettings();
+
+      expect(useOrchestratorStore.getState().hookServerEnabled).toEqual({ 'copilot-cli': true });
+    });
+
+    it('isHookServerEnabled defaults claude-code ON and others OFF', () => {
+      const { isHookServerEnabled } = useOrchestratorStore.getState();
+      expect(isHookServerEnabled('claude-code')).toBe(true);
+      expect(isHookServerEnabled('copilot-cli')).toBe(false);
+      expect(isHookServerEnabled('codex-cli')).toBe(false);
+    });
+
+    it('isHookServerEnabled honours an explicit pref over the default', () => {
+      useOrchestratorStore.setState({ hookServerEnabled: { 'claude-code': false, 'copilot-cli': true } });
+      const { isHookServerEnabled } = useOrchestratorStore.getState();
+      expect(isHookServerEnabled('claude-code')).toBe(false);
+      expect(isHookServerEnabled('copilot-cli')).toBe(true);
+    });
+
+    it('setHookServerEnabled updates state and calls the IPC bridge', async () => {
+      (window as any).clubhouse.app.setOrchestratorHookServer.mockResolvedValue(undefined);
+
+      await useOrchestratorStore.getState().setHookServerEnabled('copilot-cli', true);
+
+      expect(useOrchestratorStore.getState().hookServerEnabled).toEqual({ 'copilot-cli': true });
+      expect((window as any).clubhouse.app.setOrchestratorHookServer).toHaveBeenCalledWith('copilot-cli', true);
+    });
+
+    it('setHookServerEnabled reverts on IPC error', async () => {
+      useOrchestratorStore.setState({ hookServerEnabled: { 'copilot-cli': true } });
+      (window as any).clubhouse.app.setOrchestratorHookServer.mockRejectedValue(new Error('boom'));
+
+      await useOrchestratorStore.getState().setHookServerEnabled('copilot-cli', false);
+
+      expect(useOrchestratorStore.getState().hookServerEnabled).toEqual({ 'copilot-cli': true });
     });
   });
 

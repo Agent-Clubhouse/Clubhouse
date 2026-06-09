@@ -40,68 +40,62 @@ vi.mock('./config-pipeline', () => ({
   getHooksConfigPath: (...args: unknown[]) => mockGetHooksConfigPath(...args),
 }));
 
-const mockListPending = vi.fn(() => []);
-const mockReset = vi.fn();
+const mockClearForAgent = vi.fn();
 vi.mock('./annex-permission-queue', () => ({
-  listPending: () => mockListPending(),
-  reset: () => mockReset(),
+  clearForAgent: (...args: unknown[]) => mockClearForAgent(...args),
 }));
 
-const mockSetEnabled = vi.fn();
 const mockGetPort = vi.fn(() => 12345);
 vi.mock('./hook-server', () => ({
-  setEnabled: (v: boolean) => mockSetEnabled(v),
   getPort: () => mockGetPort(),
 }));
 
-import { applyDisabled, applyEnabled, onHookServerSettingsChanged } from './hook-server-toggle';
+import {
+  applyDisabledForOrchestrator,
+  applyEnabledForOrchestrator,
+  onOrchestratorHookServerChanged,
+} from './hook-server-toggle';
 
 describe('hook-server-toggle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('applyDisabled', () => {
-    it('flips the hook server off', async () => {
-      mockGetAllRegistrations.mockReturnValue(new Map());
-      await applyDisabled();
-      expect(mockSetEnabled).toHaveBeenCalledWith(false);
-    });
-
-    it('resolves any in-flight permissions before stripping hooks', async () => {
-      mockGetAllRegistrations.mockReturnValue(new Map());
-      // Two pending permissions in flight
-      mockListPending.mockReturnValue([
-        { requestId: 'r1', agentId: 'a1', toolName: 'Bash', createdAt: 0, timeoutMs: 110_000 },
-        { requestId: 'r2', agentId: 'a2', toolName: 'Edit', createdAt: 0, timeoutMs: 110_000 },
-      ] as any);
-      await applyDisabled();
-      expect(mockReset).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not call queue.reset when no permissions are pending', async () => {
-      mockGetAllRegistrations.mockReturnValue(new Map());
-      mockListPending.mockReturnValue([]);
-      await applyDisabled();
-      expect(mockReset).not.toHaveBeenCalled();
-    });
-
-    it('strips Clubhouse hooks from every running agent and reports their ids', async () => {
+  describe('applyDisabledForOrchestrator', () => {
+    it('only touches agents belonging to the target orchestrator', async () => {
       mockGetAllRegistrations.mockReturnValue(new Map([
-        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
-        ['agent-b', { projectPath: '/p', cwd: '/p/b', orchestrator: 'copilot-cli', runtime: 'pty' }],
+        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'copilot-cli', runtime: 'pty' }],
+        ['agent-b', { projectPath: '/p', cwd: '/p/b', orchestrator: 'claude-code', runtime: 'pty' }],
+        ['agent-c', { projectPath: '/p', cwd: '/p/c', orchestrator: 'copilot-cli', runtime: 'pty' }],
       ]));
-      const affected = await applyDisabled();
+      const affected = await applyDisabledForOrchestrator('copilot-cli');
+      expect(affected).toEqual(['agent-a', 'agent-c']);
       expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-a');
-      expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-b');
-      expect(affected).toEqual(['agent-a', 'agent-b']);
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-c');
+      expect(mockRestoreForAgent).not.toHaveBeenCalledWith('agent-b');
+    });
+
+    it('clears in-flight permissions for the target orchestrator\'s agents only', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'copilot-cli', runtime: 'pty' }],
+        ['agent-b', { projectPath: '/p', cwd: '/p/b', orchestrator: 'claude-code', runtime: 'pty' }],
+      ]));
+      await applyDisabledForOrchestrator('copilot-cli');
+      expect(mockClearForAgent).toHaveBeenCalledWith('agent-a');
+      expect(mockClearForAgent).not.toHaveBeenCalledWith('agent-b');
+    });
+
+    it('does NOT globally disable the hook server (no setEnabled)', async () => {
+      // hook-server mock only exposes getPort — a call to setEnabled would throw.
+      mockGetAllRegistrations.mockReturnValue(new Map());
+      await expect(applyDisabledForOrchestrator('claude-code')).resolves.toEqual([]);
     });
 
     it('broadcasts agents-need-restart with the affected agentIds', async () => {
       mockGetAllRegistrations.mockReturnValue(new Map([
         ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
       ]));
-      await applyDisabled();
+      await applyDisabledForOrchestrator('claude-code');
       expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
         'hook-server:agents-need-restart',
         { reason: 'disabled', agentIds: ['agent-a'] },
@@ -109,8 +103,10 @@ describe('hook-server-toggle', () => {
     });
 
     it('does not broadcast when no agents were affected', async () => {
-      mockGetAllRegistrations.mockReturnValue(new Map());
-      await applyDisabled();
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['agent-b', { projectPath: '/p', cwd: '/p/b', orchestrator: 'claude-code', runtime: 'pty' }],
+      ]));
+      await applyDisabledForOrchestrator('copilot-cli');
       expect(mockBroadcastToAllWindows).not.toHaveBeenCalled();
     });
 
@@ -120,13 +116,12 @@ describe('hook-server-toggle', () => {
         ['agent-b', { projectPath: '/p', cwd: '/p/b', orchestrator: 'claude-code', runtime: 'pty' }],
       ]));
       mockRestoreForAgent.mockImplementationOnce(() => Promise.reject(new Error('disk failure')));
-      const affected = await applyDisabled();
-      // First failed, second succeeded — only the second is reported
+      const affected = await applyDisabledForOrchestrator('claude-code');
       expect(affected).toEqual(['agent-b']);
     });
   });
 
-  describe('applyEnabled', () => {
+  describe('applyEnabledForOrchestrator', () => {
     const mockProvider = {
       id: 'claude-code',
       writeHooksConfig: vi.fn(() => Promise.resolve()),
@@ -139,10 +134,35 @@ describe('hook-server-toggle', () => {
       mockGetHooksConfigPath.mockReturnValue('/p/a/.claude/settings.local.json');
     });
 
-    it('flips the hook server on', async () => {
-      mockGetAllRegistrations.mockReturnValue(new Map());
-      await applyEnabled();
-      expect(mockSetEnabled).toHaveBeenCalledWith(true);
+    it('re-injects hooks only for the target orchestrator\'s agents with a known cwd', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
+        ['agent-b', { projectPath: '/p', cwd: '/p/b', orchestrator: 'copilot-cli', runtime: 'pty' }],
+      ]));
+      const affected = await applyEnabledForOrchestrator('claude-code');
+      expect(mockProvider.writeHooksConfig).toHaveBeenCalledWith('/p/a', 'http://127.0.0.1:12345/hook');
+      expect(mockProvider.writeHooksConfig).not.toHaveBeenCalledWith('/p/b', expect.anything());
+      expect(affected).toEqual(['agent-a']);
+    });
+
+    it('returns early for an unknown provider', async () => {
+      mockGetProvider.mockReturnValue(undefined);
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'mystery', runtime: 'pty' }],
+      ]));
+      const affected = await applyEnabledForOrchestrator('mystery');
+      expect(affected).toEqual([]);
+      expect(mockProvider.writeHooksConfig).not.toHaveBeenCalled();
+    });
+
+    it('returns early for a non-hook-capable provider', async () => {
+      mockIsHookCapable.mockReturnValue(false);
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
+      ]));
+      const affected = await applyEnabledForOrchestrator('claude-code');
+      expect(affected).toEqual([]);
+      expect(mockProvider.writeHooksConfig).not.toHaveBeenCalled();
     });
 
     it('skips re-injection when the server port is 0 (server not started)', async () => {
@@ -150,27 +170,16 @@ describe('hook-server-toggle', () => {
       mockGetAllRegistrations.mockReturnValue(new Map([
         ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
       ]));
-      const affected = await applyEnabled();
+      const affected = await applyEnabledForOrchestrator('claude-code');
       expect(affected).toEqual([]);
       expect(mockProvider.writeHooksConfig).not.toHaveBeenCalled();
-    });
-
-    it('re-injects hooks for each running agent with a known cwd', async () => {
-      mockGetAllRegistrations.mockReturnValue(new Map([
-        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
-        ['agent-b', { projectPath: '/p', cwd: '/p/b', orchestrator: 'claude-code', runtime: 'pty' }],
-      ]));
-      const affected = await applyEnabled();
-      expect(mockProvider.writeHooksConfig).toHaveBeenCalledWith('/p/a', 'http://127.0.0.1:12345/hook');
-      expect(mockProvider.writeHooksConfig).toHaveBeenCalledWith('/p/b', 'http://127.0.0.1:12345/hook');
-      expect(affected).toEqual(['agent-a', 'agent-b']);
     });
 
     it('skips agents with unknown cwd (legacy registrations)', async () => {
       mockGetAllRegistrations.mockReturnValue(new Map([
         ['agent-legacy', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'pty' }],
       ]));
-      const affected = await applyEnabled();
+      const affected = await applyEnabledForOrchestrator('claude-code');
       expect(mockProvider.writeHooksConfig).not.toHaveBeenCalled();
       expect(affected).toEqual([]);
     });
@@ -179,7 +188,7 @@ describe('hook-server-toggle', () => {
       mockGetAllRegistrations.mockReturnValue(new Map([
         ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
       ]));
-      await applyEnabled();
+      await applyEnabledForOrchestrator('claude-code');
       expect(mockSnapshotFile).toHaveBeenCalledWith('agent-a', '/p/a/.claude/settings.local.json');
     });
 
@@ -187,35 +196,34 @@ describe('hook-server-toggle', () => {
       mockGetAllRegistrations.mockReturnValue(new Map([
         ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
       ]));
-      await applyEnabled();
+      await applyEnabledForOrchestrator('claude-code');
       expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
         'hook-server:agents-need-restart',
         { reason: 'enabled', agentIds: ['agent-a'] },
       );
     });
+  });
 
-    it('skips providers that are not hook-capable', async () => {
-      mockIsHookCapable.mockReturnValue(false);
+  describe('onOrchestratorHookServerChanged', () => {
+    const mockProvider = { id: 'claude-code', writeHooksConfig: vi.fn(() => Promise.resolve()) };
+
+    it('routes enabled=true to applyEnabledForOrchestrator', async () => {
+      mockGetProvider.mockReturnValue(mockProvider);
+      mockIsHookCapable.mockReturnValue(true);
+      mockGetHooksConfigPath.mockReturnValue('/p/a/.claude/settings.local.json');
       mockGetAllRegistrations.mockReturnValue(new Map([
         ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
       ]));
-      const affected = await applyEnabled();
-      expect(mockProvider.writeHooksConfig).not.toHaveBeenCalled();
-      expect(affected).toEqual([]);
-    });
-  });
-
-  describe('onHookServerSettingsChanged', () => {
-    it('routes enabled=true to applyEnabled', async () => {
-      mockGetAllRegistrations.mockReturnValue(new Map());
-      await onHookServerSettingsChanged({ enabled: true });
-      expect(mockSetEnabled).toHaveBeenCalledWith(true);
+      await onOrchestratorHookServerChanged('claude-code', true);
+      expect(mockProvider.writeHooksConfig).toHaveBeenCalled();
     });
 
-    it('routes enabled=false to applyDisabled', async () => {
-      mockGetAllRegistrations.mockReturnValue(new Map());
-      await onHookServerSettingsChanged({ enabled: false });
-      expect(mockSetEnabled).toHaveBeenCalledWith(false);
+    it('routes enabled=false to applyDisabledForOrchestrator', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
+      ]));
+      await onOrchestratorHookServerChanged('claude-code', false);
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-a');
     });
   });
 });

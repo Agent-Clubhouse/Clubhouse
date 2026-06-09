@@ -208,6 +208,13 @@ vi.mock('../orchestrators', () => ({
   isAgentFileCapable: vi.fn((p: any) => typeof p.buildAgentFileArgs === 'function'),
 }));
 
+// Per-orchestrator hook server gating. Defaults to enabled so existing
+// injection assertions hold; individual tests override it to exercise the gate.
+const mockIsHookServerEnabled = vi.fn(() => true);
+vi.mock('./orchestrator-settings', () => ({
+  isHookServerEnabled: (...args: unknown[]) => mockIsHookServerEnabled(...(args as [])),
+}));
+
 import {
   resolveOrchestrator,
   spawnAgent,
@@ -340,6 +347,17 @@ describe('agent-system', () => {
         '/project',
         'http://127.0.0.1:12345/hook'
       );
+    });
+
+    it('does NOT write hooks config when the orchestrator hook server is disabled', async () => {
+      mockIsHookServerEnabled.mockReturnValueOnce(false);
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+      expect(mockProvider.writeHooksConfig).not.toHaveBeenCalled();
     });
 
     it('generates and tracks a nonce per spawn', async () => {
