@@ -38,7 +38,7 @@ export function settingsChannels(key: string) {
 // Concrete definitions — importable from both main and renderer
 // ---------------------------------------------------------------------------
 
-import type { ClipboardSettings, EditorSettings, HookServerSettings, McpSettings, SecuritySettings } from './types';
+import type { ClipboardSettings, EditorSettings, McpSettings, SecuritySettings } from './types';
 
 export const CLIPBOARD_SETTINGS: SettingsDefinition<ClipboardSettings> = {
   key: 'clipboard',
@@ -62,10 +62,4 @@ export const SECURITY_SETTINGS: SettingsDefinition<SecuritySettings> = {
   key: 'security',
   filename: 'security-settings.json',
   defaults: { allowLocalFileWebviews: false },
-};
-
-export const HOOK_SERVER_SETTINGS: SettingsDefinition<HookServerSettings> = {
-  key: 'hook-server',
-  filename: 'hook-server-settings.json',
-  defaults: { enabled: true },
 };

@@ -8,9 +8,19 @@ export interface OrchestratorSettings {
   enabled: string[];
   /** Per-provider default execution mode preference */
   defaultExecutionMode?: Partial<Record<string, AgentExecutionMode>>;
+  /**
+   * Per-provider opt-in/out of the hook server (permission requests, tool
+   * observability).  App-level only.  An absent entry resolves to the default
+   * via {@link resolveHookServerEnabled}: on for Claude Code, off for every
+   * other orchestrator (until their hook integration is better tested).
+   */
+  hookServerEnabled?: Partial<Record<string, boolean>>;
   /** Set to true after first-run auto-detection has completed */
   autoDetected?: boolean;
 }
+
+/** The only orchestrator whose hook server defaults to ON when unset. */
+export const DEFAULT_HOOK_SERVER_ORCHESTRATOR = 'claude-code';
 
 const SETTINGS_FILENAME = 'orchestrator-settings.json';
 
@@ -20,6 +30,44 @@ const store = createSettingsStore<OrchestratorSettings>(SETTINGS_FILENAME, {
 
 export const getSettings = store.get;
 export const saveSettings = store.save;
+/** Read-modify-write merge so partial saves never clobber sibling fields. */
+export const updateSettings = store.update;
+
+/**
+ * Resolve whether the hook server is enabled for an orchestrator, applying the
+ * default when no explicit preference is stored: ON for Claude Code, OFF for
+ * everything else.
+ */
+export function resolveHookServerEnabled(
+  settings: OrchestratorSettings,
+  orchestratorId: string,
+): boolean {
+  const explicit = settings.hookServerEnabled?.[orchestratorId];
+  if (explicit !== undefined) return explicit;
+  return orchestratorId === DEFAULT_HOOK_SERVER_ORCHESTRATOR;
+}
+
+/** Convenience: resolve the hook server preference from the persisted store. */
+export function isHookServerEnabled(orchestratorId: string): boolean {
+  return resolveHookServerEnabled(store.get(), orchestratorId);
+}
+
+/**
+ * Persist the per-orchestrator hook server preference (merging into existing
+ * settings) and return the updated settings object.
+ */
+export function setHookServerEnabled(
+  orchestratorId: string,
+  enabled: boolean,
+): Promise<OrchestratorSettings> {
+  return store.update((current) => ({
+    ...current,
+    hookServerEnabled: {
+      ...current.hookServerEnabled,
+      [orchestratorId]: enabled,
+    },
+  }));
+}
 
 /**
  * One-time auto-detection of available orchestrators.

@@ -2,12 +2,20 @@ import { create } from 'zustand';
 import type { ProviderCapabilities, OrchestratorInfo } from '../../shared/types';
 import { optimisticUpdate } from './optimistic-update';
 
+/** The only orchestrator whose hook server defaults to ON when unset. */
+export const DEFAULT_HOOK_SERVER_ORCHESTRATOR = 'claude-code';
+
 interface OrchestratorState {
   enabled: string[];
   allOrchestrators: OrchestratorInfo[];
   availability: Record<string, { available: boolean; error?: string }>;
+  /** Explicit per-orchestrator hook server preferences (absent ⇒ use default). */
+  hookServerEnabled: Record<string, boolean>;
   loadSettings: () => Promise<void>;
   setEnabled: (id: string, enabled: boolean) => Promise<void>;
+  /** Resolve the effective hook server state for an orchestrator (applies default). */
+  isHookServerEnabled: (id: string) => boolean;
+  setHookServerEnabled: (id: string, enabled: boolean) => Promise<void>;
   checkAllAvailability: () => Promise<void>;
   getCapabilities: (orchestratorId: string) => ProviderCapabilities | undefined;
 }
@@ -16,6 +24,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   enabled: ['claude-code'],
   allOrchestrators: [],
   availability: {},
+  hookServerEnabled: {},
 
   loadSettings: async () => {
     try {
@@ -25,6 +34,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       ]);
       set({
         enabled: settings?.enabled ?? ['claude-code'],
+        hookServerEnabled: settings?.hookServerEnabled ?? {},
         allOrchestrators: Array.isArray(orchestrators) ? orchestrators : [],
       });
     } catch {
@@ -49,6 +59,20 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
     await optimisticUpdate(set, get,
       { enabled: next },
       () => window.clubhouse.app.saveOrchestratorSettings({ enabled: next }),
+    );
+  },
+
+  isHookServerEnabled: (id) => {
+    const explicit = get().hookServerEnabled[id];
+    if (explicit !== undefined) return explicit;
+    return id === DEFAULT_HOOK_SERVER_ORCHESTRATOR;
+  },
+
+  setHookServerEnabled: async (id, enabled) => {
+    const next = { ...get().hookServerEnabled, [id]: enabled };
+    await optimisticUpdate(set, get,
+      { hookServerEnabled: next },
+      () => window.clubhouse.app.setOrchestratorHookServer(id, enabled),
     );
   },
 

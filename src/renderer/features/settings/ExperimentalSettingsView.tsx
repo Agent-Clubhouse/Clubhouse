@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
-import { useHookServerSettingsStore } from '../../stores/hookServerSettingsStore';
 
 /** Feature definitions for the experimental settings page. */
 const EXPERIMENTAL_FEATURES: Array<{
@@ -39,27 +38,17 @@ export function ExperimentalSettingsView() {
   const [settings, setSettings] = useState<Record<string, boolean>>({});
   const [loaded, setLoaded] = useState(false);
 
-  const hookServerEnabled = useHookServerSettingsStore((s) => s.enabled);
-  const hookServerLoaded = useHookServerSettingsStore((s) => s.loaded);
-  const loadHookServerSettings = useHookServerSettingsStore((s) => s.loadSettings);
-  const saveHookServerSettings = useHookServerSettingsStore((s) => s.saveSettings);
-
   useEffect(() => {
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setSettings(s);
       setLoaded(true);
     });
-    if (!hookServerLoaded) void loadHookServerSettings();
-  }, [hookServerLoaded, loadHookServerSettings]);
+  }, []);
 
   const handleToggle = async (id: string, enabled: boolean) => {
     const updated = { ...settings, [id]: enabled };
     setSettings(updated);
     await window.clubhouse.app.saveExperimentalSettings(updated);
-  };
-
-  const handleHookServerToggle = (enabled: boolean) => {
-    void saveHookServerSettings({ enabled });
   };
 
   const handleRestart = () => {
@@ -100,31 +89,6 @@ export function ExperimentalSettingsView() {
               />
             </div>
           ))}
-        </div>
-
-        {/* Diagnostics — escape hatches for stuck states.  Not experimental
-            in the "may be removed" sense, but lives here because the user
-            audience overlaps and the section is already labelled advanced. */}
-        <div className="space-y-3 mb-6 border-t border-surface-0 pt-4">
-          <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Diagnostics</h3>
-          <div className="flex items-center justify-between py-2">
-            <div className="pr-4">
-              <div className="text-sm text-ctp-text font-medium">Hook server</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">
-                Receives orchestrator hook callbacks (permission requests, tool
-                events). Disabling is the durable escape hatch when an
-                orchestrator's hook integration gets stuck — Clubhouse-injected
-                hooks are stripped from running agents and the server returns
-                fast 200s. Running agents need to be restarted before changes
-                take full effect; permission request and observability features
-                are unavailable while disabled.
-              </div>
-            </div>
-            <Toggle
-              checked={hookServerEnabled}
-              onChange={handleHookServerToggle}
-            />
-          </div>
         </div>
 
         {/* Restart button */}
