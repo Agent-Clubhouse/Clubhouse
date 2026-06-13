@@ -198,6 +198,19 @@ vi.mock('./stores/notificationStore', () => ({
       })),
     },
   ),
+  isAgentVisible: vi.fn(() => false),
+}));
+
+vi.mock('./stores/toastStore', () => ({
+  useToastStore: Object.assign(
+    vi.fn(),
+    {
+      getState: vi.fn(() => ({
+        addToast: vi.fn(),
+        removeToast: vi.fn(),
+      })),
+    },
+  ),
 }));
 
 vi.mock('./stores/quickAgentStore', () => ({
@@ -288,6 +301,8 @@ import { initAppEventBridge } from './app-event-bridge';
 import { useAgentStore } from './stores/agentStore';
 import { useProjectStore } from './stores/projectStore';
 import { useUIStore } from './stores/uiStore';
+import { isAgentVisible } from './stores/notificationStore';
+import { useToastStore } from './stores/toastStore';
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -480,6 +495,111 @@ describe('initAppEventBridge', () => {
     }
 
     expect(mockPlaySound).not.toHaveBeenCalled();
+  });
+
+  it('shows toast notification when agent emits notification event and agent is not visible', () => {
+    const agent = createAgent('a1', 'proj-1');
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: agent },
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const mockAddToast = vi.fn();
+    vi.mocked(useToastStore.getState).mockReturnValue({
+      addToast: mockAddToast,
+      removeToast: vi.fn(),
+      toasts: [],
+    } as any);
+
+    vi.mocked(isAgentVisible).mockReturnValue(false);
+
+    const hookCallback = vi.mocked(window.clubhouse.agent.onHookEvent).mock.calls[0][0];
+    hookCallback('a1', {
+      kind: 'notification',
+      message: 'Agent completed successfully',
+      timestamp: Date.now(),
+    });
+
+    expect(mockAddToast).toHaveBeenCalledWith('Agent completed successfully', 'info');
+  });
+
+  it('does not show toast when agent is visible and emits notification event', () => {
+    const agent = createAgent('a1', 'proj-1');
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: agent },
+      activeAgentId: 'a1',
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const mockAddToast = vi.fn();
+    vi.mocked(useToastStore.getState).mockReturnValue({
+      addToast: mockAddToast,
+      removeToast: vi.fn(),
+      toasts: [],
+    } as any);
+
+    vi.mocked(isAgentVisible).mockReturnValue(true);
+
+    const hookCallback = vi.mocked(window.clubhouse.agent.onHookEvent).mock.calls[0][0];
+    hookCallback('a1', {
+      kind: 'notification',
+      message: 'Agent is still running',
+      timestamp: Date.now(),
+    });
+
+    expect(mockAddToast).not.toHaveBeenCalled();
+  });
+
+  it('does not show toast when notification event has no message', () => {
+    const agent = createAgent('a1', 'proj-1');
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: agent },
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const mockAddToast = vi.fn();
+    vi.mocked(useToastStore.getState).mockReturnValue({
+      addToast: mockAddToast,
+      removeToast: vi.fn(),
+      toasts: [],
+    } as any);
+
+    const hookCallback = vi.mocked(window.clubhouse.agent.onHookEvent).mock.calls[0][0];
+    hookCallback('a1', {
+      kind: 'notification',
+      timestamp: Date.now(),
+    });
+
+    expect(mockAddToast).not.toHaveBeenCalled();
   });
 
 });
