@@ -29,4 +29,10 @@ describe('forge.config.ts macOS plist entries', () => {
   it('sets packagerConfig name to Clubhouse', () => {
     expect(configSource).toMatch(/name:\s*'Clubhouse'/);
   });
+
+  it('registers the clubhouse:// custom URL scheme via CFBundleURLTypes', () => {
+    expect(configSource).toContain('CFBundleURLTypes');
+    expect(configSource).toContain('CFBundleURLSchemes');
+    expect(configSource).toContain("'clubhouse'");
+  });
 });

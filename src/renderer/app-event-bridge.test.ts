@@ -29,6 +29,7 @@ const mockRemovers = {
   onSatellitesChanged: vi.fn(),
   onDiscoveredChanged: vi.fn(),
   onSatelliteEvent: vi.fn(),
+  onProtocolAction: vi.fn(),
 };
 
 vi.stubGlobal('window', {
@@ -37,6 +38,8 @@ vi.stubGlobal('window', {
       onOpenSettings: vi.fn(() => mockRemovers.onOpenSettings),
       onOpenAbout: vi.fn(() => mockRemovers.onOpenAbout),
       onNotificationClicked: vi.fn(() => mockRemovers.onNotificationClicked),
+      onProtocolAction: vi.fn(() => mockRemovers.onProtocolAction),
+      getPendingProtocolAction: vi.fn(() => Promise.resolve(null)),
     },
     window: {
       isPopout: vi.fn(() => false),
@@ -188,6 +191,24 @@ vi.mock('./stores/uiStore', () => ({
   ),
 }));
 
+vi.mock('./stores/toastStore', () => ({
+  useToastStore: Object.assign(
+    vi.fn(),
+    {
+      getState: vi.fn(() => ({
+        addToast: vi.fn(),
+        removeToast: vi.fn(),
+      })),
+    },
+  ),
+}));
+
+vi.mock('./plugins/builtin/files/state', () => ({
+  fileState: {
+    openTab: vi.fn(),
+  },
+}));
+
 vi.mock('./stores/notificationStore', () => ({
   useNotificationStore: Object.assign(
     vi.fn(),
@@ -199,18 +220,6 @@ vi.mock('./stores/notificationStore', () => ({
     },
   ),
   isAgentVisible: vi.fn(() => false),
-}));
-
-vi.mock('./stores/toastStore', () => ({
-  useToastStore: Object.assign(
-    vi.fn(),
-    {
-      getState: vi.fn(() => ({
-        addToast: vi.fn(),
-        removeToast: vi.fn(),
-      })),
-    },
-  ),
 }));
 
 vi.mock('./stores/quickAgentStore', () => ({
@@ -297,12 +306,13 @@ vi.mock('./stores/soundStore', () => ({
   ),
 }));
 
-import { initAppEventBridge } from './app-event-bridge';
+import { initAppEventBridge, handleProtocolAction } from './app-event-bridge';
 import { useAgentStore } from './stores/agentStore';
 import { useProjectStore } from './stores/projectStore';
 import { useUIStore } from './stores/uiStore';
 import { isAgentVisible } from './stores/notificationStore';
 import { useToastStore } from './stores/toastStore';
+import { fileState } from './plugins/builtin/files/state';
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -602,4 +612,75 @@ describe('initAppEventBridge', () => {
     expect(mockAddToast).not.toHaveBeenCalled();
   });
 
+  it('registers the protocol action listener and pulls any pending action', () => {
+    expect(window.clubhouse.app.onProtocolAction).toHaveBeenCalled();
+    expect(window.clubhouse.app.getPendingProtocolAction).toHaveBeenCalled();
+  });
+
+});
+
+describe('handleProtocolAction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('open-file activates the project, switches to the files tab, and opens the file', () => {
+    vi.useFakeTimers();
+    try {
+      const setActiveProject = vi.fn();
+      const setExplorerTab = vi.fn();
+      vi.mocked(useProjectStore.getState).mockReturnValue({ setActiveProject } as never);
+      vi.mocked(useUIStore.getState).mockReturnValue({ setExplorerTab } as never);
+
+      handleProtocolAction({ kind: 'open-file', projectId: 'p1', relativePath: 'src/a.ts' });
+
+      expect(setActiveProject).toHaveBeenCalledWith('p1');
+      expect(setExplorerTab).toHaveBeenCalledWith('plugin:files', 'p1');
+      // openTab is deferred to let the files panel mount
+      expect(fileState.openTab).not.toHaveBeenCalled();
+      vi.runAllTimers();
+      expect(fileState.openTab).toHaveBeenCalledWith('src/a.ts', { preview: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('open-folder adds the project then switches to its files tab', async () => {
+    const project = { id: 'p2', name: 'beta', path: '/tmp/beta' };
+    const addProject = vi.fn().mockResolvedValue(project);
+    const setExplorerTab = vi.fn();
+    vi.mocked(useProjectStore.getState).mockReturnValue({ addProject } as never);
+    vi.mocked(useUIStore.getState).mockReturnValue({ setExplorerTab } as never);
+
+    handleProtocolAction({ kind: 'open-folder', folderPath: '/tmp/beta' });
+
+    expect(addProject).toHaveBeenCalledWith('/tmp/beta');
+    // Flush the addProject promise chain
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(setExplorerTab).toHaveBeenCalledWith('plugin:files', 'p2');
+  });
+
+  it('open-folder shows an error toast when adding the project fails', async () => {
+    const addProject = vi.fn().mockRejectedValue(new Error('nope'));
+    const addToast = vi.fn();
+    vi.mocked(useProjectStore.getState).mockReturnValue({ addProject } as never);
+    vi.mocked(useToastStore.getState).mockReturnValue({ addToast } as never);
+
+    handleProtocolAction({ kind: 'open-folder', folderPath: '/tmp/beta' });
+
+    // Flush the addProject rejection chain
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(addToast).toHaveBeenCalledWith('Failed to open folder as a project', 'error');
+  });
+
+  it('open-file-not-found shows an error toast naming the file', () => {
+    const addToast = vi.fn();
+    vi.mocked(useToastStore.getState).mockReturnValue({ addToast } as never);
+
+    handleProtocolAction({ kind: 'open-file-not-found', filePath: '/x/y.ts' });
+
+    expect(addToast).toHaveBeenCalledWith('No open project contains /x/y.ts', 'error');
+  });
 });

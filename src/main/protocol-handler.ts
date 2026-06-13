@@ -14,7 +14,9 @@
  */
 
 import * as path from 'path';
-import { Project } from '../shared/types';
+import { Project, ResolvedProtocolAction } from '../shared/types';
+
+export type { ResolvedProtocolAction };
 
 /** The OS-level scheme the app registers. */
 export const PROTOCOL_SCHEME = 'clubhouse';
@@ -22,16 +24,6 @@ export const PROTOCOL_SCHEME = 'clubhouse';
 /** A command parsed from a protocol URL, before resolution against projects. */
 export type ProtocolCommand =
   | { kind: 'open-file'; filePath: string }
-  | { kind: 'open-folder'; folderPath: string };
-
-/**
- * A fully-resolved action to dispatch to the renderer. For `open-file` we
- * resolve the owning project in the main process (where the canonical project
- * list and Node's `path` module live) so the renderer needs no path logic.
- */
-export type ResolvedProtocolAction =
-  | { kind: 'open-file'; projectId: string; relativePath: string }
-  | { kind: 'open-file-not-found'; filePath: string }
   | { kind: 'open-folder'; folderPath: string };
 
 /**
@@ -149,4 +141,17 @@ export function resolveProtocolCommand(
     return { kind: 'open-file-not-found', filePath: command.filePath };
   }
   return { kind: 'open-file', projectId: match.project.id, relativePath: match.relativePath };
+}
+
+/**
+ * Convenience: parse a URL and resolve it against the project list in one
+ * step. Returns null when the URL is not a valid, supported protocol link.
+ */
+export function resolveProtocolUrl(
+  url: string,
+  projects: readonly Project[],
+): ResolvedProtocolAction | null {
+  const command = parseProtocolUrl(url);
+  if (!command) return null;
+  return resolveProtocolCommand(command, projects);
 }

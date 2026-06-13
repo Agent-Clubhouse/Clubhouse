@@ -112,6 +112,9 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.PLUGIN_MCP.TOOL_CALL',
   'IPC.APP.RESUME_STATUS_UPDATE',
   'IPC.APP.DEV_SIMULATE_UPDATE_RESTART', // Dev-only: handler registered behind !app.isPackaged guard
+  // Protocol activation is pushed main→renderer via webContents.send when a
+  // clubhouse:// link is opened while the app is running (see protocol-service.ts).
+  'IPC.APP.PROTOCOL_ACTION',
 ]);
 
 /**

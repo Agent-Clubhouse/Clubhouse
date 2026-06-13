@@ -235,6 +235,11 @@ export const IPC = {
     CONFIRM_UPDATE_RESTART: 'app:confirm-update-restart',
     /** Dev-only: simulate update restart to test session resume flow */
     DEV_SIMULATE_UPDATE_RESTART: 'app:dev-simulate-update-restart',
+    // Custom protocol handler (clubhouse://)
+    /** main → renderer: a protocol link was activated while the app was running */
+    PROTOCOL_ACTION: 'app:protocol-action',
+    /** renderer → main: pull any protocol action queued before the renderer was ready */
+    GET_PENDING_PROTOCOL_ACTION: 'app:get-pending-protocol-action',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',

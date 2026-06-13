@@ -26,7 +26,8 @@ import { getProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
 import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
 import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore, getKnownProjectIds } from './plugins/builtin/canvas/main';
 import { applyCanvasMutation } from './plugins/builtin/canvas/canvas-sync';
-import type { AgentHookEvent, AgentStatus, HubMutation, CanvasMutation, SoundEvent } from '../shared/types';
+import type { AgentHookEvent, AgentStatus, HubMutation, CanvasMutation, SoundEvent, ResolvedProtocolAction } from '../shared/types';
+import { fileState } from './plugins/builtin/files/state';
 import { useSoundStore } from './stores/soundStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
 import { initAnnexListener } from './stores/annexStore';
@@ -652,6 +653,64 @@ let previousCleanup: (() => void) | null = null;
  * Returns a single cleanup function that tears everything down.
  * Safe to call multiple times — previous subscriptions are torn down first.
  */
+// ─── Custom Protocol (clubhouse://) ─────────────────────────────────────────
+
+/**
+ * Apply a resolved protocol activation dispatched from the main process:
+ *   - open-file: focus the owning project, switch to the file browser, and
+ *     open the file. The openTab is deferred so the files panel finishes
+ *     (re)mounting — and any previous panel finishes deactivating, which
+ *     resets fileState — before we set the active tab.
+ *   - open-folder: add the folder as a new project (which activates it) and
+ *     switch to its file browser.
+ *   - open-file-not-found: surface an error toast.
+ */
+export function handleProtocolAction(action: ResolvedProtocolAction): void {
+  switch (action.kind) {
+    case 'open-file': {
+      useProjectStore.getState().setActiveProject(action.projectId);
+      useUIStore.getState().setExplorerTab('plugin:files', action.projectId);
+      const { relativePath } = action;
+      setTimeout(() => {
+        fileState.openTab(relativePath, { preview: false });
+      }, 0);
+      break;
+    }
+    case 'open-folder': {
+      useProjectStore.getState().addProject(action.folderPath)
+        .then((project) => {
+          useUIStore.getState().setExplorerTab('plugin:files', project.id);
+        })
+        .catch(() => {
+          useToastStore.getState().addToast('Failed to open folder as a project', 'error');
+        });
+      break;
+    }
+    case 'open-file-not-found': {
+      useToastStore.getState().addToast(
+        `No open project contains ${action.filePath}`,
+        'error',
+      );
+      break;
+    }
+  }
+}
+
+function initProtocolActionListener(): () => void {
+  // Warm path: links activated while the app is running are pushed here.
+  const removeListener = window.clubhouse.app.onProtocolAction(handleProtocolAction);
+
+  // Cold start: a link may have launched the app before this listener existed.
+  // Pull any queued action and apply it.
+  window.clubhouse.app.getPendingProtocolAction()
+    .then((action) => {
+      if (action) handleProtocolAction(action);
+    })
+    .catch(() => { /* best-effort */ });
+
+  return removeListener;
+}
+
 export function initAppEventBridge(): () => void {
   // Tear down previous subscriptions to prevent accumulation on re-init
   previousCleanup?.();
@@ -684,6 +743,7 @@ export function initAppEventBridge(): () => void {
     }
   }));
   cleanups.push(initToolActivityListener());
+  cleanups.push(initProtocolActionListener());
 
   const teardown = () => {
     for (const cleanup of cleanups) {

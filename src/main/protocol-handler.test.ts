@@ -6,6 +6,7 @@ import {
   extractProtocolUrlFromArgv,
   findProjectForFile,
   resolveProtocolCommand,
+  resolveProtocolUrl,
 } from './protocol-handler';
 import { Project } from '../shared/types';
 
@@ -166,5 +167,27 @@ describe('resolveProtocolCommand', () => {
       projects,
     );
     expect(action).toEqual({ kind: 'open-file-not-found', filePath: '/somewhere/else/a.ts' });
+  });
+});
+
+describe('resolveProtocolUrl', () => {
+  const projects = [project('p1', '/Users/me/projects/alpha')];
+
+  it('parses and resolves an open-file URL in one step', () => {
+    const action = resolveProtocolUrl(
+      'clubhouse://open-file?path=/Users/me/projects/alpha/src/a.ts',
+      projects,
+    );
+    expect(action).toEqual({ kind: 'open-file', projectId: 'p1', relativePath: 'src/a.ts' });
+  });
+
+  it('parses and resolves an open-folder URL in one step', () => {
+    const action = resolveProtocolUrl('clubhouse://open-folder?path=/tmp/new', projects);
+    expect(action).toEqual({ kind: 'open-folder', folderPath: '/tmp/new' });
+  });
+
+  it('returns null for an invalid URL', () => {
+    expect(resolveProtocolUrl('https://example.com', projects)).toBeNull();
+    expect(resolveProtocolUrl('clubhouse://unknown?path=/x', projects)).toBeNull();
   });
 });
