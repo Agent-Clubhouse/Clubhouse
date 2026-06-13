@@ -459,6 +459,299 @@ describe('Provider integration tests', () => {
 
   });
 
+  describe('writeHooksConfig format', () => {
+    it('ClaudeCode: writes hooks in Claude Code format', async () => {
+      const provider = new ClaudeCodeProvider();
+      vi.mocked(fs.existsSync).mockImplementation((p) => isKnownBinary(p as string));
+
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
+      expect(written.hooks).toBeDefined();
+      // Claude Code uses PascalCase event names
+      expect(written.hooks.PreToolUse).toBeDefined();
+      expect(written.hooks.PostToolUse).toBeDefined();
+      expect(written.hooks.Stop).toBeDefined();
+      expect(written.hooks.Notification).toBeDefined();
+      expect(written.hooks.PermissionRequest).toBeDefined();
+    });
+
+    it('ClaudeCode: writes to .claude/settings.local.json', async () => {
+      const provider = new ClaudeCodeProvider();
+      vi.mocked(fs.existsSync).mockImplementation((p) => isKnownBinary(p as string));
+
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+
+      expect(fsp.writeFile).toHaveBeenCalledWith(
+        path.join('/project', '.claude', 'settings.local.json'),
+        expect.any(String),
+        'utf-8'
+      );
+    });
+
+    it('CopilotCli: writes hooks with version 1 wrapper and bash/timeoutSec properties', async () => {
+      const provider = new CopilotCliProvider();
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        return isKnownBinary(s) || s.includes('.github');
+      });
+
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
+      // Must have version 1 wrapper
+      expect(written.version).toBe(1);
+      expect(written.hooks).toBeDefined();
+      // Copilot uses camelCase event names
+      expect(written.hooks.preToolUse).toBeDefined();
+      expect(written.hooks.postToolUse).toBeDefined();
+      expect(written.hooks.errorOccurred).toBeDefined();
+      // Flat array per event, uses type/bash/timeoutSec (not command/timeout)
+      const entry = written.hooks.preToolUse[0];
+      expect(entry.type).toBe('command');
+      expect(entry.bash).toBeDefined();
+      expect(entry.timeoutSec).toBe(5);
+      expect(entry.command).toBeUndefined();
+      expect(entry.timeout).toBeUndefined();
+      expect(entry.async).toBeUndefined();
+      // Each event type encodes its name in the URL path
+      expect(entry.bash).toContain('/preToolUse');
+      const postEntry = written.hooks.postToolUse[0];
+      expect(postEntry.bash).toContain('/postToolUse');
+      const errEntry = written.hooks.errorOccurred[0];
+      expect(errEntry.bash).toContain('/errorOccurred');
+    });
+
+    it('CopilotCli: writes to .github/hooks/hooks.json', async () => {
+      const provider = new CopilotCliProvider();
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        return isKnownBinary(s) || s.includes('.github');
+      });
+
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+
+      expect(fsp.writeFile).toHaveBeenCalledWith(
+        path.join('/project', '.github', 'hooks', 'hooks.json'),
+        expect.any(String),
+        'utf-8'
+      );
+    });
+
+    it('CodexCli: implements HookCapable (writeHooksConfig)', () => {
+      const provider = new CodexCliProvider();
+      expect(typeof (provider as any).writeHooksConfig).toBe('function');
+    });
+
+    it('CodexCli: implements buildMcpArgs for CLI-arg MCP injection', () => {
+      const provider = new CodexCliProvider();
+      expect(typeof provider.buildMcpArgs).toBe('function');
+      const args = provider.buildMcpArgs({
+        command: 'node',
+        args: ['/bridge.js'],
+        env: { CLUBHOUSE_MCP_PORT: '12345' },
+      });
+      expect(args.length).toBeGreaterThan(0);
+      expect(args).toContain('-c');
+      expect(args.some(a => a.includes('mcp_servers.clubhouse'))).toBe(true);
+    });
+
+  });
+
+  describe('getDefaultPermissions', () => {
+    it('ClaudeCode quick agents get file tools', () => {
+      const provider = new ClaudeCodeProvider();
+      const perms = provider.getDefaultPermissions('quick');
+      expect(perms).toContain('Read');
+      expect(perms).toContain('Write');
+      expect(perms).toContain('Edit');
+      expect(perms).toContain('Glob');
+      expect(perms).toContain('Grep');
+    });
+
+    it('CopilotCli quick agents get lowercase Copilot CLI tool names', () => {
+      const provider = new CopilotCliProvider();
+      const perms = provider.getDefaultPermissions('quick');
+      expect(perms).toContain('read');
+      expect(perms).toContain('edit');
+      expect(perms).toContain('search');
+      expect(perms).toContain('shell(git:*)');
+      expect(perms).not.toContain('Read');
+      expect(perms).not.toContain('Write');
+      expect(perms).not.toContain('Glob');
+      expect(perms).not.toContain('Grep');
+    });
+
+    it('CopilotCli durable agents get shell-scoped permissions', () => {
+      const provider = new CopilotCliProvider();
+      const perms = provider.getDefaultPermissions('durable');
+      expect(perms).toContain('shell(git:*)');
+      expect(perms).toContain('shell(npm:*)');
+      expect(perms).toContain('shell(npx:*)');
+      expect(perms).not.toContain('Bash(git:*)');
+    });
+
+    it('CodexCli durable agents get shell-scoped permissions', () => {
+      const provider = new CodexCliProvider();
+      const perms = provider.getDefaultPermissions('durable');
+      expect(perms).toContain('shell(git:*)');
+      expect(perms).toContain('shell(npm:*)');
+      expect(perms).toContain('shell(npx:*)');
+      expect(perms).not.toContain('apply_patch');
+    });
+
+    it('CodexCli quick agents get shell and apply_patch permissions', () => {
+      const provider = new CodexCliProvider();
+      const perms = provider.getDefaultPermissions('quick');
+      expect(perms).toContain('shell(*)');
+      expect(perms).toContain('apply_patch');
+      expect(perms).toContain('shell(git:*)');
+    });
+
+  });
+
+  describe('parseHookEvent normalization', () => {
+    it('ClaudeCode: normalizes PascalCase events', () => {
+      const provider = new ClaudeCodeProvider();
+      expect(provider.parseHookEvent({ hook_event_name: 'PreToolUse', tool_name: 'Bash' })?.kind).toBe('pre_tool');
+      expect(provider.parseHookEvent({ hook_event_name: 'PostToolUse' })?.kind).toBe('post_tool');
+      expect(provider.parseHookEvent({ hook_event_name: 'PostToolUseFailure' })?.kind).toBe('tool_error');
+      expect(provider.parseHookEvent({ hook_event_name: 'Stop' })?.kind).toBe('stop');
+      expect(provider.parseHookEvent({ hook_event_name: 'Notification' })?.kind).toBe('notification');
+      expect(provider.parseHookEvent({ hook_event_name: 'PermissionRequest' })?.kind).toBe('permission_request');
+    });
+
+    it('CopilotCli: normalizes camelCase events', () => {
+      const provider = new CopilotCliProvider();
+      expect(provider.parseHookEvent({ hook_event_name: 'preToolUse', tool_name: 'shell' })?.kind).toBe('pre_tool');
+      expect(provider.parseHookEvent({ hook_event_name: 'postToolUse' })?.kind).toBe('post_tool');
+      expect(provider.parseHookEvent({ hook_event_name: 'errorOccurred' })?.kind).toBe('tool_error');
+      expect(provider.parseHookEvent({ hook_event_name: 'sessionEnd' })?.kind).toBe('stop');
+    });
+
+    it('CopilotCli: handles camelCase tool fields (toolName, toolArgs)', () => {
+      const provider = new CopilotCliProvider();
+      const event = provider.parseHookEvent({
+        hook_event_name: 'preToolUse',
+        toolName: 'shell',
+        toolArgs: '{"command": "git status"}',
+      });
+      expect(event).not.toBeNull();
+      expect(event!.toolName).toBe('shell');
+      expect(event!.toolInput).toEqual({ command: 'git status' });
+    });
+
+    it('CopilotCli: handles snake_case tool fields as fallback', () => {
+      const provider = new CopilotCliProvider();
+      const event = provider.parseHookEvent({
+        hook_event_name: 'preToolUse',
+        tool_name: 'read',
+        tool_input: { path: '/foo' },
+      });
+      expect(event).not.toBeNull();
+      expect(event!.toolName).toBe('read');
+      expect(event!.toolInput).toEqual({ path: '/foo' });
+    });
+
+    it('CodexCli: implements HookCapable (parseHookEvent)', () => {
+      const provider = new CodexCliProvider();
+      expect(typeof (provider as any).parseHookEvent).toBe('function');
+      const event = provider.parseHookEvent({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'shell',
+      });
+      expect(event).not.toBeNull();
+      expect(event!.kind).toBe('pre_tool');
+    });
+
+    it('hook-capable providers return null for unknown event', () => {
+      const hookProviders = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider()];
+      for (const p of hookProviders) {
+        expect(p.parseHookEvent(null)).toBeNull();
+        expect(p.parseHookEvent('not-object')).toBeNull();
+      }
+      // Claude and Copilot return null for unknown hook_event_name
+      expect(new ClaudeCodeProvider().parseHookEvent({ hook_event_name: 'Unknown' })).toBeNull();
+      expect(new CopilotCliProvider().parseHookEvent({ hook_event_name: 'Unknown' })).toBeNull();
+    });
+  });
+
+  describe('provider conventions match expected directory structure', () => {
+    it('ClaudeCode uses .claude/', () => {
+      const provider = new ClaudeCodeProvider();
+      expect(provider.conventions.configDir).toBe('.claude');
+      expect(provider.conventions.localInstructionsFile).toBe('CLAUDE.md');
+      expect(provider.conventions.legacyInstructionsFile).toBe('CLAUDE.md');
+      expect(provider.conventions.mcpConfigFile).toBe('.mcp.json');
+      expect(provider.conventions.skillsDir).toBe('skills');
+      expect(provider.conventions.agentTemplatesDir).toBe('agents');
+      expect(provider.conventions.localSettingsFile).toBe('settings.local.json');
+    });
+
+    it('CopilotCli uses .github/', () => {
+      const provider = new CopilotCliProvider();
+      expect(provider.conventions.configDir).toBe('.github');
+      expect(provider.conventions.localInstructionsFile).toBe('copilot-instructions.md');
+      expect(provider.conventions.mcpConfigFile).toBe('.github/mcp.json');
+      expect(provider.conventions.localSettingsFile).toBe('hooks/hooks.json');
+    });
+
+    it('CodexCli uses .codex/ with AGENTS.md', () => {
+      const provider = new CodexCliProvider();
+      expect(provider.conventions.configDir).toBe('.codex');
+      expect(provider.conventions.localInstructionsFile).toBe('AGENTS.md');
+      expect(provider.conventions.legacyInstructionsFile).toBe('AGENTS.md');
+      expect(provider.conventions.mcpConfigFile).toBe('.codex/config.toml');
+      expect(provider.conventions.localSettingsFile).toBe('config.toml');
+    });
+
+  });
+
+  describe('getCapabilities', () => {
+    it('ClaudeCode: all capabilities enabled', () => {
+      const caps = new ClaudeCodeProvider().getCapabilities();
+      expect(caps).toEqual({
+        headless: true,
+        structuredOutput: true,
+        hooks: true,
+        sessionResume: true,
+        permissions: true,
+        structuredMode: true,
+        structuredProtocol: 'acp',
+      });
+    });
+
+    it('CopilotCli: has structuredOutput', () => {
+      const caps = new CopilotCliProvider().getCapabilities();
+      expect(caps.headless).toBe(true);
+      expect(caps.structuredOutput).toBe(true);
+      expect(caps.hooks).toBe(true);
+      expect(caps.sessionResume).toBe(true);
+      expect(caps.permissions).toBe(true);
+    });
+
+    it('CodexCli: headless, hooks, permissions, and structuredMode, no structuredOutput', () => {
+      const caps = new CodexCliProvider().getCapabilities();
+      expect(caps.headless).toBe(true);
+      expect(caps.structuredOutput).toBe(false);
+      expect(caps.hooks).toBe(true);
+      expect(caps.sessionResume).toBe(true);
+      expect(caps.permissions).toBe(true);
+      expect(caps.structuredMode).toBe(true);
+    });
+
+    it('all providers return an object with all required keys', () => {
+      const requiredKeys = ['headless', 'structuredOutput', 'hooks', 'sessionResume', 'permissions'];
+      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider()];
+      for (const p of providers) {
+        const caps = p.getCapabilities();
+        for (const key of requiredKeys) {
+          expect(typeof (caps as any)[key]).toBe('boolean');
+        }
+      }
+    });
+  });
+
   describe('writeHooksConfig merge behavior', () => {
     it('ClaudeCode: preserves existing user hooks alongside Clubhouse hooks', async () => {
       const provider = new ClaudeCodeProvider();
