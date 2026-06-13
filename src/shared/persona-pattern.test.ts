@@ -27,6 +27,21 @@ describe('persona-pattern', () => {
       expect(parsed.body).toBe(body);
     });
 
+    it('round-trips skills bundling settings', () => {
+      const settings: PatternSettings = {
+        model: 'claude-opus-4-8',
+        skills: [
+          { name: 'mission', cadence: undefined },
+          { name: 'group-pm-polling', cadence: '15m' },
+        ],
+      };
+      const body = '# Role: Group Project PM\n\nCoordinate work.';
+      const file = serializePersonaFile(settings, body);
+      const parsed = parsePersonaFile(file);
+      expect(parsed.settings).toEqual(settings);
+      expect(parsed.body).toBe(body);
+    });
+
     it('emits no front-matter when there are no settings', () => {
       const body = '# Just content';
       expect(serializePersonaFile({}, body)).toBe(body);
