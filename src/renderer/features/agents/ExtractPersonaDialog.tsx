@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../components/Modal';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
-import { serializePersonaFile, PatternSettings, PATTERN_SETTING_KEYS } from '../../../shared/persona-pattern';
+import { serializePersonaFile, PatternSettings, PATTERN_SETTING_KEYS } from '../../../shared/persona-persona';
 
 const ID_PATTERN = /^[a-zA-Z0-9._-]+$/;
 
