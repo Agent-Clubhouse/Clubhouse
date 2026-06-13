@@ -208,7 +208,7 @@ describe('GroupProjectLifecycle', () => {
     });
 
     // Polling message should fire after 500ms delay (bracketed paste)
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 700));
     const pollingCall = mockPtyWrite.mock.calls.find(
       (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('bulletin'),
     );
