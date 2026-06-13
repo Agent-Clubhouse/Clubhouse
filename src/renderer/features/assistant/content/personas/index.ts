@@ -8,7 +8,7 @@ import executorMerge from './executor-merge.md';
 import docUpdater from './doc-updater.md';
 import judge from './judge.md';
 import researcher from './researcher.md';
-import { SkillDefinition } from '../../../shared/persona-pattern';
+import { SkillDefinition } from '../../../../../shared/persona-pattern';
 
 export interface PersonaTemplate {
   id: string;
