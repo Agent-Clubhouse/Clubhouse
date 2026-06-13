@@ -287,6 +287,8 @@ vi.stubGlobal('clubhouse', {
     onNotificationClicked: () => noop,
     onOpenSettings: () => noop,
     onOpenAbout: () => noop,
+    onProtocolAction: () => noop,
+    getPendingProtocolAction: vi.fn().mockResolvedValue(null),
 
     getTheme: async () => ({ themeId: 'catppuccin-mocha' }),
     saveTheme: asyncNoop,

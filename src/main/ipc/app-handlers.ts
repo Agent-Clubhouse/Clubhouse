@@ -29,6 +29,7 @@ import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureS
 import * as ptyManager from '../services/pty-manager';
 import * as agentSystem from '../services/agent-system';
 import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
+import { consumePendingProtocolAction } from '../services/protocol-service';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
 const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
@@ -424,6 +425,12 @@ export function registerAppHandlers(): void {
       await clearPendingResume();
     }
     return state;
+  });
+
+  // Renderer pulls any protocol action queued before it was ready (cold start
+  // via a clubhouse:// link). Read-once: consuming clears the queue.
+  ipcMain.handle(IPC.APP.GET_PENDING_PROTOCOL_ACTION, () => {
+    return consumePendingProtocolAction();
   });
 
   ipcMain.handle(IPC.APP.RESUME_MANUAL_AGENT, withValidatedArgs(
