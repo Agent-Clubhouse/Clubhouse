@@ -150,17 +150,21 @@ describe('BlueprintGallery', () => {
     await waitFor(() => { expect(screen.getByText('Alpha')).toBeDefined(); });
 
     const grid = screen.getByTestId('blueprint-gallery-grid');
-    const cards = grid.querySelectorAll('[data-testid^="blueprint-card-"]');
-    // Default sort by name
-    expect(cards[0].textContent).toContain('Alpha');
-    expect(cards[1].textContent).toContain('Bravo');
-    expect(cards[2].textContent).toContain('Charlie');
+    // Built-in templates are always present; assert the relative ordering of the
+    // disk blueprints rather than absolute indices.
+    const orderOf = (name: string) => {
+      const cards = [...grid.querySelectorAll('[data-testid^="blueprint-card-"]')];
+      return cards.findIndex((c) => c.textContent?.includes(name));
+    };
 
-    // Sort by views
+    // Default sort by name: Alpha < Bravo < Charlie
+    expect(orderOf('Alpha')).toBeLessThan(orderOf('Bravo'));
+    expect(orderOf('Bravo')).toBeLessThan(orderOf('Charlie'));
+
+    // Sort by views (desc): Alpha (5) < Bravo (3) < Charlie (1)
     fireEvent.change(screen.getByTestId('blueprint-gallery-sort'), { target: { value: 'views' } });
-    const sorted = grid.querySelectorAll('[data-testid^="blueprint-card-"]');
-    expect(sorted[0].textContent).toContain('Alpha'); // 5 views
-    expect(sorted[2].textContent).toContain('Charlie'); // 1 view
+    expect(orderOf('Alpha')).toBeLessThan(orderOf('Bravo'));
+    expect(orderOf('Bravo')).toBeLessThan(orderOf('Charlie'));
   });
 
   // ── Preview panel ──────────────────────────────────────────────
@@ -190,13 +194,15 @@ describe('BlueprintGallery', () => {
 
   // ── Empty state ────────────────────────────────────────────────
 
-  it('shows helpful empty state with export guidance', async () => {
+  it('shows built-in squad templates even when no disk blueprints exist', async () => {
     state.blueprintGalleryOpen = true;
     mockBlueprintList.mockResolvedValue([]);
 
     render(<BlueprintGallery />);
-    await waitFor(() => { expect(screen.getByTestId('blueprint-gallery-empty')).toBeDefined(); });
-    expect(screen.getByText('No blueprints yet')).toBeDefined();
+    // Built-in templates always lead the list, so the gallery is never empty.
+    await waitFor(() => { expect(screen.getByText('Small Squad')).toBeDefined(); });
+    expect(screen.getByText('Large Squad')).toBeDefined();
+    expect(screen.queryByText('No blueprints yet')).toBeNull();
   });
 
   it('shows search-specific empty state when no results', async () => {
