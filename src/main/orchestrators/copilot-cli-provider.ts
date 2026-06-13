@@ -9,20 +9,16 @@ import {
   SpawnCommandResult,
   HeadlessOpts,
   HeadlessCommandResult,
-  NormalizedHookEvent,
   StructuredAdapter,
-  HookCapable,
   HeadlessCapable,
   SessionCapable,
   StructuredCapable,
   AgentFileCapable,
-  PERMISSION_HOOK_TIMEOUT_SEC,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
 import { AcpAdapter } from './adapters';
-import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
-import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { homePath, parseModelChoicesFromHelp, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { appLog } from '../services/log-service';
 
 const TOOL_VERBS: Record<string, string> = {
@@ -47,17 +43,7 @@ const COPILOT_MODEL_CHOICES_PATTERN = /--model\s+<model>\s+.*?\(choices:\s*([\s\
 const DEFAULT_DURABLE_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)', 'read', 'edit', 'search'];
 
-const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
-  preToolUse: 'pre_tool',
-  postToolUse: 'post_tool',
-  errorOccurred: 'tool_error',
-  sessionEnd: 'stop',
-  permissionRequest: 'permission_request',
-  sessionStart: 'notification',
-  userPromptSubmitted: 'notification',
-};
-
-export class CopilotCliProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable, StructuredCapable, AgentFileCapable {
+export class CopilotCliProvider extends BaseProvider implements HeadlessCapable, SessionCapable, StructuredCapable, AgentFileCapable {
   readonly id = 'copilot-cli' as const;
   readonly displayName = 'GitHub Copilot CLI';
   readonly shortName = 'GHCP';
@@ -139,7 +125,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     return {
       headless: true,
       structuredOutput: true,
-      hooks: true,
+      hooks: false,
       sessionResume: true,
       permissions: true,
       structuredMode: true,
@@ -232,57 +218,6 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   }
 
   // ── HookCapable ─────────────────────────────────────────────────────────
-
-  async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
-    const safeUrl = validateHookUrl(hookUrl);
-    const makeCurl = (event: string) => buildHookCurlCommand(safeUrl, `/${event}`);
-
-    const ourHooks: Record<string, unknown[]> = {
-      preToolUse: [{ type: 'command', bash: makeCurl('preToolUse'), timeoutSec: 5 }],
-      postToolUse: [{ type: 'command', bash: makeCurl('postToolUse'), timeoutSec: 5 }],
-      errorOccurred: [{ type: 'command', bash: makeCurl('errorOccurred'), timeoutSec: 5 }],
-      // PermissionRequest uses a long timeout to allow for remote approval via Annex
-      permissionRequest: [{ type: 'command', bash: makeCurl('permissionRequest'), timeoutSec: PERMISSION_HOOK_TIMEOUT_SEC }],
-      sessionStart: [{ type: 'command', bash: makeCurl('sessionStart'), timeoutSec: 5 }],
-      sessionEnd: [{ type: 'command', bash: makeCurl('sessionEnd'), timeoutSec: 5 }],
-      userPromptSubmitted: [{ type: 'command', bash: makeCurl('userPromptSubmitted'), timeoutSec: 5 }],
-    };
-
-    const githubDir = path.join(cwd, '.github');
-    const hooksDir = path.join(githubDir, 'hooks');
-    await fsp.mkdir(hooksDir, { recursive: true });
-
-    const settingsPath = path.join(hooksDir, 'hooks.json');
-
-    let existing: Record<string, unknown> = { version: 1 };
-    try {
-      existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
-    } catch {
-      // No existing file
-    }
-
-    const mergedHooks = mergeHookEntries(existing, ourHooks, isClubhouseHookEntry);
-    await fsp.writeFile(settingsPath, JSON.stringify({ ...existing, hooks: mergedHooks }, null, 2), 'utf-8');
-  }
-
-  parseHookEvent(raw: unknown): NormalizedHookEvent | null {
-    if (!raw || typeof raw !== 'object') return null;
-    const obj = raw as Record<string, unknown>;
-    const eventName = (obj.hook_event_name as string) || '';
-    const kind = EVENT_NAME_MAP[eventName];
-    if (!kind) return null;
-
-    // Copilot sends camelCase (toolName, toolArgs) in hook stdin
-    const toolName = (obj.tool_name ?? obj.toolName) as string | undefined;
-    const rawInput = obj.tool_input ?? (typeof obj.toolArgs === 'string' ? JSON.parse(obj.toolArgs as string) : obj.toolArgs);
-
-    return {
-      kind,
-      toolName,
-      toolInput: rawInput as Record<string, unknown> | undefined,
-      message: obj.message as string | undefined,
-    };
-  }
 
   // ── HeadlessCapable ─────────────────────────────────────────────────────
 
