@@ -176,8 +176,8 @@ describe('GroupProjectLifecycle', () => {
       agentName: 'robin',
     });
 
-    // Wait for polling delay (500ms) + processing
-    await new Promise(r => setTimeout(r, 800));
+    // Wait for polling delay (500ms) + paste delay (400ms) + processing
+    await new Promise(r => setTimeout(r, 1000));
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
@@ -208,7 +208,7 @@ describe('GroupProjectLifecycle', () => {
     });
 
     // Polling message should fire after 500ms delay (bracketed paste)
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 700));
     const pollingCall = mockPtyWrite.mock.calls.find(
       (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('bulletin'),
     );
@@ -271,7 +271,7 @@ describe('GroupProjectLifecycle', () => {
       agentName: 'robin',
     });
 
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
@@ -297,7 +297,7 @@ describe('GroupProjectLifecycle', () => {
       agentName: 'claude-bot',
     });
 
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
@@ -340,7 +340,7 @@ describe('GroupProjectLifecycle', () => {
     });
 
     // Wait long enough for all async lifecycle processing + polling delay (500ms)
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
 
     const pollingCalls = mockPtyWrite.mock.calls.filter(
       (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('bulletin'),
@@ -365,7 +365,7 @@ describe('GroupProjectLifecycle', () => {
       agentName: 'codex-bot',
     });
 
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
@@ -386,7 +386,7 @@ describe('GroupProjectLifecycle', () => {
       agentName: 'robin',
     });
 
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
@@ -617,7 +617,7 @@ describe('GroupProjectLifecycle', () => {
       agentName: 'falcon',
     });
 
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
