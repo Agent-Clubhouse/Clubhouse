@@ -8,12 +8,14 @@ import executorMerge from './executor-merge.md';
 import docUpdater from './doc-updater.md';
 import judge from './judge.md';
 import researcher from './researcher.md';
+import { SkillDefinition } from '../../../../../shared/persona-pattern';
 
 export interface PersonaTemplate {
   id: string;
   name: string;
   description: string;
   content: string;
+  skills?: SkillDefinition[];
 }
 
 export const PERSONA_TEMPLATES: PersonaTemplate[] = [
@@ -28,6 +30,12 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
     name: 'Group Project PM',
     description: 'Project manager who actively operates the group-project board: dispatches work, wakes/sleeps agents, manages polling, shoulder-taps, and keeps channels lean. Assumes privileged (admin) tools.',
     content: groupProjectPm,
+    skills: [
+      {
+        name: 'group-pm-polling',
+        cadence: '15m',
+      },
+    ],
   },
   {
     id: 'qa',

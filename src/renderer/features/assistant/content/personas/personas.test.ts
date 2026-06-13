@@ -46,4 +46,13 @@ describe('persona templates', () => {
     const ids = PERSONA_TEMPLATES.map((p) => p.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it('group-project-pm persona includes skills bundling', () => {
+    const pm = getPersonaTemplate('group-project-pm');
+    expect(pm).toBeDefined();
+    expect(pm!.skills).toBeDefined();
+    expect(pm!.skills).toHaveLength(1);
+    expect(pm!.skills![0].name).toBe('group-pm-polling');
+    expect(pm!.skills![0].cadence).toBe('15m');
+  });
 });
