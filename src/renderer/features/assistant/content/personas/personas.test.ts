@@ -16,6 +16,48 @@ describe('persona templates', () => {
     }
   });
 
+  it('each template has focused tooling and skills', () => {
+    for (const persona of PERSONA_TEMPLATES) {
+      expect(persona.tools).toBeDefined();
+      expect(Array.isArray(persona.tools)).toBe(true);
+      expect(persona.orchestrator).toBe('claude');
+      expect(Array.isArray(persona.skills)).toBe(true);
+    }
+  });
+
+  it('group-project-pm has only board management tools', () => {
+    const pm = getPersonaTemplate('group-project-pm');
+    expect(pm!.tools).toContain('read_bulletin');
+    expect(pm!.tools).toContain('post_bulletin');
+    expect(pm!.tools).toContain('wake_agent');
+    expect(pm!.tools).not.toContain('build');
+    expect(pm!.tools).not.toContain('test');
+    expect(pm!.tools).not.toContain('create-pr');
+  });
+
+  it('executors have only implementation tools', () => {
+    const executor = getPersonaTemplate('executor-pr-only');
+    expect(executor!.tools).toContain('build');
+    expect(executor!.tools).toContain('test');
+    expect(executor!.tools).toContain('create-pr');
+    expect(executor!.tools).not.toContain('read_bulletin');
+    expect(executor!.tools).not.toContain('wake_agent');
+  });
+
+  it('qa has testing and review tools', () => {
+    const qa = getPersonaTemplate('qa');
+    expect(qa!.tools).toContain('test');
+    expect(qa!.tools).toContain('code-review');
+    expect(qa!.skills!.map((s) => s.name)).toContain('validate-changes');
+  });
+
+  it('researcher has web search and investigation tools', () => {
+    const researcher = getPersonaTemplate('researcher');
+    expect(researcher!.tools).toContain('web-search');
+    expect(researcher!.tools).toContain('web-fetch');
+    expect(researcher!.skills!.map((s) => s.name)).toContain('deep-research');
+  });
+
   it('getPersonaTemplate returns correct template by ID', () => {
     const qa = getPersonaTemplate('qa');
     expect(qa).toBeDefined();
