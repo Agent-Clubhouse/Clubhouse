@@ -340,6 +340,61 @@ describe('CopilotCliProvider', () => {
       expect(result.args).not.toContain('--agent');
       expect(result.args).not.toContain('--source');
     });
+
+    // Session resume. Copilot CLI cannot resume in prompt mode (-p), so the
+    // provider only appends resume flags for interactive (no mission/systemPrompt)
+    // spawns. This guard (copilot-cli-provider.ts:157) was previously untested and
+    // is the highest-risk silent-failure path in the provider.
+    it('adds --continue when resume is set without a sessionId', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project', resume: true });
+      expect(result.args).toContain('--continue');
+      expect(result.args).not.toContain('--resume');
+    });
+
+    it('adds --resume <sessionId> when resume is set with a sessionId', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        resume: true,
+        sessionId: 'sess-123',
+      });
+      expect(result.args).toContain('--resume');
+      expect(result.args[result.args.indexOf('--resume') + 1]).toBe('sess-123');
+      expect(result.args).not.toContain('--continue');
+    });
+
+    it('does not add resume flags when resume is false', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        resume: false,
+        sessionId: 'sess-123',
+      });
+      expect(result.args).not.toContain('--resume');
+      expect(result.args).not.toContain('--continue');
+    });
+
+    it('suppresses resume flags when a mission is set (prompt mode cannot resume)', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        resume: true,
+        sessionId: 'sess-123',
+        mission: 'Fix the bug',
+      });
+      expect(result.args).not.toContain('--resume');
+      expect(result.args).not.toContain('--continue');
+      // Mission is still passed through prompt mode.
+      expect(result.args).toContain('-p');
+    });
+
+    it('suppresses resume flags when a systemPrompt is set (prompt mode cannot resume)', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        resume: true,
+        systemPrompt: 'You are helpful',
+      });
+      expect(result.args).not.toContain('--resume');
+      expect(result.args).not.toContain('--continue');
+      expect(result.args).toContain('-p');
+    });
   });
 
   describe('buildAgentFileArgs (AgentFileCapable)', () => {
@@ -734,6 +789,42 @@ describe('CopilotCliProvider', () => {
       const pIdx = result!.args.indexOf('-p');
       expect(result!.args[pIdx + 1]).toContain('Be thorough');
       expect(result!.args[pIdx + 1]).toContain('Fix bug');
+    });
+
+    // Parity gap (Mission 2c): unlike the Claude Code provider, GHCP's headless
+    // path hard-codes blanket --allow-all and ignores fine-grained permission /
+    // tool-filtering options. These tests lock in the current behavior so any
+    // future change to close the gap is a deliberate, reviewed decision rather
+    // than a silent regression.
+    it('ignores permissionMode and always uses blanket --allow-all in headless', async () => {
+      const result = await provider.buildHeadlessCommand({
+        cwd: '/project',
+        mission: 'Fix bug',
+        permissionMode: 'skip-all',
+      });
+      expect(result!.args).toContain('--allow-all');
+      // permissionMode does not change the headless flag set.
+      expect(result!.args).not.toContain('--allow-all-tools');
+    });
+
+    it('does not emit --allow-tool for allowedTools in headless (blanket allow-all)', async () => {
+      const result = await provider.buildHeadlessCommand({
+        cwd: '/project',
+        mission: 'Fix bug',
+        allowedTools: ['read', 'edit'],
+      });
+      expect(result!.args).not.toContain('--allow-tool');
+      expect(result!.args).toContain('--allow-all');
+    });
+
+    it('does not emit --disallowedTools for disallowedTools in headless (parity gap vs Claude Code)', async () => {
+      const result = await provider.buildHeadlessCommand({
+        cwd: '/project',
+        mission: 'Fix bug',
+        disallowedTools: ['shell'],
+      } as Parameters<typeof provider.buildHeadlessCommand>[0]);
+      expect(result!.args).not.toContain('--disallowedTools');
+      expect(result!.args).not.toContain('--disallow-tool');
     });
   });
 
