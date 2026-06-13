@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ExtractPatternDialog } from './ExtractPatternDialog';
+import { ExtractPersonaDialog } from './ExtractPersonaDialog';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 
@@ -7,8 +7,8 @@ const mockClose = vi.fn();
 
 function resetStores(overrides: Record<string, any> = {}) {
   useAgentStore.setState({
-    extractPatternDialogAgent: 'agent-1',
-    closeExtractPatternDialog: mockClose,
+    extractPersonaDialogAgent: 'agent-1',
+    closeExtractPersonaDialog: mockClose,
     agents: {
       'agent-1': {
         id: 'agent-1', projectId: 'proj-1', name: 'Bold Falcon',
@@ -24,11 +24,11 @@ function resetStores(overrides: Record<string, any> = {}) {
   });
 }
 
-describe('ExtractPatternDialog', () => {
+describe('ExtractPersonaDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
-    window.clubhouse.agentSettings.extractAgentPattern = vi.fn().mockResolvedValue({
+    window.clubhouse.agentSettings.extractAgentPersona = vi.fn().mockResolvedValue({
       content: 'Agent @@AgentName',
       settings: { model: 'claude-opus-4-8', mcpIds: ['github'] },
     });
@@ -36,13 +36,13 @@ describe('ExtractPatternDialog', () => {
   });
 
   it('renders nothing when no agent is selected', () => {
-    resetStores({ extractPatternDialogAgent: null });
-    const { container } = render(<ExtractPatternDialog />);
+    resetStores({ extractPersonaDialogAgent: null });
+    const { container } = render(<ExtractPersonaDialog />);
     expect(container.innerHTML).toBe('');
   });
 
   it('prefills the extracted content, settings, and a slugified id', async () => {
-    render(<ExtractPatternDialog />);
+    render(<ExtractPersonaDialog />);
     await waitFor(() => {
       expect(screen.getByDisplayValue('Agent @@AgentName')).toBeInTheDocument();
       expect(screen.getByDisplayValue('bold-falcon')).toBeInTheDocument(); // slug of "Bold Falcon"
@@ -51,9 +51,9 @@ describe('ExtractPatternDialog', () => {
   });
 
   it('saves the pattern with front-matter to the user library by default', async () => {
-    render(<ExtractPatternDialog />);
+    render(<ExtractPersonaDialog />);
     await screen.findByDisplayValue('Agent @@AgentName');
-    fireEvent.click(screen.getByText('Save pattern'));
+    fireEvent.click(screen.getByText('Save persona'));
     await waitFor(() => {
       expect(window.clubhouse.agentSettings.writeSourcePersonaContent).toHaveBeenCalled();
     });

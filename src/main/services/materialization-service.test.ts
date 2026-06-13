@@ -74,7 +74,7 @@ import {
   resolvePersonaId,
   resolvePersonaContent,
   readPersonaForEdit,
-  extractAgentPattern,
+  extractAgentPersona,
   writeResolvedPersonaInstructions,
   resolveAgentCommands,
   listAvailablePersonas,
@@ -349,14 +349,14 @@ describe('materialization-service', () => {
       expect(await readPersonaForEdit('/project', 'qa')).toBe(raw);
     });
 
-    it('extractAgentPattern re-genericizes wildcards and captures settings', async () => {
+    it('extractAgentPersona re-genericizes wildcards and captures settings', async () => {
       mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
       const agent = { ...testAgent, model: 'claude-opus-4-8', mcpIds: ['github'], freeAgentMode: true };
       const provider = {
         ...mockProvider,
         readInstructions: vi.fn(async () => 'Agent bold-falcon at .clubhouse/agents/bold-falcon/'),
       };
-      const { content, settings } = await extractAgentPattern({ projectPath: '/project', agent, provider });
+      const { content, settings } = await extractAgentPersona({ projectPath: '/project', agent, provider });
       expect(content).toBe('Agent @@AgentName at @@Path');
       expect(settings).toEqual({ model: 'claude-opus-4-8', mcpIds: ['github'], freeAgentMode: true });
     });

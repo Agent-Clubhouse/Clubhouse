@@ -406,8 +406,8 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_PERSONA, projectPath, personaId, scope),
     applyPersonaToAgent: (projectPath: string, agentId: string, personaId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.AGENT.APPLY_PERSONA_TO_AGENT, projectPath, agentId, personaId),
-    extractAgentPattern: (projectPath: string, agentId: string): Promise<{ content: string; settings: import('../shared/persona-pattern').PatternSettings } | null> =>
-      ipcRenderer.invoke(IPC.AGENT.EXTRACT_AGENT_PATTERN, projectPath, agentId),
+    extractAgentPersona: (projectPath: string, agentId: string): Promise<{ content: string; settings: import('../shared/persona-pattern').PatternSettings } | null> =>
+      ipcRenderer.invoke(IPC.AGENT.EXTRACT_AGENT_PERSONA, projectPath, agentId),
     createSkill: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
       ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource, projectPath),
     createAgentTemplate: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>

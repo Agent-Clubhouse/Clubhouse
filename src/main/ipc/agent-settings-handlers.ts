@@ -4,7 +4,7 @@ import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import { getDurableConfig, updateDurableConfig } from '../services/agent-config';
-import { extractAgentPattern, getAgentWildcards, listAvailablePersonas, materializeAgent, previewMaterialization, readLayeredPersonaRaw, readPersonaForEdit, resetProjectAgentDefaults, writeResolvedPersonaInstructions } from '../services/materialization-service';
+import { extractAgentPersona, getAgentWildcards, listAvailablePersonas, materializeAgent, previewMaterialization, readLayeredPersonaRaw, readPersonaForEdit, resetProjectAgentDefaults, writeResolvedPersonaInstructions } from '../services/materialization-service';
 import { isClubhouseModeEnabled } from '../services/clubhouse-mode-settings';
 import { parsePersonaFile } from '../../shared/persona-pattern';
 import type { DurableConfigUpdates } from '../../shared/types';
@@ -363,14 +363,14 @@ export function registerAgentSettingsHandlers(): void {
     },
   ));
 
-  // Extract an agent's instructions + settings into a reusable pattern payload.
-  ipcMain.handle(IPC.AGENT.EXTRACT_AGENT_PATTERN, withValidatedArgs(
+  // Extract an agent's instructions + settings into a reusable persona payload.
+  ipcMain.handle(IPC.AGENT.EXTRACT_AGENT_PERSONA, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
       const agent = await getDurableConfig(projectPath, agentId);
       if (!agent) return null;
       const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-      return extractAgentPattern({ projectPath, agent, provider });
+      return extractAgentPersona({ projectPath, agent, provider });
     },
   ));
 

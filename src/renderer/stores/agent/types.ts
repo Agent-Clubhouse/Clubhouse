@@ -15,8 +15,8 @@ export interface AgentUISlice {
   deleteDialogAgent: string | null;
   /** Agent ID for the "Apply persona" dialog, or null when closed. */
   applyPersonaDialogAgent: string | null;
-  /** Agent ID for the "Extract pattern" dialog, or null when closed. */
-  extractPatternDialogAgent: string | null;
+  /** Agent ID for the "Extract persona" dialog, or null when closed. */
+  extractPersonaDialogAgent: string | null;
   configChangesDialogAgent: string | null;
   configChangesProjectPath: string | null;
   /** Agent ID that should be prompted for a session name (set on quit if setting enabled) */
@@ -30,8 +30,8 @@ export interface AgentUISlice {
   closeDeleteDialog: () => void;
   openApplyPersonaDialog: (agentId: string) => void;
   closeApplyPersonaDialog: () => void;
-  openExtractPatternDialog: (agentId: string) => void;
-  closeExtractPatternDialog: () => void;
+  openExtractPersonaDialog: (agentId: string) => void;
+  closeExtractPersonaDialog: () => void;
   openConfigChangesDialog: (agentId: string, projectPath: string) => void;
   closeConfigChangesDialog: () => void;
   setSessionNamePrompt: (agentId: string | null) => void;
