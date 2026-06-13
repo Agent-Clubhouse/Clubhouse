@@ -804,51 +804,6 @@ describe('Provider integration tests', () => {
       expect(written.hooks.PreToolUse[1].hooks[0].command).toContain('127.0.0.1:9999');
     });
 
-    it('CopilotCli: preserves existing user hooks alongside Clubhouse hooks', async () => {
-      const provider = new CopilotCliProvider();
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isKnownBinary(s) || s.includes('.github');
-      });
-
-      // Simulate existing user hooks
-      const existingConfig = {
-        version: 1,
-        hooks: {
-          preToolUse: [{ bash: 'echo "user pre-tool hook"', timeoutSec: 10 }],
-          customEvent: [{ bash: 'echo "custom"' }],
-        },
-      };
-      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify(existingConfig));
-
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-
-      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
-      expect(written.version).toBe(1);
-      // preToolUse should have user entry + our entry
-      expect(written.hooks.preToolUse).toHaveLength(2);
-      expect(written.hooks.preToolUse[0].bash).toBe('echo "user pre-tool hook"');
-      expect(written.hooks.preToolUse[1].bash).toContain('CLUBHOUSE_AGENT_ID');
-      // Custom event preserved
-      expect(written.hooks.customEvent).toHaveLength(1);
-    });
-
-    it('CopilotCli: handles missing config file gracefully', async () => {
-      const provider = new CopilotCliProvider();
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isKnownBinary(s) || s.includes('.github');
-      });
-      // fsp.readFile rejects (no existing file)
-      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
-
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-
-      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
-      expect(written.version).toBe(1);
-      expect(written.hooks.preToolUse).toHaveLength(1);
-      expect(written.hooks.preToolUse[0].bash).toContain('CLUBHOUSE_AGENT_ID');
-    });
   });
 
   describe('getProfileEnvKeys', () => {
@@ -1045,9 +1000,9 @@ describe('Provider integration tests', () => {
   });
 
   describe('type guards for capability sub-interfaces', () => {
-    it('isHookCapable returns true for ClaudeCode, CopilotCli, and CodexCli', () => {
+    it('isHookCapable returns true for ClaudeCode and CodexCli, false for CopilotCli', () => {
       expect(isHookCapable(new ClaudeCodeProvider())).toBe(true);
-      expect(isHookCapable(new CopilotCliProvider())).toBe(true);
+      expect(isHookCapable(new CopilotCliProvider())).toBe(false);
       expect(isHookCapable(new CodexCliProvider())).toBe(true);
     });
 
