@@ -76,9 +76,7 @@ const config: ForgeConfig = {
       },
     ],
   },
-  rebuildConfig: {
-    onlyModules: [],
-  },
+  rebuildConfig: {},
   makers: [
     new MakerZIP({}, ['darwin']),
     new MakerDMG({
