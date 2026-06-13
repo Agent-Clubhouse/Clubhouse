@@ -136,7 +136,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const openDeleteDialog = useAgentStore((s) => s.openDeleteDialog);
   const openApplyPersonaDialog = useAgentStore((s) => s.openApplyPersonaDialog);
-  const openExtractPatternDialog = useAgentStore((s) => s.openExtractPatternDialog);
+  const openExtractPersonaDialog = useAgentStore((s) => s.openExtractPersonaDialog);
   const localDetailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus[agent.id]);
   const detailed = isRemote ? remoteDetailed : localDetailed;
@@ -213,9 +213,9 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     openApplyPersonaDialog(agent.id);
   }, [agent.id, openApplyPersonaDialog]);
 
-  const handleExtractPattern = useCallback(() => {
-    openExtractPatternDialog(agent.id);
-  }, [agent.id, openExtractPatternDialog]);
+  const handleExtractPersona = useCallback(() => {
+    openExtractPersonaDialog(agent.id);
+  }, [agent.id, openExtractPersonaDialog]);
 
   const handlePopOut = useCallback(async () => {
     await window.clubhouse.window.createPopout({
@@ -337,8 +337,8 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
         handler: handleApplyPersona,
       });
       list.push({
-        id: 'extract-pattern',
-        label: 'Extract pattern…',
+        id: 'extract-persona',
+        label: 'Extract persona…',
         icon: (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -348,7 +348,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
         ),
         hoverColor: 'hover:text-ctp-accent',
         visible: true,
-        handler: handleExtractPattern,
+        handler: handleExtractPersona,
       });
     }
 
@@ -374,7 +374,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeAndResume, handlePopOut, handleSpawnChild, handleSettings, handleDelete, handleApplyPersona, handleExtractPattern]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeAndResume, handlePopOut, handleSpawnChild, handleSettings, handleDelete, handleApplyPersona, handleExtractPersona]);
 
   // ── Responsive action collapse ─────────────────────────────────
 

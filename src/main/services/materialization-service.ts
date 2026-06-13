@@ -398,7 +398,7 @@ function pickPatternSettings(agent: DurableAgentConfig): PatternSettings {
  * content is intentionally NOT folded into the wildcard context here — the
  * instructions themselves become the persona body.
  */
-export async function extractAgentPattern(params: {
+export async function extractAgentPersona(params: {
   projectPath: string;
   agent: DurableAgentConfig;
   provider: OrchestratorProvider;

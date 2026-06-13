@@ -161,7 +161,7 @@ vi.stubGlobal('clubhouse', {
     writeSourcePersonaContent: asyncNoop,
     deleteSourcePersona: asyncNoop,
     applyPersonaToAgent: asyncNoop,
-    extractAgentPattern: async () => ({ content: '', settings: {} }),
+    extractAgentPersona: async () => ({ content: '', settings: {} }),
     createSkill: asyncNoop,
     createAgentTemplate: asyncNoop,
     readPermissions: async () => ({}),
