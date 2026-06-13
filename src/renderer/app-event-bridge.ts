@@ -13,7 +13,8 @@
 import { useAgentStore, consumeCancelled } from './stores/agentStore';
 import { useProjectStore } from './stores/projectStore';
 import { useUIStore } from './stores/uiStore';
-import { useNotificationStore } from './stores/notificationStore';
+import { useNotificationStore, isAgentVisible } from './stores/notificationStore';
+import { useToastStore } from './stores/toastStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useClubhouseModeStore } from './stores/clubhouseModeStore';
 import { useCommandPaletteStore } from './stores/commandPaletteStore';
@@ -370,6 +371,14 @@ function initHookEventListener(): () => void {
       if (event.kind === 'permission_resolved') {
         const soundEvent = event.message === 'allow' ? 'permission-granted' : 'permission-denied';
         useSoundStore.getState().playSound(soundEvent as SoundEvent, agent.projectId);
+      }
+
+      // Show toast notification when agent emits a notification event (respects active focus)
+      if (event.kind === 'notification' && event.message) {
+        // Only show toast if agent is not actively being viewed
+        if (!isAgentVisible(agentId, agent.projectId)) {
+          useToastStore.getState().addToast(event.message, 'info');
+        }
       }
 
       // Emit plugin events for agent lifecycle

@@ -22,7 +22,7 @@ function cachedCollectLeaves(tree: PaneNode): LeafPane[] {
   return cached;
 }
 
-function isAgentVisible(agentId: string, projectId: string): boolean {
+export function isAgentVisible(agentId: string, projectId: string): boolean {
   if (!document.hasFocus()) return false;
 
   const { explorerTab } = useUIStore.getState();
