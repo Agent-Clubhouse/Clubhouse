@@ -117,10 +117,10 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('getCapabilities', () => {
-    it('reports headless and hooks support', () => {
+    it('reports headless but no hooks support', () => {
       const caps = provider.getCapabilities();
       expect(caps.headless).toBe(true);
-      expect(caps.hooks).toBe(true);
+      expect(caps.hooks).toBe(false);
       expect(caps.sessionResume).toBe(true);
       expect(caps.permissions).toBe(true);
       expect(caps.structuredOutput).toBe(true);
