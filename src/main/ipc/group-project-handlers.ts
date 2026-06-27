@@ -9,7 +9,6 @@ import { getBulletinBoard, destroyBulletinBoard } from '../services/group-projec
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
-import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
@@ -39,8 +38,17 @@ export function _resetHandlersForTesting(): void {
 
 export function registerGroupProjectHandlers(): void {
   if (handlersRegistered) return;
-  if (!isMcpEnabledForAny()) return;
 
+  // NOTE: Group-project creation and its bulletin board are local features and
+  // must work regardless of whether the Clubhouse MCP bridge is enabled. Gating
+  // registration on isMcpEnabledForAny() previously meant that on a fresh install
+  // (MCP + Clubhouse Mode both default-off) NONE of these IPC handlers — including
+  // group-project:create — were registered, so the renderer's invoke() rejected
+  // with "No handler registered" and project creation silently no-op'd. The MCP
+  // bridge / tool exposure is gated separately in registerMcpBindingHandlers(),
+  // so registering these handlers unconditionally does not expose anything
+  // external. initGroupProjectLifecycle() is idempotent and its bindingManager
+  // subscription stays dormant until an agent actually binds to a project.
   handlersRegistered = true;
 
   // Tool registration is handled centrally in registerMcpBindingHandlers().
