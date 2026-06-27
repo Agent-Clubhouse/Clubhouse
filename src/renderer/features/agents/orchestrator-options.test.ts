@@ -22,19 +22,22 @@ describe('buildOrchestratorOptions', () => {
     expect(opts).toHaveLength(2);
   });
 
-  it('prepends the current orchestrator (from the global list) when it is not in the effective set', () => {
+  it('prepends the current orchestrator (from the global list) with a (disabled) suffix when not in the effective set', () => {
     // Worktree-synced agent on codex-cli, but the profile only enables claude-code.
     const opts = buildOrchestratorOptions([claudeCode], allOrchestrators, 'codex-cli');
     expect(opts.map((o) => o.id)).toEqual(['codex-cli', 'claude-code']);
-    expect(opts[0].displayName).toBe('Codex CLI');
+    // Suffixed so the user understands why a non-enabled orchestrator appears.
+    expect(opts[0].displayName).toBe('Codex CLI (disabled)');
+    // Other options are unchanged.
+    expect(opts[1].displayName).toBe('Claude Code');
   });
 
-  it('renders a selectable option even when the current orchestrator is unknown to this machine', () => {
+  it('renders a selectable (not installed) option when the current orchestrator is unknown to this machine', () => {
     // Agent synced with an orchestrator absent from app settings entirely.
     const opts = buildOrchestratorOptions([claudeCode], [claudeCode], 'mystery-cli');
     expect(opts.map((o) => o.id)).toEqual(['mystery-cli', 'claude-code']);
     // A real <option> can render — the synthesized entry carries a label and safe caps.
-    expect(opts[0].displayName).toBe('mystery-cli');
+    expect(opts[0].displayName).toBe('mystery-cli (not installed)');
     expect(opts[0].capabilities.permissions).toBe(false);
   });
 
