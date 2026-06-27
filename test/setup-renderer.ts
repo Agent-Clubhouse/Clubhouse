@@ -161,7 +161,7 @@ vi.stubGlobal('clubhouse', {
     writeSourcePersonaContent: asyncNoop,
     deleteSourcePersona: asyncNoop,
     applyPersonaToAgent: asyncNoop,
-    extractAgentPattern: async () => ({ content: '', settings: {} }),
+    extractAgentPersona: async () => ({ content: '', settings: {} }),
     createSkill: asyncNoop,
     createAgentTemplate: asyncNoop,
     readPermissions: async () => ({}),
@@ -287,6 +287,8 @@ vi.stubGlobal('clubhouse', {
     onNotificationClicked: () => noop,
     onOpenSettings: () => noop,
     onOpenAbout: () => noop,
+    onProtocolAction: () => noop,
+    getPendingProtocolAction: vi.fn().mockResolvedValue(null),
 
     getTheme: async () => ({ themeId: 'catppuccin-mocha' }),
     saveTheme: asyncNoop,

@@ -17,18 +17,18 @@ function formatSettingValue(value: unknown): string {
 }
 
 /**
- * "Extract pattern" dialog — capture the right-clicked agent's instructions
+ * "Extract persona" dialog — capture the right-clicked agent's instructions
  * (re-genericized with @@wildcards) and a chosen subset of its settings into a
  * reusable persona file, saved to the user-global or project persona library.
  */
-export function ExtractPatternDialog() {
-  const extractPatternDialogAgent = useAgentStore((s) => s.extractPatternDialogAgent);
-  const closeExtractPatternDialog = useAgentStore((s) => s.closeExtractPatternDialog);
+export function ExtractPersonaDialog() {
+  const extractPersonaDialogAgent = useAgentStore((s) => s.extractPersonaDialogAgent);
+  const closeExtractPersonaDialog = useAgentStore((s) => s.closeExtractPersonaDialog);
   const agents = useAgentStore((s) => s.agents);
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
-  const agent = extractPatternDialogAgent ? agents[extractPatternDialogAgent] : null;
+  const agent = extractPersonaDialogAgent ? agents[extractPersonaDialogAgent] : null;
   const projectPath = activeProject?.path;
 
   const [content, setContent] = useState('');
@@ -40,14 +40,14 @@ export function ExtractPatternDialog() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Load the extracted pattern when the dialog opens.
+  // Load the extracted persona when the dialog opens.
   useEffect(() => {
-    if (!extractPatternDialogAgent || !projectPath) return;
+    if (!extractPersonaDialogAgent || !projectPath) return;
     let cancelled = false;
     setLoading(true);
     (async () => {
       try {
-        const result = await window.clubhouse.agentSettings.extractAgentPattern(projectPath, extractPatternDialogAgent);
+        const result = await window.clubhouse.agentSettings.extractAgentPersona(projectPath, extractPersonaDialogAgent);
         if (cancelled) return;
         const s = (result?.settings ?? {}) as PatternSettings;
         setContent(result?.content ?? '');
@@ -60,7 +60,7 @@ export function ExtractPatternDialog() {
       }
     })();
     return () => { cancelled = true; };
-  }, [extractPatternDialogAgent, projectPath]);
+  }, [extractPersonaDialogAgent, projectPath]);
 
   // Seed the default id from the agent name when the dialog opens.
   useEffect(() => {
@@ -72,7 +72,7 @@ export function ExtractPatternDialog() {
     [settings],
   );
 
-  if (!agent || !projectPath || !extractPatternDialogAgent) return null;
+  if (!agent || !projectPath || !extractPersonaDialogAgent) return null;
 
   const toggle = (key: string) => {
     setChecked((prev) => {
@@ -84,7 +84,7 @@ export function ExtractPatternDialog() {
 
   const handleSave = async () => {
     const trimmed = id.trim();
-    if (!trimmed) { setError('Enter an id for the pattern.'); return; }
+    if (!trimmed) { setError('Enter an id for the persona.'); return; }
     if (!ID_PATTERN.test(trimmed)) { setError('Use only letters, numbers, dots, dashes, and underscores.'); return; }
     setSaving(true);
     setError('');
@@ -97,16 +97,16 @@ export function ExtractPatternDialog() {
       }
       const file = serializePersonaFile(chosen, content);
       await window.clubhouse.agentSettings.writeSourcePersonaContent(projectPath, trimmed, file, scope);
-      closeExtractPatternDialog();
+      closeExtractPersonaDialog();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save pattern.');
+      setError(e instanceof Error ? e.message : 'Failed to save persona.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Modal open onClose={closeExtractPatternDialog} title={`Extract pattern from ${agent.name}`} width="w-[520px]">
+    <Modal open onClose={closeExtractPersonaDialog} title={`Extract persona from ${agent.name}`} width="w-[520px]">
       <div className="space-y-4">
         <div className="flex gap-2">
           <div className="flex-1">
@@ -115,7 +115,7 @@ export function ExtractPatternDialog() {
               type="text"
               value={id}
               onChange={(e) => setId(e.target.value)}
-              placeholder="my-pattern"
+              placeholder="my-persona"
               className="w-full bg-surface-0 border border-surface-2 rounded px-2 py-1.5 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
             />
           </div>
@@ -171,7 +171,7 @@ export function ExtractPatternDialog() {
 
         <div className="flex justify-end gap-2">
           <button
-            onClick={closeExtractPatternDialog}
+            onClick={closeExtractPersonaDialog}
             disabled={saving}
             className="text-xs px-3 py-1.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors disabled:opacity-50"
           >
@@ -182,7 +182,7 @@ export function ExtractPatternDialog() {
             disabled={saving || loading}
             className="text-xs px-3 py-1.5 rounded bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer transition-colors disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Save pattern'}
+            {saving ? 'Saving…' : 'Save persona'}
           </button>
         </div>
       </div>

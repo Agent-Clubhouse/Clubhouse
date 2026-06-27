@@ -18,7 +18,7 @@ import { pollingStartMsg } from '../../shared/polling-messages';
 const REJOIN_DEBOUNCE_MS = 30_000;
 
 /** Default delay (ms) before sending Enter after bracketed paste. */
-const DEFAULT_PASTE_DELAY_MS = 200;
+const DEFAULT_PASTE_DELAY_MS = 400;
 
 /** Get the orchestrator-specific paste delay for an agent. */
 function getPasteDelayMs(agentId: string): number {

@@ -45,6 +45,15 @@ const config: ForgeConfig = {
       NSLocalNetworkUsageDescription:
         'Clubhouse uses your local network to discover and connect to Annex companion devices.',
       NSBonjourServices: ['_clubhouse-annex._tcp.'],
+      // Register the clubhouse:// custom URL scheme so the app can be invoked
+      // via protocol links (open-file / open-folder). Windows/Linux register
+      // the scheme at runtime via app.setAsDefaultProtocolClient.
+      CFBundleURLTypes: [
+        {
+          CFBundleURLName: 'com.mason-allen.clubhouse',
+          CFBundleURLSchemes: ['clubhouse'],
+        },
+      ],
     },
     osxSign: {
       identity: process.env.APPLE_SIGNING_IDENTITY || '-',

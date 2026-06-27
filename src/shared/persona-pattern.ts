@@ -8,6 +8,11 @@ import { SourceControlProvider } from './types';
  * These keys mirror the per-agent overrides on DurableConfigUpdates so a pattern
  * applies cleanly via updateDurableConfig.
  */
+export interface SkillDefinition {
+  name: string;
+  cadence?: string;
+}
+
 export interface PatternSettings {
   model?: string;
   orchestrator?: string;
@@ -20,6 +25,7 @@ export interface PatternSettings {
   testCommand?: string;
   lintCommand?: string;
   sourceControlProvider?: SourceControlProvider;
+  skills?: SkillDefinition[];
 }
 
 /** Ordered list of the keys a pattern may carry (used by extract UI + apply). */
@@ -35,6 +41,7 @@ export const PATTERN_SETTING_KEYS: Array<keyof PatternSettings> = [
   'testCommand',
   'lintCommand',
   'sourceControlProvider',
+  'skills',
 ];
 
 const FRONT_MATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n)+/;

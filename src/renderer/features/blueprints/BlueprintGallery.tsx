@@ -7,6 +7,11 @@ import { parseAnyBlueprint, buildWireDefinitionsFromResult } from './parse-bluep
 import { getProjectCanvasStore, useAppCanvasStore } from '../../plugins/builtin/canvas/main';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
+import {
+  listBuiltinBlueprintSummaries,
+  getBuiltinBlueprint,
+  isBuiltinBlueprintPath,
+} from './builtin-blueprints';
 
 // ── Fuzzy search ─────────────────────────────────────────────────────
 
@@ -66,15 +71,26 @@ export function BlueprintGallery() {
     setSelected(null);
     setPreviewData(null);
     setDeleteConfirm(null);
+    // Built-in squad templates always lead the list; disk blueprints follow.
+    const builtins = listBuiltinBlueprintSummaries();
     window.clubhouse.blueprint.list()
-      .then(setBlueprints)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .then((disk) => setBlueprints([...builtins, ...disk]))
+      .catch((err) => {
+        // Disk scan failure shouldn't hide the built-in templates.
+        setBlueprints(builtins);
+        setError(err instanceof Error ? err.message : String(err));
+      })
       .finally(() => setLoading(false));
   }, [isOpen]);
 
   // Fetch full data when a card is selected for preview
   useEffect(() => {
     if (!selected) { setPreviewData(null); return; }
+    if (isBuiltinBlueprintPath(selected.filePath)) {
+      const manifest = getBuiltinBlueprint(selected.filePath);
+      setPreviewData(manifest ? (manifest as unknown as Record<string, unknown>) : null);
+      return;
+    }
     window.clubhouse.blueprint.read(selected.filePath)
       .then(setPreviewData)
       .catch(() => setPreviewData(null));
@@ -90,7 +106,10 @@ export function BlueprintGallery() {
   const handleImport = useCallback(async (bp: BlueprintSummary) => {
     setImporting(bp.filePath);
     try {
-      const data = await window.clubhouse.blueprint.read(bp.filePath);
+      // Built-in templates resolve from the in-memory registry; disk blueprints are read from file.
+      const data = isBuiltinBlueprintPath(bp.filePath)
+        ? (getBuiltinBlueprint(bp.filePath) as unknown as Record<string, unknown> | undefined)
+        : await window.clubhouse.blueprint.read(bp.filePath);
       if (!data) throw new Error('Failed to read blueprint file');
 
       const store = activeProjectId
@@ -183,6 +202,8 @@ export function BlueprintGallery() {
   }, [activeProjectId, close]);
 
   const handleDelete = useCallback(async (bp: BlueprintSummary) => {
+    // Built-in templates are not file-backed and cannot be deleted.
+    if (isBuiltinBlueprintPath(bp.filePath)) return;
     const deleted = await window.clubhouse.blueprint.delete(bp.filePath);
     if (deleted) {
       setBlueprints((prev) => prev.filter((b) => b.filePath !== bp.filePath));
@@ -300,6 +321,7 @@ export function BlueprintGallery() {
                     onImport={() => handleImport(bp)}
                     onDelete={() => setDeleteConfirm(bp.filePath)}
                     importing={importing === bp.filePath}
+                    canDelete={!isBuiltinBlueprintPath(bp.filePath)}
                   />
                 ))}
               </div>
@@ -367,6 +389,7 @@ function BlueprintCard({
   onImport,
   onDelete,
   importing,
+  canDelete = true,
 }: {
   blueprint: BlueprintSummary;
   isSelected: boolean;
@@ -374,6 +397,7 @@ function BlueprintCard({
   onImport: () => void;
   onDelete: () => void;
   importing: boolean;
+  canDelete?: boolean;
 }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -434,14 +458,18 @@ function BlueprintCard({
           >
             Import
           </button>
-          <div className="border-t border-surface-0 my-1" />
-          <button
-            onClick={() => { setContextMenu(null); onDelete(); }}
-            className="w-full text-left px-3 py-1.5 hover:bg-ctp-error/10 text-ctp-error"
-            data-testid="blueprint-card-delete"
-          >
-            Delete Blueprint
-          </button>
+          {canDelete && (
+            <>
+              <div className="border-t border-surface-0 my-1" />
+              <button
+                onClick={() => { setContextMenu(null); onDelete(); }}
+                className="w-full text-left px-3 py-1.5 hover:bg-ctp-error/10 text-ctp-error"
+                data-testid="blueprint-card-delete"
+              >
+                Delete Blueprint
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

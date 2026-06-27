@@ -116,7 +116,7 @@ export const IPC = {
     WRITE_SOURCE_PERSONA_CONTENT: 'agent:write-source-persona-content',
     DELETE_SOURCE_PERSONA: 'agent:delete-source-persona',
     APPLY_PERSONA_TO_AGENT: 'agent:apply-persona-to-agent',
-    EXTRACT_AGENT_PATTERN: 'agent:extract-agent-pattern',
+    EXTRACT_AGENT_PERSONA: 'agent:extract-agent-persona',
     GET_PROJECT_CONFIG_BREAKDOWN: 'agent:get-project-config-breakdown',
     REMOVE_PLUGIN_INJECTION_ITEM: 'agent:remove-plugin-injection-item',
     COMPUTE_CONFIG_DIFF: 'agent:compute-config-diff',
@@ -235,6 +235,11 @@ export const IPC = {
     CONFIRM_UPDATE_RESTART: 'app:confirm-update-restart',
     /** Dev-only: simulate update restart to test session resume flow */
     DEV_SIMULATE_UPDATE_RESTART: 'app:dev-simulate-update-restart',
+    // Custom protocol handler (clubhouse://)
+    /** main → renderer: a protocol link was activated while the app was running */
+    PROTOCOL_ACTION: 'app:protocol-action',
+    /** renderer → main: pull any protocol action queued before the renderer was ready */
+    GET_PENDING_PROTOCOL_ACTION: 'app:get-pending-protocol-action',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',

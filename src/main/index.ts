@@ -22,6 +22,8 @@ import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
 import { generateCspNonce, getCspNonce } from './csp-nonce';
+import { initProtocolHandler } from './services/protocol-service';
+import * as projectStore from './services/project-store';
 
 // Allow overriding userData path for running multiple isolated instances (e.g. testing,
 // dual-instance Annex V2 workflows). Must be set before app.name so that any early
@@ -65,6 +67,20 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
+let mainWindow: BrowserWindow | null = null;
+
+// Register the clubhouse:// protocol and acquire the single-instance lock as
+// early as possible. If another instance already holds the lock, this one
+// hands its protocol argv to the running instance (via second-instance) and
+// quits immediately.
+const gotInstanceLock = initProtocolHandler({
+  getWindow: () => mainWindow,
+  listProjects: () => projectStore.list(),
+});
+if (!gotInstanceLock) {
+  app.quit();
+}
+
 function getThemeColors(): { bg: string; mantle: string; text: string } {
   try {
     const { themeId } = getThemeSettings();
@@ -73,8 +89,6 @@ function getThemeColors(): { bg: string; mantle: string; text: string } {
     return getThemeColorsForTitleBar('catppuccin-mocha');
   }
 }
-
-let mainWindow: BrowserWindow | null = null;
 
 const createWindow = (): void => {
   const isWin = process.platform === 'win32';

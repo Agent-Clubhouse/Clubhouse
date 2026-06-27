@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import { settingsChannels } from '../shared/settings-definitions';
-import { AgentHookEvent, AgentWildcardSettings, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings, WrapperCatalogSnapshot } from '../shared/types';
+import { AgentHookEvent, AgentWildcardSettings, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings, WrapperCatalogSnapshot, ResolvedProtocolAction } from '../shared/types';
 import type { PluginUpdatesStatus } from '../shared/marketplace-types';
 
 const api = {
@@ -406,8 +406,8 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_PERSONA, projectPath, personaId, scope),
     applyPersonaToAgent: (projectPath: string, agentId: string, personaId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.AGENT.APPLY_PERSONA_TO_AGENT, projectPath, agentId, personaId),
-    extractAgentPattern: (projectPath: string, agentId: string): Promise<{ content: string; settings: import('../shared/persona-pattern').PatternSettings } | null> =>
-      ipcRenderer.invoke(IPC.AGENT.EXTRACT_AGENT_PATTERN, projectPath, agentId),
+    extractAgentPersona: (projectPath: string, agentId: string): Promise<{ content: string; settings: import('../shared/persona-pattern').PatternSettings } | null> =>
+      ipcRenderer.invoke(IPC.AGENT.EXTRACT_AGENT_PERSONA, projectPath, agentId),
     createSkill: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
       ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource, projectPath),
     createAgentTemplate: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
@@ -789,6 +789,14 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_LIVE_AGENTS_FOR_UPDATE),
     getPendingResumes: () =>
       ipcRenderer.invoke(IPC.APP.GET_PENDING_RESUMES),
+    getPendingProtocolAction: (): Promise<ResolvedProtocolAction | null> =>
+      ipcRenderer.invoke(IPC.APP.GET_PENDING_PROTOCOL_ACTION),
+    onProtocolAction: (callback: (action: ResolvedProtocolAction) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, action: ResolvedProtocolAction) =>
+        callback(action);
+      ipcRenderer.on(IPC.APP.PROTOCOL_ACTION, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.PROTOCOL_ACTION, listener); };
+    },
     resumeManualAgent: (agentId: string, projectPath: string, sessionId?: string) =>
       ipcRenderer.invoke(IPC.APP.RESUME_MANUAL_AGENT, agentId, projectPath, sessionId),
     resolveWorkingAgent: (agentId: string, action: string) =>

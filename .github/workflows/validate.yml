@@ -52,7 +52,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # Pin Windows to windows-2022 (VS2022). windows-latest rolled to the
+        # windows-2025 image (VS2026), which @electron/node-gyp can't detect,
+        # breaking the node-pty rebuild during `electron-forge package`.
+        os: [macos-latest, windows-2022, ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -92,7 +95,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # Pin Windows to windows-2022 (VS2022). windows-latest rolled to the
+        # windows-2025 image (VS2026), which @electron/node-gyp can't detect,
+        # breaking the node-pty rebuild during `electron-forge package`.
+        os: [macos-latest, windows-2022, ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
