@@ -16,9 +16,11 @@ vi.mock('./config-pipeline', () => ({
 // Mock pty-manager
 const mockPtySpawn = vi.fn();
 const mockPtyGracefulKill = vi.fn();
+const mockPtyIsRunning = vi.fn(() => false);
 vi.mock('./pty-manager', () => ({
   spawn: (...args: unknown[]) => mockPtySpawn(...args),
   gracefulKill: (...args: unknown[]) => mockPtyGracefulKill(...args),
+  isRunning: (...args: unknown[]) => mockPtyIsRunning(...args),
 }));
 
 // Mock headless-manager
@@ -227,6 +229,8 @@ import {
   untrackAgent,
   isHeadlessAgent,
   isStructuredAgent,
+  isAgentRunning,
+  getRunningAgentIds,
   expandHome,
 } from './agent-system';
 import * as os from 'os';
@@ -2321,6 +2325,36 @@ describe('agent-system', () => {
         ['my-mcp'],
         testConfigs,
       );
+    });
+  });
+
+  describe('isAgentRunning / getRunningAgentIds', () => {
+    it('reports running when a PTY session is live', () => {
+      mockPtyIsRunning.mockImplementation((id: string) => id === 'pty_agent');
+      expect(isAgentRunning('pty_agent')).toBe(true);
+      expect(isAgentRunning('other')).toBe(false);
+    });
+
+    it('reports running for headless and structured sessions', () => {
+      mockIsHeadless.mockImplementation((id: string) => id === 'headless_agent');
+      mockIsStructuredSession.mockImplementation((id: string) => id === 'structured_agent');
+      expect(isAgentRunning('headless_agent')).toBe(true);
+      expect(isAgentRunning('structured_agent')).toBe(true);
+    });
+
+    it('reports not running when no manager has a session', () => {
+      expect(isAgentRunning('idle_agent')).toBe(false);
+    });
+
+    it('filters a candidate list to only the live agents', () => {
+      mockPtyIsRunning.mockImplementation((id: string) => id === 'a');
+      mockIsHeadless.mockImplementation((id: string) => id === 'b');
+      mockIsStructuredSession.mockImplementation((id: string) => id === 'c');
+      expect(getRunningAgentIds(['a', 'b', 'c', 'd'])).toEqual(['a', 'b', 'c']);
+    });
+
+    it('returns an empty array when none are running', () => {
+      expect(getRunningAgentIds(['x', 'y'])).toEqual([]);
     });
   });
 });

@@ -46,6 +46,7 @@ vi.mock('../services/agent-system', () => ({
   checkAvailability: vi.fn(async () => ({ available: true })),
   getAvailableOrchestrators: vi.fn(() => ['claude-code', 'aider']),
   isHeadlessAgent: vi.fn(() => false),
+  getRunningAgentIds: vi.fn((ids: string[]) => ids.filter((id) => id === 'running_one')),
 }));
 
 vi.mock('../services/headless-manager', () => ({
@@ -123,6 +124,7 @@ describe('agent-handlers', () => {
       IPC.AGENT.GET_TOOL_VERB, IPC.AGENT.GET_SUMMARY_INSTRUCTION,
       IPC.AGENT.READ_TRANSCRIPT, IPC.AGENT.GET_TRANSCRIPT_INFO,
       IPC.AGENT.READ_TRANSCRIPT_PAGE, IPC.AGENT.IS_HEADLESS_AGENT,
+      IPC.AGENT.GET_RUNNING_STATUSES,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -152,6 +154,13 @@ describe('agent-handlers', () => {
     const result = await handler({}, '/project');
     expect(agentConfig.listDurable).toHaveBeenCalledWith('/project');
     expect(result).toEqual([{ id: 'a1', name: 'Bot' }]);
+  });
+
+  it('GET_RUNNING_STATUSES delegates to agentSystem.getRunningAgentIds', async () => {
+    const handler = handlers.get(IPC.AGENT.GET_RUNNING_STATUSES)!;
+    const result = await handler({}, ['running_one', 'sleeping_two']);
+    expect(agentSystem.getRunningAgentIds).toHaveBeenCalledWith(['running_one', 'sleeping_two']);
+    expect(result).toEqual(['running_one']);
   });
 
   it('CREATE_DURABLE delegates to agentConfig.createDurable', async () => {

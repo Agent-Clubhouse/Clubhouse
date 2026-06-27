@@ -67,6 +67,7 @@ vi.stubGlobal('clubhouse', {
   },
   agent: {
     listDurable: async () => [],
+    getRunningStatuses: async () => [],
     createDurable: asyncNoop,
     deleteDurable: asyncNoop,
     renameDurable: asyncNoop,

@@ -40,6 +40,18 @@ export function registerAgentHandlers(): void {
     },
   ));
 
+  // Returns the subset of the given agent IDs that currently have a live
+  // session (PTY / headless / structured) in the main process. The renderer
+  // calls this after (re)loading durable agents to reconcile status, so a
+  // reopened window shows running agents as 'running' immediately instead of
+  // waiting for the next poll tick or hook event.
+  ipcMain.handle(IPC.AGENT.GET_RUNNING_STATUSES, withValidatedArgs(
+    [arrayArg(stringArg())],
+    async (_event, agentIds) => {
+      return agentSystem.getRunningAgentIds(agentIds);
+    },
+  ));
+
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(

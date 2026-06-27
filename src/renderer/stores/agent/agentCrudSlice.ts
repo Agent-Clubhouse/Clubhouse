@@ -89,6 +89,36 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
 
       set({ agents });
 
+      // Reconcile status against the main process's live sessions. Durable
+      // agents load as 'sleeping' (above), but their PTY/headless/structured
+      // sessions outlive the renderer window — on a window reopen the freshly
+      // loaded store would otherwise show genuinely-running agents as 'asleep'
+      // until the next poll tick or hook event. Upgrade 'sleeping' → 'running'
+      // for any loaded agent the main process reports as live (mirrors the
+      // remote-agent reconciliation in remoteProjectStore). Upgrade only —
+      // downgrades are left to the stale-status tick and hook events.
+      try {
+        const runningIds: string[] = await window.clubhouse.agent.getRunningStatuses(
+          configs.map((config) => config.id),
+        );
+        if (runningIds.length > 0) {
+          set((s) => {
+            let changed = false;
+            const next = { ...s.agents };
+            for (const id of runningIds) {
+              const agent = next[id];
+              if (agent && agent.status === 'sleeping') {
+                next[id] = { ...agent, status: 'running' };
+                changed = true;
+              }
+            }
+            return changed ? { agents: next } : s;
+          });
+        }
+      } catch {
+        // Non-fatal — status self-corrects on the next poll tick / hook event.
+      }
+
       // Load icons for agents that have them (in parallel)
       await Promise.all(
         configs
