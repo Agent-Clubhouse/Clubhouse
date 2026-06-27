@@ -98,6 +98,7 @@ function CreationForm({
 }) {
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const create = useGroupProjectStore((s) => s.create);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const loaded = useGroupProjectStore((s) => s.loaded);
@@ -110,9 +111,18 @@ function CreationForm({
     const trimmed = name.trim();
     if (!trimmed || creating) return;
     setCreating(true);
+    setError(null);
     try {
       const project = await create(trimmed);
       onUpdateMetadata({ groupProjectId: project.id, name: project.name });
+    } catch (err) {
+      // Surface the failure instead of silently resetting the card. The most
+      // common cause is an unregistered IPC handler ("No handler registered for
+      // 'group-project:create'"), but disk/permission errors during the registry
+      // flush surface here too.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[group-project] create failed:', message);
+      setError(`Couldn't create project: ${message}`);
     } finally {
       setCreating(false);
     }
@@ -133,7 +143,7 @@ function CreationForm({
       <input
         type="text"
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
         onKeyDown={handleKeyDown}
         placeholder="Project name..."
         className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
@@ -146,6 +156,11 @@ function CreationForm({
       >
         {creating ? 'Creating...' : 'Create'}
       </button>
+      {error && (
+        <div role="alert" className="w-full text-xs text-ctp-red bg-ctp-red/10 border border-ctp-red/30 rounded-md px-3 py-1.5">
+          {error}
+        </div>
+      )}
     </div>
   );
 }
