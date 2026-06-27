@@ -261,7 +261,7 @@ function AppAgentSettings() {
 
               {showExpansion && (
                 <div className="border-t border-surface-0 px-3 py-2.5 pl-8 space-y-2.5">
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs text-ctp-text font-medium">Hook server</div>
                       <div className="text-[11px] text-ctp-subtext0 mt-0.5">
@@ -271,10 +271,12 @@ function AppAgentSettings() {
                         running agents, which need a restart to take full effect.
                       </div>
                     </div>
-                    <Toggle
-                      checked={hookServerOn}
-                      onChange={(v) => setHookServerEnabled(o.id, v)}
-                    />
+                    <div className="flex-shrink-0">
+                      <Toggle
+                        checked={hookServerOn}
+                        onChange={(v) => setHookServerEnabled(o.id, v)}
+                      />
+                    </div>
                   </div>
                 </div>
               )}

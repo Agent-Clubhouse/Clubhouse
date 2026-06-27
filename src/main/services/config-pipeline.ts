@@ -179,6 +179,67 @@ export function stripClubhouseHooks(settings: Record<string, unknown>): Record<s
   return result;
 }
 
+/**
+ * Strip Clubhouse-injected hook entries from an on-disk JSON config file that
+ * belongs to a *stopped* agent — one with no live snapshot in this process.
+ *
+ * The per-orchestrator hook-server disable path uses the snapshot/restore
+ * pipeline for running agents, but stopped durable agents have no in-memory
+ * snapshot: their hook file still sits on disk and keeps firing after the
+ * toggle is turned off. This reconciles those files directly.
+ *
+ * Reads the current file, removes our hook entries (preserving user-authored
+ * hooks and sibling settings such as Copilot's `version`), and writes it back.
+ * If stripping collapses the file to an empty object, the file is deleted.
+ * No-ops (returns false) when the file is missing, not valid JSON, or contains
+ * no Clubhouse entries. Mutex-guarded so it serialises with snapshot/restore
+ * on the same path. Returns true only when an entry was actually removed.
+ */
+export function stripClubhouseHooksFromFile(filePath: string): Promise<boolean> {
+  return withMutex(async () => {
+    const absPath = path.resolve(filePath);
+    if (!(await pathExists(absPath))) return false;
+
+    let current: unknown;
+    try {
+      current = JSON.parse(await fsp.readFile(absPath, 'utf-8'));
+    } catch {
+      return false; // unreadable / not valid JSON — leave it untouched
+    }
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return false;
+
+    const settings = current as Record<string, unknown>;
+    const hooks = settings.hooks;
+    if (!hooks || typeof hooks !== 'object') return false;
+
+    const hadClubhouse = Object.values(hooks as Record<string, unknown>).some(
+      (entries) => Array.isArray(entries) && entries.some((e) => isClubhouseHookEntry(e)),
+    );
+    if (!hadClubhouse) return false;
+
+    const cleaned = stripClubhouseHooks(settings);
+    try {
+      if (Object.keys(cleaned).length === 0) {
+        await fsp.unlink(absPath);
+        appLog('core:config-pipeline', 'info', 'Stripped Clubhouse hooks from stopped agent (deleted, no remaining settings)', {
+          meta: { filePath: absPath },
+        });
+      } else {
+        await fsp.writeFile(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
+        appLog('core:config-pipeline', 'info', 'Stripped Clubhouse hooks from stopped agent', {
+          meta: { filePath: absPath },
+        });
+      }
+      return true;
+    } catch (err) {
+      appLog('core:config-pipeline', 'error', 'Failed to strip hooks from stopped agent config', {
+        meta: { filePath: absPath, error: err instanceof Error ? err.message : String(err) },
+      });
+      return false;
+    }
+  });
+}
+
 /** Check if a file path looks like a TOML config file. */
 function isTomlFile(filePath: string): boolean {
   return filePath.endsWith('.toml');
