@@ -76,6 +76,25 @@ export function isStructuredAgent(agentId: string): boolean {
   return structuredManager.isStructuredSession(agentId);
 }
 
+/**
+ * Whether an agent currently has a live session in the main process — a PTY,
+ * a headless run, or a structured session. Live sessions outlive the renderer
+ * window, so this is the source of truth when a reopened window reconciles
+ * status (see `getRunningAgentIds`).
+ */
+export function isAgentRunning(agentId: string): boolean {
+  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || isStructuredAgent(agentId);
+}
+
+/**
+ * Given a set of candidate agent IDs, return those with a live session. Used by
+ * the renderer to reconcile durable-agent status on window reopen so genuinely
+ * running agents don't briefly show as 'sleeping' until the next poll tick.
+ */
+export function getRunningAgentIds(agentIds: string[]): string[] {
+  return agentIds.filter(isAgentRunning);
+}
+
 export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
   let params = inParams;
   const provider = await resolveOrchestrator(params.projectPath, params.orchestrator);

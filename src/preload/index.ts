@@ -93,6 +93,8 @@ const api = {
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
+    getRunningStatuses: (agentIds: string[]): Promise<string[]> =>
+      ipcRenderer.invoke(IPC.AGENT.GET_RUNNING_STATUSES, agentIds),
     createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, structuredMode?: boolean, persona?: string) =>
       ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, structuredMode, persona),
     deleteDurable: (projectPath: string, agentId: string) =>

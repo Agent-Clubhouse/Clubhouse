@@ -10,6 +10,7 @@ vi.stubGlobal('window', {
     },
     agent: {
       listDurable: vi.fn().mockResolvedValue([]),
+      getRunningStatuses: vi.fn().mockResolvedValue([]),
       renameDurable: vi.fn().mockResolvedValue(undefined),
       updateDurable: vi.fn().mockResolvedValue(undefined),
       deleteDurable: vi.fn().mockResolvedValue(undefined),
@@ -1197,6 +1198,58 @@ describe('agentStore', () => {
       // Second load under project B (same path, different store ID)
       await getState().loadDurableAgents('proj_B', '/shared-path');
       expect(getState().agents['durable_dup'].projectId).toBe('proj_B');
+    });
+
+    it('reconciles status to running for agents the main process reports live', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_live', name: 'live', color: 'indigo', createdAt: '2024-01-01' },
+        { id: 'durable_idle', name: 'idle', color: 'emerald', createdAt: '2024-01-01' },
+      ]);
+      // Main process reports only the first agent as having a live session.
+      mockAgent.getRunningStatuses.mockResolvedValue(['durable_live']);
+
+      await getState().loadDurableAgents('proj_1', '/project');
+
+      // Running agent reconciled immediately; genuinely-idle one stays sleeping.
+      expect(getState().agents['durable_live'].status).toBe('running');
+      expect(getState().agents['durable_idle'].status).toBe('sleeping');
+      expect(mockAgent.getRunningStatuses).toHaveBeenCalledWith(['durable_live', 'durable_idle']);
+    });
+
+    it('leaves all agents sleeping when none are reported running', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_s1', name: 's1', color: 'indigo', createdAt: '2024-01-01' },
+      ]);
+      mockAgent.getRunningStatuses.mockResolvedValue([]);
+
+      await getState().loadDurableAgents('proj_1', '/project');
+      expect(getState().agents['durable_s1'].status).toBe('sleeping');
+    });
+
+    it('does not downgrade an agent already marked running', async () => {
+      seedAgent({ id: 'durable_run', projectId: 'proj_1', status: 'running' });
+      const mockAgent = window.clubhouse.agent as any;
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_run', name: 'run', color: 'indigo', createdAt: '2024-01-01' },
+      ]);
+      // Main reports it as not live (e.g. a transient snapshot) — must not flip it.
+      mockAgent.getRunningStatuses.mockResolvedValue([]);
+
+      await getState().loadDurableAgents('proj_1', '/project');
+      expect(getState().agents['durable_run'].status).toBe('running');
+    });
+
+    it('survives a getRunningStatuses failure (non-fatal)', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_err', name: 'err', color: 'indigo', createdAt: '2024-01-01' },
+      ]);
+      mockAgent.getRunningStatuses.mockRejectedValue(new Error('ipc down'));
+
+      await getState().loadDurableAgents('proj_1', '/project');
+      expect(getState().agents['durable_err'].status).toBe('sleeping');
     });
   });
 
