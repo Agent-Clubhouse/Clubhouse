@@ -18,10 +18,23 @@ vi.mock('../../shared/ipc-channels', () => ({
 }));
 
 const mockGetAllRegistrations = vi.fn();
+const mockReadProjectOrchestrator = vi.fn(() => Promise.resolve(undefined));
 vi.mock('./agent-registry', () => ({
   agentRegistry: {
     getAllRegistrations: () => mockGetAllRegistrations(),
   },
+  readProjectOrchestrator: (...args: unknown[]) => mockReadProjectOrchestrator(...args),
+  DEFAULT_ORCHESTRATOR: 'claude-code',
+}));
+
+const mockProjectStoreList = vi.fn(() => Promise.resolve([]));
+vi.mock('./project-store', () => ({
+  list: (...args: unknown[]) => mockProjectStoreList(...args),
+}));
+
+const mockListDurable = vi.fn(() => Promise.resolve([]));
+vi.mock('./agent-config', () => ({
+  listDurable: (...args: unknown[]) => mockListDurable(...args),
 }));
 
 const mockGetProvider = vi.fn();
@@ -34,10 +47,12 @@ vi.mock('../orchestrators', () => ({
 const mockSnapshotFile = vi.fn(() => Promise.resolve());
 const mockRestoreForAgent = vi.fn(() => Promise.resolve());
 const mockGetHooksConfigPath = vi.fn();
+const mockStripClubhouseHooksFromFile = vi.fn(() => Promise.resolve(true));
 vi.mock('./config-pipeline', () => ({
   snapshotFile: (...args: unknown[]) => mockSnapshotFile(...args),
   restoreForAgent: (...args: unknown[]) => mockRestoreForAgent(...args),
   getHooksConfigPath: (...args: unknown[]) => mockGetHooksConfigPath(...args),
+  stripClubhouseHooksFromFile: (...args: unknown[]) => mockStripClubhouseHooksFromFile(...args),
 }));
 
 const mockClearForAgent = vi.fn();
@@ -121,6 +136,125 @@ describe('hook-server-toggle', () => {
     });
   });
 
+  describe('applyDisabledForOrchestrator — stopped durable agents', () => {
+    const hookProvider = { id: 'copilot-cli', writeHooksConfig: vi.fn(() => Promise.resolve()) };
+
+    beforeEach(() => {
+      mockGetProvider.mockReturnValue(hookProvider);
+      mockIsHookCapable.mockReturnValue(true);
+      mockGetHooksConfigPath.mockImplementation(
+        (_provider: unknown, cwd: string) => `${cwd}/.github/hooks/hooks.json`,
+      );
+      mockStripClubhouseHooksFromFile.mockResolvedValue(true);
+    });
+
+    it('strips on-disk hooks for a stopped durable agent of the target orchestrator', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map()); // nothing running
+      mockProjectStoreList.mockResolvedValue([{ id: 'proj1', name: 'p', path: '/p' }]);
+      mockListDurable.mockResolvedValue([
+        { id: 'dur-a', name: 'a', color: '#fff', worktreePath: '/p/dur-a', orchestrator: 'copilot-cli' },
+      ]);
+
+      const affected = await applyDisabledForOrchestrator('copilot-cli');
+
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/p/dur-a/.github/hooks/hooks.json');
+      expect(affected).toEqual(['dur-a']);
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+        'hook-server:agents-need-restart',
+        { reason: 'disabled', agentIds: ['dur-a'] },
+      );
+    });
+
+    it('skips a durable agent that is currently running (already handled, no double strip)', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['dur-a', { projectPath: '/p', cwd: '/p/dur-a', orchestrator: 'copilot-cli', runtime: 'pty' }],
+      ]));
+      mockProjectStoreList.mockResolvedValue([{ id: 'proj1', name: 'p', path: '/p' }]);
+      mockListDurable.mockResolvedValue([
+        { id: 'dur-a', name: 'a', color: '#fff', worktreePath: '/p/dur-a', orchestrator: 'copilot-cli' },
+      ]);
+
+      const affected = await applyDisabledForOrchestrator('copilot-cli');
+
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('dur-a');
+      expect(mockStripClubhouseHooksFromFile).not.toHaveBeenCalled();
+      expect(affected).toEqual(['dur-a']);
+    });
+
+    it('skips durable agents belonging to a different orchestrator', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map());
+      mockProjectStoreList.mockResolvedValue([{ id: 'proj1', name: 'p', path: '/p' }]);
+      mockListDurable.mockResolvedValue([
+        { id: 'dur-claude', name: 'c', color: '#fff', worktreePath: '/p/dur-claude', orchestrator: 'claude-code' },
+        { id: 'dur-copilot', name: 'c', color: '#fff', worktreePath: '/p/dur-copilot', orchestrator: 'copilot-cli' },
+      ]);
+
+      const affected = await applyDisabledForOrchestrator('copilot-cli');
+
+      expect(mockStripClubhouseHooksFromFile).toHaveBeenCalledWith('/p/dur-copilot/.github/hooks/hooks.json');
+      expect(mockStripClubhouseHooksFromFile).not.toHaveBeenCalledWith('/p/dur-claude/.github/hooks/hooks.json');
+      expect(affected).toEqual(['dur-copilot']);
+    });
+
+    it('resolves a durable agent with no explicit orchestrator via the project setting', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map());
+      mockReadProjectOrchestrator.mockResolvedValueOnce('copilot-cli');
+      mockProjectStoreList.mockResolvedValue([{ id: 'proj1', name: 'p', path: '/p' }]);
+      mockListDurable.mockResolvedValue([
+        { id: 'dur-inherit', name: 'i', color: '#fff', worktreePath: '/p/dur-inherit' },
+      ]);
+
+      const affected = await applyDisabledForOrchestrator('copilot-cli');
+
+      expect(affected).toEqual(['dur-inherit']);
+    });
+
+    it('does not count a durable agent whose file had no Clubhouse hooks', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map());
+      mockStripClubhouseHooksFromFile.mockResolvedValue(false);
+      mockProjectStoreList.mockResolvedValue([{ id: 'proj1', name: 'p', path: '/p' }]);
+      mockListDurable.mockResolvedValue([
+        { id: 'dur-a', name: 'a', color: '#fff', worktreePath: '/p/dur-a', orchestrator: 'copilot-cli' },
+      ]);
+
+      const affected = await applyDisabledForOrchestrator('copilot-cli');
+
+      expect(affected).toEqual([]);
+      expect(mockBroadcastToAllWindows).not.toHaveBeenCalled();
+    });
+
+    it('does not reconcile durable agents for a non-hook-capable orchestrator', async () => {
+      mockIsHookCapable.mockReturnValue(false);
+      mockGetAllRegistrations.mockReturnValue(new Map());
+      mockProjectStoreList.mockResolvedValue([{ id: 'proj1', name: 'p', path: '/p' }]);
+      mockListDurable.mockResolvedValue([
+        { id: 'dur-a', name: 'a', color: '#fff', worktreePath: '/p/dur-a', orchestrator: 'copilot-cli' },
+      ]);
+
+      const affected = await applyDisabledForOrchestrator('copilot-cli');
+
+      expect(mockStripClubhouseHooksFromFile).not.toHaveBeenCalled();
+      expect(affected).toEqual([]);
+    });
+
+    it('continues when one project fails to list durable agents', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map());
+      mockProjectStoreList.mockResolvedValue([
+        { id: 'proj1', name: 'p1', path: '/p1' },
+        { id: 'proj2', name: 'p2', path: '/p2' },
+      ]);
+      mockListDurable
+        .mockRejectedValueOnce(new Error('corrupt agents.json'))
+        .mockResolvedValueOnce([
+          { id: 'dur-b', name: 'b', color: '#fff', worktreePath: '/p2/dur-b', orchestrator: 'copilot-cli' },
+        ]);
+
+      const affected = await applyDisabledForOrchestrator('copilot-cli');
+
+      expect(affected).toEqual(['dur-b']);
+    });
+  });
+
   describe('applyEnabledForOrchestrator', () => {
     const mockProvider = {
       id: 'claude-code',
@@ -201,6 +335,15 @@ describe('hook-server-toggle', () => {
         'hook-server:agents-need-restart',
         { reason: 'enabled', agentIds: ['agent-a'] },
       );
+    });
+
+    it('does not reach into durable configs (stopped agents get hooks via startup injection)', async () => {
+      mockGetAllRegistrations.mockReturnValue(new Map([
+        ['agent-a', { projectPath: '/p', cwd: '/p/a', orchestrator: 'claude-code', runtime: 'pty' }],
+      ]));
+      await applyEnabledForOrchestrator('claude-code');
+      expect(mockListDurable).not.toHaveBeenCalled();
+      expect(mockStripClubhouseHooksFromFile).not.toHaveBeenCalled();
     });
   });
 

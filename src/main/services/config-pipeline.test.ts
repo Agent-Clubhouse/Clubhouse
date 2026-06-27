@@ -25,6 +25,7 @@ import {
   getHooksConfigPath,
   isClubhouseHookEntry,
   stripClubhouseHooks,
+  stripClubhouseHooksFromFile,
   _resetForTesting,
 } from './config-pipeline';
 
@@ -34,6 +35,78 @@ describe('config-pipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _resetForTesting();
+  });
+
+  describe('stripClubhouseHooksFromFile', () => {
+    it('returns false (no-op) when the file does not exist', async () => {
+      vi.mocked(pathExists).mockResolvedValueOnce(false);
+      const result = await stripClubhouseHooksFromFile('/p/dur/.github/hooks/hooks.json');
+      expect(result).toBe(false);
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('returns false for an unreadable / non-JSON file without touching it', async () => {
+      vi.mocked(pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('not json {');
+      const result = await stripClubhouseHooksFromFile('/p/dur/hooks.json');
+      expect(result).toBe(false);
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('returns false when the file has no Clubhouse hooks', async () => {
+      vi.mocked(pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo hi' }] }] },
+      }));
+      const result = await stripClubhouseHooksFromFile('/p/dur/hooks.json');
+      expect(result).toBe(false);
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('deletes the file when stripping leaves no settings (Claude-style)', async () => {
+      vi.mocked(pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] }] },
+      }));
+      const result = await stripClubhouseHooksFromFile('/p/dur/.claude/settings.local.json');
+      expect(result).toBe(true);
+      expect(fsp.unlink).toHaveBeenCalledWith(path.resolve('/p/dur/.claude/settings.local.json'));
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('writes back preserving sibling settings (Copilot-style version field)', async () => {
+      vi.mocked(pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        version: 1,
+        hooks: { preToolUse: [{ type: 'command', bash: CLUBHOUSE_HOOK_CMD }] },
+      }));
+      const result = await stripClubhouseHooksFromFile('/p/dur/.github/hooks/hooks.json');
+      expect(result).toBe(true);
+      expect(fsp.unlink).not.toHaveBeenCalled();
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
+      expect(written).toEqual({ version: 1 });
+    });
+
+    it('preserves user-authored hooks alongside the stripped Clubhouse entry', async () => {
+      vi.mocked(pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            { hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] },
+            { hooks: [{ type: 'command', command: 'echo user-hook' }] },
+          ],
+        },
+      }));
+      const result = await stripClubhouseHooksFromFile('/p/dur/settings.json');
+      expect(result).toBe(true);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
+      expect(written.hooks.PreToolUse).toEqual([
+        { hooks: [{ type: 'command', command: 'echo user-hook' }] },
+      ]);
+    });
   });
 
   describe('snapshotFile', () => {
