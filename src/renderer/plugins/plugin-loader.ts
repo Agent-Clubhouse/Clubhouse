@@ -10,6 +10,7 @@ import { getBuiltinPlugins, getDefaultEnabledIds, type ExperimentalFlags } from 
 import { preRegisterFromManifest } from './canvas-widget-registry';
 import { rendererLog } from './renderer-logger';
 import { dynamicImportModule } from './dynamic-import';
+import { buildPluginModuleUrl } from '../../shared/plugin-protocol-url';
 import { registerTheme, unregisterTheme } from '../themes';
 
 const activeContexts = new Map<string, PluginContext>();
@@ -375,29 +376,26 @@ export async function activatePlugin(
         return;
       }
     } else {
-      // Dynamic import for community plugins
+      // Dynamic import for community plugins.
       // Strip leading "./" from manifest.main so joining doesn't create an
-      // unresolvable "./"-prefixed segment in the final file:// URL.
+      // unresolvable "./"-prefixed segment (kept from #1499).
       const mainPath = (entry.manifest.main || 'main.js').replace(/^\.\//, '');
       const fullModulePath = `${entry.pluginPath}/${mainPath}`;
 
-      // Convert filesystem path to file:// URL for ESM import resolution.
-      // On macOS/Linux paths start with '/', on Windows they start with a drive letter.
-      const moduleUrl = fullModulePath.startsWith('/')
-        ? `file://${fullModulePath}`
-        : `file:///${fullModulePath.replace(/\\/g, '/')}`;
-
-      // Append cache-busting param so re-imports after plugin rebuild
-      // don't return the stale cached module.
-      const cacheBustedUrl = `${moduleUrl}?v=${Date.now()}`;
+      // Serve the module over the custom same-origin `clubhouse-plugin:` scheme
+      // (Part B). Unlike a file:// URL or a pathless blob URL, this lets the
+      // module's relative/bare imports resolve in both dev and prod. The
+      // Date.now() version is embedded in the URL path so a re-import after a
+      // plugin rebuild busts the cache for the entry AND its sibling modules.
+      const moduleUrl = buildPluginModuleUrl(fullModulePath, Date.now());
 
       try {
-        mod = await dynamicImportModule(cacheBustedUrl);
+        mod = await dynamicImportModule(moduleUrl);
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         const errStack = err instanceof Error ? err.stack : undefined;
         rendererLog('core:plugins', 'error', `Failed to load module for plugin "${pluginId}"`, {
-          meta: { pluginId, modulePath: fullModulePath, moduleUrl: cacheBustedUrl, error: errMsg, stack: errStack },
+          meta: { pluginId, modulePath: fullModulePath, moduleUrl, error: errMsg, stack: errStack },
         });
         store.setPluginStatus(pluginId, 'errored', `Failed to load module: ${errMsg}`);
         return;

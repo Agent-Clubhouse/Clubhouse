@@ -11,6 +11,7 @@ import fs from 'fs';
 
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
+import { buildDevCsp } from './src/main/csp-nonce';
 
 function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string): void {
   const src = path.join(srcRoot, 'node_modules', moduleName);
@@ -125,6 +126,12 @@ const config: ForgeConfig = {
     new WebpackPlugin({
       port: 3456,
       mainConfig,
+      // Dev-only CSP (webpack dev server, http://localhost). Includes the
+      // webpack-HMR relaxations plus the custom `clubhouse-plugin:` scheme so
+      // the dev renderer can import plugin modules over it. Production CSP is
+      // set separately via an HTTP header in src/main/index.ts. Kept in sync
+      // with buildProductionCsp by csp-nonce tests.
+      devContentSecurityPolicy: buildDevCsp(),
       renderer: {
         config: rendererConfig,
         entryPoints: [

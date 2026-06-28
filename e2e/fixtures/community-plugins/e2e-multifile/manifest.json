@@ -1,0 +1,22 @@
+{
+  "id": "e2e-multifile",
+  "name": "E2E Multi-File Plugin",
+  "version": "1.0.0",
+  "description": "E2E fixture whose entry module imports a sibling module — proves relative-import resolution at runtime.",
+  "author": "Clubhouse E2E",
+  "engine": { "api": 0.8 },
+  "scope": "project",
+  "main": "./dist/main.js",
+  "permissions": [],
+  "contributes": {
+    "help": {
+      "topics": [
+        {
+          "id": "e2e-multifile",
+          "title": "E2E Multi-File Plugin",
+          "content": "Fixture plugin. Its entry `dist/main.js` does `import { MARKER } from './marker.js'` so a successful activation proves the sibling module resolved."
+        }
+      ]
+    }
+  }
+}

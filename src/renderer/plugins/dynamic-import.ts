@@ -1,38 +1,32 @@
 import type { PluginModule } from '../../shared/plugin-types';
+import { PLUGIN_PROTOCOL_SCHEME, parsePluginModuleUrl } from '../../shared/plugin-protocol-url';
 
 /**
  * Dynamic import wrapper — in a separate module so tests can mock it.
  *
- * Two distinct paths, selected by the renderer's origin:
+ * Community plugin modules are served over the custom same-origin
+ * `clubhouse-plugin:` scheme (Part B). Because that scheme is a *standard*
+ * scheme backed by a main-process handler, the module keeps a real path, so its
+ * relative/bare imports resolve — in both dev and prod — and the version prefix
+ * in the URL path provides cache-busting on reload.
  *
- * 1. Dev mode (renderer served from http://localhost by the webpack dev
- *    server): Chromium's ES module loader blocks cross-origin import() of
- *    file:// URLs. We read the file via IPC and import from a unique blob:
- *    URL, which sidesteps the cross-origin restriction without unsafe-eval.
- *    (A blob: URL has no path component, so a multi-file plugin's relative
- *    imports cannot resolve — but the cross-origin block leaves dev no other
- *    option. Production uses the direct path below, which does resolve them.)
- *
- * 2. Production mode (renderer on file://): import the file:// URL directly so
- *    the module keeps a real filesystem path and its relative/bare imports
- *    (e.g. `import './util.js'`) resolve. The renderer is same-origin with the
- *    plugin files — CSP allows it via `script-src 'self'`, and the files are
- *    served by the main-process `protocol.handle('file', …)` handler. We strip
- *    the `?v=` cache-busting query first: Chromium's ESM loader does not
- *    support query params on file:// URLs and would otherwise fail with
- *    "Cannot find module …?v=…".
- *
- * Routing *all* imports through a blob URL (as #1499 did) broke multi-file
- * plugins in production, because blob: URLs have no path for relative imports
- * to resolve against. This wrapper restores the direct production import.
+ * - **Production** (renderer on `file://`): import the `clubhouse-plugin:` URL
+ *   directly. This is the durable path and the one the E2E covers.
+ * - **Dev** (renderer on `http://localhost`): the import is cross-origin. The
+ *   privileged scheme + CORS header are meant to allow it; if a given Electron
+ *   build still blocks it, we fall back to reading the source via IPC and
+ *   importing from a blob URL so dev keeps loading. (Blob URLs have no path, so
+ *   multi-file relative imports are unsupported in that fallback — a long-
+ *   standing dev limitation; production uses the protocol. This is the approved
+ *   dev posture: never weaken CSP or ship a broken dev path to force one route.)
  *
  * The webpackIgnore comment prevents webpack from statically analyzing the import().
  */
 
 /**
- * Indirection around the native dynamic import. Kept on an object so tests can
- * spy on it without depending on the runtime's module resolver, while the
- * webpackIgnore comment still suppresses webpack's static analysis.
+ * Indirection around the native dynamic import so tests can spy on it without
+ * depending on the runtime's module resolver. The webpackIgnore comment still
+ * suppresses webpack's static analysis.
  * @internal — only the export name is internal; the behavior is production code.
  */
 export const _internals = {
@@ -40,27 +34,31 @@ export const _internals = {
     import(/* webpackIgnore: true */ specifier),
 };
 
+async function importViaBlob(filePath: string): Promise<PluginModule> {
+  const contents = await window.clubhouse.plugin.loadModuleSource(filePath);
+  const blob = new Blob([contents], { type: 'text/javascript' });
+  const blobUrl = URL.createObjectURL(blob);
+  try {
+    return await _internals.rawImport(blobUrl);
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
 export async function dynamicImportModule(url: string): Promise<PluginModule> {
-  if (url.startsWith('file:') && window.location.protocol !== 'file:') {
-    // Dev mode: read the module source via IPC and import from a blob URL.
-    // Strip the scheme prefix and any query params to get the filesystem path.
-    const filePath = decodeURIComponent(
-      url.replace(/^file:\/\//, '').replace(/\?.*$/, ''),
-    );
-    const contents = await window.clubhouse.plugin.loadModuleSource(filePath);
-    const blob = new Blob([contents], { type: 'text/javascript' });
-    const blobUrl = URL.createObjectURL(blob);
+  const isPluginScheme = url.startsWith(`${PLUGIN_PROTOCOL_SCHEME}:`);
+
+  // Dev (non-file origin): try the protocol, fall back to the blob path so dev
+  // still loads if the cross-origin import is blocked.
+  if (isPluginScheme && window.location.protocol !== 'file:') {
     try {
-      return await _internals.rawImport(blobUrl);
-    } finally {
-      URL.revokeObjectURL(blobUrl);
+      return await _internals.rawImport(url);
+    } catch {
+      const parsed = parsePluginModuleUrl(url);
+      return importViaBlob(parsed?.filePath ?? url);
     }
   }
 
-  // Production (file:// origin) and any non-file URL: import directly so the
-  // module's relative/bare imports resolve against its real path. Strip the
-  // ?v= cache-busting query from file:// URLs — Chromium's ESM loader rejects
-  // query params on file:// URLs.
-  const importUrl = url.startsWith('file:') ? url.replace(/\?.*$/, '') : url;
-  return _internals.rawImport(importUrl);
+  // Production (file: origin) and any other URL: import directly.
+  return _internals.rawImport(url);
 }
