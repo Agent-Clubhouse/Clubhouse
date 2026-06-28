@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { app, BrowserWindow, dialog, powerMonitor, session, net } from 'electron';
+import { app, BrowserWindow, dialog, powerMonitor, session, net, protocol } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, stopAllWatches } from './services/file-watch-service';
@@ -23,6 +23,9 @@ import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
 import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
 import { initProtocolHandler } from './services/protocol-service';
+import { resolvePluginModulePath } from './plugin-protocol';
+import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
+import { getCommunityPluginsDir } from './services/plugin-discovery';
 import * as projectStore from './services/project-store';
 
 // Allow overriding userData path for running multiple isolated instances (e.g. testing,
@@ -42,6 +45,25 @@ app.name = 'Clubhouse';
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.mason-allen.clubhouse');
 }
+
+// Register the custom plugin-module scheme as privileged. MUST run before the
+// app 'ready' event (i.e. at module load), per Electron. `standard` makes
+// relative ESM imports resolve via normal URL resolution; `secure` keeps it a
+// secure context; `supportFetchAPI` + `corsEnabled` let the dev renderer
+// (http://localhost) import cross-origin when the handler returns ACAO. The
+// handler itself is wired after 'ready' (see below).
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: PLUGIN_PROTOCOL_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
 
 // Catch-all handlers for truly unexpected errors. These fire *after* logService.init()
 // has been called (in registerAllHandlers), so early crashes before `ready` won't log —
@@ -244,6 +266,33 @@ app.on('ready', () => {
     }
 
     return net.fetch(request as unknown as Request, { bypassCustomProtocolHandlers: true });
+  });
+
+  // Serve plugin modules over the custom same-origin `clubhouse-plugin:` scheme
+  // (Part B). The path is resolved + validated symlink-safely against the
+  // plugins root; relative imports inside a module resolve back through this
+  // same handler (the version prefix in the path propagates to siblings, giving
+  // cache-busting). CORS header lets the dev renderer (http origin) import it too.
+  session.defaultSession.protocol.handle(PLUGIN_PROTOCOL_SCHEME, async (request) => {
+    try {
+      const realPath = await resolvePluginModulePath(
+        request.url,
+        getCommunityPluginsDir(),
+        (p) => fs.promises.realpath(p),
+      );
+      const source = await fs.promises.readFile(realPath, 'utf-8');
+      return new Response(source, {
+        headers: {
+          'content-type': 'text/javascript; charset=utf-8',
+          'access-control-allow-origin': '*',
+        },
+      });
+    } catch (err) {
+      appLog('core:plugins', 'warn', 'clubhouse-plugin: request denied', {
+        meta: { url: request.url, error: err instanceof Error ? err.message : String(err) },
+      });
+      return new Response('Not found', { status: 404 });
+    }
   });
 
   // Enforce CSP via HTTP header on the main-frame HTML response (production only).
