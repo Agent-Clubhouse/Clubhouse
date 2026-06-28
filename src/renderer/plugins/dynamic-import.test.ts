@@ -4,6 +4,14 @@ import type { PluginModule } from '../../shared/plugin-types';
 const FAKE_SOURCE = 'export default {}';
 const FAKE_BLOB_URL = 'blob:null/test-uuid';
 
+type ClubhouseWindow = { clubhouse: { plugin: { loadModuleSource: ReturnType<typeof vi.fn> } } };
+function setClubhouse(loadModuleSource: ReturnType<typeof vi.fn>) {
+  (window as unknown as ClubhouseWindow).clubhouse = { plugin: { loadModuleSource } };
+}
+function getLoadModuleSource() {
+  return (window as unknown as ClubhouseWindow).clubhouse.plugin.loadModuleSource;
+}
+
 function setupDevModeGlobals(mockModule: PluginModule) {
   // Simulate http: origin (dev mode)
   Object.defineProperty(window, 'location', {
@@ -38,6 +46,10 @@ describe('dynamicImportModule', () => {
   async function loadFn() {
     const { dynamicImportModule } = await import('./dynamic-import');
     return dynamicImportModule;
+  }
+
+  async function loadModule() {
+    return import('./dynamic-import');
   }
 
   describe('dev mode (non-file: origin)', () => {
@@ -119,53 +131,96 @@ describe('dynamicImportModule', () => {
   describe('production mode (file: origin)', () => {
     beforeEach(() => {
       setupProdModeGlobals();
+      // Provide a clubhouse stub + URL spies so we can assert the blob/IPC
+      // path is NOT taken in production (that path is what broke relative
+      // imports in #1499).
+      setClubhouse(vi.fn().mockResolvedValue(FAKE_SOURCE));
       vi.spyOn(URL, 'createObjectURL').mockReturnValue(FAKE_BLOB_URL);
       vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
     });
 
-    it('reads module source via IPC for file: origin (same as dev mode)', async () => {
+    // The exact case #1499's tests missed: a multi-file plugin whose entry
+    // module does `import './x.js'`. Blob-wrapping (no path) broke this. We
+    // assert production imports the file:// URL DIRECTLY — no IPC, no blob —
+    // which is the prerequisite for the entry module's relative import to
+    // resolve against its real filesystem path.
+    it('imports the file:// URL directly for a multi-file plugin — no IPC, no blob', async () => {
       const fakeModule: PluginModule = { activate: vi.fn() };
-      const { loadModuleSource } = setupDevModeGlobals(fakeModule);
-      // Override location back to production after setupDevModeGlobals set it to http:
-      setupProdModeGlobals();
+      const url = 'file:///Users/me/.clubhouse/plugins/automations/dist/main.js';
 
-      const fn = await loadFn();
-      await fn('file:///Users/masonallen/.clubhouse/plugins/automations/dist/main.js').catch(() => {});
+      const mod = await loadModule();
+      const rawImport = vi.spyOn(mod._internals, 'rawImport').mockResolvedValue(fakeModule);
 
-      expect(loadModuleSource).toHaveBeenCalledWith(
-        '/Users/masonallen/.clubhouse/plugins/automations/dist/main.js',
-      );
+      const result = await mod.dynamicImportModule(url);
+
+      // Imported directly with the real file:// path — not a blob/IPC copy.
+      expect(result).toBe(fakeModule);
+      expect(rawImport).toHaveBeenCalledWith(url);
+      expect(getLoadModuleSource()).not.toHaveBeenCalled();
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
     });
 
-    it('creates a blob URL for file: origin — avoids ?v= query-param failure', async () => {
-      const loadModuleSource = vi.fn().mockResolvedValue(FAKE_SOURCE);
-      (window as any).clubhouse = { plugin: { loadModuleSource } };
+    // A bare/external dependency import inside the entry module (e.g.
+    // `import 'some-dep'`) likewise only resolves when the module is imported
+    // directly with its real path — never through a pathless blob URL.
+    it('imports directly for an entry module with a bare dependency import', async () => {
+      const fakeModule: PluginModule = {};
+      const url = 'file:///plugins/with-deps/dist/main.js';
 
-      const fn = await loadFn();
-      await fn('file:///plugins/automations/dist/main.js?v=1780813375562').catch(() => {});
+      const mod = await loadModule();
+      const rawImport = vi.spyOn(mod._internals, 'rawImport').mockResolvedValue(fakeModule);
 
-      expect(URL.createObjectURL).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'text/javascript' }),
-      );
+      const result = await mod.dynamicImportModule(url);
+
+      expect(result).toBe(fakeModule);
+      expect(rawImport).toHaveBeenCalledWith(url);
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
+      expect(getLoadModuleSource()).not.toHaveBeenCalled();
     });
 
-    it('strips ?v= cache-busting query param from file path in production', async () => {
-      const loadModuleSource = vi.fn().mockResolvedValue(FAKE_SOURCE);
-      (window as any).clubhouse = { plugin: { loadModuleSource } };
+    it('strips the ?v= cache-busting query param before importing in production', async () => {
+      const fakeModule: PluginModule = {};
+      const cleanUrl = 'file:///plugins/automations/dist/main.js';
 
-      const fn = await loadFn();
-      await fn('file:///plugins/automations/dist/main.js?v=1780813375562').catch(() => {});
+      const mod = await loadModule();
+      const rawImport = vi.spyOn(mod._internals, 'rawImport').mockResolvedValue(fakeModule);
 
-      expect(loadModuleSource).toHaveBeenCalledWith('/plugins/automations/dist/main.js');
+      await mod.dynamicImportModule(`${cleanUrl}?v=1780813375562`);
+
+      // The query param must be gone — Chromium's ESM loader rejects ?v= on file://.
+      expect(rawImport).toHaveBeenCalledWith(cleanUrl);
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
     });
 
-    it('revokes the blob URL after import in production (cleanup)', async () => {
-      const loadModuleSource = vi.fn().mockResolvedValue(FAKE_SOURCE);
-      (window as any).clubhouse = { plugin: { loadModuleSource } };
+    it('loads a single-file plugin in production without blob-wrapping', async () => {
+      const fakeModule: PluginModule = { activate: vi.fn() };
+      const url = 'file:///plugins/single/main.js';
 
-      const fn = await loadFn();
-      await fn('file:///plugins/automations/dist/main.js').catch(() => {});
+      const mod = await loadModule();
+      const rawImport = vi.spyOn(mod._internals, 'rawImport').mockResolvedValue(fakeModule);
 
+      const result = await mod.dynamicImportModule(url);
+
+      expect(result).toBe(fakeModule);
+      expect(rawImport).toHaveBeenCalledWith(url);
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
+      expect(getLoadModuleSource()).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('dev mode — direct-import seam (single-file, blob path)', () => {
+    it('imports the generated blob URL via the raw import seam', async () => {
+      const fakeModule: PluginModule = { activate: vi.fn() };
+      setupDevModeGlobals(fakeModule);
+
+      const mod = await loadModule();
+      const rawImport = vi.spyOn(mod._internals, 'rawImport').mockResolvedValue(fakeModule);
+
+      const result = await mod.dynamicImportModule('file:///some/plugin/main.js');
+
+      expect(result).toBe(fakeModule);
+      // Dev imports the blob URL (not the file path) to dodge the cross-origin block.
+      expect(rawImport).toHaveBeenCalledWith(FAKE_BLOB_URL);
       expect(URL.revokeObjectURL).toHaveBeenCalledWith(FAKE_BLOB_URL);
     });
   });

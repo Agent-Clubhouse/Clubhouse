@@ -21,7 +21,7 @@ import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
-import { generateCspNonce, getCspNonce } from './csp-nonce';
+import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
 import { initProtocolHandler } from './services/protocol-service';
 import * as projectStore from './services/project-store';
 
@@ -254,7 +254,7 @@ app.on('ready', () => {
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-            `default-src 'self' 'unsafe-inline' data:; script-src 'self' 'nonce-${getCspNonce()}' blob:; worker-src 'self' blob:`,
+            buildProductionCsp(getCspNonce()),
           ],
         },
       });
