@@ -4,6 +4,14 @@ import type { PluginModule } from '../../shared/plugin-types';
 const FAKE_SOURCE = 'export default {}';
 const FAKE_BLOB_URL = 'blob:null/test-uuid';
 
+type ClubhouseWindow = { clubhouse: { plugin: { loadModuleSource: ReturnType<typeof vi.fn> } } };
+function setClubhouse(loadModuleSource: ReturnType<typeof vi.fn>) {
+  (window as unknown as ClubhouseWindow).clubhouse = { plugin: { loadModuleSource } };
+}
+function getLoadModuleSource() {
+  return (window as unknown as ClubhouseWindow).clubhouse.plugin.loadModuleSource;
+}
+
 function setupDevModeGlobals(mockModule: PluginModule) {
   // Simulate http: origin (dev mode)
   Object.defineProperty(window, 'location', {
@@ -126,7 +134,7 @@ describe('dynamicImportModule', () => {
       // Provide a clubhouse stub + URL spies so we can assert the blob/IPC
       // path is NOT taken in production (that path is what broke relative
       // imports in #1499).
-      (window as any).clubhouse = { plugin: { loadModuleSource: vi.fn().mockResolvedValue(FAKE_SOURCE) } };
+      setClubhouse(vi.fn().mockResolvedValue(FAKE_SOURCE));
       vi.spyOn(URL, 'createObjectURL').mockReturnValue(FAKE_BLOB_URL);
       vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
     });
@@ -148,7 +156,7 @@ describe('dynamicImportModule', () => {
       // Imported directly with the real file:// path — not a blob/IPC copy.
       expect(result).toBe(fakeModule);
       expect(rawImport).toHaveBeenCalledWith(url);
-      expect((window as any).clubhouse.plugin.loadModuleSource).not.toHaveBeenCalled();
+      expect(getLoadModuleSource()).not.toHaveBeenCalled();
       expect(URL.createObjectURL).not.toHaveBeenCalled();
     });
 
@@ -167,7 +175,7 @@ describe('dynamicImportModule', () => {
       expect(result).toBe(fakeModule);
       expect(rawImport).toHaveBeenCalledWith(url);
       expect(URL.createObjectURL).not.toHaveBeenCalled();
-      expect((window as any).clubhouse.plugin.loadModuleSource).not.toHaveBeenCalled();
+      expect(getLoadModuleSource()).not.toHaveBeenCalled();
     });
 
     it('strips the ?v= cache-busting query param before importing in production', async () => {
@@ -196,7 +204,7 @@ describe('dynamicImportModule', () => {
       expect(result).toBe(fakeModule);
       expect(rawImport).toHaveBeenCalledWith(url);
       expect(URL.createObjectURL).not.toHaveBeenCalled();
-      expect((window as any).clubhouse.plugin.loadModuleSource).not.toHaveBeenCalled();
+      expect(getLoadModuleSource()).not.toHaveBeenCalled();
     });
   });
 
