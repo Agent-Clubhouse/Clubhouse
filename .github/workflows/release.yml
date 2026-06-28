@@ -233,7 +233,11 @@ jobs:
   build-windows:
     name: Build Windows (${{ matrix.arch }})
     needs: [verify-tag, validate-update-scripts]
-    runs-on: windows-latest
+    # Pin to windows-2022 (VS2022). windows-latest rolled to the windows-2025
+    # image (VS2026), which @electron/node-gyp can't detect, breaking the
+    # node-pty native rebuild during `electron-forge make`. Mirrors the E2E
+    # runner pin from #1509.
+    runs-on: windows-2022
     environment: release
     strategy:
       fail-fast: false
