@@ -281,12 +281,16 @@ app.on('ready', () => {
         (p) => fs.promises.realpath(p),
       );
       const source = await fs.promises.readFile(realPath, 'utf-8');
-      return new Response(source, {
-        headers: {
-          'content-type': 'text/javascript; charset=utf-8',
-          'access-control-allow-origin': '*',
-        },
-      });
+      const headers: Record<string, string> = {
+        'content-type': 'text/javascript; charset=utf-8',
+      };
+      // Dev (renderer on http://localhost) imports cross-origin and needs CORS.
+      // Prod (renderer on file://) is same-origin and does not — scope ACAO to
+      // unpackaged builds to keep the prod posture tight (QA note, Part B).
+      if (!app.isPackaged) {
+        headers['access-control-allow-origin'] = '*';
+      }
+      return new Response(source, { headers });
     } catch (err) {
       appLog('core:plugins', 'warn', 'clubhouse-plugin: request denied', {
         meta: { url: request.url, error: err instanceof Error ? err.message : String(err) },

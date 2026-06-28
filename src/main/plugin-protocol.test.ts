@@ -27,15 +27,16 @@ describe('resolvePluginModulePath', () => {
   it('resolves a valid in-root URL to its real path', async () => {
     const abs = `${ROOT}/automations/dist/main.js`;
     const url = buildPluginModuleUrl(abs, 123);
-    await expect(resolvePluginModulePath(url, ROOT, identityRealpath)).resolves.toBe(abs);
+    // path.resolve() so the expectation matches on Windows (C:\…) too.
+    await expect(resolvePluginModulePath(url, ROOT, identityRealpath)).resolves.toBe(path.resolve(abs));
   });
 
   it('ignores the version prefix when resolving the file', async () => {
     const abs = `${ROOT}/p/dist/main.js`;
     const v1 = await resolvePluginModulePath(buildPluginModuleUrl(abs, 1), ROOT, identityRealpath);
     const v2 = await resolvePluginModulePath(buildPluginModuleUrl(abs, 999), ROOT, identityRealpath);
-    expect(v1).toBe(abs);
-    expect(v2).toBe(abs);
+    expect(v1).toBe(path.resolve(abs));
+    expect(v2).toBe(path.resolve(abs));
   });
 
   it('rejects a malformed / wrong-scheme URL', async () => {
@@ -62,17 +63,17 @@ describe('resolvePluginModulePath', () => {
   });
 
   it('resolves a symlinked root (realpath of root differs from lexical root)', async () => {
-    // Simulate macOS /var → /private/var: both root and file live under the
-    // resolved prefix, so a file inside the symlinked root is accepted.
-    const lexicalRoot = '/var/tmp-plugins';
-    const realParent = '/private/var/tmp-plugins';
+    // Simulate macOS /var → /private/var: realpath maps anything under the
+    // lexical root onto a different real prefix. Built with path.resolve so it
+    // holds on Windows (C:\…) too.
+    const lexicalRoot = path.resolve('/tmp-lexical/plugins');
+    const realRoot = path.resolve('/tmp-real/plugins');
     const realpathFn = vi.fn().mockImplementation((p: string) =>
-      Promise.resolve(p.replace(/^\/var\//, '/private/var/')),
+      Promise.resolve(p.startsWith(lexicalRoot) ? realRoot + p.slice(lexicalRoot.length) : p),
     );
     const url = buildPluginModuleUrl(`${lexicalRoot}/p/dist/main.js`, 1);
-    await expect(resolvePluginModulePath(url, lexicalRoot, realpathFn)).resolves.toBe(
-      `${realParent}/p/dist/main.js`,
-    );
+    const expected = path.join(realRoot, 'p', 'dist', 'main.js');
+    await expect(resolvePluginModulePath(url, lexicalRoot, realpathFn)).resolves.toBe(expected);
   });
 
   it('propagates a realpath failure (missing file → 404 upstream)', async () => {
