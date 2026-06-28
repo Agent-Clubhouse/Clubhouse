@@ -243,6 +243,33 @@ test.describe('Drag-to-Reorder', () => {
       ).toBeVisible({ timeout: 3_000 });
     }
   });
+
+  // GH #1521 — dragging an UNSELECTED agent must reorder it (no prior click).
+  // NOTE: Playwright's HTML5 DnD is synthesized and cannot reproduce the real
+  // macOS native-gesture failure, so a green run here does NOT by itself prove
+  // the fix. It is a regression guard that the reorder wiring + persistence
+  // keep working when the drag starts from a row that was never click-selected.
+  // Keep this LAST in the describe — it mutates the persisted order.
+  test('reorders a durable agent dragged from an unselected row (GH #1521)', async () => {
+    const before = await getDurableAgentOrder();
+    expect(before.length).toBeGreaterThanOrEqual(3);
+
+    // Drag the first row onto the third — without selecting it first.
+    await window
+      .locator('[data-testid="durable-drag-0"]')
+      .dragTo(window.locator('[data-testid="durable-drag-2"]'));
+
+    // Order must change and persist (reorderAgents → agents.json → re-render).
+    await expect
+      .poll(async () => (await getDurableAgentOrder()).join(','), { timeout: 5_000 })
+      .not.toBe(before.join(','));
+
+    const after = await getDurableAgentOrder();
+    // The dragged row moved later in the list.
+    expect(after.indexOf(before[0])).toBeGreaterThan(0);
+    // No agents lost in the shuffle.
+    expect([...after].sort()).toEqual([...before].sort());
+  });
 });
 
 // ---------------------------------------------------------------------------
