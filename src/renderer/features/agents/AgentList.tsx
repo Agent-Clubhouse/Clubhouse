@@ -357,14 +357,23 @@ function AgentListInner() {
   }, []);
 
   // Drag-to-reorder handlers for durable agents
-  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+  const handleDragStart = useCallback((e: React.DragEvent, index: number, agentId: string) => {
+    // Select the dragged agent up-front so reorder never depends on a prior
+    // click (GH #1521). On the native macOS HTML5-DnD loop a drag begun on a
+    // non-active row does not complete a reorder — the only path that works is
+    // dragging the already-active row. Activating the row here, synchronously
+    // at drag start, puts every drag into that known-good state. Pure
+    // interaction logic: it reuses the existing active styling, adds no layout
+    // change, and is a no-op when the row is already active.
+    selectCompleted(null);
+    setActiveAgent(agentId, activeProjectId ?? undefined);
     setDragIndex(index);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(index));
     if (e.currentTarget instanceof HTMLElement) {
       e.currentTarget.style.opacity = '0.5';
     }
-  }, []);
+  }, [selectCompleted, setActiveAgent, activeProjectId]);
 
   const handleDragEnd = useCallback((e: React.DragEvent) => {
     if (e.currentTarget instanceof HTMLElement) {
@@ -603,7 +612,7 @@ function AgentListInner() {
                 <div
                   key={durable.id}
                   draggable
-                  onDragStart={(e) => handleDragStart(e, i)}
+                  onDragStart={(e) => handleDragStart(e, i, durable.id)}
                   onDragEnd={handleDragEnd}
                   onDragOver={(e) => handleDragOver(e, i)}
                   onDrop={(e) => handleDrop(e, i)}
