@@ -53,10 +53,26 @@ describe('resolvePluginModulePath', () => {
   it('rejects a SYMLINK that escapes the root (realpath resolves outside)', async () => {
     const abs = `${ROOT}/p/dist/main.js`;
     const url = buildPluginModuleUrl(abs, 1);
-    // realpath resolves the in-root path to an out-of-root target (symlink escape).
-    const escapingRealpath = vi.fn().mockResolvedValue('/etc/shadow');
+    // The root resolves to itself; only the file's realpath escapes the root.
+    const escapingRealpath = vi.fn().mockImplementation((p: string) =>
+      p === path.resolve(ROOT) ? Promise.resolve(path.resolve(ROOT)) : Promise.resolve('/etc/shadow'),
+    );
     await expect(resolvePluginModulePath(url, ROOT, escapingRealpath)).rejects.toThrow(/Access denied/);
     expect(escapingRealpath).toHaveBeenCalled();
+  });
+
+  it('resolves a symlinked root (realpath of root differs from lexical root)', async () => {
+    // Simulate macOS /var → /private/var: both root and file live under the
+    // resolved prefix, so a file inside the symlinked root is accepted.
+    const lexicalRoot = '/var/tmp-plugins';
+    const realParent = '/private/var/tmp-plugins';
+    const realpathFn = vi.fn().mockImplementation((p: string) =>
+      Promise.resolve(p.replace(/^\/var\//, '/private/var/')),
+    );
+    const url = buildPluginModuleUrl(`${lexicalRoot}/p/dist/main.js`, 1);
+    await expect(resolvePluginModulePath(url, lexicalRoot, realpathFn)).resolves.toBe(
+      `${realParent}/p/dist/main.js`,
+    );
   });
 
   it('propagates a realpath failure (missing file → 404 upstream)', async () => {

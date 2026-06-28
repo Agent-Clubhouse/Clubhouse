@@ -18,6 +18,15 @@ export interface LaunchOptions {
    * `CLUBHOUSE_USER_DATA` env var.
    */
   experimental?: Record<string, boolean>;
+
+  /**
+   * Redirect the community-plugins directory to a sandbox via
+   * `CLUBHOUSE_PLUGINS_DIR`. Honored only in unpackaged builds (E2E runs
+   * unpackaged), and feeds both plugin discovery and the `clubhouse-plugin:`
+   * protocol handler's allowed-root. Lets a test install a fixture plugin
+   * without touching the real user dir.
+   */
+  pluginsDir?: string;
 }
 
 /**
@@ -36,6 +45,9 @@ export async function launchApp(opts: LaunchOptions = {}) {
       'utf-8',
     );
     env.CLUBHOUSE_USER_DATA = userDataDir;
+  }
+  if (opts.pluginsDir) {
+    env.CLUBHOUSE_PLUGINS_DIR = opts.pluginsDir;
   }
 
   const electronApp = await electron.launch({

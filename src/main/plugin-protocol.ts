@@ -43,9 +43,19 @@ export async function resolvePluginModulePath(
   if (!parsed) {
     throw new Error(`Invalid plugin module URL: ${url}`);
   }
+  // Realpath the ROOT too, then compare realpath-to-realpath. Without this, a
+  // symlinked plugins root (e.g. macOS tmpdir /var → /private/var) makes the
+  // file's realpath fail the startsWith check against the un-resolved root. Fall
+  // back to the lexical root if it can't be resolved (e.g. dir doesn't exist).
+  let realRoot: string;
+  try {
+    realRoot = await realpathFn(path.resolve(pluginsRoot));
+  } catch {
+    realRoot = path.resolve(pluginsRoot);
+  }
   const candidate = path.resolve(parsed.filePath);
   const realPath = await realpathFn(candidate);
-  if (!isPathWithinRoot(realPath, pluginsRoot)) {
+  if (!isPathWithinRoot(realPath, realRoot)) {
     throw new Error(`Access denied: "${parsed.filePath}" is outside the plugins root`);
   }
   return realPath;
