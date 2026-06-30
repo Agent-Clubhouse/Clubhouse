@@ -1,5 +1,6 @@
 import type { PluginModule } from '../../shared/plugin-types';
 import { PLUGIN_PROTOCOL_SCHEME, parsePluginModuleUrl } from '../../shared/plugin-protocol-url';
+import { nativeDynamicImport } from './native-import';
 
 /**
  * Dynamic import wrapper — in a separate module so tests can mock it.
@@ -20,18 +21,20 @@ import { PLUGIN_PROTOCOL_SCHEME, parsePluginModuleUrl } from '../../shared/plugi
  *   standing dev limitation; production uses the protocol. This is the approved
  *   dev posture: never weaken CSP or ship a broken dev path to force one route.)
  *
- * The webpackIgnore comment prevents webpack from statically analyzing the import().
+ * The actual `import()` lives in native-import.js (plain JS). It MUST stay there:
+ * under tsconfig's `module: "commonjs"`, ts-loader downlevels a TS `import()`
+ * into `require()` and drops the `webpackIgnore` comment, which throws
+ * `Cannot find module 'clubhouse-plugin://…'` and never reaches the protocol
+ * handler. See native-import.js for the full rationale.
  */
 
 /**
  * Indirection around the native dynamic import so tests can spy on it without
- * depending on the runtime's module resolver. The webpackIgnore comment still
- * suppresses webpack's static analysis.
+ * depending on the runtime's module resolver.
  * @internal — only the export name is internal; the behavior is production code.
  */
 export const _internals = {
-  rawImport: (specifier: string): Promise<PluginModule> =>
-    import(/* webpackIgnore: true */ specifier),
+  rawImport: (specifier: string): Promise<PluginModule> => nativeDynamicImport(specifier),
 };
 
 async function importViaBlob(filePath: string): Promise<PluginModule> {
