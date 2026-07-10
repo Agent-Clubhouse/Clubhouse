@@ -9,11 +9,10 @@
 
 import { createSettingsStore } from './settings-store';
 import { isClubhouseModeEnabled, getSettings as getClubhouseModeSettings } from './clubhouse-mode-settings';
+import { MCP_SETTINGS } from '../../shared/settings-definitions';
 import type { McpSettings } from '../../shared/types';
 
-const store = createSettingsStore<McpSettings>('mcp-settings.json', {
-  enabled: false,
-});
+const store = createSettingsStore<McpSettings>(MCP_SETTINGS.filename, MCP_SETTINGS.defaults);
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

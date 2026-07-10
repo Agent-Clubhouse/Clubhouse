@@ -68,6 +68,13 @@ vi.mock('./clubhouse-mode-settings', () => ({
   isClubhouseModeEnabled: (...args: unknown[]) => mockIsClubhouseModeEnabled(...args),
 }));
 
+// Most agent-system tests target non-MCP behavior. Enable MCP explicitly only
+// in tests that exercise MCP injection so snapshot assertions stay focused.
+const mockIsMcpEnabled = vi.fn(() => false);
+vi.mock('./mcp-settings', () => ({
+  isMcpEnabled: (...args: unknown[]) => mockIsMcpEnabled(...args),
+}));
+
 // Mock agent-config
 const mockGetDurableConfig = vi.fn(() => null);
 const mockAddSessionEntry = vi.fn();
@@ -238,6 +245,7 @@ import * as os from 'os';
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsMcpEnabled.mockReturnValue(false);
     mockHeadlessSpawn.mockImplementation((agentId: string) => {
       mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
     });
