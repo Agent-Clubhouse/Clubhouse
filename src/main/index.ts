@@ -23,7 +23,7 @@ import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
 import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
 import { initProtocolHandler } from './services/protocol-service';
-import { resolvePluginModulePath } from './plugin-protocol';
+import { resolvePluginModulePath, pluginModuleResponseHeaders } from './plugin-protocol';
 import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
 import { getCommunityPluginsDir } from './services/plugin-discovery';
 import * as projectStore from './services/project-store';
@@ -281,16 +281,9 @@ app.on('ready', () => {
         (p) => fs.promises.realpath(p),
       );
       const source = await fs.promises.readFile(realPath, 'utf-8');
-      const headers: Record<string, string> = {
-        'content-type': 'text/javascript; charset=utf-8',
-      };
-      // Dev (renderer on http://localhost) imports cross-origin and needs CORS.
-      // Prod (renderer on file://) is same-origin and does not — scope ACAO to
-      // unpackaged builds to keep the prod posture tight (QA note, Part B).
-      if (!app.isPackaged) {
-        headers['access-control-allow-origin'] = '*';
-      }
-      return new Response(source, { headers });
+      // CORS header is required: importing this scheme is always cross-origin
+      // from the file://-or-http:// renderer. See pluginModuleResponseHeaders.
+      return new Response(source, { headers: pluginModuleResponseHeaders() });
     } catch (err) {
       appLog('core:plugins', 'warn', 'clubhouse-plugin: request denied', {
         meta: { url: request.url, error: err instanceof Error ? err.message : String(err) },

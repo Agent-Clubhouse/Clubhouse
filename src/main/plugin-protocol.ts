@@ -12,6 +12,27 @@ import * as path from 'path';
 import { parsePluginModuleUrl } from '../shared/plugin-protocol-url';
 
 /**
+ * HTTP response headers for serving a plugin module over the `clubhouse-plugin:`
+ * scheme.
+ *
+ * `Access-Control-Allow-Origin` is mandatory and must NOT be gated on
+ * packaged-vs-dev: a dynamic ESM `import()` of this scheme is ALWAYS
+ * cross-origin, because the renderer's origin is `file://` (prod) or
+ * `http://localhost` (dev) — never `clubhouse-plugin://`. Module fetches use
+ * CORS mode, so a response without this header is rejected by the browser with
+ * "Failed to fetch dynamically imported module", which breaks plugin loading in
+ * every build. (An earlier `!app.isPackaged` gate wrongly assumed prod was
+ * same-origin.) The served file is already validated within the plugins root by
+ * `resolvePluginModulePath`, so allowing any origin to read it is safe.
+ */
+export function pluginModuleResponseHeaders(): Record<string, string> {
+  return {
+    'content-type': 'text/javascript; charset=utf-8',
+    'access-control-allow-origin': '*',
+  };
+}
+
+/**
  * True iff `target` is the root itself or strictly underneath it. Compares
  * against `root + sep` so `/a/plugins-evil` does NOT match root `/a/plugins`.
  */

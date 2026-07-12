@@ -1,9 +1,24 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as path from 'path';
-import { isPathWithinRoot, resolvePluginModulePath } from './plugin-protocol';
+import { isPathWithinRoot, resolvePluginModulePath, pluginModuleResponseHeaders } from './plugin-protocol';
 import { buildPluginModuleUrl } from '../shared/plugin-protocol-url';
 
 const ROOT = '/home/me/.clubhouse/plugins';
+
+describe('pluginModuleResponseHeaders', () => {
+  // Regression: a dynamic import() of clubhouse-plugin: is always cross-origin
+  // (renderer is file:// or http://localhost), so the response MUST carry an
+  // Access-Control-Allow-Origin header in EVERY build — not just unpackaged.
+  // Without it the packaged app fails with "Failed to fetch dynamically imported
+  // module" and no plugin with a JS main can launch.
+  it('always sets Access-Control-Allow-Origin (not gated on dev vs packaged)', () => {
+    expect(pluginModuleResponseHeaders()['access-control-allow-origin']).toBe('*');
+  });
+
+  it('serves the module as JavaScript', () => {
+    expect(pluginModuleResponseHeaders()['content-type']).toMatch(/text\/javascript/);
+  });
+});
 
 describe('isPathWithinRoot', () => {
   it('accepts the root and paths under it', () => {
