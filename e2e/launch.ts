@@ -28,6 +28,12 @@ export interface LaunchOptions {
    */
   pluginsDir?: string;
 
+  /**
+   * JSON files to seed in the isolated Electron userData directory before
+   * launch, keyed by filename (for example `mcp-settings.json`).
+   */
+  userDataFiles?: Record<string, unknown>;
+
   /** Launch a packaged Clubhouse executable instead of the webpack entry. */
   executablePath?: string;
 }
@@ -40,13 +46,29 @@ export interface LaunchOptions {
 export async function launchApp(opts: LaunchOptions = {}) {
   let userDataDir: string | undefined;
   const env = { ...process.env };
-  if (opts.experimental) {
+  if (opts.experimental || opts.userDataFiles) {
     userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-e2e-'));
+  }
+  if (opts.experimental && userDataDir) {
     fs.writeFileSync(
       path.join(userDataDir, 'experimental-settings.json'),
       JSON.stringify(opts.experimental, null, 2),
       'utf-8',
     );
+  }
+  if (opts.userDataFiles && userDataDir) {
+    for (const [filename, value] of Object.entries(opts.userDataFiles)) {
+      if (path.basename(filename) !== filename) {
+        throw new Error(`Invalid userData seed filename: ${filename}`);
+      }
+      fs.writeFileSync(
+        path.join(userDataDir, filename),
+        JSON.stringify(value, null, 2),
+        'utf-8',
+      );
+    }
+  }
+  if (userDataDir) {
     env.CLUBHOUSE_USER_DATA = userDataDir;
   }
   if (opts.pluginsDir) {
