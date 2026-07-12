@@ -27,6 +27,9 @@ export interface LaunchOptions {
    * without touching the real user dir.
    */
   pluginsDir?: string;
+
+  /** Launch a packaged Clubhouse executable instead of the webpack entry. */
+  executablePath?: string;
 }
 
 /**
@@ -51,7 +54,8 @@ export async function launchApp(opts: LaunchOptions = {}) {
   }
 
   const electronApp = await electron.launch({
-    args: [MAIN_ENTRY],
+    ...(opts.executablePath ? { executablePath: opts.executablePath } : {}),
+    args: opts.executablePath ? [] : [MAIN_ENTRY],
     cwd: APP_PATH,
     env,
   });
