@@ -407,6 +407,7 @@ vi.stubGlobal('clubhouse', {
     gpDeleteTopic: vi.fn(async () => ({ deleted: false })),
     gpSetTopicProtection: vi.fn(async () => ({ ok: true })),
     gpInjectMessage: vi.fn(async () => true),
+    gpSetPolling: vi.fn(async () => ({ pollingEnabled: false, members: [] })),
     forgetSatellite: asyncNoop,
     forgetAllSatellites: asyncNoop,
     onSatellitesChanged: () => noop,
@@ -444,6 +445,7 @@ vi.stubGlobal('clubhouse', {
     estimateTrim: async () => ({ wouldRemove: 0 }),
     getMessage: async () => null,
     injectMessage: async () => true,
+    setPolling: async () => ({ pollingEnabled: false, members: [] }),
     onChanged: () => noop,
   },
   mcpBinding: {
