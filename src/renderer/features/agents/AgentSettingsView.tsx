@@ -1,7 +1,9 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Agent, QuickAgentDefaults, MaterializationPreview, McpCatalogArg, McpCatalogEntry, McpCatalogEntryWithState } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
+import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
+import { buildOrchestratorOptions } from './orchestrator-options';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -140,9 +142,19 @@ export function AgentSettingsView({ agent }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
   const { options: MODEL_OPTIONS } = useModelOptions();
-  const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
+  // Resolve orchestrators the same way AddAgentDialog does — profile-aware and scoped
+  // to this agent's project — so the selector behaves consistently with agent creation.
+  const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
+  const { effectiveOrchestrators } = useEffectiveOrchestrators(projectPath);
+  const agentOrchestrator = agent.orchestrator || 'claude-code';
+  // Always offer the agent's current orchestrator, even if it's disabled app-wide or
+  // missing from this machine's settings (e.g. a worktree-synced agent whose project
+  // profile wasn't synced). See buildOrchestratorOptions / #fix-orchestrator-selector AC #2.
+  const orchestratorOptions = useMemo(
+    () => buildOrchestratorOptions(effectiveOrchestrators, allOrchestrators, agentOrchestrator),
+    [effectiveOrchestrators, allOrchestrators, agentOrchestrator],
+  );
 
   // Tab state
   const [activeTab, setActiveTab] = useState<SettingsTab>('main');
@@ -320,7 +332,6 @@ export function AgentSettingsView({ agent }: Props) {
   };
 
   // Resolve orchestrator display name
-  const agentOrchestrator = agent.orchestrator || 'claude-code';
   const orchestratorInfo = allOrchestrators.find((o) => o.id === agentOrchestrator);
 
   // Resolve capabilities for the agent's orchestrator
@@ -358,7 +369,6 @@ export function AgentSettingsView({ agent }: Props) {
   }, []);
 
   // Quick Agent Defaults state
-  const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const [qadSystemPrompt, setQadSystemPrompt] = useState('');
   const [qadAllowedTools, setQadAllowedTools] = useState('');
   const [qadDefaultModel, setQadDefaultModel] = useState('');
@@ -909,7 +919,7 @@ export function AgentSettingsView({ agent }: Props) {
               </div>
 
               {/* Orchestrator */}
-              {enabledOrchestrators.length > 1 ? (
+              {orchestratorOptions.length > 1 ? (
                 <div>
                   <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
                   <select
@@ -918,15 +928,15 @@ export function AgentSettingsView({ agent }: Props) {
                     disabled={agent.status === 'running'}
                     className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {enabledOrchestrators.map((o) => (
+                    {orchestratorOptions.map((o) => (
                       <option key={o.id} value={o.id}>{o.displayName}</option>
                     ))}
                   </select>
                 </div>
-              ) : orchestratorInfo ? (
+              ) : (orchestratorInfo || orchestratorOptions[0]) ? (
                 <div>
                   <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
-                  <p className="mt-1 text-sm text-ctp-text">{orchestratorInfo.displayName}</p>
+                  <p className="mt-1 text-sm text-ctp-text">{(orchestratorInfo || orchestratorOptions[0]).displayName}</p>
                 </div>
               ) : null}
 

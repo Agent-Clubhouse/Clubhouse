@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
+import { app } from 'electron';
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
@@ -40,6 +41,7 @@ import {
   listProjectPluginInjections,
   cleanupProjectPluginInjections,
   listOrphanedPluginIds,
+  getCommunityPluginsDir,
 } from './plugin-discovery';
 
 const PLUGINS_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'plugins');
@@ -675,5 +677,36 @@ describe('plugin-discovery', () => {
 
       expect(result).toBeNull();
     });
+  });
+});
+
+describe('getCommunityPluginsDir — CLUBHOUSE_PLUGINS_DIR seam (Part B guardrail)', () => {
+  const ORIG_ENV = process.env.CLUBHOUSE_PLUGINS_DIR;
+  const ORIG_PACKAGED = (app as { isPackaged: boolean }).isPackaged;
+
+  afterEach(() => {
+    if (ORIG_ENV === undefined) delete process.env.CLUBHOUSE_PLUGINS_DIR;
+    else process.env.CLUBHOUSE_PLUGINS_DIR = ORIG_ENV;
+    (app as { isPackaged: boolean }).isPackaged = ORIG_PACKAGED;
+  });
+
+  it('honors CLUBHOUSE_PLUGINS_DIR in an unpackaged (dev/E2E) build', () => {
+    (app as { isPackaged: boolean }).isPackaged = false;
+    process.env.CLUBHOUSE_PLUGINS_DIR = path.join(os.tmpdir(), 'sandbox-plugins');
+    expect(getCommunityPluginsDir()).toBe(path.join(os.tmpdir(), 'sandbox-plugins'));
+  });
+
+  it('IGNORES CLUBHOUSE_PLUGINS_DIR in a packaged build — cannot widen the prod allowed-root', () => {
+    (app as { isPackaged: boolean }).isPackaged = true;
+    process.env.CLUBHOUSE_PLUGINS_DIR = path.join(os.tmpdir(), 'sandbox-plugins');
+    const result = getCommunityPluginsDir();
+    expect(result).not.toBe(path.join(os.tmpdir(), 'sandbox-plugins'));
+    expect(result.endsWith(path.join('.clubhouse', 'plugins'))).toBe(true);
+  });
+
+  it('falls back to the home plugins dir when no override is set', () => {
+    (app as { isPackaged: boolean }).isPackaged = false;
+    delete process.env.CLUBHOUSE_PLUGINS_DIR;
+    expect(getCommunityPluginsDir().endsWith(path.join('.clubhouse', 'plugins'))).toBe(true);
   });
 });

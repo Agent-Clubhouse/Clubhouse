@@ -2,13 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock dependencies before importing the module under test
 vi.mock('./settings-store', () => {
-  let stored: Record<string, unknown> = { enabled: false };
+  let defaults: Record<string, unknown> = {};
+  let stored: Record<string, unknown> = {};
   return {
-    createSettingsStore: vi.fn(() => ({
-      get: () => ({ ...stored }),
-      save: vi.fn(async (settings: Record<string, unknown>) => { stored = { ...settings }; }),
-    })),
-    resetAllSettingsStoresForTests: vi.fn(() => { stored = { enabled: false }; }),
+    createSettingsStore: vi.fn((_filename: string, initial: Record<string, unknown>) => {
+      defaults = { ...initial };
+      stored = { ...initial };
+      return {
+        get: () => ({ ...stored }),
+        save: vi.fn(async (settings: Record<string, unknown>) => { stored = { ...settings }; }),
+      };
+    }),
+    resetAllSettingsStoresForTests: vi.fn(() => { stored = { ...defaults }; }),
   };
 });
 
@@ -31,8 +36,8 @@ describe('mcp-settings', () => {
   });
 
   describe('isMcpEnabled', () => {
-    it('returns false by default', () => {
-      expect(isMcpEnabled()).toBe(false);
+    it('returns true using the shared default', () => {
+      expect(isMcpEnabled()).toBe(true);
     });
 
     it('returns true when globally enabled', async () => {
@@ -51,12 +56,14 @@ describe('mcp-settings', () => {
       expect(isMcpEnabled('/project')).toBe(false);
     });
 
-    it('falls back to clubhouse mode when all disabled', () => {
+    it('falls back to clubhouse mode when all disabled', async () => {
+      await saveSettings({ enabled: false });
       vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
       expect(isMcpEnabled()).toBe(true);
     });
 
-    it('clubhouse mode fallback receives project path', () => {
+    it('clubhouse mode fallback receives project path', async () => {
+      await saveSettings({ enabled: false });
       vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
       isMcpEnabled('/my-project');
       expect(isClubhouseModeEnabled).toHaveBeenCalledWith('/my-project');
@@ -64,7 +71,12 @@ describe('mcp-settings', () => {
   });
 
   describe('isMcpEnabledForAny', () => {
-    it('returns false when everything is disabled', () => {
+    it('returns true by default', () => {
+      expect(isMcpEnabledForAny()).toBe(true);
+    });
+
+    it('returns false when everything is disabled', async () => {
+      await saveSettings({ enabled: false });
       expect(isMcpEnabledForAny()).toBe(false);
     });
 
@@ -83,17 +95,20 @@ describe('mcp-settings', () => {
       expect(isMcpEnabledForAny()).toBe(false);
     });
 
-    it('returns true when Clubhouse Mode global toggle is on', () => {
+    it('returns true when Clubhouse Mode global toggle is on', async () => {
+      await saveSettings({ enabled: false });
       cmStored = { enabled: true };
       expect(isMcpEnabledForAny()).toBe(true);
     });
 
-    it('returns true when any Clubhouse Mode project override is true', () => {
+    it('returns true when any Clubhouse Mode project override is true', async () => {
+      await saveSettings({ enabled: false });
       cmStored = { enabled: false, projectOverrides: { '/x': false, '/y': true } };
       expect(isMcpEnabledForAny()).toBe(true);
     });
 
-    it('returns false when all Clubhouse Mode project overrides are false', () => {
+    it('returns false when all Clubhouse Mode project overrides are false', async () => {
+      await saveSettings({ enabled: false });
       cmStored = { enabled: false, projectOverrides: { '/x': false } };
       expect(isMcpEnabledForAny()).toBe(false);
     });

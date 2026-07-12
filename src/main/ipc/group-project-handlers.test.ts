@@ -160,13 +160,19 @@ describe('group-project-handlers', () => {
     expect(vi.mocked(ipcMain.handle).mock.calls.length).toBe(callCount);
   });
 
-  it('does not register when MCP is disabled', () => {
+  it('registers handlers even when MCP is disabled (regression: fresh-Mac silent create failure)', () => {
+    // Group-project creation is a local feature and must not depend on the MCP
+    // bridge being enabled. Previously this early-returned, leaving
+    // group-project:create unregistered so the renderer's invoke() rejected and
+    // creation silently no-op'd on fresh installs.
     vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
     handlers.clear();
     vi.mocked(ipcMain.handle).mockClear();
     _resetHandlersForTesting();
     registerGroupProjectHandlers();
-    expect(ipcMain.handle).not.toHaveBeenCalled();
+    expect(ipcMain.handle).toHaveBeenCalled();
+    expect(handlers.has(IPC.GROUP_PROJECT.CREATE)).toBe(true);
+    expect(handlers.has(IPC.GROUP_PROJECT.LIST)).toBe(true);
   });
 
   it('subscribes to registry onChange for broadcast', () => {

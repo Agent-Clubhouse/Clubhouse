@@ -37,6 +37,7 @@ export const IPC = {
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',
     LIST_DURABLE: 'agent:list-durable',
+    GET_RUNNING_STATUSES: 'agent:get-running-statuses',
     DELETE_DURABLE: 'agent:delete-durable',
     READ_INSTRUCTIONS: 'agent:read-instructions',
     SAVE_INSTRUCTIONS: 'agent:save-instructions',

@@ -823,4 +823,40 @@ describe('AgentList drag-reorder re-render', () => {
     // alpha (idx 0) moved to idx 2 → bravo, charlie, alpha
     expect(reorderAgents).toHaveBeenCalledWith('/project', ['b', 'c', 'a']);
   });
+
+  it('selects the dragged agent on drag start so reorder needs no prior click (GH #1521)', () => {
+    const a: Agent = { id: 'a', projectId: 'proj-1', name: 'alpha', kind: 'durable', status: 'sleeping', color: 'indigo' };
+    const b: Agent = { id: 'b', projectId: 'proj-1', name: 'bravo', kind: 'durable', status: 'sleeping', color: 'indigo' };
+    const c: Agent = { id: 'c', projectId: 'proj-1', name: 'charlie', kind: 'durable', status: 'sleeping', color: 'indigo' };
+    const setActiveAgent = vi.fn();
+    const reorderAgents = vi.fn();
+    // Start with NO agent selected — the exact precondition that used to fail.
+    useAgentStore.setState({ agents: { a, b, c }, setActiveAgent, reorderAgents, activeAgentId: null });
+
+    render(<AgentList />);
+
+    const store: Record<string, string> = {};
+    const dataTransfer = {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: (k: string, v: string) => { store[k] = v; },
+      getData: (k: string) => store[k] ?? '',
+    } as unknown as DataTransfer;
+
+    const src = screen.getByTestId('durable-drag-0');
+    const tgt = screen.getByTestId('durable-drag-2');
+
+    // Drag straight from an unselected row — no click first.
+    fireEvent.dragStart(src, { dataTransfer });
+
+    // The drag itself selects the dragged agent (puts it in the known-good
+    // active state), rather than requiring a prior click to select it.
+    expect(setActiveAgent).toHaveBeenCalled();
+    expect(setActiveAgent.mock.calls[0][0]).toBe('a');
+
+    // …and the reorder still completes end-to-end.
+    fireEvent.dragOver(tgt, { dataTransfer });
+    fireEvent.drop(tgt, { dataTransfer });
+    expect(reorderAgents).toHaveBeenCalledWith('/project', ['b', 'c', 'a']);
+  });
 });

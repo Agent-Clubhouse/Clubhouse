@@ -18,6 +18,24 @@ export interface LaunchOptions {
    * `CLUBHOUSE_USER_DATA` env var.
    */
   experimental?: Record<string, boolean>;
+
+  /**
+   * Redirect the community-plugins directory to a sandbox via
+   * `CLUBHOUSE_PLUGINS_DIR`. Honored only in unpackaged builds (E2E runs
+   * unpackaged), and feeds both plugin discovery and the `clubhouse-plugin:`
+   * protocol handler's allowed-root. Lets a test install a fixture plugin
+   * without touching the real user dir.
+   */
+  pluginsDir?: string;
+
+  /**
+   * JSON files to seed in the isolated Electron userData directory before
+   * launch, keyed by filename (for example `mcp-settings.json`).
+   */
+  userDataFiles?: Record<string, unknown>;
+
+  /** Launch a packaged Clubhouse executable instead of the webpack entry. */
+  executablePath?: string;
 }
 
 /**
@@ -28,18 +46,38 @@ export interface LaunchOptions {
 export async function launchApp(opts: LaunchOptions = {}) {
   let userDataDir: string | undefined;
   const env = { ...process.env };
-  if (opts.experimental) {
+  if (opts.experimental || opts.userDataFiles) {
     userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-e2e-'));
+  }
+  if (opts.experimental && userDataDir) {
     fs.writeFileSync(
       path.join(userDataDir, 'experimental-settings.json'),
       JSON.stringify(opts.experimental, null, 2),
       'utf-8',
     );
+  }
+  if (opts.userDataFiles && userDataDir) {
+    for (const [filename, value] of Object.entries(opts.userDataFiles)) {
+      if (path.basename(filename) !== filename) {
+        throw new Error(`Invalid userData seed filename: ${filename}`);
+      }
+      fs.writeFileSync(
+        path.join(userDataDir, filename),
+        JSON.stringify(value, null, 2),
+        'utf-8',
+      );
+    }
+  }
+  if (userDataDir) {
     env.CLUBHOUSE_USER_DATA = userDataDir;
+  }
+  if (opts.pluginsDir) {
+    env.CLUBHOUSE_PLUGINS_DIR = opts.pluginsDir;
   }
 
   const electronApp = await electron.launch({
-    args: [MAIN_ENTRY],
+    ...(opts.executablePath ? { executablePath: opts.executablePath } : {}),
+    args: opts.executablePath ? [] : [MAIN_ENTRY],
     cwd: APP_PATH,
     env,
   });

@@ -615,3 +615,24 @@ describe('GroupProjectCanvasWidget — admin star + toggle', () => {
     expect(source).toContain('getProjectAdmins(project?.metadata)');
   });
 });
+
+// ── Creation form surfaces errors (regression: silent create failure) ──
+
+describe('GroupProjectCanvasWidget — CreationForm error surfacing', () => {
+  it('handleCreate catches errors instead of only using try/finally', () => {
+    // Previously handleCreate wrapped create() in try/finally with no catch, so
+    // a rejected IPC call (e.g. unregistered group-project:create handler on a
+    // fresh Mac) became an unhandled rejection and the card silently reset.
+    expect(source).toMatch(/const handleCreate = useCallback\(async \(\) => \{[\s\S]*?\} catch \(err\) \{/);
+  });
+
+  it('stores and renders the create error in an alert region', () => {
+    expect(source).toContain("setError(`Couldn't create project: ${message}`)");
+    expect(source).toContain('role="alert"');
+    expect(source).toMatch(/\{error &&/);
+  });
+
+  it('clears the error when the user edits the name', () => {
+    expect(source).toMatch(/onChange=\{\(e\) => \{ setName\(e\.target\.value\); if \(error\) setError\(null\); \}\}/);
+  });
+});

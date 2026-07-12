@@ -1083,7 +1083,7 @@ describe('plugin-loader', () => {
   describe('community plugin loading', () => {
     const mockDynamicImport = dynamicImportModule as ReturnType<typeof vi.fn>;
 
-    it('converts unix path to file:// URL for dynamic import', async () => {
+    it('builds a clubhouse-plugin: URL from a unix path for dynamic import', async () => {
       const mod: PluginModule = { activate: vi.fn() };
       mockDynamicImport.mockResolvedValue(mod);
 
@@ -1095,7 +1095,9 @@ describe('plugin-loader', () => {
 
       expect(mockDynamicImport).toHaveBeenCalledTimes(1);
       const importedUrl = mockDynamicImport.mock.calls[0][0] as string;
-      expect(importedUrl).toMatch(/^file:\/\/\/home\/user\/.clubhouse\/plugins\/comm-1\/main\.js\?v=\d+$/);
+      expect(importedUrl).toMatch(
+        /^clubhouse-plugin:\/\/plugin\/v\d+\/home\/user\/\.clubhouse\/plugins\/comm-1\/main\.js$/,
+      );
     });
 
     it('uses custom main path from manifest', async () => {
@@ -1109,12 +1111,12 @@ describe('plugin-loader', () => {
       await activatePlugin('comm-main', 'proj-1', '/p1');
 
       const importedUrl = mockDynamicImport.mock.calls[0][0] as string;
-      expect(importedUrl).toMatch(/^file:\/\/\/plugins\/comm-main\/dist\/index\.js\?v=\d+$/);
+      expect(importedUrl).toMatch(/^clubhouse-plugin:\/\/plugin\/v\d+\/plugins\/comm-main\/dist\/index\.js$/);
     });
 
     it('normalizes ./ prefix in manifest main path', async () => {
-      // Regression: manifest.main of "./dist/main.js" was producing the path
-      // "pluginPath/./dist/main.js" which Chromium's ESM loader cannot resolve.
+      // Regression (#1499): manifest.main of "./dist/main.js" was producing
+      // "pluginPath/./dist/main.js" which the ESM loader cannot resolve. Kept.
       const mod: PluginModule = { activate: vi.fn() };
       mockDynamicImport.mockResolvedValue(mod);
 
@@ -1131,7 +1133,7 @@ describe('plugin-loader', () => {
       // Must NOT contain "/./": the ./ prefix must be stripped before joining.
       expect(importedUrl).not.toContain('/./');
       expect(importedUrl).toMatch(
-        /^file:\/\/\/Users\/masonallen\/.clubhouse\/plugins\/automations\/dist\/main\.js\?v=\d+$/,
+        /^clubhouse-plugin:\/\/plugin\/v\d+\/Users\/masonallen\/\.clubhouse\/plugins\/automations\/dist\/main\.js$/,
       );
     });
 
@@ -1150,7 +1152,7 @@ describe('plugin-loader', () => {
 
       const importedUrl = mockDynamicImport.mock.calls[0][0] as string;
       expect(importedUrl).not.toContain('/./');
-      expect(importedUrl).toMatch(/^file:\/\/\/plugins\/comm-nested\/lib\/index\.js\?v=\d+$/);
+      expect(importedUrl).toMatch(/^clubhouse-plugin:\/\/plugin\/v\d+\/plugins\/comm-nested\/lib\/index\.js$/);
     });
 
     it('sets errored status when dynamic import fails', async () => {
@@ -1214,7 +1216,7 @@ describe('plugin-loader', () => {
       expect(entry.error).toContain('at Plugin.activate');
     });
 
-    it('appends cache-busting query param to import URL', async () => {
+    it('embeds a cache-busting version in the URL path', async () => {
       const mod: PluginModule = {};
       mockDynamicImport.mockResolvedValue(mod);
 
@@ -1226,7 +1228,9 @@ describe('plugin-loader', () => {
       await activatePlugin('comm-cache', 'proj-1', '/p1');
 
       const importedUrl = mockDynamicImport.mock.calls[0][0] as string;
-      const match = importedUrl.match(/\?v=(\d+)$/);
+      // Version lives in the path (v<ts>), not a query — so it propagates to
+      // sibling imports for whole-subtree cache-busting.
+      const match = importedUrl.match(/\/plugin\/v(\d+)\//);
       expect(match).not.toBeNull();
       const timestamp = parseInt(match![1], 10);
       expect(timestamp).toBeGreaterThanOrEqual(before);

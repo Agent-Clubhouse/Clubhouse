@@ -8,14 +8,24 @@
     <!-- Import map for community plugin ESM imports.
          Plugins use native ESM dynamic import outside webpack, so bare specifiers
          like 'react' must be resolved via import map. These shim files
-         re-export from the globalThis references set by the renderer entry. -->
+         re-export from the globalThis references set by the renderer entry.
+
+         Paths are '../shims/…', NOT './shims/…': the webpack CopyWebpackPlugin
+         emits the shims at the renderer output ROOT (.webpack/renderer/shims),
+         while this document is the 'main_window' entry one level deeper
+         (.webpack/renderer/main_window/index.html). Import-map addresses resolve
+         against THIS document's URL, so a packaged build needs to climb out of
+         main_window/ to reach them — './shims' 404s in production (it only
+         happened to resolve in dev, where the entry is served without the
+         main_window/ path segment). A 404 here fails the plugin's whole module
+         graph with "Failed to fetch dynamically imported module". -->
     <script type="importmap" nonce="%%NONCE%%">
     {
       "imports": {
-        "react": "./shims/react.js",
-        "react-dom": "./shims/react-dom.js",
-        "react-dom/client": "./shims/react-dom-client.js",
-        "react/jsx-runtime": "./shims/react-jsx-runtime.js"
+        "react": "../shims/react.js",
+        "react-dom": "../shims/react-dom.js",
+        "react-dom/client": "../shims/react-dom-client.js",
+        "react/jsx-runtime": "../shims/react-jsx-runtime.js"
       }
     }
     </script>

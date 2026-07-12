@@ -13,7 +13,21 @@ function assertSafePluginId(pluginId: string): void {
   }
 }
 
-function getCommunityPluginsDir(): string {
+/**
+ * The directory community/marketplace plugins are discovered from — and the
+ * allowed-root the `clubhouse-plugin:` protocol handler validates against.
+ *
+ * Test/E2E seam: `CLUBHOUSE_PLUGINS_DIR` redirects this to a sandbox so tests
+ * can install fixture plugins without touching the real user dir. It is honored
+ * ONLY in unpackaged builds — a packaged production app always uses the real
+ * home dir, so the env var can never widen the protocol handler's allowed-root
+ * in production (Part B guardrail).
+ */
+export function getCommunityPluginsDir(): string {
+  const override = process.env.CLUBHOUSE_PLUGINS_DIR;
+  if (override && !app.isPackaged) {
+    return override;
+  }
   return path.join(app.getPath('home'), '.clubhouse', 'plugins');
 }
 
