@@ -37,6 +37,14 @@ export interface GroupProjectContextValue {
   /** Update project fields. */
   update: (groupProjectId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
 
+  /**
+   * Set the project-wide polling setting (persist + inject start/stop to members).
+   * Routes through the shared main-process code path (setProjectPolling) so the UI
+   * toggle and the toggle_polling admin command can't diverge — local via IPC,
+   * remote via the satellite REST proxy.
+   */
+  setPolling: (groupProjectId: string, enabled: boolean) => Promise<void>;
+
   /** Fetch bulletin digest. */
   fetchDigest: (groupProjectId: string, since?: string) => Promise<TopicDigest[]>;
 
@@ -100,6 +108,7 @@ export function useGroupProjectContext(
   const localLoaded = useGroupProjectStore((s) => s.loaded);
   const localLoadProjects = useGroupProjectStore((s) => s.loadProjects);
   const localUpdate = useGroupProjectStore((s) => s.update);
+  const localSetPolling = useGroupProjectStore((s) => s.setPolling);
   const localBindings = useMcpBindingStore((s) => s.bindings);
 
   // --- Remote store selectors ---
@@ -168,6 +177,23 @@ export function useGroupProjectContext(
       await localUpdate(gpId, fields as any);
     }
   }, [isRemote, satelliteId, localUpdate, annex]);
+
+  const setPolling = useCallback(async (gpId: string, enabled: boolean) => {
+    if (isRemote && satelliteId) {
+      const bareId = stripRemotePrefix(gpId);
+      await annex.gpSetPolling(satelliteId, bareId, enabled);
+      // Optimistically reflect the new setting so the UI updates immediately rather
+      // than waiting for the next snapshot sync.
+      const satProjects = useRemoteProjectStore.getState().remoteGroupProjects[satelliteId] as GroupProject[] | undefined;
+      const existing = satProjects?.find((p) => p.id === bareId || p.id === gpId);
+      if (existing) {
+        const merged = { ...existing, metadata: { ...((existing as any).metadata || {}), pollingEnabled: enabled } };
+        useRemoteProjectStore.getState().updateRemoteGroupProject(satelliteId, 'updated', merged);
+      }
+    } else {
+      await localSetPolling(gpId, enabled);
+    }
+  }, [isRemote, satelliteId, annex, localSetPolling]);
 
   // --- Bulletin reads ---
   const fetchDigest = useCallback(async (gpId: string, since?: string): Promise<TopicDigest[]> => {
@@ -243,6 +269,7 @@ export function useGroupProjectContext(
     loaded,
     loadProjects,
     update,
+    setPolling,
     fetchDigest,
     fetchTopicMessages,
     fetchAllMessages,

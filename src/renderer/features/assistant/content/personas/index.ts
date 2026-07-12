@@ -38,7 +38,7 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
     name: 'Group Project PM',
     description: 'Project manager who actively operates the group-project board: dispatches work, wakes/sleeps agents, manages polling, shoulder-taps, and keeps channels lean. Assumes privileged (admin) tools.',
     content: groupProjectPm,
-    tools: ['read_bulletin', 'post_bulletin', 'read_topic', 'read_message', 'list_members', 'get_project_info', 'wake_agent', 'sleep_agent', 'start_polling', 'stop_polling', 'shoulder_tap', 'broadcast', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages'],
+    tools: ['read_bulletin', 'post_bulletin', 'read_topic', 'read_message', 'list_members', 'get_project_info', 'query_polling', 'wake_agent', 'sleep_agent', 'toggle_polling', 'nudge_polling', 'shoulder_tap', 'broadcast', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages'],
     orchestrator: 'claude',
     skills: [{ name: 'group-pm-polling', cadence: '15m' }],
   },

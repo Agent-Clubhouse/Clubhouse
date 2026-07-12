@@ -1125,6 +1125,24 @@ export function requestSetTopicProtection(
 }
 
 /**
+ * Set the project-wide polling setting on a satellite group project via HTTPS REST.
+ * Runs setProjectPolling on the satellite so the persisted setting + member
+ * side-effect stay identical to a local toggle.
+ */
+export function requestGroupProjectSetPolling(
+  fingerprint: string,
+  groupProjectId: string,
+  enabled: boolean,
+): Promise<unknown> {
+  return satelliteHttpsRequest(
+    fingerprint,
+    'POST',
+    `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/polling`,
+    { enabled },
+  );
+}
+
+/**
  * Inject a message into an agent's PTY on a satellite (with proper chunked paste).
  */
 export function requestInjectMessage(

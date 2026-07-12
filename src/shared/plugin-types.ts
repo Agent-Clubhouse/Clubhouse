@@ -1244,6 +1244,8 @@ export interface AnnexAPI {
   gpSetTopicProtection(satelliteId: string, groupProjectId: string, topic: string, isProtected: boolean): Promise<boolean>;
   /** Inject a message into an agent's PTY on a satellite. */
   gpInjectMessage(satelliteId: string, agentId: string, message: string): Promise<boolean>;
+  /** Set the project-wide polling setting on a satellite group project. */
+  gpSetPolling(satelliteId: string, groupProjectId: string, enabled: boolean): Promise<unknown>;
 
   // ── Events ──────────────────────────────────────────────────────────
   /** Subscribe to satellite list changes. Returns a Disposable. */

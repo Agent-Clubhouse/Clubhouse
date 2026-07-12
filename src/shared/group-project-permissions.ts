@@ -5,6 +5,7 @@ export const GROUP_PROJECT_CORE_TOOL_SUFFIXES = [
   'read_topic',
   'read_message',
   'get_project_info',
+  'query_polling',
 ] as const;
 
 export const GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES = [
@@ -12,8 +13,8 @@ export const GROUP_PROJECT_PRIVILEGED_TOOL_SUFFIXES = [
   'broadcast',
   'wake_agent',
   'sleep_agent',
-  'start_polling',
-  'stop_polling',
+  'toggle_polling',
+  'nudge_polling',
   'clear_agent',
   'compact_agent',
   'clear_topic',

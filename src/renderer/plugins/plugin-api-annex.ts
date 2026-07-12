@@ -132,6 +132,9 @@ export function createAnnexAPI(ctx: PluginContext): AnnexAPI {
     gpInjectMessage(satelliteId, agentId, message) {
       return window.clubhouse.annexClient.gpInjectMessage(satelliteId, agentId, message);
     },
+    gpSetPolling(satelliteId, groupProjectId, enabled) {
+      return window.clubhouse.annexClient.gpSetPolling(satelliteId, groupProjectId, enabled);
+    },
 
     // ── Events ────────────────────────────────────────────────────────
     onSatellitesChanged(callback) {

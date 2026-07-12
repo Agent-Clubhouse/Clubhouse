@@ -6,8 +6,7 @@ import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { useAgentStore } from '../../../stores/agentStore';
-import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
-import { pollingStartMsg, pollingStopMsg, pollingNudgeMsg } from '../../../../shared/polling-messages';
+import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { getProjectAdmins, isProjectAdmin, addAdmin, removeAdmin } from '../../../../shared/group-project-admin';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
@@ -218,7 +217,7 @@ function ProjectCard({
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, update, fetchDigest, injectMessage } = ctx;
+  const { project, members, loaded, loadProjects, update, setPolling, fetchDigest, injectMessage } = ctx;
 
   const [showTapModal, setShowTapModal] = useState(false);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
@@ -260,20 +259,12 @@ function ProjectCard({
 
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
-    await update(groupProjectId, { metadata: { pollingEnabled: newVal } });
+    // Delegate persist + member start/stop side-effect to the shared main-process
+    // code path (setProjectPolling), the same one the toggle_polling MCP command
+    // uses, so the setting and the injected instructions can't diverge.
+    await setPolling(groupProjectId, newVal);
     onUpdateMetadata({ pollingEnabled: newVal });
-    const name = project?.name || groupProjectId;
-    const localAgents = useAgentStore.getState().agents;
-    const remoteAgents = useRemoteProjectStore.getState().remoteAgents;
-    const allAgents = { ...localAgents, ...remoteAgents };
-    for (const member of members) {
-      const agent = allAgents[member.agentId];
-      if (!agent) continue;
-      const orchestrator = agent.orchestrator;
-      const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
-      void injectMessage(member.agentId, msg);
-    }
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, members, project, injectMessage]);
+  }, [pollingEnabled, setPolling, groupProjectId, onUpdateMetadata]);
 
   const handleNudgePolling = useCallback(() => {
     const name = project?.name || groupProjectId;
@@ -390,7 +381,7 @@ function ExpandedProjectView({
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, update, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
+  const { project, members, loaded, loadProjects, update, setPolling, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
 
   const {
     topicsWidth,
@@ -551,20 +542,12 @@ function ExpandedProjectView({
 
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
-    await update(groupProjectId, { metadata: { pollingEnabled: newVal } });
+    // Delegate persist + member start/stop side-effect to the shared main-process
+    // code path (setProjectPolling), the same one the toggle_polling MCP command
+    // uses, so the setting and the injected instructions can't diverge.
+    await setPolling(groupProjectId, newVal);
     onUpdateMetadata({ pollingEnabled: newVal });
-    const name = project?.name || groupProjectId;
-    const localAgents = useAgentStore.getState().agents;
-    const remoteAgents = useRemoteProjectStore.getState().remoteAgents;
-    const allAgents = { ...localAgents, ...remoteAgents };
-    for (const member of members) {
-      const agent = allAgents[member.agentId];
-      if (!agent) continue;
-      const orchestrator = agent.orchestrator;
-      const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
-      void injectMessage(member.agentId, msg);
-    }
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, members, project, injectMessage]);
+  }, [pollingEnabled, setPolling, groupProjectId, onUpdateMetadata]);
 
   const handleNudgePolling = useCallback(() => {
     const name = project?.name || groupProjectId;

@@ -392,6 +392,7 @@ export const IPC = {
     GP_DELETE_TOPIC: 'annex-client:gp-delete-topic',
     GP_SET_TOPIC_PROTECTION: 'annex-client:gp-set-topic-protection',
     GP_INJECT_MESSAGE: 'annex-client:gp-inject-message',
+    GP_SET_POLLING: 'annex-client:gp-set-polling',
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',
@@ -414,6 +415,7 @@ export const IPC = {
     ESTIMATE_TRIM: 'group-project:estimate-trim',
     GET_MESSAGE: 'group-project:get-message',
     INJECT_MESSAGE: 'group-project:inject-message',
+    SET_POLLING: 'group-project:set-polling',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',

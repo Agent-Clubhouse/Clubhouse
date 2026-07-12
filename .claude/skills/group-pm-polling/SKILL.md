@@ -23,7 +23,7 @@ The Group PM polling skill establishes an independent polling loop for the Group
 
 1. **Board monitoring** — read bulletin with `summary=true` to get digest before drilling into specific channels
 2. **Channel hygiene** — use `clear_topic` to retire completed channels and `delete_messages` to remove stale content
-3. **Agent lifecycle** — coordinate wake/sleep with polling state; stop polling before sleeping agents
+3. **Agent lifecycle** — coordinate wake/sleep with the project polling setting; turn polling off (`toggle_polling`) before sleeping the team
 4. **Context management** — use `compact_agent` when an agent's context grows too large
 5. **Routine alerts** — post status summaries periodically to keep team aligned
 
@@ -42,4 +42,5 @@ The Group PM polling skill integrates with:
 - `read_bulletin` — efficient digest reads with timestamp filtering
 - `read_topic` — drill-down into channels with new activity
 - Board management tools — `clear_topic`, `delete_messages`, `compact_agent`, `clear_agent`
-- Agent lifecycle tools — `wake_agent`, `sleep_agent`, `start_polling`, `stop_polling`
+- Polling control — `query_polling` (read state), `toggle_polling` (turn the project setting on/off), `nudge_polling` (remind one drifted peer)
+- Agent lifecycle tools — `wake_agent`, `sleep_agent`

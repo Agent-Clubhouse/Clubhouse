@@ -123,6 +123,11 @@ vi.mock('./group-project-shoulder-tap', () => ({
   executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', delivered: [], failed: [] }),
 }));
 
+vi.mock('./group-project-polling', () => ({
+  setProjectPolling: vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] }),
+  getProjectPollingState: vi.fn().mockResolvedValue({ pollingEnabled: false, members: [] }),
+}));
+
 vi.mock('./clubhouse-mcp/binding-manager', () => ({
   bindingManager: {
     getAllBindings: vi.fn().mockReturnValue([]),
@@ -2006,6 +2011,36 @@ describe('annex-server', () => {
       const res = await request(port, 'POST', '/api/v1/agents/agent-1/message', { message: 'hello' }, authHeaders(token));
       expect(res.status).toBe(400);
       expect(JSON.parse(res.body).error).toContain('headless');
+    });
+  });
+
+  describe('group project polling endpoint', () => {
+    it('POST /api/v1/group-projects/:id/polling sets the setting via setProjectPolling', async () => {
+      const { port, token } = await startAndPair();
+      const { setProjectPolling } = await import('./group-project-polling');
+      vi.mocked(setProjectPolling).mockResolvedValueOnce({ pollingEnabled: true, members: [] });
+
+      const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/polling', { enabled: true }, authHeaders(token));
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body).pollingEnabled).toBe(true);
+      expect(setProjectPolling).toHaveBeenCalledWith('gp_1', true);
+    });
+
+    it('returns 400 when enabled is not a boolean', async () => {
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/group-projects/gp_1/polling', {}, authHeaders(token));
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body).error).toContain('enabled');
+    });
+
+    it('returns 404 for an unknown group project', async () => {
+      const { port, token } = await startAndPair();
+      const { setProjectPolling } = await import('./group-project-polling');
+      vi.mocked(setProjectPolling).mockResolvedValueOnce(null);
+
+      const res = await request(port, 'POST', '/api/v1/group-projects/gp_missing/polling', { enabled: false }, authHeaders(token));
+      expect(res.status).toBe(404);
+      expect(JSON.parse(res.body).error).toBe('group_project_not_found');
     });
   });
 

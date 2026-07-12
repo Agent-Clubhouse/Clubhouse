@@ -334,4 +334,12 @@ export function registerAnnexClientHandlers(): void {
       return annexClient.requestInjectMessage(satelliteId, agentId, message);
     },
   ));
+
+  // Group Project proxy: set project-wide polling setting on satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GP_SET_POLLING, withValidatedArgs(
+    [stringArg(), stringArg(), booleanArg()],
+    async (_event, satelliteId, groupProjectId, enabled) => {
+      return annexClient.requestGroupProjectSetPolling(satelliteId, groupProjectId, enabled as boolean);
+    },
+  ));
 }

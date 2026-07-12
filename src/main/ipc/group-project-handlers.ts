@@ -5,6 +5,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { groupProjectRegistry } from '../services/group-project-registry';
+import { setProjectPolling } from '../services/group-project-polling';
 import { getBulletinBoard, destroyBulletinBoard } from '../services/group-project-bulletin';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
@@ -264,6 +265,16 @@ export function registerGroupProjectHandlers(): void {
       }
 
       return true;
+    },
+  ));
+
+  // Set the project-wide polling setting (persist + member start/stop side-effect).
+  // Shared with the toggle_polling admin MCP command via setProjectPolling so the
+  // UI toggle and the command can't diverge.
+  ipcMain.handle(IPC.GROUP_PROJECT.SET_POLLING, withValidatedArgs(
+    [stringArg(), booleanArg()],
+    async (_event, projectId, enabled) => {
+      return setProjectPolling(projectId as string, enabled as boolean);
     },
   ));
 }
