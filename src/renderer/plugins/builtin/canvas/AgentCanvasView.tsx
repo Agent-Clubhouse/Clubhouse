@@ -93,6 +93,20 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     setSelectedProjectId(null);
   }, []);
 
+  // #1536: Contain plain wheel/trackpad scrolling inside the picker's scroll
+  // regions so it never pans the canvas underneath. The canvas workspace
+  // routes any wheel event that bubbles up to it into a pan (see
+  // useViewportControls.handleWheel), and the card content wrapper only stops
+  // wheel propagation while the view is selected (CanvasView.tsx), so an
+  // unselected — or even selected — picker would otherwise scroll the list AND
+  // pan the canvas at the same time, including at the list's top/bottom
+  // boundary. Ctrl/Cmd+wheel is a canvas zoom gesture and is intentionally
+  // allowed to bubble so zoom keeps working while hovering the picker.
+  const handlePickerWheel = useCallback((e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) return;
+    e.stopPropagation();
+  }, []);
+
   // Resolve the active project for agent creation
   const activeProjectForCreate = useMemo(() => {
     const pid = isAppMode ? selectedProjectId : api.context.projectId;
@@ -177,7 +191,11 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
           <div className="text-xs font-medium text-ctp-subtext1 uppercase tracking-wider mb-2">
             Select a project
           </div>
-          <div className="flex-1 overflow-y-auto space-y-1">
+          <div
+            className="flex-1 overflow-y-auto overscroll-contain space-y-1"
+            onWheel={handlePickerWheel}
+            data-testid="canvas-agent-picker-scroll"
+          >
             {projects.length === 0 ? (
               <EmptyState title="No projects open" compact />
             ) : (
@@ -232,7 +250,11 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         <div className="text-xs font-medium text-ctp-subtext1 uppercase tracking-wider mb-2">
           Assign an agent
         </div>
-        <div className="flex-1 overflow-y-auto space-y-1">
+        <div
+          className="flex-1 overflow-y-auto overscroll-contain space-y-1"
+          onWheel={handlePickerWheel}
+          data-testid="canvas-agent-picker-scroll"
+        >
           {filteredAgents.length === 0 ? (
             <EmptyState title={isAppMode ? 'No agents in this project' : 'No agents available'} compact />
           ) : (
