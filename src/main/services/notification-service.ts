@@ -30,6 +30,7 @@ const store = createSettingsStore<NotificationSettings>('notification-settings.j
   agentIdle: false,
   agentStopped: false,
   agentError: false,
+  agentRequestedAttention: true,
   playSound: true,
 });
 

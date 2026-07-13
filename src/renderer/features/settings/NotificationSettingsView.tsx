@@ -13,6 +13,7 @@ const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSet
   { key: 'agentStopped', label: 'Agent Stopped', description: 'Notify when an agent has finished running' },
   { key: 'agentIdle', label: 'Agent Idle', description: 'Notify when an agent is waiting for input' },
   { key: 'agentError', label: 'Agent Error', description: 'Notify when a tool call fails' },
+  { key: 'agentRequestedAttention', label: 'Agent Requested Attention', description: 'Notify when an agent explicitly asks for you (via the notify_user tool)' },
 ];
 
 // Three-state toggle for project overrides: global default / on / off

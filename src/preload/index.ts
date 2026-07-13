@@ -727,6 +727,12 @@ const api = {
       ipcRenderer.on(IPC.APP.NOTIFICATION_CLICKED, listener);
       return () => { ipcRenderer.removeListener(IPC.APP.NOTIFICATION_CLICKED, listener); };
     },
+    onAgentAttention: (callback: (agentId: string, payload: { message: string; title?: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, payload: { message: string; title?: string }) =>
+        callback(agentId, payload);
+      ipcRenderer.on(IPC.APP.AGENT_ATTENTION, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.AGENT_ATTENTION, listener); };
+    },
     onOpenSettings: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on(IPC.APP.OPEN_SETTINGS, listener);

@@ -13,7 +13,7 @@
 import { useAgentStore, consumeCancelled } from './stores/agentStore';
 import { useProjectStore } from './stores/projectStore';
 import { useUIStore } from './stores/uiStore';
-import { useNotificationStore, isAgentVisible } from './stores/notificationStore';
+import { useNotificationStore } from './stores/notificationStore';
 import { useToastStore } from './stores/toastStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useClubhouseModeStore } from './stores/clubhouseModeStore';
@@ -374,14 +374,6 @@ function initHookEventListener(): () => void {
         useSoundStore.getState().playSound(soundEvent as SoundEvent, agent.projectId);
       }
 
-      // Show toast notification when agent emits a notification event (respects active focus)
-      if (event.kind === 'notification' && event.message) {
-        // Only show toast if agent is not actively being viewed
-        if (!isAgentVisible(agentId, agent.projectId)) {
-          useToastStore.getState().addToast(event.message, 'info');
-        }
-      }
-
       // Emit plugin events for agent lifecycle
       if (event.kind === 'stop') {
         pluginEventBus.emit('agent:completed', { agentId, name });
@@ -541,6 +533,27 @@ function initActiveAgentSound(): () => void {
     prevActiveAgentId = nextActiveAgentId;
   });
   return unsub;
+}
+
+// ─── Agent Attention (notify_user tool) ─────────────────────────────────────
+
+function initAgentAttentionListener(): () => void {
+  // An agent deliberately asked for the user's attention via the notify_user
+  // MCP tool. Route it through the shared notification gating so it surfaces as
+  // a native desktop notification (click-to-navigate + auto-dismiss), gated by
+  // the agentRequestedAttention setting and suppressed when the agent is visible.
+  return window.clubhouse.app.onAgentAttention((agentId, payload) => {
+    const agent = useAgentStore.getState().agents[agentId];
+    const name = agent?.name ?? 'Agent';
+    useNotificationStore.getState().checkAndNotify(
+      name,
+      'attention',
+      undefined,
+      agentId,
+      agent?.projectId,
+      payload,
+    );
+  });
 }
 
 // ─── Notification Clearing ──────────────────────────────────────────────────
@@ -727,6 +740,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initAgentStatusEmitter());
   cleanups.push(initActiveAgentSound());
   cleanups.push(initNotificationClearing());
+  cleanups.push(initAgentAttentionListener());
   cleanups.push(initStaleStatusCleanup());
   cleanups.push(initKeyboardShortcuts());
   cleanups.push(initAnnexListener());
