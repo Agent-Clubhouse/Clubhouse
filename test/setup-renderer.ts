@@ -286,6 +286,7 @@ vi.stubGlobal('clubhouse', {
     sendNotification: asyncNoop,
     closeNotification: asyncNoop,
     onNotificationClicked: () => noop,
+    onAgentAttention: () => noop,
     onOpenSettings: () => noop,
     onOpenAbout: () => noop,
     onProtocolAction: () => noop,
