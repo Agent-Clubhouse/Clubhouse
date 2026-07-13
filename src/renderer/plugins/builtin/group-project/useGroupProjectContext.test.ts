@@ -18,6 +18,7 @@ const mockGpInjectMessage = vi.fn().mockResolvedValue(true);
 const mockGpDeleteMessage = vi.fn().mockResolvedValue({ deleted: true });
 const mockGpDeleteTopic = vi.fn().mockResolvedValue({ deleted: true });
 const mockGpSetTopicProtection = vi.fn().mockResolvedValue(undefined);
+const mockGpSetPolling = vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] });
 
 const mockAnnex = {
   gpUpdate: mockGpUpdate,
@@ -28,6 +29,7 @@ const mockAnnex = {
   gpDeleteMessage: mockGpDeleteMessage,
   gpDeleteTopic: mockGpDeleteTopic,
   gpSetTopicProtection: mockGpSetTopicProtection,
+  gpSetPolling: mockGpSetPolling,
 } as unknown as AnnexAPI;
 
 beforeEach(() => {
@@ -41,6 +43,7 @@ beforeEach(() => {
       deleteMessage: vi.fn().mockResolvedValue(true),
       deleteTopic: vi.fn().mockResolvedValue(true),
       setTopicProtection: vi.fn().mockResolvedValue(true),
+      setPolling: vi.fn().mockResolvedValue({ pollingEnabled: true, members: [] }),
     },
   };
 
@@ -167,6 +170,25 @@ describe('useGroupProjectContext — remote optimistic update', () => {
     expect(mockGpInjectMessage).toHaveBeenCalledWith(SAT_ID, 'agent-1', 'hello world');
   });
 
+  it('routes setPolling through annex client when remote and optimistically updates the setting', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
+
+    await act(async () => {
+      await result.current.setPolling(GP_ID, true);
+    });
+
+    expect(mockGpSetPolling).toHaveBeenCalledWith(SAT_ID, GP_ID, true);
+    // Does NOT fall back to the two-step update+inject path.
+    expect(mockGpUpdate).not.toHaveBeenCalled();
+
+    const remoteGPs = useRemoteProjectStore.getState().remoteGroupProjects[SAT_ID] as any[];
+    const updated = remoteGPs.find((p) => p.id === GP_ID);
+    expect(updated.metadata.pollingEnabled).toBe(true);
+    // Original metadata keys are preserved.
+    expect(updated.metadata.shoulderTapEnabled).toBe(false);
+  });
+
   it('returns loaded=true for remote context', () => {
     seedRemoteGP();
     const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
@@ -196,6 +218,18 @@ describe('useGroupProjectContext — local mode', () => {
     const { result } = renderHook(() => useGroupProjectContext('gp-1', false, null, mockAnnex));
     expect(result.current.loaded).toBe(false);
     expect(result.current.isRemote).toBe(false);
+  });
+
+  it('routes setPolling through the local groupProject IPC (not annex) when local', async () => {
+    useGroupProjectStore.setState({ loaded: true, projects: [] });
+    const { result } = renderHook(() => useGroupProjectContext('gp-1', false, null, mockAnnex));
+
+    await act(async () => {
+      await result.current.setPolling('gp-1', false);
+    });
+
+    expect((window as any).clubhouse.groupProject.setPolling).toHaveBeenCalledWith('gp-1', false);
+    expect(mockGpSetPolling).not.toHaveBeenCalled();
   });
 });
 

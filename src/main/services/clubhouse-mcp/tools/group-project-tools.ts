@@ -15,11 +15,12 @@ import * as agentSystem from '../../agent-system';
 import { listDurable } from '../../agent-config';
 import * as projectStore from '../../project-store';
 import { agentRegistry, getAgentOrchestrator } from '../../agent-registry';
-import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
+import { pollingNudgeMsg } from '../../../../shared/polling-messages';
+import { setProjectPolling, getProjectPollingState } from '../../group-project-polling';
 import * as annexEventBus from '../../annex-event-bus';
 import { appLog } from '../../log-service';
 import type { McpToolResult } from '../types';
-import { requireString, optionalString, optionalNumber } from './validation';
+import { requireString, optionalString, optionalNumber, optionalBoolean } from './validation';
 import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
 import { IPC } from '../../../../shared/ipc-channels';
 
@@ -674,17 +675,98 @@ export function registerGroupProjectTools(): void {
     },
   });
 
-  // group__<name>_<hash>__start_polling
+  // group__<name>_<hash>__toggle_polling
   mcpAdapter.registerMcpCommand({
-    id: 'group-project.start_polling',
+    id: 'group-project.toggle_polling',
     category: 'group-project',
-    label: 'Start Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'start_polling' },
+    label: 'Toggle Polling',
+    mcp: { targetKind: 'group-project', nameSuffix: 'toggle_polling' },
       description:
-        'Send a polling start instruction to a specific connected agent.\n\n' +
-        'Injects a message into the agent\'s terminal instructing it to begin polling ' +
-        'the group project bulletin board. The instruction is tailored to the agent\'s ' +
-        'orchestrator (e.g. Claude Code agents get /loop instructions).\n\n' +
+        'Turn the project-wide polling setting on or off.\n\n' +
+        'This is the real admin control over `pollingEnabled` — the same setting the ' +
+        'UI "Poll: On/Off" toggle drives and the one agents auto-start from on join. ' +
+        'It persists the setting AND injects the orchestrator-aware start/stop ' +
+        'instruction into every connected member\'s terminal, exactly like the UI toggle.\n\n' +
+        'Pass `enabled` to set an explicit state; omit it to flip the current value. ' +
+        'Use query_polling first if you want to check the current state.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            description: 'Desired polling state. Omit to flip the current value.',
+          },
+        },
+      },
+    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
+      const current = await getProjectPollingState(targetId);
+      if (!current) {
+        return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
+      }
+
+      const requested = optionalBoolean(args, 'enabled');
+      const nextEnabled = requested === undefined ? !current.pollingEnabled : requested;
+
+      const result = await setProjectPolling(targetId, nextEnabled);
+      if (!result) {
+        return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
+      }
+
+      const notified = result.members.filter(m => m.status === 'connected');
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            action: 'toggle_polling',
+            pollingEnabled: result.pollingEnabled,
+            notifiedMembers: notified.map(m => ({ agentId: m.agentId, agentName: m.agentName })),
+            members: result.members,
+          }),
+        }],
+      };
+    },
+  });
+
+  // group__<name>_<hash>__query_polling
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.query_polling',
+    category: 'group-project',
+    label: 'Query Polling',
+    mcp: { targetKind: 'group-project', nameSuffix: 'query_polling' },
+      description:
+        'Read the current project-wide polling setting.\n\n' +
+        'Returns `{ pollingEnabled, members }` where `pollingEnabled` is the persisted ' +
+        'setting (same one the UI toggle and on-join auto-start read) and `members` lists ' +
+        'each bound agent with its connection status (connected/sleeping).\n\n' +
+        'Note: there is no per-agent "actively polling" signal — polling is a fire-and-forget ' +
+        'instruction — so member status reflects connectivity, not live polling activity. ' +
+        'Non-privileged: any member may call this to check before acting.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    handler: async (targetId: string, _agentId: string, _args: Record<string, unknown>): Promise<McpToolResult> => {
+      const state = await getProjectPollingState(targetId);
+      if (!state) {
+        return { content: [{ type: 'text', text: `Group project ${targetId} not found.` }], isError: true };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(state) }],
+      };
+    },
+  });
+
+  // group__<name>_<hash>__nudge_polling
+  mcpAdapter.registerMcpCommand({
+    id: 'group-project.nudge_polling',
+    category: 'group-project',
+    label: 'Nudge Polling',
+    mcp: { targetKind: 'group-project', nameSuffix: 'nudge_polling' },
+      description:
+        'Nudge a single connected agent to start polling if it isn\'t already.\n\n' +
+        'This is a one-off PTY nudge to a specific peer — it does NOT change the ' +
+        'project `pollingEnabled` setting. Use toggle_polling to actually turn the ' +
+        'setting on or off; use this only to remind a peer that has drifted.\n\n' +
         'The agent must be connected (not sleeping) for this to work.',
       inputSchema: {
         type: 'object',
@@ -724,7 +806,7 @@ export function registerGroupProjectTools(): void {
       const project = await groupProjectRegistry.get(targetId);
       const projectName = project?.name || targetId;
       const orchestrator = getAgentOrchestrator(targetAgentId);
-      const msg = pollingStartMsg(projectName, orchestrator);
+      const msg = pollingNudgeMsg(projectName, orchestrator);
 
       injectPtyMessage(targetAgentId, msg);
 
@@ -734,74 +816,7 @@ export function registerGroupProjectTools(): void {
           text: JSON.stringify({
             agentId: targetAgentId,
             agentName: memberBinding.agentName || targetAgentId,
-            action: 'start_polling',
-            delivered: true,
-          }),
-        }],
-      };
-    },
-  });
-
-  // group__<name>_<hash>__stop_polling
-  mcpAdapter.registerMcpCommand({
-    id: 'group-project.stop_polling',
-    category: 'group-project',
-    label: 'Stop Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'stop_polling' },
-      description:
-        'Send a polling stop instruction to a specific connected agent.\n\n' +
-        'Injects a message into the agent\'s terminal instructing it to stop polling ' +
-        'the group project bulletin board.\n\n' +
-        'The agent must be connected (not sleeping) for this to work.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          target_agent_id: {
-            type: 'string',
-            description: 'The agentId of the connected agent (from list_members).',
-          },
-        },
-        required: ['target_agent_id'],
-      },
-    handler: async (targetId: string, _agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const targetAgentId = requireString(args, 'target_agent_id');
-      if (!targetAgentId) {
-        return { content: [{ type: 'text', text: 'target_agent_id is required.' }], isError: true };
-      }
-
-      // Verify target is a member
-      const allBindings = bindingManager.getAllBindings();
-      const memberBinding = allBindings.find(
-        b => b.targetKind === 'group-project' && b.targetId === targetId && b.agentId === targetAgentId,
-      );
-      if (!memberBinding) {
-        return {
-          content: [{ type: 'text', text: `Agent ${targetAgentId} is not a member of this group project.` }],
-          isError: true,
-        };
-      }
-
-      if (!isAgentAlive(targetAgentId)) {
-        return {
-          content: [{ type: 'text', text: `Agent ${targetAgentId} is sleeping — cannot send stop instruction.` }],
-          isError: true,
-        };
-      }
-
-      const project = await groupProjectRegistry.get(targetId);
-      const projectName = project?.name || targetId;
-      const orchestrator = getAgentOrchestrator(targetAgentId);
-      const msg = pollingStopMsg(projectName, orchestrator);
-
-      injectPtyMessage(targetAgentId, msg);
-
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            agentId: targetAgentId,
-            agentName: memberBinding.agentName || targetAgentId,
-            action: 'stop_polling',
+            action: 'nudge_polling',
             delivered: true,
           }),
         }],

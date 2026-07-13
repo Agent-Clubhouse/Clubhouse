@@ -265,6 +265,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       gpDeleteTopic: async () => false,
       gpSetTopicProtection: async () => false,
       gpInjectMessage: async () => false,
+      gpSetPolling: async () => ({ pollingEnabled: false, members: [] }),
       onSatellitesChanged: () => ({ dispose: noop }),
       onDiscoveredChanged: () => ({ dispose: noop }),
       onSatelliteEvent: () => ({ dispose: noop }),

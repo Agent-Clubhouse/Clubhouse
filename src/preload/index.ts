@@ -1066,6 +1066,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_SET_TOPIC_PROTECTION, satelliteId, groupProjectId, topic, isProtected),
     gpInjectMessage: (satelliteId: string, agentId: string, message: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_INJECT_MESSAGE, satelliteId, agentId, message),
+    gpSetPolling: (satelliteId: string, groupProjectId: string, enabled: boolean): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_SET_POLLING, satelliteId, groupProjectId, enabled),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>
@@ -1348,6 +1350,8 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_MESSAGE, projectId, messageId),
     injectMessage: (agentId: string, message: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.INJECT_MESSAGE, agentId, message),
+    setPolling: (projectId: string, enabled: boolean): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.SET_POLLING, projectId, enabled),
     onChanged: (callback: (projects: unknown[]) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, projects: unknown[]) => callback(projects);
       ipcRenderer.on(IPC.GROUP_PROJECT.CHANGED, listener);

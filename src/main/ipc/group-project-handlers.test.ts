@@ -148,6 +148,7 @@ describe('group-project-handlers', () => {
       IPC.GROUP_PROJECT.GET_RETENTION_CONFIG,
       IPC.GROUP_PROJECT.SAVE_RETENTION_CONFIG,
       IPC.GROUP_PROJECT.INJECT_MESSAGE,
+      IPC.GROUP_PROJECT.SET_POLLING,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel), `Missing handler for ${channel}`).toBe(true);

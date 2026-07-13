@@ -12,6 +12,7 @@ interface GroupProjectStoreState {
   loadProjects: () => Promise<void>;
   create: (name: string) => Promise<GroupProject>;
   update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
+  setPolling: (id: string, enabled: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
   postBulletinMessage: (projectId: string, topic: string, body: string) => Promise<void>;
   sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string) => Promise<unknown>;
@@ -60,6 +61,19 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
         }
         return updated;
       }),
+    }));
+  },
+
+  setPolling: async (id, enabled) => {
+    // Delegates the persist + member start/stop side-effect to the main process
+    // (setProjectPolling), the same code path the toggle_polling MCP command uses.
+    // Optimistically reflect the new setting so the "Poll: On/Off" label updates
+    // immediately; the CHANGED broadcast will reconcile shortly after.
+    await window.clubhouse.groupProject.setPolling(id, enabled);
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === id ? { ...p, metadata: { ...p.metadata, pollingEnabled: enabled } } : p,
+      ),
     }));
   },
 
