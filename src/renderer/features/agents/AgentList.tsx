@@ -124,6 +124,11 @@ function AgentListInner() {
   // Drag-to-reorder state for durable agents
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const isDragging = dragIndex !== null;
+  // Mirrors `isDragging` for long-lived callbacks (the pty.onData
+  // subscription) that must not re-subscribe on every drag.
+  const isDraggingRef = useRef(false);
+  isDraggingRef.current = isDragging;
 
   // Collapsible completed section (persisted in localStorage)
   const [completedCollapsed, setCompletedCollapsed] = useState(() => {
@@ -158,6 +163,8 @@ function AgentListInner() {
 
     const record = (agentId: string) => {
       activityTimestamps[agentId] = Date.now();
+      // Never start the tick mid-drag — see the tick effect below.
+      if (isDraggingRef.current) return;
       if (!isTickActiveRef.current) {
         isTickActiveRef.current = true;
         setIsTickActive(true);
@@ -191,8 +198,17 @@ function AgentListInner() {
   // Tick for activity status refresh — only while agents have recent activity.
   // The tick also auto-stops after 5 s of inactivity so we don't re-render
   // when the app is idle.
+  //
+  // Suspended while a reorder drag is in flight. The tick re-renders every row
+  // (flipping "Thinking..." labels, the pulse-ring class, and the running-vs-
+  // sleeping action buttons, which re-runs the responsive-collapse
+  // ResizeObserver). That DOM churn underneath the drag source aborts the
+  // native macOS HTML5 drag loop, so a reorder was impossible whenever an
+  // agent was streaming pty output — i.e. whenever the selected agent was
+  // awake, since only the selected agent's terminal is mounted. Refreshing
+  // activity labels mid-drag has no value; resume when the drag ends.
   useEffect(() => {
-    if (!isTickActive) return;
+    if (!isTickActive || isDragging) return;
     const interval = setInterval(() => {
       const now = Date.now();
       const anyRecent = Object.values(activityTimestamps).some(
@@ -205,7 +221,7 @@ function AgentListInner() {
       setTick((t) => t + 1);
     }, 2000);
     return () => clearInterval(interval);
-  }, [isTickActive]);
+  }, [isTickActive, isDragging]);
 
   const { durableAgents, quickAgents, orphanQuickAgents } = useProjectAgentBuckets(
     agents,
