@@ -53,7 +53,14 @@ interface NotificationState {
   settings: NotificationSettings | null;
   loadSettings: () => Promise<void>;
   saveSettings: (partial: Partial<NotificationSettings>) => Promise<void>;
-  checkAndNotify: (agentName: string, eventKind: string, detail?: string, agentId?: string, projectId?: string) => void;
+  checkAndNotify: (
+    agentName: string,
+    eventKind: string,
+    detail?: string,
+    agentId?: string,
+    projectId?: string,
+    attention?: { message: string; title?: string },
+  ) => void;
   clearNotification: (agentId: string, projectId: string) => void;
 }
 
@@ -73,7 +80,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     await window.clubhouse.app.saveNotificationSettings(merged);
   },
 
-  checkAndNotify: (agentName, eventKind, detail, agentId, projectId) => {
+  checkAndNotify: (agentName, eventKind, detail, agentId, projectId, attention) => {
     const s = get().settings;
     if (!s || !s.enabled) return;
 
@@ -96,6 +103,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     } else if (eventKind === 'tool_error' && s.agentError) {
       title = `${agentName} hit an error`;
       body = detail ? `${detail} failed` : 'A tool call failed';
+    } else if (eventKind === 'attention' && s.agentRequestedAttention) {
+      // Agent deliberately requested attention via the notify_user tool.
+      title = attention?.title?.trim() || `${agentName} needs you`;
+      body = attention?.message?.trim() || 'Agent requested your attention';
     } else {
       return;
     }

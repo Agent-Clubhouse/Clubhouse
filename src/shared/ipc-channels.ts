@@ -183,6 +183,8 @@ export const IPC = {
     SEND_NOTIFICATION: 'app:send-notification',
     CLOSE_NOTIFICATION: 'app:close-notification',
     NOTIFICATION_CLICKED: 'app:notification-clicked',
+    /** Main→renderer: an agent deliberately requested the user's attention via notify_user. */
+    AGENT_ATTENTION: 'app:agent-attention',
     GET_THEME: 'app:get-theme',
     SAVE_THEME: 'app:save-theme',
     THEME_CHANGED: 'app:theme-changed',
