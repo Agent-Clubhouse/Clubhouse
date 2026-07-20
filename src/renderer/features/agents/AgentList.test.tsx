@@ -824,6 +824,67 @@ describe('AgentList drag-reorder re-render', () => {
     expect(reorderAgents).toHaveBeenCalledWith('/project', ['b', 'c', 'a']);
   });
 
+  // The activity tick re-renders every row every 2 s while any agent streams
+  // pty output. That DOM churn under the drag source aborts the native macOS
+  // HTML5 drag loop, so reordering was impossible whenever the selected agent
+  // was awake (only the selected agent's terminal is mounted, so only it
+  // produces pty data). The tick must stay frozen for the whole gesture.
+  it('freezes the activity tick while a reorder drag is in flight, and resumes after', () => {
+    vi.useFakeTimers();
+    try {
+      let emitPtyData: ((agentId: string) => void) | undefined;
+      window.clubhouse.pty.onData = vi.fn((cb: (agentId: string) => void) => {
+        emitPtyData = cb;
+        return () => {};
+      });
+
+      const a: Agent = { id: 'a', projectId: 'proj-1', name: 'alpha', kind: 'durable', status: 'running', color: 'indigo' };
+      const b: Agent = { id: 'b', projectId: 'proj-1', name: 'bravo', kind: 'durable', status: 'sleeping', color: 'indigo' };
+      useAgentStore.setState({ agents: { a, b }, reorderAgents: vi.fn() });
+
+      render(<AgentList />);
+
+      // Awake agent streams output → tick starts and re-renders the rows.
+      act(() => { emitPtyData!('a'); });
+      isThinkingCaptures.length = 0;
+      act(() => { vi.advanceTimersByTime(4000); });
+      expect(isThinkingCaptures.length).toBeGreaterThan(0);
+
+      const store: Record<string, string> = {};
+      const dataTransfer = {
+        effectAllowed: '',
+        dropEffect: '',
+        setData: (k: string, v: string) => { store[k] = v; },
+        getData: (k: string) => store[k] ?? '',
+      } as unknown as DataTransfer;
+
+      fireEvent.dragStart(screen.getByTestId('durable-drag-0'), { dataTransfer });
+
+      // Mid-drag: continued pty output must not re-render the drag source.
+      isThinkingCaptures.length = 0;
+      act(() => {
+        emitPtyData!('a');
+        vi.advanceTimersByTime(6000);
+        emitPtyData!('a');
+        vi.advanceTimersByTime(6000);
+      });
+      expect(isThinkingCaptures).toEqual([]);
+
+      // Drag over/drop still work while frozen.
+      fireEvent.dragOver(screen.getByTestId('durable-drag-1'), { dataTransfer });
+      fireEvent.drop(screen.getByTestId('durable-drag-1'), { dataTransfer });
+      fireEvent.dragEnd(screen.getByTestId('durable-drag-0'));
+
+      // Drag over → the tick resumes so status labels stay live.
+      isThinkingCaptures.length = 0;
+      act(() => { emitPtyData!('a'); });
+      act(() => { vi.advanceTimersByTime(4000); });
+      expect(isThinkingCaptures.length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('selects the dragged agent on drag start so reorder needs no prior click (GH #1521)', () => {
     const a: Agent = { id: 'a', projectId: 'proj-1', name: 'alpha', kind: 'durable', status: 'sleeping', color: 'indigo' };
     const b: Agent = { id: 'b', projectId: 'proj-1', name: 'bravo', kind: 'durable', status: 'sleeping', color: 'indigo' };
