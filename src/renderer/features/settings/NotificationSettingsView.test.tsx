@@ -34,6 +34,7 @@ function resetStores(opts: { projectOverrides?: Record<string, any> } = {}) {
       agentStopped: true,
       agentIdle: false,
       agentError: true,
+      agentRequestedAttention: true,
       playSound: true,
     },
     loadSettings: mockLoadSettings,

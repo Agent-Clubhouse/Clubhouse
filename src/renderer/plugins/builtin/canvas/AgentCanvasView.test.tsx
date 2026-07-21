@@ -153,6 +153,98 @@ describe('AgentCanvasView', () => {
     expect(screen.getByText('Connecting...')).toBeTruthy();
   });
 
+  // ── #1536: picker wheel containment ───────────────────────────────
+  //
+  // Scrolling the picker list must not pan the canvas underneath. The canvas
+  // workspace turns any wheel event that bubbles up to it into a pan (which in
+  // turn calls onViewportChange), so we model that by wrapping the picker in a
+  // parent whose onWheel spy stands in for the workspace pan handler and assert
+  // plain wheel events never reach it — while Ctrl/Cmd+wheel zoom gestures do.
+
+  describe('picker wheel containment', () => {
+    it('stops plain wheel propagation over the agent list (no canvas pan)', () => {
+      const view = makeView({ agentId: null });
+      const api = stubApi({
+        agents: [{ id: 'agent-1', name: 'Alpha', status: 'sleeping', kind: 'durable', projectId: 'proj-1' }],
+      });
+      // Parent onWheel stands in for CanvasWorkspace's pan handler, which would
+      // call onViewportChange for any wheel event that reaches it.
+      const onViewportChange = vi.fn();
+
+      render(
+        <div onWheel={onViewportChange} data-testid="workspace">
+          <AgentCanvasView view={view} api={api} onUpdate={noop} />
+        </div>
+      );
+
+      const scroll = screen.getByTestId('canvas-agent-picker-scroll');
+      fireEvent.wheel(scroll, { deltaY: 120 });
+
+      expect(onViewportChange).not.toHaveBeenCalled();
+    });
+
+    it('stops plain wheel propagation over the project list (app mode)', () => {
+      const view = makeView({ agentId: null });
+      const api = stubApi({
+        mode: 'app',
+        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
+      });
+      const onViewportChange = vi.fn();
+
+      render(
+        <div onWheel={onViewportChange} data-testid="workspace">
+          <AgentCanvasView view={view} api={api} onUpdate={noop} />
+        </div>
+      );
+
+      // App mode starts on the project-selection step.
+      expect(screen.getByText('Select a project')).toBeTruthy();
+      const scroll = screen.getByTestId('canvas-agent-picker-scroll');
+      fireEvent.wheel(scroll, { deltaY: -120 });
+
+      expect(onViewportChange).not.toHaveBeenCalled();
+    });
+
+    it('lets Ctrl+wheel zoom gestures bubble to the canvas', () => {
+      const view = makeView({ agentId: null });
+      const api = stubApi({
+        agents: [{ id: 'agent-1', name: 'Alpha', status: 'sleeping', kind: 'durable', projectId: 'proj-1' }],
+      });
+      const onViewportChange = vi.fn();
+
+      render(
+        <div onWheel={onViewportChange} data-testid="workspace">
+          <AgentCanvasView view={view} api={api} onUpdate={noop} />
+        </div>
+      );
+
+      const scroll = screen.getByTestId('canvas-agent-picker-scroll');
+      fireEvent.wheel(scroll, { deltaY: 120, ctrlKey: true });
+
+      // Zoom gesture must reach the workspace so canvas zoom keeps working.
+      expect(onViewportChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets Meta+wheel zoom gestures bubble to the canvas', () => {
+      const view = makeView({ agentId: null });
+      const api = stubApi({
+        agents: [{ id: 'agent-1', name: 'Alpha', status: 'sleeping', kind: 'durable', projectId: 'proj-1' }],
+      });
+      const onViewportChange = vi.fn();
+
+      render(
+        <div onWheel={onViewportChange} data-testid="workspace">
+          <AgentCanvasView view={view} api={api} onUpdate={noop} />
+        </div>
+      );
+
+      const scroll = screen.getByTestId('canvas-agent-picker-scroll');
+      fireEvent.wheel(scroll, { deltaY: 120, metaKey: true });
+
+      expect(onViewportChange).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // ── LB-M68: create-from-card flow ─────────────────────────────────
 
   describe('"+ New Agent" create-from-card flow', () => {

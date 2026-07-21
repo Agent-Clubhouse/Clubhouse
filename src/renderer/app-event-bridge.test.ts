@@ -8,6 +8,7 @@ const mockRemovers = {
   onOpenSettings: vi.fn(),
   onOpenAbout: vi.fn(),
   onNotificationClicked: vi.fn(),
+  onAgentAttention: vi.fn(),
   onRequestAgentState: vi.fn(),
   onRequestHubState: vi.fn(),
   onHubMutation: vi.fn(),
@@ -38,6 +39,7 @@ vi.stubGlobal('window', {
       onOpenSettings: vi.fn(() => mockRemovers.onOpenSettings),
       onOpenAbout: vi.fn(() => mockRemovers.onOpenAbout),
       onNotificationClicked: vi.fn(() => mockRemovers.onNotificationClicked),
+      onAgentAttention: vi.fn(() => mockRemovers.onAgentAttention),
       onProtocolAction: vi.fn(() => mockRemovers.onProtocolAction),
       getPendingProtocolAction: vi.fn(() => Promise.resolve(null)),
     },
@@ -209,12 +211,13 @@ vi.mock('./plugins/builtin/files/state', () => ({
   },
 }));
 
+const mockCheckAndNotify = vi.hoisted(() => vi.fn());
 vi.mock('./stores/notificationStore', () => ({
   useNotificationStore: Object.assign(
     vi.fn(),
     {
       getState: vi.fn(() => ({
-        checkAndNotify: vi.fn(),
+        checkAndNotify: mockCheckAndNotify,
         clearNotification: vi.fn(),
       })),
     },
@@ -310,7 +313,6 @@ import { initAppEventBridge, handleProtocolAction } from './app-event-bridge';
 import { useAgentStore } from './stores/agentStore';
 import { useProjectStore } from './stores/projectStore';
 import { useUIStore } from './stores/uiStore';
-import { isAgentVisible } from './stores/notificationStore';
 import { useToastStore } from './stores/toastStore';
 import { fileState } from './plugins/builtin/files/state';
 
@@ -336,6 +338,7 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.app.onOpenSettings).toHaveBeenCalled();
     expect(window.clubhouse.app.onOpenAbout).toHaveBeenCalled();
     expect(window.clubhouse.app.onNotificationClicked).toHaveBeenCalled();
+    expect(window.clubhouse.app.onAgentAttention).toHaveBeenCalled();
     expect(window.clubhouse.window.onRequestAgentState).toHaveBeenCalled();
     expect(window.clubhouse.window.onRequestHubState).toHaveBeenCalled();
     expect(window.clubhouse.window.onHubMutation).toHaveBeenCalled();
@@ -507,79 +510,9 @@ describe('initAppEventBridge', () => {
     expect(mockPlaySound).not.toHaveBeenCalled();
   });
 
-  it('shows toast notification when agent emits notification event and agent is not visible', () => {
-    const agent = createAgent('a1', 'proj-1');
-    vi.mocked(useAgentStore.getState).mockReturnValue({
-      agents: { a1: agent },
-      activeAgentId: null,
-      agentDetailedStatus: {},
-      agentIcons: {},
-      updateAgentStatus: vi.fn(),
-      handleHookEvent: vi.fn(),
-      removeAgent: vi.fn(),
-      clearStaleStatuses: vi.fn(),
-      setActiveAgent: vi.fn(),
-      restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
-      setSessionNamePrompt: vi.fn(),
-    } as any);
-
-    const mockAddToast = vi.fn();
-    vi.mocked(useToastStore.getState).mockReturnValue({
-      addToast: mockAddToast,
-      removeToast: vi.fn(),
-      toasts: [],
-    } as any);
-
-    vi.mocked(isAgentVisible).mockReturnValue(false);
-
-    const hookCallback = vi.mocked(window.clubhouse.agent.onHookEvent).mock.calls[0][0];
-    hookCallback('a1', {
-      kind: 'notification',
-      message: 'Agent completed successfully',
-      timestamp: Date.now(),
-    });
-
-    expect(mockAddToast).toHaveBeenCalledWith('Agent completed successfully', 'info');
-  });
-
-  it('does not show toast when agent is visible and emits notification event', () => {
-    const agent = createAgent('a1', 'proj-1');
-    vi.mocked(useAgentStore.getState).mockReturnValue({
-      agents: { a1: agent },
-      activeAgentId: 'a1',
-      agentDetailedStatus: {},
-      agentIcons: {},
-      updateAgentStatus: vi.fn(),
-      handleHookEvent: vi.fn(),
-      removeAgent: vi.fn(),
-      clearStaleStatuses: vi.fn(),
-      setActiveAgent: vi.fn(),
-      restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
-      setSessionNamePrompt: vi.fn(),
-    } as any);
-
-    const mockAddToast = vi.fn();
-    vi.mocked(useToastStore.getState).mockReturnValue({
-      addToast: mockAddToast,
-      removeToast: vi.fn(),
-      toasts: [],
-    } as any);
-
-    vi.mocked(isAgentVisible).mockReturnValue(true);
-
-    const hookCallback = vi.mocked(window.clubhouse.agent.onHookEvent).mock.calls[0][0];
-    hookCallback('a1', {
-      kind: 'notification',
-      message: 'Agent is still running',
-      timestamp: Date.now(),
-    });
-
-    expect(mockAddToast).not.toHaveBeenCalled();
-  });
-
-  it('does not show toast when notification event has no message', () => {
+  it('does NOT surface a toast for orchestrator notification-hook events (auto-grab removed)', () => {
+    // Regression guard for the #1507 auto-grab: Claude Code's own "Claude is
+    // waiting for your input" Notification hook must no longer produce a toast.
     const agent = createAgent('a1', 'proj-1');
     vi.mocked(useAgentStore.getState).mockReturnValue({
       agents: { a1: agent },
@@ -606,10 +539,70 @@ describe('initAppEventBridge', () => {
     const hookCallback = vi.mocked(window.clubhouse.agent.onHookEvent).mock.calls[0][0];
     hookCallback('a1', {
       kind: 'notification',
+      message: 'Claude is waiting for your input',
       timestamp: Date.now(),
     });
 
     expect(mockAddToast).not.toHaveBeenCalled();
+  });
+
+  it('routes agent attention (notify_user) to checkAndNotify with the attention kind', () => {
+    const agent = createAgent('a1', 'proj-1');
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: agent },
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const attentionCallback = vi.mocked(window.clubhouse.app.onAgentAttention).mock.calls[0][0];
+    attentionCallback('a1', { message: 'Need a decision', title: 'Blocked' });
+
+    expect(mockCheckAndNotify).toHaveBeenCalledWith(
+      agent.name,
+      'attention',
+      undefined,
+      'a1',
+      'proj-1',
+      { message: 'Need a decision', title: 'Blocked' },
+    );
+  });
+
+  it('routes agent attention for an unknown agent with a generic name and no crash', () => {
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: {},
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const attentionCallback = vi.mocked(window.clubhouse.app.onAgentAttention).mock.calls[0][0];
+    attentionCallback('ghost', { message: 'hello' });
+
+    expect(mockCheckAndNotify).toHaveBeenCalledWith(
+      'Agent',
+      'attention',
+      undefined,
+      'ghost',
+      undefined,
+      { message: 'hello' },
+    );
   });
 
   it('registers the protocol action listener and pulls any pending action', () => {

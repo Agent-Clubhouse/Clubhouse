@@ -183,6 +183,8 @@ export const IPC = {
     SEND_NOTIFICATION: 'app:send-notification',
     CLOSE_NOTIFICATION: 'app:close-notification',
     NOTIFICATION_CLICKED: 'app:notification-clicked',
+    /** Main→renderer: an agent deliberately requested the user's attention via notify_user. */
+    AGENT_ATTENTION: 'app:agent-attention',
     GET_THEME: 'app:get-theme',
     SAVE_THEME: 'app:save-theme',
     THEME_CHANGED: 'app:theme-changed',
@@ -392,6 +394,7 @@ export const IPC = {
     GP_DELETE_TOPIC: 'annex-client:gp-delete-topic',
     GP_SET_TOPIC_PROTECTION: 'annex-client:gp-set-topic-protection',
     GP_INJECT_MESSAGE: 'annex-client:gp-inject-message',
+    GP_SET_POLLING: 'annex-client:gp-set-polling',
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',
@@ -414,6 +417,7 @@ export const IPC = {
     ESTIMATE_TRIM: 'group-project:estimate-trim',
     GET_MESSAGE: 'group-project:get-message',
     INJECT_MESSAGE: 'group-project:inject-message',
+    SET_POLLING: 'group-project:set-polling',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',

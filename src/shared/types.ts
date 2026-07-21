@@ -488,6 +488,8 @@ export interface NotificationSettings {
   agentIdle: boolean;
   agentStopped: boolean;
   agentError: boolean;
+  /** Notify when an agent deliberately requests your attention via the notify_user tool. */
+  agentRequestedAttention: boolean;
   playSound: boolean;
 }
 

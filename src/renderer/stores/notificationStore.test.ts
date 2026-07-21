@@ -30,6 +30,7 @@ const ALL_ON_SETTINGS = {
   agentIdle: true,
   agentStopped: true,
   agentError: true,
+  agentRequestedAttention: true,
   playSound: true,
 };
 
@@ -198,6 +199,74 @@ describe('notificationStore', () => {
         });
         useNotificationStore.getState().checkAndNotify('Dev', 'tool_error');
         expect(mockSendNotification).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('attention events (notify_user tool)', () => {
+      it('sends notification with agent message and custom title', () => {
+        useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+        useNotificationStore.getState().checkAndNotify(
+          'Claude', 'attention', undefined, 'a1', 'p1',
+          { message: 'Need you to pick an auth approach', title: 'Blocked on auth' },
+        );
+
+        expect(mockSendNotification).toHaveBeenCalledWith(
+          'Blocked on auth',
+          'Need you to pick an auth approach',
+          false,
+          'a1',
+          'p1',
+        );
+      });
+
+      it('defaults the title to "<name> needs you" when none provided', () => {
+        useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+        useNotificationStore.getState().checkAndNotify(
+          'Worker', 'attention', undefined, 'a2', 'p2', { message: 'Please review' },
+        );
+
+        expect(mockSendNotification).toHaveBeenCalledWith(
+          'Worker needs you',
+          'Please review',
+          false,
+          'a2',
+          'p2',
+        );
+      });
+
+      it('skips when agentRequestedAttention is off', () => {
+        useNotificationStore.setState({
+          settings: { ...ALL_ON_SETTINGS, agentRequestedAttention: false },
+        });
+        useNotificationStore.getState().checkAndNotify(
+          'Claude', 'attention', undefined, 'a3', 'p3', { message: 'hi' },
+        );
+        expect(mockSendNotification).not.toHaveBeenCalled();
+      });
+
+      it('skips when notifications are globally disabled', () => {
+        useNotificationStore.setState({
+          settings: { ...ALL_ON_SETTINGS, enabled: false },
+        });
+        useNotificationStore.getState().checkAndNotify(
+          'Claude', 'attention', undefined, 'a4', 'p4', { message: 'hi' },
+        );
+        expect(mockSendNotification).not.toHaveBeenCalled();
+      });
+
+      it('falls back to a generic body when message is blank', () => {
+        useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+        useNotificationStore.getState().checkAndNotify(
+          'Claude', 'attention', undefined, 'a5', 'p5', { message: '   ' },
+        );
+
+        expect(mockSendNotification).toHaveBeenCalledWith(
+          'Claude needs you',
+          'Agent requested your attention',
+          false,
+          'a5',
+          'p5',
+        );
       });
     });
 

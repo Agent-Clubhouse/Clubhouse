@@ -24,6 +24,7 @@ import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } fr
 import { groupProjectRegistry } from './group-project-registry';
 import { getBulletinBoard } from './group-project-bulletin';
 import { executeShoulderTap } from './group-project-shoulder-tap';
+import { setProjectPolling } from './group-project-polling';
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import * as fileService from './file-service';
@@ -1970,6 +1971,33 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         sendJson(res, 200, result);
       } catch (err) {
         sendJson(res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
+      }
+    });
+    return;
+  }
+
+  // POST /api/v1/group-projects/:id/polling (destructive — requires mTLS)
+  // Sets the project-wide polling setting (persist + member start/stop side-effect),
+  // sharing setProjectPolling with the controller's UI toggle and toggle_polling command.
+  const gpPollingMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/polling$/);
+  if (method === 'POST' && gpPollingMatch) {
+    if (requireMtls()) return;
+    const gpId = decodeURIComponent(gpPollingMatch[1]);
+    readJsonBody(req, res, async (body) => {
+      const enabled = body.enabled;
+      if (typeof enabled !== 'boolean') {
+        sendJson(res, 400, { error: 'enabled (boolean) is required' });
+        return;
+      }
+      try {
+        const result = await setProjectPolling(gpId, enabled);
+        if (!result) {
+          sendJson(res, 404, { error: 'group_project_not_found' });
+          return;
+        }
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'set_polling_failed' });
       }
     });
     return;

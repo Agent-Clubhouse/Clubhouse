@@ -41,6 +41,18 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
+/**
+ * Canonicalize a channel/topic name for storage and lookup. Channel names are
+ * case-insensitive — `inbox-My-Agent` and `inbox-my-agent` are the same channel —
+ * so an agent posting with one casing and reading with another must converge on a
+ * single key. Lowercasing (plus surrounding-whitespace trim) mirrors the
+ * normalization already applied by `inboxChannelName()`, and is idempotent and
+ * safe for the already-lowercase reserved channels (`general`, `control`).
+ */
+export function normalizeChannelName(topic: string): string {
+  return topic.trim().toLowerCase();
+}
+
 interface BulletinData {
   topics: Record<string, BulletinMessage[]>;
   protectedTopics?: string[];
@@ -75,13 +87,40 @@ class BulletinBoard {
     if (await pathExists(bp)) {
       try {
         const data: BulletinData = JSON.parse(await fsp.readFile(bp, 'utf-8'));
+        // Silent one-time migration: canonicalize topic keys to lowercase. Boards
+        // written before channel names were case-insensitive may hold mixed-case
+        // keys (e.g. `inbox-My-Agent`) that collide with the canonical form once
+        // lowercased. Merge colliding topics — concatenated and re-sorted by
+        // timestamp — so no message history is dropped.
+        let migrated = false;
         for (const [topic, messages] of Object.entries(data.topics || {})) {
-          this.topics.set(topic, messages);
+          const key = normalizeChannelName(topic);
+          if (key !== topic) migrated = true;
+          // Rewrite each message's stored topic to the canonical form too.
+          const canonical = messages.map(m => (m.topic === key ? m : { ...m, topic: key }));
+          const existing = this.topics.get(key);
+          if (existing) {
+            migrated = true;
+            const merged = [...existing, ...canonical].sort(
+              (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+            );
+            this.topics.set(key, merged);
+          } else {
+            this.topics.set(key, canonical);
+          }
         }
         if (Array.isArray(data.protectedTopics)) {
           for (const t of data.protectedTopics) {
-            this.protectedTopics.add(t);
+            const key = normalizeChannelName(t);
+            if (key !== t) migrated = true;
+            this.protectedTopics.add(key);
           }
+        }
+        // Persist the canonical form once so the migration is durable rather than
+        // re-run on every load.
+        if (migrated) {
+          this.dirty = true;
+          this.scheduleFlush();
         }
       } catch (err) {
         appLog('core:group-project', 'error', 'Failed to parse bulletin board', {
@@ -137,23 +176,24 @@ class BulletinBoard {
       throw new Error(`Message body exceeds ${MAX_BODY_BYTES} byte limit`);
     }
 
+    const canonicalTopic = normalizeChannelName(topic);
     const message: BulletinMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       sender,
-      topic,
+      topic: canonicalTopic,
       body,
       timestamp: new Date().toISOString(),
     };
 
-    let topicMessages = this.topics.get(topic);
+    let topicMessages = this.topics.get(canonicalTopic);
     if (!topicMessages) {
       topicMessages = [];
-      this.topics.set(topic, topicMessages);
+      this.topics.set(canonicalTopic, topicMessages);
     }
     topicMessages.push(message);
 
     // Prune per-topic (skip protected topics)
-    if (!this.protectedTopics.has(topic) && topicMessages.length > this.maxPerTopic) {
+    if (!this.protectedTopics.has(canonicalTopic) && topicMessages.length > this.maxPerTopic) {
       topicMessages.splice(0, topicMessages.length - this.maxPerTopic);
     }
 
@@ -168,7 +208,7 @@ class BulletinBoard {
   /** Check whether a topic has been created (has at least one message). */
   async hasTopic(topic: string): Promise<boolean> {
     await this.ensureLoaded();
-    return this.topics.has(topic);
+    return this.topics.has(normalizeChannelName(topic));
   }
 
   /**
@@ -179,7 +219,9 @@ class BulletinBoard {
   async getDigest(since?: string, channels?: string[]): Promise<TopicDigest[]> {
     await this.ensureLoaded();
     const sinceTime = since ? new Date(since).getTime() : 0;
-    const filter = channels && channels.length > 0 ? new Set(channels) : null;
+    const filter = channels && channels.length > 0
+      ? new Set(channels.map(normalizeChannelName))
+      : null;
     const digests: TopicDigest[] = [];
 
     for (const [topic, messages] of this.topics) {
@@ -222,7 +264,7 @@ class BulletinBoard {
   /** Get messages from a specific topic. */
   async getTopicMessages(topic: string, since?: string, limit?: number): Promise<BulletinMessage[]> {
     await this.ensureLoaded();
-    let messages = this.topics.get(topic) ?? [];
+    let messages = this.topics.get(normalizeChannelName(topic)) ?? [];
     if (since) {
       const sinceTime = new Date(since).getTime();
       messages = messages.filter(m => new Date(m.timestamp).getTime() > sinceTime);
@@ -278,10 +320,11 @@ class BulletinBoard {
 
   /** Mark a topic as protected (skip pruning) or unprotected. */
   setTopicProtected(topic: string, isProtected: boolean): void {
+    const canonicalTopic = normalizeChannelName(topic);
     if (isProtected) {
-      this.protectedTopics.add(topic);
+      this.protectedTopics.add(canonicalTopic);
     } else {
-      this.protectedTopics.delete(topic);
+      this.protectedTopics.delete(canonicalTopic);
     }
     this.dirty = true;
     this.scheduleFlush();
@@ -289,7 +332,7 @@ class BulletinBoard {
 
   /** Check whether a topic is protected. */
   isTopicProtected(topic: string): boolean {
-    return this.protectedTopics.has(topic);
+    return this.protectedTopics.has(normalizeChannelName(topic));
   }
 
   /** Return all protected topic names. */
@@ -302,7 +345,8 @@ class BulletinBoard {
   /** Delete a single message by ID within a topic. Returns true if found. */
   async deleteMessage(topic: string, messageId: string): Promise<boolean> {
     await this.ensureLoaded();
-    const messages = this.topics.get(topic);
+    const canonicalTopic = normalizeChannelName(topic);
+    const messages = this.topics.get(canonicalTopic);
     if (!messages) return false;
 
     const idx = messages.findIndex(m => m.id === messageId);
@@ -310,8 +354,8 @@ class BulletinBoard {
 
     messages.splice(idx, 1);
     if (messages.length === 0) {
-      this.topics.delete(topic);
-      this.protectedTopics.delete(topic);
+      this.topics.delete(canonicalTopic);
+      this.protectedTopics.delete(canonicalTopic);
     }
 
     this.dirty = true;
@@ -322,11 +366,12 @@ class BulletinBoard {
   /** Delete an entire topic and all its messages. Returns true if the topic existed. */
   async deleteTopic(topic: string): Promise<boolean> {
     await this.ensureLoaded();
-    const existed = this.topics.has(topic);
+    const canonicalTopic = normalizeChannelName(topic);
+    const existed = this.topics.has(canonicalTopic);
     if (!existed) return false;
 
-    this.topics.delete(topic);
-    this.protectedTopics.delete(topic);
+    this.topics.delete(canonicalTopic);
+    this.protectedTopics.delete(canonicalTopic);
 
     this.dirty = true;
     this.scheduleFlush();

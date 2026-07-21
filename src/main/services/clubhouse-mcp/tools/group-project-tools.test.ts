@@ -101,7 +101,7 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
-  it('exposes all 17 tools to an admin member', () => {
+  it('exposes all 18 tools to an admin member', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_123', name: 'My Project', description: '', instructions: '',
       createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
@@ -115,7 +115,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(17);
+    expect(tools).toHaveLength(18);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('list_members');
@@ -128,8 +128,11 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('broadcast');
     expect(suffixes).toContain('wake_agent');
     expect(suffixes).toContain('sleep_agent');
-    expect(suffixes).toContain('start_polling');
-    expect(suffixes).toContain('stop_polling');
+    expect(suffixes).toContain('toggle_polling');
+    expect(suffixes).toContain('query_polling');
+    expect(suffixes).toContain('nudge_polling');
+    expect(suffixes).not.toContain('start_polling');
+    expect(suffixes).not.toContain('stop_polling');
     expect(suffixes).toContain('clear_agent');
     expect(suffixes).toContain('compact_agent');
     expect(suffixes).toContain('clear_topic');
@@ -137,7 +140,7 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('set_project_info');
   });
 
-  it('exposes only the 6 core tools to a non-admin member', () => {
+  it('exposes only the core tools (incl. query_polling) to a non-admin member', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_core', name: 'Core', description: '', instructions: '',
       createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['someone-else'] },
@@ -148,9 +151,9 @@ describe('GroupProjectTools', () => {
 
     const suffixes = getScopedToolList('agent-1').map(t => t.name.split('__').pop());
     expect(suffixes.sort()).toEqual(
-      ['get_project_info', 'list_members', 'post_bulletin', 'read_bulletin', 'read_message', 'read_topic'].sort(),
+      ['get_project_info', 'list_members', 'post_bulletin', 'query_polling', 'read_bulletin', 'read_message', 'read_topic'].sort(),
     );
-    for (const priv of ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'delete_messages', 'set_project_info']) {
+    for (const priv of ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'nudge_polling', 'delete_messages', 'set_project_info']) {
       expect(suffixes).not.toContain(priv);
     }
   });
@@ -163,7 +166,7 @@ describe('GroupProjectTools', () => {
       agentName: 'robin',
       targetName: 'My Project',
     });
-    bindingManager.setDisabledTools('agent-1', 'gp_123', ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'start_polling', 'stop_polling', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages']);
+    bindingManager.setDisabledTools('agent-1', 'gp_123', ['shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'nudge_polling', 'clear_agent', 'compact_agent', 'clear_topic', 'delete_messages']);
 
     const tools = getScopedToolList('agent-1');
     const suffixes = tools.map(t => t.name.split('__').pop());
@@ -660,9 +663,9 @@ describe('GroupProjectTools', () => {
     expect(readBulletin!.description).toContain('inbox-<your-name>');
   });
 
-  /* ---------- Agent Control Tools (wake, sleep, start/stop polling) ---------- */
+  /* ---------- Agent Control Tools (wake, sleep, polling) ---------- */
 
-  it('wake_agent, sleep_agent, start_polling, stop_polling are available to an admin', () => {
+  it('wake_agent, sleep_agent, toggle_polling, nudge_polling are available to an admin (query_polling to all)', () => {
     groupProjectRegistry._setForTesting({
       id: 'gp_123', name: 'My Project', description: '', instructions: '',
       createdAt: '2020-01-01T00:00:00Z', metadata: { admins: ['agent-1'] },
@@ -679,8 +682,11 @@ describe('GroupProjectTools', () => {
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('wake_agent');
     expect(suffixes).toContain('sleep_agent');
-    expect(suffixes).toContain('start_polling');
-    expect(suffixes).toContain('stop_polling');
+    expect(suffixes).toContain('toggle_polling');
+    expect(suffixes).toContain('nudge_polling');
+    expect(suffixes).toContain('query_polling');
+    expect(suffixes).not.toContain('start_polling');
+    expect(suffixes).not.toContain('stop_polling');
   });
 
   it('wake_agent returns error for non-member agent', async () => {
@@ -937,134 +943,147 @@ describe('GroupProjectTools', () => {
     expect(mockKillAgent).not.toHaveBeenCalled();
   });
 
-  it('start_polling injects polling message into agent PTY', async () => {
-    const project = await groupProjectRegistry.create('PollStart');
+  it('toggle_polling(enabled=true) persists the setting and injects start to connected members', async () => {
+    const project = await groupProjectRegistry.create('PollToggle');
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
 
     bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'PS',
-      agentName: 'robin',
-      targetName: 'PollStart',
+      targetId: project.id, targetKind: 'group-project', label: 'PT', agentName: 'robin', targetName: 'PollToggle',
     });
     bindingManager.bind('agent-2', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'PS',
-      agentName: 'falcon',
-      targetName: 'PollStart',
+      targetId: project.id, targetKind: 'group-project', label: 'PT', agentName: 'falcon', targetName: 'PollToggle',
     });
 
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollStart' });
-    const toolName = buildToolName(binding, 'start_polling');
-    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollToggle' });
+    const result = await callTool('agent-1', buildToolName(binding, 'toggle_polling'), { enabled: true });
 
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.action).toBe('start_polling');
-    expect(parsed.delivered).toBe(true);
+    expect(parsed.action).toBe('toggle_polling');
+    expect(parsed.pollingEnabled).toBe(true);
+    expect(parsed.notifiedMembers.map((m: { agentId: string }) => m.agentId)).toEqual(['agent-2']);
 
-    // Verify PTY write was called with polling instruction
-    expect(mockPtyWrite).toHaveBeenCalled();
-    const writeCall = mockPtyWrite.mock.calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification'),
+    // Setting is actually persisted
+    const persisted = await groupProjectRegistry.get(project.id);
+    expect(persisted?.metadata?.pollingEnabled).toBe(true);
+
+    // Only the connected member (agent-2) receives the start instruction
+    const startWrite = mockPtyWrite.mock.calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('start polling'),
     );
-    expect(writeCall).toBeDefined();
-    expect(writeCall![0]).toBe('agent-2');
+    expect(startWrite).toBeDefined();
+    expect(startWrite![0]).toBe('agent-2');
 
     agentRegistry.untrack('agent-2');
   });
 
-  it('start_polling returns error for sleeping agent', async () => {
-    const project = await groupProjectRegistry.create('PollSleep');
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'PSL',
-      agentName: 'robin',
-      targetName: 'PollSleep',
-    });
-    bindingManager.bind('agent-2', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'PSL',
-      agentName: 'falcon',
-      targetName: 'PollSleep',
-    });
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollSleep' });
-    const toolName = buildToolName(binding, 'start_polling');
-    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('sleeping');
-  });
-
-  it('stop_polling injects stop message into agent PTY', async () => {
-    const project = await groupProjectRegistry.create('PollStop');
+  it('toggle_polling without enabled flips the current value and injects stop when turning off', async () => {
+    const project = await groupProjectRegistry.create('PollFlip');
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
 
     bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'PST',
-      agentName: 'robin',
-      targetName: 'PollStop',
+      targetId: project.id, targetKind: 'group-project', label: 'PF', agentName: 'robin', targetName: 'PollFlip',
     });
     bindingManager.bind('agent-2', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'PST',
-      agentName: 'falcon',
-      targetName: 'PollStop',
+      targetId: project.id, targetKind: 'group-project', label: 'PF', agentName: 'falcon', targetName: 'PollFlip',
     });
 
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollStop' });
-    const toolName = buildToolName(binding, 'stop_polling');
-    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollFlip' });
+    const result = await callTool('agent-1', buildToolName(binding, 'toggle_polling'), {});
 
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.action).toBe('stop_polling');
-    expect(parsed.delivered).toBe(true);
+    expect(parsed.pollingEnabled).toBe(false);
 
-    // Verify PTY write was called with stop instruction
-    expect(mockPtyWrite).toHaveBeenCalled();
-    const writeCall = mockPtyWrite.mock.calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Stop'),
+    const persisted = await groupProjectRegistry.get(project.id);
+    expect(persisted?.metadata?.pollingEnabled).toBe(false);
+
+    const stopWrite = mockPtyWrite.mock.calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('stop polling'),
     );
-    expect(writeCall).toBeDefined();
+    expect(stopWrite).toBeDefined();
 
     agentRegistry.untrack('agent-2');
   });
 
-  it('stop_polling returns error for sleeping agent', async () => {
-    const project = await groupProjectRegistry.create('StopSleep');
+  it('query_polling returns the current setting and member statuses', async () => {
+    const project = await groupProjectRegistry.create('PollQuery');
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+
+    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
+    mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
 
     bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'SS',
-      agentName: 'robin',
-      targetName: 'StopSleep',
+      targetId: project.id, targetKind: 'group-project', label: 'PQ', agentName: 'robin', targetName: 'PollQuery',
     });
     bindingManager.bind('agent-2', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'SS',
-      agentName: 'falcon',
-      targetName: 'StopSleep',
+      targetId: project.id, targetKind: 'group-project', label: 'PQ', agentName: 'falcon', targetName: 'PollQuery',
     });
 
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'StopSleep' });
-    const toolName = buildToolName(binding, 'stop_polling');
-    const result = await callTool('agent-1', toolName, { target_agent_id: 'agent-2' });
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollQuery' });
+    const result = await callTool('agent-1', buildToolName(binding, 'query_polling'), {});
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.pollingEnabled).toBe(true);
+    const statuses = Object.fromEntries(parsed.members.map((m: { agentId: string; status: string }) => [m.agentId, m.status]));
+    expect(statuses['agent-2']).toBe('connected');
+    expect(statuses['agent-1']).toBe('sleeping');
+
+    agentRegistry.untrack('agent-2');
+  });
+
+  it('nudge_polling injects a nudge into a connected agent without changing the setting', async () => {
+    const project = await groupProjectRegistry.create('PollNudge');
+
+    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
+    mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id, targetKind: 'group-project', label: 'PN', agentName: 'robin', targetName: 'PollNudge',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: project.id, targetKind: 'group-project', label: 'PN', agentName: 'falcon', targetName: 'PollNudge',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'PollNudge' });
+    const result = await callTool('agent-1', buildToolName(binding, 'nudge_polling'), { target_agent_id: 'agent-2' });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.action).toBe('nudge_polling');
+    expect(parsed.delivered).toBe(true);
+
+    const nudgeWrite = mockPtyWrite.mock.calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('nudge'),
+    );
+    expect(nudgeWrite).toBeDefined();
+    expect(nudgeWrite![0]).toBe('agent-2');
+
+    // The setting is NOT changed by a nudge
+    const persisted = await groupProjectRegistry.get(project.id);
+    expect(persisted?.metadata?.pollingEnabled).toBeFalsy();
+
+    agentRegistry.untrack('agent-2');
+  });
+
+  it('nudge_polling returns error for sleeping agent', async () => {
+    const project = await groupProjectRegistry.create('NudgeSleep');
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id, targetKind: 'group-project', label: 'NS', agentName: 'robin', targetName: 'NudgeSleep',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: project.id, targetKind: 'group-project', label: 'NS', agentName: 'falcon', targetName: 'NudgeSleep',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'NudgeSleep' });
+    const result = await callTool('agent-1', buildToolName(binding, 'nudge_polling'), { target_agent_id: 'agent-2' });
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('sleeping');

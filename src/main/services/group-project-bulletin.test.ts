@@ -36,6 +36,7 @@ import {
   ensureProjectChannels,
   ensureInboxChannel,
   inboxChannelName,
+  normalizeChannelName,
 } from './group-project-bulletin';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -550,12 +551,203 @@ describe('BulletinBoard', () => {
       expect(digest[0].messageCount).toBe(2);
     });
   });
+
+  // ── Case-insensitive channels (go-forward routing) ───────────────────
+  describe('case-insensitive channel routing', () => {
+    it('routes a mixed-case post to the same channel read with lowercase (digest filter)', async () => {
+      const board = getBulletinBoard('gp_ci_digest');
+      await board.postMessage('a', 'inbox-My-Agent', 'hi');
+
+      const digest = await board.getDigest(undefined, ['inbox-my-agent']);
+      expect(digest).toHaveLength(1);
+      expect(digest[0].topic).toBe('inbox-my-agent');
+      expect(digest[0].messageCount).toBe(1);
+    });
+
+    it('reads messages regardless of the casing used to post or query', async () => {
+      const board = getBulletinBoard('gp_ci_read');
+      await board.postMessage('a', 'inbox-my-agent', 'hello');
+
+      const messages = await board.getTopicMessages('inbox-MY-AGENT');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].body).toBe('hello');
+    });
+
+    it('accumulates differently-cased posts under one canonical topic', async () => {
+      const board = getBulletinBoard('gp_ci_accum');
+      await board.postMessage('a', 'inbox-My-Agent', 'first');
+      await board.postMessage('b', 'INBOX-MY-AGENT', 'second');
+      await board.postMessage('c', 'inbox-my-agent', 'third');
+
+      const digest = await board.getDigest();
+      expect(digest).toHaveLength(1);
+      expect(digest[0].topic).toBe('inbox-my-agent');
+      expect(digest[0].messageCount).toBe(3);
+    });
+
+    it('stores the canonical (lowercased) form as the message topic', async () => {
+      const board = getBulletinBoard('gp_ci_msgtopic');
+      const msg = await board.postMessage('a', 'Inbox-Robin', 'yo');
+      expect(msg.topic).toBe('inbox-robin');
+    });
+
+    it('hasTopic is case-insensitive', async () => {
+      const board = getBulletinBoard('gp_ci_has');
+      await board.postMessage('a', 'inbox-robin', 'x');
+      expect(await board.hasTopic('inbox-Robin')).toBe(true);
+      expect(await board.hasTopic('INBOX-ROBIN')).toBe(true);
+    });
+
+    it('protection applies across casings and survives pruning', async () => {
+      const board = getBulletinBoard('gp_ci_prot');
+      board.setLimits(3, 1000);
+      board.setTopicProtected('Inbox-Safe', true);
+      expect(board.isTopicProtected('inbox-safe')).toBe(true);
+
+      for (let i = 0; i < 10; i++) {
+        await board.postMessage('a', 'INBOX-SAFE', `msg${i}`);
+      }
+      const messages = await board.getTopicMessages('inbox-safe', undefined, 100);
+      expect(messages).toHaveLength(10); // protected → not pruned to 3
+    });
+
+    it('delete paths resolve topics case-insensitively', async () => {
+      const board = getBulletinBoard('gp_ci_del');
+      const msg = await board.postMessage('a', 'inbox-x', 'one');
+      await board.postMessage('b', 'inbox-x', 'two');
+
+      expect(await board.deleteMessage('INBOX-X', msg.id)).toBe(true);
+      expect(await board.getTopicMessages('inbox-x')).toHaveLength(1);
+
+      expect(await board.deleteTopic('Inbox-X')).toBe(true);
+      expect(await board.hasTopic('inbox-x')).toBe(false);
+    });
+  });
+
+  // ── Silent one-time migration on load ─────────────────────────────────
+  describe('mixed-case migration on load', () => {
+    const bulletinPathFor = (projectId: string) =>
+      path.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', projectId, 'bulletin.json');
+
+    // vitest config sets `mockReset: true`, which wipes the store-backed mock
+    // implementations before each test. These migration tests are the only ones
+    // that read seeded content back through readFile, so re-establish the impls.
+    beforeEach(() => {
+      vi.mocked(fsp.access).mockImplementation(async (p: string) => {
+        if (!store.has(p)) throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: string) => {
+        const data = store.get(p);
+        if (data === undefined) throw new Error('ENOENT');
+        return data;
+      });
+      vi.mocked(fsp.writeFile).mockImplementation(async (p: string, content: string) => {
+        store.set(p, content);
+      });
+    });
+
+    it('canonicalizes a lone mixed-case topic key on load', async () => {
+      store.set(bulletinPathFor('gp_mig_lone'), JSON.stringify({
+        topics: {
+          'inbox-My-Agent': [
+            { id: 'msg_1', sender: 'a', topic: 'inbox-My-Agent', body: 'hi', timestamp: '2026-01-01T00:00:00.000Z' },
+          ],
+        },
+      }));
+
+      const board = getBulletinBoard('gp_mig_lone');
+      const messages = await board.getTopicMessages('inbox-my-agent');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].topic).toBe('inbox-my-agent');
+    });
+
+    it('merges colliding keys, preserving all messages in timestamp order', async () => {
+      store.set(bulletinPathFor('gp_mig_merge'), JSON.stringify({
+        topics: {
+          'inbox-My-Agent': [
+            { id: 'm1', sender: 'a', topic: 'inbox-My-Agent', body: 'first',  timestamp: '2026-01-01T00:00:01.000Z' },
+            { id: 'm3', sender: 'a', topic: 'inbox-My-Agent', body: 'third',  timestamp: '2026-01-01T00:00:03.000Z' },
+          ],
+          'inbox-my-agent': [
+            { id: 'm2', sender: 'b', topic: 'inbox-my-agent', body: 'second', timestamp: '2026-01-01T00:00:02.000Z' },
+            { id: 'm4', sender: 'b', topic: 'inbox-my-agent', body: 'fourth', timestamp: '2026-01-01T00:00:04.000Z' },
+          ],
+        },
+      }));
+
+      const board = getBulletinBoard('gp_mig_merge');
+      const messages = await board.getTopicMessages('inbox-my-agent', undefined, 100);
+      expect(messages.map(m => m.body)).toEqual(['first', 'second', 'third', 'fourth']);
+      // No history lost.
+      expect(board.totalMessageCount()).toBe(4);
+      // Single canonical topic remains.
+      const digest = await board.getDigest();
+      expect(digest.map(d => d.topic)).toEqual(['inbox-my-agent']);
+    });
+
+    it('normalizes protectedTopics on load', async () => {
+      store.set(bulletinPathFor('gp_mig_prot'), JSON.stringify({
+        topics: {
+          'Inbox-Guard': [
+            { id: 'g1', sender: 'a', topic: 'Inbox-Guard', body: 'x', timestamp: '2026-01-01T00:00:00.000Z' },
+          ],
+        },
+        protectedTopics: ['Inbox-Guard'],
+      }));
+
+      const board = getBulletinBoard('gp_mig_prot');
+      expect(await board.hasTopic('inbox-guard')).toBe(true);
+      expect(board.isTopicProtected('inbox-guard')).toBe(true);
+    });
+
+    it('persists the canonical form back to disk (migration is durable)', async () => {
+      const p = bulletinPathFor('gp_mig_persist');
+      store.set(p, JSON.stringify({
+        topics: {
+          'inbox-My-Agent': [
+            { id: 'm1', sender: 'a', topic: 'inbox-My-Agent', body: 'a', timestamp: '2026-01-01T00:00:01.000Z' },
+          ],
+          'inbox-my-agent': [
+            { id: 'm2', sender: 'b', topic: 'inbox-my-agent', body: 'b', timestamp: '2026-01-01T00:00:02.000Z' },
+          ],
+        },
+      }));
+
+      const board = getBulletinBoard('gp_mig_persist');
+      await board.hasTopic('anything'); // triggers ensureLoaded → migration
+      await board.flush();
+
+      const written = JSON.parse(store.get(p)!);
+      expect(Object.keys(written.topics)).toEqual(['inbox-my-agent']);
+      expect(written.topics['inbox-my-agent']).toHaveLength(2);
+    });
+  });
 });
 
 describe('channel bootstrap helpers', () => {
   beforeEach(() => {
     store.clear();
     _resetAllBoardsForTesting();
+  });
+
+  describe('normalizeChannelName', () => {
+    it('lowercases mixed-case channel names', () => {
+      expect(normalizeChannelName('inbox-My-Agent')).toBe('inbox-my-agent');
+    });
+
+    it('trims surrounding whitespace', () => {
+      expect(normalizeChannelName('  Inbox-X  ')).toBe('inbox-x');
+    });
+
+    it('leaves already-canonical reserved channels unchanged', () => {
+      expect(normalizeChannelName('general')).toBe('general');
+      expect(normalizeChannelName('control')).toBe('control');
+    });
+
+    it('is idempotent', () => {
+      const once = normalizeChannelName('Inbox-My-Agent');
+      expect(normalizeChannelName(once)).toBe(once);
+    });
   });
 
   describe('inboxChannelName', () => {

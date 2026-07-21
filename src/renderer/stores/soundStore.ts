@@ -246,6 +246,7 @@ export function mapNotificationToSoundEvent(eventKind: string): SoundEvent | nul
     case 'tool_error': return 'error';
     case 'permission_request': return 'permission';
     case 'notification': return 'notification';
+    case 'attention': return 'notification';
     default: return null;
   }
 }
