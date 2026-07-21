@@ -46,6 +46,11 @@ export interface LaunchOptions {
 export async function launchApp(opts: LaunchOptions = {}) {
   let userDataDir: string | undefined;
   const env = { ...process.env };
+  // Never let the auto-updater run during E2E. A real "update available/ready"
+  // banner appearing mid-run overlays the UI and flakes unrelated tests (editor
+  // focus clicks, canvas context menus). Belt-and-suspenders with the
+  // isPackaged gate — this also covers a packaged smoke-test launch.
+  env.CLUBHOUSE_DISABLE_AUTO_UPDATE = '1';
   if (opts.experimental || opts.userDataFiles) {
     userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-e2e-'));
   }
