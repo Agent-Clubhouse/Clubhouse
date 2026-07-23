@@ -87,50 +87,12 @@ export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   const file = path.join(dir, `${req.key}.json`);
   await assertSafePath(dir, `${req.key}.json`);
-
-  // Read and parse as two separate steps so a missing file (expected — no data
-  // saved yet) is distinguishable from a corrupt one (a real problem).
-  let raw: string;
   try {
-    raw = await fs.readFile(file, 'utf-8');
-  } catch {
-    // File doesn't exist yet — a genuine fresh-start, return no value.
-    return undefined;
-  }
-
-  try {
+    const raw = await fs.readFile(file, 'utf-8');
     return JSON.parse(raw);
-  } catch (parseErr) {
-    // The file exists but holds invalid JSON — almost always a truncated write
-    // from a crash/force-quit mid-save. Returning undefined here makes the
-    // caller treat it as "no data", and callers that auto-save on load will
-    // then overwrite the file, destroying the bytes permanently. Instead,
-    // quarantine the corrupt file to a timestamped sidecar so the data can be
-    // recovered, and log loudly rather than failing silently.
-    try {
-      const quarantine = `${file}.corrupt-${nextQuarantineSuffix()}`;
-      await fs.rename(file, quarantine);
-      appLog('plugin-storage', 'error', 'Quarantined corrupt kv file', {
-        meta: {
-          pluginId: req.pluginId, scope: req.scope, key: req.key, quarantine,
-          bytes: raw.length, error: String(parseErr),
-        },
-      });
-    } catch (quarantineErr) {
-      appLog('plugin-storage', 'error', 'Failed to quarantine corrupt kv file', {
-        meta: { pluginId: req.pluginId, key: req.key, error: String(quarantineErr) },
-      });
-    }
+  } catch {
     return undefined;
   }
-}
-
-// Monotonic suffix for temp/quarantine filenames — avoids collisions within a
-// tight loop without depending on wall-clock granularity.
-let quarantineCounter = 0;
-function nextQuarantineSuffix(): string {
-  quarantineCounter += 1;
-  return `${Date.now()}-${process.pid}-${quarantineCounter}`;
 }
 
 export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
@@ -141,22 +103,7 @@ export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
   await assertSafePath(dir, `${req.key}.json`);
   await ensureDir(dir);
   const file = path.join(dir, `${req.key}.json`);
-
-  // Atomic write: serialize to a temp file in the same directory, then rename
-  // over the destination. rename() is atomic on POSIX and NTFS, so a reader
-  // (or a crash) never observes a half-written file — the destination is
-  // always either the old complete contents or the new complete contents.
-  // A plain fs.writeFile truncates-then-writes and can leave invalid JSON if
-  // the process dies mid-write, which silently wipes canvas/wire state.
-  const tmp = path.join(dir, `${req.key}.json.tmp-${nextQuarantineSuffix()}`);
-  try {
-    await fs.writeFile(tmp, JSON.stringify(req.value), 'utf-8');
-    await fs.rename(tmp, file);
-  } catch (err) {
-    // Best-effort cleanup of the temp file so a failed write doesn't litter.
-    try { await fs.unlink(tmp); } catch { /* already gone */ }
-    throw err;
-  }
+  await fs.writeFile(file, JSON.stringify(req.value), 'utf-8');
 }
 
 export async function deleteKey(req: PluginStorageDeleteRequest): Promise<void> {
