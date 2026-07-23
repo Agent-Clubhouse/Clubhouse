@@ -66,7 +66,8 @@ vi.mock('fs/promises', () => ({
 // Imports
 // ---------------------------------------------------------------------------
 
-import { startPeriodicChecks, stopPeriodicChecks } from './auto-update-service';
+import { startPeriodicChecks, stopPeriodicChecks, shouldAutoCheckOnStartup } from './auto-update-service';
+import { app } from 'electron';
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -137,5 +138,34 @@ describe('startPeriodicChecks / stopPeriodicChecks', () => {
     await startPeriodicChecks();
     await startPeriodicChecks(); // second call should be a no-op
     stopPeriodicChecks();
+  });
+});
+
+describe('shouldAutoCheckOnStartup', () => {
+  const originalPackaged = app.isPackaged;
+  const originalEnv = process.env.CLUBHOUSE_DISABLE_AUTO_UPDATE;
+
+  afterEach(() => {
+    (app as { isPackaged: boolean }).isPackaged = originalPackaged;
+    if (originalEnv === undefined) delete process.env.CLUBHOUSE_DISABLE_AUTO_UPDATE;
+    else process.env.CLUBHOUSE_DISABLE_AUTO_UPDATE = originalEnv;
+  });
+
+  it('returns false for an unpackaged build (dev / E2E)', () => {
+    (app as { isPackaged: boolean }).isPackaged = false;
+    delete process.env.CLUBHOUSE_DISABLE_AUTO_UPDATE;
+    expect(shouldAutoCheckOnStartup()).toBe(false);
+  });
+
+  it('returns true for a packaged build', () => {
+    (app as { isPackaged: boolean }).isPackaged = true;
+    delete process.env.CLUBHOUSE_DISABLE_AUTO_UPDATE;
+    expect(shouldAutoCheckOnStartup()).toBe(true);
+  });
+
+  it('returns false when the E2E disable override is set, even if packaged', () => {
+    (app as { isPackaged: boolean }).isPackaged = true;
+    process.env.CLUBHOUSE_DISABLE_AUTO_UPDATE = '1';
+    expect(shouldAutoCheckOnStartup()).toBe(false);
   });
 });

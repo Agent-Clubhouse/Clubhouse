@@ -1184,6 +1184,24 @@ export function getStatus(): UpdateStatus {
   return { ...status };
 }
 
+/**
+ * Whether the app should kick off automatic update checks on startup.
+ *
+ * Auto-update only applies to packaged builds — an unpackaged build (dev run
+ * or the E2E harness, which launches via the main entry, not a packaged app)
+ * cannot apply a downloaded update anyway. Worse, letting the check run under
+ * E2E means a real "update available/ready" banner can appear mid-run, overlay
+ * the UI, and break otherwise-unrelated interactions (editor focus clicks,
+ * canvas context menus) — a flaky failure that depends purely on update-check
+ * timing. Manual "check for updates" (checkForUpdates) is unaffected; only the
+ * automatic startup trigger is gated. An explicit env override is honored so a
+ * packaged smoke test can opt out too.
+ */
+export function shouldAutoCheckOnStartup(): boolean {
+  if (process.env.CLUBHOUSE_DISABLE_AUTO_UPDATE === '1') return false;
+  return app.isPackaged;
+}
+
 export async function startPeriodicChecks(): Promise<void> {
   if (checkTimer) return;
 
