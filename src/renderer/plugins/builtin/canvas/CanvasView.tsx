@@ -11,7 +11,7 @@ import { usePluginStore } from '../../plugin-store';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { LinkDropdown } from './LinkDropdown';
-import { Spinner } from '../../../components/Spinner';
+import { PendingWidgetPlaceholder } from './PendingWidgetPlaceholder';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -462,12 +462,7 @@ export function CanvasViewComponent({
           const widgetParts = parsePluginWidgetType(pluginView.pluginWidgetType);
           const pluginKnown = widgetParts && !!usePluginStore.getState().plugins[widgetParts.pluginId];
           if (pluginKnown) {
-            return (
-              <div className="flex flex-col items-center justify-center h-full gap-2 text-ctp-overlay0 text-xs p-4 text-center" data-testid="widget-loading">
-                <Spinner size="sm" />
-                <span>Loading&hellip;</span>
-              </div>
-            );
+            return <PendingWidgetPlaceholder pluginId={widgetParts.pluginId} />;
           }
           return (
             <div className="flex items-center justify-center h-full text-ctp-overlay0 text-xs p-4 text-center">
@@ -478,11 +473,10 @@ export function CanvasViewComponent({
         }
         if (isWidgetPending(pluginView.pluginWidgetType)) {
           return (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-ctp-overlay0 text-xs p-4 text-center" data-testid="widget-loading">
-              <span className="font-medium text-ctp-subtext0">{registered.declaration.label}</span>
-              <Spinner size="sm" />
-              <span>Loading…</span>
-            </div>
+            <PendingWidgetPlaceholder
+              pluginId={registered.pluginId}
+              label={registered.declaration.label}
+            />
           );
         }
         const Component = registered.descriptor.component;

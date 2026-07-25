@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { usePluginStore } from './plugin-store';
 import type { PluginManifest, PluginModule } from '../../shared/plugin-types';
 
@@ -80,6 +80,15 @@ import {
   rejectPluginPermissions,
   _resetActiveContexts,
   _resetPluginSystemReady,
+  withTimeout,
+  retryPluginActivation,
+  activationRetryDelay,
+  PluginActivationTimeoutError,
+  PLUGIN_IPC_TIMEOUT_MS,
+  PLUGIN_ACTIVATE_TIMEOUT_MS,
+  MAX_ACTIVATION_ATTEMPTS,
+  ACTIVATION_RETRY_BASE_MS,
+  ACTIVATION_RETRY_MAX_MS,
 } from './plugin-loader';
 import { dynamicImportModule } from './dynamic-import';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
@@ -716,17 +725,19 @@ describe('plugin-loader', () => {
       expect(usePluginStore.getState().plugins['bad'].status).toBe('incompatible');
     });
 
-    it('skips activation of errored plugin', async () => {
-      mockLog.write.mockClear();
+    it('retries an errored plugin rather than skipping it permanently', async () => {
+      // An errored status is not terminal: a transient activation failure (busy
+      // main process during an app update) must not require an app restart.
+      const mod: PluginModule = { activate: vi.fn() };
       usePluginStore.getState().registerPlugin(
-        makeManifest({ id: 'err' }), 'community', '/path', 'errored', 'load failed'
+        makeManifest({ id: 'err', scope: 'app' }), 'builtin', '', 'errored', 'load failed'
       );
+      usePluginStore.getState().setPluginModule('err', mod);
 
       await activatePlugin('err');
 
-      expect(mockLog.write).toHaveBeenCalledWith(
-        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }),
-      );
+      expect(mod.activate).toHaveBeenCalled();
+      expect(usePluginStore.getState().plugins['err'].status).toBe('activated');
     });
 
     it('skips activation of disabled plugin', async () => {
@@ -2381,6 +2392,230 @@ describe('plugin-loader', () => {
       expect(store.projectEnabled['proj-1']).not.toContain('terminal');
       // Terminal should NOT be activated for proj-1
       expect(getActiveContext('terminal', 'proj-1')).toBeUndefined();
+    });
+  });
+
+  // ── activation timeouts & retry/backoff ─────────────────────────────
+
+  describe('activation timeouts', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function registerBuiltin(id: string, mod: PluginModule): void {
+      usePluginStore.getState().registerPlugin(makeManifest({ id, scope: 'app' }), 'builtin', '', 'registered');
+      usePluginStore.getState().setPluginModule(id, mod);
+    }
+
+    it('times out a hung activate() and marks the plugin errored', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const never = new Promise<void>(() => { /* never settles */ });
+      const mod: PluginModule = { activate: vi.fn().mockReturnValue(never) };
+      registerBuiltin('hang', mod);
+
+      const pending = activatePlugin('hang');
+      await vi.advanceTimersByTimeAsync(PLUGIN_ACTIVATE_TIMEOUT_MS + 1);
+      await pending;
+
+      const entry = usePluginStore.getState().plugins['hang'];
+      expect(entry.status).toBe('errored');
+      expect(entry.error).toContain('timed out');
+      expect(getActiveContext('hang')).toBeUndefined();
+      spy.mockRestore();
+    });
+
+    it('does not block activation when the settings IPC read hangs', async () => {
+      mockPlugin.storageRead.mockReturnValue(new Promise(() => { /* never settles */ }));
+      const mod: PluginModule = { activate: vi.fn() };
+      registerBuiltin('slow-settings', mod);
+
+      const pending = activatePlugin('slow-settings');
+      await vi.advanceTimersByTimeAsync(PLUGIN_IPC_TIMEOUT_MS + 1);
+      await pending;
+
+      // Falls back to default settings and activates rather than spinning.
+      expect(usePluginStore.getState().plugins['slow-settings'].status).toBe('activated');
+      expect(mod.activate).toHaveBeenCalled();
+    });
+
+    it('withTimeout resolves normally when work finishes in time', async () => {
+      const result = await withTimeout('fast', 1_000, async () => 'ok');
+      expect(result).toBe('ok');
+    });
+
+    it('withTimeout aborts the signal when it fires', async () => {
+      let seen: AbortSignal | undefined;
+      const pending = withTimeout('slow', 100, (signal) => {
+        seen = signal;
+        return new Promise<never>(() => { /* never settles */ });
+      });
+      const assertion = expect(pending).rejects.toBeInstanceOf(PluginActivationTimeoutError);
+      await vi.advanceTimersByTimeAsync(101);
+      await assertion;
+      expect(seen?.aborted).toBe(true);
+    });
+  });
+
+  describe('activation retry & backoff', () => {
+    let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      consoleSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    function registerBuiltin(id: string, mod: PluginModule): void {
+      usePluginStore.getState().registerPlugin(makeManifest({ id, scope: 'app' }), 'builtin', '', 'registered');
+      usePluginStore.getState().setPluginModule(id, mod);
+    }
+
+    it('retries a failed activation after a backoff and recovers', async () => {
+      const activate = vi.fn()
+        .mockRejectedValueOnce(new Error('main process busy'))
+        .mockResolvedValueOnce(undefined);
+      registerBuiltin('flaky', { activate });
+
+      await activatePlugin('flaky');
+      expect(usePluginStore.getState().plugins['flaky'].status).toBe('errored');
+      expect(activate).toHaveBeenCalledTimes(1);
+
+      // Nothing retries before the backoff elapses...
+      await vi.advanceTimersByTimeAsync(ACTIVATION_RETRY_BASE_MS - 1);
+      expect(activate).toHaveBeenCalledTimes(1);
+
+      // ...and the scheduled retry succeeds on its own, no restart needed.
+      await vi.advanceTimersByTimeAsync(1);
+      expect(activate).toHaveBeenCalledTimes(2);
+      expect(usePluginStore.getState().plugins['flaky'].status).toBe('activated');
+      expect(getActiveContext('flaky')).toBeDefined();
+    });
+
+    it('backs off exponentially and gives up after MAX_ACTIVATION_ATTEMPTS', async () => {
+      const activate = vi.fn().mockRejectedValue(new Error('still broken'));
+      registerBuiltin('broken', { activate });
+
+      await activatePlugin('broken');
+      expect(activate).toHaveBeenCalledTimes(1);
+
+      // Attempt 2 after 1s, attempt 3 after 2s, attempt 4 after 4s.
+      await vi.advanceTimersByTimeAsync(activationRetryDelay(1));
+      expect(activate).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(activationRetryDelay(2));
+      expect(activate).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(activationRetryDelay(3));
+      expect(activate).toHaveBeenCalledTimes(MAX_ACTIVATION_ATTEMPTS);
+
+      // Budget spent — no further automatic retries.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(activate).toHaveBeenCalledTimes(MAX_ACTIVATION_ATTEMPTS);
+      expect(usePluginStore.getState().plugins['broken'].status).toBe('errored');
+
+      // And an explicit activation request is skipped once retries are spent.
+      mockLog.write.mockClear();
+      await activatePlugin('broken');
+      expect(activate).toHaveBeenCalledTimes(MAX_ACTIVATION_ATTEMPTS);
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ msg: expect.stringContaining('retries exhausted') }),
+      );
+    });
+
+    it('defers a caller-initiated activation while a retry is already scheduled', async () => {
+      const activate = vi.fn().mockRejectedValue(new Error('boom'));
+      registerBuiltin('deferred', { activate });
+
+      await activatePlugin('deferred');
+      expect(activate).toHaveBeenCalledTimes(1);
+
+      // A project switch mid-backoff must not burn an attempt early.
+      await activatePlugin('deferred');
+      expect(activate).toHaveBeenCalledTimes(1);
+    });
+
+    it('activationRetryDelay grows exponentially and is capped', () => {
+      expect(activationRetryDelay(1)).toBe(ACTIVATION_RETRY_BASE_MS);
+      expect(activationRetryDelay(2)).toBe(ACTIVATION_RETRY_BASE_MS * 2);
+      expect(activationRetryDelay(3)).toBe(ACTIVATION_RETRY_BASE_MS * 4);
+      expect(activationRetryDelay(99)).toBe(ACTIVATION_RETRY_MAX_MS);
+    });
+
+    it('retryPluginActivation revives a plugin whose retries are exhausted', async () => {
+      const activate = vi.fn().mockRejectedValue(new Error('boom'));
+      registerBuiltin('revive', { activate });
+
+      await activatePlugin('revive');
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(usePluginStore.getState().plugins['revive'].status).toBe('errored');
+
+      activate.mockResolvedValue(undefined);
+      expect(retryPluginActivation('revive')).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(usePluginStore.getState().plugins['revive'].status).toBe('activated');
+    });
+
+    it('retryPluginActivation reuses the project context of the failed attempt', async () => {
+      const activate = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue(undefined);
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'proj-plugin', scope: 'project' }), 'builtin', '', 'registered'
+      );
+      usePluginStore.getState().setPluginModule('proj-plugin', { activate });
+
+      await activatePlugin('proj-plugin', 'proj-1', '/p1');
+      expect(usePluginStore.getState().plugins['proj-plugin'].status).toBe('errored');
+
+      // The canvas widget only knows the plugin id — the project context comes
+      // from the recorded attempt.
+      expect(retryPluginActivation('proj-plugin')).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const ctx = getActiveContext('proj-plugin', 'proj-1');
+      expect(ctx?.projectId).toBe('proj-1');
+      expect(ctx?.projectPath).toBe('/p1');
+    });
+
+    it('retryPluginActivation returns false for an unknown plugin', () => {
+      expect(retryPluginActivation('nope')).toBe(false);
+    });
+
+    it('deactivation cancels a pending activation retry', async () => {
+      const activate = vi.fn().mockRejectedValue(new Error('boom'));
+      registerBuiltin('cancelled', { activate });
+
+      await activatePlugin('cancelled');
+      expect(activate).toHaveBeenCalledTimes(1);
+
+      await deactivatePlugin('cancelled');
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(activate).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears failure state after a successful activation', async () => {
+      const activate = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue(undefined);
+      registerBuiltin('recovered', { activate });
+
+      await activatePlugin('recovered');
+      await vi.advanceTimersByTimeAsync(ACTIVATION_RETRY_BASE_MS);
+      expect(usePluginStore.getState().plugins['recovered'].status).toBe('activated');
+
+      // Fresh budget: a later failure gets the full retry allowance again.
+      await deactivatePlugin('recovered');
+      usePluginStore.getState().setPluginStatus('recovered', 'registered');
+      activate.mockRejectedValue(new Error('boom again'));
+
+      await activatePlugin('recovered');
+      expect(activate).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(ACTIVATION_RETRY_BASE_MS);
+      expect(activate).toHaveBeenCalledTimes(4);
     });
   });
 });
