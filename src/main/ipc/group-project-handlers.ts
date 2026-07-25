@@ -12,13 +12,61 @@ import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, type ArgValidator } from './validation';
+import type { DigestSince } from '../../shared/group-project-types';
 import { agentRegistry } from '../services/agent-registry';
 import * as ptyManager from '../services/pty-manager';
 import * as structuredManager from '../services/structured-manager';
 import { writeChunkedBracketedPaste, submitAfterPaste } from '../services/clubhouse-mcp/tools/agent-tools';
 import { getProvider } from '../orchestrators';
 import type { PasteSubmitTiming } from '../orchestrators';
+
+/** Upper bounds on the per-topic read map, so a bad caller can't send an unbounded object. */
+const MAX_SINCE_ENTRIES = 500;
+const MAX_TOPIC_LENGTH = 256;
+const MAX_TIMESTAMP_LENGTH = 64;
+/** Keys that must never be copied onto a plain object. */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * `since` for the digest: either a single ISO timestamp, or a per-topic
+ * `topic -> ISO timestamp` map.
+ */
+export function digestSinceArg(): ArgValidator<DigestSince | undefined> {
+  return (value, argName) => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'string') {
+      if (value.length > MAX_TIMESTAMP_LENGTH) {
+        throw new Error(`${argName} timestamp must be at most ${MAX_TIMESTAMP_LENGTH} characters`);
+      }
+      return value;
+    }
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`${argName} must be a string or an object`);
+    }
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length > MAX_SINCE_ENTRIES) {
+      throw new Error(`${argName} must have at most ${MAX_SINCE_ENTRIES} entries`);
+    }
+    const map: Record<string, string> = {};
+    for (const [topic, timestamp] of entries) {
+      if (UNSAFE_KEYS.has(topic)) {
+        throw new Error(`${argName} may not contain the key "${topic}"`);
+      }
+      if (topic.length > MAX_TOPIC_LENGTH) {
+        throw new Error(`${argName} topic keys must be at most ${MAX_TOPIC_LENGTH} characters`);
+      }
+      if (typeof timestamp !== 'string') {
+        throw new Error(`${argName}.${topic} must be a string`);
+      }
+      if (timestamp.length > MAX_TIMESTAMP_LENGTH) {
+        throw new Error(`${argName}.${topic} must be at most ${MAX_TIMESTAMP_LENGTH} characters`);
+      }
+      map[topic] = timestamp;
+    }
+    return map;
+  };
+}
 
 function broadcastChanged(): void {
   groupProjectRegistry.list().then((projects) => {
@@ -110,10 +158,10 @@ export function registerGroupProjectHandlers(): void {
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true })],
+    [stringArg(), digestSinceArg()],
     async (_event, id, since) => {
       const board = getBulletinBoard(id as string);
-      return board.getDigest(since as string | undefined);
+      return board.getDigest(since as DigestSince | undefined);
     },
   ));
 

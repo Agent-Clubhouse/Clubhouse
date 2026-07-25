@@ -7,7 +7,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
-import type { BulletinMessage, TopicDigest } from '../../shared/group-project-types';
+import type { BulletinMessage, TopicDigest, DigestSince } from '../../shared/group-project-types';
 import { appLog } from './log-service';
 
 /** Default max message body size in bytes. */
@@ -56,6 +56,36 @@ export function normalizeChannelName(topic: string): string {
 interface BulletinData {
   topics: Record<string, BulletinMessage[]>;
   protectedTopics?: string[];
+}
+
+/**
+ * Normalize a `since` argument into a lookup usable per topic: either a single
+ * cutoff applied everywhere, or a Map keyed by canonical channel name.
+ *
+ * A Map (not a plain object) so a channel named `toString` or `__proto__`
+ * cannot pick up an inherited prototype member as its cutoff. Keys are
+ * canonicalized because channel names are case-insensitive.
+ */
+function buildSinceLookup(since: DigestSince | undefined): string | Map<string, string> | null {
+  if (!since) return null;
+  if (typeof since === 'string') return since;
+  const lookup = new Map<string, string>();
+  for (const [topic, iso] of Object.entries(since)) {
+    if (typeof iso === 'string' && iso) lookup.set(normalizeChannelName(topic), iso);
+  }
+  return lookup;
+}
+
+/**
+ * Resolve the unread cutoff for a topic. Returns 0 (meaning "everything is
+ * unread") when there is no usable timestamp for that topic.
+ */
+function resolveSince(lookup: string | Map<string, string> | null, topic: string): number {
+  if (!lookup) return 0;
+  const iso = typeof lookup === 'string' ? lookup : lookup.get(topic);
+  if (!iso) return 0;
+  const time = new Date(iso).getTime();
+  return Number.isNaN(time) ? 0 : time;
 }
 
 class BulletinBoard {
@@ -215,10 +245,15 @@ class BulletinBoard {
    * Get a digest of topics (no message bodies). Pass `channels` to restrict the
    * digest to a named list — omitted topics are still present on the board but
    * skipped in the result to reduce token cost for agents polling a small set.
+   *
+   * `since` may be a single ISO timestamp applied to every topic, or a
+   * per-topic map of `topic -> ISO timestamp` (what the UI passes so each
+   * channel's unread count reflects when that channel was last read).
+   * Topics absent from the map are treated as never read.
    */
-  async getDigest(since?: string, channels?: string[]): Promise<TopicDigest[]> {
+  async getDigest(since?: DigestSince, channels?: string[]): Promise<TopicDigest[]> {
     await this.ensureLoaded();
-    const sinceTime = since ? new Date(since).getTime() : 0;
+    const sinceLookup = buildSinceLookup(since);
     const filter = channels && channels.length > 0
       ? new Set(channels.map(normalizeChannelName))
       : null;
@@ -227,6 +262,7 @@ class BulletinBoard {
     for (const [topic, messages] of this.topics) {
       if (messages.length === 0) continue;
       if (filter && !filter.has(topic)) continue;
+      const sinceTime = resolveSince(sinceLookup, topic);
       const newMessages = sinceTime > 0
         ? messages.filter(m => new Date(m.timestamp).getTime() > sinceTime)
         : messages;
