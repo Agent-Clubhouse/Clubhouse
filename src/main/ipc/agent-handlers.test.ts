@@ -96,6 +96,8 @@ import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shar
 import { appLog } from '../services/log-service';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
+import { agentRegistry } from '../services/agent-registry';
+import * as permissionQueue from '../services/annex-permission-queue';
 
 describe('agent-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -499,5 +501,153 @@ describe('agent-handlers', () => {
 
     // Should write persona content standalone (no existing instructions)
     expect(mockWriteInstructions).toHaveBeenCalledWith('/wt/qa2', '# QA Agent\nReview code.');
+  });
+
+  // ── Durable permission queue (issue #1553) ─────────────────────────
+  // These run against the real queue and agent registry: the point of the
+  // channel is the authorization it enforces, which a mock would erase.
+  describe('durable agent permissions', () => {
+    beforeEach(() => {
+      permissionQueue.reset();
+      agentRegistry.untrack('agent-1');
+      agentRegistry.untrack('agent-2');
+      agentRegistry.register('agent-1', {
+        projectPath: '/project', orchestrator: 'claude-code', runtime: 'pty',
+      });
+      agentRegistry.register('agent-2', {
+        projectPath: '/project', orchestrator: 'claude-code', runtime: 'pty',
+      });
+    });
+
+    it('registers the durable permission channels', () => {
+      expect(handlers.has(IPC.AGENT.LIST_PENDING_PERMISSIONS)).toBe(true);
+      expect(handlers.has(IPC.AGENT.RESOLVE_PENDING_PERMISSION)).toBe(true);
+    });
+
+    it('LIST_PENDING_PERMISSIONS returns everything when no agent is given', async () => {
+      permissionQueue.createPermission('agent-1', 'Skill');
+      permissionQueue.createPermission('agent-2', 'AskUserQuestion');
+
+      const result = await handlers.get(IPC.AGENT.LIST_PENDING_PERMISSIONS)!({});
+
+      expect(result).toHaveLength(2);
+    });
+
+    it('LIST_PENDING_PERMISSIONS filters by agent', async () => {
+      permissionQueue.createPermission('agent-1', 'Skill');
+      permissionQueue.createPermission('agent-2', 'AskUserQuestion');
+
+      const result = await handlers.get(IPC.AGENT.LIST_PENDING_PERMISSIONS)!({}, 'agent-2');
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ agentId: 'agent-2', toolName: 'AskUserQuestion' });
+    });
+
+    it('RESOLVE_PENDING_PERMISSION applies an allow decision', async () => {
+      const { requestId, decision } = permissionQueue.createPermission('agent-1', 'Skill');
+
+      const result = await handlers.get(IPC.AGENT.RESOLVE_PENDING_PERMISSION)!(
+        {}, 'agent-1', requestId, 'allow',
+      );
+
+      expect(result).toEqual({ status: 'resolved' });
+      await expect(decision).resolves.toBe('allow');
+    });
+
+    it('RESOLVE_PENDING_PERMISSION applies a deny decision', async () => {
+      const { requestId, decision } = permissionQueue.createPermission('agent-1', 'Skill');
+
+      const result = await handlers.get(IPC.AGENT.RESOLVE_PENDING_PERMISSION)!(
+        {}, 'agent-1', requestId, 'deny',
+      );
+
+      expect(result).toEqual({ status: 'resolved' });
+      await expect(decision).resolves.toBe('deny');
+    });
+
+    it('rejects a decision value that is not allow/deny', async () => {
+      const { requestId } = permissionQueue.createPermission('agent-1', 'Skill');
+
+      for (const bad of ['ask', 'ALLOW', 'allow ', 'yes']) {
+        const result = await handlers.get(IPC.AGENT.RESOLVE_PENDING_PERMISSION)!(
+          {}, 'agent-1', requestId, bad,
+        );
+        expect(result).toEqual({ status: 'rejected', reason: 'invalid_decision' });
+      }
+      // Still pending — nothing was applied.
+      expect(permissionQueue.getPermission(requestId)).toBeDefined();
+    });
+
+    it('rejects non-string arguments before they reach the queue', async () => {
+      const { requestId } = permissionQueue.createPermission('agent-1', 'Skill');
+      const handler = handlers.get(IPC.AGENT.RESOLVE_PENDING_PERMISSION)!;
+
+      // withValidatedArgs rejects the call before the handler body runs, so
+      // these throw synchronously rather than returning a rejected promise.
+      expect(() => handler({}, 'agent-1', requestId, { toString: () => 'allow' })).toThrow(/must be a string/);
+      expect(() => handler({}, 'agent-1', requestId, null)).toThrow(/must be a string/);
+      expect(() => handler({}, 42, requestId, 'allow')).toThrow(/must be a string/);
+      expect(() => handler({}, 'agent-1', '', 'allow')).toThrow(/at least 1 character/);
+      expect(() => handler({}, 'agent-1', requestId)).toThrow(/must be a string/);
+
+      expect(permissionQueue.getPermission(requestId)).toBeDefined();
+    });
+
+    it('refuses to resolve a request belonging to another agent', async () => {
+      const { requestId, decision } = permissionQueue.createPermission('agent-1', 'Skill');
+
+      // agent-2 is a legitimate registered agent — it still must not be able
+      // to answer agent-1's permission request.
+      const result = await handlers.get(IPC.AGENT.RESOLVE_PENDING_PERMISSION)!(
+        {}, 'agent-2', requestId, 'allow',
+      );
+
+      expect(result).toEqual({ status: 'rejected', reason: 'agent_mismatch' });
+      expect(permissionQueue.getPermission(requestId)).toBeDefined();
+      permissionQueue.resolvePermission(requestId, 'deny');
+      await expect(decision).resolves.toBe('deny');
+    });
+
+    it('refuses when the agent is not registered', async () => {
+      const { requestId } = permissionQueue.createPermission('ghost', 'Skill');
+
+      const result = await handlers.get(IPC.AGENT.RESOLVE_PENDING_PERMISSION)!(
+        {}, 'ghost', requestId, 'allow',
+      );
+
+      expect(result).toEqual({ status: 'rejected', reason: 'unknown_agent' });
+      expect(permissionQueue.getPermission(requestId)).toBeDefined();
+    });
+
+    it('refuses an unknown request id', async () => {
+      const result = await handlers.get(IPC.AGENT.RESOLVE_PENDING_PERMISSION)!(
+        {}, 'agent-1', 'not-a-real-request', 'allow',
+      );
+
+      expect(result).toEqual({ status: 'rejected', reason: 'not_found' });
+    });
+
+    it('refuses a request whose deadline has passed', async () => {
+      vi.useFakeTimers();
+      const { requestId } = permissionQueue.createPermission('agent-1', 'Skill', undefined, undefined, 1_000);
+      vi.setSystemTime(Date.now() + 1_001);
+
+      const result = await handlers.get(IPC.AGENT.RESOLVE_PENDING_PERMISSION)!(
+        {}, 'agent-1', requestId, 'allow',
+      );
+
+      expect(result).toEqual({ status: 'rejected', reason: 'expired' });
+      vi.useRealTimers();
+    });
+
+    it('a second decision on the same request is refused', async () => {
+      const { requestId, decision } = permissionQueue.createPermission('agent-1', 'Skill');
+      const handler = handlers.get(IPC.AGENT.RESOLVE_PENDING_PERMISSION)!;
+
+      expect(await handler({}, 'agent-1', requestId, 'deny')).toEqual({ status: 'resolved' });
+      expect(await handler({}, 'agent-1', requestId, 'allow')).toEqual({ status: 'rejected', reason: 'not_found' });
+
+      await expect(decision).resolves.toBe('deny');
+    });
   });
 });

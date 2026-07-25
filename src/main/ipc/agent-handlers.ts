@@ -17,6 +17,7 @@ import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
+import * as permissionQueue from '../services/annex-permission-queue';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
 
 type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
@@ -471,6 +472,51 @@ export function registerAgentHandlers(): void {
       },
     ),
   );
+
+  // ── Durable (PTY) agent permission queue ───────────────────────────
+  // Desktop-local approve/deny for hook-driven permission requests. Before
+  // this existed the queue could only be resolved by a connected Annex/iOS
+  // client, so durable agents stalled for the full queue timeout and then
+  // re-prompted forever (issue #1553).
+
+  ipcMain.handle(IPC.AGENT.LIST_PENDING_PERMISSIONS, withValidatedArgs(
+    [stringArg({ optional: true })],
+    async (_event, agentId) => (
+      agentId === undefined
+        ? permissionQueue.listPending()
+        : permissionQueue.listPendingForAgent(agentId)
+    ),
+  ));
+
+  ipcMain.handle(IPC.AGENT.RESOLVE_PENDING_PERMISSION, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    async (_event, agentId, requestId, decision) => {
+      // `decision` is validated as a non-empty string by withValidatedArgs;
+      // narrow it to the two legal values before it reaches the queue.
+      if (decision !== 'allow' && decision !== 'deny') {
+        appLog('core:ipc', 'warn', 'Rejected permission decision (invalid value)', {
+          meta: { agentId, requestId, decision },
+        });
+        return { status: 'rejected' as const, reason: 'invalid_decision' as const };
+      }
+
+      // The agent must still be registered with a live hook session. A
+      // requestId for an agent this app no longer owns is not resolvable.
+      if (!agentRegistry.get(agentId)) {
+        appLog('core:ipc', 'warn', 'Rejected permission decision (unknown agent)', {
+          meta: { agentId, requestId, decision },
+        });
+        return { status: 'rejected' as const, reason: 'unknown_agent' as const };
+      }
+
+      // expectedAgentId binds the requestId to the claimed agent, so a stray
+      // or guessed requestId can't approve a different agent's tool call.
+      return permissionQueue.resolvePermissionDetailed(requestId, decision, {
+        expectedAgentId: agentId,
+        source: 'desktop',
+      });
+    },
+  ));
 
   // ── Backup & recovery ──────────────────────────────────────────────
 

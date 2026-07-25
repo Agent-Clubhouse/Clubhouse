@@ -35,6 +35,7 @@ import { initAnnexClientListener } from './stores/annexClientStore';
 import { useLockStore } from './stores/lockStore';
 import { initMcpBindingListener, useMcpBindingStore } from './stores/mcpBindingStore';
 import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivity';
+import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
@@ -356,6 +357,31 @@ function initAgentWakingListener(): () => void {
     removeAwokeListener();
     removeWakeFailedListener();
     removeSleepingListener();
+  };
+}
+
+/**
+ * Keep the durable-agent permission queue mirrored in the renderer so the
+ * approve/deny prompt can be shown. Seeded from the main process so a window
+ * reload doesn't lose prompts that are already waiting.
+ */
+function initPermissionQueueListener(): () => void {
+  const store = usePendingPermissionStore.getState();
+
+  window.clubhouse.agent.listPendingPermissions()
+    .then((pending) => store.hydrate(pending))
+    .catch(() => { /* queue unavailable — prompts arrive via events instead */ });
+
+  const removePendingListener = window.clubhouse.agent.onPermissionPending((_agentId, permission) => {
+    usePendingPermissionStore.getState().addPending(permission);
+  });
+  const removeSettledListener = window.clubhouse.agent.onPermissionSettled((_agentId, settled) => {
+    usePendingPermissionStore.getState().removePending(settled.requestId);
+  });
+
+  return () => {
+    removePendingListener();
+    removeSettledListener();
   };
 }
 
@@ -735,6 +761,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initPtyExitListener());
   cleanups.push(initAgentWakingListener());
   cleanups.push(initHookEventListener());
+  cleanups.push(initPermissionQueueListener());
   cleanups.push(initAnnexSpawnListener());
   cleanups.push(initAgentStateBroadcast());
   cleanups.push(initAgentStatusEmitter());

@@ -1046,9 +1046,17 @@ function handlePermissionResponse(
     return;
   }
 
-  const resolved = permissionQueue.resolvePermission(requestId, decision);
-  if (!resolved) {
-    sendJson(res, 404, { error: 'request_not_found' });
+  // The agentId comes from the request path — bind the resolution to it so a
+  // client can't resolve another agent's pending request by requestId alone.
+  const result = permissionQueue.resolvePermissionDetailed(requestId, decision, {
+    expectedAgentId: agentId,
+    source: 'annex',
+  });
+  if (result.status === 'rejected') {
+    const httpStatus = result.reason === 'agent_mismatch' ? 403 : 404;
+    sendJson(res, httpStatus, {
+      error: result.reason === 'agent_mismatch' ? 'agent_mismatch' : 'request_not_found',
+    });
     return;
   }
 
