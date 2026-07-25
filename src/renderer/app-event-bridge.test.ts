@@ -31,6 +31,8 @@ const mockRemovers = {
   onDiscoveredChanged: vi.fn(),
   onSatelliteEvent: vi.fn(),
   onProtocolAction: vi.fn(),
+  onPermissionPending: vi.fn(),
+  onPermissionSettled: vi.fn(),
 };
 
 vi.stubGlobal('window', {
@@ -71,6 +73,10 @@ vi.stubGlobal('window', {
       readTranscript: vi.fn(),
       readQuickSummary: vi.fn(),
       killAgent: vi.fn(),
+      listPendingPermissions: vi.fn(async () => []),
+      resolvePendingPermission: vi.fn(async () => ({ status: 'resolved' })),
+      onPermissionPending: vi.fn(() => mockRemovers.onPermissionPending),
+      onPermissionSettled: vi.fn(() => mockRemovers.onPermissionSettled),
     },
     annex: {
       onAgentSpawned: vi.fn(() => mockRemovers.onAgentSpawned),
@@ -315,6 +321,7 @@ import { useProjectStore } from './stores/projectStore';
 import { useUIStore } from './stores/uiStore';
 import { useToastStore } from './stores/toastStore';
 import { fileState } from './plugins/builtin/files/state';
+import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -610,6 +617,65 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.app.getPendingProtocolAction).toHaveBeenCalled();
   });
 
+
+  // ── Durable permission queue (issue #1553) ───────────────────────────
+  describe('permission queue listeners', () => {
+    it('subscribes to pending and settled permission broadcasts', () => {
+      expect(window.clubhouse.agent.onPermissionPending).toHaveBeenCalled();
+      expect(window.clubhouse.agent.onPermissionSettled).toHaveBeenCalled();
+    });
+
+    it('seeds the store from the main process so a reload keeps live prompts', async () => {
+      const pending = {
+        requestId: 'req-hydrate', agentId: 'agent-1', toolName: 'Skill',
+        createdAt: 1_000, timeoutMs: 110_000,
+      };
+      vi.mocked(window.clubhouse.agent.listPendingPermissions).mockResolvedValueOnce([pending]);
+
+      cleanup();
+      cleanup = initAppEventBridge();
+      await vi.waitFor(() => {
+        expect(usePendingPermissionStore.getState().byRequestId['req-hydrate']).toBeDefined();
+      });
+    });
+
+    it('adds a request when the pending broadcast fires', () => {
+      usePendingPermissionStore.setState({ byRequestId: {} });
+      const callback = vi.mocked(window.clubhouse.agent.onPermissionPending).mock.calls[0][0];
+
+      callback('agent-1', {
+        requestId: 'req-new', agentId: 'agent-1', toolName: 'AskUserQuestion',
+        createdAt: 2_000, timeoutMs: 110_000,
+      });
+
+      expect(usePendingPermissionStore.getState().byRequestId['req-new']).toMatchObject({
+        toolName: 'AskUserQuestion',
+      });
+    });
+
+    it('drops a request when the settled broadcast fires', () => {
+      usePendingPermissionStore.setState({
+        byRequestId: {
+          'req-gone': {
+            requestId: 'req-gone', agentId: 'agent-1', toolName: 'Skill',
+            createdAt: 1_000, timeoutMs: 110_000,
+          },
+        },
+      });
+      const callback = vi.mocked(window.clubhouse.agent.onPermissionSettled).mock.calls[0][0];
+
+      callback('agent-1', { requestId: 'req-gone', agentId: 'agent-1', decision: 'ask' });
+
+      expect(usePendingPermissionStore.getState().byRequestId['req-gone']).toBeUndefined();
+    });
+
+    it('removes the listeners on cleanup', () => {
+      cleanup();
+      expect(mockRemovers.onPermissionPending).toHaveBeenCalled();
+      expect(mockRemovers.onPermissionSettled).toHaveBeenCalled();
+      cleanup = initAppEventBridge();
+    });
+  });
 });
 
 describe('handleProtocolAction', () => {

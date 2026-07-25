@@ -42,6 +42,8 @@ vi.mock('../../shared/ipc-channels', () => ({
   IPC: {
     AGENT: {
       HOOK_EVENT: 'agent:hook-event',
+      PERMISSION_PENDING: 'agent:permission-pending',
+      PERMISSION_SETTLED: 'agent:permission-settled',
     },
   },
 }));
@@ -54,6 +56,7 @@ vi.mock('./log-service', () => ({
 const mockCreatePermission = vi.fn();
 vi.mock('./annex-permission-queue', () => ({
   createPermission: (...args: unknown[]) => mockCreatePermission(...args),
+  PERMISSION_QUEUE_TIMEOUT_MS: 110_000,
 }));
 
 const mockEmitHookEvent = vi.fn();
@@ -566,6 +569,91 @@ describe('hook-server', () => {
         'unknown',
         undefined,
         undefined,
+      );
+    });
+
+
+    // ── Desktop approve/deny path (issue #1553) ──────────────────────
+    it('broadcasts the pending permission with its requestId so the desktop can resolve it', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-desktop-1',
+        decision: new Promise(() => { /* stays pending */ }),
+      });
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Skill',
+          toolInput: { skill: 'deploy' },
+          message: 'Run the deploy skill?',
+        })),
+        toolVerb: vi.fn(() => 'Running skill'),
+      });
+
+      postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await new Promise((r) => setTimeout(r, 50));
+
+      // The generic hook event carries no requestId — this one must.
+      expect(mockSend).toHaveBeenCalledWith(
+        'agent:permission-pending',
+        'agent-1',
+        expect.objectContaining({
+          requestId: 'req-desktop-1',
+          agentId: 'agent-1',
+          toolName: 'Skill',
+          toolInput: { skill: 'deploy' },
+          message: 'Run the deploy skill?',
+          timeoutMs: 110_000,
+        }),
+      );
+    });
+
+    it('broadcasts permission-settled when a decision arrives', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-desktop-2',
+        decision: Promise.resolve('allow'),
+      });
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request', toolName: 'Skill', toolInput: undefined, message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Running skill'),
+      });
+
+      await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      expect(mockSend).toHaveBeenCalledWith(
+        'agent:permission-settled',
+        'agent-1',
+        { requestId: 'req-desktop-2', agentId: 'agent-1', decision: 'allow' },
+      );
+    });
+
+    it('broadcasts permission-settled with the ask fallback on timeout', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-desktop-3',
+        decision: Promise.resolve('timeout'),
+      });
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request', toolName: 'AskUserQuestion', toolInput: undefined, message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Asking'),
+      });
+
+      await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      // The prompt must clear even when nobody answered, or the UI keeps a
+      // dead prompt for a request the orchestrator has already given up on.
+      expect(mockSend).toHaveBeenCalledWith(
+        'agent:permission-settled',
+        'agent-1',
+        { requestId: 'req-desktop-3', agentId: 'agent-1', decision: 'ask' },
       );
     });
 

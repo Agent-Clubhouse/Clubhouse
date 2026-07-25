@@ -104,6 +104,11 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   // Hook server toggle: AGENTS_NEED_RESTART is broadcast main→renderer when
   // the user flips the global hook server toggle (see hook-server-toggle.ts).
   'IPC.HOOK_SERVER.AGENTS_NEED_RESTART',
+  // Durable-agent permission queue: both are broadcast main→renderer from
+  // hook-server.ts as requests are created and settled. The renderer's
+  // approve/deny travels back over IPC.AGENT.RESOLVE_PENDING_PERMISSION.
+  'IPC.AGENT.PERMISSION_PENDING',
+  'IPC.AGENT.PERMISSION_SETTLED',
   'IPC.WINDOW.NAVIGATE_TO_AGENT',
   'IPC.WINDOW.NAVIGATE_TO_PLUGIN_SETTINGS',
   'IPC.WINDOW.REQUEST_AGENT_STATE',

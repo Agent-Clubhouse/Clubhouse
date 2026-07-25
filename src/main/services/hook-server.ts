@@ -149,6 +149,19 @@ function handlePermissionRequest(
     normalized.message,
   );
 
+  // Tell the desktop UI about the pending request. The generic hook event
+  // broadcast above carries no requestId, so without this the renderer can
+  // flag "needs permission" but has nothing to resolve (issue #1553).
+  broadcastToAllWindows(IPC.AGENT.PERMISSION_PENDING, agentId, {
+    requestId,
+    agentId,
+    toolName,
+    toolInput: normalized.toolInput,
+    message: normalized.message,
+    createdAt: Date.now(),
+    timeoutMs: permissionQueue.PERMISSION_QUEUE_TIMEOUT_MS,
+  });
+
   decision.then((result) => {
     const permissionDecision = result === 'timeout' ? 'ask' : result;
     const responseBody = JSON.stringify({
@@ -177,6 +190,15 @@ function handlePermissionRequest(
         },
       });
     }
+
+    // Drop the pending prompt in the desktop UI. Fires for every outcome —
+    // allow, deny, timeout, and agent-stop clearing — because they all settle
+    // this promise.
+    broadcastToAllWindows(IPC.AGENT.PERMISSION_SETTLED, agentId, {
+      requestId,
+      agentId,
+      decision: permissionDecision,
+    });
 
     // Broadcast permission_resolved so the renderer clears the
     // needs_permission status.  Without this, denied / timed-out

@@ -135,6 +135,13 @@ export const IPC = {
     CANCEL_STRUCTURED: 'agent:cancel-structured',              // Renderer → Main
     SEND_STRUCTURED_MESSAGE: 'agent:send-structured-message',  // Renderer → Main
     RESPOND_PERMISSION: 'agent:respond-permission',            // Renderer → Main
+    // Durable (PTY) agent permission queue — the desktop-local approve/deny
+    // path. Without these, a durable agent's permission request can only be
+    // answered by a connected Annex/iOS client (issue #1553).
+    LIST_PENDING_PERMISSIONS: 'agent:list-pending-permissions', // Renderer → Main
+    RESOLVE_PENDING_PERMISSION: 'agent:resolve-pending-permission', // Renderer → Main
+    PERMISSION_PENDING: 'agent:permission-pending',            // Main → Renderer
+    PERMISSION_SETTLED: 'agent:permission-settled',            // Main → Renderer
   },
   FILE: {
     READ_TREE: 'file:read-tree',

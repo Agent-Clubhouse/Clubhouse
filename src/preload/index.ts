@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc-channels';
 import { settingsChannels } from '../shared/settings-definitions';
 import { AgentHookEvent, AgentWildcardSettings, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings, WrapperCatalogSnapshot, ResolvedProtocolAction } from '../shared/types';
 import type { PluginUpdatesStatus } from '../shared/marketplace-types';
+import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
 const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -310,6 +311,31 @@ const api = {
 
     respondPermission: (agentId: string, requestId: string, approved: boolean, reason?: string) =>
       ipcRenderer.invoke(IPC.AGENT.RESPOND_PERMISSION, agentId, requestId, approved, reason),
+
+    // Durable (PTY) agent permission queue — desktop-local approve/deny.
+    listPendingPermissions: (agentId?: string): Promise<PendingPermissionInfo[]> =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_PENDING_PERMISSIONS, agentId),
+
+    resolvePendingPermission: (
+      agentId: string,
+      requestId: string,
+      decision: 'allow' | 'deny',
+    ): Promise<PermissionResolveOutcome> =>
+      ipcRenderer.invoke(IPC.AGENT.RESOLVE_PENDING_PERMISSION, agentId, requestId, decision),
+
+    onPermissionPending: (callback: (agentId: string, permission: PendingPermissionInfo) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, permission: PendingPermissionInfo) =>
+        callback(agentId, permission);
+      ipcRenderer.on(IPC.AGENT.PERMISSION_PENDING, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT.PERMISSION_PENDING, listener); };
+    },
+
+    onPermissionSettled: (callback: (agentId: string, settled: PermissionSettledInfo) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, settled: PermissionSettledInfo) =>
+        callback(agentId, settled);
+      ipcRenderer.on(IPC.AGENT.PERMISSION_SETTLED, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT.PERMISSION_SETTLED, listener); };
+    },
 
     // Backup & recovery
     getBackupInfo: (projectPath: string) =>
