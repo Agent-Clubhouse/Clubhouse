@@ -95,6 +95,14 @@ export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   }
 }
 
+// Monotonic suffix for atomic-write temp filenames — avoids collisions within a
+// tight loop without depending on wall-clock granularity.
+let tmpCounter = 0;
+function nextTmpSuffix(): string {
+  tmpCounter += 1;
+  return `${Date.now()}-${process.pid}-${tmpCounter}`;
+}
+
 export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
   if (req.scope === 'project-local' && req.projectPath) {
     await ensurePluginDataLocalGitignored(req.projectPath);
@@ -103,7 +111,21 @@ export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
   await assertSafePath(dir, `${req.key}.json`);
   await ensureDir(dir);
   const file = path.join(dir, `${req.key}.json`);
-  await fs.writeFile(file, JSON.stringify(req.value), 'utf-8');
+
+  // Atomic write: serialize to a temp file in the same directory, then rename
+  // over the destination. rename() is atomic on POSIX and NTFS, so a reader
+  // (or a crash) never observes a half-written file — the destination is
+  // always either the old complete contents or the new complete contents.
+  // A plain fs.writeFile truncates-then-writes and can leave invalid JSON if
+  // the process dies mid-write, which silently wipes canvas/wire state.
+  const tmp = path.join(dir, `${req.key}.json.tmp-${nextTmpSuffix()}`);
+  try {
+    await fs.writeFile(tmp, JSON.stringify(req.value), 'utf-8');
+    await fs.rename(tmp, file);
+  } catch (err) {
+    try { await fs.unlink(tmp); } catch { /* already gone */ }
+    throw err;
+  }
 }
 
 export async function deleteKey(req: PluginStorageDeleteRequest): Promise<void> {

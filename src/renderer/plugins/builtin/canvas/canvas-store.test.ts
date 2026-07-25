@@ -53,6 +53,39 @@ describe('canvas-store', () => {
     expect(store2.getState().views[0].type).toBe('agent');
   });
 
+  // Regression: a single saved instance with a missing/non-array `views`
+  // (a partially-written record) must NOT throw and collapse ALL canvases to
+  // one empty canvas. The bad instance loads as empty; the good one is intact.
+  it('loads good canvases even when one saved instance has a malformed views field', async () => {
+    const storage = createMockStorage({
+      'canvas-instances': [
+        { id: 'canvas_bad', name: 'broken' /* no views field at all */ },
+        {
+          id: 'canvas_good',
+          name: 'goobers-bridge',
+          views: [
+            { id: 'v1', type: 'agent', position: { x: 10, y: 20 }, size: { width: 400, height: 300 }, title: 'A', zIndex: 1, agentId: 'durable_x' },
+          ],
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          nextZIndex: 2,
+        },
+      ],
+      'canvas-active-id': 'canvas_good',
+    });
+
+    await store.getState().loadCanvas(storage);
+
+    const state = store.getState();
+    expect(state.loaded).toBe(true);
+    expect(state.canvases).toHaveLength(2);
+    const bad = state.canvases.find((c) => c.id === 'canvas_bad');
+    const good = state.canvases.find((c) => c.id === 'canvas_good');
+    expect(bad?.views).toEqual([]);
+    expect(good?.views).toHaveLength(1);
+    expect(state.activeCanvasId).toBe('canvas_good');
+    expect(state.views).toHaveLength(1);
+  });
+
   // LB-M68: Mission 68 — sibling agent card from "+ New Agent" must survive
   // a save/load round-trip with its position intact. This guards against
   // regressions where addView + updateView produce a view whose position
