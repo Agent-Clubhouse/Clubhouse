@@ -101,7 +101,7 @@ describe('AddAgentDialog', () => {
     render(<AddAgentDialog {...defaultProps} />);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined,
+      'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined, undefined,
     );
   });
 
@@ -132,7 +132,7 @@ describe('AddAgentDialog', () => {
     fireEvent.change(input, { target: { value: 'my-custom-agent' } });
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'my-custom-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined,
+      'my-custom-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined, undefined,
     );
   });
 
@@ -142,8 +142,39 @@ describe('AddAgentDialog', () => {
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', true, 'claude-code', undefined, undefined, undefined,
+      'test-agent', 'indigo', 'default', true, 'claude-code', undefined, undefined, undefined, undefined,
     );
+  });
+
+  describe('persona selector (#1565)', () => {
+    it('renders a persona select defaulting to Project default', () => {
+      render(<AddAgentDialog {...defaultProps} />);
+      const select = screen.getByTestId('add-agent-persona-select') as HTMLSelectElement;
+      expect(select.value).toBe('');
+      expect(screen.getByText('Project default')).toBeInTheDocument();
+    });
+
+    it('lists the known persona templates as options', () => {
+      render(<AddAgentDialog {...defaultProps} />);
+      expect(screen.getByText('Quality Assurance')).toBeInTheDocument();
+      expect(screen.getByText('Researcher')).toBeInTheDocument();
+    });
+
+    it('does not propagate a persona by default', () => {
+      render(<AddAgentDialog {...defaultProps} />);
+      fireEvent.click(screen.getByText('Create Agent'));
+      const callArgs = (defaultProps.onCreate as any).mock.calls[0];
+      expect(callArgs[callArgs.length - 1]).toBeUndefined();
+    });
+
+    it('propagates the selected persona id on submit', () => {
+      render(<AddAgentDialog {...defaultProps} />);
+      fireEvent.change(screen.getByTestId('add-agent-persona-select'), { target: { value: 'qa' } });
+      fireEvent.click(screen.getByText('Create Agent'));
+      expect(defaultProps.onCreate).toHaveBeenCalledWith(
+        'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined, 'qa',
+      );
+    });
   });
 
   describe('error surfacing (#1564)', () => {
