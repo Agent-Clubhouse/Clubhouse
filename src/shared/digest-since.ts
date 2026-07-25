@@ -8,19 +8,29 @@
 
 import type { DigestSince } from './group-project-types';
 
-/** Upper bounds so a bad caller can't send an unbounded object. */
+/**
+ * Validation bounds, applied at every boundary so a bad caller can't send an
+ * unbounded object. Independent of the transport bound below — see there.
+ */
 export const MAX_SINCE_ENTRIES = 500;
 export const MAX_TOPIC_LENGTH = 256;
 export const MAX_TIMESTAMP_LENGTH = 64;
 
 /**
- * Cap on the encoded query-string value for the per-channel map.
+ * Transport bound: cap on the encoded query-string value for the per-channel map.
  *
  * Node's HTTP server rejects request lines beyond `--max-http-header-size`
  * (16KB by default), and intermediaries impose their own limits, so the
  * controller degrades to "no cutoff" rather than emitting a request the
  * satellite would reject outright. Well past any realistic board: a 30-channel
  * project encodes to roughly 2KB.
+ *
+ * Deliberately NOT reconciled with `MAX_SINCE_ENTRIES`: that one bounds what
+ * any boundary will validate, this one bounds what a URL can carry. A map can
+ * therefore pass validation and still be dropped by the encoder on the remote
+ * path while working locally, where nothing is ever encoded into a query
+ * string. Raising this to "match" the entry bound would push requests into the
+ * 431 range, where the satellite never sees them at all.
  */
 export const MAX_SINCE_PARAM_LENGTH = 6000;
 
