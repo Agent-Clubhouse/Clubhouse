@@ -1,4 +1,5 @@
 import type { FileNode, ThemeColors, HljsColors, TerminalColors, ThemeFonts, ThemeGradients } from './types';
+import type { DigestSince } from './group-project-types';
 
 // ── Disposable ──────────────────────────────────────────────────────────
 export interface Disposable {
@@ -1227,7 +1228,7 @@ export interface AnnexAPI {
   /** Update group project fields on a satellite. */
   gpUpdate(satelliteId: string, groupProjectId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown>;
   /** Get bulletin topic digest from a satellite group project. */
-  gpBulletinDigest(satelliteId: string, groupProjectId: string, since?: string): Promise<unknown[]>;
+  gpBulletinDigest(satelliteId: string, groupProjectId: string, since?: DigestSince): Promise<unknown[]>;
   /** Get messages for a bulletin topic from a satellite group project. */
   gpBulletinTopic(satelliteId: string, groupProjectId: string, topic: string, since?: string, limit?: number): Promise<unknown[]>;
   /** Get all bulletin messages from a satellite group project. */

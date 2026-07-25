@@ -128,6 +128,35 @@ describe('useGroupProjectContext — remote optimistic update', () => {
     expect(updated.metadata.shoulderTapEnabled).toBe(false);
   });
 
+  it('forwards a per-channel read map to the satellite when remote', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
+
+    mockGpBulletinDigest.mockResolvedValue([]);
+    const map = { general: '2026-07-25T10:00:00.000Z', tasks: '2026-07-25T11:00:00.000Z' };
+
+    await act(async () => {
+      await result.current.fetchDigest(GP_ID, map);
+    });
+
+    // Previously degraded to undefined because the annex call only took a
+    // single ISO cutoff (#1556) — remote projects showed everything unread.
+    expect(mockGpBulletinDigest).toHaveBeenCalledWith(SAT_ID, GP_ID, map);
+  });
+
+  it('forwards a single timestamp to the satellite when remote', async () => {
+    seedRemoteGP();
+    const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));
+
+    mockGpBulletinDigest.mockResolvedValue([]);
+
+    await act(async () => {
+      await result.current.fetchDigest(GP_ID, '2026-07-25T10:00:00.000Z');
+    });
+
+    expect(mockGpBulletinDigest).toHaveBeenCalledWith(SAT_ID, GP_ID, '2026-07-25T10:00:00.000Z');
+  });
+
   it('routes fetchDigest through annex client when remote', async () => {
     seedRemoteGP();
     const { result } = renderHook(() => useGroupProjectContext(GP_ID, true, SAT_ID, mockAnnex));

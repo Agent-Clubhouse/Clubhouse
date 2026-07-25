@@ -1054,7 +1054,7 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_GET, satelliteId, groupProjectId),
     gpUpdate: (satelliteId: string, groupProjectId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_UPDATE, satelliteId, groupProjectId, fields),
-    gpBulletinDigest: (satelliteId: string, groupProjectId: string, since?: string): Promise<unknown[]> =>
+    gpBulletinDigest: (satelliteId: string, groupProjectId: string, since?: string | Record<string, string>): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_DIGEST, satelliteId, groupProjectId, since),
     gpBulletinTopic: (satelliteId: string, groupProjectId: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_TOPIC, satelliteId, groupProjectId, topic, since, limit),

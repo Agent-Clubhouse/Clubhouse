@@ -44,6 +44,8 @@ function isAgentRunning(agentId: string): boolean {
 }
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
+import type { DigestSince } from '../../shared/group-project-types';
+import { decodeDigestSince, SINCE_CHANNELS_PARAM } from '../../shared/digest-since';
 import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
@@ -1856,6 +1858,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   // GET /api/v1/group-projects/:id/bulletin/digest?since=<ISO8601>
+  //   or ?sinceChannels=<JSON {channel: ISO8601}> for per-channel unread counts.
+  // Controllers predating per-channel read state send only `since`; this handler
+  // still honours it, so an older controller against a newer satellite keeps working.
   const gpDigestMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/digest(\?.*)?$/);
   if (method === 'GET' && gpDigestMatch) {
     const gpId = decodeURIComponent(gpDigestMatch[1]);
@@ -1865,7 +1870,17 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
     const params = new URLSearchParams(gpDigestMatch[2]?.slice(1) || '');
-    const since = params.get('since') || undefined;
+    let since: DigestSince | undefined;
+    try {
+      // Same bounds and prototype-key rejection the local IPC boundary applies.
+      since = decodeDigestSince(params.get('since'), params.get(SINCE_CHANNELS_PARAM));
+    } catch (err) {
+      appLog('core:annex-server', 'warn', 'Rejected bulletin digest request with invalid since', {
+        meta: { gpId, error: err instanceof Error ? err.message : String(err) },
+      });
+      sendJson(res, 400, { error: 'invalid_since' });
+      return;
+    }
     const board = getBulletinBoard(gpId);
     const digest = await board.getDigest(since);
     sendJson(res, 200, digest);
