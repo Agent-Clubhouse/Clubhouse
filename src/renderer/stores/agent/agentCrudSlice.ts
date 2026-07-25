@@ -83,7 +83,10 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           // Always update projectId — the same agents.json may be loaded
           // under a different project store ID when a project is re-added
           // or when multiple store entries share the same path.
-          agents[config.id] = { ...agents[config.id], projectId };
+          // Re-hydrate `model` too: agents.json is the source of truth for it,
+          // and a store entry that lost the value (e.g. rebuilt on spawn) would
+          // otherwise stay stale for the lifetime of the window.
+          agents[config.id] = { ...agents[config.id], projectId, model: config.model };
         }
       }
 

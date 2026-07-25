@@ -141,13 +141,15 @@ export function AgentSettingsView({ agent }: Props) {
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
-  const { options: MODEL_OPTIONS } = useModelOptions();
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   // Resolve orchestrators the same way AddAgentDialog does — profile-aware and scoped
   // to this agent's project — so the selector behaves consistently with agent creation.
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const { effectiveOrchestrators } = useEffectiveOrchestrators(projectPath);
   const agentOrchestrator = agent.orchestrator || 'claude-code';
+  // Scope the model list to *this agent's* orchestrator, not the project default —
+  // otherwise a Codex/Copilot agent is offered (and validated against) Claude's ids.
+  const { options: MODEL_OPTIONS, loading: modelOptionsLoading } = useModelOptions(agentOrchestrator);
   // Always offer the agent's current orchestrator, even if it's disabled app-wide or
   // missing from this machine's settings (e.g. a worktree-synced agent whose project
   // profile wasn't synced). See buildOrchestratorOptions / #fix-orchestrator-selector AC #2.
@@ -293,11 +295,17 @@ export function AgentSettingsView({ agent }: Props) {
     });
   };
 
-  // Agent model state
+  // Agent model state.
+  //
+  // The persisted id is kept raw in `savedModel`; splitting it into the dropdown
+  // selection + custom text box happens in the effect below. That split MUST wait
+  // for useModelOptions to finish fetching — while the request is in flight the
+  // hook reports a `default`-only placeholder, and classifying against it would
+  // mislabel every real id (e.g. `sonnet`) as "Custom...".
   const isKnownModel = (id: string) => MODEL_OPTIONS.some((opt) => opt.id === id);
-  const initModel = agent.model || 'default';
-  const [agentModel, setAgentModel] = useState(isKnownModel(initModel) ? initModel : 'custom');
-  const [agentCustomModel, setAgentCustomModel] = useState(isKnownModel(initModel) ? '' : initModel);
+  const [savedModel, setSavedModel] = useState(agent.model || 'default');
+  const [agentModel, setAgentModel] = useState('default');
+  const [agentCustomModel, setAgentCustomModel] = useState('');
 
   const persistModel = async (value: string) => {
     if (!projectPath) return;
@@ -320,6 +328,7 @@ export function AgentSettingsView({ agent }: Props) {
       // Don't persist yet — wait for custom input
       setAgentCustomModel('');
     } else {
+      setSavedModel(value);
       await persistModel(value);
     }
   };
@@ -327,6 +336,7 @@ export function AgentSettingsView({ agent }: Props) {
   const handleCustomModelBlur = async () => {
     const trimmed = agentCustomModel.trim();
     if (trimmed) {
+      setSavedModel(trimmed);
       await persistModel(trimmed);
     }
   };
@@ -373,6 +383,29 @@ export function AgentSettingsView({ agent }: Props) {
   const [qadAllowedTools, setQadAllowedTools] = useState('');
   const [qadDefaultModel, setQadDefaultModel] = useState('');
   const [qadCustomModel, setQadCustomModel] = useState('');
+  const [qadSavedModel, setQadSavedModel] = useState('');
+
+  // Split the raw persisted model ids into dropdown selection + custom text box.
+  // Deliberately gated on `modelOptionsLoading` and re-run when MODEL_OPTIONS
+  // arrives, so a known id is never transiently latched as "Custom...".
+  useEffect(() => {
+    if (modelOptionsLoading) return;
+    if (isKnownModel(savedModel)) {
+      setAgentModel(savedModel);
+      setAgentCustomModel('');
+    } else {
+      setAgentModel('custom');
+      setAgentCustomModel(savedModel);
+    }
+    if (qadSavedModel && !isKnownModel(qadSavedModel)) {
+      setQadDefaultModel('custom');
+      setQadCustomModel(qadSavedModel);
+    } else {
+      setQadDefaultModel(qadSavedModel);
+      setQadCustomModel('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedModel, qadSavedModel, modelOptionsLoading, MODEL_OPTIONS]);
   const [qadFreeAgentMode, setQadFreeAgentMode] = useState(false);
   const [qadDirty, setQadDirty] = useState(false);
   const [qadSaving, setQadSaving] = useState(false);
@@ -557,24 +590,12 @@ export function AgentSettingsView({ agent }: Props) {
         if (defaults) {
           setQadSystemPrompt(defaults.systemPrompt || '');
           setQadAllowedTools((defaults.allowedTools || []).join('\n'));
-          const savedQadModel = defaults.defaultModel || '';
-          if (savedQadModel && !isKnownModel(savedQadModel)) {
-            setQadDefaultModel('custom');
-            setQadCustomModel(savedQadModel);
-          } else {
-            setQadDefaultModel(savedQadModel);
-          }
+          setQadSavedModel(defaults.defaultModel || '');
           setQadFreeAgentMode(defaults.freeAgentMode ?? false);
         }
-        // Sync agent model and free agent mode from disk
-        const savedModel = config?.model || 'default';
-        if (isKnownModel(savedModel)) {
-          setAgentModel(savedModel);
-          setAgentCustomModel('');
-        } else {
-          setAgentModel('custom');
-          setAgentCustomModel(savedModel);
-        }
+        // Sync agent model from disk — disk is the source of truth. Classification
+        // into known-vs-custom is left to the effect that waits on MODEL_OPTIONS.
+        setSavedModel(config?.model || 'default');
         setFreeAgentMode(config?.freeAgentMode ?? false);
         setStructuredMode(config?.structuredMode ?? false);
         setQadLoaded(true);
