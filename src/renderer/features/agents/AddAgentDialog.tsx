@@ -11,9 +11,11 @@ interface Props {
   onClose: () => void;
   onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean) => void;
   projectPath?: string;
+  /** Surfaced when the most recent create attempt failed, so the user sees why instead of a silently dead button. */
+  error?: string | null;
 }
 
-export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
+export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props) {
   const [name, setName] = useState(generateDurableName());
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
@@ -69,6 +71,14 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
   return (
     <Modal open={true} onClose={onClose}>
         <h2 className="text-base font-semibold text-ctp-text mb-4">New Agent</h2>
+        {error && (
+          <div
+            className="px-3 py-2 mb-3 text-xs text-ctp-error bg-ctp-error/10 rounded-md"
+            data-testid="add-agent-dialog-error"
+          >
+            {error}
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           {/* Name */}
           <label className="block mb-3">

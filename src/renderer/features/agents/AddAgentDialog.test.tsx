@@ -146,6 +146,26 @@ describe('AddAgentDialog', () => {
     );
   });
 
+  describe('error surfacing (#1564)', () => {
+    it('shows no error banner by default', () => {
+      render(<AddAgentDialog {...defaultProps} />);
+      expect(screen.queryByTestId('add-agent-dialog-error')).not.toBeInTheDocument();
+    });
+
+    it('shows the error banner when an error prop is passed', () => {
+      render(<AddAgentDialog {...defaultProps} error="Plugin 'canvas' requires 'agents.free-agent-mode' permission" />);
+      expect(screen.getByTestId('add-agent-dialog-error')).toBeInTheDocument();
+      expect(screen.getByText(/requires 'agents.free-agent-mode' permission/)).toBeInTheDocument();
+    });
+
+    it('hides the error banner when error is null', () => {
+      const { rerender } = render(<AddAgentDialog {...defaultProps} error="boom" />);
+      expect(screen.getByTestId('add-agent-dialog-error')).toBeInTheDocument();
+      rerender(<AddAgentDialog {...defaultProps} error={null} />);
+      expect(screen.queryByTestId('add-agent-dialog-error')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Structured Mode gating (experimental flag)', () => {
     it('hides Structured Mode toggle when experimental.structuredMode is off (default)', async () => {
       render(<AddAgentDialog {...defaultProps} />);
