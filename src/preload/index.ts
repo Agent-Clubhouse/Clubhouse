@@ -1328,7 +1328,9 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.UPDATE, id, fields),
     delete: (id: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id),
-    getBulletinDigest: (id: string, since?: string): Promise<unknown[]> =>
+    // `since` is either one ISO timestamp for all topics, or a per-topic
+    // `topic -> ISO timestamp` map (used for per-channel unread counts).
+    getBulletinDigest: (id: string, since?: string | Record<string, string>): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, id, since),
     getTopicMessages: (id: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, id, topic, since, limit),

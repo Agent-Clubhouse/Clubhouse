@@ -96,6 +96,69 @@ describe('BulletinBoard', () => {
     expect(t.newMessageCount).toBe(1);
   });
 
+  it('digest accepts a per-topic since map', async () => {
+    const board = getBulletinBoard('gp_test');
+    await board.postMessage('a', 'read-topic', 'old');
+    await board.postMessage('a', 'unread-topic', 'old');
+
+    const cutoff = new Date().toISOString();
+    await new Promise(r => setTimeout(r, 5));
+    await board.postMessage('b', 'read-topic', 'new');
+    await board.postMessage('b', 'unread-topic', 'new');
+
+    const digest = await board.getDigest({ 'read-topic': cutoff });
+
+    const read = digest.find(d => d.topic === 'read-topic')!;
+    expect(read.messageCount).toBe(2);
+    expect(read.newMessageCount).toBe(1);
+
+    // A topic missing from the map has never been read — everything is new.
+    const unread = digest.find(d => d.topic === 'unread-topic')!;
+    expect(unread.messageCount).toBe(2);
+    expect(unread.newMessageCount).toBe(2);
+  });
+
+  it('digest reports zero unread for a topic read up to its latest message', async () => {
+    const board = getBulletinBoard('gp_test');
+    await board.postMessage('a', 'topic', 'msg1');
+    await board.postMessage('b', 'topic', 'msg2');
+
+    const first = await board.getDigest();
+    expect(first[0].newMessageCount).toBe(2);
+
+    // Mark read at the latest timestamp, as the UI does when a channel is opened.
+    const digest = await board.getDigest({ topic: first[0].latestTimestamp });
+    expect(digest[0].messageCount).toBe(2);
+    expect(digest[0].newMessageCount).toBe(0);
+  });
+
+  it('digest counts everything as unread when the per-topic timestamp is invalid', async () => {
+    const board = getBulletinBoard('gp_test');
+    await board.postMessage('a', 'topic', 'msg1');
+
+    const digest = await board.getDigest({ topic: 'not-a-timestamp' });
+    expect(digest[0].newMessageCount).toBe(1);
+  });
+
+  it('digest with an empty since map counts everything as unread', async () => {
+    const board = getBulletinBoard('gp_test');
+    await board.postMessage('a', 'topic', 'msg1');
+    await board.postMessage('b', 'topic', 'msg2');
+
+    const digest = await board.getDigest({});
+    expect(digest[0].newMessageCount).toBe(2);
+  });
+
+  it('digest ignores inherited properties on the since map', async () => {
+    const board = getBulletinBoard('gp_test');
+    await board.postMessage('a', 'toString', 'msg1');
+
+    // A topic named after an Object.prototype member must not pick up the
+    // inherited value as its cutoff.
+    const digest = await board.getDigest({} as Record<string, string>);
+    expect(digest[0].newMessageCount).toBe(1);
+  });
+
   it('getTopicMessages returns messages for a topic', async () => {
     const board = getBulletinBoard('gp_test');
     await board.postMessage('a', 'topic1', 'msg1');

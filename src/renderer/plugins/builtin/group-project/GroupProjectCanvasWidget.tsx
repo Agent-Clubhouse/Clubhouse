@@ -3,6 +3,7 @@ import { GroupProjectPanelSidebar, useGroupProjectPanelLayout } from './GroupPro
 import type { CanvasWidgetComponentProps, AnnexAPI } from '../../../../shared/plugin-types';
 import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
+import { useBulletinReadStore } from '../../../stores/bulletinReadStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -206,6 +207,26 @@ function ProjectView({
   );
 }
 
+/* ---------- Unread / read-state helpers ---------- */
+
+/**
+ * The digest entry for the channel the user has open, or null.
+ *
+ * The "All" pane deliberately marks nothing read: it is the default selection,
+ * so treating it as a read of every channel would clear every badge the moment
+ * the widget renders and make unread counts useless.
+ */
+export function openChannel(topics: TopicDigest[], selectedTopic: string): TopicDigest | null {
+  if (selectedTopic === ALL_TOPICS_KEY) return null;
+  return topics.find((t) => t.topic === selectedTopic) ?? null;
+}
+
+/** Zero the unread badge for a channel, so it clears without a poll round-trip. */
+export function clearUnread(topics: TopicDigest[], channel: TopicDigest | null): TopicDigest[] {
+  if (!channel) return topics;
+  return topics.map((t) => (t.topic === channel.topic ? { ...t, newMessageCount: 0 } : t));
+}
+
 /* ---------- Compact Card ---------- */
 
 function ProjectCard({
@@ -221,25 +242,27 @@ function ProjectCard({
 
   const [showTapModal, setShowTapModal] = useState(false);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
+  const getLastRead = useBulletinReadStore((s) => s.getLastRead);
 
   useEffect(() => {
     if (!loaded) loadProjects();
   }, [loaded, loadProjects]);
 
-  // Poll bulletin digest for activity summary
+  // Poll bulletin digest for activity summary. The compact card has no channel
+  // list to open, so it only reports unread — it never marks anything read.
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
       if (cancelled) return;
       try {
-        const digest = await fetchDigest(groupProjectId);
+        const digest = await fetchDigest(groupProjectId, getLastRead(groupProjectId));
         if (!cancelled) setTopics(digest);
       } catch { /* ignore */ }
     };
     refresh();
     const interval = setInterval(refresh, POLL_INTERVAL_MS);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [groupProjectId, fetchDigest]);
+  }, [groupProjectId, fetchDigest, getLastRead]);
 
   const hasActivity = members.length > 0;
   const description = project?.description || '';
@@ -403,6 +426,11 @@ function ExpandedProjectView({
   const [confirmDeleteTopic, setConfirmDeleteTopic] = useState<string | null>(null);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
 
+  // Read state is pulled at call time rather than subscribed to, so marking a
+  // channel read doesn't tear down and restart the polling interval.
+  const getLastRead = useBulletinReadStore((s) => s.getLastRead);
+  const markTopicRead = useBulletinReadStore((s) => s.markTopicRead);
+
   useEffect(() => {
     if (!loaded) loadProjects();
   }, [loaded, loadProjects]);
@@ -495,10 +523,18 @@ function ExpandedProjectView({
     const refresh = async () => {
       if (cancelled) return;
       try {
-        const digest = await fetchDigest(groupProjectId);
-        if (!cancelled) setTopics(digest);
+        const digest = await fetchDigest(groupProjectId, getLastRead(groupProjectId));
+        if (!cancelled) {
+          // The channel the user has open counts as read, including messages
+          // that arrive while they are sitting on it.
+          const open = openChannel(digest, selectedTopic);
+          setTopics(clearUnread(digest, open));
+          if (open) markTopicRead(groupProjectId, open.topic, open.latestTimestamp);
+        }
       } catch { /* ignore */ }
 
+      // Message fetches stay unfiltered — `since` drives unread counts only,
+      // the panes still show the full history of the selected channel.
       if (selectedTopic === ALL_TOPICS_KEY) {
         try {
           const allMsgs = await fetchAllMessages(groupProjectId);
@@ -515,7 +551,7 @@ function ExpandedProjectView({
     refresh();
     const interval = setInterval(refresh, POLL_INTERVAL_MS);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [groupProjectId, selectedTopic, fetchDigest, fetchAllMessages, fetchTopicMessages]);
+  }, [groupProjectId, selectedTopic, fetchDigest, fetchAllMessages, fetchTopicMessages, getLastRead, markTopicRead]);
 
   // Sort messages newest-first by the numeric timestamp embedded in the message ID
   // (msg_<epoch_ms>_<random>) to match the backend's numeric sort order and avoid
@@ -538,7 +574,13 @@ function ExpandedProjectView({
     setSelectedTopic(topic);
     setSelectedMessageId(null);
     setMessages([]);
-  }, []);
+    // Clear the badge immediately rather than waiting for the next poll.
+    const open = openChannel(topics, topic);
+    if (open) {
+      markTopicRead(groupProjectId, open.topic, open.latestTimestamp);
+      setTopics((prev) => clearUnread(prev, open));
+    }
+  }, [topics, groupProjectId, markTopicRead]);
 
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
