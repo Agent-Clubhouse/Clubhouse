@@ -1,4 +1,6 @@
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
+import type { DigestSince } from '../../shared/group-project-types';
+import { parseDigestSince } from '../../shared/digest-since';
 
 type IpcEvent = IpcMainEvent | IpcMainInvokeEvent;
 type IpcHandler<Args extends unknown[], Result> = (event: IpcEvent, ...args: Args) => Result;
@@ -124,4 +126,18 @@ export function withValidatedArgs<Args extends unknown[], Result>(
     const args = validateArgs(rawArgs, validators);
     return handler(event, ...args);
   };
+}
+
+/**
+ * `since` for a bulletin digest: a single ISO timestamp, or a per-channel
+ * `channel -> ISO timestamp` map.
+ *
+ * Lives here rather than beside one handler because two IPC boundaries take
+ * this value — the local group-project digest and the annex client's proxy to
+ * a satellite — and both must enforce identical bounds and prototype-key
+ * rejection. The rules themselves are in the shared parser, which the
+ * satellite's HTTP handler also uses.
+ */
+export function digestSinceArg(): ArgValidator<DigestSince | undefined> {
+  return (value, argName) => parseDigestSince(value, argName);
 }

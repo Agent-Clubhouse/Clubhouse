@@ -103,7 +103,8 @@ import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { registerGroupProjectHandlers, _resetHandlersForTesting, digestSinceArg } from './group-project-handlers';
+import { registerGroupProjectHandlers, _resetHandlersForTesting } from './group-project-handlers';
+import { digestSinceArg } from './validation';
 
 type HandlerFn = (...args: unknown[]) => unknown;
 const handlers = new Map<string, HandlerFn>();

@@ -2044,6 +2044,151 @@ describe('annex-server', () => {
     });
   });
 
+  describe('group project bulletin digest endpoint', () => {
+    const ISO = '2026-07-25T10:00:00.000Z';
+
+    async function setupDigest() {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      const { getBulletinBoard } = await import('./group-project-bulletin');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValue({ id: 'gp_1', name: 'GP' } as any);
+      const getDigest = vi.fn().mockResolvedValue([]);
+      vi.mocked(getBulletinBoard).mockReturnValue({ getDigest } as any);
+      return { getDigest, ...(await startAndPair()) };
+    }
+
+    it('passes a plain `since` through — an older controller keeps working', async () => {
+      const { port, token, getDigest } = await setupDigest();
+
+      const res = await request(
+        port, 'GET', `/api/v1/group-projects/gp_1/bulletin/digest?since=${encodeURIComponent(ISO)}`,
+        undefined, authHeaders(token),
+      );
+
+      expect(res.status).toBe(200);
+      expect(getDigest).toHaveBeenCalledWith(ISO);
+    });
+
+    it('decodes `sinceChannels` into a per-channel map', async () => {
+      const { port, token, getDigest } = await setupDigest();
+      const map = { general: ISO, tasks: '2026-07-25T11:00:00.000Z' };
+
+      const res = await request(
+        port, 'GET',
+        `/api/v1/group-projects/gp_1/bulletin/digest?sinceChannels=${encodeURIComponent(JSON.stringify(map))}`,
+        undefined, authHeaders(token),
+      );
+
+      expect(res.status).toBe(200);
+      expect(getDigest).toHaveBeenCalledWith(map);
+    });
+
+    it('requests no cutoff when neither param is sent', async () => {
+      const { port, token, getDigest } = await setupDigest();
+
+      const res = await request(
+        port, 'GET', '/api/v1/group-projects/gp_1/bulletin/digest',
+        undefined, authHeaders(token),
+      );
+
+      expect(res.status).toBe(200);
+      expect(getDigest).toHaveBeenCalledWith(undefined);
+    });
+
+    it('rejects malformed JSON in sinceChannels with 400', async () => {
+      const { port, token, getDigest } = await setupDigest();
+
+      const res = await request(
+        port, 'GET', '/api/v1/group-projects/gp_1/bulletin/digest?sinceChannels=not-json',
+        undefined, authHeaders(token),
+      );
+
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body).error).toBe('invalid_since');
+      expect(getDigest).not.toHaveBeenCalled();
+    });
+
+    it('rejects prototype-polluting keys from a paired peer with 400', async () => {
+      const { port, token, getDigest } = await setupDigest();
+      const payload = '{"__proto__": {"polluted": true}}';
+
+      const res = await request(
+        port, 'GET',
+        `/api/v1/group-projects/gp_1/bulletin/digest?sinceChannels=${encodeURIComponent(payload)}`,
+        undefined, authHeaders(token),
+      );
+
+      expect(res.status).toBe(400);
+      expect(getDigest).not.toHaveBeenCalled();
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    });
+
+    it('rejects an over-long sinceChannels param with 400 rather than doing the work', async () => {
+      const { port, token, getDigest } = await setupDigest();
+      // Past MAX_SINCE_PARAM_LENGTH but still inside Node's ~16KB request-line
+      // limit, so the handler's own guard is what rejects it. Anything larger
+      // never reaches us — Node answers 431 — which is why the controller caps
+      // the encoded length before sending (see encodeDigestSince).
+      const huge: Record<string, string> = {};
+      for (let i = 0; i < 200; i++) huge[`t${i}`] = ISO;
+
+      const res = await request(
+        port, 'GET',
+        `/api/v1/group-projects/gp_1/bulletin/digest?sinceChannels=${encodeURIComponent(JSON.stringify(huge))}`,
+        undefined, authHeaders(token),
+      );
+
+      expect(res.status).toBe(400);
+      expect(getDigest).not.toHaveBeenCalled();
+    });
+
+    it('accepts exactly what the controller\'s encoder produces', async () => {
+      const { encodeDigestSince } = await import('../../shared/digest-since');
+      const { port, token, getDigest } = await setupDigest();
+      const map = { general: ISO, 'inbox-warm-alpaca': '2026-07-25T11:30:00.000Z' };
+
+      // Build the query with the same function annex-client uses, then send it
+      // through the real HTTP route. Closes the encode/decode loop across the
+      // two halves without needing a live satellite pair.
+      const { params } = encodeDigestSince(map);
+      const qs = new URLSearchParams(params).toString();
+
+      const res = await request(
+        port, 'GET', `/api/v1/group-projects/gp_1/bulletin/digest?${qs}`,
+        undefined, authHeaders(token),
+      );
+
+      expect(res.status).toBe(200);
+      expect(getDigest).toHaveBeenCalledWith(map);
+    });
+
+    it('documents the compat contract: a pre-#1556 satellite ignores sinceChannels', async () => {
+      const { encodeDigestSince } = await import('../../shared/digest-since');
+      const { params } = encodeDigestSince({ general: ISO });
+      const qs = new URLSearchParams(params).toString();
+
+      // This is verbatim how the old handler read the query string. It yields
+      // no cutoff — everything unread, the pre-#1555 behaviour — rather than
+      // misparsing JSON as a date or erroring. Asserted here because running an
+      // actual older satellite build isn't possible in CI.
+      const oldParsed = new URLSearchParams(qs).get('since') || undefined;
+      expect(oldParsed).toBeUndefined();
+    });
+
+    it('still 404s for an unknown group project', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValue(null as any);
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'GET', '/api/v1/group-projects/gp_missing/bulletin/digest',
+        undefined, authHeaders(token),
+      );
+
+      expect(res.status).toBe(404);
+      expect(JSON.parse(res.body).error).toBe('group_project_not_found');
+    });
+  });
+
   describe('theme broadcast includes terminal colors', () => {
     it('snapshot includes terminalColors field', async () => {
       // eslint-disable-next-line no-restricted-syntax -- TODO(TC-CRIT-03): structural test pending behavioral conversion

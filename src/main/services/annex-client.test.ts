@@ -1260,6 +1260,141 @@ describe('annex-client', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Per-channel bulletin read state over the annex REST call (#1556)
+  // -------------------------------------------------------------------------
+  describe('requestBulletinDigest since encoding', () => {
+    const ISO = '2026-07-25T10:00:00.000Z';
+    const FINGERPRINT = 'AA:BB:CC:FF';
+
+    async function connectSatellite() {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: FINGERPRINT,
+        alias: 'Digest Satellite',
+        icon: 'server',
+        color: 'blue',
+        publicKey: 'digest-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FINGERPRINT,
+        alias: 'Digest Satellite',
+        icon: 'server',
+        color: 'blue',
+        publicKey: 'digest-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+      openCb!();
+      vi.useRealTimers();
+    }
+
+    /** Capture the URL the client builds and answer with an empty digest. */
+    function captureUrl(): { get: () => string } {
+      let captured = '';
+      vi.mocked(https.get).mockImplementation((url: any, _opts: any, cb: any) => {
+        captured = String(url);
+        const res = {
+          statusCode: 200,
+          resume: vi.fn(),
+          on: vi.fn().mockImplementation((event: string, handler: any) => {
+            if (event === 'data') handler(Buffer.from('[]'));
+            if (event === 'end') handler();
+            return res;
+          }),
+        };
+        cb(res);
+        return { on: vi.fn().mockReturnThis(), setTimeout: vi.fn(), destroy: vi.fn() } as any;
+      });
+      return { get: () => captured };
+    }
+
+    function queryOf(url: string): URLSearchParams {
+      return new URLSearchParams(url.slice(url.indexOf('?') + 1));
+    }
+
+    it('sends no cutoff params when since is omitted', async () => {
+      await connectSatellite();
+      const url = captureUrl();
+
+      await annexClient.requestBulletinDigest(FINGERPRINT, 'gp-1');
+
+      expect(url.get()).not.toContain('?');
+    });
+
+    it('sends a single timestamp as `since`', async () => {
+      await connectSatellite();
+      const url = captureUrl();
+
+      await annexClient.requestBulletinDigest(FINGERPRINT, 'gp-1', ISO);
+
+      expect(queryOf(url.get()).get('since')).toBe(ISO);
+    });
+
+    it('sends a per-channel map as JSON in `sinceChannels`, not `since`', async () => {
+      await connectSatellite();
+      const url = captureUrl();
+      const map = { general: ISO, 'inbox-warm-alpaca': '2026-07-25T11:00:00.000Z' };
+
+      await annexClient.requestBulletinDigest(FINGERPRINT, 'gp-1', map);
+
+      const params = queryOf(url.get());
+      expect(JSON.parse(params.get('sinceChannels')!)).toEqual(map);
+      // Overloading `since` would make an older satellite parse JSON as a date.
+      expect(params.get('since')).toBeNull();
+    });
+
+    it('omits the cutoff and warns when the map is too large for a URL', async () => {
+      await connectSatellite();
+      const { appLog } = await import('./log-service');
+      vi.mocked(appLog).mockClear();
+      const url = captureUrl();
+      const huge: Record<string, string> = {};
+      for (let i = 0; i < 400; i++) huge[`channel-with-a-long-name-${i}`] = ISO;
+
+      await annexClient.requestBulletinDigest(FINGERPRINT, 'gp-1', huge);
+
+      expect(url.get()).not.toContain('sinceChannels');
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex-client', 'warn',
+        'Per-channel read map too large for digest request; requesting without a cutoff',
+        expect.objectContaining({ meta: expect.objectContaining({ channels: 400 }) }),
+      );
+    });
+
+    it('sends no params for an empty map', async () => {
+      await connectSatellite();
+      const url = captureUrl();
+
+      await annexClient.requestBulletinDigest(FINGERPRINT, 'gp-1', {});
+
+      expect(url.get()).not.toContain('?');
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Bug fix LB-AN-003: pong timeout clears heartbeat interval before reconnect
   // -------------------------------------------------------------------------
 

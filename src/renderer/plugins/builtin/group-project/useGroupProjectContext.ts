@@ -198,11 +198,9 @@ export function useGroupProjectContext(
   // --- Bulletin reads ---
   const fetchDigest = useCallback(async (gpId: string, since?: DigestSince): Promise<TopicDigest[]> => {
     if (isRemote && satelliteId) {
-      // The annex bulletin protocol carries a single ISO cutoff, not a
-      // per-channel map, so remote projects keep the existing behaviour until
-      // that wire format is widened.
-      const remoteSince = typeof since === 'string' ? since : undefined;
-      return await annex.gpBulletinDigest(satelliteId, stripRemotePrefix(gpId), remoteSince) as TopicDigest[];
+      // Carries the per-channel map too; a satellite that predates it ignores
+      // the param and answers with no cutoff rather than erroring.
+      return await annex.gpBulletinDigest(satelliteId, stripRemotePrefix(gpId), since) as TopicDigest[];
     }
     return await window.clubhouse.groupProject.getBulletinDigest(gpId, since) as TopicDigest[];
   }, [isRemote, satelliteId, annex]);
