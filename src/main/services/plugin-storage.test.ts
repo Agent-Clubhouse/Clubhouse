@@ -75,31 +75,17 @@ describe('plugin-storage', () => {
   });
 
   describe('writeKey', () => {
-    it('writes JSON atomically (temp file then rename) and ensures dir exists', async () => {
+    it('writes JSON to kv directory and ensures dir exists', async () => {
       await writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: { a: 1 } });
-      const finalPath = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
       expect(fsp.mkdir).toHaveBeenCalledWith(
         path.join(GLOBAL_BASE, 'my-plugin', 'kv'),
         { recursive: true },
       );
-      // Content is written to a temp sibling, never directly to the destination.
-      const writeCall = vi.mocked(fsp.writeFile).mock.calls[0];
-      const tmpPath = writeCall[0] as string;
-      expect(tmpPath).toMatch(/config\.json\.tmp-/);
-      expect(writeCall[1]).toBe(JSON.stringify({ a: 1 }));
-      expect(fsp.writeFile).not.toHaveBeenCalledWith(finalPath, expect.anything(), expect.anything());
-      // Then atomically renamed over the real file.
-      expect(fsp.rename).toHaveBeenCalledWith(tmpPath, finalPath);
-    });
-
-    it('cleans up the temp file and rethrows if the write fails', async () => {
-      vi.mocked(fsp.writeFile).mockRejectedValueOnce(new Error('disk full'));
-      await expect(
-        writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: { a: 1 } }),
-      ).rejects.toThrow('disk full');
-      const unlinked = vi.mocked(fsp.unlink).mock.calls[0]?.[0] as string | undefined;
-      expect(unlinked).toMatch(/config\.json\.tmp-/);
-      expect(fsp.rename).not.toHaveBeenCalled();
+      expect(fsp.writeFile).toHaveBeenCalledWith(
+        path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json'),
+        JSON.stringify({ a: 1 }),
+        'utf-8',
+      );
     });
 
     it('rejects path traversal in key', async () => {
@@ -342,15 +328,11 @@ describe('plugin-storage', () => {
       // The gitignore ensurer will try to readFile for .gitignore - mock that too
       vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
       await writeKey({ pluginId: 'my-plugin', scope: 'project-local', key: 'config', value: 42, projectPath });
-      const finalPath = path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv', 'config.json');
-      // Atomic write: content lands in a temp sibling, then rename onto the final path.
-      const kvWrite = vi.mocked(fsp.writeFile).mock.calls.find(
-        (c) => String(c[0]).includes(path.join('plugin-data-local', 'my-plugin', 'kv', 'config.json')),
+      expect(fsp.writeFile).toHaveBeenCalledWith(
+        path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv', 'config.json'),
+        '42',
+        'utf-8',
       );
-      expect(kvWrite).toBeDefined();
-      expect(String(kvWrite![0])).toMatch(/config\.json\.tmp-/);
-      expect(kvWrite![1]).toBe('42');
-      expect(fsp.rename).toHaveBeenCalledWith(kvWrite![0], finalPath);
     });
 
     it('deleteKey uses plugin-data-local path', async () => {

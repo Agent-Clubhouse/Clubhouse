@@ -125,6 +125,11 @@ export interface CanvasState {
 // ── Storage keys ─────────────────────────────────────────────────────
 
 const STORAGE_KEY_INSTANCES = 'canvas-instances';
+// Last-good backup of the instances written alongside the primary (see
+// saveCanvas / loadCanvas). Guards against the primary file being torn by a
+// crash mid-write, which otherwise loads as an empty canvas and gets
+// overwritten on the next autosave — silently destroying all cards.
+const STORAGE_KEY_INSTANCES_BACKUP = 'canvas-instances-backup';
 const STORAGE_KEY_ACTIVE = 'canvas-active-id';
 const STORAGE_KEY_WIRES = 'canvas-wires';
 const STORAGE_KEY_ZONE_WIRES = 'canvas-zone-wires';
@@ -227,7 +232,21 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           // ignore zone wire restore failure
         }
 
-        const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as CanvasInstanceData[] | null;
+        let savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as CanvasInstanceData[] | null;
+        // A torn/corrupt primary reads back as null (parse failure → undefined)
+        // or a non-array. Rather than fall through to a fresh empty canvas —
+        // which the next autosave would then persist over the good data — try
+        // the last-good backup first. A valid empty canvas is always a
+        // non-empty array (≥1 instance), so this only triggers on real loss.
+        if (!Array.isArray(savedInstances) || savedInstances.length === 0) {
+          const backup = await storage.read(STORAGE_KEY_INSTANCES_BACKUP) as CanvasInstanceData[] | null;
+          if (Array.isArray(backup) && backup.length > 0) {
+            rendererLog('canvas', 'warn', 'Primary canvas data missing/corrupt — recovered from backup', {
+              meta: { backupCanvases: backup.length },
+            });
+            savedInstances = backup;
+          }
+        }
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
           const canvases: CanvasInstance[] = savedInstances.map((s): CanvasInstance => {
             // Restore each instance defensively: a single partially-written or
@@ -321,6 +340,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         elkDirection: c.elkDirection,
         layoutCenterId: c.layoutCenterId,
       }));
+      // Ordered double-write for crash recovery. Write the backup FIRST, then
+      // the primary. A crash can tear at most one of the two files, so the
+      // other is always a complete (old-or-new) copy that loadCanvas can fall
+      // back to. We intentionally avoid an atomic temp-file+rename here: the
+      // extra filesystem events it generates regress unrelated plugins on
+      // Linux CI, whereas an ordered pair of plain writes does not.
+      await storage.write(STORAGE_KEY_INSTANCES_BACKUP, data);
       await storage.write(STORAGE_KEY_INSTANCES, data);
       await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
 

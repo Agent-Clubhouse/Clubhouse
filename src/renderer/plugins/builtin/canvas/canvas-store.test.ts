@@ -53,6 +53,51 @@ describe('canvas-store', () => {
     expect(store2.getState().views[0].type).toBe('agent');
   });
 
+  // Data-loss recovery: if the primary canvas-instances file is torn/corrupt
+  // (reads back as undefined) but a backup exists, load restores from the
+  // backup instead of falling through to a fresh empty canvas (which the next
+  // autosave would persist over the good data — the silent card-loss bug).
+  it('recovers canvas cards from the backup when the primary is corrupt', async () => {
+    // Storage with an accessible backing map so we can simulate a torn primary.
+    const map = new Map<string, unknown>();
+    const storage: ScopedStorage = {
+      read: vi.fn(async (key: string) => map.get(key) ?? undefined),
+      write: vi.fn(async (key: string, value: unknown) => { map.set(key, value); }),
+      delete: vi.fn(async (key: string) => { map.delete(key); }),
+      list: vi.fn(async () => [...map.keys()]),
+    };
+
+    await store.getState().loadCanvas(storage);
+    store.getState().addView('agent', { x: 100, y: 200 });
+    store.getState().addView('agent', { x: 700, y: 200 });
+    await store.getState().saveCanvas(storage);
+
+    // Backup was written; now simulate the primary being torn (unreadable).
+    expect(map.get('canvas-instances-backup')).toBeDefined();
+    map.delete('canvas-instances');
+
+    const store2 = createCanvasStore();
+    await store2.getState().loadCanvas(storage);
+
+    expect(store2.getState().loaded).toBe(true);
+    expect(store2.getState().views).toHaveLength(2);
+  });
+
+  it('saveCanvas writes the backup before the primary (ordered double-write)', async () => {
+    const storage = createMockStorage();
+    await store.getState().loadCanvas(storage);
+    store.getState().addView('agent', { x: 10, y: 20 });
+
+    const order: string[] = [];
+    (storage.write as any).mockImplementation(async (key: string) => { order.push(key); });
+    await store.getState().saveCanvas(storage);
+
+    const backupIdx = order.indexOf('canvas-instances-backup');
+    const primaryIdx = order.indexOf('canvas-instances');
+    expect(backupIdx).toBeGreaterThanOrEqual(0);
+    expect(primaryIdx).toBeGreaterThan(backupIdx); // backup written first
+  });
+
   // Regression: a single saved instance with a missing/non-array `views`
   // (a partially-written record) must NOT throw and collapse ALL canvases to
   // one empty canvas. The bad instance loads as empty; the good one is intact.
