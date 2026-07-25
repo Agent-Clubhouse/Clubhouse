@@ -256,6 +256,29 @@ describe('canvas main', () => {
     expect(removeViewBlock).toContain('removeWireDefinition');
   });
 
+  it('handleAddFromBlueprint passes an explicit app/project scope to openBlueprintGallery (structural, GH-1563)', () => {
+    // #1563: the blueprint gallery previously picked its target canvas store from
+    // the globally active project (activeProjectId), which is wrong when the "+ →
+    // From Blueprint" button is clicked on the app-mode rail Canvas while a project
+    // happens to be open elsewhere. The fix is for the caller to tell the gallery
+    // which store it means via an explicit scope, instead of the gallery guessing.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    const block = source.slice(
+      source.indexOf('const handleAddFromBlueprint'),
+      source.indexOf('const handleAddFromBlueprint') + 400,
+    );
+    expect(block).toContain('openBlueprintGallery(');
+    expect(block).toContain("mode: 'app'");
+    expect(block).toContain("mode: 'project'");
+    expect(block).toContain('isAppMode');
+    // Must forward the actual project id/path, not rely on a global lookup.
+    expect(block).toContain('api.context.projectId');
+    expect(block).toContain('api.context.projectPath');
+  });
+
   it('per-project stores have isolated state', () => {
     const storeA = canvasModule.getProjectCanvasStore('canvas-proj-iso-a');
     const storeB = canvasModule.getProjectCanvasStore('canvas-proj-iso-b');

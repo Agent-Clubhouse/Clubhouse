@@ -396,8 +396,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, remoteForward]);
 
   const handleAddFromBlueprint = useCallback(() => {
-    useUIStore.getState().openBlueprintGallery();
-  }, []);
+    useUIStore.getState().openBlueprintGallery(
+      isAppMode
+        ? { mode: 'app' }
+        : { mode: 'project', projectId: api.context.projectId!, projectPath: api.context.projectPath },
+    );
+  }, [isAppMode, api]);
 
   const handleRemoveCanvas = useCallback((canvasId: string) => {
     remoteForward({ type: 'removeCanvas', canvasId });
