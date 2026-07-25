@@ -404,7 +404,8 @@ export function AgentSettingsView({ agent }: Props) {
       setQadDefaultModel(qadSavedModel);
       setQadCustomModel('');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally keyed on the option list identity rather than isKnownModel,
+    // which is re-created every render.
   }, [savedModel, qadSavedModel, modelOptionsLoading, MODEL_OPTIONS]);
   const [qadFreeAgentMode, setQadFreeAgentMode] = useState(false);
   const [qadDirty, setQadDirty] = useState(false);
