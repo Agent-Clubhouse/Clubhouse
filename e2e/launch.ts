@@ -2,6 +2,7 @@ import { _electron as electron, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { recordElectronApp, trackOpenApp } from './e2e-cleanup';
 
 const APP_PATH = path.resolve(__dirname, '..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
@@ -86,6 +87,11 @@ export async function launchApp(opts: LaunchOptions = {}) {
     cwd: APP_PATH,
     env,
   });
+
+  // Register for cleanup before doing anything else that can throw — a launch
+  // that dies during window discovery must still be reapable.
+  recordElectronApp(electronApp.process().pid, userDataDir);
+  trackOpenApp(electronApp);
 
   // Collect all windows that open, then pick the renderer (non-devtools) one.
   const rendererWindow = await findRendererWindow(electronApp);

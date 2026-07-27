@@ -8,9 +8,26 @@ import { _electron as electron, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { recordElectronApp, trackOpenApp, untrackOpenApp } from '../e2e-cleanup';
 
 const APP_PATH = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
+
+/**
+ * Whether to drive these tests against a real orchestrator binary.
+ *
+ * The stub is the default everywhere, so a plain `npx playwright test` locally
+ * behaves exactly like CI: fast, deterministic, and free. Live coverage is an
+ * explicit opt-in — it makes real model calls that take many seconds each and
+ * routinely blow the 120s test timeout.
+ *
+ *   E2E_LIVE_ORCHESTRATOR=1 npx playwright test e2e/assistant/
+ *
+ * Never honored in CI, which has no orchestrator binary installed.
+ */
+export function useLiveOrchestrator(): boolean {
+  return !process.env.CI && process.env.E2E_LIVE_ORCHESTRATOR === '1';
+}
 
 export interface AssistantInstance {
   electronApp: Awaited<ReturnType<typeof electron.launch>>;
@@ -89,11 +106,16 @@ export async function launchAssistantInstance(): Promise<AssistantInstance> {
     },
   });
 
+  // Register for cleanup before window discovery, which can throw.
+  recordElectronApp(electronApp.process().pid, userDataDir);
+  trackOpenApp(electronApp);
+
   const window = await findRendererWindow(electronApp);
   await window.waitForLoadState('load');
 
-  // Install stub IPC handlers in CI where no real orchestrator is available
-  if (process.env.CI) {
+  // Install stub IPC handlers unless live orchestrator coverage was explicitly
+  // requested. CI always takes the stub path — unchanged.
+  if (!useLiveOrchestrator()) {
     await installAssistantStub(electronApp);
   }
 
@@ -212,6 +234,7 @@ async function installAssistantStub(
  * Clean up an assistant test instance.
  */
 export async function cleanupAssistantInstance(handle: AssistantInstance): Promise<void> {
+  untrackOpenApp(handle.electronApp);
   try {
     await handle.electronApp.close();
   } catch {

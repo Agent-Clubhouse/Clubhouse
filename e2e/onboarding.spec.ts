@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
+import { recordElectronApp, trackOpenApp } from './e2e-cleanup';
 
 const APP_PATH = path.resolve(__dirname, '..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
@@ -17,6 +18,9 @@ async function launchFresh() {
     args: [MAIN_ENTRY],
     cwd: APP_PATH,
   });
+
+  recordElectronApp(electronApp.process().pid);
+  trackOpenApp(electronApp);
 
   // Find renderer window — DevTools may briefly have a non-devtools:// URL,
   // so after the URL check we verify the page has <div id="root">.
