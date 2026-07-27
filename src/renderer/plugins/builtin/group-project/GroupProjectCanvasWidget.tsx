@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { GroupProjectPanelSidebar, useGroupProjectPanelLayout } from './GroupProjectPanelSidebar';
+import { GroupProjectPanelSidebar, useGroupProjectPanelLayout, stopPlainWheelPropagation } from './GroupProjectPanelSidebar';
 import type { CanvasWidgetComponentProps, AnnexAPI } from '../../../../shared/plugin-types';
 import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
@@ -883,7 +883,11 @@ function ExpandedProjectView({
         </GroupProjectPanelSidebar>
 
         {/* Message Detail (main content area) */}
-        <div className="flex-1 min-w-0 overflow-y-auto p-3">
+        <div
+          className="flex-1 min-w-0 overflow-y-auto p-3"
+          onWheel={stopPlainWheelPropagation}
+          data-testid="group-project-message-detail-scroll"
+        >
           {selectedMessage ? (
             <div className="text-xs space-y-2">
               <div className="flex items-center gap-2 flex-wrap">

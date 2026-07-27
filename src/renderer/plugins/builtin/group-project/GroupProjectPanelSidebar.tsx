@@ -98,6 +98,19 @@ export function useGroupProjectPanelLayout() {
   };
 }
 
+/* ---------- Wheel containment ---------- */
+
+// #1545: Contain plain wheel/trackpad scrolling inside this panel's scroll
+// regions so it never bubbles up to pan the canvas underneath (same fix as
+// #1536/#1538 for the Agent canvas picker in AgentCanvasView.tsx — see
+// handlePickerWheel there for the full rationale). Ctrl/Cmd+wheel is a canvas
+// zoom gesture and is intentionally allowed to bubble so zoom keeps working
+// while hovering the panel.
+export function stopPlainWheelPropagation(e: React.WheelEvent): void {
+  if (e.ctrlKey || e.metaKey) return;
+  e.stopPropagation();
+}
+
 /* ---------- Component ---------- */
 
 interface GroupProjectPanelSidebarProps {
@@ -165,6 +178,7 @@ export function GroupProjectPanelSidebar({
             style={{ width }}
             onMouseEnter={handleEnter}
             onMouseLeave={handleLeave}
+            onWheel={stopPlainWheelPropagation}
             data-testid="panel-rail-overlay"
           >
             {children}
@@ -179,6 +193,7 @@ export function GroupProjectPanelSidebar({
       <div
         className="flex-shrink-0 overflow-y-auto"
         style={{ width }}
+        onWheel={stopPlainWheelPropagation}
         data-testid="group-project-panel-sidebar"
       >
         {children}
