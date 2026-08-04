@@ -1,6 +1,7 @@
 import { create, StoreApi, UseBoundStore } from 'zustand';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 import { generateHubName } from '../../../../shared/name-generator';
+import { rendererLog } from '../../renderer-logger';
 import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, ZoneCanvasView, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
@@ -124,6 +125,11 @@ export interface CanvasState {
 // ── Storage keys ─────────────────────────────────────────────────────
 
 const STORAGE_KEY_INSTANCES = 'canvas-instances';
+// Last-good backup of the instances written alongside the primary (see
+// saveCanvas / loadCanvas). Guards against the primary file being torn by a
+// crash mid-write, which otherwise loads as an empty canvas and gets
+// overwritten on the next autosave — silently destroying all cards.
+const STORAGE_KEY_INSTANCES_BACKUP = 'canvas-instances-backup';
 const STORAGE_KEY_ACTIVE = 'canvas-active-id';
 const STORAGE_KEY_WIRES = 'canvas-wires';
 const STORAGE_KEY_ZONE_WIRES = 'canvas-zone-wires';
@@ -226,35 +232,77 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           // ignore zone wire restore failure
         }
 
-        const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as CanvasInstanceData[] | null;
+        let savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as CanvasInstanceData[] | null;
+        // A torn/corrupt primary reads back as null (parse failure → undefined)
+        // or a non-array. Rather than fall through to a fresh empty canvas —
+        // which the next autosave would then persist over the good data — try
+        // the last-good backup first. A valid empty canvas is always a
+        // non-empty array (≥1 instance), so this only triggers on real loss.
+        if (!Array.isArray(savedInstances) || savedInstances.length === 0) {
+          const backup = await storage.read(STORAGE_KEY_INSTANCES_BACKUP) as CanvasInstanceData[] | null;
+          if (Array.isArray(backup) && backup.length > 0) {
+            rendererLog('canvas', 'warn', 'Primary canvas data missing/corrupt — recovered from backup', {
+              meta: { backupCanvases: backup.length },
+            });
+            savedInstances = backup;
+          }
+        }
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
           const canvases: CanvasInstance[] = savedInstances.map((s): CanvasInstance => {
-            // Backfill displayName and metadata for views saved in older formats.
-            // Filter out legacy view types that no longer exist (browser, file,
-            // legacy-file, terminal, legacy-terminal, git-diff, legacy-git-diff) —
-            // these have been replaced by plugin-provided widgets.
-            const REMOVED_TYPES = new Set(['browser', 'file', 'legacy-file', 'terminal', 'legacy-terminal', 'git-diff', 'legacy-git-diff']);
-            const restoredViews = s.views
-              .filter((v: any) => !REMOVED_TYPES.has(v.type))
-              .map((v: any) => ({
-                ...v,
-                metadata: v.metadata ?? {},
-                displayName: v.displayName ?? v.title ?? v.type ?? '',
-                ...(v.type === 'zone' ? { containedViewIds: v.containedViewIds ?? [] } : {}),
-              })) as CanvasView[];
-            return {
-              id: s.id,
-              name: s.name,
-              views: restoredViews,
-              viewport: clampViewport(s.viewport),
-              nextZIndex: s.nextZIndex,
-              zoomedViewId: s.zoomedViewId ?? null,
-              selectedViewId: null,
-              minimapAutoHide: s.minimapAutoHide ?? true,
-              elkAlgorithm: s.elkAlgorithm ?? 'layered',
-              elkDirection: s.elkDirection ?? 'RIGHT',
-              layoutCenterId: s.layoutCenterId ?? null,
-            };
+            // Restore each instance defensively: a single partially-written or
+            // malformed record must degrade to an empty-but-valid canvas, NOT
+            // throw and send the outer catch into replacing ALL canvases with
+            // one fresh empty canvas — that is the silent, total card-loss bug.
+            try {
+              // Backfill displayName and metadata for views saved in older
+              // formats. Filter out legacy view types that no longer exist
+              // (browser, file, legacy-file, terminal, legacy-terminal,
+              // git-diff, legacy-git-diff) — replaced by plugin-provided widgets.
+              const REMOVED_TYPES = new Set(['browser', 'file', 'legacy-file', 'terminal', 'legacy-terminal', 'git-diff', 'legacy-git-diff']);
+              const restoredViews = (Array.isArray(s.views) ? s.views : [])
+                .filter((v: any) => !REMOVED_TYPES.has(v.type))
+                .map((v: any) => ({
+                  ...v,
+                  metadata: v.metadata ?? {},
+                  displayName: v.displayName ?? v.title ?? v.type ?? '',
+                  ...(v.type === 'zone' ? { containedViewIds: v.containedViewIds ?? [] } : {}),
+                })) as CanvasView[];
+              const rawViewport: Partial<Viewport> = (s.viewport && typeof s.viewport === 'object') ? s.viewport : {};
+              return {
+                id: s.id ?? generateCanvasId(),
+                name: s.name ?? generateHubName(),
+                views: restoredViews,
+                viewport: clampViewport({
+                  panX: rawViewport.panX ?? 0,
+                  panY: rawViewport.panY ?? 0,
+                  zoom: rawViewport.zoom ?? 1,
+                }),
+                nextZIndex: s.nextZIndex ?? restoredViews.length,
+                zoomedViewId: s.zoomedViewId ?? null,
+                selectedViewId: null,
+                minimapAutoHide: s.minimapAutoHide ?? true,
+                elkAlgorithm: s.elkAlgorithm ?? 'layered',
+                elkDirection: s.elkDirection ?? 'RIGHT',
+                layoutCenterId: s.layoutCenterId ?? null,
+              };
+            } catch (err) {
+              rendererLog('canvas', 'error', 'Skipped malformed canvas instance on load', {
+                meta: { id: s?.id, error: err instanceof Error ? err.message : String(err) },
+              });
+              return {
+                id: s?.id ?? generateCanvasId(),
+                name: s?.name ?? generateHubName(),
+                views: [],
+                viewport: { panX: 0, panY: 0, zoom: 1 },
+                nextZIndex: 0,
+                zoomedViewId: null,
+                selectedViewId: null,
+                minimapAutoHide: true,
+                elkAlgorithm: 'layered',
+                elkDirection: 'RIGHT',
+                layoutCenterId: null,
+              };
+            }
           });
           const savedActive = await storage.read(STORAGE_KEY_ACTIVE) as string | null;
           const activeCanvasId = (savedActive && canvases.find((c) => c.id === savedActive))
@@ -268,7 +316,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         // Fresh start
         const canvas = createCanvasInstance();
         set({ canvases: [canvas], activeCanvasId: canvas.id, zoneWireDefinitions: loadedZoneWires, loaded: true, ...syncDerivedState([canvas], canvas.id) });
-      } catch {
+      } catch (err) {
+        // Loading failed after data was already read — log loudly rather than
+        // silently discarding the user's canvas.
+        rendererLog('canvas', 'error', 'loadCanvas failed — substituting empty canvas', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
         const canvas = createCanvasInstance();
         set({ canvases: [canvas], activeCanvasId: canvas.id, loaded: true, ...syncDerivedState([canvas], canvas.id) });
       }
@@ -287,6 +340,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         elkDirection: c.elkDirection,
         layoutCenterId: c.layoutCenterId,
       }));
+      // Ordered double-write for crash recovery. Write the backup FIRST, then
+      // the primary. A crash can tear at most one of the two files, so the
+      // other is always a complete (old-or-new) copy that loadCanvas can fall
+      // back to. We intentionally avoid an atomic temp-file+rename here: the
+      // extra filesystem events it generates regress unrelated plugins on
+      // Linux CI, whereas an ordered pair of plain writes does not.
+      await storage.write(STORAGE_KEY_INSTANCES_BACKUP, data);
       await storage.write(STORAGE_KEY_INSTANCES, data);
       await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
 
