@@ -71,8 +71,9 @@ describe('GroupProjectCanvasWidget — activity summary', () => {
   });
 
   it('polls bulletin digest on the compact card via context hook', () => {
-    // Compact card should call fetchDigest for activity data (abstracted via context hook)
-    expect(source).toContain('fetchDigest(groupProjectId)');
+    // Compact card should call fetchDigest for activity data (abstracted via context hook),
+    // passing the per-channel read state so its "+N new" count reflects what's unread.
+    expect(source).toContain('fetchDigest(groupProjectId, getLastRead(groupProjectId))');
   });
 });
 

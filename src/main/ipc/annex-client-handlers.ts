@@ -4,7 +4,8 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as annexClient from '../services/annex-client';
-import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg, digestSinceArg } from './validation';
+import type { DigestSince } from '../../shared/group-project-types';
 
 export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.GET_SATELLITES, () => {
@@ -265,9 +266,9 @@ export function registerAnnexClientHandlers(): void {
 
   // Group Project proxy: get bulletin digest from satellite
   ipcMain.handle(IPC.ANNEX_CLIENT.GP_BULLETIN_DIGEST, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true })],
+    [stringArg(), stringArg(), digestSinceArg()],
     async (_event, satelliteId, groupProjectId, since) => {
-      return annexClient.requestBulletinDigest(satelliteId, groupProjectId, since);
+      return annexClient.requestBulletinDigest(satelliteId, groupProjectId, since as DigestSince | undefined);
     },
   ));
 

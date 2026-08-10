@@ -15,6 +15,169 @@ import { registerTheme, unregisterTheme } from '../themes';
 
 const activeContexts = new Map<string, PluginContext>();
 
+// ── Activation timeouts ───────────────────────────────────────────────
+// Activation awaits several IPC round-trips into the main process. If the
+// main process is busy (e.g. mid app-update) one of those can hang forever,
+// which used to leave the plugin — and any canvas widget it provides —
+// spinning until a full app restart. Each await is bounded instead.
+
+/** Timeout for a single IPC round-trip during activation. */
+export const PLUGIN_IPC_TIMEOUT_MS = 10_000;
+/** Timeout for the plugin's own activate() hook. */
+export const PLUGIN_ACTIVATE_TIMEOUT_MS = 20_000;
+
+export class PluginActivationTimeoutError extends Error {
+  constructor(label: string, timeoutMs: number) {
+    super(`${label} timed out after ${timeoutMs}ms`);
+    this.name = 'PluginActivationTimeoutError';
+  }
+}
+
+/**
+ * Bound a promise by `timeoutMs`. The AbortSignal is handed to `work` so
+ * abort-aware callees can bail early; IPC calls that ignore it are simply
+ * abandoned — the timeout still unblocks activation either way.
+ */
+export async function withTimeout<T>(
+  label: string,
+  timeoutMs: number,
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new PluginActivationTimeoutError(label, timeoutMs));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([work(controller.signal), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+// ── Activation retry / backoff ────────────────────────────────────────
+// A plugin that errors during activation used to be skipped permanently, so
+// a transient failure was indistinguishable from a broken plugin and only a
+// restart recovered. Failures are now retried with exponential backoff.
+
+/** Max activation attempts (initial attempt + retries) before giving up. */
+export const MAX_ACTIVATION_ATTEMPTS = 4;
+/** Base delay for exponential backoff between activation retries. */
+export const ACTIVATION_RETRY_BASE_MS = 1_000;
+/** Upper bound on a single backoff delay. */
+export const ACTIVATION_RETRY_MAX_MS = 30_000;
+
+interface ActivationAttempt {
+  projectId?: string;
+  projectPath?: string;
+}
+
+interface ActivationFailure extends ActivationAttempt {
+  attempts: number;
+  nextEligibleAt: number;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/** Last activation arguments per context key — lets a manual retry re-dispatch. */
+const lastActivationAttempt = new Map<string, ActivationAttempt>();
+/**
+ * Most recent activation arguments per plugin id, regardless of context. A
+ * canvas widget knows only the plugin id, so this is how a manual retry
+ * recovers the project context of the attempt that failed.
+ */
+const lastAttemptByPlugin = new Map<string, ActivationAttempt>();
+/** Failure bookkeeping per context key. */
+const activationFailures = new Map<string, ActivationFailure>();
+
+function activationContextKey(pluginId: string, projectId?: string): string {
+  return projectId ? `${pluginId}:${projectId}` : pluginId;
+}
+
+/** Backoff delay for the Nth attempt (1-based), capped. */
+export function activationRetryDelay(attempts: number): number {
+  return Math.min(ACTIVATION_RETRY_BASE_MS * 2 ** (attempts - 1), ACTIVATION_RETRY_MAX_MS);
+}
+
+/**
+ * Record a failed activation and schedule an automatic retry unless the
+ * attempt budget is exhausted.
+ */
+function recordActivationFailure(pluginId: string, projectId?: string, projectPath?: string): void {
+  const key = activationContextKey(pluginId, projectId);
+  const prev = activationFailures.get(key);
+  if (prev?.timer) clearTimeout(prev.timer);
+  const attempts = (prev?.attempts ?? 0) + 1;
+
+  if (attempts >= MAX_ACTIVATION_ATTEMPTS) {
+    activationFailures.set(key, { attempts, nextEligibleAt: Infinity, projectId, projectPath });
+    rendererLog('core:plugins', 'error', `Giving up on activating "${pluginId}" after ${attempts} attempts`, {
+      meta: { pluginId, projectId, attempts },
+    });
+    return;
+  }
+
+  const delay = activationRetryDelay(attempts);
+  const timer = setTimeout(() => {
+    const record = activationFailures.get(key);
+    if (record) record.timer = undefined;
+    void activatePlugin(pluginId, projectId, projectPath);
+  }, delay);
+  // Don't hold the process open for a retry (no-op in the renderer).
+  (timer as unknown as { unref?: () => void }).unref?.();
+
+  activationFailures.set(key, {
+    attempts,
+    nextEligibleAt: Date.now() + delay,
+    projectId,
+    projectPath,
+    timer,
+  });
+  rendererLog('core:plugins', 'warn', `Scheduling activation retry for "${pluginId}" in ${delay}ms`, {
+    meta: { pluginId, projectId, attempts, delay },
+  });
+}
+
+/** Clear failure bookkeeping after a successful activation. */
+function clearActivationFailure(pluginId: string, projectId?: string): void {
+  const key = activationContextKey(pluginId, projectId);
+  const record = activationFailures.get(key);
+  if (record?.timer) clearTimeout(record.timer);
+  activationFailures.delete(key);
+}
+
+/**
+ * User-initiated retry (e.g. from a stuck canvas widget). Clears the backoff
+ * state and the errored status so activation can run again immediately.
+ * Returns false when there's nothing to retry.
+ */
+export function retryPluginActivation(pluginId: string, projectId?: string): boolean {
+  const store = usePluginStore.getState();
+  const entry = store.plugins[pluginId];
+  if (!entry) return false;
+
+  // Fall back to the project context of the last attempt when the caller
+  // (e.g. a canvas widget) only knows the plugin id.
+  const fallback = lastAttemptByPlugin.get(pluginId);
+  const resolvedProjectId = projectId ?? fallback?.projectId;
+  const resolvedKey = activationContextKey(pluginId, resolvedProjectId);
+  const resolvedAttempt = lastActivationAttempt.get(resolvedKey) ?? fallback;
+
+  if (entry.manifest.scope === 'project' && !resolvedProjectId) return false;
+
+  clearActivationFailure(pluginId, resolvedProjectId);
+  if (entry.status === 'errored') {
+    store.setPluginStatus(pluginId, 'registered');
+  }
+  rendererLog('core:plugins', 'info', `Manual activation retry for "${pluginId}"`, {
+    meta: { pluginId, projectId: resolvedProjectId },
+  });
+  void activatePlugin(pluginId, resolvedProjectId, resolvedAttempt?.projectPath);
+  return true;
+}
+
 // ── Plugin system ready gate ─────────────────────────────────────────
 // Resolves when initializePluginSystem() completes (including safe mode).
 // Consumers (e.g. project switch in App.tsx) should await this before
@@ -301,11 +464,35 @@ export async function activatePlugin(
     return;
   }
 
-  if (entry.status === 'incompatible' || entry.status === 'errored' || entry.status === 'disabled' || entry.status === 'pending-approval') {
+  if (entry.status === 'incompatible' || entry.status === 'disabled' || entry.status === 'pending-approval') {
     rendererLog('core:plugins', 'warn', `Skipping activation of ${pluginId}: ${entry.status}`, {
       meta: { pluginId, status: entry.status, error: entry.error },
     });
     return;
+  }
+
+  // An errored plugin is retryable: activation failures are often transient
+  // (busy main process during an app update). Skip only while a backoff is
+  // still pending or the attempt budget is spent.
+  if (entry.status === 'errored') {
+    const failure = activationFailures.get(activationContextKey(pluginId, projectId));
+    const attempts = failure?.attempts ?? 0;
+    if (attempts >= MAX_ACTIVATION_ATTEMPTS) {
+      rendererLog('core:plugins', 'warn', `Skipping activation of ${pluginId}: errored, retries exhausted`, {
+        meta: { pluginId, status: entry.status, error: entry.error, attempts },
+      });
+      return;
+    }
+    if (failure && Date.now() < failure.nextEligibleAt) {
+      rendererLog('core:plugins', 'debug', `Deferring activation of ${pluginId}: retry already scheduled`, {
+        meta: { pluginId, attempts, nextEligibleAt: failure.nextEligibleAt },
+      });
+      return;
+    }
+    if (failure?.timer) {
+      clearTimeout(failure.timer);
+      failure.timer = undefined;
+    }
   }
 
   if (entry.manifest.scope === 'project' && !projectId) {
@@ -317,6 +504,11 @@ export async function activatePlugin(
   if (activeContexts.has(contextKey)) {
     return; // Already activated
   }
+
+  // Remember the arguments so a user-initiated retry can re-dispatch with the
+  // same project context.
+  lastActivationAttempt.set(contextKey, { projectId, projectPath });
+  lastAttemptByPlugin.set(pluginId, { projectId, projectPath });
 
   const ctx: PluginContext = {
     pluginId,
@@ -334,17 +526,27 @@ export async function activatePlugin(
   if (!savedSettings) {
     try {
       const scope = projectId || 'app';
-      const persisted = await window.clubhouse.plugin.storageRead({
-        pluginId: '_system',
-        scope: 'global',
-        key: `settings-${scope}-${pluginId}`,
-      }) as Record<string, unknown> | undefined;
+      const persisted = await withTimeout(
+        `settings read for "${pluginId}"`,
+        PLUGIN_IPC_TIMEOUT_MS,
+        () => window.clubhouse.plugin.storageRead({
+          pluginId: '_system',
+          scope: 'global',
+          key: `settings-${scope}-${pluginId}`,
+        }),
+      ) as Record<string, unknown> | undefined;
       if (persisted && typeof persisted === 'object') {
         store.loadPluginSettings(settingsKey, persisted);
         savedSettings = persisted;
       }
-    } catch {
-      // No persisted settings — use defaults
+    } catch (err) {
+      // No persisted settings (or the read hung) — use defaults rather than
+      // blocking activation forever.
+      if (err instanceof PluginActivationTimeoutError) {
+        rendererLog('core:plugins', 'warn', `Timed out reading settings for plugin "${pluginId}"`, {
+          meta: { pluginId, projectId, timeoutMs: PLUGIN_IPC_TIMEOUT_MS },
+        });
+      }
     }
   }
   if (savedSettings) {
@@ -398,6 +600,7 @@ export async function activatePlugin(
           meta: { pluginId, modulePath: fullModulePath, moduleUrl, error: errMsg, stack: errStack },
         });
         store.setPluginStatus(pluginId, 'errored', `Failed to load module: ${errMsg}`);
+        recordActivationFailure(pluginId, projectId, projectPath);
         return;
       }
 
@@ -406,6 +609,7 @@ export async function activatePlugin(
         const errMsg = `Plugin module at "${fullModulePath}" did not export a valid module object`;
         rendererLog('core:plugins', 'error', errMsg, { meta: { pluginId, modulePath: fullModulePath } });
         store.setPluginStatus(pluginId, 'errored', errMsg);
+        recordActivationFailure(pluginId, projectId, projectPath);
         return;
       }
 
@@ -420,9 +624,13 @@ export async function activatePlugin(
       // Ensure the plugin's data directory exists before activation
       try {
         const dataDirRelative = projectId ? `files/${projectId}` : 'files';
-        await window.clubhouse.plugin.mkdir(pluginId, 'global', dataDirRelative);
+        await withTimeout(
+          `data directory mkdir for "${pluginId}"`,
+          PLUGIN_IPC_TIMEOUT_MS,
+          () => window.clubhouse.plugin.mkdir(pluginId, 'global', dataDirRelative),
+        );
       } catch {
-        // Best-effort — don't block activation if mkdir fails
+        // Best-effort — don't block activation if mkdir fails or hangs
         rendererLog('core:plugins', 'warn', `Failed to create data directory for plugin "${pluginId}"`);
       }
 
@@ -430,15 +638,25 @@ export async function activatePlugin(
       if (entry.manifest.permissions?.includes('workspace')) {
         try {
           const workspaceDir = computeWorkspaceRoot(pluginId);
-          await window.clubhouse.file.mkdir(workspaceDir);
+          await withTimeout(
+            `workspace mkdir for "${pluginId}"`,
+            PLUGIN_IPC_TIMEOUT_MS,
+            () => window.clubhouse.file.mkdir(workspaceDir),
+          );
         } catch {
           rendererLog('core:plugins', 'warn', `Failed to create workspace directory for plugin "${pluginId}"`);
         }
       }
 
-      // Call activate if it exists
+      // Call activate if it exists. A hung activate() would otherwise leave the
+      // plugin's widgets on a placeholder spinner indefinitely — bound it so the
+      // failure surfaces and the retry path can run.
       if (mod.activate) {
-        await mod.activate(ctx, api);
+        await withTimeout(
+          `activate() for "${pluginId}"`,
+          PLUGIN_ACTIVATE_TIMEOUT_MS,
+          () => Promise.resolve(mod.activate!(ctx, api)),
+        );
       }
 
       // Auto-register manifest-declared command hotkeys (v0.6+)
@@ -468,6 +686,7 @@ export async function activatePlugin(
     // Update status
     store.setPluginStatus(pluginId, 'activated');
     activeContexts.set(contextKey, ctx);
+    clearActivationFailure(pluginId, projectId);
     store.bumpContextRevision();
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -478,6 +697,7 @@ export async function activatePlugin(
     // Store a detailed error: message on first line, stack on subsequent lines
     const errorDetail = errStack ? `Activation failed: ${errMsg}\n${errStack}` : `Activation failed: ${errMsg}`;
     store.setPluginStatus(pluginId, 'errored', errorDetail);
+    recordActivationFailure(pluginId, projectId, projectPath);
   }
 }
 
@@ -485,6 +705,10 @@ export async function deactivatePlugin(pluginId: string, projectId?: string): Pr
   const store = usePluginStore.getState();
   const contextKey = projectId ? `${pluginId}:${projectId}` : pluginId;
   const ctx = activeContexts.get(contextKey);
+
+  // Cancel any pending activation retry for this context regardless of whether
+  // a context exists — a deactivated plugin should not be revived by a timer.
+  clearActivationFailure(pluginId, projectId);
 
   if (!ctx) return;
 
@@ -699,8 +923,10 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
     if (postEntry?.status === 'errored') {
       const label = projectId ? `project ${projectId}` : 'app';
       activationErrors.push(`${label}: ${postEntry.error || 'unknown error'}`);
-      // Reset status so subsequent activations aren't skipped
+      // Reset status so subsequent activations aren't skipped, and drop the
+      // backoff state — a hot reload is a fresh start for the attempt budget.
       usePluginStore.getState().setPluginStatus(pluginId, 'registered');
+      clearActivationFailure(pluginId, projectId);
     }
   };
 
@@ -963,6 +1189,17 @@ export async function refreshCommunityPlugins(opts?: {
 /** @internal — only for tests */
 export function _resetActiveContexts(): void {
   activeContexts.clear();
+  _resetActivationRetries();
+}
+
+/** @internal — only for tests */
+export function _resetActivationRetries(): void {
+  for (const record of activationFailures.values()) {
+    if (record.timer) clearTimeout(record.timer);
+  }
+  activationFailures.clear();
+  lastActivationAttempt.clear();
+  lastAttemptByPlugin.clear();
 }
 
 /** @internal — only for tests */

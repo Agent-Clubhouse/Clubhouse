@@ -11,7 +11,7 @@ import { getSettings as getThemeSettings } from './services/theme-service';
 import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
-import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit } from './services/auto-update-service';
+import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup } from './services/auto-update-service';
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
 import { bridgeServer as mcpBridgeServer } from './services/clubhouse-mcp';
@@ -321,8 +321,13 @@ app.on('ready', () => {
 
   createWindow();
 
-  // Start periodic update checks (respects user's autoUpdate setting)
-  startUpdateChecks();
+  // Start periodic update checks (respects user's autoUpdate setting).
+  // Skipped for unpackaged builds (dev / E2E) so a mid-run "update ready"
+  // banner can't overlay the UI and flake unrelated tests. Manual checks
+  // still work via the "check for updates" action.
+  if (shouldAutoCheckOnStartup()) {
+    startUpdateChecks();
+  }
 
   // Start periodic plugin update checks
   startPeriodicPluginUpdateChecks();

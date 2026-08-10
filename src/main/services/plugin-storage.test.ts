@@ -10,6 +10,7 @@ vi.mock('fs/promises', () => ({
   access: vi.fn(),
   readdir: vi.fn(),
   rm: vi.fn(),
+  rename: vi.fn(),
   realpath: vi.fn(),
 }));
 
@@ -382,6 +383,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        rename: vi.fn(),
         realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');
@@ -411,6 +413,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        rename: vi.fn(),
         realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');
@@ -439,6 +442,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        rename: vi.fn(),
         realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');
@@ -465,6 +469,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        rename: vi.fn(),
         realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');
@@ -493,6 +498,7 @@ describe('plugin-storage', () => {
         access: vi.fn(),
         readdir: vi.fn(),
         rm: vi.fn(),
+        rename: vi.fn(),
         realpath: vi.fn(async (p: any) => String(p)),
       }));
       const freshFsp = await import('fs/promises');

@@ -13,6 +13,7 @@ import { useTerminalFit } from '../terminal/useTerminalFit';
 import { ptyResize } from '../../services/project-proxy';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { Spinner } from '../../components/Spinner';
+import { DurablePermissionPrompt } from './DurablePermissionPrompt';
 
 /** How long PTY output must be silent before we consider a resume "done". */
 const RESUME_SETTLE_MS = 1500;
@@ -660,6 +661,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         style={{ padding: '8px' }}
         onMouseDown={handleMouseDown}
       />
+      {/* Approve/deny for hook-driven permission requests. Remote agents are
+          owned by their satellite host, which runs its own queue. */}
+      {!isRemote && <DurablePermissionPrompt agentId={agentId} />}
       {/* Scroll-to-bottom floating button */}
       {isScrolledUp && !resuming && (
         <button

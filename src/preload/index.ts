@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc-channels';
 import { settingsChannels } from '../shared/settings-definitions';
 import { AgentHookEvent, AgentWildcardSettings, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings, WrapperCatalogSnapshot, ResolvedProtocolAction } from '../shared/types';
 import type { PluginUpdatesStatus } from '../shared/marketplace-types';
+import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
 const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -310,6 +311,31 @@ const api = {
 
     respondPermission: (agentId: string, requestId: string, approved: boolean, reason?: string) =>
       ipcRenderer.invoke(IPC.AGENT.RESPOND_PERMISSION, agentId, requestId, approved, reason),
+
+    // Durable (PTY) agent permission queue — desktop-local approve/deny.
+    listPendingPermissions: (agentId?: string): Promise<PendingPermissionInfo[]> =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_PENDING_PERMISSIONS, agentId),
+
+    resolvePendingPermission: (
+      agentId: string,
+      requestId: string,
+      decision: 'allow' | 'deny',
+    ): Promise<PermissionResolveOutcome> =>
+      ipcRenderer.invoke(IPC.AGENT.RESOLVE_PENDING_PERMISSION, agentId, requestId, decision),
+
+    onPermissionPending: (callback: (agentId: string, permission: PendingPermissionInfo) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, permission: PendingPermissionInfo) =>
+        callback(agentId, permission);
+      ipcRenderer.on(IPC.AGENT.PERMISSION_PENDING, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT.PERMISSION_PENDING, listener); };
+    },
+
+    onPermissionSettled: (callback: (agentId: string, settled: PermissionSettledInfo) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, settled: PermissionSettledInfo) =>
+        callback(agentId, settled);
+      ipcRenderer.on(IPC.AGENT.PERMISSION_SETTLED, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT.PERMISSION_SETTLED, listener); };
+    },
 
     // Backup & recovery
     getBackupInfo: (projectPath: string) =>
@@ -1054,7 +1080,7 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_GET, satelliteId, groupProjectId),
     gpUpdate: (satelliteId: string, groupProjectId: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_UPDATE, satelliteId, groupProjectId, fields),
-    gpBulletinDigest: (satelliteId: string, groupProjectId: string, since?: string): Promise<unknown[]> =>
+    gpBulletinDigest: (satelliteId: string, groupProjectId: string, since?: string | Record<string, string>): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_DIGEST, satelliteId, groupProjectId, since),
     gpBulletinTopic: (satelliteId: string, groupProjectId: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_BULLETIN_TOPIC, satelliteId, groupProjectId, topic, since, limit),
@@ -1328,7 +1354,9 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.UPDATE, id, fields),
     delete: (id: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id),
-    getBulletinDigest: (id: string, since?: string): Promise<unknown[]> =>
+    // `since` is either one ISO timestamp for all topics, or a per-topic
+    // `topic -> ISO timestamp` map (used for per-channel unread counts).
+    getBulletinDigest: (id: string, since?: string | Record<string, string>): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, id, since),
     getTopicMessages: (id: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, id, topic, since, limit),

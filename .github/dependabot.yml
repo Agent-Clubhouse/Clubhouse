@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # One grouped PR per ecosystem per week: ungrouped npm bumps all edit
+  # package-lock.json and conflict pairwise, cascading into rebase churn.
+  # Every ecosystem carries the same 7-day cooldown: let routine releases
+  # age before adoption. Security updates bypass cooldown automatically
+  # (a dependabot behavior, not something set here).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    groups:
+      npm:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"

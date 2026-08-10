@@ -104,6 +104,7 @@ import * as annexEventBus from '../services/annex-event-bus';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { registerGroupProjectHandlers, _resetHandlersForTesting } from './group-project-handlers';
+import { digestSinceArg } from './validation';
 
 type HandlerFn = (...args: unknown[]) => unknown;
 const handlers = new Map<string, HandlerFn>();
@@ -520,5 +521,78 @@ describe('group-project-handlers', () => {
       const handler = getHandler(IPC.GROUP_PROJECT.INJECT_MESSAGE);
       expect(() => handler(fakeEvent, 'agent-1')).toThrow();
     });
+  });
+});
+
+// ── digestSinceArg validator ────────────────────────────────────────
+
+describe('digestSinceArg', () => {
+  const validate = digestSinceArg();
+
+  it('accepts undefined', () => {
+    expect(validate(undefined, 'arg2')).toBeUndefined();
+  });
+
+  it('treats null as absent', () => {
+    expect(validate(null, 'arg2')).toBeUndefined();
+  });
+
+  it('accepts a single ISO timestamp string', () => {
+    expect(validate('2026-07-25T10:00:00.000Z', 'arg2')).toBe('2026-07-25T10:00:00.000Z');
+  });
+
+  it('accepts a per-topic map', () => {
+    const map = { general: '2026-07-25T10:00:00.000Z', tasks: '2026-07-25T11:00:00.000Z' };
+    expect(validate(map, 'arg2')).toEqual(map);
+  });
+
+  it('accepts an empty map', () => {
+    expect(validate({}, 'arg2')).toEqual({});
+  });
+
+  it('rejects arrays', () => {
+    expect(() => validate(['2026-07-25T10:00:00.000Z'], 'arg2')).toThrow('must be a string or an object');
+  });
+
+  it('rejects numbers', () => {
+    expect(() => validate(42, 'arg2')).toThrow('must be a string or an object');
+  });
+
+  it('rejects non-string map values', () => {
+    expect(() => validate({ general: 42 }, 'arg2')).toThrow('arg2.general must be a string');
+    expect(() => validate({ general: { nested: 'x' } }, 'arg2')).toThrow('arg2.general must be a string');
+  });
+
+  it('rejects an oversized map', () => {
+    const map: Record<string, string> = {};
+    for (let i = 0; i < 501; i++) map[`topic${i}`] = '2026-07-25T10:00:00.000Z';
+    expect(() => validate(map, 'arg2')).toThrow('at most 500 entries');
+  });
+
+  it('accepts a map at exactly the entry limit', () => {
+    const map: Record<string, string> = {};
+    for (let i = 0; i < 500; i++) map[`topic${i}`] = '2026-07-25T10:00:00.000Z';
+    expect(Object.keys(validate(map, 'arg2') as Record<string, string>)).toHaveLength(500);
+  });
+
+  it('rejects oversized topic keys', () => {
+    expect(() => validate({ ['x'.repeat(257)]: '2026-07-25T10:00:00.000Z' }, 'arg2'))
+      .toThrow('topic keys must be at most 256 characters');
+  });
+
+  it('rejects oversized timestamps', () => {
+    expect(() => validate('x'.repeat(65), 'arg2')).toThrow('at most 64 characters');
+    expect(() => validate({ general: 'x'.repeat(65) }, 'arg2')).toThrow('arg2.general must be at most 64 characters');
+  });
+
+  it('rejects prototype-polluting keys', () => {
+    const payload = JSON.parse('{"__proto__": {"polluted": true}, "general": "2026-07-25T10:00:00.000Z"}');
+    expect(() => validate(payload, 'arg2')).toThrow('may not contain the key');
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+
+    expect(() => validate({ constructor: '2026-07-25T10:00:00.000Z' }, 'arg2'))
+      .toThrow('may not contain the key "constructor"');
+    expect(() => validate({ prototype: '2026-07-25T10:00:00.000Z' }, 'arg2'))
+      .toThrow('may not contain the key "prototype"');
   });
 });

@@ -36,3 +36,11 @@ export interface BulletinRetentionConfig {
   maxPerTopic: number;
   maxTotal: number;
 }
+
+/**
+ * Unread cutoff for a bulletin digest: a single ISO timestamp applied to every
+ * channel, or a per-channel `channel -> ISO timestamp` map. The map form is
+ * what the UI passes so each channel's unread count reflects when that channel
+ * was last read.
+ */
+export type DigestSince = string | Record<string, string>;

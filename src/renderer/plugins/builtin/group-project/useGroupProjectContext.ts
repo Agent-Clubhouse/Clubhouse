@@ -6,7 +6,7 @@
  */
 import { useMemo, useCallback } from 'react';
 import type { GroupProject } from '../../../../shared/group-project-types';
-import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
+import type { TopicDigest, BulletinMessage, DigestSince } from '../../../../shared/group-project-types';
 import type { AnnexAPI } from '../../../../shared/plugin-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
@@ -46,7 +46,7 @@ export interface GroupProjectContextValue {
   setPolling: (groupProjectId: string, enabled: boolean) => Promise<void>;
 
   /** Fetch bulletin digest. */
-  fetchDigest: (groupProjectId: string, since?: string) => Promise<TopicDigest[]>;
+  fetchDigest: (groupProjectId: string, since?: DigestSince) => Promise<TopicDigest[]>;
 
   /** Fetch messages for a specific topic. */
   fetchTopicMessages: (groupProjectId: string, topic: string, since?: string, limit?: number) => Promise<BulletinMessage[]>;
@@ -196,8 +196,10 @@ export function useGroupProjectContext(
   }, [isRemote, satelliteId, annex, localSetPolling]);
 
   // --- Bulletin reads ---
-  const fetchDigest = useCallback(async (gpId: string, since?: string): Promise<TopicDigest[]> => {
+  const fetchDigest = useCallback(async (gpId: string, since?: DigestSince): Promise<TopicDigest[]> => {
     if (isRemote && satelliteId) {
+      // Carries the per-channel map too; a satellite that predates it ignores
+      // the param and answers with no cutoff rather than erroring.
       return await annex.gpBulletinDigest(satelliteId, stripRemotePrefix(gpId), since) as TopicDigest[];
     }
     return await window.clubhouse.groupProject.getBulletinDigest(gpId, since) as TopicDigest[];

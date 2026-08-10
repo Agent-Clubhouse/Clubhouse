@@ -17,6 +17,8 @@ import * as headlessTerminal from './pty-headless-terminal';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
+import type { DigestSince } from '../../shared/group-project-types';
+import { encodeDigestSince } from '../../shared/digest-since';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -912,14 +914,23 @@ export function requestFileRead(fingerprint: string, projectId: string, path: st
 /**
  * Fetch group project bulletin digest from a satellite via HTTPS REST.
  */
-export function requestBulletinDigest(fingerprint: string, groupProjectId: string, since?: string): Promise<unknown[]> {
+export function requestBulletinDigest(fingerprint: string, groupProjectId: string, since?: DigestSince): Promise<unknown[]> {
   const sat = satellites.get(fingerprint);
   if (!sat || sat.state !== 'connected') return Promise.resolve([]);
 
   const identity = annexIdentity.getOrCreateIdentity();
   const tlsOptions = annexTls.createTlsClientOptions(identity);
   const params = new URLSearchParams();
-  if (since) params.set('since', since);
+  // A satellite predating per-channel read state ignores `sinceChannels` and
+  // answers with no cutoff — everything unread, the pre-#1555 behaviour —
+  // rather than erroring. That is the compatibility story for this endpoint.
+  const encoded = encodeDigestSince(since);
+  if (encoded.oversized) {
+    appLog('core:annex-client', 'warn', 'Per-channel read map too large for digest request; requesting without a cutoff', {
+      meta: { fingerprint, groupProjectId, channels: Object.keys(since as Record<string, string>).length },
+    });
+  }
+  for (const [key, value] of Object.entries(encoded.params)) params.set(key, value);
   const qs = params.toString() ? `?${params.toString()}` : '';
 
   return new Promise<unknown[]>((resolve) => {

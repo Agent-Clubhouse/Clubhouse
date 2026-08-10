@@ -31,6 +31,7 @@ vi.mock('../services/annex-client', () => ({
   requestCreateDurable: vi.fn(async () => ({})),
   requestDeleteDurable: vi.fn(async () => ({})),
   requestWorktreeStatus: vi.fn(async () => ({})),
+  requestBulletinDigest: vi.fn(async () => []),
 }));
 
 import { ipcMain } from 'electron';
@@ -222,4 +223,50 @@ describe('annex-client-handlers', () => {
       payload: { projectId: 'proj-1', orderedIds: ['a2', 'a1'] },
     });
   });
+
+  // ── Bulletin digest `since` validation at the annex boundary (#1556) ──────
+  describe('bulletin digest since', () => {
+    const ISO = '2026-07-25T10:00:00.000Z';
+
+    function digestHandler() {
+      return handlers.get(IPC.ANNEX_CLIENT.GP_BULLETIN_DIGEST)!;
+    }
+
+    it('forwards a single ISO timestamp', async () => {
+      await digestHandler()({} as any, 'sat-1', 'gp-1', ISO);
+      expect(annexClient.requestBulletinDigest).toHaveBeenCalledWith('sat-1', 'gp-1', ISO);
+    });
+
+    it('forwards a per-channel map', async () => {
+      const map = { general: ISO };
+      await digestHandler()({} as any, 'sat-1', 'gp-1', map);
+      expect(annexClient.requestBulletinDigest).toHaveBeenCalledWith('sat-1', 'gp-1', map);
+    });
+
+    it('forwards an absent cutoff', async () => {
+      await digestHandler()({} as any, 'sat-1', 'gp-1', undefined);
+      expect(annexClient.requestBulletinDigest).toHaveBeenCalledWith('sat-1', 'gp-1', undefined);
+    });
+
+    it('rejects a malformed cutoff before it reaches the satellite', () => {
+      expect(() => digestHandler()({} as any, 'sat-1', 'gp-1', ['array'])).toThrow('must be a string or an object');
+      expect(() => digestHandler()({} as any, 'sat-1', 'gp-1', { general: 42 })).toThrow('must be a string');
+      expect(annexClient.requestBulletinDigest).not.toHaveBeenCalled();
+    });
+
+    it('rejects prototype-polluting keys — same rules as the local boundary', () => {
+      const payload = JSON.parse(`{"__proto__": {"polluted": true}, "general": "${ISO}"}`);
+      expect(() => digestHandler()({} as any, 'sat-1', 'gp-1', payload)).toThrow('may not contain the key');
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+      expect(annexClient.requestBulletinDigest).not.toHaveBeenCalled();
+    });
+
+    it('rejects an over-large map', () => {
+      const huge: Record<string, string> = {};
+      for (let i = 0; i < 501; i++) huge[`t${i}`] = ISO;
+      expect(() => digestHandler()({} as any, 'sat-1', 'gp-1', huge)).toThrow('at most 500 entries');
+      expect(annexClient.requestBulletinDigest).not.toHaveBeenCalled();
+    });
+  });
 });
+

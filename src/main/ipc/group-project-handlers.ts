@@ -12,7 +12,8 @@ import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, digestSinceArg } from './validation';
+import type { DigestSince } from '../../shared/group-project-types';
 import { agentRegistry } from '../services/agent-registry';
 import * as ptyManager from '../services/pty-manager';
 import * as structuredManager from '../services/structured-manager';
@@ -110,10 +111,10 @@ export function registerGroupProjectHandlers(): void {
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true })],
+    [stringArg(), digestSinceArg()],
     async (_event, id, since) => {
       const board = getBulletinBoard(id as string);
-      return board.getDigest(since as string | undefined);
+      return board.getDigest(since as DigestSince | undefined);
     },
   ));
 

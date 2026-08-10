@@ -145,4 +145,95 @@ describe('annex-permission-queue', () => {
       vi.useRealTimers();
     });
   });
+
+  // ── Desktop approve/deny path (issue #1553) ────────────────────────
+  describe('resolve authorization', () => {
+    it('resolvePermissionDetailed reports resolved on success', async () => {
+      const { requestId, decision } = queue.createPermission('agent1', 'Skill');
+      const result = queue.resolvePermissionDetailed(requestId, 'allow', {
+        expectedAgentId: 'agent1',
+        source: 'desktop',
+      });
+      expect(result).toEqual({ status: 'resolved' });
+      await expect(decision).resolves.toBe('allow');
+    });
+
+    it('refuses to resolve another agent\'s request', async () => {
+      const { requestId, decision } = queue.createPermission('agent1', 'Skill');
+
+      const result = queue.resolvePermissionDetailed(requestId, 'allow', {
+        expectedAgentId: 'agent2',
+        source: 'desktop',
+      });
+
+      expect(result).toEqual({ status: 'rejected', reason: 'agent_mismatch' });
+      // The request is untouched — still pending for its real owner.
+      expect(queue.getPermission(requestId)?.agentId).toBe('agent1');
+      queue.resolvePermission(requestId, 'deny', { expectedAgentId: 'agent1' });
+      await expect(decision).resolves.toBe('deny');
+    });
+
+    it('logs an error when a mismatched agent tries to resolve', async () => {
+      const { appLog } = await import('./log-service');
+      const { requestId } = queue.createPermission('agent1', 'Skill');
+
+      queue.resolvePermissionDetailed(requestId, 'allow', { expectedAgentId: 'attacker' });
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:permission-queue',
+        'error',
+        expect.stringContaining('agent mismatch'),
+        expect.objectContaining({
+          meta: expect.objectContaining({ claimedAgentId: 'attacker', ownerAgentId: 'agent1' }),
+        }),
+      );
+    });
+
+    it('resolves without an expectedAgentId (internal callers)', () => {
+      const { requestId } = queue.createPermission('agent1', 'Skill');
+      expect(queue.resolvePermissionDetailed(requestId, 'allow')).toEqual({ status: 'resolved' });
+    });
+
+    it('refuses an entry whose deadline has passed even if the timer has not fired', async () => {
+      vi.useFakeTimers();
+      const { requestId } = queue.createPermission('agent1', 'Skill', undefined, undefined, 1_000);
+
+      // Simulate a delayed timer (busy loop / machine sleep): the clock moves
+      // past the deadline without the expiry callback running.
+      vi.setSystemTime(Date.now() + 1_001);
+
+      const result = queue.resolvePermissionDetailed(requestId, 'allow', { expectedAgentId: 'agent1' });
+      expect(result).toEqual({ status: 'rejected', reason: 'expired' });
+      vi.useRealTimers();
+    });
+
+    it('reports not_found for an unknown or already-resolved request', () => {
+      expect(queue.resolvePermissionDetailed('no-such-id', 'allow'))
+        .toEqual({ status: 'rejected', reason: 'not_found' });
+
+      const { requestId } = queue.createPermission('agent1', 'Skill');
+      queue.resolvePermission(requestId, 'allow');
+      expect(queue.resolvePermissionDetailed(requestId, 'deny'))
+        .toEqual({ status: 'rejected', reason: 'not_found' });
+    });
+
+    it('a second decision cannot override the first', async () => {
+      const { requestId, decision } = queue.createPermission('agent1', 'Skill');
+
+      expect(queue.resolvePermission(requestId, 'deny', { expectedAgentId: 'agent1' })).toBe(true);
+      expect(queue.resolvePermission(requestId, 'allow', { expectedAgentId: 'agent1' })).toBe(false);
+
+      await expect(decision).resolves.toBe('deny');
+    });
+
+    it('getPermission exposes the entry without the internal resolve/timer', () => {
+      const { requestId } = queue.createPermission('agent1', 'Skill', { skill: 'run' }, 'why');
+      const info = queue.getPermission(requestId);
+
+      expect(info).toMatchObject({ requestId, agentId: 'agent1', toolName: 'Skill' });
+      expect(info).not.toHaveProperty('resolve');
+      expect(info).not.toHaveProperty('timer');
+      expect(queue.getPermission('missing')).toBeUndefined();
+    });
+  });
 });
