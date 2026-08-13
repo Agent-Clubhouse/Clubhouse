@@ -56,6 +56,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       freeAgentMode?: boolean;
       mcpIds?: string[];
       structuredMode?: boolean;
+      persona?: string;
     }): Promise<string> {
       if (options.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
         throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);
@@ -77,7 +78,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
 
       const model = options.model && options.model !== 'default' ? options.model : undefined;
       const config = await window.clubhouse.agent.createDurable(
-        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds, undefined, options.structuredMode,
+        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds, undefined, options.structuredMode, options.persona,
       );
       return useAgentStore.getState().spawnDurableAgent(projectId, projectPath, config, false);
     },

@@ -33,6 +33,12 @@ vi.mock('../../../features/agents/AddAgentDialog', () => ({
       >
         Submit (free agent + structured)
       </button>
+      <button
+        data-testid="stub-add-agent-submit-with-persona"
+        onClick={() => onCreate('NewAgent', 'emerald', 'default', false, 'claude-code', undefined, undefined, undefined, 'qa')}
+      >
+        Submit (persona)
+      </button>
     </div>
   ),
 }));
@@ -403,6 +409,50 @@ describe('AgentCanvasView', () => {
           freeAgentMode: true,
           structuredMode: true,
         }),
+      );
+    });
+  });
+
+  // ── #1565: persona pass-through ─────────────────────────────────────
+
+  describe('persona pass-through (#1565)', () => {
+    it('passes the selected persona through to api.agents.createDurable', async () => {
+      const view = makeView({ agentId: null });
+      const onUpdate = vi.fn();
+      const createDurableSpy = vi.fn(async () => 'agent-new-id');
+      const api = stubApi({
+        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
+        createDurable: createDurableSpy,
+      });
+
+      render(<AgentCanvasView view={view} api={api} onUpdate={onUpdate} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      fireEvent.click(screen.getByTestId('stub-add-agent-submit-with-persona'));
+
+      await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+      expect(createDurableSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ persona: 'qa' }),
+      );
+    });
+
+    it('omits persona when none is selected', async () => {
+      const view = makeView({ agentId: null });
+      const onUpdate = vi.fn();
+      const createDurableSpy = vi.fn(async () => 'agent-new-id');
+      const api = stubApi({
+        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
+        createDurable: createDurableSpy,
+      });
+
+      render(<AgentCanvasView view={view} api={api} onUpdate={onUpdate} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
+
+      await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+      expect(createDurableSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ persona: undefined }),
       );
     });
   });
