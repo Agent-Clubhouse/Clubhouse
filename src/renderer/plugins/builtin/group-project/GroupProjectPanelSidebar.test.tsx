@@ -237,6 +237,89 @@ describe('GroupProjectPanelSidebar', () => {
     // Overlay should still be visible
     expect(queryByTestId('panel-rail-overlay')).toBeInTheDocument();
   });
+
+  // ── #1545: panel wheel containment ────────────────────────────────
+  //
+  // Scrolling the topics/messages panel must not pan the canvas underneath.
+  // The canvas workspace turns any wheel event that bubbles up to it into a
+  // pan, so we model that by wrapping the panel in a parent whose onWheel spy
+  // stands in for the workspace pan handler and assert plain wheel events
+  // never reach it — while Ctrl/Cmd+wheel zoom gestures do (same pattern as
+  // the #1536/#1538 AgentCanvasView picker fix).
+  describe('wheel containment', () => {
+    it('stops plain wheel propagation over the sidebar list', () => {
+      const onViewportChange = vi.fn();
+      const { getByTestId } = render(
+        <div onWheel={onViewportChange} data-testid="workspace">
+          <GroupProjectPanelSidebar
+            width={200}
+            collapsed={false}
+            onResize={vi.fn()}
+            onToggleCollapse={vi.fn()}
+          >
+            <div>Content</div>
+          </GroupProjectPanelSidebar>
+        </div>,
+      );
+      fireEvent.wheel(getByTestId('group-project-panel-sidebar'), { deltaY: 120 });
+      expect(onViewportChange).not.toHaveBeenCalled();
+    });
+
+    it('lets Ctrl+wheel zoom gestures bubble past the sidebar list', () => {
+      const onViewportChange = vi.fn();
+      const { getByTestId } = render(
+        <div onWheel={onViewportChange} data-testid="workspace">
+          <GroupProjectPanelSidebar
+            width={200}
+            collapsed={false}
+            onResize={vi.fn()}
+            onToggleCollapse={vi.fn()}
+          >
+            <div>Content</div>
+          </GroupProjectPanelSidebar>
+        </div>,
+      );
+      fireEvent.wheel(getByTestId('group-project-panel-sidebar'), { deltaY: 120, ctrlKey: true });
+      expect(onViewportChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets Meta+wheel zoom gestures bubble past the sidebar list', () => {
+      const onViewportChange = vi.fn();
+      const { getByTestId } = render(
+        <div onWheel={onViewportChange} data-testid="workspace">
+          <GroupProjectPanelSidebar
+            width={200}
+            collapsed={false}
+            onResize={vi.fn()}
+            onToggleCollapse={vi.fn()}
+          >
+            <div>Content</div>
+          </GroupProjectPanelSidebar>
+        </div>,
+      );
+      fireEvent.wheel(getByTestId('group-project-panel-sidebar'), { deltaY: 120, metaKey: true });
+      expect(onViewportChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops plain wheel propagation over the collapsed rail hover overlay', () => {
+      const onViewportChange = vi.fn();
+      const { getByTestId } = render(
+        <div onWheel={onViewportChange} data-testid="workspace">
+          <GroupProjectPanelSidebar
+            width={200}
+            collapsed={true}
+            onResize={vi.fn()}
+            onToggleCollapse={vi.fn()}
+          >
+            <div>Content</div>
+          </GroupProjectPanelSidebar>
+        </div>,
+      );
+      fireEvent.mouseEnter(getByTestId('panel-rail-toggle'));
+      fireEvent.wheel(getByTestId('panel-rail-overlay'), { deltaY: 120 });
+      expect(onViewportChange).not.toHaveBeenCalled();
+    });
+  });
 });
 
 /* ---------- useGroupProjectPanelLayout hook tests ---------- */
