@@ -166,6 +166,21 @@ describe('AddAgentDialog', () => {
     });
   });
 
+  describe('Free Agent Mode default-off (#1567)', () => {
+    it('renders the Free Agent Mode checkbox unchecked on mount', () => {
+      render(<AddAgentDialog {...defaultProps} />);
+      const checkbox = screen.getByRole('checkbox', { name: /free agent mode/i });
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it('submits with freeAgentMode undefined when the toggle is never touched', () => {
+      render(<AddAgentDialog {...defaultProps} />);
+      fireEvent.click(screen.getByText('Create Agent'));
+      const freeAgentModeArg = (defaultProps.onCreate as any).mock.calls[0][5];
+      expect(freeAgentModeArg).toBeUndefined();
+    });
+  });
+
   describe('Structured Mode gating (experimental flag)', () => {
     it('hides Structured Mode toggle when experimental.structuredMode is off (default)', async () => {
       render(<AddAgentDialog {...defaultProps} />);
