@@ -18,7 +18,7 @@ interface ViewPrefs {
  */
 export type BlueprintGalleryScope =
   | { mode: 'app' }
-  | { mode: 'project'; projectId: string; projectPath?: string };
+  | { mode: 'project'; projectId: string; projectPath: string };
 
 function loadViewPrefs(): ViewPrefs {
   try {

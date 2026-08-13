@@ -226,7 +226,7 @@ describe('uiStore', () => {
     });
 
     it('closeBlueprintGallery clears both open and scope', () => {
-      getState().openBlueprintGallery({ mode: 'project', projectId: 'proj-1' });
+      getState().openBlueprintGallery({ mode: 'project', projectId: 'proj-1', projectPath: '/tmp/proj-1' });
       getState().closeBlueprintGallery();
       expect(getState().blueprintGalleryOpen).toBe(false);
       expect(getState().blueprintGalleryScope).toBeNull();

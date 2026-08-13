@@ -1,9 +1,11 @@
-/* eslint-disable no-restricted-syntax -- TODO(TC-CRIT-03): structural readFileSync tests pending behavioral conversion */
-import { describe, it, expect, vi } from 'vitest';
+import React from 'react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { validateBuiltinPlugin } from '../builtin-plugin-testing';
 import { manifest } from './manifest';
 import * as canvasModule from './main';
 import { createMockContext, createMockAPI } from '../../testing';
+import { useUIStore } from '../../../stores/uiStore';
 
 describe('canvas main', () => {
   it('passes validateBuiltinPlugin', () => {
@@ -256,27 +258,67 @@ describe('canvas main', () => {
     expect(removeViewBlock).toContain('removeWireDefinition');
   });
 
-  it('handleAddFromBlueprint passes an explicit app/project scope to openBlueprintGallery (structural, GH-1563)', () => {
+  describe('handleAddFromBlueprint (GH-1563 / #1566)', () => {
     // #1563: the blueprint gallery previously picked its target canvas store from
     // the globally active project (activeProjectId), which is wrong when the "+ →
     // From Blueprint" button is clicked on the app-mode rail Canvas while a project
     // happens to be open elsewhere. The fix is for the caller to tell the gallery
     // which store it means via an explicit scope, instead of the gallery guessing.
-    const fs = require('fs');
-    const path = require('path');
-    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+    //
+    // #1566 QA follow-up: an optional projectPath let a project-scoped import
+    // silently fall through to global storage. These tests render the real
+    // MainPanel and click the actual "+ → From Blueprint" control, asserting on
+    // what openBlueprintGallery is actually called with — not on source text.
 
-    const block = source.slice(
-      source.indexOf('const handleAddFromBlueprint'),
-      source.indexOf('const handleAddFromBlueprint') + 400,
-    );
-    expect(block).toContain('openBlueprintGallery(');
-    expect(block).toContain("mode: 'app'");
-    expect(block).toContain("mode: 'project'");
-    expect(block).toContain('isAppMode');
-    // Must forward the actual project id/path, not rely on a global lookup.
-    expect(block).toContain('api.context.projectId');
-    expect(block).toContain('api.context.projectPath');
+    function renderPanel(context: Partial<import('../../../../shared/plugin-types').PluginContext>) {
+      const api = createMockAPI({ context: { mode: 'project', projectId: undefined, projectPath: undefined, ...context } });
+      render(React.createElement(canvasModule.MainPanel, { api }));
+    }
+
+    async function clickAddFromBlueprint() {
+      fireEvent.click(await screen.findByTestId('canvas-add-button'));
+      fireEvent.click(screen.getByTestId('canvas-add-from-blueprint'));
+    }
+
+    beforeEach(() => {
+      useUIStore.setState({ blueprintGalleryOpen: false, blueprintGalleryScope: null });
+    });
+
+    it('passes an app scope when opened from the app-mode rail Canvas', async () => {
+      const openSpy = vi.spyOn(useUIStore.getState(), 'openBlueprintGallery');
+      renderPanel({ mode: 'app', projectId: undefined, projectPath: undefined });
+
+      await clickAddFromBlueprint();
+
+      expect(openSpy).toHaveBeenCalledWith({ mode: 'app' });
+    });
+
+    it('passes an explicit project scope with the real projectId and projectPath', async () => {
+      const openSpy = vi.spyOn(useUIStore.getState(), 'openBlueprintGallery');
+      renderPanel({ mode: 'project', projectId: 'proj-1566', projectPath: '/tmp/proj-1566' });
+
+      await clickAddFromBlueprint();
+
+      expect(openSpy).toHaveBeenCalledWith({ mode: 'project', projectId: 'proj-1566', projectPath: '/tmp/proj-1566' });
+    });
+
+    it('does NOT open the gallery when project mode is missing a resolved projectPath', async () => {
+      const openSpy = vi.spyOn(useUIStore.getState(), 'openBlueprintGallery');
+      renderPanel({ mode: 'project', projectId: 'proj-1566', projectPath: undefined });
+
+      await clickAddFromBlueprint();
+
+      expect(openSpy).not.toHaveBeenCalled();
+    });
+
+    it('does NOT open the gallery when project mode is missing a resolved projectId', async () => {
+      const openSpy = vi.spyOn(useUIStore.getState(), 'openBlueprintGallery');
+      renderPanel({ mode: 'project', projectId: undefined, projectPath: '/tmp/proj-1566' });
+
+      await clickAddFromBlueprint();
+
+      expect(openSpy).not.toHaveBeenCalled();
+    });
   });
 
   it('per-project stores have isolated state', () => {
