@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentListItem } from './AgentListItem';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -245,6 +245,76 @@ describe('AgentListItem context menu', () => {
     // so PTY/content-view stacking contexts cannot obscure it.
     expect(document.body.contains(menu)).toBe(true);
     expect(container.contains(menu)).toBe(false);
+  });
+});
+
+describe('AgentListItem overflow menu', () => {
+  // The [...] trigger only appears when the actions row is too narrow to fit
+  // every action. jsdom never performs layout, so ResizeObserver has to be
+  // stubbed to report a narrow row — otherwise maxVisible stays at
+  // actions.length, hasOverflow is false, and the [...] button never renders.
+  // ACTION_BUTTON_WIDTH is 26, so a 52px row fits 2 buttons and collapses the rest.
+  // Assign/restore directly rather than via vi.stubGlobal: vi.unstubAllGlobals()
+  // would also drop the window.clubhouse bridge mock that setup-renderer.ts
+  // installs with stubGlobal, breaking every later describe in this file.
+  const originalResizeObserver = globalThis.ResizeObserver;
+
+  function stubNarrowActionsRow(width: number) {
+    globalThis.ResizeObserver = class {
+      constructor(private cb: ResizeObserverCallback) {}
+      observe(target: Element) {
+        this.cb(
+          [{ target, contentRect: { width } } as unknown as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        );
+      }
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    } as unknown as typeof ResizeObserver;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.clubhouse.window.createPopout = vi.fn().mockResolvedValue(1);
+    stubNarrowActionsRow(52);
+  });
+
+  afterEach(() => {
+    globalThis.ResizeObserver = originalResizeObserver;
+  });
+
+  it('renders the [...] trigger when actions do not fit the row', () => {
+    renderItem({ status: 'sleeping' }, { onSpawnQuickChild: vi.fn() });
+    expect(screen.getByTestId('action-overflow')).toBeInTheDocument();
+  });
+
+  it('opens the overflow menu when [...] is clicked', () => {
+    renderItem({ status: 'sleeping' }, { onSpawnQuickChild: vi.fn() });
+    expect(screen.queryByTestId('agent-context-menu')).toBeNull();
+    fireEvent.click(screen.getByTestId('action-overflow'));
+    expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
+  });
+
+  // Regression guard for gh-1471: the [...] menu rendered behind the
+  // pseudoterminal / content view. The fix portals it to document.body so no
+  // ancestor stacking context (e.g. CanvasWorkspace's transform: scale(...))
+  // can trap or obscure it. The right-click path has its own guard above;
+  // this covers the [...] path the issue was actually filed against.
+  it('overflow menu portals to document.body so it is not trapped by stacking contexts', () => {
+    const { container } = renderItem({ status: 'sleeping' }, { onSpawnQuickChild: vi.fn() });
+    fireEvent.click(screen.getByTestId('action-overflow'));
+
+    const menu = screen.getByTestId('agent-context-menu');
+    expect(document.body.contains(menu)).toBe(true);
+    expect(container.contains(menu)).toBe(false);
+  });
+
+  it('overflow menu closes on escape', () => {
+    renderItem({ status: 'sleeping' }, { onSpawnQuickChild: vi.fn() });
+    fireEvent.click(screen.getByTestId('action-overflow'));
+    expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('agent-context-menu')).toBeNull();
   });
 });
 
