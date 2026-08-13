@@ -118,6 +118,8 @@ clubhouse/
 
 # Playwright
 test-results/
+# Local-only E2E run state (launched Electron PIDs, for orphan cleanup)
+e2e/.run-state/
 
 # Git worktrees
 .worktrees/
