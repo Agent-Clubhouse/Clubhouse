@@ -12,13 +12,28 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 // we can drive handleCreateDurable without rendering the full form (which has
 // orchestrator/model store dependencies that would balloon test setup).
 vi.mock('../../../features/agents/AddAgentDialog', () => ({
-  AddAgentDialog: ({ onCreate }: { onCreate: (name: string, color: string, model: string, useWorktree: boolean) => void }) => (
-    <button
-      data-testid="stub-add-agent-submit"
-      onClick={() => onCreate('NewAgent', 'emerald', 'default', false)}
-    >
-      Submit
-    </button>
+  AddAgentDialog: ({ onCreate, error }: {
+    onCreate: (
+      name: string, color: string, model: string, useWorktree: boolean,
+      orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean,
+    ) => void;
+    error?: string | null;
+  }) => (
+    <div>
+      {error && <div data-testid="stub-add-agent-error">{error}</div>}
+      <button
+        data-testid="stub-add-agent-submit"
+        onClick={() => onCreate('NewAgent', 'emerald', 'default', false)}
+      >
+        Submit
+      </button>
+      <button
+        data-testid="stub-add-agent-submit-free-agent"
+        onClick={() => onCreate('NewAgent', 'emerald', 'default', false, 'claude-code', true, undefined, true)}
+      >
+        Submit (free agent + structured)
+      </button>
+    </div>
   ),
 }));
 
@@ -313,6 +328,82 @@ describe('AgentCanvasView', () => {
       // No position field should be in the update — caller relies on existing
       // store behavior of preserving position via spread merge.
       expect(updateArg).not.toHaveProperty('position');
+    });
+  });
+
+  // ── #1564: error surfacing + structuredMode/freeAgentMode pass-through ──
+
+  describe('create-agent failure surfacing (#1564)', () => {
+    it('surfaces the createDurable error in the dialog instead of swallowing it', async () => {
+      const view = makeView({ agentId: null });
+      const onUpdate = vi.fn();
+      const api = stubApi({
+        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
+        createDurable: async () => {
+          throw new Error("Plugin 'canvas' requires 'agents.free-agent-mode' permission to use freeAgentMode");
+        },
+      });
+
+      render(<AgentCanvasView view={view} api={api} onUpdate={onUpdate} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('stub-add-agent-error')).toBeTruthy();
+      });
+      expect(screen.getByTestId('stub-add-agent-error').textContent).toContain('agents.free-agent-mode');
+      // Dialog stays open (the stub submit button is still present) so the user can retry.
+      expect(screen.getByTestId('stub-add-agent-submit')).toBeTruthy();
+      // No card should have been assigned/created on failure.
+      expect(onUpdate).not.toHaveBeenCalled();
+    });
+
+    it('clears a previous error on the next successful create attempt', async () => {
+      const view = makeView({ agentId: null });
+      const onUpdate = vi.fn();
+      let shouldFail = true;
+      const api = stubApi({
+        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
+        createDurable: async () => {
+          if (shouldFail) throw new Error('boom');
+          return 'agent-recovered';
+        },
+      });
+
+      render(<AgentCanvasView view={view} api={api} onUpdate={onUpdate} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
+      await waitFor(() => expect(screen.getByTestId('stub-add-agent-error')).toBeTruthy());
+
+      shouldFail = false;
+      fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
+      await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+    });
+
+    it('passes freeAgentMode and structuredMode through to api.agents.createDurable', async () => {
+      const view = makeView({ agentId: null });
+      const onUpdate = vi.fn();
+      const createDurableSpy = vi.fn(async () => 'agent-new-id');
+      const api = stubApi({
+        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
+        createDurable: createDurableSpy,
+      });
+
+      render(<AgentCanvasView view={view} api={api} onUpdate={onUpdate} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      fireEvent.click(screen.getByTestId('stub-add-agent-submit-free-agent'));
+
+      await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+      expect(createDurableSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orchestrator: 'claude-code',
+          freeAgentMode: true,
+          structuredMode: true,
+        }),
+      );
     });
   });
 });

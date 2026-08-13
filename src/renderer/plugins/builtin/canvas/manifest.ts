@@ -14,7 +14,11 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.9 },
   scope: 'dual',
-  permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'files', 'git', 'terminal', 'annex'],
+  // 'agents.free-agent-mode' (dangerous) is granted deliberately: the "+ New Agent"
+  // picker exposes a user-initiated Free Agent Mode toggle (AddAgentDialog), and
+  // without this permission every create silently threw at the plugin-api-agents.ts
+  // gate. Usage is limited to that single opt-in call site — never defaulted on.
+  permissions: ['commands', 'storage', 'agents', 'agents.free-agent-mode', 'projects', 'widgets', 'navigation', 'files', 'git', 'terminal', 'annex'],
   contributes: {
     tab: { label: 'Canvas', title: 'Canvas', icon: CANVAS_TAB_ICON, layout: 'full' },
     railItem: { label: 'Canvas', title: 'Canvas', icon: CANVAS_RAIL_ICON, position: 'top' },

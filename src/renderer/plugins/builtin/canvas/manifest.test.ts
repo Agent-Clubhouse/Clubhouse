@@ -37,6 +37,14 @@ describe('canvas manifest', () => {
     expect(manifest.permissions!.length).toBeGreaterThanOrEqual(7);
   });
 
+  it('declares agents.free-agent-mode alongside its agents parent (#1564)', () => {
+    // Deliberate grant: the "+ New Agent" picker exposes a user-initiated Free
+    // Agent Mode toggle, so canvas needs this permission or every create with
+    // it checked silently throws at the plugin-api-agents.ts gate.
+    expect(manifest.permissions).toContain('agents.free-agent-mode');
+    expect(manifest.permissions).toContain('agents');
+  });
+
   it('contributes a tab with label and full layout', () => {
     expect(manifest.contributes?.tab).toBeDefined();
     expect(manifest.contributes!.tab!.label).toBe('Canvas');
