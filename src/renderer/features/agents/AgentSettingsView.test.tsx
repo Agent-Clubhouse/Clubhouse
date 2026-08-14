@@ -70,16 +70,15 @@ vi.mock('./TemplateConfigDialog', () => ({
   },
 }));
 
-vi.mock('../../hooks/useModelOptions', () => ({
-  useModelOptions: () => ({
-    options: [
-      { id: 'default', label: 'Default' },
-      { id: 'opus', label: 'Opus' },
-      { id: 'sonnet', label: 'Sonnet' },
-    ],
-    loading: false,
-  }),
-}));
+// NOTE: useModelOptions is deliberately NOT mocked. It fetches asynchronously via
+// window.clubhouse.agent.getModelOptions and reports a `default`-only placeholder
+// while in flight — mocking it away with a synchronous full list is what hid the
+// "Sonnet loads as Custom..." bug. Tests drive the real hook through the IPC mock.
+const MODEL_OPTION_LIST = [
+  { id: 'default', label: 'Default' },
+  { id: 'opus', label: 'Opus' },
+  { id: 'sonnet', label: 'Sonnet' },
+];
 
 const defaultAgent: Agent = {
   id: 'agent-1',
@@ -160,7 +159,7 @@ describe('AgentSettingsView', () => {
     window.clubhouse.agentSettings.previewMaterialization = vi.fn().mockResolvedValue(mockPreview);
     (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
     (window.clubhouse.agent as any).updateDurableConfig = vi.fn().mockResolvedValue(undefined);
-    (window.clubhouse.agent as any).getModelOptions = vi.fn().mockResolvedValue([{ id: 'default', label: 'Default' }]);
+    (window.clubhouse.agent as any).getModelOptions = vi.fn().mockResolvedValue(MODEL_OPTION_LIST);
   });
 
   describe('header', () => {
@@ -598,6 +597,65 @@ describe('AgentSettingsView', () => {
         expect(modelSelect.value).toBe('custom');
       });
       expect(screen.getByDisplayValue('my-special-model-v3')).toBeInTheDocument();
+    });
+
+    it('loads a known persisted model as itself, not Custom', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ model: 'sonnet' });
+      renderSettings();
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Sonnet')).toBeInTheDocument();
+      });
+      expect(screen.queryByDisplayValue('Custom...')).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText('e.g. claude-opus-4-6')).not.toBeInTheDocument();
+    });
+
+    it('does not latch a known model as Custom when the option list resolves last', async () => {
+      // Regression: the model option list arrives after the durable config. If the
+      // known-vs-custom split runs against the in-flight `default`-only placeholder,
+      // `sonnet` is mislabelled "Custom..." and never re-corrected.
+      let releaseOptions!: (opts: typeof MODEL_OPTION_LIST) => void;
+      (window.clubhouse.agent as any).getModelOptions = vi.fn().mockReturnValue(
+        new Promise((resolve) => { releaseOptions = resolve; }),
+      );
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ model: 'sonnet' });
+
+      renderSettings();
+      // Config has landed while the option list is still loading.
+      await waitFor(() => {
+        expect((window.clubhouse.agent as any).getDurableConfig).toHaveBeenCalled();
+      });
+      expect(screen.queryByDisplayValue('Custom...')).not.toBeInTheDocument();
+
+      releaseOptions(MODEL_OPTION_LIST);
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Sonnet')).toBeInTheDocument();
+      });
+      expect(screen.queryByDisplayValue('Custom...')).not.toBeInTheDocument();
+    });
+
+    it('still classifies a genuinely unknown model as Custom once options load', async () => {
+      let releaseOptions!: (opts: typeof MODEL_OPTION_LIST) => void;
+      (window.clubhouse.agent as any).getModelOptions = vi.fn().mockReturnValue(
+        new Promise((resolve) => { releaseOptions = resolve; }),
+      );
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ model: 'claude-opus-4-6' });
+
+      renderSettings();
+      await waitFor(() => {
+        expect((window.clubhouse.agent as any).getDurableConfig).toHaveBeenCalled();
+      });
+      releaseOptions(MODEL_OPTION_LIST);
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Custom...')).toBeInTheDocument();
+      });
+      expect(screen.getByDisplayValue('claude-opus-4-6')).toBeInTheDocument();
+    });
+
+    it('fetches model options for the agent own orchestrator', async () => {
+      renderSettings({ orchestrator: 'codex-cli' });
+      await waitFor(() => {
+        expect((window.clubhouse.agent as any).getModelOptions).toHaveBeenCalledWith('/project', 'codex-cli');
+      });
     });
 
     it('persists custom model on blur', async () => {

@@ -167,6 +167,27 @@ describe('agentLifecycleSlice – spawnDurableAgent', () => {
     expect(state().agents['durable-1']?.status).toBe('error');
     expect((state().agents['durable-1'] as any).errorMessage).toBe('durable spawn failed');
   });
+
+  it('preserves the configured model on the store entry', async () => {
+    // Regression: the spawned Agent object REPLACES the store entry, so dropping
+    // `model` made Agent Settings and the list badge fall back to "Default" after
+    // every wake, even though agents.json still had the right value.
+    const { state, slice } = createTestStore();
+
+    await slice.spawnDurableAgent(PROJECT_ID, PROJECT_PATH, DURABLE_CONFIG, false);
+
+    expect(state().agents['durable-1']?.model).toBe('claude-3');
+  });
+
+  it('passes the configured model to the spawn IPC', async () => {
+    const { slice } = createTestStore();
+
+    await slice.spawnDurableAgent(PROJECT_ID, PROJECT_PATH, DURABLE_CONFIG, false);
+
+    expect((window as any).clubhouse.agent.spawnAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'claude-3' }),
+    );
+  });
 });
 
 describe('agentLifecycleSlice – killAgent', () => {

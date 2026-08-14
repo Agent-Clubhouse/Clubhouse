@@ -154,6 +154,10 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         branch: config.branch,
         exitCode: undefined,
         mission,
+        // Carry the durable config's model through — this object REPLACES the
+        // store entry, so omitting it wipes the agent's configured model on
+        // every wake (settings + list badge fall back to "Default").
+        model: config.model,
         orchestrator: config.orchestrator,
         freeAgentMode: config.freeAgentMode || undefined,
         structuredMode: config.structuredMode || undefined,
