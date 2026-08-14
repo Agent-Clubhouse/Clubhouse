@@ -24,7 +24,7 @@ jobs:
       release_message: ${{ steps.meta.outputs.release_message }}
       release_notes: ${{ steps.meta.outputs.release_notes }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -127,8 +127,8 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -155,9 +155,9 @@ jobs:
       sha256_x64: ${{ steps.hash.outputs.sha256_x64 }}
       size_x64: ${{ steps.hash.outputs.size_x64 }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -224,7 +224,7 @@ jobs:
           cp "$DMG_PATH" "dist/Clubhouse-${VERSION}-darwin-${ARCH}.dmg"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-darwin-${{ matrix.arch }}
           path: dist/
@@ -251,9 +251,9 @@ jobs:
       sha256_win_arm64: ${{ steps.hash.outputs.sha256_win_arm64 }}
       size_win_arm64: ${{ steps.hash.outputs.size_win_arm64 }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -272,7 +272,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows executables
-        uses: azure/trusted-signing-action@v1
+        uses: azure/trusted-signing-action@v2
         with:
           endpoint: https://wus2.codesigning.azure.net/
           trusted-signing-account-name: Clubhouse-Win-Signing
@@ -333,7 +333,7 @@ jobs:
           }
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-win32-${{ matrix.arch }}
           path: dist/
@@ -352,9 +352,9 @@ jobs:
       sha256_deb_x64: ${{ steps.hash.outputs.sha256_deb_x64 }}
       size_deb_x64: ${{ steps.hash.outputs.size_deb_x64 }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -403,7 +403,7 @@ jobs:
           fi
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-linux-${{ matrix.arch }}
           path: dist/
@@ -416,7 +416,7 @@ jobs:
     environment: release
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true

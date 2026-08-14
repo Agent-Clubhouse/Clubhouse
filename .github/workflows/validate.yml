@@ -17,8 +17,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -33,14 +33,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test -- --reporter=junit --outputFile=test-results.xml
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-${{ matrix.os }}
@@ -57,8 +57,8 @@ jobs:
         # breaking the node-pty rebuild during `electron-forge package`.
         os: [macos-latest, windows-2022, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -83,7 +83,7 @@ jobs:
           PLAYWRIGHT_IGNORE_ANNEX: '1'
           # chrome-sandbox is not SUID root on GitHub runners
           ELECTRON_DISABLE_SANDBOX: '1'
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: playwright-traces-${{ matrix.os }}
@@ -100,8 +100,8 @@ jobs:
         # breaking the node-pty rebuild during `electron-forge package`.
         os: [macos-latest, windows-2022, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -121,7 +121,7 @@ jobs:
         env:
           # chrome-sandbox is not SUID root on GitHub runners
           ELECTRON_DISABLE_SANDBOX: '1'
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: annex-traces-${{ matrix.os }}
@@ -131,8 +131,8 @@ jobs:
     name: Linux Package Smoke Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -157,8 +157,8 @@ jobs:
     name: API Surface Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
