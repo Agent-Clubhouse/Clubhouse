@@ -7,6 +7,7 @@
  */
 import * as https from 'https';
 import * as http from 'http';
+import * as net from 'net';
 import Bonjour, { Browser, Service as RemoteService } from 'bonjour-service';
 import { WebSocket } from 'ws';
 import * as annexIdentity from './annex-identity';
@@ -186,7 +187,7 @@ async function seedAndGetBuffer(satelliteId: string, agentId: string): Promise<s
     const satelliteBuffer = await new Promise<string>((resolve) => {
       let resolved = false;
       const once = (val: string) => { if (!resolved) { resolved = true; resolve(val); } };
-      const url = `https://${sat.host}:${sat.mainPort}/api/v1/agents/${encodeURIComponent(agentId)}/buffer`;
+      const url = `https://${bracketHost(sat.host)}:${sat.mainPort}/api/v1/agents/${encodeURIComponent(agentId)}/buffer`;
       const req = https.get(url, { ...tlsOptions, timeout: 5000 }, (res) => {
         if (res.statusCode !== 200) {
           res.resume();
@@ -268,9 +269,20 @@ function setState(sat: SatelliteConnectionInternal, state: SatelliteState, error
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Wrap bare IPv6 literals in brackets so they're valid in a URL authority.
+ * mDNS/Bonjour discovery can hand back link-local IPv6 addresses (e.g.
+ * `fe80::…`); interpolating one unbracketed makes `new URL()`, http(s).request,
+ * and `new WebSocket()` throw `ERR_INVALID_URL`. IPv4 addresses and hostnames
+ * pass through unchanged.
+ */
+function bracketHost(host: string): string {
+  return net.isIPv6(host) ? `[${host}]` : host;
+}
+
 function httpGet(host: string, port: number, path: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.get(`http://${host}:${port}${path}`, (res) => {
+    const req = http.get(`http://${bracketHost(host)}:${port}${path}`, (res) => {
       let body = '';
       res.on('data', (chunk) => { body += chunk; });
       res.on('end', () => resolve({ status: res.statusCode || 0, body }));
@@ -369,7 +381,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
   // Connect via WebSocket using mTLS (preferred) with optional bearer token fallback
   try {
     const tlsOptions = annexTls.createTlsClientOptions(identity);
-    const wsUrl = `wss://${sat.host}:${sat.mainPort}/ws`;
+    const wsUrl = `wss://${bracketHost(sat.host)}:${sat.mainPort}/ws`;
 
     appLog('core:annex-client', 'info', 'Connecting to satellite', {
       meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort, hasBearerToken: !!sat.bearerToken },
@@ -865,7 +877,7 @@ export function requestFileTree(fingerprint: string, projectId: string, options?
   const qs = params.toString() ? `?${params.toString()}` : '';
 
   return new Promise<unknown[]>((resolve) => {
-    const url = `https://${sat.host}:${sat.mainPort}/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`;
+    const url = `https://${bracketHost(sat.host)}:${sat.mainPort}/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`;
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
       if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
       const chunks: Buffer[] = [];
@@ -898,7 +910,7 @@ export function requestFileRead(fingerprint: string, projectId: string, path: st
   const qs = `?path=${encodeURIComponent(path)}`;
 
   return new Promise<string>((resolve, reject) => {
-    const url = `https://${sat.host}:${sat.mainPort}/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`;
+    const url = `https://${bracketHost(sat.host)}:${sat.mainPort}/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`;
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
       if (res.statusCode === 404) { res.resume(); reject(new Error('File not found')); return; }
       if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode}`)); return; }
@@ -934,7 +946,7 @@ export function requestBulletinDigest(fingerprint: string, groupProjectId: strin
   const qs = params.toString() ? `?${params.toString()}` : '';
 
   return new Promise<unknown[]>((resolve) => {
-    const url = `https://${sat.host}:${sat.mainPort}/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/digest${qs}`;
+    const url = `https://${bracketHost(sat.host)}:${sat.mainPort}/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/digest${qs}`;
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
       if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
       const chunks: Buffer[] = [];
@@ -970,7 +982,7 @@ export function requestBulletinTopicMessages(fingerprint: string, groupProjectId
   const qs = params.toString() ? `?${params.toString()}` : '';
 
   return new Promise<unknown[]>((resolve) => {
-    const url = `https://${sat.host}:${sat.mainPort}/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`;
+    const url = `https://${bracketHost(sat.host)}:${sat.mainPort}/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`;
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
       if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
       const chunks: Buffer[] = [];
@@ -1030,7 +1042,7 @@ export function requestBulletinAllMessages(
   const tlsOptions = annexTls.createTlsClientOptions(identity);
 
   return new Promise<unknown[]>((resolve) => {
-    const url = `https://${sat.host}:${sat.mainPort}/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`;
+    const url = `https://${bracketHost(sat.host)}:${sat.mainPort}/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`;
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
       if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
       const chunks: Buffer[] = [];
@@ -1188,7 +1200,7 @@ function satelliteHttpsRequest(
 
   const identity = annexIdentity.getOrCreateIdentity();
   const tlsOptions = annexTls.createTlsClientOptions(identity);
-  const url = `https://${sat.host}:${sat.mainPort}${urlPath}`;
+  const url = `https://${bracketHost(sat.host)}:${sat.mainPort}${urlPath}`;
 
   return new Promise<unknown>((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : undefined;
