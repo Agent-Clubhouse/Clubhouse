@@ -9,6 +9,17 @@ interface ViewPrefs {
   showHome: boolean;
 }
 
+/**
+ * Which canvas store a blueprint import should target. Set by the caller that
+ * opened the gallery (e.g. the app-mode rail Canvas vs. a project-mode Canvas
+ * tab) so the import doesn't fall back to guessing from the globally active
+ * project — that guess is wrong whenever a project is open but the gallery
+ * was opened from the app-level rail Canvas.
+ */
+export type BlueprintGalleryScope =
+  | { mode: 'app' }
+  | { mode: 'project'; projectId: string; projectPath: string };
+
 function loadViewPrefs(): ViewPrefs {
   try {
     const raw = localStorage.getItem(VIEW_PREFS_KEY);
@@ -64,7 +75,8 @@ interface UIState {
   openQuickAgentDialog: () => void;
   closeQuickAgentDialog: () => void;
   blueprintGalleryOpen: boolean;
-  openBlueprintGallery: () => void;
+  blueprintGalleryScope: BlueprintGalleryScope | null;
+  openBlueprintGallery: (scope?: BlueprintGalleryScope) => void;
   closeBlueprintGallery: () => void;
 }
 
@@ -180,6 +192,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   openQuickAgentDialog: () => set({ quickAgentDialogOpen: true }),
   closeQuickAgentDialog: () => set({ quickAgentDialogOpen: false }),
   blueprintGalleryOpen: false,
-  openBlueprintGallery: () => set({ blueprintGalleryOpen: true }),
-  closeBlueprintGallery: () => set({ blueprintGalleryOpen: false }),
+  blueprintGalleryScope: null,
+  openBlueprintGallery: (scope) => set({ blueprintGalleryOpen: true, blueprintGalleryScope: scope ?? null }),
+  closeBlueprintGallery: () => set({ blueprintGalleryOpen: false, blueprintGalleryScope: null }),
 }));

@@ -16,6 +16,35 @@ updates:
       npm:
         patterns:
           - "*"
+    # Majors that need a deliberate migration before they can land; each entry
+    # broke CI when dependabot proposed it. Remove an entry once its blocker
+    # is cleared.
+    ignore:
+      # typescript-eslint peer-requires typescript <6.1.0, and TS 6 makes our
+      # baseUrl + moduleResolution=node10 tsconfig options hard errors.
+      - dependency-name: "typescript"
+        versions: [">=6.0.0"]
+      # jsdom 30's selector engine stops matching camelCase SVG attributes
+      # (svg[viewBox=...], animate[attributeName=...]) used by our tests.
+      - dependency-name: "jsdom"
+        versions: [">=29.0.0"]
+      # ESLint 10's new preserve-caught-error / no-useless-assignment rules
+      # produce 19 errors; fix the code before adopting. @eslint/js is
+      # versioned in lockstep with eslint.
+      - dependency-name: "eslint"
+        versions: [">=10.0.0"]
+      - dependency-name: "@eslint/js"
+        versions: [">=10.0.0"]
+      # @electron-forge/plugin-fuses still peer-requires @electron/fuses v1
+      # (also comment-ignored on the PR; kept here for visibility).
+      - dependency-name: "@electron/fuses"
+        versions: [">=2.0.0"]
+      # monaco-editor 0.56's typings field points at a file missing from the
+      # published tarball, so it typechecks as untyped under our
+      # moduleResolution=node; needs the exports-aware resolution migration
+      # (same work as the TypeScript 6 move).
+      - dependency-name: "monaco-editor"
+        versions: [">=0.56.0"]
 
   - package-ecosystem: "github-actions"
     directory: "/"

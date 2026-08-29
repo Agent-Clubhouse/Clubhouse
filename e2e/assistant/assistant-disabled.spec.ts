@@ -21,6 +21,7 @@ import { _electron as electron } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { recordElectronApp, trackOpenApp } from '../e2e-cleanup';
 
 const APP_PATH = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
@@ -87,6 +88,9 @@ async function launchDisabledInstance(): Promise<DisabledInstance> {
       CLUBHOUSE_USER_DATA: userDataDir,
     },
   });
+
+  recordElectronApp(electronApp.process().pid, userDataDir);
+  trackOpenApp(electronApp);
 
   const window = await findRendererWindow(electronApp);
   await window.waitForLoadState('load');

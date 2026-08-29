@@ -200,6 +200,39 @@ describe('uiStore', () => {
     });
   });
 
+  describe('blueprintGallery scope (GH-1563)', () => {
+    it('starts closed with no scope', () => {
+      expect(getState().blueprintGalleryOpen).toBe(false);
+      expect(getState().blueprintGalleryScope).toBeNull();
+    });
+
+    it('openBlueprintGallery with no scope opens with a null scope (back-compat callers)', () => {
+      getState().openBlueprintGallery();
+      expect(getState().blueprintGalleryOpen).toBe(true);
+      expect(getState().blueprintGalleryScope).toBeNull();
+    });
+
+    it('openBlueprintGallery records an app scope', () => {
+      getState().openBlueprintGallery({ mode: 'app' });
+      expect(getState().blueprintGalleryOpen).toBe(true);
+      expect(getState().blueprintGalleryScope).toEqual({ mode: 'app' });
+    });
+
+    it('openBlueprintGallery records a project scope with id and path', () => {
+      getState().openBlueprintGallery({ mode: 'project', projectId: 'proj-1', projectPath: '/tmp/proj-1' });
+      expect(getState().blueprintGalleryScope).toEqual({
+        mode: 'project', projectId: 'proj-1', projectPath: '/tmp/proj-1',
+      });
+    });
+
+    it('closeBlueprintGallery clears both open and scope', () => {
+      getState().openBlueprintGallery({ mode: 'project', projectId: 'proj-1', projectPath: '/tmp/proj-1' });
+      getState().closeBlueprintGallery();
+      expect(getState().blueprintGalleryOpen).toBe(false);
+      expect(getState().blueprintGalleryScope).toBeNull();
+    });
+  });
+
   describe('settingsContext', () => {
     it('defaults to app', () => {
       expect(getState().settingsContext).toBe('app');

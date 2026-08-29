@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { ZoneBackground } from './ZoneBackground';
+import { ZoneBackground, ZONE_BACKGROUND_Z_BASE } from './ZoneBackground';
 import type { ZoneCanvasView } from './canvas-types';
 
 function makeZone(overrides?: Partial<ZoneCanvasView>): ZoneCanvasView {
@@ -28,6 +28,27 @@ describe('ZoneBackground', () => {
     expect(el.style.top).toBe('200px');
     expect(el.style.width).toBe('600px');
     expect(el.style.height).toBe('400px');
+  });
+
+  it('paints in a band below every widget while preserving zone-vs-zone order', () => {
+    const lower = makeZone({ id: 'zone-lower', zIndex: 5 });
+    const higher = makeZone({ id: 'zone-higher', zIndex: 9 });
+    const { getByTestId } = render(
+      <>
+        <ZoneBackground zone={lower} />
+        <ZoneBackground zone={higher} />
+      </>,
+    );
+
+    const lowerZ = Number(getByTestId('zone-background-zone-lower').style.zIndex);
+    const higherZ = Number(getByTestId('zone-background-zone-higher').style.zIndex);
+
+    // Widgets live at zIndex >= 0, so backgrounds must stay strictly negative.
+    expect(lowerZ).toBe(ZONE_BACKGROUND_Z_BASE + 5);
+    expect(lowerZ).toBeLessThan(0);
+    expect(higherZ).toBeLessThan(0);
+    // Relative ordering between zones is preserved.
+    expect(lowerZ).toBeLessThan(higherZ);
   });
 
   it('applies drag offset as transform', () => {

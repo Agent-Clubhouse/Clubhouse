@@ -2,13 +2,17 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BlueprintGallery } from './BlueprintGallery';
 
-const state = { blueprintGalleryOpen: false };
+const state: { blueprintGalleryOpen: boolean; blueprintGalleryScope: any } = {
+  blueprintGalleryOpen: false,
+  blueprintGalleryScope: null,
+};
 const mockCloseBlueprintGallery = vi.fn();
 
 vi.mock('../../stores/uiStore', () => ({
   useUIStore: Object.assign(
     (selector: any) => selector({
       get blueprintGalleryOpen() { return state.blueprintGalleryOpen; },
+      get blueprintGalleryScope() { return state.blueprintGalleryScope; },
       closeBlueprintGallery: mockCloseBlueprintGallery,
     }),
     { getState: () => ({ closeBlueprintGallery: mockCloseBlueprintGallery }) },
@@ -53,11 +57,25 @@ vi.mock('./blueprint-import', () => ({
   importBlueprint: (...args: any[]) => mockManifestImport(...args),
 }));
 
-const mockInsertCanvas = vi.fn();
+const mockLoadAndInsertCanvas = vi.fn().mockResolvedValue(undefined);
 const mockAddWireDefinition = vi.fn();
+const mockGetProjectCanvasStore = vi.fn((projectId: string) => ({
+  __scope: `project:${projectId}`,
+  getState: () => ({ loadAndInsertCanvas: mockLoadAndInsertCanvas, addWireDefinition: mockAddWireDefinition }),
+}));
 vi.mock('../../plugins/builtin/canvas/main', () => ({
-  getProjectCanvasStore: () => ({ getState: () => ({ insertCanvas: mockInsertCanvas, addWireDefinition: mockAddWireDefinition }) }),
-  useAppCanvasStore: { getState: () => ({ insertCanvas: mockInsertCanvas, addWireDefinition: mockAddWireDefinition }) },
+  getProjectCanvasStore: (projectId: string) => mockGetProjectCanvasStore(projectId),
+  useAppCanvasStore: {
+    __scope: 'app',
+    getState: () => ({ loadAndInsertCanvas: mockLoadAndInsertCanvas, addWireDefinition: mockAddWireDefinition }),
+  },
+}));
+
+const mockCreateScopedStorage = vi.fn((pluginId: string, scope: string, projectPath?: string) => ({
+  pluginId, scope, projectPath,
+}));
+vi.mock('../../plugins/plugin-api-storage', () => ({
+  createScopedStorage: (...args: any[]) => (mockCreateScopedStorage as any)(...args),
 }));
 
 const mockBlueprintList = vi.fn();
@@ -86,7 +104,12 @@ function makeBp(overrides: Partial<any> = {}) {
 }
 
 describe('BlueprintGallery', () => {
-  beforeEach(() => { vi.clearAllMocks(); state.blueprintGalleryOpen = false; });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLoadAndInsertCanvas.mockResolvedValue(undefined);
+    state.blueprintGalleryOpen = false;
+    state.blueprintGalleryScope = null;
+  });
 
   it('renders nothing when closed', () => {
     const { container } = render(<BlueprintGallery />);
@@ -277,7 +300,7 @@ describe('BlueprintGallery', () => {
     fireEvent.dblClick(screen.getByTestId('blueprint-card-Test BP'));
     await waitFor(() => {
       expect(mockManifestImport).toHaveBeenCalled();
-      expect(mockInsertCanvas).toHaveBeenCalled();
+      expect(mockLoadAndInsertCanvas).toHaveBeenCalled();
     });
     // Legacy import should NOT have been called
     expect(mockLegacyImport).not.toHaveBeenCalled();
@@ -298,7 +321,7 @@ describe('BlueprintGallery', () => {
     fireEvent.dblClick(screen.getByTestId('blueprint-card-Test BP'));
     await waitFor(() => {
       expect(mockLegacyImport).toHaveBeenCalled();
-      expect(mockInsertCanvas).toHaveBeenCalled();
+      expect(mockLoadAndInsertCanvas).toHaveBeenCalled();
     });
     // Manifest import should NOT have been called
     expect(mockManifestImport).not.toHaveBeenCalled();
@@ -337,7 +360,7 @@ describe('BlueprintGallery', () => {
     await waitFor(() => {
       expect(mockBlueprintOpenAndRead).toHaveBeenCalled();
       expect(mockManifestImport).toHaveBeenCalled();
-      expect(mockInsertCanvas).toHaveBeenCalled();
+      expect(mockLoadAndInsertCanvas).toHaveBeenCalled();
     });
   });
 
@@ -361,7 +384,7 @@ describe('BlueprintGallery', () => {
 
     await waitFor(() => {
       expect(mockLegacyImport).toHaveBeenCalled();
-      expect(mockInsertCanvas).toHaveBeenCalled();
+      expect(mockLoadAndInsertCanvas).toHaveBeenCalled();
     });
   });
 
@@ -378,7 +401,7 @@ describe('BlueprintGallery', () => {
     await waitFor(() => {
       expect(mockBlueprintOpenAndRead).toHaveBeenCalled();
     });
-    expect(mockInsertCanvas).not.toHaveBeenCalled();
+    expect(mockLoadAndInsertCanvas).not.toHaveBeenCalled();
     expect(mockCloseBlueprintGallery).not.toHaveBeenCalled();
   });
 
@@ -400,5 +423,103 @@ describe('BlueprintGallery', () => {
       expect(screen.getByTestId('blueprint-gallery-error')).toBeDefined();
     });
     expect(screen.getByText(/Unexpected token/)).toBeDefined();
+  });
+
+  // ── Canvas store targeting by scope (#1563) ────────────────────
+
+  it('imports into the app canvas store + global storage when opened from the rail (app) Canvas', async () => {
+    state.blueprintGalleryOpen = true;
+    state.blueprintGalleryScope = { mode: 'app' };
+    mockBlueprintList.mockResolvedValue([makeBp()]);
+    mockBlueprintRead.mockResolvedValue({ version: 1, name: 'Legacy BP', views: [] });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
+
+    fireEvent.dblClick(screen.getByTestId('blueprint-card-Test BP'));
+
+    await waitFor(() => { expect(mockLoadAndInsertCanvas).toHaveBeenCalled(); });
+    // Store resolution never falls through to the project store for app scope,
+    // even though a project (p1) is globally active in this test setup.
+    expect(mockGetProjectCanvasStore).not.toHaveBeenCalled();
+    expect(mockCreateScopedStorage).toHaveBeenCalledWith('canvas', 'global');
+  });
+
+  it('imports into the matching project canvas store + project-local storage when opened from a project Canvas tab', async () => {
+    state.blueprintGalleryOpen = true;
+    state.blueprintGalleryScope = { mode: 'project', projectId: 'p2', projectPath: '/tmp/proj2' };
+    mockBlueprintList.mockResolvedValue([makeBp()]);
+    mockBlueprintRead.mockResolvedValue({ version: 1, name: 'Legacy BP', views: [] });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
+
+    fireEvent.dblClick(screen.getByTestId('blueprint-card-Test BP'));
+
+    await waitFor(() => { expect(mockLoadAndInsertCanvas).toHaveBeenCalled(); });
+    // Targets project p2's store, NOT the globally active project (p1) —
+    // this is the #1563 regression: opening from the rail Canvas with a
+    // different project open must not silently redirect the import.
+    expect(mockGetProjectCanvasStore).toHaveBeenCalledWith('p2');
+    expect(mockCreateScopedStorage).toHaveBeenCalledWith('canvas', 'project-local', '/tmp/proj2');
+  });
+
+  it('falls back to the globally active project when no scope is set (command palette entry points)', async () => {
+    state.blueprintGalleryOpen = true;
+    state.blueprintGalleryScope = null;
+    mockBlueprintList.mockResolvedValue([makeBp()]);
+    mockBlueprintRead.mockResolvedValue({ version: 1, name: 'Legacy BP', views: [] });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
+
+    fireEvent.dblClick(screen.getByTestId('blueprint-card-Test BP'));
+
+    await waitFor(() => { expect(mockLoadAndInsertCanvas).toHaveBeenCalled(); });
+    expect(mockGetProjectCanvasStore).toHaveBeenCalledWith('p1');
+    expect(mockCreateScopedStorage).toHaveBeenCalledWith('canvas', 'project-local', '/tmp/proj');
+  });
+
+  it('persists the import immediately via loadAndInsertCanvas so it survives a remount', async () => {
+    state.blueprintGalleryOpen = true;
+    state.blueprintGalleryScope = { mode: 'app' };
+    mockBlueprintList.mockResolvedValue([makeBp()]);
+    mockBlueprintRead.mockResolvedValue({ version: 1, name: 'Legacy BP', views: [] });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByText('Test BP')).toBeDefined(); });
+
+    fireEvent.dblClick(screen.getByTestId('blueprint-card-Test BP'));
+
+    await waitFor(() => {
+      // loadAndInsertCanvas (not the fire-and-forget insertCanvas) is what
+      // persists the canvas to storage, so a re-mount of the plugin panel
+      // picks up the imported canvas instead of losing it.
+      expect(mockLoadAndInsertCanvas).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ scope: 'global' }),
+      );
+    });
+  });
+
+  it('imports a blueprint opened via the OS file picker into the scoped project store', async () => {
+    state.blueprintGalleryOpen = true;
+    state.blueprintGalleryScope = { mode: 'project', projectId: 'p2', projectPath: '/tmp/proj2' };
+    mockBlueprintList.mockResolvedValue([]);
+    mockBlueprintOpenAndRead.mockResolvedValue({
+      canceled: false,
+      filePath: '/elsewhere/legacy.json',
+      data: { version: 1, name: 'Legacy from disk', views: [] },
+    });
+
+    render(<BlueprintGallery />);
+    await waitFor(() => { expect(screen.getByTestId('blueprint-gallery-open-from-file')).toBeDefined(); });
+
+    fireEvent.click(screen.getByTestId('blueprint-gallery-open-from-file'));
+
+    await waitFor(() => {
+      expect(mockGetProjectCanvasStore).toHaveBeenCalledWith('p2');
+      expect(mockLoadAndInsertCanvas).toHaveBeenCalled();
+    });
   });
 });

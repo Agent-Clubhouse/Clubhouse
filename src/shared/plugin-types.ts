@@ -659,6 +659,8 @@ export interface AgentsAPI {
     orchestrator?: string;
     freeAgentMode?: boolean;
     mcpIds?: string[];
+    structuredMode?: boolean;
+    persona?: string;
   }): Promise<string>;
   runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean; metadata?: Record<string, string> }): Promise<string>;
   kill(agentId: string): Promise<void>;

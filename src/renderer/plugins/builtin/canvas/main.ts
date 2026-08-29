@@ -17,6 +17,7 @@ import { usePluginStore } from '../../plugin-store';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { ExportBlueprintDialog } from '../../../features/blueprints/ExportBlueprintDialog';
+import { rendererLog } from '../../renderer-logger';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -396,8 +397,19 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, remoteForward]);
 
   const handleAddFromBlueprint = useCallback(() => {
-    useUIStore.getState().openBlueprintGallery();
-  }, []);
+    if (isAppMode) {
+      useUIStore.getState().openBlueprintGallery({ mode: 'app' });
+      return;
+    }
+    const { projectId, projectPath } = api.context;
+    if (!projectId || !projectPath) {
+      rendererLog('canvas:main', 'error', 'Cannot open blueprint gallery in project mode without a resolved projectId and projectPath', {
+        meta: { projectId, projectPath },
+      });
+      return;
+    }
+    useUIStore.getState().openBlueprintGallery({ mode: 'project', projectId, projectPath });
+  }, [isAppMode, api]);
 
   const handleRemoveCanvas = useCallback((canvasId: string) => {
     remoteForward({ type: 'removeCanvas', canvasId });

@@ -11,6 +11,20 @@ import { GRID_SIZE } from './canvas-types';
 import { getTheme } from '../../../themes';
 import type { ResizeDirection } from './CanvasView';
 
+/**
+ * Zone backgrounds paint in a dedicated band strictly below every widget.
+ *
+ * A zone's own zIndex comes from the same counter as widgets, so a zone created
+ * after a widget outranks it. Because zones deliberately do not swallow existing
+ * widgets on creation, the normal way to put an older widget into a zone is to
+ * drag or resize the zone over it — and the widget would then be painted behind
+ * the zone's opaque background, invisible until clicked (which bumps it to the
+ * front). Offsetting into a negative band keeps zone-vs-zone relative order while
+ * guaranteeing the background never covers a widget. See also #1117, which fixed
+ * the same class of bug for wires.
+ */
+export const ZONE_BACKGROUND_Z_BASE = -100000;
+
 /** Size of edge resize zones in pixels */
 const EDGE_SIZE = 6;
 /** Size of corner resize zones in pixels */
@@ -58,7 +72,7 @@ export function ZoneBackground({ zone, dragOffset, resizeOverride, onResizeStart
         top,
         width,
         height,
-        zIndex: zone.zIndex,
+        zIndex: ZONE_BACKGROUND_Z_BASE + zone.zIndex,
         backgroundColor: bgColor,
         borderColor: `${borderColor}60`,
         backgroundImage: `radial-gradient(circle, ${dotColor}73 0.75px, transparent 0.75px)`,

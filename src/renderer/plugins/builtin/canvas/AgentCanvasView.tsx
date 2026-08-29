@@ -35,6 +35,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
   const [agentTick, setAgentTick] = useState(0);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     const sub = api.agents.onAnyChange(() => setAgentTick((n) => n + 1));
@@ -116,10 +117,11 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
 
   const handleCreateDurable = useCallback(async (
     name: string, color: string, model: string, useWorktree: boolean,
-    orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[],
+    orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean, persona?: string,
   ) => {
     const project = activeProjectForCreate;
     if (!project) return;
+    setCreateError(null);
     try {
       const agentId = await api.agents.createDurable({
         projectId: project.id,
@@ -130,6 +132,8 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         orchestrator,
         freeAgentMode,
         mcpIds,
+        structuredMode,
+        persona,
       });
       setShowCreateDialog(false);
       const newAgent = api.agents.list().find((a) => a.id === agentId);
@@ -144,8 +148,12 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         handlePickAgent(newAgent);
       }
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error('Failed to create durable agent:', err);
-      // Keep dialog open so user can see the failure context and retry
+      // Surface the failure in the dialog instead of a silently dead Create
+      // button — the previous swallow-to-console left the user with no
+      // signal at all (#1564). Keep the dialog open so they can retry.
+      setCreateError(message);
     }
   }, [activeProjectForCreate, api.agents, handlePickAgent, onCreateAgentCard, view]);
 
@@ -279,7 +287,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
           )}
         </div>
         <button
-          onClick={() => setShowCreateDialog(true)}
+          onClick={() => { setCreateError(null); setShowCreateDialog(true); }}
           data-testid="canvas-create-agent"
           className="w-full mt-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg
             bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 transition-colors text-xs cursor-pointer"
@@ -288,9 +296,10 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         </button>
         {showCreateDialog && activeProjectForCreate && (
           <AddAgentDialog
-            onClose={() => setShowCreateDialog(false)}
+            onClose={() => { setShowCreateDialog(false); setCreateError(null); }}
             onCreate={handleCreateDurable}
             projectPath={activeProjectForCreate.path}
+            error={createError}
           />
         )}
       </div>

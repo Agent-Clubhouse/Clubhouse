@@ -295,7 +295,7 @@ function AgentListInner() {
   const sendAgentCreateDurable = useAnnexClientStore((s) => s.sendAgentCreateDurable);
   const sendAgentReorder = useAnnexClientStore((s) => s.sendAgentReorder);
 
-  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean) => {
+  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean, persona?: string) => {
     if (!activeProject) return;
     setShowDialog(false);
 
@@ -329,7 +329,7 @@ function AgentListInner() {
 
     try {
       const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, structuredMode
+        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, structuredMode, persona
       );
       if (tempId) removeAgent(tempId);
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);

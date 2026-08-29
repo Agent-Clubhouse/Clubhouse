@@ -5,6 +5,7 @@ import { importBlueprint as legacyImportBlueprint, validateBlueprint } from '../
 import { importBlueprint as manifestImportBlueprint } from './blueprint-import';
 import { parseAnyBlueprint, buildWireDefinitionsFromResult } from './parse-blueprint';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../plugins/builtin/canvas/main';
+import { createScopedStorage } from '../../plugins/plugin-api-storage';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import {
@@ -50,7 +51,42 @@ function sortBlueprints(items: BlueprintSummary[], mode: SortMode): BlueprintSum
 export function BlueprintGallery() {
   const isOpen = useUIStore((s) => s.blueprintGalleryOpen);
   const close = useUIStore((s) => s.closeBlueprintGallery);
+  const scope = useUIStore((s) => s.blueprintGalleryScope);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+
+  // Resolve the canvas store + scoped storage the import should land in. When the
+  // opener specified a scope (rail Canvas vs. a project Canvas tab), use that —
+  // otherwise fall back to whichever project is globally active (command palette
+  // entry points that aren't tied to a specific canvas instance).
+  const resolveTarget = useCallback(() => {
+    if (scope) {
+      if (scope.mode === 'app') {
+        return {
+          store: useAppCanvasStore,
+          storage: createScopedStorage('canvas', 'global'),
+          projectId: undefined as string | undefined,
+        };
+      }
+      return {
+        store: getProjectCanvasStore(scope.projectId),
+        storage: createScopedStorage('canvas', 'project-local', scope.projectPath),
+        projectId: scope.projectId as string | undefined,
+      };
+    }
+    if (activeProjectId) {
+      const projectPath = useProjectStore.getState().projects.find((p) => p.id === activeProjectId)?.path;
+      return {
+        store: getProjectCanvasStore(activeProjectId),
+        storage: createScopedStorage('canvas', 'project-local', projectPath),
+        projectId: activeProjectId as string | undefined,
+      };
+    }
+    return {
+      store: useAppCanvasStore,
+      storage: createScopedStorage('canvas', 'global'),
+      projectId: undefined as string | undefined,
+    };
+  }, [scope, activeProjectId]);
 
   const [blueprints, setBlueprints] = useState<BlueprintSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,9 +148,7 @@ export function BlueprintGallery() {
         : await window.clubhouse.blueprint.read(bp.filePath);
       if (!data) throw new Error('Failed to read blueprint file');
 
-      const store = activeProjectId
-        ? getProjectCanvasStore(activeProjectId)
-        : useAppCanvasStore;
+      const { store, storage, projectId: targetProjectId } = resolveTarget();
 
       // Use manifest-aware import for BlueprintManifest files (preserves agent bindings/wires)
       if (data && typeof data === 'object' && 'schemaVersion' in data) {
@@ -124,8 +158,8 @@ export function BlueprintGallery() {
           name: p.name,
           path: p.path,
         }));
-        const result = manifestImportBlueprint(data as any, agents, projects, activeProjectId ?? undefined);
-        store.getState().insertCanvas(result.canvas);
+        const result = manifestImportBlueprint(data as any, agents, projects, targetProjectId);
+        await store.getState().loadAndInsertCanvas(result.canvas, storage);
         // Restore wire definitions from the import
         for (const wire of result.pendingWires) {
           const sourceViewId = result.refIdToViewId.get(wire.sourceRef);
@@ -155,7 +189,7 @@ export function BlueprintGallery() {
         const validationError = validateBlueprint(data);
         if (validationError) throw new Error(validationError);
         const canvas = legacyImportBlueprint(data as any);
-        store.getState().insertCanvas(canvas);
+        await store.getState().loadAndInsertCanvas(canvas, storage);
       }
 
       close();
@@ -164,7 +198,7 @@ export function BlueprintGallery() {
     } finally {
       setImporting(null);
     }
-  }, [activeProjectId, close]);
+  }, [resolveTarget, close]);
 
   const handleOpenFromFile = useCallback(async () => {
     setError(null);
@@ -180,16 +214,14 @@ export function BlueprintGallery() {
       const projects = useProjectStore.getState().projects.map((p) => ({
         id: p.id, name: p.name, path: p.path,
       }));
+      const { store, storage, projectId: targetProjectId } = resolveTarget();
       const parsed = parseAnyBlueprint(result.data, {
         agents,
         projects,
-        activeProjectId: activeProjectId ?? undefined,
+        activeProjectId: targetProjectId,
       });
 
-      const store = activeProjectId
-        ? getProjectCanvasStore(activeProjectId)
-        : useAppCanvasStore;
-      store.getState().insertCanvas(parsed.canvas);
+      await store.getState().loadAndInsertCanvas(parsed.canvas, storage);
       for (const wire of buildWireDefinitionsFromResult(parsed)) {
         store.getState().addWireDefinition(wire);
       }
@@ -199,7 +231,7 @@ export function BlueprintGallery() {
     } finally {
       setImporting(null);
     }
-  }, [activeProjectId, close]);
+  }, [resolveTarget, close]);
 
   const handleDelete = useCallback(async (bp: BlueprintSummary) => {
     // Built-in templates are not file-backed and cannot be deleted.

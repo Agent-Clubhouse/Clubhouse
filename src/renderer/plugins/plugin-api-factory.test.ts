@@ -2827,7 +2827,7 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const result = await api.agents.createDurable({ name: 'test-agent', color: 'blue' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'test-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined,
+          '/projects/my-project', 'test-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, undefined, undefined,
         );
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', durableConfig, false);
         expect(result).toBe('new-agent');
@@ -2847,7 +2847,7 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
         await api.agents.createDurable({ projectId: 'proj-2', name: 'other-agent', color: 'red' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/p2', 'other-agent', 'red', undefined, false, undefined, undefined, undefined, undefined,
+          '/projects/p2', 'other-agent', 'red', undefined, false, undefined, undefined, undefined, undefined, undefined, undefined,
         );
         expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', durableConfig, false);
       });
@@ -2874,7 +2874,7 @@ describe('plugin-api-factory', () => {
           useWorktree: true, orchestrator: 'claude-code', mcpIds: ['mcp-1'],
         });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'full-agent', 'green', 'opus', true, 'claude-code', undefined, ['mcp-1'], undefined,
+          '/projects/my-project', 'full-agent', 'green', 'opus', true, 'claude-code', undefined, ['mcp-1'], undefined, undefined, undefined,
         );
       });
 
@@ -2885,7 +2885,53 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.createDurable({ name: 'agent', color: 'red', model: 'default' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'agent', 'red', undefined, false, undefined, undefined, undefined, undefined,
+          '/projects/my-project', 'agent', 'red', undefined, false, undefined, undefined, undefined, undefined, undefined, undefined,
+        );
+      });
+
+      it('passes structuredMode through (#1564)', async () => {
+        const durableConfig = { id: 'new-agent', name: 'structured-agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        await api.agents.createDurable({ name: 'structured-agent', color: 'blue', structuredMode: true });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/my-project', 'structured-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, true, undefined,
+        );
+      });
+
+      it('passes persona through (#1565)', async () => {
+        const durableConfig = { id: 'new-agent', name: 'qa-agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        await api.agents.createDurable({ name: 'qa-agent', color: 'blue', persona: 'qa' });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/my-project', 'qa-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, undefined, 'qa',
+        );
+      });
+
+      it('throws when freeAgentMode is requested without the agents.free-agent-mode permission (#1564)', async () => {
+        const manifestWithoutFreeAgent = makeAllPermsManifest({
+          permissions: ALL_PLUGIN_PERMISSIONS.filter((p) => p !== 'agents.free-agent-mode'),
+        });
+        const api = createPluginAPI(makeCtx(), undefined, manifestWithoutFreeAgent);
+        await expect(
+          api.agents.createDurable({ name: 'x', color: 'red', freeAgentMode: true }),
+        ).rejects.toThrow(/free-agent-mode/);
+        expect(mockAgent.createDurable).not.toHaveBeenCalled();
+      });
+
+      it('still succeeds with freeAgentMode when the permission is granted (#1564)', async () => {
+        const durableConfig = { id: 'new-agent', name: 'free-agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        await expect(
+          api.agents.createDurable({ name: 'free-agent', color: 'red', freeAgentMode: true }),
+        ).resolves.toBe('new-agent');
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/my-project', 'free-agent', 'red', undefined, false, undefined, true, undefined, undefined, undefined, undefined,
         );
       });
     });
