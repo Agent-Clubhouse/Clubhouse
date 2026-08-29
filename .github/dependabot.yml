@@ -39,6 +39,12 @@ updates:
       # (also comment-ignored on the PR; kept here for visibility).
       - dependency-name: "@electron/fuses"
         versions: [">=2.0.0"]
+      # monaco-editor 0.56's typings field points at a file missing from the
+      # published tarball, so it typechecks as untyped under our
+      # moduleResolution=node; needs the exports-aware resolution migration
+      # (same work as the TypeScript 6 move).
+      - dependency-name: "monaco-editor"
+        versions: [">=0.56.0"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
