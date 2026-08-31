@@ -7,7 +7,7 @@
  * root. Both are exercised here against real processes and real directories.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -23,6 +23,12 @@ import {
   ELECTRON_DIST_DIR,
   type CleanupPaths,
 } from '../e2e/e2e-cleanup';
+
+// The sweep enumerates processes via PowerShell/Get-CimInstance on Windows,
+// which alone can take several seconds on a cold CI runner; each test also
+// waits up to ~3s for its probe process to appear. The 5s default has been
+// flaking on windows-latest.
+vi.setConfig({ testTimeout: 30_000 });
 
 /** Sandbox for state + temp roots, so tests never touch the real ones. */
 let sandbox: string;
