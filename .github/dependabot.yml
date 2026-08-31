@@ -45,6 +45,12 @@ updates:
       # (same work as the TypeScript 6 move).
       - dependency-name: "monaco-editor"
         versions: [">=0.56.0"]
+      # The electron-forge webpack template pins this exact version for a
+      # reason: newer releases inject `__webpack_require__.ab = __dirname +
+      # "/native_modules/"` unguarded into web-target bundles, which throws
+      # ReferenceError in the renderer and blank-screens the app at launch.
+      - dependency-name: "@vercel/webpack-asset-relocator-loader"
+        versions: [">1.7.3"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
