@@ -18,7 +18,7 @@
     "test:e2e": "npx playwright test",
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npm test && npm run make && npm run test:e2e",
-    "postinstall": "node scripts/fix-node-pty-win.js"
+    "postinstall": "node scripts/fix-node-pty.js"
   },
   "keywords": [],
   "author": {
