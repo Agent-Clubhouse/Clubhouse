@@ -33,6 +33,7 @@ Open `Cmd+K`, then type a prefix:
 | `Cmd+Shift+H` | Go to Home |
 | `Cmd+B` | Toggle Sidebar |
 | `Cmd+Shift+B` | Toggle Accessory Panel |
+| `Cmd+Shift+.` | Toggle Assistant |
 
 ## Agents & Projects
 
@@ -41,6 +42,8 @@ Open `Cmd+K`, then type a prefix:
 | `Cmd+1` – `Cmd+9` | Switch to Agent 1–9 |
 | `Cmd+Option+1` – `Cmd+Option+9` | Switch to Project 1–9 |
 | `Cmd+Shift+O` | Add Project |
+| `Cmd+Shift+T` | Focus Active Terminal — an escape hatch for terminal-focus issues under Copilot CLI's mouse tracking |
+| `Cmd+Shift+W` | Close Project |
 | `Cmd+Enter` | Submit Quick Agent dialog |
 
 ## Standard Shortcuts
