@@ -94,7 +94,7 @@ describe('Provider integration tests', () => {
 
     it('CodexCli: generates correct flags for model and mission', async () => {
       const provider = new CodexCliProvider();
-      const { args } = await provider.buildSpawnCommand({
+      const { args, trailingArgs } = await provider.buildSpawnCommand({
         cwd: '/p',
         model: 'gpt-5.3-codex',
         mission: 'Fix bug',
@@ -103,8 +103,10 @@ describe('Provider integration tests', () => {
 
       expect(args).toContain('--model');
       expect(args[args.indexOf('--model') + 1]).toBe('gpt-5.3-codex');
-      // Codex combines system prompt and mission into a single positional arg
-      const lastArg = args[args.length - 1];
+      // Codex combines system prompt and mission into a single trailing
+      // positional arg, kept separate from `args` so callers can splice
+      // MCP config flags in ahead of it (see SpawnCommandResult.trailingArgs).
+      const lastArg = trailingArgs?.[trailingArgs.length - 1];
       expect(lastArg).toContain('Context info');
       expect(lastArg).toContain('Fix bug');
     });
