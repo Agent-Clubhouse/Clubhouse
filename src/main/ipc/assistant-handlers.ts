@@ -472,6 +472,11 @@ async function spawnInteractive(
     const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
     args = [...args, ...provider.buildMcpArgs(serverDef)];
   }
+  // trailingArgs (e.g. Codex's bare mission prompt) must stay after the
+  // dynamically-injected MCP flags above — see SpawnCommandResult.
+  if (spawnCmd.trailingArgs && spawnCmd.trailingArgs.length > 0) {
+    args = [...args, ...spawnCmd.trailingArgs];
+  }
 
   appLog(LOG_NS, 'info', 'PTY spawn starting', {
     meta: { agentId, binary, args: args.join(' '), cwd: workspace, mcpPort },

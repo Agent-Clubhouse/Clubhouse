@@ -205,11 +205,17 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
       args.push('--model', opts.model);
     }
 
+    // The mission/prompt is a bare positional argument for Codex (unlike
+    // Claude Code's -p flag), so it must stay last even after buildMcpArgs()
+    // output is injected — otherwise Codex's arg parser misreads the
+    // trailing -c flags as extra positionals and exits with a usage error.
+    // See trailingArgs on SpawnCommandResult.
+    const trailingArgs: string[] = [];
     if (opts.mission || opts.systemPrompt) {
       const parts: string[] = [];
       if (opts.systemPrompt) parts.push(opts.systemPrompt);
       if (opts.mission) parts.push(opts.mission);
-      args.push(parts.join('\n\n'));
+      trailingArgs.push(parts.join('\n\n'));
     }
 
     // Explicitly pass through API keys so they reach the spawned process even
@@ -219,7 +225,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     if (shellEnv.OPENAI_API_KEY) env.OPENAI_API_KEY = shellEnv.OPENAI_API_KEY;
     if (shellEnv.OPENAI_BASE_URL) env.OPENAI_BASE_URL = shellEnv.OPENAI_BASE_URL;
 
-    return { binary, args, env };
+    return { binary, args, env, trailingArgs };
   }
 
   // ── MCP args ───────────────────────────────────────────────────────────

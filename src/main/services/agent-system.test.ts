@@ -201,7 +201,30 @@ const mockCodexProvider = {
     sessionResume: true, permissions: true, structuredMode: false,
   })),
   getProfileEnvKeys: vi.fn(() => ['OPENAI_API_KEY']),
+  // Codex passes its mission as a bare trailing positional argument, so
+  // buildSpawnCommand puts it in trailingArgs (see SpawnCommandResult) and
+  // buildMcpArgs must be spliced in ahead of it, never appended after.
+  buildMcpArgs: vi.fn(() => ['-c', 'mcp_servers.clubhouse.command=node']),
 };
+
+// Mocks for the MCP bridge/injection path exercised when mcpPort > 0.
+// Default to the real module's "not started" rejection so existing tests
+// (which don't care about MCP injection) keep seeing mcpPort stay 0.
+const mockMcpWaitReady = vi.fn(() => Promise.reject(new Error('MCP bridge server not started')));
+vi.mock('./clubhouse-mcp/bridge-server', () => ({
+  waitReady: (...args: unknown[]) => mockMcpWaitReady(...args),
+}));
+
+const mockInjectClubhouseMcp = vi.fn(() => Promise.resolve());
+const mockBuildClubhouseMcpDef = vi.fn((port: number) => ({
+  command: 'node',
+  args: ['bridge.js'],
+  env: { CLUBHOUSE_MCP_PORT: String(port) },
+}));
+vi.mock('./clubhouse-mcp/injection', () => ({
+  injectClubhouseMcp: (...args: unknown[]) => mockInjectClubhouseMcp(...args),
+  buildClubhouseMcpDef: (...args: unknown[]) => mockBuildClubhouseMcpDef(...args),
+}));
 
 vi.mock('../orchestrators', () => ({
   getProvider: vi.fn((id: string) => {
@@ -645,6 +668,62 @@ describe('agent-system', () => {
       } finally {
         delete (mockProvider as any).buildHeadlessCommand;
       }
+    });
+  });
+
+  describe('MCP arg injection ordering (spawnPtyAgent)', () => {
+    it('inserts buildMcpArgs output before trailingArgs so a positional mission stays last', async () => {
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        binary: '/usr/local/bin/codex',
+        args: ['--full-auto'],
+        trailingArgs: ['Fix the bug'],
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        orchestrator: 'codex-cli',
+        mission: 'Fix the bug',
+      });
+
+      expect(mockPtySpawn).toHaveBeenCalledWith(
+        'agent-1',
+        '/project',
+        '/usr/local/bin/codex',
+        ['--full-auto', '-c', 'mcp_servers.clubhouse.command=node', 'Fix the bug'],
+        expect.anything(),
+        expect.any(Function),
+        undefined,
+      );
+    });
+
+    it('appends nothing extra when the provider has no trailingArgs', async () => {
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        binary: '/usr/local/bin/codex',
+        args: ['--full-auto'],
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        orchestrator: 'codex-cli',
+      });
+
+      expect(mockPtySpawn).toHaveBeenCalledWith(
+        'agent-1',
+        '/project',
+        '/usr/local/bin/codex',
+        ['--full-auto', '-c', 'mcp_servers.clubhouse.command=node'],
+        expect.anything(),
+        expect.any(Function),
+        undefined,
+      );
     });
   });
 
