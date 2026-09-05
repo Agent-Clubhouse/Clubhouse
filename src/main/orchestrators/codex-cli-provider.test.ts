@@ -247,32 +247,35 @@ describe('CodexCliProvider', () => {
       expect(args).not.toContain('--model');
     });
 
-    it('passes mission as last argument', async () => {
-      const { args } = await provider.buildSpawnCommand({
+    it('passes mission via trailingArgs, not args', async () => {
+      const { args, trailingArgs } = await provider.buildSpawnCommand({
         cwd: '/p',
         mission: 'Fix the bug',
       });
-      expect(args[args.length - 1]).toBe('Fix the bug');
+      expect(args).not.toContain('Fix the bug');
+      expect(trailingArgs).toEqual(['Fix the bug']);
     });
 
-    it('combines system prompt and mission into a single argument', async () => {
-      const { args } = await provider.buildSpawnCommand({
+    it('combines system prompt and mission into a single trailing argument', async () => {
+      const { trailingArgs } = await provider.buildSpawnCommand({
         cwd: '/p',
         systemPrompt: 'Be concise',
         mission: 'Fix the bug',
       });
-      const lastArg = args[args.length - 1];
-      expect(lastArg).toContain('Be concise');
-      expect(lastArg).toContain('Fix the bug');
-      expect(lastArg).toBe('Be concise\n\nFix the bug');
+      expect(trailingArgs).toEqual(['Be concise\n\nFix the bug']);
     });
 
     it('passes system prompt alone when no mission', async () => {
-      const { args } = await provider.buildSpawnCommand({
+      const { trailingArgs } = await provider.buildSpawnCommand({
         cwd: '/p',
         systemPrompt: 'Be concise',
       });
-      expect(args[args.length - 1]).toBe('Be concise');
+      expect(trailingArgs).toEqual(['Be concise']);
+    });
+
+    it('returns no trailingArgs when neither mission nor systemPrompt is given', async () => {
+      const { trailingArgs } = await provider.buildSpawnCommand({ cwd: '/p' });
+      expect(trailingArgs).toEqual([]);
     });
 
     it('adds --full-auto when freeAgentMode is true', async () => {
@@ -297,7 +300,7 @@ describe('CodexCliProvider', () => {
     });
 
     it('places --full-auto before other flags', async () => {
-      const { args } = await provider.buildSpawnCommand({
+      const { args, trailingArgs } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
         model: 'gpt-5.3-codex',
@@ -305,11 +308,11 @@ describe('CodexCliProvider', () => {
       });
       expect(args[0]).toBe('--full-auto');
       expect(args).toContain('--model');
-      expect(args[args.length - 1]).toBe('Fix bug');
+      expect(trailingArgs).toEqual(['Fix bug']);
     });
 
     it('combines all options correctly', async () => {
-      const { args } = await provider.buildSpawnCommand({
+      const { args, trailingArgs } = await provider.buildSpawnCommand({
         cwd: '/p',
         model: 'gpt-5.2-codex',
         systemPrompt: 'Be careful',
@@ -319,7 +322,24 @@ describe('CodexCliProvider', () => {
       expect(args).toContain('--full-auto');
       expect(args).toContain('--model');
       expect(args).toContain('gpt-5.2-codex');
-      expect(args[args.length - 1]).toBe('Be careful\n\nDeploy it');
+      expect(trailingArgs).toEqual(['Be careful\n\nDeploy it']);
+    });
+
+    it('places buildMcpArgs output ahead of trailingArgs so the mission stays the final positional', async () => {
+      const { args, trailingArgs } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        freeAgentMode: true,
+        model: 'gpt-5.3-codex',
+        mission: 'Fix bug',
+      });
+      const mcpArgs = provider.buildMcpArgs({
+        command: 'node',
+        args: ['server.js'],
+        env: { CLUBHOUSE_MCP_PORT: '12345' },
+      });
+      const finalArgs = [...args, ...mcpArgs, ...(trailingArgs ?? [])];
+      expect(finalArgs[finalArgs.length - 1]).toBe('Fix bug');
+      expect(finalArgs.indexOf('-c')).toBeLessThan(finalArgs.length - 1);
     });
 
     it('does not add --dangerously-skip-permissions or --yolo', async () => {

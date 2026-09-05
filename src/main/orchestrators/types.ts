@@ -37,6 +37,15 @@ export interface SpawnCommandResult {
   binary: string;
   args: string[];
   env?: Record<string, string>;
+  /**
+   * Args that must stay after any dynamically-injected flags (e.g. the
+   * `-c` MCP overrides from `buildMcpArgs`) because they include a trailing
+   * positional (like Codex's bare prompt argument) that a clap-style parser
+   * will otherwise swallow flags after, producing a CLI usage error instead
+   * of starting the session. Callers must insert `buildMcpArgs()` output
+   * between `args` and `trailingArgs`, never append after `trailingArgs`.
+   */
+  trailingArgs?: string[];
 }
 
 export interface HeadlessCommandResult {

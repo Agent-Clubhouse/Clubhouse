@@ -413,6 +413,11 @@ async function spawnPtyAgent(
     const serverDef = buildClubhouseMcpDef(mcpPort, params.agentId, nonce);
     args = [...args, ...provider.buildMcpArgs(serverDef)];
   }
+  // trailingArgs (e.g. Codex's bare mission prompt) must come after any
+  // dynamically-injected flags above, not before — see SpawnCommandResult.
+  if (spawnCmd.trailingArgs && spawnCmd.trailingArgs.length > 0) {
+    args = [...args, ...spawnCmd.trailingArgs];
+  }
 
   // Apply launch wrapper transform if configured and validation passes.
   // Plugin-enabled lookup is treated as always-true: plugins live renderer-side,
