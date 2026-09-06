@@ -374,14 +374,6 @@ app.on('before-quit', (event) => {
   stopUpdateChecks();
   stopPeriodicPluginUpdateChecks();
 
-  // Silently apply any downloaded update before quitting so the next launch
-  // gets the new version without user action.
-  try {
-    applyUpdateOnQuit();
-  } catch (err) {
-    appLog('core:shutdown', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
   // Flush any pending throttled IPC broadcasts before tearing down
   flushPendingBroadcasts();
 
@@ -392,9 +384,9 @@ app.on('before-quit', (event) => {
   restoreAll();
   stopAllWatches();
 
-  // Delay quit to await async cleanup (killAll, flushAllAgentConfigs).
+  // Delay quit to await async cleanup (killAll, flushAllAgentConfigs, applyUpdateOnQuit).
   // Without this, Electron may exit before PTY processes are terminated,
-  // leaving orphaned processes.
+  // leaving orphaned processes, or before a downloaded update is applied.
   event.preventDefault();
   Promise.all([
     killAll().catch((err) => {
@@ -402,6 +394,9 @@ app.on('before-quit', (event) => {
     }),
     flushAllAgentConfigs().catch((err) => {
       appLog('core:shutdown', 'error', `Failed to flush agent configs: ${err instanceof Error ? err.message : String(err)}`);
+    }),
+    applyUpdateOnQuit().catch((err) => {
+      appLog('core:shutdown', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
     }),
   ]).finally(() => {
     app.quit();

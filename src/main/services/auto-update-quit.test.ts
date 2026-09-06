@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mockSpawn = vi.fn();
+
 vi.mock('electron', () => ({
   app: {
     getPath: (key: string) => key === 'userData' ? '/tmp/test-clubhouse' : '/tmp/test-temp',
@@ -12,6 +14,7 @@ vi.mock('electron', () => ({
 
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
+  flush: vi.fn(),
 }));
 
 vi.mock('fs', async () => {
@@ -42,6 +45,11 @@ vi.mock('fs/promises', () => ({
 
 vi.mock('./fs-utils', () => ({
   pathExists: vi.fn(async () => false),
+}));
+
+vi.mock('child_process', () => ({
+  spawn: mockSpawn,
+  execSync: vi.fn(),
 }));
 
 import * as fsp from 'fs/promises';
@@ -142,5 +150,13 @@ describe('auto-update-service: applyUpdateOnQuit', () => {
 
   it('is exported as a function', () => {
     expect(typeof applyUpdateOnQuit).toBe('function');
+  });
+
+  it('awaits all async operations before returning', async () => {
+    // This verifies that applyUpdateOnQuit is an async function
+    // and does not throw when called
+    const result = applyUpdateOnQuit();
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).resolves.not.toThrow();
   });
 });

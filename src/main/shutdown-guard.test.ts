@@ -32,6 +32,11 @@ describe('before-quit handler', () => {
     expect(indexSource).toMatch(/Promise\.all\(\s*\[[\s\S]*?flushAllAgentConfigs\(\)/);
   });
 
+  it('should await applyUpdateOnQuit via Promise', () => {
+    // applyUpdateOnQuit should be inside a Promise.all
+    expect(indexSource).toMatch(/Promise\.all\(\s*\[[\s\S]*?applyUpdateOnQuit\(\)/);
+  });
+
   it('should call app.quit() in the finally block', () => {
     expect(indexSource).toMatch(/\.finally\(\s*\(\)\s*=>\s*\{[\s\S]*?app\.quit\(\)/);
   });
