@@ -656,6 +656,51 @@ describe('annex-client', () => {
       expect(wsUrl).toContain('wss://');
     });
 
+    it('rejects sockets that do not present a peer certificate before the session is considered connected', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(null);
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.socket = makeMockSocket('MM:NN:OO:PP');
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          return this;
+        });
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.send = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(annexClient.getSatellites()[0].state).toBe('disconnected');
+      expect(annexClient.getSatellites()[0].lastError).toBe('Peer certificate unavailable');
+    });
+
     it('rejects TLS peer certificate mismatches before the session is considered connected', async () => {
       const { WebSocket: WsMock } = await import('ws');
 

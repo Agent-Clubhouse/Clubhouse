@@ -411,10 +411,17 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     ws.on('open', () => {
       const peerFingerprint = getPeerCertificateFingerprint(ws);
       if (!peerFingerprint) {
-        appLog('core:annex-client', 'debug', 'Peer certificate is unavailable on the TLS socket; continuing without a certificate-bound fingerprint check', {
+        appLog('core:annex-client', 'warn', 'Peer certificate is unavailable on the TLS socket; rejecting connection', {
           meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort },
         });
-      } else if (peerFingerprint !== sat.fingerprint) {
+        try { ws.close(); } catch {}
+        sat.ws = null;
+        setState(sat, 'disconnected', 'Peer certificate unavailable');
+        if (!sat.reconnectTimer) scheduleReconnect(sat);
+        return;
+      }
+
+      if (peerFingerprint !== sat.fingerprint) {
         appLog('core:annex-client', 'warn', 'Peer certificate fingerprint mismatch', {
           meta: {
             expected: sat.fingerprint,
