@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockSpawn = vi.fn();
+const mockSpawn = vi.hoisted(() => vi.fn());
 
 vi.mock('electron', () => ({
   app: {
