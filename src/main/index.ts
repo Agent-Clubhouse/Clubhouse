@@ -22,7 +22,7 @@ import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
 import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
-import { awaitShutdownCleanup } from './shutdown-guard';
+import { createBeforeQuitHandler } from './shutdown-guard';
 import { initProtocolHandler } from './services/protocol-service';
 import { resolvePluginModulePath, pluginModuleResponseHeaders } from './plugin-protocol';
 import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
@@ -366,11 +366,15 @@ app.on('activate', () => {
   }
 });
 
-let isQuitting = false;
-app.on('before-quit', (event) => {
-  if (isQuitting) return; // Re-entrance guard — already shutting down
-  isQuitting = true;
-
+app.on('before-quit', createBeforeQuitHandler({
+  killAll,
+  flushAllAgentConfigs,
+  applyUpdateOnQuit,
+  appQuit: () => app.quit(),
+  onCleanupError: (operation, error) => {
+    appLog('core:shutdown', 'error', `Failed to ${operation}: ${error instanceof Error ? error.message : String(error)}`);
+  },
+  beforeCleanup: () => {
   appLog('core:shutdown', 'info', 'App shutting down, restoring configs and killing all PTY sessions');
   stopUpdateChecks();
   stopPeriodicPluginUpdateChecks();
@@ -384,22 +388,5 @@ app.on('before-quit', (event) => {
   mcpBridgeServer.stop();
   restoreAll();
   stopAllWatches();
-
-  // Delay quit to await async cleanup (killAll, flushAllAgentConfigs, applyUpdateOnQuit).
-  // Without this, Electron may exit before PTY processes are terminated,
-  // leaving orphaned processes, or before a downloaded update is applied.
-  event.preventDefault();
-  awaitShutdownCleanup([
-    killAll().catch((err) => {
-      appLog('core:shutdown', 'error', `Failed to kill PTY sessions: ${err instanceof Error ? err.message : String(err)}`);
-    }),
-    flushAllAgentConfigs().catch((err) => {
-      appLog('core:shutdown', 'error', `Failed to flush agent configs: ${err instanceof Error ? err.message : String(err)}`);
-    }),
-    applyUpdateOnQuit().catch((err) => {
-      appLog('core:shutdown', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
-    }),
-  ], () => {
-    app.quit();
-  });
-});
+  },
+}));
