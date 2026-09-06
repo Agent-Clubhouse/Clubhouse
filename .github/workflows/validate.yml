@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx tsc --noEmit
+      # Baseline: 20 marker-bearing test files tracked by #1594.
+      - run: npm run check:test-coverage-ratchet
 
   unit-and-component:
     name: Unit + Component Tests (${{ matrix.os }})
