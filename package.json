@@ -16,6 +16,7 @@
     "test:unit": "vitest run --project main --project shared",
     "test:components": "vitest run --project renderer",
     "test:e2e": "npx playwright test",
+    "check:test-coverage-ratchet": "node scripts/check-test-coverage-ratchet.mjs",
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npm test && npm run make && npm run test:e2e",
     "postinstall": "node scripts/fix-node-pty.js"
