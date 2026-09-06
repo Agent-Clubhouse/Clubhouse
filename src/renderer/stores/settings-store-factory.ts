@@ -7,26 +7,36 @@
  * - saveSettings(updates) — optimistic update with error revert
  *
  * Usage:
- *   import { CLIPBOARD_SETTINGS } from '../../shared/settings-definitions';
+ *   import { MCP_SETTINGS } from '../../shared/settings-definitions';
  *
- *   export const useClipboardSettingsStore = createSettingsStore(CLIPBOARD_SETTINGS);
+ *   export const useMcpSettingsStore = createSettingsStore(MCP_SETTINGS);
  *
  *   // In a component:
- *   const compat = useClipboardSettingsStore(s => s.clipboardCompat);
- *   const save = useClipboardSettingsStore(s => s.saveSettings);
- *   save({ clipboardCompat: true });
+ *   const enabled = useMcpSettingsStore(s => s.enabled);
+ *   const save = useMcpSettingsStore(s => s.saveSettings);
+ *   save({ enabled: true });
  */
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import type { SettingsDefinition } from '../../shared/settings-definitions';
 
+export interface SettingsStoreFactoryOptions<T extends object, U = Partial<T>> {
+  /**
+   * Resolve default values at runtime when a setting has domain-specific
+   * initialization logic (for example, platform-dependent defaults).
+   */
+  getDefaults?: () => T;
+  /** Normalize a store-specific save payload into the persisted settings shape. */
+  normalizeUpdate?: (updates: U) => Partial<T>;
+}
+
 /** State shape produced by the factory: setting fields + load/save helpers. */
-export type SettingsStoreState<T> = T & {
+export type SettingsStoreState<T extends object, U = Partial<T>> = T & {
   /** Whether settings have been loaded from the main process at least once. */
   loaded: boolean;
   /** Fetch settings from the main process and update the store. */
   loadSettings: () => Promise<void>;
   /** Persist a partial update (optimistic with error revert). */
-  saveSettings: (updates: Partial<T>) => Promise<void>;
+  saveSettings: (updates: U) => Promise<void>;
 };
 
 /**
@@ -36,46 +46,59 @@ export type SettingsStoreState<T> = T & {
  * fetches the persisted values from the main process via the generic
  * settings bridge (window.clubhouse.settings).
  */
-export function createSettingsStore<T extends Record<string, unknown>>(
+export function createSettingsStore<T extends object, U = Partial<T>>(
   definition: SettingsDefinition<T>,
-): UseBoundStore<StoreApi<SettingsStoreState<T>>> {
-  return create<SettingsStoreState<T>>()((set, get) => ({
-    ...definition.defaults,
+  options: SettingsStoreFactoryOptions<T, U> = {},
+): UseBoundStore<StoreApi<SettingsStoreState<T, U>>> {
+  const getDefaultState = () => ({
+    ...(options.getDefaults ? options.getDefaults() : definition.defaults),
+  }) as T;
+
+  const normalizeUpdate = (updates: U): Partial<T> => {
+    if (options.normalizeUpdate) {
+      return options.normalizeUpdate(updates);
+    }
+    return updates as Partial<T>;
+  };
+
+  return create<SettingsStoreState<T, U>>()((set, get) => ({
+    ...getDefaultState(),
     loaded: false,
 
     loadSettings: async () => {
       try {
         const settings = await window.clubhouse.settings.get(definition.key) as T | null;
+        const defaults = getDefaultState() as Record<string, unknown>;
         if (settings) {
-          set({ ...definition.defaults, ...settings, loaded: true } as unknown as Partial<SettingsStoreState<T>>);
+          const merged = { ...defaults, ...(settings as Record<string, unknown>), loaded: true };
+          set(merged as unknown as Partial<SettingsStoreState<T, U>>);
         } else {
-          set({ loaded: true } as Partial<SettingsStoreState<T>>);
+          set({ ...defaults, loaded: true } as unknown as Partial<SettingsStoreState<T, U>>);
         }
       } catch {
-        set({ loaded: true } as Partial<SettingsStoreState<T>>);
+        const defaults = getDefaultState() as Record<string, unknown>;
+        set({ ...defaults, loaded: true } as unknown as Partial<SettingsStoreState<T, U>>);
       }
     },
 
-    saveSettings: async (updates: Partial<T>) => {
-      // Snapshot current state for revert
+    saveSettings: async (updates: U) => {
+      const next = normalizeUpdate(updates);
+      const defaults = getDefaultState() as Record<string, unknown>;
       const prev: Record<string, unknown> = {};
-      for (const key of Object.keys(definition.defaults)) {
+      for (const key of Object.keys(defaults)) {
         prev[key] = (get() as Record<string, unknown>)[key];
       }
 
-      // Optimistic update
-      set(updates as Partial<SettingsStoreState<T>>);
+      set(next as Partial<SettingsStoreState<T, U>>);
 
       try {
-        // Build full settings object for persistence
         const full: Record<string, unknown> = {};
-        for (const key of Object.keys(definition.defaults)) {
+        for (const key of Object.keys(defaults)) {
           full[key] = (get() as Record<string, unknown>)[key];
         }
-        await window.clubhouse.settings.save(definition.key, full as T);
+        await window.clubhouse.settings.save(definition.key, full as Record<string, unknown>);
       } catch {
-        // Revert on error
-        set(prev as Partial<SettingsStoreState<T>>);
+        set(prev as unknown as Partial<SettingsStoreState<T, U>>);
       }
     },
   }));
