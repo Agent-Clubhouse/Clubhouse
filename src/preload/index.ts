@@ -5,7 +5,7 @@ import { AgentHookEvent, AgentWildcardSettings, LaunchWrapperConfig, McpCatalogE
 import type { PluginUpdatesStatus } from '../shared/marketplace-types';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
-const api = {
+export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   /**
