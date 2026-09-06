@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { spawn } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
 import { createSettingsStore } from './settings-store';
@@ -867,18 +868,18 @@ export async function applyUpdate(): Promise<void> {
 // Apply update silently on quit (no relaunch)
 // ---------------------------------------------------------------------------
 
-export async function applyUpdateOnQuit(): Promise<void> {
-  if (status.state !== 'ready') {
+export async function applyUpdateOnQuit(updateStatus: UpdateStatus = status): Promise<void> {
+  if (updateStatus.state !== 'ready') {
     return; // No update ready — nothing to do
   }
 
-  const downloadPath = status.downloadPath;
+  const downloadPath = updateStatus.downloadPath;
 
   // Persist release notes for the What's New dialog after next launch
-  if (status.availableVersion && status.releaseNotes) {
+  if (updateStatus.availableVersion && updateStatus.releaseNotes) {
     await writePendingReleaseNotes({
-      version: status.availableVersion,
-      releaseNotes: status.releaseNotes,
+      version: updateStatus.availableVersion,
+      releaseNotes: updateStatus.releaseNotes,
     });
   }
 
@@ -886,13 +887,13 @@ export async function applyUpdateOnQuit(): Promise<void> {
 
   // Record apply attempt so we can detect silent failures on next launch
   await writeApplyAttempt({
-    version: status.availableVersion!,
-    artifactUrl: status.artifactUrl,
+    version: updateStatus.availableVersion!,
+    artifactUrl: updateStatus.artifactUrl,
     attemptedAt: new Date().toISOString(),
   });
 
   appLog('update:apply-on-quit', 'info', 'Applying update on quit (silent)', {
-    meta: { version: status.availableVersion, downloadPath },
+    meta: { version: updateStatus.availableVersion, downloadPath },
   });
 
   if (process.platform === 'darwin') {
@@ -935,7 +936,6 @@ export async function applyUpdateOnQuit(): Promise<void> {
         meta: { updateExe, releasesUrl },
       });
 
-      const { spawn } = require('child_process');
       const child = spawn(updateExe, ['--update', releasesUrl], {
         detached: true,
         stdio: 'ignore',
