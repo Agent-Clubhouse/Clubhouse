@@ -11,14 +11,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Mocks — set up before importing the module under test
 // ---------------------------------------------------------------------------
 
-const { mockBrowser, mockBonjourInstance, BonjourConstructor } = vi.hoisted(() => {
+const { mockBrowser, mockBonjourInstance, BonjourConstructor, WebSocketMock } = vi.hoisted(() => {
   const mockBrowser = { stop: vi.fn() };
   const mockBonjourInstance = {
     find: vi.fn(),
     destroy: vi.fn(),
   };
   const BonjourConstructor = vi.fn();
-  return { mockBrowser, mockBonjourInstance, BonjourConstructor };
+  const WebSocketMock = Object.assign(vi.fn(), { OPEN: 1 });
+  return { mockBrowser, mockBonjourInstance, BonjourConstructor, WebSocketMock };
 });
 
 let bonjourFindCallback: ((service: any) => void) | null = null;
@@ -40,7 +41,7 @@ vi.mock('bonjour-service', () => ({
 }));
 
 vi.mock('ws', () => ({
-  WebSocket: Object.assign(vi.fn(), { OPEN: 1 }),
+  WebSocket: WebSocketMock,
 }));
 
 const LOCAL_IDENTITY = {
@@ -57,6 +58,7 @@ vi.mock('./annex-identity', () => ({
 
 vi.mock('./annex-tls', () => ({
   createTlsClientOptions: vi.fn().mockReturnValue({}),
+  extractPeerFingerprint: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock('./annex-peers', () => ({
@@ -106,6 +108,7 @@ vi.mock('https', async (importOriginal) => {
 import * as annexClient from './annex-client';
 import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
+import * as annexTls from './annex-tls';
 import * as annexSettings from './annex-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -127,6 +130,23 @@ function resetAllMocks() {
     color: 'indigo',
     autoReconnect: true,
   });
+  vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(null);
+  WebSocketMock.mockImplementation(function (this: any, _url?: string, opts?: Record<string, any>) {
+    this.readyState = WebSocketMock.OPEN;
+    this.socket = {
+      getPeerCertificate: () => ({ subject: {} }),
+    };
+    this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+      if (event === 'open') setTimeout(cb, 0);
+      return this;
+    });
+    this.send = vi.fn();
+    this.ping = vi.fn();
+    this.close = vi.fn();
+    this.terminate = vi.fn();
+    this.removeListener = vi.fn();
+    return this;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +161,12 @@ function makeService(overrides: Record<string, any> = {}) {
     txt: { pairingPort: '9001' },
     referer: { address: '192.168.1.50' },
     ...overrides,
+  };
+}
+
+function makeMockSocket(peerFingerprint: string = LOCAL_IDENTITY.fingerprint) {
+  return {
+    getPeerCertificate: () => ({ subject: { CN: peerFingerprint } }),
   };
 }
 
@@ -600,7 +626,6 @@ describe('annex-client', () => {
 
   describe('mTLS reconnection', () => {
     it('attempts connection for discovered paired satellite without bearer token', async () => {
-      // Track if WebSocket was constructed (= connection attempted)
       const { WebSocket: WsMock } = await import('ws');
 
       mockHttpGetIdentity({
@@ -625,13 +650,55 @@ describe('annex-client', () => {
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
 
-      // Key assertion: WebSocket constructor was called (connection was attempted)
-      // even though there's no bearer token — mTLS handles auth
       expect(WsMock).toHaveBeenCalled();
       const wsUrl = vi.mocked(WsMock).mock.calls[0][0] as string;
-      // URL should NOT contain token param (no bearer token)
       expect(wsUrl).not.toContain('token=');
       expect(wsUrl).toContain('wss://');
+    });
+
+    it('rejects TLS peer certificate mismatches before the session is considered connected', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue('MM:NN:OO:PP');
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.socket = makeMockSocket('MM:NN:OO:PP');
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          return this;
+        });
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.send = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(annexClient.getSatellites()[0].state).toBe('disconnected');
+      expect(annexClient.getSatellites()[0].lastError).toBe('Peer certificate mismatch');
     });
 
     it('retry works without bearer token', async () => {
@@ -658,11 +725,9 @@ describe('annex-client', () => {
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
 
-      // Force disconnect
       annexClient.disconnect('PP:QQ:RR:SS');
       expect(annexClient.getSatellites()[0].state).toBe('disconnected');
 
-      // Retry should attempt connection again (WebSocket constructor called again)
       vi.mocked(WsMock).mockClear();
       annexClient.retry('PP:QQ:RR:SS');
       expect(WsMock).toHaveBeenCalled();
@@ -672,7 +737,7 @@ describe('annex-client', () => {
   // ---- bearer token via Authorization header (SEC-CRIT-07) ----
 
   describe('bearer token WebSocket auth', () => {
-    it('sends bearer token as Authorization header, not query param', async () => {
+    it('defers bearer token transmission until after the peer certificate is verified', async () => {
       const { WebSocket: WsMock } = await import('ws');
 
       mockHttpGetIdentity({
@@ -695,10 +760,10 @@ describe('annex-client', () => {
       const wsUrl = vi.mocked(WsMock).mock.calls[0][0] as string;
       const wsOptions = vi.mocked(WsMock).mock.calls[0][1] as Record<string, unknown>;
 
-      // Token must be in Authorization header — not embedded in the URL
+      // The initial certificate-bound socket must not carry the bearer token yet.
       expect(wsUrl).not.toContain('token=');
       expect(wsUrl).toContain('wss://');
-      expect((wsOptions?.headers as Record<string, string>)?.Authorization).toBe('Bearer my-bearer-token');
+      expect((wsOptions?.headers as Record<string, string>)?.Authorization).toBeUndefined();
     });
 
     it('omits Authorization header when no bearer token (mTLS path)', async () => {

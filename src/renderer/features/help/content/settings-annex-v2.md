@@ -6,7 +6,7 @@ Annex V2 enables **desktop-to-desktop remote control** between Clubhouse instanc
 
 - **Satellite**: The Clubhouse instance whose agents are being controlled remotely. Enable the Annex Server in Settings.
 - **Controller**: The Clubhouse instance issuing commands. Use the Annex Control settings page to pair and manage satellites.
-- **Security**: All communication uses mutual TLS (mTLS) with self-signed certificates. Identity is based on Ed25519 keypairs.
+- **Security**: Paired Annex connections use mutual TLS (mTLS) with self-signed certificates, and the controller verifies the peer certificate fingerprint against the paired satellite before treating the socket as authenticated. Identity remains based on Ed25519 keypairs.
 
 ## Setup
 
