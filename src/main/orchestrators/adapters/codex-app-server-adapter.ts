@@ -6,6 +6,9 @@ import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
 import { appLog } from '../../services/log-service';
 import { validateCommandPrefix } from '../../services/command-prefix-validation';
 
+/** JSON-RPC "Method not found" — the standard reply for a request we can't serve. */
+const JSONRPC_METHOD_NOT_FOUND = -32601;
+
 export interface CodexAppServerAdapterOpts {
   binary: string;
   env?: Record<string, string>;
@@ -24,6 +27,8 @@ export class CodexAppServerAdapter implements StructuredAdapter {
   private queue: AsyncQueue<StructuredEvent> | null = null;
   private pendingApprovals = new Map<string, number | string>();
   private threadId: string | null = null;
+  /** Id of the turn currently in flight; `turn/interrupt` requires it. */
+  private turnId: string | null = null;
   private turnEnded = false;
   private opts: CodexAppServerAdapterOpts;
 
@@ -79,7 +84,23 @@ export class CodexAppServerAdapter implements StructuredAdapter {
       },
       onServerRequest: (id, method, params) => {
         const event = this.mapServerRequest(id, method, params);
-        if (event) queue.push(event);
+        if (event) {
+          queue.push(event);
+          return;
+        }
+        // No mapping produced a pending decision, so nothing will ever call
+        // respondToPermission for this id.  Answer now: Codex blocks the turn
+        // until a server request is resolved, and a silent stall is much harder
+        // to diagnose than a rejected call.
+        this.client?.respondWithError(
+          id,
+          JSONRPC_METHOD_NOT_FOUND,
+          `Clubhouse does not handle the '${method}' request`,
+        );
+        queue.push(this.makeEvent('error', {
+          code: 'unhandled_server_request',
+          message: `Codex asked for '${method}', which Clubhouse cannot answer. The turn continues, but that step was declined.`,
+        }));
       },
       onExit: (code) => {
         const stderr = this.client?.getStderr()?.trim();
@@ -128,10 +149,7 @@ export class CodexAppServerAdapter implements StructuredAdapter {
 
     this.turnEnded = false;
 
-    await this.client.request('turn/start', {
-      threadId: this.threadId,
-      input: [{ type: 'text', text: message }],
-    });
+    await this.startTurn(message);
   }
 
   async respondToPermission(
@@ -149,8 +167,33 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     });
   }
 
+  /**
+   * Stop the current turn, keeping the thread alive.
+   *
+   * This used to kill the process, which forfeited the thread and made the
+   * session unresumable.  `turn/interrupt` is the protocol's own stop: the
+   * thread survives and can be resumed, which is what pressing stop means.
+   * Falls back to killing only if the interrupt can't be delivered.
+   */
   async cancel(): Promise<void> {
     if (!this.client) return;
+
+    // `turn/interrupt` requires both ids; with no turn in flight there is
+    // nothing to interrupt, so fall through to killing the process.
+    if (this.threadId && this.turnId && this.client.alive) {
+      try {
+        await this.client.request('turn/interrupt', {
+          threadId: this.threadId,
+          turnId: this.turnId,
+        });
+        return;
+      } catch (err) {
+        appLog('core:structured:codex', 'warn', 'turn/interrupt failed; killing the process', {
+          meta: { threadId: this.threadId, turnId: this.turnId, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
+
     this.client.kill();
   }
 
@@ -160,6 +203,7 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     this.client = null;
     this.queue = null;
     this.threadId = null;
+    this.turnId = null;
     this.pendingApprovals.clear();
   }
 
@@ -190,10 +234,7 @@ export class CodexAppServerAdapter implements StructuredAdapter {
       const prompt = parts.join('\n\n');
 
       if (prompt) {
-        await this.client.request('turn/start', {
-          threadId: this.threadId,
-          input: [{ type: 'text', text: prompt }],
-        });
+        await this.startTurn(prompt);
       }
 
       return;
@@ -230,10 +271,19 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     if (!prompt) return;
 
     // Start turn
-    await this.client.request('turn/start', {
+    await this.startTurn(prompt);
+  }
+
+  /** Start a turn and record its id for a later `turn/interrupt`. */
+  private async startTurn(prompt: string): Promise<void> {
+    const result = await this.client!.request('turn/start', {
       threadId: this.threadId,
       input: [{ type: 'text', text: prompt }],
-    });
+    }) as { turn?: { id?: string } } | undefined;
+
+    if (typeof result?.turn?.id === 'string') {
+      this.turnId = result.turn.id;
+    }
   }
 
   // ── Event mapping ─────────────────────────────────────────────────────────
@@ -245,6 +295,14 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     const p = (params ?? {}) as Record<string, unknown>;
 
     switch (method) {
+      case 'turn/started': {
+        // Remember the turn so cancel() can interrupt it — `turn/interrupt`
+        // requires both threadId and turnId.
+        const turn = (p.turn as Record<string, unknown>) ?? {};
+        this.turnId = typeof turn.id === 'string' ? turn.id : null;
+        return null;
+      }
+
       case 'item/agentMessage/delta': {
         const delta = (p.delta as Record<string, unknown>) ?? {};
         return this.makeEvent('text_delta', {
@@ -318,6 +376,7 @@ export class CodexAppServerAdapter implements StructuredAdapter {
 
       case 'turn/completed': {
         this.turnEnded = true;
+        this.turnId = null;
         const usage = (p.usage as Record<string, unknown>) ?? {};
 
         // Emit usage event
@@ -508,6 +567,12 @@ export class CodexAppServerAdapter implements StructuredAdapter {
       }
 
       default:
+        // Deliberately unmapped — the caller answers with a JSON-RPC error so
+        // the turn is never left hanging.  The two cases above are the only
+        // ones decidable from a yes/no; the rest
+        // (item/permissions/requestApproval, item/tool/requestUserInput,
+        // item/tool/call, mcpServer/elicitation/request, openai/form, …) need
+        // response payloads Clubhouse has no UI to produce yet.
         return null;
     }
   }

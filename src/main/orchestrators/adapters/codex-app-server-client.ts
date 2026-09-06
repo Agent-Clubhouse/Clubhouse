@@ -89,6 +89,19 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
     this.send({ id, result });
   }
 
+  /**
+   * Send a JSON-RPC error back to the server.
+   *
+   * Every server-initiated request must be answered.  Codex blocks the turn
+   * waiting for a reply, so an unhandled request that receives no response at
+   * all stalls the session with nothing surfaced to the user — a far worse
+   * failure than an explicit rejection, which Codex can report and recover from.
+   */
+  respondWithError(id: number | string, code: number, message: string): void {
+    this.log('warn', `RPC error response → id=${id}`, { code, message });
+    this.send({ id, error: { code, message } });
+  }
+
   protected handleResponse(msg: Record<string, unknown>): void {
     const id = msg.id as number | string;
     const pending = this.pending.get(id);
