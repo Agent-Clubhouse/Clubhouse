@@ -192,13 +192,16 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     const binary = this.findBinary();
     const args: string[] = [];
 
-    // Session resume: --continue for most recent session
+    // Session resume: `resume --last` picks up the most recent session
+    // (older Codex CLI releases used a bare `--continue` flag, since removed).
     if (opts.resume) {
-      args.push('--continue');
+      args.push('resume', '--last');
     }
 
     if (opts.freeAgentMode) {
-      args.push('--full-auto');
+      // `--full-auto` was removed from the Codex CLI; the equivalent is an
+      // explicit sandboxed + no-approval combination.
+      args.push('--sandbox', 'workspace-write', '--ask-for-approval', 'never');
     }
 
     if (opts.model && opts.model !== 'default') {
@@ -463,7 +466,10 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     parts.push(opts.mission);
     const prompt = parts.join('\n\n');
 
-    const args = ['exec', prompt, '--json', '--full-auto'];
+    // `--full-auto` was removed from the Codex CLI; `exec` already runs
+    // non-interactively without approval prompts, so an explicit sandbox
+    // mode is the remaining equivalent.
+    const args = ['exec', prompt, '--json', '--sandbox', 'workspace-write'];
 
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);

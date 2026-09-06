@@ -278,35 +278,40 @@ describe('CodexCliProvider', () => {
       expect(trailingArgs).toEqual([]);
     });
 
-    it('adds --full-auto when freeAgentMode is true', async () => {
+    it('adds --sandbox workspace-write --ask-for-approval never when freeAgentMode is true', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
       });
-      expect(args).toContain('--full-auto');
+      expect(args).toContain('--sandbox');
+      expect(args).toContain('workspace-write');
+      expect(args).toContain('--ask-for-approval');
+      expect(args).toContain('never');
     });
 
-    it('does not add --full-auto when freeAgentMode is false', async () => {
+    it('does not add sandbox/approval flags when freeAgentMode is false', async () => {
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: false,
       });
-      expect(args).not.toContain('--full-auto');
+      expect(args).not.toContain('--sandbox');
+      expect(args).not.toContain('--ask-for-approval');
     });
 
-    it('does not add --full-auto when freeAgentMode is undefined', async () => {
+    it('does not add sandbox/approval flags when freeAgentMode is undefined', async () => {
       const { args } = await provider.buildSpawnCommand({ cwd: '/p' });
-      expect(args).not.toContain('--full-auto');
+      expect(args).not.toContain('--sandbox');
+      expect(args).not.toContain('--ask-for-approval');
     });
 
-    it('places --full-auto before other flags', async () => {
+    it('places --sandbox before other flags', async () => {
       const { args, trailingArgs } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
         model: 'gpt-5.3-codex',
         mission: 'Fix bug',
       });
-      expect(args[0]).toBe('--full-auto');
+      expect(args[0]).toBe('--sandbox');
       expect(args).toContain('--model');
       expect(trailingArgs).toEqual(['Fix bug']);
     });
@@ -319,7 +324,8 @@ describe('CodexCliProvider', () => {
         mission: 'Deploy it',
         freeAgentMode: true,
       });
-      expect(args).toContain('--full-auto');
+      expect(args).toContain('--sandbox');
+      expect(args).toContain('workspace-write');
       expect(args).toContain('--model');
       expect(args).toContain('gpt-5.2-codex');
       expect(trailingArgs).toEqual(['Be careful\n\nDeploy it']);
@@ -438,7 +444,7 @@ describe('CodexCliProvider', () => {
   });
 
   describe('buildHeadlessCommand', () => {
-    it('generates exec command with --json and --full-auto', async () => {
+    it('generates exec command with --json and --sandbox workspace-write', async () => {
       const result = await provider.buildHeadlessCommand({
         cwd: '/p',
         mission: 'Fix the auth bug',
@@ -449,7 +455,8 @@ describe('CodexCliProvider', () => {
       expect(args[0]).toBe('exec');
       expect(args[1]).toBe('Fix the auth bug');
       expect(args).toContain('--json');
-      expect(args).toContain('--full-auto');
+      expect(args).toContain('--sandbox');
+      expect(args).toContain('workspace-write');
     });
 
     it('returns stream-json outputKind for JSONL parsing', async () => {
