@@ -555,11 +555,11 @@ describe('Provider integration tests', () => {
     it('CodexCli: implements buildMcpArgs for CLI-arg MCP injection', () => {
       const provider = new CodexCliProvider();
       expect(typeof provider.buildMcpArgs).toBe('function');
-      const args = provider.buildMcpArgs({
+      const args = provider.buildMcpArgs({ clubhouse: {
         command: 'node',
         args: ['/bridge.js'],
         env: { CLUBHOUSE_MCP_PORT: '12345' },
-      });
+      } });
       expect(args.length).toBeGreaterThan(0);
       expect(args).toContain('-c');
       expect(args.some(a => a.includes('mcp_servers.clubhouse'))).toBe(true);

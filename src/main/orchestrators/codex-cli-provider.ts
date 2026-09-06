@@ -352,27 +352,44 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
   // ── MCP args ───────────────────────────────────────────────────────────
 
   /**
-   * Codex CLI reads MCP config from .codex/config.toml, so the primary
-   * injection path writes TOML directly to that file.  buildMcpArgs is a
-   * supplementary mechanism that passes the Clubhouse MCP server definition
-   * via `-c` config-override flags at launch time.
+   * Codex reads `mcp_servers` only from `$CODEX_HOME/config.toml` — never from
+   * a project-level `.codex/config.toml`.  Verified directly: the same table is
+   * invisible in-repo and visible under CODEX_HOME.  So the TOML that
+   * materialisation writes into the worktree does not reach Codex, and `-c`
+   * config overrides at launch are the only path that does.
+   *
+   * `-c key=value` takes dot-notation with TOML-typed values.
    */
-  buildMcpArgs(serverDef: McpServerDef): string[] {
-    // Write a temp TOML snippet to a config override flag.
-    // Codex CLI's `-c key=value` supports dot-notation with TOML-typed values.
+  buildMcpArgs(servers: Record<string, McpServerDef>): string[] {
     const args: string[] = [];
-    const name = 'clubhouse';
 
-    if (serverDef.command) {
-      args.push('-c', `mcp_servers.${name}.command=${tomlValue(serverDef.command)}`);
-    }
-    if (serverDef.args && serverDef.args.length > 0) {
-      const arr = `[${serverDef.args.map(tomlValue).join(', ')}]`;
-      args.push('-c', `mcp_servers.${name}.args=${arr}`);
-    }
-    if (serverDef.env) {
-      for (const [key, val] of Object.entries(serverDef.env)) {
-        args.push('-c', `mcp_servers.${name}.env.${key}=${tomlValue(val)}`);
+    for (const [name, def] of Object.entries(servers)) {
+      // A server name lands in a dotted config key, so anything outside this
+      // set would produce an unparseable override rather than a clear error.
+      if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+        appLog('core:orchestrator', 'warn', 'Skipping MCP server with a name Codex cannot key on', {
+          meta: { name },
+        });
+        continue;
+      }
+
+      if (def.type) {
+        args.push('-c', `mcp_servers.${name}.type=${tomlValue(def.type)}`);
+      }
+      if (def.command) {
+        args.push('-c', `mcp_servers.${name}.command=${tomlValue(def.command)}`);
+      }
+      if (def.args && def.args.length > 0) {
+        const arr = `[${def.args.map(tomlValue).join(', ')}]`;
+        args.push('-c', `mcp_servers.${name}.args=${arr}`);
+      }
+      if (def.url) {
+        args.push('-c', `mcp_servers.${name}.url=${tomlValue(def.url)}`);
+      }
+      if (def.env) {
+        for (const [key, val] of Object.entries(def.env)) {
+          args.push('-c', `mcp_servers.${name}.env.${key}=${tomlValue(val)}`);
+        }
       }
     }
 

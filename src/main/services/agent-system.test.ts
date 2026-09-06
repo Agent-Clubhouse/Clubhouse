@@ -88,6 +88,7 @@ vi.mock('./agent-config', () => ({
 const mockMaterializeAgent = vi.fn();
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
 vi.mock('./materialization-service', () => ({
+  resolveProjectMcpServers: vi.fn(async () => ({})),
   materializeAgent: (...args: unknown[]) => mockMaterializeAgent(...args),
   cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
 }));
