@@ -810,7 +810,35 @@ describe('Provider integration tests', () => {
       // Should have user entry + new Clubhouse entry (old one replaced)
       expect(written.hooks.PreToolUse).toHaveLength(2);
       expect(written.hooks.PreToolUse[0].hooks[0].command).toBe('echo "user hook"');
-      expect(written.hooks.PreToolUse[1].hooks[0].command).toContain('127.0.0.1:9999');
+      // The port is an env reference, not a literal — see buildHookCurlCommand.
+      // Reference syntax is shell-specific, so match the platform's.
+      const portRef = process.platform === 'win32'
+        ? '127.0.0.1:%CLUBHOUSE_HOOK_PORT%'
+        : '127.0.0.1:${CLUBHOUSE_HOOK_PORT}';
+      expect(written.hooks.PreToolUse[1].hooks[0].command).toContain(portRef);
+    });
+
+    it.each([
+      ['ClaudeCode', () => new ClaudeCodeProvider()],
+      ['CodexCli', () => new CodexCliProvider()],
+      ['CopilotCli', () => new CopilotCliProvider()],
+    ])('%s: writes an identical hook command whatever port the server bound', async (_name, make) => {
+      const provider = make();
+      const capture = async (port: number) => {
+        vi.mocked(fsp.writeFile).mockClear();
+        await provider.writeHooksConfig('/project', `http://127.0.0.1:${port}/hook`);
+        const call = vi.mocked(fsp.writeFile).mock.calls.at(-1)!;
+        return call[1] as string;
+      };
+
+      // The hook server binds an ephemeral port, so this differs run to run.
+      // Codex records hook trust against the command's content hash and skips
+      // hooks whose hash changed, so the written file must not vary with it.
+      const first = await capture(9999);
+      const second = await capture(45123);
+      expect(second).toBe(first);
+      expect(first).not.toContain('9999');
+      expect(first).not.toContain('45123');
     });
 
     it('CopilotCli: preserves existing user hooks alongside Clubhouse hooks', async () => {

@@ -913,18 +913,40 @@ describe('CodexCliProvider', () => {
       expect(written.hooks.PreToolUse.length).toBe(2);
     });
 
-    it('includes all 6 event types', async () => {
+    it('registers only events Codex actually defines', async () => {
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
       const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
       const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
       const written = JSON.parse(hookCall![1] as string);
-      const events = Object.keys(written.hooks);
-      expect(events).toContain('PreToolUse');
-      expect(events).toContain('PostToolUse');
-      expect(events).toContain('PostToolUseFailure');
-      expect(events).toContain('Stop');
-      expect(events).toContain('Notification');
-      expect(events).toContain('PermissionRequest');
+      const events = Object.keys(written.hooks).sort();
+      expect(events).toEqual([
+        'PermissionRequest', 'PostToolUse', 'PreToolUse',
+        'SessionStart', 'Stop', 'UserPromptSubmit',
+      ]);
+      // Claude Code event names that Codex has no equivalent for
+      expect(events).not.toContain('PostToolUseFailure');
+      expect(events).not.toContain('Notification');
+    });
+
+    it('reads the hook server port from the environment so the trust hash is stable', async () => {
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      const raw = hookCall![1] as string;
+      // Codex hashes hook commands for its trust model; an ephemeral port baked
+      // into the command re-marks trusted hooks as modified on every launch.
+      expect(raw).not.toContain('9999');
+      expect(raw).toContain('CLUBHOUSE_HOOK_PORT');
+    });
+
+    it('writes hooks to the same path config-pipeline cleans up', async () => {
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      expect(hookCall).toBeDefined();
+      expect(String(hookCall![0])).toBe(path.join('/project', '.codex', 'hooks.json'));
+      // getHooksConfigPath composes configDir + (hooksFile ?? localSettingsFile)
+      expect(provider.conventions.hooksFile).toBe('hooks.json');
     });
   });
 
@@ -956,14 +978,32 @@ describe('CodexCliProvider', () => {
       });
     });
 
-    it('parses PostToolUseFailure as tool_error', () => {
-      const result = provider.parseHookEvent({
+    it('ignores PostToolUseFailure, which Codex does not emit', () => {
+      // Copied from the Claude Code provider; not a Codex HookEventName.
+      expect(provider.parseHookEvent({
         hook_event_name: 'PostToolUseFailure',
         tool_name: 'shell',
         message: 'Command failed',
+      })).toBeNull();
+    });
+
+    it('parses SessionStart as a notification', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'SessionStart',
+        message: 'Session began',
       });
-      expect(result!.kind).toBe('tool_error');
-      expect(result!.message).toBe('Command failed');
+      expect(result!.kind).toBe('notification');
+    });
+
+    it('parses UserPromptSubmit as a notification', () => {
+      expect(provider.parseHookEvent({ hook_event_name: 'UserPromptSubmit' })!.kind)
+        .toBe('notification');
+    });
+
+    it('ignores SessionEnd so a session does not report stopped twice', () => {
+      // Codex emits both Stop (turn finished) and SessionEnd (process exiting);
+      // only Stop means "turn done".
+      expect(provider.parseHookEvent({ hook_event_name: 'SessionEnd' })).toBeNull();
     });
 
     it('parses Stop as stop', () => {
@@ -989,13 +1029,11 @@ describe('CodexCliProvider', () => {
       expect(result!.toolName).toBe('shell');
     });
 
-    it('parses Notification as notification', () => {
-      const result = provider.parseHookEvent({
+    it('ignores Notification, which Codex does not emit', () => {
+      expect(provider.parseHookEvent({
         hook_event_name: 'Notification',
         message: 'Something happened',
-      });
-      expect(result!.kind).toBe('notification');
-      expect(result!.message).toBe('Something happened');
+      })).toBeNull();
     });
 
     it('returns null for unknown event names', () => {

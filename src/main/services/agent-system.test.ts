@@ -59,6 +59,7 @@ vi.mock('./experimental-settings', () => ({
 
 // Mock hook-server
 vi.mock('./hook-server', () => ({
+  portEnv: vi.fn(() => ({ CLUBHOUSE_HOOK_PORT: '9999' })),
   waitReady: vi.fn(() => Promise.resolve(12345)),
 }));
 

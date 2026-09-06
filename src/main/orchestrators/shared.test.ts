@@ -482,15 +482,28 @@ Options:
     it('builds posix curl command without suffix', () => {
       if (process.platform === 'win32') return;
       const cmd = buildHookCurlCommand('http://localhost:3000/hooks');
-      expect(cmd).toContain('http://localhost:3000/hooks/${CLUBHOUSE_AGENT_ID}');
+      // The port is read from the environment, not baked in: a literal port
+      // changes the command on every app launch, which breaks Codex's
+      // content-hash hook trust. See buildHookCurlCommand.
+      expect(cmd).toContain('http://localhost:${CLUBHOUSE_HOOK_PORT}/hooks/${CLUBHOUSE_AGENT_ID}');
+      expect(cmd).not.toContain(':3000');
       expect(cmd).toContain('--data-binary @-');
       expect(cmd).toContain('X-Clubhouse-Nonce');
+    });
+
+    it('builds windows curl command with the port as a cmd.exe variable', () => {
+      if (process.platform !== 'win32') return;
+      const cmd = buildHookCurlCommand('http://localhost:3000/hooks');
+      // cmd.exe uses %VAR%, not ${VAR} — the posix assertion above would pass
+      // on mac/ubuntu while this branch shipped broken.
+      expect(cmd).toContain('http://localhost:%CLUBHOUSE_HOOK_PORT%/hooks/%CLUBHOUSE_AGENT_ID%');
+      expect(cmd).not.toContain(':3000');
     });
 
     it('appends event suffix when provided', () => {
       if (process.platform === 'win32') return;
       const cmd = buildHookCurlCommand('http://localhost:3000/hooks', '/preToolUse');
-      expect(cmd).toContain('http://localhost:3000/hooks/${CLUBHOUSE_AGENT_ID}/preToolUse');
+      expect(cmd).toContain('http://localhost:${CLUBHOUSE_HOOK_PORT}/hooks/${CLUBHOUSE_AGENT_ID}/preToolUse');
     });
 
     it('produces no suffix when omitted', () => {

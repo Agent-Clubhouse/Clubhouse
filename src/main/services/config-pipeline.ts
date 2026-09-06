@@ -111,7 +111,9 @@ export function hasSnapshot(filePath: string): boolean {
  */
 export function getHooksConfigPath(provider: OrchestratorProvider, cwd: string): string | null {
   if (!provider.getCapabilities().hooks) return null;
-  return path.join(cwd, provider.conventions.configDir, provider.conventions.localSettingsFile);
+  const { configDir, hooksFile, localSettingsFile } = provider.conventions;
+  // hooksFile wins when the provider keeps hooks apart from its settings file.
+  return path.join(cwd, configDir, hooksFile ?? localSettingsFile);
 }
 
 /**

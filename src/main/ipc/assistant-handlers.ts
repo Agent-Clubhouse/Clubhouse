@@ -25,7 +25,7 @@ import * as headlessManager from '../services/headless-manager';
 import * as structuredManager from '../services/structured-manager';
 import * as configPipeline from '../services/config-pipeline';
 import * as freeAgentSettings from '../services/free-agent-settings';
-import { waitReady as waitHookServerReady } from '../services/hook-server';
+import { waitReady as waitHookServerReady, portEnv as hookPortEnv } from '../services/hook-server';
 import { waitReady as waitMcpBridgeReady } from '../services/clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../services/clubhouse-mcp/injection';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -277,6 +277,7 @@ export function registerAssistantHandlers(): void {
         ...headlessResult.env, ...profileEnv,
         CLUBHOUSE_AGENT_ID: agentId,
         CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
         ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
       };
 
@@ -344,6 +345,7 @@ export function registerAssistantHandlers(): void {
         ...profileEnv,
         CLUBHOUSE_AGENT_ID: agentId,
         CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
         ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
       };
 
@@ -485,6 +487,7 @@ async function spawnInteractive(
     ...env, ...profileEnv,
     CLUBHOUSE_AGENT_ID: agentId,
     CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
 
@@ -515,6 +518,7 @@ async function spawnStructured(
     ...profileEnv,
     CLUBHOUSE_AGENT_ID: agentId,
     CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
 
@@ -577,6 +581,7 @@ async function spawnHeadless(
     ...headlessResult.env, ...profileEnv,
     CLUBHOUSE_AGENT_ID: agentId,
     CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
 

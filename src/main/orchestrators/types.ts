@@ -89,6 +89,17 @@ export interface OrchestratorConventions {
   agentTemplatesDir: string;
   /** Settings filename within configDir (e.g. 'settings.local.json') */
   localSettingsFile: string;
+  /**
+   * Filename within configDir that hooks are written to, when it differs from
+   * `localSettingsFile`.  Codex keeps hooks in `.codex/hooks.json` while its
+   * settings live in `.codex/config.toml`; Claude Code and Copilot write both
+   * to the same file, so they leave this unset.
+   *
+   * Snapshot, restore and strip all key off this path, so it must match what
+   * `writeHooksConfig` actually writes — otherwise Clubhouse-managed hooks are
+   * never cleaned out of the user's worktree.
+   */
+  hooksFile?: string;
   /** Format of the settings and MCP config files. Defaults to 'json'. */
   settingsFormat?: 'json' | 'toml';
 }

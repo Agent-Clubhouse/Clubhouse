@@ -103,6 +103,7 @@ const { mockWaitHookReady, mockWaitMcpBridgeReady } = vi.hoisted(() => ({
 }));
 
 vi.mock('../services/hook-server', () => ({
+  portEnv: vi.fn(() => ({ CLUBHOUSE_HOOK_PORT: '9999' })),
   waitReady: mockWaitHookReady,
 }));
 
