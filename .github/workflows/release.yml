@@ -262,27 +262,42 @@ jobs:
         run: npm ci
 
       - name: Build Windows installer
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: npx electron-forge make --arch=${{ matrix.arch }}
 
-      - name: Authenticate to Azure
-        uses: azure/login@v3
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Verify Squirrel payload signatures
+        shell: pwsh
+        run: |
+          $nupkg = Get-ChildItem -Path out/make -Recurse -Filter "*.nupkg" | Select-Object -First 1
+          if (-not $nupkg) {
+            Write-Error "No .nupkg found in out/make"
+            exit 1
+          }
 
-      - name: Sign Windows executables
-        uses: azure/trusted-signing-action@v2
-        with:
-          endpoint: https://wus2.codesigning.azure.net/
-          trusted-signing-account-name: Clubhouse-Win-Signing
-          certificate-profile-name: clubhouse-win-codesign
-          files-folder: out/make
-          files-folder-filter: exe
-          files-folder-depth: 10
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
+          $extractDir = Join-Path $env:RUNNER_TEMP "clubhouse-squirrel-sign-check"
+          Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+          Expand-Archive -LiteralPath $nupkg.FullName -DestinationPath $extractDir -Force
+
+          $exeFiles = Get-ChildItem -Path $extractDir -Recurse -Filter "*.exe" | Select-Object -ExpandProperty FullName
+          if (-not $exeFiles) {
+            Write-Error "No .exe files found inside $($nupkg.Name)"
+            exit 1
+          }
+
+          foreach ($exe in $exeFiles) {
+            $signature = Get-AuthenticodeSignature -FilePath $exe
+            Write-Host "Checking $exe -> $($signature.Status)"
+            if ($signature.Status -ne 'Valid') {
+              Write-Error "Unsigned executable found in nupkg: $exe (Status: $($signature.Status))"
+              exit 1
+            }
+          }
+
+          Write-Host "All EXEs in the Squirrel payload are validly signed."
 
       - name: Compute artifact hashes
         id: hash
