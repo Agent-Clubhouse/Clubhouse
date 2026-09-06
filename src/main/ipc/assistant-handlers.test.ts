@@ -347,13 +347,18 @@ describe('assistant-handlers', () => {
       );
     });
 
-    it('adds --continue flag for session resumption', async () => {
+    it('leaves the resume flag to the provider rather than appending one itself', async () => {
       const handler = handlers.get(IPC.ASSISTANT.SEND_FOLLOWUP)!;
       await handler({}, { message: 'test' });
 
       const spawnCall = mockHeadlessSpawn.mock.calls[0];
       const args = spawnCall[3]; // 4th arg is the args array
-      expect(args).toContain('--continue');
+      // `--continue` is a Claude Code / Copilot spelling that Codex removed —
+      // the handler signals intent with `resume: true` (asserted below) and each
+      // provider expresses it in its own vocabulary via buildHeadlessCommand.
+      expect(args).not.toContain('--continue');
+      // Args the provider did return are still forwarded untouched.
+      expect(args).toEqual(expect.arrayContaining(['-p', 'test']));
     });
 
     it('sets resume: true in buildHeadlessCommand', async () => {
