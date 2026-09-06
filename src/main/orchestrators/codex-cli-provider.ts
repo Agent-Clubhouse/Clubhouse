@@ -21,6 +21,7 @@ import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
 import { CodexAppServerAdapter } from './adapters';
+import { createCodexHeadlessNormalizer } from './codex-headless-events';
 import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
@@ -693,6 +694,14 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     if (shellEnv.OPENAI_API_KEY) env.OPENAI_API_KEY = shellEnv.OPENAI_API_KEY;
     if (shellEnv.OPENAI_BASE_URL) env.OPENAI_BASE_URL = shellEnv.OPENAI_BASE_URL;
 
-    return { binary, args, env, outputKind: 'stream-json' };
+    return {
+      binary,
+      args,
+      env,
+      outputKind: 'stream-json',
+      // `codex exec --json` emits Codex's own event vocabulary, not Claude
+      // Code's stream-json — see codex-headless-events.
+      createEventNormalizer: createCodexHeadlessNormalizer,
+    };
   }
 }

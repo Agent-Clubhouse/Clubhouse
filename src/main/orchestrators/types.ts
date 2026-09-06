@@ -53,6 +53,20 @@ export interface HeadlessCommandResult {
   args: string[];
   env?: Record<string, string>;
   outputKind?: HeadlessOutputKind;  // defaults to 'stream-json'
+  /**
+   * Translate one line of the CLI's JSONL into the stream-json shape the shared
+   * headless pipeline consumes, returning zero or more events.
+   *
+   * Only Claude Code emits that shape natively; the other CLIs have their own
+   * event vocabularies, and the pipeline matches on `assistant` / `user` /
+   * `result` / `content_block_*`.  A provider that omits this is assumed to
+   * emit stream-json already.
+   *
+   * Called once per session, so the returned function may keep per-session
+   * state (Codex reports the final assistant text well before its terminal
+   * event, for instance).
+   */
+  createEventNormalizer?: () => (raw: StreamJsonEvent) => StreamJsonEvent[];
 }
 
 export interface NormalizedHookEvent {

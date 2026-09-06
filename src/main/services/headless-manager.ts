@@ -37,6 +37,8 @@ interface HeadlessSession {
   agentId: string;
   outputKind: HeadlessOutputKind;
   parser: JsonlParser | null;
+  /** Provider-specific translation into stream-json; identity when absent. */
+  normalizeEvent: ((raw: StreamJsonEvent) => StreamJsonEvent[]) | null;
   transcript: StreamJsonEvent[];
   /** Pre-serialized JSON string for each event, parallel to `transcript`. */
   transcriptLines: string[];
@@ -243,6 +245,7 @@ function createSessionRecord(
   outputKind: HeadlessOutputKind,
   transcriptPath: string,
   onExit?: (agentId: string, exitCode: number) => void,
+  createEventNormalizer?: () => (raw: StreamJsonEvent) => StreamJsonEvent[],
 ): HeadlessSession {
   const parser = outputKind === 'stream-json' ? new JsonlParser() : null;
   return {
@@ -250,6 +253,7 @@ function createSessionRecord(
     agentId,
     outputKind,
     parser,
+    normalizeEvent: createEventNormalizer ? createEventNormalizer() : null,
     transcript: [],
     transcriptLines: [],
     transcriptEventSizes: [],
@@ -297,28 +301,42 @@ function setupTranscriptPipeline(
   // Track which content_block indices are tool_use (for matching content_block_stop)
   const activeToolBlocks = new Map<number, string>();
 
-  session.parser.on('line', (event: StreamJsonEvent) => {
-    appendTranscriptEvent(session, event, logStream);
-
-    // Log first event for diagnostics
-    if (session.transcript.length === 1) {
-      appLog('core:headless', 'info', `First JSONL event received`, {
-        meta: { agentId, type: event.type },
-      });
-    }
-
-    // Evict old events if in-memory transcript exceeds the cap
-    if (session.transcriptBytes > maxTranscriptBytes) {
-      evictOldEvents(session);
-    }
-
-    // Emit hook events to renderer + annex event bus for status tracking
-    const hookEvents = mapToHookEvent(event, activeToolBlocks);
-    for (const hookEvent of hookEvents) {
-      broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
-      annexEventBus.emitHookEvent(agentId, hookEvent as any);
-    }
+  session.parser.on('line', (raw: StreamJsonEvent) => {
+    // Providers whose CLI emits its own vocabulary translate here, so the rest
+    // of the pipeline only ever sees stream-json. One raw line can expand to
+    // several events, or to none.
+    const events = session.normalizeEvent ? session.normalizeEvent(raw) : [raw];
+    for (const event of events) handleTranscriptEvent(session, event, logStream, agentId, activeToolBlocks);
   });
+}
+
+function handleTranscriptEvent(
+  session: HeadlessSession,
+  event: StreamJsonEvent,
+  logStream: fs.WriteStream,
+  agentId: string,
+  activeToolBlocks: Map<number, string>,
+): void {
+  appendTranscriptEvent(session, event, logStream);
+
+  // Log first event for diagnostics
+  if (session.transcript.length === 1) {
+    appLog('core:headless', 'info', `First JSONL event received`, {
+      meta: { agentId, type: event.type },
+    });
+  }
+
+  // Evict old events if in-memory transcript exceeds the cap
+  if (session.transcriptBytes > maxTranscriptBytes) {
+    evictOldEvents(session);
+  }
+
+  // Emit hook events to renderer + annex event bus for status tracking
+  const hookEvents = mapToHookEvent(event, activeToolBlocks);
+  for (const hookEvent of hookEvents) {
+    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
+    annexEventBus.emitHookEvent(agentId, hookEvent as any);
+  }
 }
 
 /** Emit initial notification for text mode so HeadlessAgentView shows activity. */
@@ -489,6 +507,7 @@ export async function spawnHeadless(
   outputKind: HeadlessOutputKind = 'stream-json',
   onExit?: (agentId: string, exitCode: number) => void,
   commandPrefix?: string,
+  createEventNormalizer?: () => (raw: StreamJsonEvent) => StreamJsonEvent[],
 ): Promise<void> {
   await validateSpawnCwd(cwd);
 
@@ -519,7 +538,7 @@ export async function spawnHeadless(
     appLog('core:headless', 'info', `Process spawned`, { meta: { agentId, pid: proc.pid } });
   }
 
-  const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit);
+  const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer);
   sessions.set(agentId, session);
 
   const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });

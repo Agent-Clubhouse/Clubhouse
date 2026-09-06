@@ -314,6 +314,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
             untrackAgent(exitAgentId);
           },
           commandPrefix,
+          headlessResult.createEventNormalizer,
         );
         broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
         return;
