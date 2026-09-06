@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
 
 const marker = 'TODO' + '(TC-CRIT-03)';
-const baseline = 20;
+// Baseline: 29 marker occurrences across the 20 grandfathered files tracked by #1594.
+const baseline = 29;
 
 const result = spawnSync(
   'git',
@@ -13,16 +14,11 @@ if (result.status !== 0 && result.status !== 1) {
   throw new Error(result.stderr.trim() || `git grep exited with status ${result.status}`);
 }
 const output = result.status === 1 ? '' : result.stdout;
-const files = new Set(
-  output === ''
-    ? []
-    : output.trimEnd().split('\n').map((line) => line.slice(0, line.indexOf(':'))),
-);
-const count = files.size;
+const count = output.split(marker).length - 1;
 
 if (count > baseline) {
-  console.error(`TC-CRIT-03 file count increased: found ${count}, baseline is ${baseline}.`);
+  console.error(`TC-CRIT-03 marker count increased: found ${count}, baseline is ${baseline}.`);
   process.exit(1);
 }
 
-console.log(`TC-CRIT-03 file count: ${count}/${baseline}.`);
+console.log(`TC-CRIT-03 marker count: ${count}/${baseline}.`);
