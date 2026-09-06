@@ -80,6 +80,15 @@ export default defineConfig({
       {
         plugins: [rawMarkdown()],
         test: {
+          name: 'preload',
+          ...sharedTestConfig,
+          include: ['src/preload/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        plugins: [rawMarkdown()],
+        test: {
           name: 'integration',
           ...sharedTestConfig,
           include: ['test/**/*.test.ts'],
