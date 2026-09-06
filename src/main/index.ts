@@ -22,6 +22,7 @@ import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
 import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
+import { awaitShutdownCleanup } from './shutdown-guard';
 import { initProtocolHandler } from './services/protocol-service';
 import { resolvePluginModulePath, pluginModuleResponseHeaders } from './plugin-protocol';
 import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
@@ -388,7 +389,7 @@ app.on('before-quit', (event) => {
   // Without this, Electron may exit before PTY processes are terminated,
   // leaving orphaned processes, or before a downloaded update is applied.
   event.preventDefault();
-  Promise.all([
+  awaitShutdownCleanup([
     killAll().catch((err) => {
       appLog('core:shutdown', 'error', `Failed to kill PTY sessions: ${err instanceof Error ? err.message : String(err)}`);
     }),
@@ -398,7 +399,7 @@ app.on('before-quit', (event) => {
     applyUpdateOnQuit().catch((err) => {
       appLog('core:shutdown', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
     }),
-  ]).finally(() => {
+  ], () => {
     app.quit();
   });
 });
