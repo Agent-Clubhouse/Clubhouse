@@ -50,6 +50,21 @@ export function getPort(): number {
 }
 
 /** Wait for the server to be ready and return the port */
+/**
+ * Environment for a spawned agent so its hook commands can resolve the hook
+ * server's port at run time.
+ *
+ * The port must not be baked into the hook command string: Codex hashes hook
+ * commands for its trust model and skips any whose hash changed, so an
+ * ephemeral port baked in would un-trust the hooks on every app launch.
+ * Returns an empty object when the server isn't listening, leaving the variable
+ * unset rather than pointing hooks at port 0.
+ */
+export function portEnv(): Record<string, string> {
+  const port = getPort();
+  return port > 0 ? { CLUBHOUSE_HOOK_PORT: String(port) } : {};
+}
+
 export function waitReady(): Promise<number> {
   if (serverPort > 0) return Promise.resolve(serverPort);
   if (readyPromise) return readyPromise;

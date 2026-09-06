@@ -1190,5 +1190,11 @@ export interface LiveAgentInfo {
   runtime: string;
   isWorking: boolean;
   lastActivity: number | null;
+  /**
+   * Whether this agent will be resumed automatically across an update restart.
+   * Computed by the main process from the same provider capability the capture
+   * path uses, so the badge shown before restarting matches what then happens.
+   */
+  resumeStrategy: ResumeStrategy;
 }
 

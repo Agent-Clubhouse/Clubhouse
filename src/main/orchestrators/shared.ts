@@ -322,11 +322,31 @@ export async function parseJsonlFile(filePath: string): Promise<StreamJsonEvent[
  * @param safeUrl   Already-validated hook base URL (no shell metacharacters).
  * @param eventSuffix  Optional path suffix appended to the URL (e.g. '/preToolUse').
  */
+/**
+ * Rewrite a hook URL so its port is read from the environment at hook time
+ * rather than baked into the command string.
+ *
+ * The hook server binds an ephemeral port, so a baked-in port makes the hook
+ * command different on every app launch.  Codex records hook trust against the
+ * command's content hash and skips hooks whose hash changed, so a baked port
+ * meant a hook the user had explicitly trusted reverted to `modified` — and was
+ * silently skipped — on the next run.  The agent id and nonce were already read
+ * from the environment; the port was the last varying literal.
+ */
+function hookUrlWithEnvPort(safeUrl: string): string {
+  const url = new URL(safeUrl);
+  const portRef = process.platform === 'win32'
+    ? '%CLUBHOUSE_HOOK_PORT%'
+    : '${CLUBHOUSE_HOOK_PORT}';
+  return `${url.protocol}//${url.hostname}:${portRef}${url.pathname}`;
+}
+
 export function buildHookCurlCommand(safeUrl: string, eventSuffix?: string): string {
   const suffix = eventSuffix ?? '';
+  const url = hookUrlWithEnvPort(safeUrl);
   return process.platform === 'win32'
-    ? `curl -s -X POST ${safeUrl}/%CLUBHOUSE_AGENT_ID%${suffix} -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
-    : `cat | curl -s -X POST ${safeUrl}/\${CLUBHOUSE_AGENT_ID}${suffix} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
+    ? `curl -s -X POST ${url}/%CLUBHOUSE_AGENT_ID%${suffix} -H "Content-Type: application/json" -H "X-Clubhouse-Nonce: %CLUBHOUSE_HOOK_NONCE%" -d @- || (exit /b 0)`
+    : `cat | curl -s -X POST ${url}/\${CLUBHOUSE_AGENT_ID}${suffix} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
 }
 
 /**

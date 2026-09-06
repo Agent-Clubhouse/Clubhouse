@@ -21,6 +21,7 @@ vi.mock('./profile-handlers', () => ({ registerProfileHandlers: vi.fn() }));
 vi.mock('../orchestrators', () => ({ registerBuiltinProviders: vi.fn(), getAllProviders: vi.fn(() => []) }));
 vi.mock('../services/orchestrator-settings', () => ({ autoDetectDefaults: vi.fn(async () => {}) }));
 vi.mock('../services/hook-server', () => ({
+  portEnv: vi.fn(() => ({ CLUBHOUSE_HOOK_PORT: '9999' })),
   start: vi.fn(async () => {}),
 }));
 vi.mock('../services/log-service', () => ({

@@ -59,6 +59,7 @@ vi.mock('./experimental-settings', () => ({
 
 // Mock hook-server
 vi.mock('./hook-server', () => ({
+  portEnv: vi.fn(() => ({ CLUBHOUSE_HOOK_PORT: '9999' })),
   waitReady: vi.fn(() => Promise.resolve(12345)),
 }));
 
@@ -87,6 +88,7 @@ vi.mock('./agent-config', () => ({
 const mockMaterializeAgent = vi.fn();
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
 vi.mock('./materialization-service', () => ({
+  resolveProjectMcpServers: vi.fn(async () => ({})),
   materializeAgent: (...args: unknown[]) => mockMaterializeAgent(...args),
   cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
 }));

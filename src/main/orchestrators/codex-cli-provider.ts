@@ -22,7 +22,7 @@ import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
 import { CodexAppServerAdapter } from './adapters';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
-import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
+import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -40,36 +40,150 @@ function tomlValue(s: string): string {
   return `"${escaped}"`;
 }
 
+/**
+ * Codex rollout filename: `rollout-<YYYY-MM-DDTHH-MM-SS>-<uuid>.jsonl`.
+ * Capture 1 is the local-time start stamp, capture 2 the session id.
+ */
+const ROLLOUT_FILE_PATTERN =
+  /^rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+
+/** `sessions/YYYY/MM/DD/` is three levels; allow one spare for re-partitioning. */
+const CODEX_SESSION_WALK_MAX_DEPTH = 4;
+
+/** Upper bound on rollout files examined per listing, newest partitions first. */
+const CODEX_SESSION_SCAN_LIMIT = 500;
+
+/** Enough to cover the opening `session_meta` line without reading whole transcripts. */
+const ROLLOUT_META_READ_BYTES = 64 * 1024;
+
+/**
+ * Convert a rollout filename stamp (`2026-09-05T17-28-00`) to an ISO string.
+ * Only the time separators are dashes, so restore the colons before parsing.
+ * Returns null when the stamp doesn't parse, letting callers fall back to mtime.
+ */
+function parseRolloutFilenameTimestamp(stamp: string): string | null {
+  const [datePart, timePart] = stamp.split('T');
+  if (!datePart || !timePart) return null;
+  const parsed = new Date(`${datePart}T${timePart.replace(/-/g, ':')}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 const TOOL_VERBS: Record<string, string> = {
   shell: 'Running command',
   shell_command: 'Running command',
   apply_patch: 'Editing file',
 };
 
+// Used only when `codex debug models` is unavailable or unparseable.  Codex
+// renames its catalog frequently, so treat this as a last resort rather than a
+// maintained list — the live query below is the real source.
 const FALLBACK_MODEL_OPTIONS = [
   { id: 'default', label: 'Default' },
-  { id: 'gpt-5.3-codex', label: 'GPT 5.3 Codex' },
-  { id: 'gpt-5.2-codex', label: 'GPT 5.2 Codex' },
-  { id: 'codex-mini-latest', label: 'Codex Mini' },
-  { id: 'gpt-5', label: 'GPT 5' },
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
+  { id: 'gpt-5.5', label: 'GPT-5.5' },
+  { id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' },
 ];
 
-const CODEX_MODEL_CHOICES_PATTERN = /--model\s+(?:<\w+>)?\s*.*?\(choices:\s*([\s\S]*?)\)/;
+/** One entry of `codex debug models` output. */
+interface CodexModelEntry {
+  slug?: unknown;
+  display_name?: unknown;
+  /** 'list' for picker-visible models; 'hide' for internal ones (e.g. codex-auto-review). */
+  visibility?: unknown;
+  /** Ascending catalog rank — lower is more prominent. */
+  priority?: unknown;
+}
+
+/**
+ * Parse `codex debug models` JSON into picker options.
+ *
+ * Codex's `--help` has no `(choices: …)` list for `--model`, so the previous
+ * help-scraping parser always returned null and the static fallback was used
+ * unconditionally — offering models that no longer exist.  `codex debug models`
+ * emits the live catalog instead.
+ *
+ * Returns null (→ static fallback) when the output isn't the expected shape.
+ */
+export function parseCodexDebugModels(stdout: string): Array<{ id: string; label: string }> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+
+  const models = (parsed as { models?: unknown } | null)?.models;
+  if (!Array.isArray(models)) return null;
+
+  const visible = (models as CodexModelEntry[])
+    .filter((m) => typeof m?.slug === 'string' && m.slug.length > 0)
+    // 'hide' models are excluded from Codex's own picker; treat a missing
+    // visibility as listable so a schema change doesn't empty the menu.
+    .filter((m) => m.visibility === undefined || m.visibility === 'list')
+    .sort((a, b) => {
+      const pa = typeof a.priority === 'number' ? a.priority : Number.MAX_SAFE_INTEGER;
+      const pb = typeof b.priority === 'number' ? b.priority : Number.MAX_SAFE_INTEGER;
+      return pa - pb;
+    })
+    .map((m) => ({
+      id: m.slug as string,
+      label: typeof m.display_name === 'string' && m.display_name.length > 0
+        ? m.display_name
+        : (m.slug as string),
+    }));
+
+  if (visible.length === 0) return null;
+
+  return [{ id: 'default', label: 'Default' }, ...visible];
+}
 
 // Codex uses sandbox-based permissions rather than per-tool permissions.
 // These map to general categories for compatibility with the permission UI.
 const DEFAULT_DURABLE_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = [...DEFAULT_DURABLE_PERMISSIONS, 'shell(*)', 'apply_patch'];
 
-/** Codex hook event names → normalised kinds (same semantics as Claude Code). */
+/**
+ * Codex hook event names → normalised kinds.
+ *
+ * Codex's own event set (HookEventName, per `codex app-server
+ * generate-json-schema`) is:
+ *
+ *   SessionStart  SessionEnd  PreToolUse  PostToolUse  PermissionRequest
+ *   PreCompact    PostCompact UserPromptSubmit  SubagentStart  SubagentStop
+ *   Stop          Interrupt
+ *
+ * This map was previously copied from the Claude Code provider and listed two
+ * events Codex does not have — `PostToolUseFailure` and `Notification` — while
+ * omitting every Codex-specific one.  Neither phantom could ever match, so
+ * tool-error and notification events were simply never delivered.
+ *
+ * `SessionEnd` is deliberately absent: Codex emits both `Stop` (turn finished)
+ * and `SessionEnd` (process exiting), and mapping both to 'stop' would report
+ * the agent idle twice per session.  `Stop` is the one that means "turn done".
+ */
 const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PreToolUse: 'pre_tool',
   PostToolUse: 'post_tool',
-  PostToolUseFailure: 'tool_error',
-  Stop: 'stop',
-  Notification: 'notification',
   PermissionRequest: 'permission_request',
+  Stop: 'stop',
+  SessionStart: 'notification',
+  UserPromptSubmit: 'notification',
 };
+
+/**
+ * Autonomy flags for an unattended Codex session.
+ *
+ * `--full-auto` was removed from the Codex CLI; the sandbox and approval
+ * policies are now separate axes.  'skip-all' means the user explicitly asked
+ * for no sandbox and no approvals, which is a different thing from 'auto'
+ * (sandboxed, but never stops to ask).
+ */
+function codexAutonomyArgs(permissionMode: SpawnOpts['permissionMode']): string[] {
+  if (permissionMode === 'skip-all') {
+    return ['--dangerously-bypass-approvals-and-sandbox'];
+  }
+  return ['--sandbox', 'workspace-write', '--ask-for-approval', 'never'];
+}
 
 export class CodexCliProvider extends BaseProvider implements HeadlessCapable, StructuredCapable, HookCapable, SessionCapable {
   readonly id = 'codex-cli' as const;
@@ -85,6 +199,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     skillsDir: 'skills',
     agentTemplatesDir: 'agents',
     localSettingsFile: 'config.toml',
+    // Codex reads hooks from .codex/hooks.json, not from config.toml
+    hooksFile: 'hooks.json',
     settingsFormat: 'toml',
   };
 
@@ -127,11 +243,14 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
   protected readonly durablePermissions = DEFAULT_DURABLE_PERMISSIONS;
   protected readonly quickPermissions = DEFAULT_QUICK_PERMISSIONS;
   protected readonly fallbackModelOptions = FALLBACK_MODEL_OPTIONS;
-  protected readonly configEnvKeys = ['OPENAI_API_KEY', 'OPENAI_BASE_URL'];
+  // CODEX_HOME is Codex's config/state root — the analogue of Claude Code's
+  // CLAUDE_CONFIG_DIR. Declaring it lets a Clubhouse profile give an agent an
+  // isolated session store, config.toml and auth.
+  protected readonly configEnvKeys = ['CODEX_HOME', 'OPENAI_API_KEY', 'OPENAI_BASE_URL'];
 
   protected readonly modelFetchConfig = {
-    args: ['--help'],
-    parser: (help: string) => parseModelChoicesFromHelp(help, CODEX_MODEL_CHOICES_PATTERN),
+    args: ['debug', 'models'],
+    parser: parseCodexDebugModels,
   };
 
   // ── Core interface ──────────────────────────────────────────────────────
@@ -193,16 +312,15 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     const binary = this.findBinary();
     const args: string[] = [];
 
-    // Session resume: `resume --last` picks up the most recent session
-    // (older Codex CLI releases used a bare `--continue` flag, since removed).
+    // Session resume.  `codex resume` takes an optional SESSION_ID positional
+    // (a UUID or a session name); `--last` selects the most recent instead.
+    // Older Codex releases used a bare `--continue` flag, since removed.
     if (opts.resume) {
-      args.push('resume', '--last');
+      args.push('resume', opts.sessionId ? opts.sessionId : '--last');
     }
 
     if (opts.freeAgentMode) {
-      // `--full-auto` was removed from the Codex CLI; the equivalent is an
-      // explicit sandboxed + no-approval combination.
-      args.push('--sandbox', 'workspace-write', '--ask-for-approval', 'never');
+      args.push(...codexAutonomyArgs(opts.permissionMode));
     }
 
     if (opts.model && opts.model !== 'default') {
@@ -235,27 +353,44 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
   // ── MCP args ───────────────────────────────────────────────────────────
 
   /**
-   * Codex CLI reads MCP config from .codex/config.toml, so the primary
-   * injection path writes TOML directly to that file.  buildMcpArgs is a
-   * supplementary mechanism that passes the Clubhouse MCP server definition
-   * via `-c` config-override flags at launch time.
+   * Codex reads `mcp_servers` only from `$CODEX_HOME/config.toml` — never from
+   * a project-level `.codex/config.toml`.  Verified directly: the same table is
+   * invisible in-repo and visible under CODEX_HOME.  So the TOML that
+   * materialisation writes into the worktree does not reach Codex, and `-c`
+   * config overrides at launch are the only path that does.
+   *
+   * `-c key=value` takes dot-notation with TOML-typed values.
    */
-  buildMcpArgs(serverDef: McpServerDef): string[] {
-    // Write a temp TOML snippet to a config override flag.
-    // Codex CLI's `-c key=value` supports dot-notation with TOML-typed values.
+  buildMcpArgs(servers: Record<string, McpServerDef>): string[] {
     const args: string[] = [];
-    const name = 'clubhouse';
 
-    if (serverDef.command) {
-      args.push('-c', `mcp_servers.${name}.command=${tomlValue(serverDef.command)}`);
-    }
-    if (serverDef.args && serverDef.args.length > 0) {
-      const arr = `[${serverDef.args.map(tomlValue).join(', ')}]`;
-      args.push('-c', `mcp_servers.${name}.args=${arr}`);
-    }
-    if (serverDef.env) {
-      for (const [key, val] of Object.entries(serverDef.env)) {
-        args.push('-c', `mcp_servers.${name}.env.${key}=${tomlValue(val)}`);
+    for (const [name, def] of Object.entries(servers)) {
+      // A server name lands in a dotted config key, so anything outside this
+      // set would produce an unparseable override rather than a clear error.
+      if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+        appLog('core:orchestrator', 'warn', 'Skipping MCP server with a name Codex cannot key on', {
+          meta: { name },
+        });
+        continue;
+      }
+
+      if (def.type) {
+        args.push('-c', `mcp_servers.${name}.type=${tomlValue(def.type)}`);
+      }
+      if (def.command) {
+        args.push('-c', `mcp_servers.${name}.command=${tomlValue(def.command)}`);
+      }
+      if (def.args && def.args.length > 0) {
+        const arr = `[${def.args.map(tomlValue).join(', ')}]`;
+        args.push('-c', `mcp_servers.${name}.args=${arr}`);
+      }
+      if (def.url) {
+        args.push('-c', `mcp_servers.${name}.url=${tomlValue(def.url)}`);
+      }
+      if (def.env) {
+        for (const [key, val] of Object.entries(def.env)) {
+          args.push('-c', `mcp_servers.${name}.env.${key}=${tomlValue(val)}`);
+        }
       }
     }
 
@@ -277,12 +412,16 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     const safeUrl = validateHookUrl(hookUrl);
     const curl = buildHookCurlCommand(safeUrl);
 
+    // Only events Codex actually defines — see EVENT_NAME_MAP.  Registering an
+    // unknown event name is at best inert and at worst rejects the whole file.
     const hooks: Record<string, unknown[]> = {
       PreToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      PostToolUseFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      Notification: [{ matcher: '', hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      SessionStart: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      // A longer timeout so the hook server can hold the response while a
+      // remote approval decision comes back from the Annex iOS client.
       PermissionRequest: [{ hooks: [{ type: 'command', command: curl, timeout: PERMISSION_HOOK_TIMEOUT_SEC }] }],
     };
 
@@ -319,113 +458,176 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
 
   // ── SessionCapable ──────────────────────────────────────────────────────
 
-  async listSessions(cwd: string, _profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
-    const codexHome = homePath('.codex');
-    const threadDirs = [
-      path.join(codexHome, 'threads'),
-      path.join(codexHome, 'sessions'),
-      path.join(cwd, '.codex', 'threads'),
-      path.join(cwd, '.codex', 'sessions'),
-    ];
+  /**
+   * Root of Codex's own state directory.
+   *
+   * Codex honours `CODEX_HOME`; a Clubhouse profile can set it to give an agent
+   * an isolated session store, config and auth (the equivalent of Claude Code's
+   * `CLAUDE_CONFIG_DIR`).
+   */
+  private resolveCodexHome(profileEnv?: Record<string, string>): string {
+    return profileEnv?.CODEX_HOME || homePath('.codex');
+  }
+
+  /**
+   * Collect rollout transcripts under `<CODEX_HOME>/sessions`.
+   *
+   * Codex partitions them by date — `sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`
+   * — so this walks rather than reading a flat directory.  The walk is depth-
+   * limited and count-capped so a long-lived store can't stall the main process,
+   * and it tolerates a flat or differently-partitioned layout rather than
+   * hardcoding the current three levels.
+   */
+  private async collectRolloutFiles(sessionsDir: string): Promise<string[]> {
+    const found: string[] = [];
+
+    const walk = async (dir: string, depth: number): Promise<void> => {
+      if (depth > CODEX_SESSION_WALK_MAX_DEPTH || found.length >= CODEX_SESSION_SCAN_LIMIT) return;
+      let entries;
+      try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      // Newest date partitions sort last by name, so descend in reverse to hit
+      // recent sessions before the scan limit bites.
+      for (const entry of [...entries].sort((a, b) => b.name.localeCompare(a.name))) {
+        if (found.length >= CODEX_SESSION_SCAN_LIMIT) return;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(full, depth + 1);
+        } else if (ROLLOUT_FILE_PATTERN.test(entry.name)) {
+          found.push(full);
+        }
+      }
+    };
+
+    await walk(sessionsDir, 0);
+    return found;
+  }
+
+  /**
+   * Read the `session_meta` record that opens every rollout file.
+   *
+   * Older Codex releases key the id as `payload.id`, newer ones also emit
+   * `payload.session_id`; both carry `payload.cwd`.  The filename is the more
+   * reliable source for the id, so this is only consulted for `cwd` and the
+   * recorded start time.
+   */
+  private async readRolloutMeta(filePath: string): Promise<{ cwd?: string; startedAt?: string }> {
+    let raw: string;
+    try {
+      // The meta record is the first line; read a bounded prefix rather than
+      // the whole transcript, which can be megabytes.
+      const handle = await fsp.open(filePath, 'r');
+      try {
+        const buf = Buffer.alloc(ROLLOUT_META_READ_BYTES);
+        const { bytesRead } = await handle.read(buf, 0, ROLLOUT_META_READ_BYTES, 0);
+        raw = buf.subarray(0, bytesRead).toString('utf-8');
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      return {};
+    }
+
+    const firstLine = raw.split('\n', 1)[0];
+    if (!firstLine) return {};
+
+    try {
+      const parsed = JSON.parse(firstLine) as { payload?: Record<string, unknown> };
+      const payload = parsed?.payload;
+      if (!payload || typeof payload !== 'object') return {};
+      return {
+        cwd: typeof payload.cwd === 'string' ? payload.cwd : undefined,
+        startedAt: typeof payload.timestamp === 'string' ? payload.timestamp : undefined,
+      };
+    } catch {
+      // A truncated prefix can't be parsed — fall back to filename metadata.
+      return {};
+    }
+  }
+
+  /**
+   * List Codex sessions recorded for `cwd`.
+   *
+   * Previously this probed `~/.codex/threads` (which does not exist) and the
+   * flat `~/.codex/sessions` root, matching entries against a UUID-shaped
+   * regex.  The only entry at that level is the year directory, so the filter
+   * never matched and the picker was always empty.
+   */
+  async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+    const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
+    const targetCwd = path.resolve(cwd);
+
+    let files: string[];
+    try {
+      files = await this.collectRolloutFiles(sessionsDir);
+    } catch (err) {
+      appLog('core:orchestrator', 'warn', 'Failed to scan Codex session store', {
+        meta: { sessionsDir, error: err instanceof Error ? err.message : String(err) },
+      });
+      return [];
+    }
 
     const sessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
     const seenIds = new Set<string>();
 
-    for (const dir of threadDirs) {
+    for (const filePath of files) {
+      const match = ROLLOUT_FILE_PATTERN.exec(path.basename(filePath));
+      if (!match) continue;
+
+      const [, filenameTimestamp, sessionId] = match;
+      if (seenIds.has(sessionId)) continue;
+
+      const meta = await this.readRolloutMeta(filePath);
+
+      // Only surface sessions recorded in this project.  A rollout with no
+      // readable cwd is skipped rather than shown against every project.
+      if (!meta.cwd || path.resolve(meta.cwd) !== targetCwd) continue;
+
+      let lastActiveAt: string;
       try {
-        await fsp.access(dir);
+        lastActiveAt = (await fsp.stat(filePath)).mtime.toISOString();
       } catch {
         continue;
       }
 
-      try {
-        const entries = await fsp.readdir(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const name = entry.isFile()
-            ? path.basename(entry.name, path.extname(entry.name))
-            : entry.name;
-          // Match UUID-like or OpenAI thread IDs (thread_xxx)
-          if (!/^[0-9a-f-]{8,}$/i.test(name) && !/^thread_[a-zA-Z0-9_-]+$/.test(name)) continue;
-          if (seenIds.has(name)) continue;
-          seenIds.add(name);
-
-          try {
-            const fullPath = path.join(dir, entry.name);
-            const stat = await fsp.stat(fullPath);
-            sessions.push({
-              sessionId: name,
-              startedAt: stat.birthtime.toISOString(),
-              lastActiveAt: stat.mtime.toISOString(),
-            });
-          } catch (err) {
-            appLog('core:orchestrator', 'warn', 'Failed to stat session file', {
-              meta: { file: entry.name, error: err instanceof Error ? err.message : String(err) },
-            });
-          }
-        }
-      } catch (err) {
-        appLog('core:orchestrator', 'warn', 'Failed to read session directory', {
-          meta: { dir, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
+      seenIds.add(sessionId);
+      sessions.push({
+        sessionId,
+        startedAt: meta.startedAt ?? parseRolloutFilenameTimestamp(filenameTimestamp) ?? lastActiveAt,
+        lastActiveAt,
+      });
     }
 
     sessions.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
     return sessions;
   }
 
+  /**
+   * Read a rollout transcript by session id.  The id is the UUID suffix of the
+   * rollout filename, so this locates the file by scanning names rather than
+   * guessing a path.
+   */
   async readSessionTranscript(
     sessionId: string,
-    cwd: string,
-    _profileEnv?: Record<string, string>,
+    _cwd: string,
+    profileEnv?: Record<string, string>,
   ): Promise<StreamJsonEvent[] | null> {
-    const codexHome = homePath('.codex');
+    const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
 
-    const searchPaths = [
-      path.join(codexHome, 'threads', `${sessionId}.jsonl`),
-      path.join(codexHome, 'sessions', `${sessionId}.jsonl`),
-      path.join(cwd, '.codex', 'threads', `${sessionId}.jsonl`),
-      path.join(cwd, '.codex', 'sessions', `${sessionId}.jsonl`),
-      path.join(codexHome, 'threads', `${sessionId}.json`),
-      path.join(codexHome, 'sessions', `${sessionId}.json`),
-      path.join(cwd, '.codex', 'threads', `${sessionId}.json`),
-      path.join(cwd, '.codex', 'sessions', `${sessionId}.json`),
-    ];
-
-    let filePath: string | null = null;
-    for (const p of searchPaths) {
-      try {
-        await fsp.access(p);
-        filePath = p;
-        break;
-      } catch {
-        continue;
-      }
+    let files: string[];
+    try {
+      files = await this.collectRolloutFiles(sessionsDir);
+    } catch {
+      return null;
     }
 
-    // Check for directory-style thread storage
-    if (!filePath) {
-      const dirPaths = [
-        path.join(codexHome, 'threads', sessionId),
-        path.join(cwd, '.codex', 'threads', sessionId),
-      ];
-
-      for (const dir of dirPaths) {
-        try {
-          const stat = await fsp.stat(dir);
-          if (stat.isDirectory()) {
-            const entries = await fsp.readdir(dir);
-            const jsonlFile = entries.find((e) => e.endsWith('.jsonl'));
-            if (jsonlFile) {
-              filePath = path.join(dir, jsonlFile);
-              break;
-            }
-          }
-        } catch {
-          continue;
-        }
-      }
-    }
+    const filePath = files.find((f) => {
+      const match = ROLLOUT_FILE_PATTERN.exec(path.basename(f));
+      return match?.[2] === sessionId;
+    });
 
     if (!filePath) return null;
 
@@ -467,10 +669,21 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     parts.push(opts.mission);
     const prompt = parts.join('\n\n');
 
-    // `--full-auto` was removed from the Codex CLI; `exec` already runs
-    // non-interactively without approval prompts, so an explicit sandbox
-    // mode is the remaining equivalent.
-    const args = ['exec', prompt, '--json', '--sandbox', 'workspace-write'];
+    // Continuing an existing thread uses the `exec resume` subcommand, which
+    // takes [SESSION_ID] [PROMPT] positionals.  Note it accepts NEITHER
+    // `--sandbox` nor `--ask-for-approval` (unlike plain `exec`), so the only
+    // autonomy control available on this path is the bypass flag.
+    const args = opts.resume
+      ? ['exec', 'resume', opts.sessionId ? opts.sessionId : '--last', prompt, '--json']
+      : ['exec', prompt, '--json'];
+
+    if (opts.permissionMode === 'skip-all') {
+      args.push('--dangerously-bypass-approvals-and-sandbox');
+    } else if (!opts.resume) {
+      // `exec` already runs non-interactively and never prompts, so the sandbox
+      // mode is the meaningful control on a fresh run.
+      args.push('--sandbox', 'workspace-write');
+    }
 
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);

@@ -62,6 +62,7 @@ vi.mock('./annex-permission-queue', () => ({
 
 const mockGetPort = vi.fn(() => 12345);
 vi.mock('./hook-server', () => ({
+  portEnv: vi.fn(() => ({ CLUBHOUSE_HOOK_PORT: '9999' })),
   getPort: () => mockGetPort(),
 }));
 

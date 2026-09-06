@@ -717,6 +717,20 @@ describe('CopilotCliProvider', () => {
     });
   });
 
+  describe('buildHeadlessCommand — session resume', () => {
+    it('continues the most recent session when resume is requested', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'carry on', resume: true,
+      }))!;
+      expect(args).toContain('--continue');
+    });
+
+    it('adds no resume flag for a fresh run', async () => {
+      const { args } = (await provider.buildHeadlessCommand({ cwd: '/p', mission: 'start' }))!;
+      expect(args).not.toContain('--continue');
+    });
+  });
+
   describe('buildHeadlessCommand', () => {
     it('returns null when no mission provided', async () => {
       const result = await provider.buildHeadlessCommand({ cwd: '/project' });
@@ -966,7 +980,7 @@ describe('CopilotCliProvider', () => {
     };
 
     it('returns --additional-mcp-config with JSON containing clubhouse server def', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       expect(args).toHaveLength(2);
       expect(args[0]).toBe('--additional-mcp-config');
 
@@ -980,8 +994,20 @@ describe('CopilotCliProvider', () => {
     });
 
     it('produces valid JSON that can be parsed', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       expect(() => JSON.parse(args[1])).not.toThrow();
+    });
+    it('includes every configured server, not just clubhouse', () => {
+      const args = provider.buildMcpArgs({
+        clubhouse: { command: 'node', args: ['/bridge.js'] },
+        linear: { command: 'npx', args: ['-y', 'linear-mcp'] },
+      });
+      const config = JSON.parse(args[args.indexOf('--additional-mcp-config') + 1]);
+      expect(Object.keys(config.mcpServers).sort()).toEqual(['clubhouse', 'linear']);
+    });
+
+    it('emits no flag at all for an empty server set', () => {
+      expect(provider.buildMcpArgs({})).toEqual([]);
     });
   });
 

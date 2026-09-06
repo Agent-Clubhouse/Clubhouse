@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
+import * as os from 'os';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
@@ -17,6 +18,7 @@ vi.mock('fs/promises', () => ({
   realpath: vi.fn(async (p: string) => p),
   access: vi.fn(async () => { throw new Error('ENOENT'); }),
   readdir: vi.fn(async () => []),
+  open: vi.fn(async () => { throw new Error('ENOENT'); }),
 }));
 
 vi.mock('child_process', () => ({
@@ -46,7 +48,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
-import { CodexCliProvider } from './codex-cli-provider';
+import { CodexCliProvider, parseCodexDebugModels } from './codex-cli-provider';
 
 /** Match any path whose basename is 'codex' (with or without .exe/.cmd) */
 function isCodexPath(p: string | Buffer | URL): boolean {
@@ -224,6 +226,67 @@ describe('CodexCliProvider', () => {
     });
   });
 
+  describe('buildSpawnCommand — session resume', () => {
+    it('resumes the most recent session with `resume --last` when no id is given', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', resume: true });
+      expect(args.slice(0, 2)).toEqual(['resume', '--last']);
+    });
+
+    it('resumes a specific session by id instead of the most recent one', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p', resume: true, sessionId: '019fe8e8-3d42-7c12-8acd-23da607b445a',
+      });
+      // `codex resume [SESSION_ID] [PROMPT]` — the id is a positional, not a flag
+      expect(args.slice(0, 2)).toEqual(['resume', '019fe8e8-3d42-7c12-8acd-23da607b445a']);
+      expect(args).not.toContain('--last');
+    });
+
+    it('ignores sessionId when resume is not requested', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', sessionId: 'abc-123' });
+      expect(args).not.toContain('resume');
+      expect(args).not.toContain('abc-123');
+    });
+
+    it('keeps the prompt in trailingArgs so injected flags cannot displace it', async () => {
+      const { args, trailingArgs } = await provider.buildSpawnCommand({
+        cwd: '/p', resume: true, sessionId: 'sess-1', mission: 'keep going',
+      });
+      expect(args).not.toContain('keep going');
+      expect(trailingArgs).toEqual(['keep going']);
+    });
+  });
+
+  describe('buildSpawnCommand — permissionMode', () => {
+    it('bypasses sandbox and approvals for skip-all', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p', freeAgentMode: true, permissionMode: 'skip-all',
+      });
+      expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+      // The bypass flag replaces the sandbox pair — passing both is contradictory
+      expect(args).not.toContain('--sandbox');
+      expect(args).not.toContain('--ask-for-approval');
+    });
+
+    it('sandboxes without prompting for auto', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p', freeAgentMode: true, permissionMode: 'auto',
+      });
+      expect(args).toEqual(['--sandbox', 'workspace-write', '--ask-for-approval', 'never']);
+      expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    });
+
+    it('defaults to the sandboxed pair when permissionMode is unset', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', freeAgentMode: true });
+      expect(args).toEqual(['--sandbox', 'workspace-write', '--ask-for-approval', 'never']);
+    });
+
+    it('emits no autonomy flags when freeAgentMode is off, whatever the mode', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', permissionMode: 'skip-all' });
+      expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+      expect(args).not.toContain('--sandbox');
+    });
+  });
+
   describe('buildSpawnCommand', () => {
     it('returns binary path and empty args by default', async () => {
       const { binary, args } = await provider.buildSpawnCommand({ cwd: '/project' });
@@ -338,11 +401,11 @@ describe('CodexCliProvider', () => {
         model: 'gpt-5.3-codex',
         mission: 'Fix bug',
       });
-      const mcpArgs = provider.buildMcpArgs({
+      const mcpArgs = provider.buildMcpArgs({ clubhouse: {
         command: 'node',
         args: ['server.js'],
         env: { CLUBHOUSE_MCP_PORT: '12345' },
-      });
+      } });
       const finalArgs = [...args, ...mcpArgs, ...(trailingArgs ?? [])];
       expect(finalArgs[finalArgs.length - 1]).toBe('Fix bug');
       expect(finalArgs.indexOf('-c')).toBeLessThan(finalArgs.length - 1);
@@ -440,6 +503,71 @@ describe('CodexCliProvider', () => {
       vi.mocked(fsp.readFile).mockResolvedValue(content);
       const result = await provider.readInstructions('/project');
       expect(result).toBe(content);
+    });
+  });
+
+  describe('buildHeadlessCommand — session resume', () => {
+    it('continues the most recent thread via the `exec resume` subcommand', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'and now the tests', resume: true,
+      }))!;
+      expect(args.slice(0, 4)).toEqual(['exec', 'resume', '--last', 'and now the tests']);
+      expect(args).toContain('--json');
+    });
+
+    it('resumes a specific thread by id', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'and now the tests', resume: true, sessionId: 'thread-7',
+      }))!;
+      expect(args.slice(0, 4)).toEqual(['exec', 'resume', 'thread-7', 'and now the tests']);
+    });
+
+    it('omits --sandbox on the resume path — `codex exec resume` rejects it', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'go on', resume: true,
+      }))!;
+      expect(args).not.toContain('--sandbox');
+      expect(args).not.toContain('--ask-for-approval');
+    });
+
+    it('never emits --continue, which Codex removed', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'go on', resume: true,
+      }))!;
+      expect(args).not.toContain('--continue');
+    });
+
+    it('carries the bypass flag onto the resume path, which does accept it', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'go on', resume: true, permissionMode: 'skip-all',
+      }))!;
+      expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+      expect(args).not.toContain('--sandbox');
+    });
+
+    it('starts a fresh exec when resume is not requested', async () => {
+      const { args } = (await provider.buildHeadlessCommand({ cwd: '/p', mission: 'start' }))!;
+      expect(args[0]).toBe('exec');
+      expect(args).not.toContain('resume');
+    });
+  });
+
+  describe('buildHeadlessCommand — permissionMode', () => {
+    it('bypasses the sandbox for skip-all', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'ship it', permissionMode: 'skip-all',
+      }))!;
+      expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+      expect(args).not.toContain('--sandbox');
+    });
+
+    it('sandboxes for auto', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'ship it', permissionMode: 'auto',
+      }))!;
+      expect(args).toContain('--sandbox');
+      expect(args).toContain('workspace-write');
+      expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
     });
   });
 
@@ -560,7 +688,7 @@ describe('CodexCliProvider', () => {
     };
 
     it('returns -c flags for command', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       expect(args).toContain('-c');
       const commandArg = args.find(a => a.includes('mcp_servers.clubhouse.command='));
       expect(commandArg).toBeDefined();
@@ -568,14 +696,14 @@ describe('CodexCliProvider', () => {
     });
 
     it('returns -c flags for args array', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       const argsArg = args.find(a => a.includes('mcp_servers.clubhouse.args='));
       expect(argsArg).toBeDefined();
       expect(argsArg).toContain('"/mock/bridge.js"');
     });
 
     it('returns -c flags for each env var', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       const portArg = args.find(a => a.includes('mcp_servers.clubhouse.env.CLUBHOUSE_MCP_PORT='));
       expect(portArg).toBeDefined();
       expect(portArg).toContain('"12345"');
@@ -586,7 +714,7 @@ describe('CodexCliProvider', () => {
     });
 
     it('all -c flags are paired', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       for (let i = 0; i < args.length; i++) {
         if (args[i] === '-c') {
           expect(args[i + 1]).toBeDefined();
@@ -596,12 +724,44 @@ describe('CodexCliProvider', () => {
     });
 
     it('handles server with no args', () => {
-      const args = provider.buildMcpArgs({ command: 'node' });
+      const args = provider.buildMcpArgs({ clubhouse: { command: 'node' } });
       expect(args.some(a => a.includes('.args='))).toBe(false);
     });
 
+    it('emits overrides for every configured server, not just clubhouse', () => {
+      const args = provider.buildMcpArgs({
+        clubhouse: { command: 'node', args: ['/bridge.js'] },
+        linear: { command: 'npx', args: ['-y', 'linear-mcp'], env: { TOKEN: 'abc' } },
+      });
+      expect(args.some(a => a.includes('mcp_servers.clubhouse.command'))).toBe(true);
+      expect(args.some(a => a.includes('mcp_servers.linear.command="npx"'))).toBe(true);
+      expect(args.some(a => a.includes('mcp_servers.linear.env.TOKEN="abc"'))).toBe(true);
+    });
+
+    it('emits type and url for remote servers', () => {
+      const args = provider.buildMcpArgs({
+        docs: { type: 'http', url: 'https://example.com/mcp' },
+      });
+      expect(args.some(a => a.includes('mcp_servers.docs.type="http"'))).toBe(true);
+      expect(args.some(a => a.includes('mcp_servers.docs.url="https://example.com/mcp"'))).toBe(true);
+    });
+
+    it('skips a server whose name would not survive dot-notation keying', () => {
+      const args = provider.buildMcpArgs({
+        'bad.name': { command: 'node' },
+        good: { command: 'node' },
+      });
+      // `-c mcp_servers.bad.name.command=…` would key into a nested table
+      expect(args.some(a => a.includes('bad.name'))).toBe(false);
+      expect(args.some(a => a.includes('mcp_servers.good.command'))).toBe(true);
+    });
+
+    it('returns no args for an empty server set', () => {
+      expect(provider.buildMcpArgs({})).toEqual([]);
+    });
+
     it('handles server with no env', () => {
-      const args = provider.buildMcpArgs({ command: 'node' });
+      const args = provider.buildMcpArgs({ clubhouse: { command: 'node' } });
       expect(args.some(a => a.includes('.env.'))).toBe(false);
     });
   });
@@ -618,21 +778,80 @@ describe('CodexCliProvider', () => {
     });
   });
 
-  describe('getModelOptions', () => {
-    it('returns fallback list including default and codex models', async () => {
-      const options = await provider.getModelOptions();
-      expect(options.length).toBeGreaterThanOrEqual(4);
-      expect(options[0]).toEqual({ id: 'default', label: 'Default' });
-      const ids = options.map(o => o.id);
-      expect(ids).toContain('gpt-5.3-codex');
-      expect(ids).toContain('gpt-5.2-codex');
-      expect(ids).toContain('codex-mini-latest');
+  describe('parseCodexDebugModels', () => {
+    // Trimmed from real `codex debug models` output (codex-cli 0.153.4).
+    const REAL_OUTPUT = JSON.stringify({
+      models: [
+        { slug: 'gpt-6-astra', display_name: 'GPT-6-Astra', visibility: 'list', priority: 1 },
+        { slug: 'gpt-reserve', display_name: 'GPT-Reserve', visibility: 'hide', priority: 3 },
+        { slug: 'gpt-5.6-sol', display_name: 'GPT-5.6-Sol', visibility: 'list', priority: 6 },
+        { slug: 'gpt-5.5', display_name: 'GPT-5.5', visibility: 'list', priority: 12 },
+        { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', priority: 43 },
+      ],
     });
 
-    it('includes GPT 5 model', async () => {
+    it('maps slug/display_name and prepends default', () => {
+      const parsed = parseCodexDebugModels(REAL_OUTPUT);
+      expect(parsed).not.toBeNull();
+      expect(parsed![0]).toEqual({ id: 'default', label: 'Default' });
+      expect(parsed![1]).toEqual({ id: 'gpt-6-astra', label: 'GPT-6-Astra' });
+    });
+
+    it('excludes models Codex hides from its own picker', () => {
+      const ids = parseCodexDebugModels(REAL_OUTPUT)!.map((m) => m.id);
+      expect(ids).not.toContain('gpt-reserve');
+      expect(ids).not.toContain('codex-auto-review');
+    });
+
+    it('orders by catalog priority ascending', () => {
+      const ids = parseCodexDebugModels(REAL_OUTPUT)!.map((m) => m.id);
+      expect(ids).toEqual(['default', 'gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.5']);
+    });
+
+    it('treats a missing visibility as listable so a schema change cannot empty the menu', () => {
+      const parsed = parseCodexDebugModels(JSON.stringify({
+        models: [{ slug: 'gpt-future', display_name: 'GPT Future', priority: 2 }],
+      }));
+      expect(parsed!.map((m) => m.id)).toContain('gpt-future');
+    });
+
+    it('falls back to the slug when display_name is absent', () => {
+      const parsed = parseCodexDebugModels(JSON.stringify({
+        models: [{ slug: 'gpt-nameless', visibility: 'list', priority: 1 }],
+      }));
+      expect(parsed![1]).toEqual({ id: 'gpt-nameless', label: 'gpt-nameless' });
+    });
+
+    it('returns null for unparseable or unexpected output', () => {
+      expect(parseCodexDebugModels('')).toBeNull();
+      expect(parseCodexDebugModels('not json')).toBeNull();
+      expect(parseCodexDebugModels('{}')).toBeNull();
+      expect(parseCodexDebugModels(JSON.stringify({ models: 'nope' }))).toBeNull();
+      expect(parseCodexDebugModels(JSON.stringify({ models: [] }))).toBeNull();
+      // All entries hidden → nothing to show → fall back rather than render empty
+      expect(parseCodexDebugModels(JSON.stringify({
+        models: [{ slug: 'x', visibility: 'hide' }],
+      }))).toBeNull();
+    });
+  });
+
+  describe('getModelOptions', () => {
+    it('queries `codex debug models`, not the --help text', async () => {
+      await provider.getModelOptions();
+      const calls = vi.mocked(childProcess.execFile).mock.calls;
+      const modelCall = calls.find((c) => (c[1] as string[])?.[0] === 'debug');
+      expect(modelCall).toBeDefined();
+      expect(modelCall![1]).toEqual(['debug', 'models']);
+    });
+
+    it('falls back to a static list when the query fails', async () => {
       const options = await provider.getModelOptions();
+      expect(options[0]).toEqual({ id: 'default', label: 'Default' });
+      // The fallback must only name models that actually exist in the catalog
+      // this provider was verified against (codex-cli 0.153.4).
       const ids = options.map(o => o.id);
-      expect(ids).toContain('gpt-5');
+      expect(ids).toContain('gpt-5.6-sol');
+      expect(ids).not.toContain('codex-mini-latest');
     });
 
     it('first option is always default', async () => {
@@ -641,7 +860,7 @@ describe('CodexCliProvider', () => {
       expect(options[0].label).toBe('Default');
     });
 
-    it('passes shell environment to execFile for --help call', async () => {
+    it('passes shell environment to execFile for the model query', async () => {
       const mockEnv = {
         PATH: '/custom/path:/usr/bin',
         OPENAI_API_KEY: 'sk-test-key',
@@ -651,9 +870,9 @@ describe('CodexCliProvider', () => {
       await provider.getModelOptions();
 
       const calls = vi.mocked(childProcess.execFile).mock.calls;
-      const helpCall = calls.find((c) => (c[1] as string[])?.[0] === '--help');
-      expect(helpCall).toBeDefined();
-      const opts = helpCall![2] as Record<string, unknown>;
+      const modelCall = calls.find((c) => (c[1] as string[])?.[0] === 'debug');
+      expect(modelCall).toBeDefined();
+      const opts = modelCall![2] as Record<string, unknown>;
       expect(opts.env).toEqual(mockEnv);
     });
   });
@@ -726,18 +945,40 @@ describe('CodexCliProvider', () => {
       expect(written.hooks.PreToolUse.length).toBe(2);
     });
 
-    it('includes all 6 event types', async () => {
+    it('registers only events Codex actually defines', async () => {
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
       const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
       const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
       const written = JSON.parse(hookCall![1] as string);
-      const events = Object.keys(written.hooks);
-      expect(events).toContain('PreToolUse');
-      expect(events).toContain('PostToolUse');
-      expect(events).toContain('PostToolUseFailure');
-      expect(events).toContain('Stop');
-      expect(events).toContain('Notification');
-      expect(events).toContain('PermissionRequest');
+      const events = Object.keys(written.hooks).sort();
+      expect(events).toEqual([
+        'PermissionRequest', 'PostToolUse', 'PreToolUse',
+        'SessionStart', 'Stop', 'UserPromptSubmit',
+      ]);
+      // Claude Code event names that Codex has no equivalent for
+      expect(events).not.toContain('PostToolUseFailure');
+      expect(events).not.toContain('Notification');
+    });
+
+    it('reads the hook server port from the environment so the trust hash is stable', async () => {
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      const raw = hookCall![1] as string;
+      // Codex hashes hook commands for its trust model; an ephemeral port baked
+      // into the command re-marks trusted hooks as modified on every launch.
+      expect(raw).not.toContain('9999');
+      expect(raw).toContain('CLUBHOUSE_HOOK_PORT');
+    });
+
+    it('writes hooks to the same path config-pipeline cleans up', async () => {
+      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
+      const hookCall = writeCalls.find(c => String(c[0]).includes('hooks.json'));
+      expect(hookCall).toBeDefined();
+      expect(String(hookCall![0])).toBe(path.join('/project', '.codex', 'hooks.json'));
+      // getHooksConfigPath composes configDir + (hooksFile ?? localSettingsFile)
+      expect(provider.conventions.hooksFile).toBe('hooks.json');
     });
   });
 
@@ -769,14 +1010,32 @@ describe('CodexCliProvider', () => {
       });
     });
 
-    it('parses PostToolUseFailure as tool_error', () => {
-      const result = provider.parseHookEvent({
+    it('ignores PostToolUseFailure, which Codex does not emit', () => {
+      // Copied from the Claude Code provider; not a Codex HookEventName.
+      expect(provider.parseHookEvent({
         hook_event_name: 'PostToolUseFailure',
         tool_name: 'shell',
         message: 'Command failed',
+      })).toBeNull();
+    });
+
+    it('parses SessionStart as a notification', () => {
+      const result = provider.parseHookEvent({
+        hook_event_name: 'SessionStart',
+        message: 'Session began',
       });
-      expect(result!.kind).toBe('tool_error');
-      expect(result!.message).toBe('Command failed');
+      expect(result!.kind).toBe('notification');
+    });
+
+    it('parses UserPromptSubmit as a notification', () => {
+      expect(provider.parseHookEvent({ hook_event_name: 'UserPromptSubmit' })!.kind)
+        .toBe('notification');
+    });
+
+    it('ignores SessionEnd so a session does not report stopped twice', () => {
+      // Codex emits both Stop (turn finished) and SessionEnd (process exiting);
+      // only Stop means "turn done".
+      expect(provider.parseHookEvent({ hook_event_name: 'SessionEnd' })).toBeNull();
     });
 
     it('parses Stop as stop', () => {
@@ -802,13 +1061,11 @@ describe('CodexCliProvider', () => {
       expect(result!.toolName).toBe('shell');
     });
 
-    it('parses Notification as notification', () => {
-      const result = provider.parseHookEvent({
+    it('ignores Notification, which Codex does not emit', () => {
+      expect(provider.parseHookEvent({
         hook_event_name: 'Notification',
         message: 'Something happened',
-      });
-      expect(result!.kind).toBe('notification');
-      expect(result!.message).toBe('Something happened');
+      })).toBeNull();
     });
 
     it('returns null for unknown event names', () => {
@@ -828,139 +1085,229 @@ describe('CodexCliProvider', () => {
     });
   });
 
+  /**
+   * Stand up a virtual Codex session store over the fs/promises mock.
+   *
+   * `tree` maps a directory to its entries; `metaByFile` maps a rollout
+   * filename to the `session_meta` record that opens it.  Paths are built with
+   * path.join so the fixture matches the platform the test runs on — see the
+   * Windows-path note in listSessions.
+   */
+  function mockCodexStore(
+    sessionsDir: string,
+    tree: Record<string, Array<{ name: string; dir: boolean }>>,
+    metaByFile: Record<string, unknown>,
+    mtimes: Record<string, string> = {},
+  ) {
+    vi.mocked(fsp.readdir).mockImplementation((async (dir: string) => {
+      const entries = tree[dir];
+      if (!entries) throw new Error('ENOENT');
+      return entries.map((e) => ({
+        name: e.name,
+        isDirectory: () => e.dir,
+        isFile: () => !e.dir,
+      }));
+    }) as never);
+
+    vi.mocked(fsp.stat).mockImplementation((async (f: string) => ({
+      isDirectory: () => false,
+      birthtime: new Date('2026-01-01T00:00:00Z'),
+      mtime: new Date(mtimes[path.basename(f)] ?? '2026-04-01T12:00:00Z'),
+    })) as never);
+
+    vi.mocked(fsp.open).mockImplementation((async (f: string) => {
+      const meta = metaByFile[path.basename(f)];
+      if (meta === undefined) throw new Error('ENOENT');
+      const text = typeof meta === 'string' ? meta : JSON.stringify(meta) + '\n';
+      return {
+        read: async (buf: Buffer) => {
+          const bytes = Buffer.from(text, 'utf-8');
+          bytes.copy(buf);
+          return { bytesRead: Math.min(bytes.length, buf.length) };
+        },
+        close: async () => {},
+      };
+    }) as never);
+
+    return sessionsDir;
+  }
+
+  /** A rollout `session_meta` line as Codex actually writes it. */
+  const rolloutMeta = (cwd: string, timestamp: string, id: string, legacy = false) => ({
+    timestamp,
+    type: 'session_meta',
+    // Older Codex releases key the id as `payload.id`; newer ones add `session_id`.
+    payload: legacy
+      ? { id, timestamp, cwd, originator: 'codex_tui', cli_version: '0.153.4' }
+      : { session_id: id, id, timestamp, cwd, originator: 'codex_tui', cli_version: '0.153.4' },
+  });
+
   describe('listSessions', () => {
-    it('returns empty array when no session directories exist', async () => {
-      const sessions = await provider.listSessions('/project');
-      expect(sessions).toEqual([]);
+    // homePath() goes through the electron mock, which roots app paths in tmpdir
+    const HOME = path.join(os.tmpdir(), 'clubhouse-test-home');
+    const SESSIONS = path.join(HOME, '.codex', 'sessions');
+    const PROJECT = path.join(path.sep, 'work', 'my-project');
+    const OTHER = path.join(path.sep, 'work', 'other-project');
+
+    const F1 = 'rollout-2026-09-05T17-28-00-01a0741d-6c83-7720-8fc2-6412909a95ab.jsonl';
+    const F2 = 'rollout-2026-09-04T09-00-00-019cc073-4ae3-79c3-bc68-eef17cd515f9.jsonl';
+    const F3 = 'rollout-2026-09-03T08-00-00-019d0eff-598f-7ce2-92f2-200d97c54271.jsonl';
+
+    const datePartitionedTree = () => ({
+      [SESSIONS]: [{ name: '2026', dir: true }],
+      [path.join(SESSIONS, '2026')]: [{ name: '09', dir: true }],
+      [path.join(SESSIONS, '2026', '09')]: [
+        { name: '05', dir: true }, { name: '04', dir: true }, { name: '03', dir: true },
+      ],
+      [path.join(SESSIONS, '2026', '09', '05')]: [{ name: F1, dir: false }],
+      [path.join(SESSIONS, '2026', '09', '04')]: [{ name: F2, dir: false }],
+      [path.join(SESSIONS, '2026', '09', '03')]: [{ name: F3, dir: false }],
     });
 
-    it('lists sessions from accessible thread directory', async () => {
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).includes('threads')) return;
-        throw new Error('ENOENT');
+    it('finds sessions in the date-partitioned rollout store', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+        [F2]: rolloutMeta(PROJECT, '2026-09-04T09:00:00.000Z', '019cc073-4ae3-79c3-bc68-eef17cd515f9', true),
+        [F3]: rolloutMeta(PROJECT, '2026-09-03T08:00:00.000Z', '019d0eff-598f-7ce2-92f2-200d97c54271'),
       });
-      vi.mocked(fsp.readdir).mockResolvedValueOnce([
-        { name: 'thread_abc123def456ghij.jsonl', isFile: () => true, isDirectory: () => false },
-        { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false },
-        { name: 'config.toml', isFile: () => true, isDirectory: () => false },
-      ] as any);
 
-      const sessions = await provider.listSessions('/project');
-      expect(sessions).toHaveLength(2);
-      const ids = sessions.map(s => s.sessionId);
-      expect(ids).toContain('thread_abc123def456ghij');
-      expect(ids).toContain('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      const sessions = await provider.listSessions(PROJECT);
+      expect(sessions.map((s) => s.sessionId)).toEqual([
+        '01a0741d-6c83-7720-8fc2-6412909a95ab',
+        '019cc073-4ae3-79c3-bc68-eef17cd515f9',
+        '019d0eff-598f-7ce2-92f2-200d97c54271',
+      ]);
     });
 
-    it('sorts sessions by most recently active first', async () => {
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).includes('threads')) return;
-        throw new Error('ENOENT');
+    it('takes the session id from the filename, including legacy metadata', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        // Legacy record: payload.id only, no session_id
+        [F2]: rolloutMeta(PROJECT, '2026-09-04T09:00:00.000Z', '019cc073-4ae3-79c3-bc68-eef17cd515f9', true),
       });
-      vi.mocked(fsp.readdir).mockResolvedValueOnce([
-        { name: 'a1b2c3d4-e5f6-7890-abcd-000000000001.jsonl', isFile: () => true, isDirectory: () => false },
-        { name: 'a1b2c3d4-e5f6-7890-abcd-000000000002.jsonl', isFile: () => true, isDirectory: () => false },
-      ] as any);
-      vi.mocked(fsp.stat)
-        .mockResolvedValueOnce({ isDirectory: () => false, birthtime: new Date('2026-04-01T10:00:00Z'), mtime: new Date('2026-04-01T11:00:00Z') } as any)
-        .mockResolvedValueOnce({ isDirectory: () => false, birthtime: new Date('2026-04-01T10:00:00Z'), mtime: new Date('2026-04-01T14:00:00Z') } as any);
 
-      const sessions = await provider.listSessions('/project');
-      expect(sessions[0].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-000000000002');
-      expect(sessions[1].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-000000000001');
-    });
-
-    it('deduplicates sessions across directories', async () => {
-      let accessCallCount = 0;
-      vi.mocked(fsp.access).mockImplementation(async () => {
-        accessCallCount++;
-        // Let first two dirs succeed
-        if (accessCallCount <= 2) return;
-        throw new Error('ENOENT');
-      });
-      const entry = { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false };
-      vi.mocked(fsp.readdir)
-        .mockResolvedValueOnce([entry] as any)
-        .mockResolvedValueOnce([entry] as any);
-
-      const sessions = await provider.listSessions('/project');
+      const sessions = await provider.listSessions(PROJECT);
       expect(sessions).toHaveLength(1);
+      expect(sessions[0].sessionId).toBe('019cc073-4ae3-79c3-bc68-eef17cd515f9');
     });
 
-    it('skips non-UUID/non-thread filenames', async () => {
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).includes('threads')) return;
-        throw new Error('ENOENT');
+    it('excludes sessions recorded against a different project', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+        [F2]: rolloutMeta(OTHER, '2026-09-04T09:00:00.000Z', '019cc073-4ae3-79c3-bc68-eef17cd515f9'),
       });
-      vi.mocked(fsp.readdir).mockResolvedValueOnce([
-        { name: 'README.md', isFile: () => true, isDirectory: () => false },
-        { name: 'config.json', isFile: () => true, isDirectory: () => false },
-      ] as any);
 
-      const sessions = await provider.listSessions('/project');
-      expect(sessions).toEqual([]);
+      const sessions = await provider.listSessions(PROJECT);
+      expect(sessions.map((s) => s.sessionId)).toEqual(['01a0741d-6c83-7720-8fc2-6412909a95ab']);
+    });
+
+    it('skips a rollout whose metadata has no cwd rather than showing it everywhere', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: { timestamp: 'x', type: 'session_meta', payload: { id: 'no-cwd' } },
+      });
+      expect(await provider.listSessions(PROJECT)).toEqual([]);
+    });
+
+    it('reports recorded start time and file mtime as last activity', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+      }, { [F1]: '2026-09-05T19:00:00Z' });
+
+      const [session] = await provider.listSessions(PROJECT);
+      expect(session.startedAt).toBe('2026-09-05T17:28:00.000Z');
+      expect(session.lastActiveAt).toBe('2026-09-05T19:00:00.000Z');
+    });
+
+    it('sorts by most recently active first', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+        [F3]: rolloutMeta(PROJECT, '2026-09-03T08:00:00.000Z', '019d0eff-598f-7ce2-92f2-200d97c54271'),
+      }, {
+        [F1]: '2026-09-05T10:00:00Z',
+        [F3]: '2026-09-09T10:00:00Z',   // touched later despite the older name
+      });
+
+      const sessions = await provider.listSessions(PROJECT);
+      expect(sessions[0].sessionId).toBe('019d0eff-598f-7ce2-92f2-200d97c54271');
+    });
+
+    it('honours CODEX_HOME from a profile instead of the default store', async () => {
+      const profileHome = path.join(path.sep, 'profiles', 'agent-a', '.codex');
+      const profileSessions = path.join(profileHome, 'sessions');
+      mockCodexStore(profileSessions, {
+        [profileSessions]: [{ name: '2026', dir: true }],
+        [path.join(profileSessions, '2026')]: [{ name: '09', dir: true }],
+        [path.join(profileSessions, '2026', '09')]: [{ name: '05', dir: true }],
+        [path.join(profileSessions, '2026', '09', '05')]: [{ name: F1, dir: false }],
+      }, {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+      });
+
+      const sessions = await provider.listSessions(PROJECT, { CODEX_HOME: profileHome });
+      expect(sessions).toHaveLength(1);
+      // The default store must not have been consulted
+      expect(vi.mocked(fsp.readdir)).not.toHaveBeenCalledWith(SESSIONS, expect.anything());
+    });
+
+    it('ignores files that are not rollouts', async () => {
+      mockCodexStore(SESSIONS, {
+        [SESSIONS]: [
+          { name: 'notes.txt', dir: false },
+          { name: 'rollout-bogus.jsonl', dir: false },
+        ],
+      }, {});
+      expect(await provider.listSessions(PROJECT)).toEqual([]);
+    });
+
+    it('returns empty when the store does not exist', async () => {
+      mockCodexStore(SESSIONS, {}, {});
+      expect(await provider.listSessions(PROJECT)).toEqual([]);
     });
   });
 
   describe('readSessionTranscript', () => {
-    it('returns null when no transcript file found', async () => {
-      const result = await provider.readSessionTranscript('nonexistent', '/project');
-      expect(result).toBeNull();
+    const HOME = path.join(os.tmpdir(), 'clubhouse-test-home');
+    const SESSIONS = path.join(HOME, '.codex', 'sessions');
+    const ID = '01a0741d-6c83-7720-8fc2-6412909a95ab';
+    const FILE = `rollout-2026-09-05T17-28-00-${ID}.jsonl`;
+
+    beforeEach(() => {
+      vi.mocked(fsp.readdir).mockImplementation((async (dir: string) => {
+        const tree: Record<string, Array<{ name: string; dir: boolean }>> = {
+          [SESSIONS]: [{ name: '2026', dir: true }],
+          [path.join(SESSIONS, '2026')]: [{ name: '09', dir: true }],
+          [path.join(SESSIONS, '2026', '09')]: [{ name: '05', dir: true }],
+          [path.join(SESSIONS, '2026', '09', '05')]: [{ name: FILE, dir: false }],
+        };
+        const entries = tree[dir];
+        if (!entries) throw new Error('ENOENT');
+        return entries.map((e) => ({ name: e.name, isDirectory: () => e.dir, isFile: () => !e.dir }));
+      }) as never);
     });
 
-    it('reads and parses JSONL transcript', async () => {
-      const jsonlContent = '{"type":"text","content":"hello"}\n{"type":"tool","name":"shell"}\n';
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).endsWith('nonexistent.jsonl') && String(p).includes('threads')) return;
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fsp.readFile).mockResolvedValueOnce(jsonlContent);
-
-      const result = await provider.readSessionTranscript('nonexistent', '/project');
-      expect(result).toHaveLength(2);
-      expect(result![0]).toEqual({ type: 'text', content: 'hello' });
-      expect(result![1]).toEqual({ type: 'tool', name: 'shell' });
+    it('locates the rollout by the session id in its filename', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue(
+        '{"type":"assistant","message":{"role":"assistant"}}\n' as never,
+      );
+      const events = await provider.readSessionTranscript(ID, '/any');
+      expect(events).not.toBeNull();
+      expect(vi.mocked(fsp.readFile)).toHaveBeenCalledWith(
+        path.join(SESSIONS, '2026', '09', '05', FILE),
+        'utf-8',
+      );
     });
 
-    it('skips malformed JSONL lines', async () => {
-      const jsonlContent = '{"type":"text"}\n{INVALID JSON}\n{"type":"tool"}\n';
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).endsWith('.jsonl') && String(p).includes('threads')) return;
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fsp.readFile).mockResolvedValueOnce(jsonlContent);
-
-      const result = await provider.readSessionTranscript('test-id', '/project');
-      expect(result).toHaveLength(2);
+    it('returns null for a session id with no matching rollout', async () => {
+      expect(await provider.readSessionTranscript('does-not-exist', '/any')).toBeNull();
     });
 
-    it('returns null for empty transcript', async () => {
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).endsWith('.jsonl') && String(p).includes('threads')) return;
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fsp.readFile).mockResolvedValueOnce('\n\n');
-
-      const result = await provider.readSessionTranscript('test-id', '/project');
-      expect(result).toBeNull();
-    });
-
-    it('checks directory-style thread storage', async () => {
-      // All direct file paths fail
-      vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
-      // But directory-style stat succeeds
-      vi.mocked(fsp.stat).mockImplementation(async (p) => {
-        if (String(p).includes('threads') && String(p).endsWith('my-thread-id')) {
-          return { isDirectory: () => true } as any;
-        }
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fsp.readdir).mockResolvedValueOnce(['transcript.jsonl', 'meta.json']);
-      vi.mocked(fsp.readFile).mockResolvedValueOnce('{"type":"text","content":"from dir"}\n');
-
-      const result = await provider.readSessionTranscript('my-thread-id', '/project');
-      expect(result).toHaveLength(1);
-      expect(result![0]).toEqual({ type: 'text', content: 'from dir' });
+    it('reads from the profile store when CODEX_HOME is set', async () => {
+      const profileHome = path.join(path.sep, 'profiles', 'agent-a', '.codex');
+      vi.mocked(fsp.readdir).mockImplementation((async () => { throw new Error('ENOENT'); }) as never);
+      expect(await provider.readSessionTranscript(ID, '/any', { CODEX_HOME: profileHome })).toBeNull();
+      expect(vi.mocked(fsp.readdir)).toHaveBeenCalledWith(
+        path.join(profileHome, 'sessions'),
+        expect.anything(),
+      );
     });
   });
 

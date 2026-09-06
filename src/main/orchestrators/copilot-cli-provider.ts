@@ -208,12 +208,15 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   // ── MCP CLI injection ──────────────────────────────────────────────────
 
   /**
-   * Copilot CLI reads MCP config from ~/.copilot/mcp-config.json, not from
-   * a project-level config file. Use --additional-mcp-config to inject the
-   * Clubhouse MCP server for this session without modifying user-level config.
+   * Copilot CLI reads MCP config from ~/.copilot/mcp-config.json, not from a
+   * project-level file — a `.github/mcp.json` in the repo is never read
+   * (verified: `copilot mcp list` in such a repo reports none configured).
+   * `--additional-mcp-config` augments the user-level config for this session
+   * only, without modifying it.
    */
-  buildMcpArgs(serverDef: McpServerDef): string[] {
-    const config = JSON.stringify({ mcpServers: { clubhouse: serverDef } });
+  buildMcpArgs(servers: Record<string, McpServerDef>): string[] {
+    if (Object.keys(servers).length === 0) return [];
+    const config = JSON.stringify({ mcpServers: servers });
     return ['--additional-mcp-config', config];
   }
 
@@ -297,6 +300,14 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     // approval round-trips. Headless mode is non-interactive by definition, so
     // we always opt in here.
     const args = ['-p', parts.join('\n\n'), '--allow-all', '--autopilot', '--output-format', 'json'];
+
+    // Continue the most recent session.  Previously appended by the caller for
+    // every provider; owned here so each CLI expresses resume in its own terms.
+    // Copilot's prompt mode has no per-ID selector, so --continue is the only
+    // option available here — see #1514.
+    if (opts.resume) {
+      args.push('--continue');
+    }
 
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);

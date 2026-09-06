@@ -534,6 +534,24 @@ describe('config-pipeline', () => {
       expect(result).toBe(path.join('/project', '.github', 'hooks/hooks.json'));
     });
 
+    it('prefers hooksFile over localSettingsFile when they differ', () => {
+      // Codex keeps hooks in .codex/hooks.json but settings in .codex/config.toml.
+      // Deriving the path from localSettingsFile pointed snapshot/restore/strip
+      // at config.toml, so Clubhouse hook entries were never cleaned up.
+      const provider = {
+        getCapabilities: () => ({ hooks: true } as any),
+        conventions: {
+          configDir: '.codex',
+          localSettingsFile: 'config.toml',
+          hooksFile: 'hooks.json',
+        },
+      } as any;
+
+      const result = getHooksConfigPath(provider, '/project');
+      expect(result).toBe(path.join('/project', '.codex', 'hooks.json'));
+      expect(result).not.toContain('config.toml');
+    });
+
     it('returns null when provider does not support hooks', () => {
       const provider = {
         getCapabilities: () => ({ hooks: false } as any),

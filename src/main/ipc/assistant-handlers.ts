@@ -25,7 +25,7 @@ import * as headlessManager from '../services/headless-manager';
 import * as structuredManager from '../services/structured-manager';
 import * as configPipeline from '../services/config-pipeline';
 import * as freeAgentSettings from '../services/free-agent-settings';
-import { waitReady as waitHookServerReady } from '../services/hook-server';
+import { waitReady as waitHookServerReady, portEnv as hookPortEnv } from '../services/hook-server';
 import { waitReady as waitMcpBridgeReady } from '../services/clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../services/clubhouse-mcp/injection';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -247,12 +247,14 @@ export function registerAssistantHandlers(): void {
 
       const { nonce, mcpPort } = await prepareMcpInjection(agentId, workspace, provider.conventions);
 
-      // Build headless command — session persists so --continue works
+      // Build headless command.  `resume: true` asks the provider to continue
+      // the existing session; how that is spelled is the provider's business
+      // (Claude/Copilot: --continue; Codex: the `exec resume` subcommand).
       const headlessResult = await provider.buildHeadlessCommand({
         cwd: workspace, model, mission: message,
         agentId, freeAgentMode: true, permissionMode,
-        // No noSessionPersistence — sessions must persist for --continue
-        resume: true, // signals continuation
+        // No noSessionPersistence — the session must persist to be resumable
+        resume: true,
       });
 
       if (!headlessResult) {
@@ -262,12 +264,9 @@ export function registerAssistantHandlers(): void {
       const { binary } = headlessResult;
       let { args } = headlessResult;
 
-      // Add --continue to resume the most recent session
-      args = [...args, '--continue'];
-
       if (mcpPort > 0 && provider.buildMcpArgs) {
         const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
-        args = [...args, ...provider.buildMcpArgs(serverDef)];
+        args = [...args, ...provider.buildMcpArgs({ clubhouse: serverDef })];
       }
 
       appLog(LOG_NS, 'info', 'Follow-up headless spawn', {
@@ -278,6 +277,7 @@ export function registerAssistantHandlers(): void {
         ...headlessResult.env, ...profileEnv,
         CLUBHOUSE_AGENT_ID: agentId,
         CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
         ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
       };
 
@@ -347,6 +347,7 @@ export function registerAssistantHandlers(): void {
         ...profileEnv,
         CLUBHOUSE_AGENT_ID: agentId,
         CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
         ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
       };
 
@@ -472,7 +473,7 @@ async function spawnInteractive(
   // CLI-based MCP args for providers that need them
   if (mcpPort > 0 && provider.buildMcpArgs) {
     const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
-    args = [...args, ...provider.buildMcpArgs(serverDef)];
+    args = [...args, ...provider.buildMcpArgs({ clubhouse: serverDef })];
   }
   // trailingArgs (e.g. Codex's bare mission prompt) must stay after the
   // dynamically-injected MCP flags above — see SpawnCommandResult.
@@ -488,6 +489,7 @@ async function spawnInteractive(
     ...env, ...profileEnv,
     CLUBHOUSE_AGENT_ID: agentId,
     CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
 
@@ -518,6 +520,7 @@ async function spawnStructured(
     ...profileEnv,
     CLUBHOUSE_AGENT_ID: agentId,
     CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
 
@@ -526,7 +529,7 @@ async function spawnStructured(
   let extraArgs: string[] | undefined;
   if (mcpPort > 0 && provider.buildMcpArgs) {
     const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
-    extraArgs = provider.buildMcpArgs(serverDef);
+    extraArgs = provider.buildMcpArgs({ clubhouse: serverDef });
   }
 
   await structuredManager.startStructuredSession(agentId, adapter, {
@@ -569,7 +572,7 @@ async function spawnHeadless(
   let { args } = headlessResult;
   if (mcpPort > 0 && provider.buildMcpArgs) {
     const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
-    args = [...args, ...provider.buildMcpArgs(serverDef)];
+    args = [...args, ...provider.buildMcpArgs({ clubhouse: serverDef })];
   }
 
   appLog(LOG_NS, 'info', 'Headless spawn starting', {
@@ -580,6 +583,7 @@ async function spawnHeadless(
     ...headlessResult.env, ...profileEnv,
     CLUBHOUSE_AGENT_ID: agentId,
     CLUBHOUSE_HOOK_NONCE: nonce,
+        ...hookPortEnv(),
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
 

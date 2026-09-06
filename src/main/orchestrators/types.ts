@@ -103,6 +103,17 @@ export interface OrchestratorConventions {
   agentTemplatesDir: string;
   /** Settings filename within configDir (e.g. 'settings.local.json') */
   localSettingsFile: string;
+  /**
+   * Filename within configDir that hooks are written to, when it differs from
+   * `localSettingsFile`.  Codex keeps hooks in `.codex/hooks.json` while its
+   * settings live in `.codex/config.toml`; Claude Code and Copilot write both
+   * to the same file, so they leave this unset.
+   *
+   * Snapshot, restore and strip all key off this path, so it must match what
+   * `writeHooksConfig` actually writes — otherwise Clubhouse-managed hooks are
+   * never cleaned out of the user's worktree.
+   */
+  hooksFile?: string;
   /** Format of the settings and MCP config files. Defaults to 'json'. */
   settingsFormat?: 'json' | 'toml';
 }
@@ -281,11 +292,18 @@ export interface OrchestratorProvider {
 
   /**
    * Optional: return CLI args to inject MCP server config at spawn time.
-   * Used by orchestrators that don't read MCP from a project-level config file
-   * (e.g. Copilot CLI uses --additional-mcp-config instead of .github/mcp.json).
-   * Receives a pre-built server definition to avoid transitive electron imports.
+   *
+   * Required by orchestrators that don't read MCP from a project-level config
+   * file — which is both Codex and Copilot.  Codex reads `mcp_servers` only
+   * from `$CODEX_HOME/config.toml`, and Copilot only from
+   * `~/.copilot/mcp-config.json`, so the project files Clubhouse materialises
+   * (`.codex/config.toml`, `.github/mcp.json`) are never read by either CLI.
+   * CLI injection is the only path that reaches them.
+   *
+   * Receives the full set of servers keyed by name — the Clubhouse bridge plus
+   * whatever the project configured — to avoid transitive electron imports.
    */
-  buildMcpArgs?(serverDef: McpServerDef): string[];
+  buildMcpArgs?(servers: Record<string, McpServerDef>): string[];
 }
 
 // ── Structured Mode ─────────────────────────────────────────────────────────

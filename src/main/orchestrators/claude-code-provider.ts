@@ -223,6 +223,18 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     const binary = this.findBinary();
     const args: string[] = ['-p', opts.mission];
 
+    // Continue an existing conversation: --resume <id> for a specific session,
+    // --continue for the most recent one in this directory.  Previously the
+    // caller appended a bare --continue for every provider; owning it here lets
+    // each CLI express resume in its own vocabulary.
+    if (opts.resume) {
+      if (opts.sessionId) {
+        args.push('--resume', opts.sessionId);
+      } else {
+        args.push('--continue');
+      }
+    }
+
     args.push('--output-format', opts.outputFormat || 'stream-json');
     args.push('--verbose');
 

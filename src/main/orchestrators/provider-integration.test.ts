@@ -555,11 +555,11 @@ describe('Provider integration tests', () => {
     it('CodexCli: implements buildMcpArgs for CLI-arg MCP injection', () => {
       const provider = new CodexCliProvider();
       expect(typeof provider.buildMcpArgs).toBe('function');
-      const args = provider.buildMcpArgs({
+      const args = provider.buildMcpArgs({ clubhouse: {
         command: 'node',
         args: ['/bridge.js'],
         env: { CLUBHOUSE_MCP_PORT: '12345' },
-      });
+      } });
       expect(args.length).toBeGreaterThan(0);
       expect(args).toContain('-c');
       expect(args.some(a => a.includes('mcp_servers.clubhouse'))).toBe(true);
@@ -810,7 +810,35 @@ describe('Provider integration tests', () => {
       // Should have user entry + new Clubhouse entry (old one replaced)
       expect(written.hooks.PreToolUse).toHaveLength(2);
       expect(written.hooks.PreToolUse[0].hooks[0].command).toBe('echo "user hook"');
-      expect(written.hooks.PreToolUse[1].hooks[0].command).toContain('127.0.0.1:9999');
+      // The port is an env reference, not a literal — see buildHookCurlCommand.
+      // Reference syntax is shell-specific, so match the platform's.
+      const portRef = process.platform === 'win32'
+        ? '127.0.0.1:%CLUBHOUSE_HOOK_PORT%'
+        : '127.0.0.1:${CLUBHOUSE_HOOK_PORT}';
+      expect(written.hooks.PreToolUse[1].hooks[0].command).toContain(portRef);
+    });
+
+    it.each([
+      ['ClaudeCode', () => new ClaudeCodeProvider()],
+      ['CodexCli', () => new CodexCliProvider()],
+      ['CopilotCli', () => new CopilotCliProvider()],
+    ])('%s: writes an identical hook command whatever port the server bound', async (_name, make) => {
+      const provider = make();
+      const capture = async (port: number) => {
+        vi.mocked(fsp.writeFile).mockClear();
+        await provider.writeHooksConfig('/project', `http://127.0.0.1:${port}/hook`);
+        const call = vi.mocked(fsp.writeFile).mock.calls.at(-1)!;
+        return call[1] as string;
+      };
+
+      // The hook server binds an ephemeral port, so this differs run to run.
+      // Codex records hook trust against the command's content hash and skips
+      // hooks whose hash changed, so the written file must not vary with it.
+      const first = await capture(9999);
+      const second = await capture(45123);
+      expect(second).toBe(first);
+      expect(first).not.toContain('9999');
+      expect(first).not.toContain('45123');
     });
 
     it('CopilotCli: preserves existing user hooks alongside Clubhouse hooks', async () => {
@@ -876,12 +904,15 @@ describe('Provider integration tests', () => {
       expect(keys).toHaveLength(2);
     });
 
-    it('CodexCli: returns OPENAI_API_KEY and OPENAI_BASE_URL', () => {
+    it('CodexCli: returns CODEX_HOME, OPENAI_API_KEY and OPENAI_BASE_URL', () => {
       const provider = new CodexCliProvider();
       const keys = provider.getProfileEnvKeys();
       expect(keys).toContain('OPENAI_API_KEY');
       expect(keys).toContain('OPENAI_BASE_URL');
-      expect(keys).toHaveLength(2);
+      // CODEX_HOME is the config-isolation root, the analogue of
+      // CLAUDE_CONFIG_DIR — a profile needs it to sandbox an agent's Codex state.
+      expect(keys).toContain('CODEX_HOME');
+      expect(keys).toHaveLength(3);
     });
 
     it('all providers return non-empty arrays', () => {
@@ -909,9 +940,11 @@ describe('Provider integration tests', () => {
       const options = await provider.getModelOptions();
       const ids = options.map(o => o.id);
       expect(ids).toContain('default');
-      expect(ids).toContain('gpt-5.3-codex');
-      expect(ids).toContain('gpt-5.2-codex');
-      expect(ids).toContain('codex-mini-latest');
+      // Fallback names only models present in the catalog this provider was
+      // verified against (codex-cli 0.153.4); the live source is
+      // `codex debug models`.
+      expect(ids).toContain('gpt-5.6-sol');
+      expect(ids).toContain('gpt-5.5');
     });
 
     it('ClaudeCode: falls back to static list when binary not found', async () => {
