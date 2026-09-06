@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { app, BrowserWindow, dialog, powerMonitor, session, net, protocol } from 'electron';
+import { app, BrowserWindow, powerMonitor, session, net, protocol } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, stopAllWatches } from './services/file-watch-service';
@@ -217,33 +217,13 @@ app.on('ready', () => {
 
   // Safe mode: check --safe-mode flag or startup marker crash counter
   const forceSafeMode = process.argv.includes('--safe-mode');
-  if (!forceSafeMode && safeMode.shouldShowSafeModeDialog()) {
-    const marker = safeMode.readMarker();
-    const pluginList = marker?.lastEnabledPlugins?.join(', ') || 'unknown';
-    appLog('core:safe-mode', 'warn', 'Startup crash loop detected, prompting safe mode', {
-      meta: { attempt: marker?.attempt, lastEnabledPlugins: marker?.lastEnabledPlugins },
-    });
-    const response = dialog.showMessageBoxSync({
-      type: 'warning',
-      title: 'Clubhouse — Safe Mode',
-      message: 'Clubhouse failed to start properly on the last attempt.',
-      detail: `This may be caused by a plugin. Last enabled plugins: ${pluginList}\n\nWould you like to start in safe mode (all plugins disabled)?`,
-      buttons: ['Start in Safe Mode', 'Try Again Normally'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (response === 0) {
-      appLog('core:safe-mode', 'warn', 'User chose safe mode — disabling all plugins');
-      // Safe mode — clear marker so we don't loop, renderer will see safeModeActive
-      safeMode.clearMarker();
-      // Set env var so renderer knows to activate safe mode
-      process.env.CLUBHOUSE_SAFE_MODE = '1';
-    }
-  }
+  const userChoseSafeMode = !forceSafeMode && safeMode.shouldShowSafeModeDialog() && safeMode.handleSafeModeDialog();
 
-  if (forceSafeMode) {
-    appLog('core:safe-mode', 'warn', 'Safe mode forced via --safe-mode flag');
-    safeMode.clearMarker();
+  if (userChoseSafeMode || forceSafeMode) {
+    appLog('core:safe-mode', 'warn', 'Safe mode activated — disabling all plugins');
+    if (forceSafeMode) {
+      safeMode.clearMarker();
+    }
     process.env.CLUBHOUSE_SAFE_MODE = '1';
   }
 
