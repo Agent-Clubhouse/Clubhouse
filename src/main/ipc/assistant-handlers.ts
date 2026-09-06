@@ -291,6 +291,8 @@ export function registerAssistantHandlers(): void {
           // DON'T unbind or untrack — we want to keep the MCP binding alive
           // for future follow-ups. Cleanup happens on explicit reset only.
         },
+        undefined,
+        headlessResult.createEventNormalizer,
       );
 
       return { agentId };
@@ -594,5 +596,7 @@ async function spawnHeadless(
       // DON'T unbind or untrack — conversation continues with follow-ups.
       // Cleanup happens on explicit reset only.
     },
+    undefined,
+    headlessResult.createEventNormalizer,
   );
 }

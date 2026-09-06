@@ -1168,6 +1168,7 @@ describe('agent-system', () => {
         'stream-json',
         expect.any(Function),
         undefined, // commandPrefix
+        undefined, // createEventNormalizer
       );
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
@@ -1305,6 +1306,7 @@ describe('agent-system', () => {
         expect.any(String),
         expect.any(Function),
         '. ./init.sh',
+        undefined, // createEventNormalizer
       );
     });
 
