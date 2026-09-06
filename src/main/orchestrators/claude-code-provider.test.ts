@@ -234,6 +234,31 @@ describe('ClaudeCodeProvider', () => {
     });
   });
 
+  describe('buildHeadlessCommand — session resume', () => {
+    it('continues the most recent conversation when resume has no id', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'carry on', resume: true,
+      }))!;
+      expect(args).toContain('--continue');
+      expect(args).not.toContain('--resume');
+    });
+
+    it('resumes a specific conversation by id', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'carry on', resume: true, sessionId: 'sess-42',
+      }))!;
+      expect(args).toContain('--resume');
+      expect(args[args.indexOf('--resume') + 1]).toBe('sess-42');
+      expect(args).not.toContain('--continue');
+    });
+
+    it('adds no resume flag for a fresh run', async () => {
+      const { args } = (await provider.buildHeadlessCommand({ cwd: '/p', mission: 'start' }))!;
+      expect(args).not.toContain('--continue');
+      expect(args).not.toContain('--resume');
+    });
+  });
+
   describe('getExitCommand', () => {
     it('returns /exit with carriage return', () => {
       expect(provider.getExitCommand()).toBe('/exit\r');

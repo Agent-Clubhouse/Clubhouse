@@ -298,6 +298,14 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     // we always opt in here.
     const args = ['-p', parts.join('\n\n'), '--allow-all', '--autopilot', '--output-format', 'json'];
 
+    // Continue the most recent session.  Previously appended by the caller for
+    // every provider; owned here so each CLI expresses resume in its own terms.
+    // Copilot's prompt mode has no per-ID selector, so --continue is the only
+    // option available here — see #1514.
+    if (opts.resume) {
+      args.push('--continue');
+    }
+
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);
     }

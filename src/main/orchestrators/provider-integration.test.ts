@@ -909,9 +909,11 @@ describe('Provider integration tests', () => {
       const options = await provider.getModelOptions();
       const ids = options.map(o => o.id);
       expect(ids).toContain('default');
-      expect(ids).toContain('gpt-5.3-codex');
-      expect(ids).toContain('gpt-5.2-codex');
-      expect(ids).toContain('codex-mini-latest');
+      // Fallback names only models present in the catalog this provider was
+      // verified against (codex-cli 0.153.4); the live source is
+      // `codex debug models`.
+      expect(ids).toContain('gpt-5.6-sol');
+      expect(ids).toContain('gpt-5.5');
     });
 
     it('ClaudeCode: falls back to static list when binary not found', async () => {

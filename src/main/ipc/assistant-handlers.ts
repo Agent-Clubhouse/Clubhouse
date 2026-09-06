@@ -247,12 +247,14 @@ export function registerAssistantHandlers(): void {
 
       const { nonce, mcpPort } = await prepareMcpInjection(agentId, workspace, provider.conventions);
 
-      // Build headless command — session persists so --continue works
+      // Build headless command.  `resume: true` asks the provider to continue
+      // the existing session; how that is spelled is the provider's business
+      // (Claude/Copilot: --continue; Codex: the `exec resume` subcommand).
       const headlessResult = await provider.buildHeadlessCommand({
         cwd: workspace, model, mission: message,
         agentId, freeAgentMode: true, permissionMode,
-        // No noSessionPersistence — sessions must persist for --continue
-        resume: true, // signals continuation
+        // No noSessionPersistence — the session must persist to be resumable
+        resume: true,
       });
 
       if (!headlessResult) {
@@ -261,9 +263,6 @@ export function registerAssistantHandlers(): void {
 
       const { binary } = headlessResult;
       let { args } = headlessResult;
-
-      // Add --continue to resume the most recent session
-      args = [...args, '--continue'];
 
       if (mcpPort > 0 && provider.buildMcpArgs) {
         const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
