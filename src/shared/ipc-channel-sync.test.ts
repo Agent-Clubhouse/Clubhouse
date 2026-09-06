@@ -15,10 +15,11 @@
  *
  * @see https://github.com/Agent-Clubhouse/Clubhouse/issues/238
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IPC } from './ipc-channels';
+import { typedInvoke } from './ipc-types';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -133,6 +134,19 @@ const _BIDIRECTIONAL_CHANNELS = new Set([
 ]);
 
 describe('IPC Channel Sync', () => {
+  describe('typed project channel contract', () => {
+    it('preserves the pick-directory response through the invoke adapter', async () => {
+      const invoke = vi.fn(async (channel: string) => {
+        expect(channel).toBe(IPC.PROJECT.PICK_DIR);
+        return '/tmp/project';
+      });
+
+      const result = await typedInvoke<string | null>(invoke, IPC.PROJECT.PICK_DIR);
+
+      expect(result).toBe('/tmp/project');
+    });
+  });
+
   const channelMap = buildChannelMap();
   const allHandlersSource = readAllHandlerFiles();
   const preloadSource = readSrc('preload/index.ts');

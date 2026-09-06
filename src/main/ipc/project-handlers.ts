@@ -10,6 +10,7 @@ import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
 import { arrayArg, objectArg, stringArg, withValidatedArgs } from './validation';
 import { assertAllowedPath } from '../services/path-sandbox';
+import type { ProjectPickDirectoryResponse } from '../../shared/ipc-types';
 
 export function registerProjectHandlers(): void {
   ipcMain.handle(IPC.PROJECT.LIST, async () => {
@@ -32,7 +33,7 @@ export function registerProjectHandlers(): void {
     return projectStore.remove(id);
   }));
 
-  ipcMain.handle(IPC.PROJECT.PICK_DIR, async () => {
+  ipcMain.handle(IPC.PROJECT.PICK_DIR, async (): Promise<ProjectPickDirectoryResponse> => {
     const win = BrowserWindow.getFocusedWindow();
     if (!win) return null;
     const result = await dialog.showOpenDialog(win, {

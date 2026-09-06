@@ -4,6 +4,8 @@ import { settingsChannels } from '../shared/settings-definitions';
 import { AgentHookEvent, AgentWildcardSettings, LaunchWrapperConfig, McpCatalogEntry, DurableConfigUpdates, NotificationSettings, BadgeSettings, WrapperCatalogSnapshot, ResolvedProtocolAction } from '../shared/types';
 import type { PluginUpdatesStatus } from '../shared/marketplace-types';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
+import { typedInvoke } from '../shared/ipc-types';
+import type { ProjectPickDirectoryResponse } from '../shared/ipc-types';
 
 export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -51,7 +53,11 @@ export const api = {
     list: () => ipcRenderer.invoke(IPC.PROJECT.LIST),
     add: (path: string) => ipcRenderer.invoke(IPC.PROJECT.ADD, path),
     remove: (id: string) => ipcRenderer.invoke(IPC.PROJECT.REMOVE, id),
-    pickDirectory: () => ipcRenderer.invoke(IPC.PROJECT.PICK_DIR),
+    pickDirectory: (): Promise<ProjectPickDirectoryResponse> =>
+      typedInvoke<ProjectPickDirectoryResponse>(
+        (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+        IPC.PROJECT.PICK_DIR,
+      ),
     checkGit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.CHECK_GIT, dirPath),
     gitInit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.GIT_INIT, dirPath),
     update: (id: string, updates: Record<string, unknown>) =>
