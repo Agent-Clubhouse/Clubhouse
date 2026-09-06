@@ -810,8 +810,12 @@ describe('Provider integration tests', () => {
       // Should have user entry + new Clubhouse entry (old one replaced)
       expect(written.hooks.PreToolUse).toHaveLength(2);
       expect(written.hooks.PreToolUse[0].hooks[0].command).toBe('echo "user hook"');
-      // The port is an env reference, not a literal — see buildHookCurlCommand
-      expect(written.hooks.PreToolUse[1].hooks[0].command).toContain('127.0.0.1:${CLUBHOUSE_HOOK_PORT}');
+      // The port is an env reference, not a literal — see buildHookCurlCommand.
+      // Reference syntax is shell-specific, so match the platform's.
+      const portRef = process.platform === 'win32'
+        ? '127.0.0.1:%CLUBHOUSE_HOOK_PORT%'
+        : '127.0.0.1:${CLUBHOUSE_HOOK_PORT}';
+      expect(written.hooks.PreToolUse[1].hooks[0].command).toContain(portRef);
     });
 
     it.each([
