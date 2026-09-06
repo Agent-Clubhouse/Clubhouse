@@ -267,11 +267,18 @@ export interface OrchestratorProvider {
 
   /**
    * Optional: return CLI args to inject MCP server config at spawn time.
-   * Used by orchestrators that don't read MCP from a project-level config file
-   * (e.g. Copilot CLI uses --additional-mcp-config instead of .github/mcp.json).
-   * Receives a pre-built server definition to avoid transitive electron imports.
+   *
+   * Required by orchestrators that don't read MCP from a project-level config
+   * file — which is both Codex and Copilot.  Codex reads `mcp_servers` only
+   * from `$CODEX_HOME/config.toml`, and Copilot only from
+   * `~/.copilot/mcp-config.json`, so the project files Clubhouse materialises
+   * (`.codex/config.toml`, `.github/mcp.json`) are never read by either CLI.
+   * CLI injection is the only path that reaches them.
+   *
+   * Receives the full set of servers keyed by name — the Clubhouse bridge plus
+   * whatever the project configured — to avoid transitive electron imports.
    */
-  buildMcpArgs?(serverDef: McpServerDef): string[];
+  buildMcpArgs?(servers: Record<string, McpServerDef>): string[];
 }
 
 // ── Structured Mode ─────────────────────────────────────────────────────────

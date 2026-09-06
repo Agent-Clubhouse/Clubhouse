@@ -1,4 +1,5 @@
 import * as fsp from 'fs/promises';
+import type { McpServerDef } from '../../shared/types';
 import * as path from 'path';
 import { pathExists } from './fs-utils';
 import { AgentWildcardSettings, DurableAgentConfig, MaterializationPreview, ProjectAgentDefaults, SourceControlProvider } from '../../shared/types';
@@ -652,6 +653,53 @@ export async function cleanupStaleJsonInTomlConfigs(
 /**
  * Preview materialization results without writing files.
  */
+/**
+ * Resolve the MCP servers a project has configured, with wildcards applied.
+ *
+ * This is the canonical source — the same `defaults.mcpJson` that
+ * materialisation renders into the provider's config file.  Providers that
+ * read a project-level MCP file (Claude Code's `.mcp.json`) pick the servers up
+ * from disk; Codex and Copilot read MCP only from their own user-level config,
+ * so for them the rendered file is inert and the servers must be handed over as
+ * launch flags instead (see `OrchestratorProvider.buildMcpArgs`).
+ *
+ * Reading the canonical JSON rather than the rendered file keeps one code path
+ * for both providers — Codex's rendered file is TOML, which can't be read back
+ * without adding a parser dependency.
+ *
+ * `agent` is optional: quick and assistant agents have no durable config, and
+ * agent-scoped wildcards simply stay unresolved for them. Returns an empty map
+ * on any read or parse failure — a malformed MCP config must never stop an
+ * agent from launching.
+ */
+export async function resolveProjectMcpServers(
+  projectPath: string,
+  agent?: DurableAgentConfig,
+): Promise<Record<string, McpServerDef>> {
+  try {
+    const defaults = await readProjectAgentDefaults(projectPath);
+    if (!defaults.mcpJson) return {};
+
+    let json = defaults.mcpJson;
+    if (agent) {
+      const scp = await resolveSourceControlProvider(projectPath, agent);
+      const commands = resolveAgentCommands(agent, defaults);
+      json = replaceWildcards(json, buildWildcardContext(agent, projectPath, scp, commands));
+    }
+
+    const parsed = JSON.parse(json) as { mcpServers?: Record<string, McpServerDef> };
+    const servers = parsed?.mcpServers;
+    if (!servers || typeof servers !== 'object') return {};
+
+    // The Clubhouse bridge is injected separately with a live port and nonce;
+    // a stale entry of the same name must not shadow it.
+    const { clubhouse: _clubhouse, ...rest } = servers;
+    return rest;
+  } catch {
+    return {};
+  }
+}
+
 export async function previewMaterialization(params: {
   projectPath: string;
   agent: DurableAgentConfig;

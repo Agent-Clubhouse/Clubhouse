@@ -338,11 +338,11 @@ describe('CodexCliProvider', () => {
         model: 'gpt-5.3-codex',
         mission: 'Fix bug',
       });
-      const mcpArgs = provider.buildMcpArgs({
+      const mcpArgs = provider.buildMcpArgs({ clubhouse: {
         command: 'node',
         args: ['server.js'],
         env: { CLUBHOUSE_MCP_PORT: '12345' },
-      });
+      } });
       const finalArgs = [...args, ...mcpArgs, ...(trailingArgs ?? [])];
       expect(finalArgs[finalArgs.length - 1]).toBe('Fix bug');
       expect(finalArgs.indexOf('-c')).toBeLessThan(finalArgs.length - 1);
@@ -560,7 +560,7 @@ describe('CodexCliProvider', () => {
     };
 
     it('returns -c flags for command', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       expect(args).toContain('-c');
       const commandArg = args.find(a => a.includes('mcp_servers.clubhouse.command='));
       expect(commandArg).toBeDefined();
@@ -568,14 +568,14 @@ describe('CodexCliProvider', () => {
     });
 
     it('returns -c flags for args array', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       const argsArg = args.find(a => a.includes('mcp_servers.clubhouse.args='));
       expect(argsArg).toBeDefined();
       expect(argsArg).toContain('"/mock/bridge.js"');
     });
 
     it('returns -c flags for each env var', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       const portArg = args.find(a => a.includes('mcp_servers.clubhouse.env.CLUBHOUSE_MCP_PORT='));
       expect(portArg).toBeDefined();
       expect(portArg).toContain('"12345"');
@@ -586,7 +586,7 @@ describe('CodexCliProvider', () => {
     });
 
     it('all -c flags are paired', () => {
-      const args = provider.buildMcpArgs(mockServerDef);
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
       for (let i = 0; i < args.length; i++) {
         if (args[i] === '-c') {
           expect(args[i + 1]).toBeDefined();
@@ -596,12 +596,44 @@ describe('CodexCliProvider', () => {
     });
 
     it('handles server with no args', () => {
-      const args = provider.buildMcpArgs({ command: 'node' });
+      const args = provider.buildMcpArgs({ clubhouse: { command: 'node' } });
       expect(args.some(a => a.includes('.args='))).toBe(false);
     });
 
+    it('emits overrides for every configured server, not just clubhouse', () => {
+      const args = provider.buildMcpArgs({
+        clubhouse: { command: 'node', args: ['/bridge.js'] },
+        linear: { command: 'npx', args: ['-y', 'linear-mcp'], env: { TOKEN: 'abc' } },
+      });
+      expect(args.some(a => a.includes('mcp_servers.clubhouse.command'))).toBe(true);
+      expect(args.some(a => a.includes('mcp_servers.linear.command="npx"'))).toBe(true);
+      expect(args.some(a => a.includes('mcp_servers.linear.env.TOKEN="abc"'))).toBe(true);
+    });
+
+    it('emits type and url for remote servers', () => {
+      const args = provider.buildMcpArgs({
+        docs: { type: 'http', url: 'https://example.com/mcp' },
+      });
+      expect(args.some(a => a.includes('mcp_servers.docs.type="http"'))).toBe(true);
+      expect(args.some(a => a.includes('mcp_servers.docs.url="https://example.com/mcp"'))).toBe(true);
+    });
+
+    it('skips a server whose name would not survive dot-notation keying', () => {
+      const args = provider.buildMcpArgs({
+        'bad.name': { command: 'node' },
+        good: { command: 'node' },
+      });
+      // `-c mcp_servers.bad.name.command=…` would key into a nested table
+      expect(args.some(a => a.includes('bad.name'))).toBe(false);
+      expect(args.some(a => a.includes('mcp_servers.good.command'))).toBe(true);
+    });
+
+    it('returns no args for an empty server set', () => {
+      expect(provider.buildMcpArgs({})).toEqual([]);
+    });
+
     it('handles server with no env', () => {
-      const args = provider.buildMcpArgs({ command: 'node' });
+      const args = provider.buildMcpArgs({ clubhouse: { command: 'node' } });
       expect(args.some(a => a.includes('.env.'))).toBe(false);
     });
   });

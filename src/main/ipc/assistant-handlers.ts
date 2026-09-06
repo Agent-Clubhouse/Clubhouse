@@ -267,7 +267,7 @@ export function registerAssistantHandlers(): void {
 
       if (mcpPort > 0 && provider.buildMcpArgs) {
         const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
-        args = [...args, ...provider.buildMcpArgs(serverDef)];
+        args = [...args, ...provider.buildMcpArgs({ clubhouse: serverDef })];
       }
 
       appLog(LOG_NS, 'info', 'Follow-up headless spawn', {
@@ -470,7 +470,7 @@ async function spawnInteractive(
   // CLI-based MCP args for providers that need them
   if (mcpPort > 0 && provider.buildMcpArgs) {
     const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
-    args = [...args, ...provider.buildMcpArgs(serverDef)];
+    args = [...args, ...provider.buildMcpArgs({ clubhouse: serverDef })];
   }
   // trailingArgs (e.g. Codex's bare mission prompt) must stay after the
   // dynamically-injected MCP flags above — see SpawnCommandResult.
@@ -524,7 +524,7 @@ async function spawnStructured(
   let extraArgs: string[] | undefined;
   if (mcpPort > 0 && provider.buildMcpArgs) {
     const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
-    extraArgs = provider.buildMcpArgs(serverDef);
+    extraArgs = provider.buildMcpArgs({ clubhouse: serverDef });
   }
 
   await structuredManager.startStructuredSession(agentId, adapter, {
@@ -567,7 +567,7 @@ async function spawnHeadless(
   let { args } = headlessResult;
   if (mcpPort > 0 && provider.buildMcpArgs) {
     const serverDef = buildClubhouseMcpDef(mcpPort, agentId, nonce);
-    args = [...args, ...provider.buildMcpArgs(serverDef)];
+    args = [...args, ...provider.buildMcpArgs({ clubhouse: serverDef })];
   }
 
   appLog(LOG_NS, 'info', 'Headless spawn starting', {

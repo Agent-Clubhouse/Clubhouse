@@ -352,10 +352,13 @@ async function spawnPtyAgent(
   // Only snapshot when the MCP feature is enabled
   const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
   let agentMcpOverride: boolean | undefined;
+  // Also reused below to resolve the project's MCP servers with agent-scoped
+  // wildcards applied — fetch it once.
+  let durableConfig: Awaited<ReturnType<typeof getDurableConfig>> | undefined;
   if (params.kind === 'durable') {
     try {
-      const agentConfig = await getDurableConfig(params.projectPath, params.agentId);
-      agentMcpOverride = agentConfig?.mcpOverride;
+      durableConfig = await getDurableConfig(params.projectPath, params.agentId);
+      agentMcpOverride = durableConfig?.mcpOverride;
     } catch { /* config not available */ }
   }
   const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
@@ -410,8 +413,21 @@ async function spawnPtyAgent(
   const { env } = spawnCmd;
   if (mcpPort > 0 && provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
-    const serverDef = buildClubhouseMcpDef(mcpPort, params.agentId, nonce);
-    args = [...args, ...provider.buildMcpArgs(serverDef)];
+    const { resolveProjectMcpServers } = await import('./materialization-service');
+
+    // Codex and Copilot read MCP only from their own user-level config, so the
+    // project MCP file materialised into the worktree never reaches them.
+    // Launch flags are the only path — hand over the project's servers here
+    // alongside the Clubhouse bridge.
+    const projectServers = mcpEnabledForSpawn
+      ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined)
+      : {};
+
+    args = [...args, ...provider.buildMcpArgs({
+      ...projectServers,
+      // The bridge is last so a project server of the same name can't shadow it.
+      clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId, nonce),
+    })];
   }
   // trailingArgs (e.g. Codex's bare mission prompt) must come after any
   // dynamically-injected flags above, not before — see SpawnCommandResult.

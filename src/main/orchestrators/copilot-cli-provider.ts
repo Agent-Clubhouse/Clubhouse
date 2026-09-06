@@ -208,12 +208,15 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   // ── MCP CLI injection ──────────────────────────────────────────────────
 
   /**
-   * Copilot CLI reads MCP config from ~/.copilot/mcp-config.json, not from
-   * a project-level config file. Use --additional-mcp-config to inject the
-   * Clubhouse MCP server for this session without modifying user-level config.
+   * Copilot CLI reads MCP config from ~/.copilot/mcp-config.json, not from a
+   * project-level file — a `.github/mcp.json` in the repo is never read
+   * (verified: `copilot mcp list` in such a repo reports none configured).
+   * `--additional-mcp-config` augments the user-level config for this session
+   * only, without modifying it.
    */
-  buildMcpArgs(serverDef: McpServerDef): string[] {
-    const config = JSON.stringify({ mcpServers: { clubhouse: serverDef } });
+  buildMcpArgs(servers: Record<string, McpServerDef>): string[] {
+    if (Object.keys(servers).length === 0) return [];
+    const config = JSON.stringify({ mcpServers: servers });
     return ['--additional-mcp-config', config];
   }
 
