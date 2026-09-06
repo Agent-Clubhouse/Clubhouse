@@ -71,3 +71,18 @@ export function handleSafeModeDialog(): boolean {
   }
   return false;
 }
+
+export function handleSafeModeStartup(forceSafeMode = process.argv.includes('--safe-mode')): boolean {
+  const userChoseSafeMode = !forceSafeMode && shouldShowSafeModeDialog() && handleSafeModeDialog();
+
+  if (userChoseSafeMode || forceSafeMode) {
+    appLog('core:safe-mode', 'warn', 'Safe mode activated — disabling all plugins');
+    if (forceSafeMode) {
+      clearMarker();
+    }
+    process.env.CLUBHOUSE_SAFE_MODE = '1';
+    return true;
+  }
+
+  return false;
+}

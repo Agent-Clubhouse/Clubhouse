@@ -215,17 +215,8 @@ app.on('ready', () => {
     },
   });
 
-  // Safe mode: check --safe-mode flag or startup marker crash counter
-  const forceSafeMode = process.argv.includes('--safe-mode');
-  const userChoseSafeMode = !forceSafeMode && safeMode.shouldShowSafeModeDialog() && safeMode.handleSafeModeDialog();
-
-  if (userChoseSafeMode || forceSafeMode) {
-    appLog('core:safe-mode', 'warn', 'Safe mode activated — disabling all plugins');
-    if (forceSafeMode) {
-      safeMode.clearMarker();
-    }
-    process.env.CLUBHOUSE_SAFE_MODE = '1';
-  }
+  // Safe mode: check --safe-mode flag or startup marker crash counter.
+  safeMode.handleSafeModeStartup();
 
   // Generate a per-run CSP nonce before creating any windows.
   // The nonce is injected into index.html and the CSP header so that inline

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -32,13 +32,25 @@ import {
   shouldShowSafeModeDialog,
   incrementAttempt,
   handleSafeModeDialog,
+  handleSafeModeStartup,
 } from './safe-mode';
 
 const MARKER_PATH = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', '.startup-marker');
 
 describe('safe-mode', () => {
+  const originalSafeModeEnv = process.env.CLUBHOUSE_SAFE_MODE;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.CLUBHOUSE_SAFE_MODE;
+  });
+
+  afterEach(() => {
+    if (originalSafeModeEnv === undefined) {
+      delete process.env.CLUBHOUSE_SAFE_MODE;
+    } else {
+      process.env.CLUBHOUSE_SAFE_MODE = originalSafeModeEnv;
+    }
   });
 
   describe('readMarker', () => {
@@ -228,6 +240,46 @@ describe('safe-mode', () => {
       handleSafeModeDialog();
 
       expect(fs.unlinkSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleSafeModeStartup', () => {
+    const originalArgv = process.argv;
+
+    beforeEach(() => {
+      process.argv = [...originalArgv];
+    });
+
+    it('returns false without prompting when the marker is below threshold', () => {
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      expect(handleSafeModeStartup()).toBe(false);
+      expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
+      expect(fs.unlinkSync).not.toHaveBeenCalled();
+    });
+
+    it('activates safe mode when the CLI force flag is set', () => {
+      process.argv = [...originalArgv, '--safe-mode'];
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+
+      const result = handleSafeModeStartup();
+
+      expect(result).toBe(true);
+      expect(fs.unlinkSync).toHaveBeenCalledWith(MARKER_PATH);
+      expect(process.env.CLUBHOUSE_SAFE_MODE).toBe('1');
+      expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
+    });
+
+    it('activates safe mode when the user chooses it from the dialog', () => {
+      const marker = { timestamp: 1000, attempt: 2, lastEnabledPlugins: ['plugin-a'] };
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(marker));
+      vi.mocked(dialog.showMessageBoxSync).mockReturnValue(0);
+
+      const result = handleSafeModeStartup();
+
+      expect(result).toBe(true);
+      expect(dialog.showMessageBoxSync).toHaveBeenCalled();
+      expect(fs.unlinkSync).toHaveBeenCalledWith(MARKER_PATH);
+      expect(process.env.CLUBHOUSE_SAFE_MODE).toBe('1');
     });
   });
 
