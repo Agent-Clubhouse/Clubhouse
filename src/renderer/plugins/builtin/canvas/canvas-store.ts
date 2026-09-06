@@ -136,6 +136,8 @@ const STORAGE_KEY_ZONE_WIRES = 'canvas-zone-wires';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+const REMOVED_TYPES = new Set(['browser', 'file', 'legacy-file', 'terminal', 'legacy-terminal', 'git-diff', 'legacy-git-diff']);
+
 function createCanvasInstance(): CanvasInstance {
   return {
     id: generateCanvasId(),
@@ -183,6 +185,66 @@ function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): P
     elkDirection: active.elkDirection,
     layoutCenterId: active.layoutCenterId,
   };
+}
+
+function normalizeCanvasInstance(
+  raw: unknown,
+  options: { source: 'disk' | 'remote'; existing?: CanvasInstance },
+): CanvasInstance {
+  const s = raw as Partial<CanvasInstanceData> | null;
+  try {
+    if (!s || typeof s !== 'object') throw new Error('Canvas instance is not an object');
+
+    const restoredViews = (Array.isArray(s.views) ? s.views : [])
+      .filter((v: any) => !REMOVED_TYPES.has(v.type))
+      .map((v: any) => ({
+        ...v,
+        metadata: v.metadata ?? {},
+        displayName: v.displayName ?? v.title ?? v.type ?? '',
+        ...(v.type === 'zone' ? { containedViewIds: v.containedViewIds ?? [] } : {}),
+      })) as CanvasView[];
+    const rawViewport: Partial<Viewport> = (s.viewport && typeof s.viewport === 'object') ? s.viewport : {};
+    const viewport = options.source === 'remote' && options.existing
+      ? options.existing.viewport
+      : clampViewport({
+        panX: rawViewport.panX ?? 0,
+        panY: rawViewport.panY ?? 0,
+        zoom: rawViewport.zoom ?? 1,
+      });
+
+    return {
+      id: s.id ?? generateCanvasId(),
+      name: s.name ?? generateHubName(),
+      views: restoredViews,
+      viewport,
+      nextZIndex: s.nextZIndex ?? restoredViews.length,
+      zoomedViewId: s.zoomedViewId ?? null,
+      selectedViewId: options.source === 'remote'
+        ? (s as Partial<CanvasInstance>).selectedViewId ?? options.existing?.selectedViewId ?? null
+        : null,
+      minimapAutoHide: options.existing?.minimapAutoHide ?? s.minimapAutoHide ?? true,
+      elkAlgorithm: options.existing?.elkAlgorithm ?? s.elkAlgorithm ?? 'layered',
+      elkDirection: options.existing?.elkDirection ?? s.elkDirection ?? 'RIGHT',
+      layoutCenterId: options.existing?.layoutCenterId ?? s.layoutCenterId ?? null,
+    };
+  } catch (err) {
+    rendererLog('canvas', 'error', `Skipped malformed canvas instance on ${options.source}`, {
+      meta: { id: s?.id, error: err instanceof Error ? err.message : String(err) },
+    });
+    return {
+      id: s?.id ?? generateCanvasId(),
+      name: s?.name ?? generateHubName(),
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+      minimapAutoHide: true,
+      elkAlgorithm: 'layered',
+      elkDirection: 'RIGHT',
+      layoutCenterId: null,
+    };
+  }
 }
 
 // ── Store factory ────────────────────────────────────────────────────
@@ -248,62 +310,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           }
         }
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
-          const canvases: CanvasInstance[] = savedInstances.map((s): CanvasInstance => {
-            // Restore each instance defensively: a single partially-written or
-            // malformed record must degrade to an empty-but-valid canvas, NOT
-            // throw and send the outer catch into replacing ALL canvases with
-            // one fresh empty canvas — that is the silent, total card-loss bug.
-            try {
-              // Backfill displayName and metadata for views saved in older
-              // formats. Filter out legacy view types that no longer exist
-              // (browser, file, legacy-file, terminal, legacy-terminal,
-              // git-diff, legacy-git-diff) — replaced by plugin-provided widgets.
-              const REMOVED_TYPES = new Set(['browser', 'file', 'legacy-file', 'terminal', 'legacy-terminal', 'git-diff', 'legacy-git-diff']);
-              const restoredViews = (Array.isArray(s.views) ? s.views : [])
-                .filter((v: any) => !REMOVED_TYPES.has(v.type))
-                .map((v: any) => ({
-                  ...v,
-                  metadata: v.metadata ?? {},
-                  displayName: v.displayName ?? v.title ?? v.type ?? '',
-                  ...(v.type === 'zone' ? { containedViewIds: v.containedViewIds ?? [] } : {}),
-                })) as CanvasView[];
-              const rawViewport: Partial<Viewport> = (s.viewport && typeof s.viewport === 'object') ? s.viewport : {};
-              return {
-                id: s.id ?? generateCanvasId(),
-                name: s.name ?? generateHubName(),
-                views: restoredViews,
-                viewport: clampViewport({
-                  panX: rawViewport.panX ?? 0,
-                  panY: rawViewport.panY ?? 0,
-                  zoom: rawViewport.zoom ?? 1,
-                }),
-                nextZIndex: s.nextZIndex ?? restoredViews.length,
-                zoomedViewId: s.zoomedViewId ?? null,
-                selectedViewId: null,
-                minimapAutoHide: s.minimapAutoHide ?? true,
-                elkAlgorithm: s.elkAlgorithm ?? 'layered',
-                elkDirection: s.elkDirection ?? 'RIGHT',
-                layoutCenterId: s.layoutCenterId ?? null,
-              };
-            } catch (err) {
-              rendererLog('canvas', 'error', 'Skipped malformed canvas instance on load', {
-                meta: { id: s?.id, error: err instanceof Error ? err.message : String(err) },
-              });
-              return {
-                id: s?.id ?? generateCanvasId(),
-                name: s?.name ?? generateHubName(),
-                views: [],
-                viewport: { panX: 0, panY: 0, zoom: 1 },
-                nextZIndex: 0,
-                zoomedViewId: null,
-                selectedViewId: null,
-                minimapAutoHide: true,
-                elkAlgorithm: 'layered',
-                elkDirection: 'RIGHT',
-                layoutCenterId: null,
-              };
-            }
-          });
+          const canvases = savedInstances.map((s) => normalizeCanvasInstance(s, { source: 'disk' }));
           const savedActive = await storage.read(STORAGE_KEY_ACTIVE) as string | null;
           const activeCanvasId = (savedActive && canvases.find((c) => c.id === savedActive))
             ? savedActive
@@ -507,31 +514,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       const existingState = get();
       const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
 
-      const canvases: CanvasInstance[] = (canvasData as CanvasInstanceData[]).map((s): CanvasInstance => {
-        const restoredViews = (s.views || []).map((v: any) => ({
-          ...v,
-          metadata: v.metadata ?? {},
-          displayName: v.displayName ?? v.title ?? v.type ?? '',
-        })) as CanvasView[];
-
-        // Preserve local viewport when merging (controller keeps its own
-        // pan/zoom position while receiving view updates from satellite).
-        // Selection and zoom are synced from the satellite.
-        const existing = existingCanvasMap.get(s.id);
-        return {
-          id: s.id,
-          name: s.name,
-          views: restoredViews,
-          viewport: existing ? existing.viewport : clampViewport(s.viewport),
-          nextZIndex: s.nextZIndex,
-          zoomedViewId: s.zoomedViewId ?? null,
-          selectedViewId: (s as any).selectedViewId ?? existing?.selectedViewId ?? null,
-          minimapAutoHide: existing?.minimapAutoHide ?? s.minimapAutoHide ?? true,
-          elkAlgorithm: existing?.elkAlgorithm ?? s.elkAlgorithm ?? 'layered',
-          elkDirection: existing?.elkDirection ?? s.elkDirection ?? 'RIGHT',
-          layoutCenterId: existing?.layoutCenterId ?? s.layoutCenterId ?? null,
-        };
-      });
+      const canvases: CanvasInstance[] = (canvasData as CanvasInstanceData[]).map((s) =>
+        normalizeCanvasInstance(s, { source: 'remote', existing: existingCanvasMap.get(s?.id) }),
+      );
 
       // Preserve the controller's active canvas tab if the user hasn't switched
       // on the satellite. Only follow satellite active tab on first hydration.
