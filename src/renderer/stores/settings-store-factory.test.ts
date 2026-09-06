@@ -97,6 +97,23 @@ describe('settings-store-factory', () => {
     });
   });
 
+  describe('custom defaults', () => {
+    it('supports runtime default resolution for platform-specific settings', async () => {
+      const dynamicStore = createSettingsStore(TEST_DEF, {
+        getDefaults: () => ({ enabled: true, count: 7 }),
+      });
+
+      expect(dynamicStore.getState().enabled).toBe(true);
+      expect(dynamicStore.getState().count).toBe(7);
+
+      mockGet.mockResolvedValue(null);
+      await dynamicStore.getState().loadSettings();
+
+      expect(dynamicStore.getState().enabled).toBe(true);
+      expect(dynamicStore.getState().count).toBe(7);
+    });
+  });
+
   describe('saveSettings', () => {
     it('optimistically updates store state', async () => {
       await useStore.getState().saveSettings({ enabled: true });

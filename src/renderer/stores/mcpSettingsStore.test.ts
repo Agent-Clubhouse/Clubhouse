@@ -24,7 +24,7 @@ describe('mcpSettingsStore', () => {
 
       await useMcpSettingsStore.getState().loadSettings();
 
-      expect(useMcpSettingsStore.getState().enabled).toBe(false);
+      expect(useMcpSettingsStore.getState().enabled).toBe(true);
       expect(useMcpSettingsStore.getState().loaded).toBe(true);
     });
 
@@ -33,7 +33,7 @@ describe('mcpSettingsStore', () => {
 
       await useMcpSettingsStore.getState().loadSettings();
 
-      expect(useMcpSettingsStore.getState().enabled).toBe(false);
+      expect(useMcpSettingsStore.getState().enabled).toBe(true);
       expect(useMcpSettingsStore.getState().loaded).toBe(true);
     });
   });
