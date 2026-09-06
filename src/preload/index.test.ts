@@ -84,9 +84,12 @@ describe('preload IPC bridge', () => {
     it('uses the delete and list storage channels', async () => {
       const request = { pluginId: 'plugin-1', scope: 'global', key: 'settings' };
       const listRequest = { pluginId: 'plugin-1', scope: 'global' };
+      invoke
+        .mockResolvedValueOnce('delete-result')
+        .mockResolvedValueOnce('list-result');
 
-      await api.plugin.storageDelete(request);
-      await api.plugin.storageList(listRequest);
+      await expect(api.plugin.storageDelete(request)).resolves.toBe('delete-result');
+      await expect(api.plugin.storageList(listRequest)).resolves.toBe('list-result');
 
       expect(invoke).toHaveBeenNthCalledWith(1, 'plugin:storage-delete', request);
       expect(invoke).toHaveBeenNthCalledWith(2, 'plugin:storage-list', listRequest);
