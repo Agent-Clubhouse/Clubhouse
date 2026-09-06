@@ -54,6 +54,9 @@ export interface GroupProjectContextValue {
   /** Fetch all messages across topics. */
   fetchAllMessages: (groupProjectId: string, since?: string, limit?: number) => Promise<BulletinMessage[]>;
 
+  /** Post a bulletin message. */
+  postBulletinMessage: (groupProjectId: string, topic: string, body: string) => Promise<void>;
+
   /** Inject a message into an agent's PTY (works both local and remote, with chunked paste). */
   injectMessage: (agentId: string, message: string) => Promise<void>;
 
@@ -219,6 +222,14 @@ export function useGroupProjectContext(
     return await window.clubhouse.groupProject.getAllMessages(gpId, since, limit) as BulletinMessage[];
   }, [isRemote, satelliteId, annex]);
 
+  const postBulletinMessage = useCallback(async (gpId: string, topic: string, body: string): Promise<void> => {
+    if (isRemote && satelliteId) {
+      await annex.gpBulletinPost(satelliteId, stripRemotePrefix(gpId), 'user', topic, body);
+    } else {
+      await window.clubhouse.groupProject.postBulletinMessage(gpId, topic, body);
+    }
+  }, [isRemote, satelliteId, annex]);
+
   // --- PTY injection: route through main process for proper chunked paste ---
   const injectMessage = useCallback(async (agentId: string, message: string): Promise<void> => {
     if (isRemote && satelliteId) {
@@ -275,6 +286,7 @@ export function useGroupProjectContext(
     fetchDigest,
     fetchTopicMessages,
     fetchAllMessages,
+    postBulletinMessage,
     injectMessage,
     deleteMessage,
     deleteTopic,

@@ -75,4 +75,23 @@ test('creating a group project advances from naming form to initialized card', a
   await expect(widget.getByRole('alert')).toHaveCount(0);
   await expect(widget.getByText('0 agents', { exact: true })).toBeVisible({ timeout: 10_000 });
   await expect(widget.getByText('Poll: Off', { exact: true })).toBeVisible({ timeout: 5_000 });
+
+  const resizeHandle = widget.locator('[data-testid="canvas-view-resize-e"]').last();
+  const resizeBox = await resizeHandle.boundingBox();
+  expect(resizeBox).not.toBeNull();
+  await window.mouse.move(resizeBox!.x + resizeBox!.width / 2, resizeBox!.y + 120);
+  await window.mouse.down();
+  await window.mouse.move(resizeBox!.x + resizeBox!.width / 2 + 320, resizeBox!.y + 120);
+  await window.mouse.up();
+
+  await expect(widget.getByLabel('Bulletin topic')).toBeVisible({ timeout: 5_000 });
+  await widget.getByLabel('Bulletin topic').fill('updates');
+  await widget.getByLabel('Bulletin message').fill('E2E bulletin round trip');
+  await widget.getByRole('button', { name: 'Post', exact: true }).click();
+  await expect(widget.getByText('E2E bulletin round trip', { exact: true })).toBeVisible({ timeout: 10_000 });
+
+  await widget.getByRole('button', { name: 'Poll: Off', exact: true }).click();
+  await expect(widget.getByText('Poll: On', { exact: true })).toBeVisible({ timeout: 5_000 });
+  await widget.getByRole('button', { name: 'Poll: On', exact: true }).click();
+  await expect(widget.getByText('Poll: Off', { exact: true })).toBeVisible({ timeout: 5_000 });
 });
