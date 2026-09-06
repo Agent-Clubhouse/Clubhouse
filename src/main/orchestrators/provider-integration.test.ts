@@ -201,13 +201,14 @@ describe('Provider integration tests', () => {
       expect(args).toContain('-p');
     });
 
-    it('CodexCli: adds --continue when resume=true', async () => {
+    it('CodexCli: adds resume --last when resume=true', async () => {
       const provider = new CodexCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         resume: true,
       });
-      expect(args).toContain('--continue');
+      expect(args).toContain('resume');
+      expect(args).toContain('--last');
     });
 
     it('CodexCli: no resume flags when resume is false', async () => {
@@ -216,7 +217,8 @@ describe('Provider integration tests', () => {
         cwd: '/p',
         resume: false,
       });
-      expect(args).not.toContain('--continue');
+      expect(args).not.toContain('resume');
+      expect(args).not.toContain('--last');
     });
 
     it('all providers declare sessionResume capability', () => {
@@ -279,22 +281,26 @@ describe('Provider integration tests', () => {
       expect(args).not.toContain('--autopilot');
     });
 
-    it('CodexCli: adds --full-auto when freeAgentMode is true', async () => {
+    it('CodexCli: adds --sandbox workspace-write --ask-for-approval never when freeAgentMode is true', async () => {
       const provider = new CodexCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
       });
-      expect(args).toContain('--full-auto');
+      expect(args).toContain('--sandbox');
+      expect(args).toContain('workspace-write');
+      expect(args).toContain('--ask-for-approval');
+      expect(args).toContain('never');
     });
 
-    it('CodexCli: no --full-auto when freeAgentMode is false', async () => {
+    it('CodexCli: no sandbox/approval flags when freeAgentMode is false', async () => {
       const provider = new CodexCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: false,
       });
-      expect(args).not.toContain('--full-auto');
+      expect(args).not.toContain('--sandbox');
+      expect(args).not.toContain('--ask-for-approval');
     });
 
     it('freeAgentMode flag coexists with other options', async () => {
@@ -433,7 +439,7 @@ describe('Provider integration tests', () => {
       expect(result).toBeNull();
     });
 
-    it('CodexCli: generates headless command with exec --json --full-auto and text outputKind', async () => {
+    it('CodexCli: generates headless command with exec --json --sandbox workspace-write and text outputKind', async () => {
       const provider = new CodexCliProvider();
       const result = await provider.buildHeadlessCommand!({
         cwd: '/p',
@@ -448,7 +454,8 @@ describe('Provider integration tests', () => {
       expect(args[0]).toBe('exec');
       expect(args[1]).toBe('Be thorough\n\nFix the bug');
       expect(args).toContain('--json');
-      expect(args).toContain('--full-auto');
+      expect(args).toContain('--sandbox');
+      expect(args).toContain('workspace-write');
       expect(args).toContain('--model');
       expect(args[args.indexOf('--model') + 1]).toBe('gpt-5.3-codex');
     });
