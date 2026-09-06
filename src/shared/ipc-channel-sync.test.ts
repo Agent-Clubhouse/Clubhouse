@@ -15,10 +15,23 @@
  *
  * @see https://github.com/Agent-Clubhouse/Clubhouse/issues/238
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IPC } from './ipc-channels';
+
+const { invoke, exposeInMainWorld } = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  exposeInMainWorld: vi.fn(),
+}));
+
+vi.mock('electron', () => ({
+  contextBridge: { exposeInMainWorld },
+  ipcRenderer: { invoke, send: vi.fn(), on: vi.fn(), removeListener: vi.fn() },
+  webUtils: { getPathForFile: vi.fn() },
+}));
+
+import { api } from '../preload/index';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -133,6 +146,18 @@ const _BIDIRECTIONAL_CHANNELS = new Set([
 ]);
 
 describe('IPC Channel Sync', () => {
+  describe('typed project channel contract', () => {
+    it('preserves selected and canceled responses through the preload wrapper', async () => {
+      invoke.mockResolvedValueOnce('/tmp/project').mockResolvedValueOnce(null);
+
+      await expect(api.project.pickDirectory()).resolves.toBe('/tmp/project');
+      await expect(api.project.pickDirectory()).resolves.toBeNull();
+
+      expect(invoke).toHaveBeenNthCalledWith(1, IPC.PROJECT.PICK_DIR);
+      expect(invoke).toHaveBeenNthCalledWith(2, IPC.PROJECT.PICK_DIR);
+    });
+  });
+
   const channelMap = buildChannelMap();
   const allHandlersSource = readAllHandlerFiles();
   const preloadSource = readSrc('preload/index.ts');
