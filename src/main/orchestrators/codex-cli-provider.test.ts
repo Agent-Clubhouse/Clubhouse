@@ -117,8 +117,10 @@ describe('CodexCliProvider', () => {
       expect(provider.getCapabilities().headless).toBe(true);
     });
 
-    it('does not support structured output', () => {
-      expect(provider.getCapabilities().structuredOutput).toBe(false);
+    it('supports structured output', () => {
+      // `codex exec --json` is structured; the provider ships a normalizer that
+      // maps it into stream-json for the shared headless pipeline.
+      expect(provider.getCapabilities().structuredOutput).toBe(true);
     });
 
     it('supports hooks', () => {

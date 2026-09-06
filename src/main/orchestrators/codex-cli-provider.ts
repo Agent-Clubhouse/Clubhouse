@@ -138,7 +138,9 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
   getCapabilities(): ProviderCapabilities {
     return {
       headless: true,
-      structuredOutput: false,
+      // `codex exec --json` emits structured events, normalised into stream-json
+      // by createEventNormalizer — see codex-headless-events.
+      structuredOutput: true,
       hooks: true,
       sessionResume: true,
       permissions: true,
