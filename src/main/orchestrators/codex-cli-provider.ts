@@ -21,7 +21,7 @@ import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
 import { CodexAppServerAdapter } from './adapters';
-import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
+import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -45,15 +45,68 @@ const TOOL_VERBS: Record<string, string> = {
   apply_patch: 'Editing file',
 };
 
+// Used only when `codex debug models` is unavailable or unparseable.  Codex
+// renames its catalog frequently, so treat this as a last resort rather than a
+// maintained list — the live query below is the real source.
 const FALLBACK_MODEL_OPTIONS = [
   { id: 'default', label: 'Default' },
-  { id: 'gpt-5.3-codex', label: 'GPT 5.3 Codex' },
-  { id: 'gpt-5.2-codex', label: 'GPT 5.2 Codex' },
-  { id: 'codex-mini-latest', label: 'Codex Mini' },
-  { id: 'gpt-5', label: 'GPT 5' },
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
+  { id: 'gpt-5.5', label: 'GPT-5.5' },
+  { id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' },
 ];
 
-const CODEX_MODEL_CHOICES_PATTERN = /--model\s+(?:<\w+>)?\s*.*?\(choices:\s*([\s\S]*?)\)/;
+/** One entry of `codex debug models` output. */
+interface CodexModelEntry {
+  slug?: unknown;
+  display_name?: unknown;
+  /** 'list' for picker-visible models; 'hide' for internal ones (e.g. codex-auto-review). */
+  visibility?: unknown;
+  /** Ascending catalog rank — lower is more prominent. */
+  priority?: unknown;
+}
+
+/**
+ * Parse `codex debug models` JSON into picker options.
+ *
+ * Codex's `--help` has no `(choices: …)` list for `--model`, so the previous
+ * help-scraping parser always returned null and the static fallback was used
+ * unconditionally — offering models that no longer exist.  `codex debug models`
+ * emits the live catalog instead.
+ *
+ * Returns null (→ static fallback) when the output isn't the expected shape.
+ */
+export function parseCodexDebugModels(stdout: string): Array<{ id: string; label: string }> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+
+  const models = (parsed as { models?: unknown } | null)?.models;
+  if (!Array.isArray(models)) return null;
+
+  const visible = (models as CodexModelEntry[])
+    .filter((m) => typeof m?.slug === 'string' && m.slug.length > 0)
+    // 'hide' models are excluded from Codex's own picker; treat a missing
+    // visibility as listable so a schema change doesn't empty the menu.
+    .filter((m) => m.visibility === undefined || m.visibility === 'list')
+    .sort((a, b) => {
+      const pa = typeof a.priority === 'number' ? a.priority : Number.MAX_SAFE_INTEGER;
+      const pb = typeof b.priority === 'number' ? b.priority : Number.MAX_SAFE_INTEGER;
+      return pa - pb;
+    })
+    .map((m) => ({
+      id: m.slug as string,
+      label: typeof m.display_name === 'string' && m.display_name.length > 0
+        ? m.display_name
+        : (m.slug as string),
+    }));
+
+  if (visible.length === 0) return null;
+
+  return [{ id: 'default', label: 'Default' }, ...visible];
+}
 
 // Codex uses sandbox-based permissions rather than per-tool permissions.
 // These map to general categories for compatibility with the permission UI.
@@ -69,6 +122,21 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   Notification: 'notification',
   PermissionRequest: 'permission_request',
 };
+
+/**
+ * Autonomy flags for an unattended Codex session.
+ *
+ * `--full-auto` was removed from the Codex CLI; the sandbox and approval
+ * policies are now separate axes.  'skip-all' means the user explicitly asked
+ * for no sandbox and no approvals, which is a different thing from 'auto'
+ * (sandboxed, but never stops to ask).
+ */
+function codexAutonomyArgs(permissionMode: SpawnOpts['permissionMode']): string[] {
+  if (permissionMode === 'skip-all') {
+    return ['--dangerously-bypass-approvals-and-sandbox'];
+  }
+  return ['--sandbox', 'workspace-write', '--ask-for-approval', 'never'];
+}
 
 export class CodexCliProvider extends BaseProvider implements HeadlessCapable, StructuredCapable, HookCapable, SessionCapable {
   readonly id = 'codex-cli' as const;
@@ -129,8 +197,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
   protected readonly configEnvKeys = ['OPENAI_API_KEY', 'OPENAI_BASE_URL'];
 
   protected readonly modelFetchConfig = {
-    args: ['--help'],
-    parser: (help: string) => parseModelChoicesFromHelp(help, CODEX_MODEL_CHOICES_PATTERN),
+    args: ['debug', 'models'],
+    parser: parseCodexDebugModels,
   };
 
   // ── Core interface ──────────────────────────────────────────────────────
@@ -192,16 +260,15 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     const binary = this.findBinary();
     const args: string[] = [];
 
-    // Session resume: `resume --last` picks up the most recent session
-    // (older Codex CLI releases used a bare `--continue` flag, since removed).
+    // Session resume.  `codex resume` takes an optional SESSION_ID positional
+    // (a UUID or a session name); `--last` selects the most recent instead.
+    // Older Codex releases used a bare `--continue` flag, since removed.
     if (opts.resume) {
-      args.push('resume', '--last');
+      args.push('resume', opts.sessionId ? opts.sessionId : '--last');
     }
 
     if (opts.freeAgentMode) {
-      // `--full-auto` was removed from the Codex CLI; the equivalent is an
-      // explicit sandboxed + no-approval combination.
-      args.push('--sandbox', 'workspace-write', '--ask-for-approval', 'never');
+      args.push(...codexAutonomyArgs(opts.permissionMode));
     }
 
     if (opts.model && opts.model !== 'default') {
@@ -466,10 +533,21 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     parts.push(opts.mission);
     const prompt = parts.join('\n\n');
 
-    // `--full-auto` was removed from the Codex CLI; `exec` already runs
-    // non-interactively without approval prompts, so an explicit sandbox
-    // mode is the remaining equivalent.
-    const args = ['exec', prompt, '--json', '--sandbox', 'workspace-write'];
+    // Continuing an existing thread uses the `exec resume` subcommand, which
+    // takes [SESSION_ID] [PROMPT] positionals.  Note it accepts NEITHER
+    // `--sandbox` nor `--ask-for-approval` (unlike plain `exec`), so the only
+    // autonomy control available on this path is the bypass flag.
+    const args = opts.resume
+      ? ['exec', 'resume', opts.sessionId ? opts.sessionId : '--last', prompt, '--json']
+      : ['exec', prompt, '--json'];
+
+    if (opts.permissionMode === 'skip-all') {
+      args.push('--dangerously-bypass-approvals-and-sandbox');
+    } else if (!opts.resume) {
+      // `exec` already runs non-interactively and never prompts, so the sandbox
+      // mode is the meaningful control on a fresh run.
+      args.push('--sandbox', 'workspace-write');
+    }
 
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);

@@ -46,7 +46,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
-import { CodexCliProvider } from './codex-cli-provider';
+import { CodexCliProvider, parseCodexDebugModels } from './codex-cli-provider';
 
 /** Match any path whose basename is 'codex' (with or without .exe/.cmd) */
 function isCodexPath(p: string | Buffer | URL): boolean {
@@ -221,6 +221,67 @@ describe('CodexCliProvider', () => {
 
       const result = await provider.checkAvailability();
       expect(result.available).toBe(true);
+    });
+  });
+
+  describe('buildSpawnCommand — session resume', () => {
+    it('resumes the most recent session with `resume --last` when no id is given', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', resume: true });
+      expect(args.slice(0, 2)).toEqual(['resume', '--last']);
+    });
+
+    it('resumes a specific session by id instead of the most recent one', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p', resume: true, sessionId: '019fe8e8-3d42-7c12-8acd-23da607b445a',
+      });
+      // `codex resume [SESSION_ID] [PROMPT]` — the id is a positional, not a flag
+      expect(args.slice(0, 2)).toEqual(['resume', '019fe8e8-3d42-7c12-8acd-23da607b445a']);
+      expect(args).not.toContain('--last');
+    });
+
+    it('ignores sessionId when resume is not requested', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', sessionId: 'abc-123' });
+      expect(args).not.toContain('resume');
+      expect(args).not.toContain('abc-123');
+    });
+
+    it('keeps the prompt in trailingArgs so injected flags cannot displace it', async () => {
+      const { args, trailingArgs } = await provider.buildSpawnCommand({
+        cwd: '/p', resume: true, sessionId: 'sess-1', mission: 'keep going',
+      });
+      expect(args).not.toContain('keep going');
+      expect(trailingArgs).toEqual(['keep going']);
+    });
+  });
+
+  describe('buildSpawnCommand — permissionMode', () => {
+    it('bypasses sandbox and approvals for skip-all', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p', freeAgentMode: true, permissionMode: 'skip-all',
+      });
+      expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+      // The bypass flag replaces the sandbox pair — passing both is contradictory
+      expect(args).not.toContain('--sandbox');
+      expect(args).not.toContain('--ask-for-approval');
+    });
+
+    it('sandboxes without prompting for auto', async () => {
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p', freeAgentMode: true, permissionMode: 'auto',
+      });
+      expect(args).toEqual(['--sandbox', 'workspace-write', '--ask-for-approval', 'never']);
+      expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    });
+
+    it('defaults to the sandboxed pair when permissionMode is unset', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', freeAgentMode: true });
+      expect(args).toEqual(['--sandbox', 'workspace-write', '--ask-for-approval', 'never']);
+    });
+
+    it('emits no autonomy flags when freeAgentMode is off, whatever the mode', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', permissionMode: 'skip-all' });
+      expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+      expect(args).not.toContain('--sandbox');
     });
   });
 
@@ -443,6 +504,71 @@ describe('CodexCliProvider', () => {
     });
   });
 
+  describe('buildHeadlessCommand — session resume', () => {
+    it('continues the most recent thread via the `exec resume` subcommand', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'and now the tests', resume: true,
+      }))!;
+      expect(args.slice(0, 4)).toEqual(['exec', 'resume', '--last', 'and now the tests']);
+      expect(args).toContain('--json');
+    });
+
+    it('resumes a specific thread by id', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'and now the tests', resume: true, sessionId: 'thread-7',
+      }))!;
+      expect(args.slice(0, 4)).toEqual(['exec', 'resume', 'thread-7', 'and now the tests']);
+    });
+
+    it('omits --sandbox on the resume path — `codex exec resume` rejects it', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'go on', resume: true,
+      }))!;
+      expect(args).not.toContain('--sandbox');
+      expect(args).not.toContain('--ask-for-approval');
+    });
+
+    it('never emits --continue, which Codex removed', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'go on', resume: true,
+      }))!;
+      expect(args).not.toContain('--continue');
+    });
+
+    it('carries the bypass flag onto the resume path, which does accept it', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'go on', resume: true, permissionMode: 'skip-all',
+      }))!;
+      expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+      expect(args).not.toContain('--sandbox');
+    });
+
+    it('starts a fresh exec when resume is not requested', async () => {
+      const { args } = (await provider.buildHeadlessCommand({ cwd: '/p', mission: 'start' }))!;
+      expect(args[0]).toBe('exec');
+      expect(args).not.toContain('resume');
+    });
+  });
+
+  describe('buildHeadlessCommand — permissionMode', () => {
+    it('bypasses the sandbox for skip-all', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'ship it', permissionMode: 'skip-all',
+      }))!;
+      expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+      expect(args).not.toContain('--sandbox');
+    });
+
+    it('sandboxes for auto', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'ship it', permissionMode: 'auto',
+      }))!;
+      expect(args).toContain('--sandbox');
+      expect(args).toContain('workspace-write');
+      expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    });
+  });
+
   describe('buildHeadlessCommand', () => {
     it('generates exec command with --json and --sandbox workspace-write', async () => {
       const result = await provider.buildHeadlessCommand({
@@ -618,21 +744,80 @@ describe('CodexCliProvider', () => {
     });
   });
 
-  describe('getModelOptions', () => {
-    it('returns fallback list including default and codex models', async () => {
-      const options = await provider.getModelOptions();
-      expect(options.length).toBeGreaterThanOrEqual(4);
-      expect(options[0]).toEqual({ id: 'default', label: 'Default' });
-      const ids = options.map(o => o.id);
-      expect(ids).toContain('gpt-5.3-codex');
-      expect(ids).toContain('gpt-5.2-codex');
-      expect(ids).toContain('codex-mini-latest');
+  describe('parseCodexDebugModels', () => {
+    // Trimmed from real `codex debug models` output (codex-cli 0.153.4).
+    const REAL_OUTPUT = JSON.stringify({
+      models: [
+        { slug: 'gpt-6-astra', display_name: 'GPT-6-Astra', visibility: 'list', priority: 1 },
+        { slug: 'gpt-reserve', display_name: 'GPT-Reserve', visibility: 'hide', priority: 3 },
+        { slug: 'gpt-5.6-sol', display_name: 'GPT-5.6-Sol', visibility: 'list', priority: 6 },
+        { slug: 'gpt-5.5', display_name: 'GPT-5.5', visibility: 'list', priority: 12 },
+        { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', priority: 43 },
+      ],
     });
 
-    it('includes GPT 5 model', async () => {
+    it('maps slug/display_name and prepends default', () => {
+      const parsed = parseCodexDebugModels(REAL_OUTPUT);
+      expect(parsed).not.toBeNull();
+      expect(parsed![0]).toEqual({ id: 'default', label: 'Default' });
+      expect(parsed![1]).toEqual({ id: 'gpt-6-astra', label: 'GPT-6-Astra' });
+    });
+
+    it('excludes models Codex hides from its own picker', () => {
+      const ids = parseCodexDebugModels(REAL_OUTPUT)!.map((m) => m.id);
+      expect(ids).not.toContain('gpt-reserve');
+      expect(ids).not.toContain('codex-auto-review');
+    });
+
+    it('orders by catalog priority ascending', () => {
+      const ids = parseCodexDebugModels(REAL_OUTPUT)!.map((m) => m.id);
+      expect(ids).toEqual(['default', 'gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.5']);
+    });
+
+    it('treats a missing visibility as listable so a schema change cannot empty the menu', () => {
+      const parsed = parseCodexDebugModels(JSON.stringify({
+        models: [{ slug: 'gpt-future', display_name: 'GPT Future', priority: 2 }],
+      }));
+      expect(parsed!.map((m) => m.id)).toContain('gpt-future');
+    });
+
+    it('falls back to the slug when display_name is absent', () => {
+      const parsed = parseCodexDebugModels(JSON.stringify({
+        models: [{ slug: 'gpt-nameless', visibility: 'list', priority: 1 }],
+      }));
+      expect(parsed![1]).toEqual({ id: 'gpt-nameless', label: 'gpt-nameless' });
+    });
+
+    it('returns null for unparseable or unexpected output', () => {
+      expect(parseCodexDebugModels('')).toBeNull();
+      expect(parseCodexDebugModels('not json')).toBeNull();
+      expect(parseCodexDebugModels('{}')).toBeNull();
+      expect(parseCodexDebugModels(JSON.stringify({ models: 'nope' }))).toBeNull();
+      expect(parseCodexDebugModels(JSON.stringify({ models: [] }))).toBeNull();
+      // All entries hidden → nothing to show → fall back rather than render empty
+      expect(parseCodexDebugModels(JSON.stringify({
+        models: [{ slug: 'x', visibility: 'hide' }],
+      }))).toBeNull();
+    });
+  });
+
+  describe('getModelOptions', () => {
+    it('queries `codex debug models`, not the --help text', async () => {
+      await provider.getModelOptions();
+      const calls = vi.mocked(childProcess.execFile).mock.calls;
+      const modelCall = calls.find((c) => (c[1] as string[])?.[0] === 'debug');
+      expect(modelCall).toBeDefined();
+      expect(modelCall![1]).toEqual(['debug', 'models']);
+    });
+
+    it('falls back to a static list when the query fails', async () => {
       const options = await provider.getModelOptions();
+      expect(options[0]).toEqual({ id: 'default', label: 'Default' });
+      // The fallback must only name models that actually exist in the catalog
+      // this provider was verified against (codex-cli 0.153.4).
       const ids = options.map(o => o.id);
-      expect(ids).toContain('gpt-5');
+      expect(ids).toContain('gpt-5.6-sol');
+      expect(ids).not.toContain('codex-mini-latest');
     });
 
     it('first option is always default', async () => {
@@ -641,7 +826,7 @@ describe('CodexCliProvider', () => {
       expect(options[0].label).toBe('Default');
     });
 
-    it('passes shell environment to execFile for --help call', async () => {
+    it('passes shell environment to execFile for the model query', async () => {
       const mockEnv = {
         PATH: '/custom/path:/usr/bin',
         OPENAI_API_KEY: 'sk-test-key',
@@ -651,9 +836,9 @@ describe('CodexCliProvider', () => {
       await provider.getModelOptions();
 
       const calls = vi.mocked(childProcess.execFile).mock.calls;
-      const helpCall = calls.find((c) => (c[1] as string[])?.[0] === '--help');
-      expect(helpCall).toBeDefined();
-      const opts = helpCall![2] as Record<string, unknown>;
+      const modelCall = calls.find((c) => (c[1] as string[])?.[0] === 'debug');
+      expect(modelCall).toBeDefined();
+      const opts = modelCall![2] as Record<string, unknown>;
       expect(opts.env).toEqual(mockEnv);
     });
   });

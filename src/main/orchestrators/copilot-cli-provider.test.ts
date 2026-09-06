@@ -717,6 +717,20 @@ describe('CopilotCliProvider', () => {
     });
   });
 
+  describe('buildHeadlessCommand — session resume', () => {
+    it('continues the most recent session when resume is requested', async () => {
+      const { args } = (await provider.buildHeadlessCommand({
+        cwd: '/p', mission: 'carry on', resume: true,
+      }))!;
+      expect(args).toContain('--continue');
+    });
+
+    it('adds no resume flag for a fresh run', async () => {
+      const { args } = (await provider.buildHeadlessCommand({ cwd: '/p', mission: 'start' }))!;
+      expect(args).not.toContain('--continue');
+    });
+  });
+
   describe('buildHeadlessCommand', () => {
     it('returns null when no mission provided', async () => {
       const result = await provider.buildHeadlessCommand({ cwd: '/project' });
