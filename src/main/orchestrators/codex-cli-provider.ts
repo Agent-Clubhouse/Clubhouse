@@ -39,6 +39,34 @@ function tomlValue(s: string): string {
   return `"${escaped}"`;
 }
 
+/**
+ * Codex rollout filename: `rollout-<YYYY-MM-DDTHH-MM-SS>-<uuid>.jsonl`.
+ * Capture 1 is the local-time start stamp, capture 2 the session id.
+ */
+const ROLLOUT_FILE_PATTERN =
+  /^rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+
+/** `sessions/YYYY/MM/DD/` is three levels; allow one spare for re-partitioning. */
+const CODEX_SESSION_WALK_MAX_DEPTH = 4;
+
+/** Upper bound on rollout files examined per listing, newest partitions first. */
+const CODEX_SESSION_SCAN_LIMIT = 500;
+
+/** Enough to cover the opening `session_meta` line without reading whole transcripts. */
+const ROLLOUT_META_READ_BYTES = 64 * 1024;
+
+/**
+ * Convert a rollout filename stamp (`2026-09-05T17-28-00`) to an ISO string.
+ * Only the time separators are dashes, so restore the colons before parsing.
+ * Returns null when the stamp doesn't parse, letting callers fall back to mtime.
+ */
+function parseRolloutFilenameTimestamp(stamp: string): string | null {
+  const [datePart, timePart] = stamp.split('T');
+  if (!datePart || !timePart) return null;
+  const parsed = new Date(`${datePart}T${timePart.replace(/-/g, ':')}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 const TOOL_VERBS: Record<string, string> = {
   shell: 'Running command',
   shell_command: 'Running command',
@@ -126,7 +154,10 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
   protected readonly durablePermissions = DEFAULT_DURABLE_PERMISSIONS;
   protected readonly quickPermissions = DEFAULT_QUICK_PERMISSIONS;
   protected readonly fallbackModelOptions = FALLBACK_MODEL_OPTIONS;
-  protected readonly configEnvKeys = ['OPENAI_API_KEY', 'OPENAI_BASE_URL'];
+  // CODEX_HOME is Codex's config/state root — the analogue of Claude Code's
+  // CLAUDE_CONFIG_DIR. Declaring it lets a Clubhouse profile give an agent an
+  // isolated session store, config.toml and auth.
+  protected readonly configEnvKeys = ['CODEX_HOME', 'OPENAI_API_KEY', 'OPENAI_BASE_URL'];
 
   protected readonly modelFetchConfig = {
     args: ['--help'],
@@ -318,113 +349,176 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
 
   // ── SessionCapable ──────────────────────────────────────────────────────
 
-  async listSessions(cwd: string, _profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
-    const codexHome = homePath('.codex');
-    const threadDirs = [
-      path.join(codexHome, 'threads'),
-      path.join(codexHome, 'sessions'),
-      path.join(cwd, '.codex', 'threads'),
-      path.join(cwd, '.codex', 'sessions'),
-    ];
+  /**
+   * Root of Codex's own state directory.
+   *
+   * Codex honours `CODEX_HOME`; a Clubhouse profile can set it to give an agent
+   * an isolated session store, config and auth (the equivalent of Claude Code's
+   * `CLAUDE_CONFIG_DIR`).
+   */
+  private resolveCodexHome(profileEnv?: Record<string, string>): string {
+    return profileEnv?.CODEX_HOME || homePath('.codex');
+  }
+
+  /**
+   * Collect rollout transcripts under `<CODEX_HOME>/sessions`.
+   *
+   * Codex partitions them by date — `sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`
+   * — so this walks rather than reading a flat directory.  The walk is depth-
+   * limited and count-capped so a long-lived store can't stall the main process,
+   * and it tolerates a flat or differently-partitioned layout rather than
+   * hardcoding the current three levels.
+   */
+  private async collectRolloutFiles(sessionsDir: string): Promise<string[]> {
+    const found: string[] = [];
+
+    const walk = async (dir: string, depth: number): Promise<void> => {
+      if (depth > CODEX_SESSION_WALK_MAX_DEPTH || found.length >= CODEX_SESSION_SCAN_LIMIT) return;
+      let entries;
+      try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      // Newest date partitions sort last by name, so descend in reverse to hit
+      // recent sessions before the scan limit bites.
+      for (const entry of [...entries].sort((a, b) => b.name.localeCompare(a.name))) {
+        if (found.length >= CODEX_SESSION_SCAN_LIMIT) return;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(full, depth + 1);
+        } else if (ROLLOUT_FILE_PATTERN.test(entry.name)) {
+          found.push(full);
+        }
+      }
+    };
+
+    await walk(sessionsDir, 0);
+    return found;
+  }
+
+  /**
+   * Read the `session_meta` record that opens every rollout file.
+   *
+   * Older Codex releases key the id as `payload.id`, newer ones also emit
+   * `payload.session_id`; both carry `payload.cwd`.  The filename is the more
+   * reliable source for the id, so this is only consulted for `cwd` and the
+   * recorded start time.
+   */
+  private async readRolloutMeta(filePath: string): Promise<{ cwd?: string; startedAt?: string }> {
+    let raw: string;
+    try {
+      // The meta record is the first line; read a bounded prefix rather than
+      // the whole transcript, which can be megabytes.
+      const handle = await fsp.open(filePath, 'r');
+      try {
+        const buf = Buffer.alloc(ROLLOUT_META_READ_BYTES);
+        const { bytesRead } = await handle.read(buf, 0, ROLLOUT_META_READ_BYTES, 0);
+        raw = buf.subarray(0, bytesRead).toString('utf-8');
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      return {};
+    }
+
+    const firstLine = raw.split('\n', 1)[0];
+    if (!firstLine) return {};
+
+    try {
+      const parsed = JSON.parse(firstLine) as { payload?: Record<string, unknown> };
+      const payload = parsed?.payload;
+      if (!payload || typeof payload !== 'object') return {};
+      return {
+        cwd: typeof payload.cwd === 'string' ? payload.cwd : undefined,
+        startedAt: typeof payload.timestamp === 'string' ? payload.timestamp : undefined,
+      };
+    } catch {
+      // A truncated prefix can't be parsed — fall back to filename metadata.
+      return {};
+    }
+  }
+
+  /**
+   * List Codex sessions recorded for `cwd`.
+   *
+   * Previously this probed `~/.codex/threads` (which does not exist) and the
+   * flat `~/.codex/sessions` root, matching entries against a UUID-shaped
+   * regex.  The only entry at that level is the year directory, so the filter
+   * never matched and the picker was always empty.
+   */
+  async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+    const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
+    const targetCwd = path.resolve(cwd);
+
+    let files: string[];
+    try {
+      files = await this.collectRolloutFiles(sessionsDir);
+    } catch (err) {
+      appLog('core:orchestrator', 'warn', 'Failed to scan Codex session store', {
+        meta: { sessionsDir, error: err instanceof Error ? err.message : String(err) },
+      });
+      return [];
+    }
 
     const sessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
     const seenIds = new Set<string>();
 
-    for (const dir of threadDirs) {
+    for (const filePath of files) {
+      const match = ROLLOUT_FILE_PATTERN.exec(path.basename(filePath));
+      if (!match) continue;
+
+      const [, filenameTimestamp, sessionId] = match;
+      if (seenIds.has(sessionId)) continue;
+
+      const meta = await this.readRolloutMeta(filePath);
+
+      // Only surface sessions recorded in this project.  A rollout with no
+      // readable cwd is skipped rather than shown against every project.
+      if (!meta.cwd || path.resolve(meta.cwd) !== targetCwd) continue;
+
+      let lastActiveAt: string;
       try {
-        await fsp.access(dir);
+        lastActiveAt = (await fsp.stat(filePath)).mtime.toISOString();
       } catch {
         continue;
       }
 
-      try {
-        const entries = await fsp.readdir(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const name = entry.isFile()
-            ? path.basename(entry.name, path.extname(entry.name))
-            : entry.name;
-          // Match UUID-like or OpenAI thread IDs (thread_xxx)
-          if (!/^[0-9a-f-]{8,}$/i.test(name) && !/^thread_[a-zA-Z0-9_-]+$/.test(name)) continue;
-          if (seenIds.has(name)) continue;
-          seenIds.add(name);
-
-          try {
-            const fullPath = path.join(dir, entry.name);
-            const stat = await fsp.stat(fullPath);
-            sessions.push({
-              sessionId: name,
-              startedAt: stat.birthtime.toISOString(),
-              lastActiveAt: stat.mtime.toISOString(),
-            });
-          } catch (err) {
-            appLog('core:orchestrator', 'warn', 'Failed to stat session file', {
-              meta: { file: entry.name, error: err instanceof Error ? err.message : String(err) },
-            });
-          }
-        }
-      } catch (err) {
-        appLog('core:orchestrator', 'warn', 'Failed to read session directory', {
-          meta: { dir, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
+      seenIds.add(sessionId);
+      sessions.push({
+        sessionId,
+        startedAt: meta.startedAt ?? parseRolloutFilenameTimestamp(filenameTimestamp) ?? lastActiveAt,
+        lastActiveAt,
+      });
     }
 
     sessions.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
     return sessions;
   }
 
+  /**
+   * Read a rollout transcript by session id.  The id is the UUID suffix of the
+   * rollout filename, so this locates the file by scanning names rather than
+   * guessing a path.
+   */
   async readSessionTranscript(
     sessionId: string,
-    cwd: string,
-    _profileEnv?: Record<string, string>,
+    _cwd: string,
+    profileEnv?: Record<string, string>,
   ): Promise<StreamJsonEvent[] | null> {
-    const codexHome = homePath('.codex');
+    const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
 
-    const searchPaths = [
-      path.join(codexHome, 'threads', `${sessionId}.jsonl`),
-      path.join(codexHome, 'sessions', `${sessionId}.jsonl`),
-      path.join(cwd, '.codex', 'threads', `${sessionId}.jsonl`),
-      path.join(cwd, '.codex', 'sessions', `${sessionId}.jsonl`),
-      path.join(codexHome, 'threads', `${sessionId}.json`),
-      path.join(codexHome, 'sessions', `${sessionId}.json`),
-      path.join(cwd, '.codex', 'threads', `${sessionId}.json`),
-      path.join(cwd, '.codex', 'sessions', `${sessionId}.json`),
-    ];
-
-    let filePath: string | null = null;
-    for (const p of searchPaths) {
-      try {
-        await fsp.access(p);
-        filePath = p;
-        break;
-      } catch {
-        continue;
-      }
+    let files: string[];
+    try {
+      files = await this.collectRolloutFiles(sessionsDir);
+    } catch {
+      return null;
     }
 
-    // Check for directory-style thread storage
-    if (!filePath) {
-      const dirPaths = [
-        path.join(codexHome, 'threads', sessionId),
-        path.join(cwd, '.codex', 'threads', sessionId),
-      ];
-
-      for (const dir of dirPaths) {
-        try {
-          const stat = await fsp.stat(dir);
-          if (stat.isDirectory()) {
-            const entries = await fsp.readdir(dir);
-            const jsonlFile = entries.find((e) => e.endsWith('.jsonl'));
-            if (jsonlFile) {
-              filePath = path.join(dir, jsonlFile);
-              break;
-            }
-          }
-        } catch {
-          continue;
-        }
-      }
-    }
+    const filePath = files.find((f) => {
+      const match = ROLLOUT_FILE_PATTERN.exec(path.basename(f));
+      return match?.[2] === sessionId;
+    });
 
     if (!filePath) return null;
 
