@@ -28,6 +28,8 @@ interface MockClientInstance {
   start: ReturnType<typeof vi.fn>;
   request: ReturnType<typeof vi.fn>;
   respond: ReturnType<typeof vi.fn>;
+  respondWithError: ReturnType<typeof vi.fn>;
+  alive: boolean;
   notify: ReturnType<typeof vi.fn>;
   kill: ReturnType<typeof vi.fn>;
   getStderr: ReturnType<typeof vi.fn>;
@@ -70,9 +72,14 @@ describe('CodexAppServerAdapter', () => {
         if (method === 'thread/start') {
           return Promise.resolve({ thread: { id: 'test-thread-1' } });
         }
+        if (method === 'turn/start') {
+          return Promise.resolve({ turn: { id: 'test-turn-1', items: [], status: 'in_progress' } });
+        }
         return Promise.resolve({});
       }),
       respond: vi.fn(),
+      respondWithError: vi.fn(),
+      alive: true,
       notify: vi.fn(),
       kill: vi.fn(),
       getStderr: vi.fn().mockReturnValue(''),
@@ -714,15 +721,42 @@ describe('CodexAppServerAdapter', () => {
     });
   });
 
-  it('ignores unknown server request methods', async () => {
+  it('answers an unhandled server request instead of leaving the turn hanging', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start(defaultSessionOpts);
+
+    // Codex blocks the turn until a server request is resolved, so silence
+    // stalls the session with nothing surfaced to the user.
+    mockClient.onServerRequest(99, 'item/tool/requestUserInput', { itemId: 'i1' });
+
+    expect(mockClient.respondWithError).toHaveBeenCalledWith(
+      99,
+      -32601,
+      expect.stringContaining('item/tool/requestUserInput'),
+    );
+  });
+
+  it('surfaces an unhandled server request as an error event', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onServerRequest(99, 'unknown/request', { data: 'test' });
+    mockClient.onServerRequest(99, 'mcpServer/elicitation/request', {});
     mockClient.onExit(0, null);
 
-    const events = await collectEvents(stream, 1);
-    expect(events[0].type).toBe('end');
+    const events = await collectEvents(stream, 2);
+    expect(events[0].type).toBe('error');
+    expect((events[0].data as { code: string }).code).toBe('unhandled_server_request');
+  });
+
+  it('does not error-respond to requests it can decide', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start(defaultSessionOpts);
+
+    mockClient.onServerRequest(7, 'item/commandExecution/requestApproval', {
+      itemId: 'cmd-1', command: 'ls',
+    });
+
+    expect(mockClient.respondWithError).not.toHaveBeenCalled();
   });
 
   // ── Permission response flow ──────────────────────────────────────────────
@@ -790,9 +824,68 @@ describe('CodexAppServerAdapter', () => {
 
   // ── cancel ────────────────────────────────────────────────────────────────
 
-  it('cancel kills the client process', async () => {
+  it('cancel interrupts the turn and keeps the thread alive', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     adapter.start(defaultSessionOpts);
+    await flushMicrotasks();
+
+    await adapter.cancel();
+
+    // Killing the process would forfeit the thread; turn/interrupt leaves it
+    // resumable, which is what pressing stop means.
+    // Both ids are required — the server rejects an interrupt without turnId
+    expect(mockClient.request).toHaveBeenCalledWith('turn/interrupt', {
+      threadId: 'test-thread-1',
+      turnId: 'test-turn-1',
+    });
+    expect(mockClient.kill).not.toHaveBeenCalled();
+  });
+
+  it('takes the turn id from the turn/started notification', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start(defaultSessionOpts);
+    await flushMicrotasks();
+
+    mockClient.onNotification('turn/started', {
+      threadId: 'test-thread-1',
+      turn: { id: 'turn-from-notification', items: [], status: 'in_progress' },
+    });
+    await adapter.cancel();
+
+    expect(mockClient.request).toHaveBeenCalledWith('turn/interrupt', {
+      threadId: 'test-thread-1',
+      turnId: 'turn-from-notification',
+    });
+  });
+
+  it('kills rather than interrupting once the turn has completed', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start(defaultSessionOpts);
+    await flushMicrotasks();
+
+    mockClient.onNotification('turn/completed', { threadId: 'test-thread-1', usage: {} });
+    await adapter.cancel();
+
+    // No turn in flight, so there is nothing to interrupt
+    expect(mockClient.request).not.toHaveBeenCalledWith('turn/interrupt', expect.anything());
+    expect(mockClient.kill).toHaveBeenCalled();
+  });
+
+  it('cancel falls back to killing the process when the interrupt fails', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start(defaultSessionOpts);
+    await flushMicrotasks();
+
+    mockClient.request.mockRejectedValueOnce(new Error('socket closed'));
+    await adapter.cancel();
+
+    expect(mockClient.kill).toHaveBeenCalled();
+  });
+
+  it('cancel kills the client process when no turn was established', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start(defaultSessionOpts);
+    // no flushMicrotasks — thread/start and turn/start have not resolved yet
 
     await adapter.cancel();
 
