@@ -58,7 +58,7 @@ vi.mock('./annex-identity', () => ({
 
 vi.mock('./annex-tls', () => ({
   createTlsClientOptions: vi.fn().mockReturnValue({}),
-  extractPeerFingerprint: vi.fn().mockReturnValue(null),
+  extractPeerFingerprint: vi.fn().mockImplementation((socket: any) => socket.getPeerCertificate().subject?.CN ?? null),
 }));
 
 vi.mock('./annex-peers', () => ({
@@ -130,11 +130,11 @@ function resetAllMocks() {
     color: 'indigo',
     autoReconnect: true,
   });
-  vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(null);
+  vi.mocked(annexTls.extractPeerFingerprint).mockImplementation((socket: any) => socket.getPeerCertificate().subject?.CN ?? null);
   WebSocketMock.mockImplementation(function (this: any, _url?: string, opts?: Record<string, any>) {
     this.readyState = WebSocketMock.OPEN;
     this.socket = {
-      getPeerCertificate: () => ({ subject: {} }),
+      getPeerCertificate: () => ({ subject: { CN: 'PP:QQ:RR:SS' } }),
     };
     this.on = vi.fn().mockImplementation((event: string, cb: any) => {
       if (event === 'open') setTimeout(cb, 0);
@@ -1016,6 +1016,7 @@ describe('annex-client', () => {
       // Mock WebSocket instance to have OPEN state but throw on send
       vi.mocked(WsMock).mockImplementation(function (this: any) {
         this.readyState = 1; // WebSocket.OPEN
+        this.socket = makeMockSocket('PP:QQ:RR:SS');
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') setTimeout(cb, 0);
           return this;
@@ -1061,6 +1062,7 @@ describe('annex-client', () => {
 
       vi.mocked(WsMock).mockImplementation(function (this: any) {
         this.readyState = 1;
+        this.socket = makeMockSocket('PP:QQ:RR:SS');
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') setTimeout(cb, 0);
           return this;
@@ -1115,6 +1117,7 @@ describe('annex-client', () => {
       let messageHandler: ((data: any) => void) | null = null;
       vi.mocked(WsMock).mockImplementation(function (this: any) {
         this.readyState = 1;
+        this.socket = makeMockSocket('PP:QQ:RR:SS');
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') setTimeout(cb, 0);
           if (event === 'message') messageHandler = cb;
@@ -1184,6 +1187,7 @@ describe('annex-client', () => {
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         wsInstance = this;
         this.readyState = 1;
+        this.socket = makeMockSocket('PP:QQ:RR:SS');
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') openCb = cb;
           return this;
@@ -1261,6 +1265,7 @@ describe('annex-client', () => {
 
       vi.mocked(WsMock).mockImplementation(function (this: any) {
         this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') openCb = cb;
           return this;
@@ -1401,6 +1406,7 @@ describe('annex-client', () => {
 
       vi.mocked(WsMock).mockImplementation(function (this: any) {
         this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') openCb = cb;
           return this;
@@ -1534,6 +1540,7 @@ describe('annex-client', () => {
 
       vi.mocked(WsMock).mockImplementation(function (this: any) {
         this.readyState = 1;
+        this.socket = makeMockSocket('TT:UU:VV:WW');
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') openCb = cb;
           return this;
@@ -1612,6 +1619,7 @@ describe('annex-client', () => {
 
       vi.mocked(WsMock).mockImplementation(function (this: any) {
         this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') openCb = cb;
           return this;
@@ -1730,6 +1738,7 @@ describe('annex-client', () => {
       vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
         wsCtorArgsList.push(opts);
         this.readyState = 1;
+        this.socket = makeMockSocket(FP);
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') openCb = cb;
           if (event === 'close') closeCb = cb;
@@ -1804,6 +1813,7 @@ describe('annex-client', () => {
       vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
         wsCtorArgsList.push(opts);
         this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') openCb = cb;
           if (event === 'close') closeCb = cb;
@@ -1887,6 +1897,7 @@ describe('annex-client', () => {
 
       vi.mocked(WsMock).mockImplementation(function (this: any) {
         this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') openCb = cb;
           if (event === 'message') messageCb = cb;
