@@ -134,7 +134,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Run update script integration tests
-        run: npx vitest run --project main -- auto-update-apply
+        run: npx vitest run --project main auto-update-apply
 
   build-macos:
     name: Build macOS (${{ matrix.arch }})
