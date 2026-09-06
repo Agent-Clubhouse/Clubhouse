@@ -1,4 +1,4 @@
-import { test, expect, _electron as electron, Page } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -6,7 +6,6 @@ import { ClaudeCodeProvider, CodexCliProvider, CopilotCliProvider } from '../src
 import { launchApp } from './launch';
 import { addProject } from './smoke-helpers';
 
-type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;
 type ProviderId = 'copilot-cli' | 'claude-code' | 'codex-cli';
 
 type ProviderCase = {
@@ -193,4 +192,17 @@ test.describe('real CLI orchestration', () => {
       await createThenWakeProviderAgent(providerCase);
     });
   }
+
+  test('Copilot CLI rejects a deliberately invalid spawn flag', async () => {
+    test.skip(!RUN_REAL_CLI || process.platform !== 'darwin', 'Set CLUBHOUSE_REAL_CLI_E2E=1 on macOS to run');
+    const copilotCase = PROVIDER_CASES[0];
+    await skipIfMissing(copilotCase);
+
+    const { binary, args } = await copilotCase.provider.buildSpawnCommand({ cwd: FIXTURE_DIR });
+    expect(() => execFileSync(binary, [...args, '--clubhouse-deliberately-invalid-flag'], {
+      cwd: FIXTURE_DIR,
+      stdio: 'pipe',
+      timeout: 10_000,
+    })).toThrow();
+  });
 });
