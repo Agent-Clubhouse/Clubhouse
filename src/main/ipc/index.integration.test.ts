@@ -70,6 +70,7 @@ vi.mock('../orchestrators', () => ({
 }));
 
 vi.mock('../services/hook-server', () => ({
+  portEnv: vi.fn(() => ({ CLUBHOUSE_HOOK_PORT: '9999' })),
   start: vi.fn(async () => {}),
 }));
 

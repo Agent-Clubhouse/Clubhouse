@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable, isAgentFileCapable } from '../orchestrators';
-import { waitReady as waitHookServerReady } from './hook-server';
+import { waitReady as waitHookServerReady, portEnv as hookPortEnv } from './hook-server';
 import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
 import * as headlessManager from './headless-manager';
@@ -455,6 +455,7 @@ async function spawnPtyAgent(
     ...(wrapperApplied ? wrapperConfig?.env : undefined),
     CLUBHOUSE_AGENT_ID: params.agentId,
     CLUBHOUSE_HOOK_NONCE: nonce,
+    ...hookPortEnv(),
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
   };
 

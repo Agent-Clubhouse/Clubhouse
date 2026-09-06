@@ -60,14 +60,32 @@ const CODEX_MODEL_CHOICES_PATTERN = /--model\s+(?:<\w+>)?\s*.*?\(choices:\s*([\s
 const DEFAULT_DURABLE_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = [...DEFAULT_DURABLE_PERMISSIONS, 'shell(*)', 'apply_patch'];
 
-/** Codex hook event names → normalised kinds (same semantics as Claude Code). */
+/**
+ * Codex hook event names → normalised kinds.
+ *
+ * Codex's own event set (HookEventName, per `codex app-server
+ * generate-json-schema`) is:
+ *
+ *   SessionStart  SessionEnd  PreToolUse  PostToolUse  PermissionRequest
+ *   PreCompact    PostCompact UserPromptSubmit  SubagentStart  SubagentStop
+ *   Stop          Interrupt
+ *
+ * This map was previously copied from the Claude Code provider and listed two
+ * events Codex does not have — `PostToolUseFailure` and `Notification` — while
+ * omitting every Codex-specific one.  Neither phantom could ever match, so
+ * tool-error and notification events were simply never delivered.
+ *
+ * `SessionEnd` is deliberately absent: Codex emits both `Stop` (turn finished)
+ * and `SessionEnd` (process exiting), and mapping both to 'stop' would report
+ * the agent idle twice per session.  `Stop` is the one that means "turn done".
+ */
 const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PreToolUse: 'pre_tool',
   PostToolUse: 'post_tool',
-  PostToolUseFailure: 'tool_error',
-  Stop: 'stop',
-  Notification: 'notification',
   PermissionRequest: 'permission_request',
+  Stop: 'stop',
+  SessionStart: 'notification',
+  UserPromptSubmit: 'notification',
 };
 
 export class CodexCliProvider extends BaseProvider implements HeadlessCapable, StructuredCapable, HookCapable, SessionCapable {
@@ -84,6 +102,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     skillsDir: 'skills',
     agentTemplatesDir: 'agents',
     localSettingsFile: 'config.toml',
+    // Codex reads hooks from .codex/hooks.json, not from config.toml
+    hooksFile: 'hooks.json',
     settingsFormat: 'toml',
   };
 
@@ -276,12 +296,16 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     const safeUrl = validateHookUrl(hookUrl);
     const curl = buildHookCurlCommand(safeUrl);
 
+    // Only events Codex actually defines — see EVENT_NAME_MAP.  Registering an
+    // unknown event name is at best inert and at worst rejects the whole file.
     const hooks: Record<string, unknown[]> = {
       PreToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      PostToolUseFailure: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
       Stop: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
-      Notification: [{ matcher: '', hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      SessionStart: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: curl, async: true, timeout: 5 }] }],
+      // A longer timeout so the hook server can hold the response while a
+      // remote approval decision comes back from the Annex iOS client.
       PermissionRequest: [{ hooks: [{ type: 'command', command: curl, timeout: PERMISSION_HOOK_TIMEOUT_SEC }] }],
     };
 
