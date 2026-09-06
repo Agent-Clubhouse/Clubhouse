@@ -5,7 +5,6 @@ import { AgentHookEvent, AgentWildcardSettings, LaunchWrapperConfig, McpCatalogE
 import type { PluginUpdatesStatus } from '../shared/marketplace-types';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 import { typedInvoke } from '../shared/ipc-types';
-import type { ProjectPickDirectoryResponse } from '../shared/ipc-types';
 
 export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -53,8 +52,8 @@ export const api = {
     list: () => ipcRenderer.invoke(IPC.PROJECT.LIST),
     add: (path: string) => ipcRenderer.invoke(IPC.PROJECT.ADD, path),
     remove: (id: string) => ipcRenderer.invoke(IPC.PROJECT.REMOVE, id),
-    pickDirectory: (): Promise<ProjectPickDirectoryResponse> =>
-      typedInvoke<ProjectPickDirectoryResponse>(
+    pickDirectory: () =>
+      typedInvoke(
         (channel, ...args) => ipcRenderer.invoke(channel, ...args),
         IPC.PROJECT.PICK_DIR,
       ),

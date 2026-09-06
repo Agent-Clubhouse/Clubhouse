@@ -19,7 +19,19 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IPC } from './ipc-channels';
-import { typedInvoke } from './ipc-types';
+
+const { invoke, exposeInMainWorld } = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  exposeInMainWorld: vi.fn(),
+}));
+
+vi.mock('electron', () => ({
+  contextBridge: { exposeInMainWorld },
+  ipcRenderer: { invoke, send: vi.fn(), on: vi.fn(), removeListener: vi.fn() },
+  webUtils: { getPathForFile: vi.fn() },
+}));
+
+import { api } from '../preload/index';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -135,15 +147,14 @@ const _BIDIRECTIONAL_CHANNELS = new Set([
 
 describe('IPC Channel Sync', () => {
   describe('typed project channel contract', () => {
-    it('preserves the pick-directory response through the invoke adapter', async () => {
-      const invoke = vi.fn(async (channel: string) => {
-        expect(channel).toBe(IPC.PROJECT.PICK_DIR);
-        return '/tmp/project';
-      });
+    it('preserves selected and canceled responses through the preload wrapper', async () => {
+      invoke.mockResolvedValueOnce('/tmp/project').mockResolvedValueOnce(null);
 
-      const result = await typedInvoke<string | null>(invoke, IPC.PROJECT.PICK_DIR);
+      await expect(api.project.pickDirectory()).resolves.toBe('/tmp/project');
+      await expect(api.project.pickDirectory()).resolves.toBeNull();
 
-      expect(result).toBe('/tmp/project');
+      expect(invoke).toHaveBeenNthCalledWith(1, IPC.PROJECT.PICK_DIR);
+      expect(invoke).toHaveBeenNthCalledWith(2, IPC.PROJECT.PICK_DIR);
     });
   });
 
