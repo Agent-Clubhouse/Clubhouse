@@ -457,6 +457,18 @@ describe('annex-server', () => {
     expect(res.status).toBe(404);
   });
 
+  it('routes bulletin protection updates through the specific bulletin route table entry', () => {
+    const route = annexServer.resolveAnnexHttpRoute('PATCH', '/api/v1/group-projects/gp_1/bulletin/topics/alerts/protection');
+    expect(route).toBeDefined();
+    expect(route?.pattern.test('/api/v1/group-projects/gp_1/bulletin/topics/alerts/protection')).toBe(true);
+  });
+
+  it('routes project agent lookups through the table-based project route', () => {
+    const route = annexServer.resolveAnnexHttpRoute('GET', '/api/v1/projects/proj_1/agents');
+    expect(route).toBeDefined();
+    expect(route?.pattern.test('/api/v1/projects/proj_1/agents')).toBe(true);
+  });
+
   // -------------------------------------------------------------------------
   // Issue 1: DurableAgent defaults + runtime status
   // -------------------------------------------------------------------------

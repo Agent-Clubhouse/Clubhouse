@@ -1248,6 +1248,125 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
   sendJson(res, 404, { error: 'not_found' });
 }
 
+type AnnexRouteContext = {
+  req: http.IncomingMessage;
+  res: http.ServerResponse;
+  url: string;
+  method: string;
+  requireMtls: () => boolean;
+};
+
+type AnnexHttpRoute = {
+  method: string;
+  pattern: RegExp;
+  handler: (ctx: AnnexRouteContext, match: RegExpMatchArray) => Promise<void>;
+};
+
+async function handleStatusRoute(ctx: AnnexRouteContext): Promise<void> {
+  const { res } = ctx;
+  const settings = annexSettings.getSettings();
+  const projects = await projectStore.list();
+  let agentCount = 0;
+  for (const p of projects) {
+    const durables = await agentConfig.listDurable(p.path);
+    agentCount += durables.length;
+  }
+  sendJson(res, 200, {
+    version: '1',
+    deviceName: settings.deviceName,
+    agentCount,
+    orchestratorCount: getAvailableOrchestrators().length,
+  });
+}
+
+async function handleProjectsRoute(ctx: AnnexRouteContext): Promise<void> {
+  sendJson(ctx.res, 200, await projectStore.list());
+}
+
+async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'project_not_found' });
+    return;
+  }
+  const durables = await agentConfig.listDurable(project.path);
+  sendJson(ctx.res, 200, durables.map((d) => mapDurableAgent(d, projectId)));
+}
+
+async function handleAgentBufferRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const agentId = decodeURIComponent(match[1]);
+  const buffer = ptyManager.getSerializedBuffer(agentId);
+  ctx.res.writeHead(200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Length': Buffer.byteLength(buffer),
+  });
+  ctx.res.end(buffer);
+}
+
+async function handleGroupProjectPatchRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.url.includes('/bulletin/')) return;
+  if (ctx.method !== 'PATCH') return;
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const fields: Record<string, unknown> = {};
+    if (body.name !== undefined) fields.name = body.name;
+    if (body.description !== undefined) fields.description = body.description;
+    if (body.instructions !== undefined) fields.instructions = body.instructions;
+    if (body.metadata !== undefined) fields.metadata = body.metadata;
+    if (Object.keys(fields).length === 0) {
+      sendJson(ctx.res, 400, { error: 'no_fields_to_update' });
+      return;
+    }
+    try {
+      const updated = await groupProjectRegistry.update(gpId, fields as any);
+      if (!updated) {
+        sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+        return;
+      }
+      annexEventBus.emitGroupProjectChanged('updated', updated);
+      sendJson(ctx.res, 200, updated);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'update_failed' });
+    }
+  });
+}
+
+async function handleGroupProjectBulletinProtectionRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const topic = decodeURIComponent(match[2]);
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const isProtected = body.isProtected as boolean;
+    if (typeof isProtected !== 'boolean') {
+      sendJson(ctx.res, 400, { error: 'isProtected (boolean) is required' });
+      return;
+    }
+    const board = getBulletinBoard(gpId);
+    board.setTopicProtected(topic, isProtected);
+    sendJson(ctx.res, 200, { ok: true });
+  });
+}
+
+const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
+  { method: 'GET', pattern: /^\/api\/v1\/status$/, handler: handleStatusRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents$/, handler: handleProjectAgentsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/buffer$/, handler: handleAgentBufferRoute },
+  { method: 'PATCH', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/protection$/, handler: handleGroupProjectBulletinProtectionRoute },
+  { method: 'PATCH', pattern: /^\/api\/v1\/group-projects\/([^/]+?)$/, handler: handleGroupProjectPatchRoute },
+];
+
+export function resolveAnnexHttpRoute(method: string, url: string): AnnexHttpRoute | undefined {
+  return ANNEX_HTTP_ROUTE_TABLE.find((route) => route.method === method && route.pattern.test(url));
+}
+
 // ---------------------------------------------------------------------------
 // Main-port request handler (serves authenticated endpoints)
 // ---------------------------------------------------------------------------
@@ -1308,6 +1427,15 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return true;
     }
     return false;
+  }
+
+  const route = resolveAnnexHttpRoute(method, url);
+  if (route) {
+    const match = url.match(route.pattern);
+    if (match) {
+      await route.handler({ req, res, url, method, requireMtls }, match);
+      return;
+    }
   }
 
   // GET /api/v1/status
