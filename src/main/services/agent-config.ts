@@ -976,6 +976,44 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
   };
 }
 
+async function saveWorktreeBeforeDelete(
+  wt: string,
+  agent: DurableAgentConfig,
+  options: { commitMessage: string; branch?: string },
+): Promise<void> {
+  // Stage all and commit
+  await execGitFileAsync(['add', '-A'], wt);
+  try {
+    await execGitFileAsync(['commit', '-m', options.commitMessage], wt);
+  } catch {
+    // Nothing to commit is OK
+  }
+
+  // Push if remote exists
+  try {
+    const remoteOut = await execGitFileAsync(['remote'], wt);
+    const branch = options.branch ?? agent.branch;
+    if (remoteOut.trim() && branch) {
+      await execGitFileAsync(['push', '-u', 'origin', branch], wt);
+    }
+  } catch (pushErr) {
+    const branch = options.branch ?? agent.branch;
+    const isCleanupBranch = options.branch !== undefined;
+    appLog(
+      'core:agent-config',
+      'warn',
+      `Push failed during ${isCleanupBranch ? 'cleanup-branch deletion' : 'delete-commit-push'}, work saved locally`,
+      {
+        meta: {
+          agentId: agent.id,
+          ...(isCleanupBranch ? { cleanupBranch: branch } : { branch }),
+          error: pushErr instanceof Error ? pushErr.message : String(pushErr),
+        },
+      },
+    );
+  }
+}
+
 export async function deleteCommitAndPush(projectPath: string, agentId: string): Promise<DeleteResult> {
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
@@ -988,25 +1026,7 @@ export async function deleteCommitAndPush(projectPath: string, agentId: string):
   }
 
   try {
-    // Stage all and commit
-    await execGitFileAsync(['add', '-A'], wt);
-    try {
-      await execGitFileAsync(['commit', '-m', 'Save work before deletion'], wt);
-    } catch {
-      // Nothing to commit is OK
-    }
-
-    // Push if remote exists
-    try {
-      const remoteOut = await execGitFileAsync(['remote'], wt);
-      if (remoteOut.trim() && agent.branch) {
-        await execGitFileAsync(['push', '-u', 'origin', agent.branch], wt);
-      }
-    } catch (pushErr) {
-      appLog('core:agent-config', 'warn', 'Push failed during delete-commit-push, work saved locally', {
-        meta: { agentId, branch: agent.branch, error: pushErr instanceof Error ? pushErr.message : String(pushErr) },
-      });
-    }
+    await saveWorktreeBeforeDelete(wt, agent, { commitMessage: 'Save work before deletion' });
   } catch (err: any) {
     appLog('core:agent-config', 'error', 'Failed to commit during agent deletion', {
       meta: { agentId, error: err.message },
@@ -1040,25 +1060,10 @@ export async function deleteWithCleanupBranch(projectPath: string, agentId: stri
       await execGitFileAsync(['checkout', cleanupBranch], wt);
     }
 
-    // Stage all and commit
-    await execGitFileAsync(['add', '-A'], wt);
-    try {
-      await execGitFileAsync(['commit', '-m', 'Cleanup: save work before agent deletion'], wt);
-    } catch {
-      // Nothing to commit
-    }
-
-    // Push if remote exists
-    try {
-      const remoteOut = await execGitFileAsync(['remote'], wt);
-      if (remoteOut.trim()) {
-        await execGitFileAsync(['push', '-u', 'origin', cleanupBranch], wt);
-      }
-    } catch (pushErr) {
-      appLog('core:agent-config', 'warn', 'Push failed during cleanup-branch deletion, work saved locally', {
-        meta: { agentId, cleanupBranch, error: pushErr instanceof Error ? pushErr.message : String(pushErr) },
-      });
-    }
+    await saveWorktreeBeforeDelete(wt, agent, {
+      commitMessage: 'Cleanup: save work before agent deletion',
+      branch: cleanupBranch,
+    });
   } catch (err: any) {
     appLog('core:agent-config', 'error', 'Failed to create cleanup branch during agent deletion', {
       meta: { agentId, error: err.message },
