@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
 import { createSettingsStore } from './settings-store';
@@ -661,35 +661,134 @@ async function downloadUpdate(
 // Apply update (quit, replace, relaunch)
 // ---------------------------------------------------------------------------
 
+interface ApplyContext {
+  downloadPath: string | null;
+  version: string;
+  artifactUrl: string | null;
+}
+
+interface ApplyOptions {
+  relaunch: boolean;
+}
+
+async function prepareApply(updateStatus: UpdateStatus, logScope: string): Promise<ApplyContext> {
+  if (updateStatus.availableVersion && updateStatus.releaseNotes) {
+    await writePendingReleaseNotes({
+      version: updateStatus.availableVersion,
+      releaseNotes: updateStatus.releaseNotes,
+    });
+  }
+  await clearPendingUpdateInfo();
+  await writeApplyAttempt({
+    version: updateStatus.availableVersion!,
+    artifactUrl: updateStatus.artifactUrl,
+    attemptedAt: new Date().toISOString(),
+  });
+  appLog(logScope, 'info', logScope === 'update:apply' ? 'Applying update' : 'Applying update on quit (silent)', {
+    meta: { version: updateStatus.availableVersion, downloadPath: updateStatus.downloadPath },
+  });
+  return {
+    downloadPath: updateStatus.downloadPath,
+    version: updateStatus.availableVersion!,
+    artifactUrl: updateStatus.artifactUrl,
+  };
+}
+
+export async function applyMacUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<void> {
+  const { downloadPath } = context;
+  if (!downloadPath) return;
+  const appBundlePath = app.getPath('exe').replace(/\/Contents\/MacOS\/.*$/, '');
+  if (!appBundlePath.endsWith('.app') || !await pathExists(downloadPath)) return;
+  const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
+  const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
+  if (relaunch) {
+    await fsp.rm(tmpExtract, { recursive: true, force: true });
+    await fsp.mkdir(tmpExtract, { recursive: true });
+    execFileSync('unzip', ['-o', '-q', downloadPath, '-d', tmpExtract], { timeout: 60_000 });
+    const extracted = (await fsp.readdir(tmpExtract)).find((file) => file.endsWith('.app'));
+    if (!extracted) throw new Error('No .app found in update archive');
+    await fsp.writeFile(
+      script,
+      buildMacUpdateScript(appBundlePath, path.join(tmpExtract, extracted), tmpExtract, downloadPath, script),
+      { mode: 0o755 },
+    );
+  } else {
+    await fsp.writeFile(script, buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, script), { mode: 0o755 });
+  }
+  spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
+  if (relaunch) {
+    flushLogs();
+    app.exit(0);
+  }
+}
+
+export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<void> {
+  const updateExe = getSquirrelUpdateExePath();
+  if (!await pathExists(updateExe)) {
+    throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
+  }
+  const releasesUrl = getSquirrelReleasesUrl(getSettings().previewChannel);
+  const appExeName = path.basename(process.execPath);
+  if (relaunch) {
+    execFileSync(updateExe, ['--update', releasesUrl], {
+      timeout: 300_000,
+      encoding: 'utf-8',
+      windowsHide: true,
+    });
+    flushLogs();
+    spawn(updateExe, ['--processStart', appExeName], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    }).unref();
+    app.exit(0);
+    return;
+  }
+  const child = spawn(updateExe, ['--update', releasesUrl], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  child.on('error', (spawnErr: Error) => {
+    appLog('update:apply-on-quit', 'error', `Update.exe failed to start: ${spawnErr.message}`);
+  });
+  child.unref();
+  flushLogs();
+}
+
+export async function applyLinuxUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
+  const { downloadPath } = context;
+  if (!downloadPath || !await pathExists(downloadPath) || !downloadPath.endsWith('.deb')) return false;
+  execFileSync('pkexec', ['dpkg', '-i', downloadPath], { timeout: 120_000 });
+  appLog(relaunch ? 'update:apply' : 'update:apply-on-quit', 'info', 'Linux: .deb installed successfully', {
+    meta: { downloadPath },
+  });
+  if (relaunch) {
+    app.relaunch();
+    app.exit(0);
+  }
+  return true;
+}
+
+async function applyPlatformUpdate(context: ApplyContext, options: ApplyOptions): Promise<boolean> {
+  if (process.platform === 'darwin') {
+    await applyMacUpdate(context, options);
+    return true;
+  }
+  if (process.platform === 'win32') {
+    await applyWindowsUpdate(context, options);
+    return true;
+  }
+  if (process.platform === 'linux') return applyLinuxUpdate(context, options);
+  return false;
+}
+
 export async function applyUpdate(): Promise<void> {
   if (status.state !== 'ready') {
     throw new Error('No update ready to apply');
   }
 
-  const downloadPath = status.downloadPath;
-  const savedVersion = status.availableVersion;
-  const savedArtifactUrl = status.artifactUrl;
-
-  // Persist release notes for the What's New dialog after restart
-  if (status.availableVersion && status.releaseNotes) {
-    await writePendingReleaseNotes({
-      version: status.availableVersion,
-      releaseNotes: status.releaseNotes,
-    });
-  }
-
-  await clearPendingUpdateInfo();
-
-  // Record apply attempt so we can detect silent failures on next launch
-  await writeApplyAttempt({
-    version: savedVersion!,
-    artifactUrl: savedArtifactUrl,
-    attemptedAt: new Date().toISOString(),
-  });
-
-  appLog('update:apply', 'info', 'Applying update', {
-    meta: { version: status.availableVersion, downloadPath },
-  });
+  const context = await prepareApply(status, 'update:apply');
 
   setState('idle', {
     availableVersion: null,
@@ -701,167 +800,18 @@ export async function applyUpdate(): Promise<void> {
     artifactUrl: null,
   });
 
-  if (process.platform === 'darwin') {
-    try {
-      const appPath = app.getPath('exe');
-      // The exe path is like /Applications/Clubhouse.app/Contents/MacOS/Clubhouse
-      // We need /Applications/Clubhouse.app
-      const appBundlePath = appPath.replace(/\/Contents\/MacOS\/.*$/, '');
-
-      if (appBundlePath.endsWith('.app') && await pathExists(downloadPath)) {
-        const { execFileSync } = require('child_process');
-        const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
-
-        // Clean up any previous extract
-        await fsp.rm(tmpExtract, { recursive: true, force: true });
-        await fsp.mkdir(tmpExtract, { recursive: true });
-
-        // Extract ZIP — use execFileSync so downloadPath is a literal arg, never shell-interpreted
-        execFileSync('unzip', ['-o', '-q', downloadPath, '-d', tmpExtract], { timeout: 60_000 });
-
-        // Find the .app inside
-        const extracted = (await fsp.readdir(tmpExtract)).find((f) => f.endsWith('.app'));
-        if (!extracted) throw new Error('No .app found in update archive');
-
-        const newAppPath = path.join(tmpExtract, extracted);
-
-        // Replace: remove old, move new
-        // Use a small shell script that runs after the app quits
-        const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
-        await fsp.writeFile(script, buildMacUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, script), { mode: 0o755 });
-
-        const { spawn } = require('child_process');
-        spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
-
-        flushLogs();
-        app.exit(0);
-        return;
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      appLog('update:apply', 'error', `Failed to apply update: ${msg}`);
-      setState('error', {
-        error: `Update failed: ${msg}`,
-        availableVersion: savedVersion,
-        artifactUrl: savedArtifactUrl,
-      });
-      throw err;
-    }
-  } else if (process.platform === 'win32') {
-    // Squirrel native update: Update.exe downloads the nupkg and applies
-    // it in-place. No batch scripts, no console windows, no installer UI.
-    try {
-      const updateExe = getSquirrelUpdateExePath();
-
-      if (!await pathExists(updateExe)) {
-        throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
-      }
-
-      const settings = getSettings();
-      const releasesUrl = getSquirrelReleasesUrl(settings.previewChannel);
-      const appExeName = path.basename(process.execPath);
-
-      appLog('update:apply', 'info', 'Applying via Squirrel Update.exe', {
-        meta: { updateExe, releasesUrl, version: savedVersion, appExeName },
-      });
-
-      const { execFileSync } = require('child_process');
-      let stdout: string;
-      try {
-        const result = execFileSync(updateExe, ['--update', releasesUrl], {
-          timeout: 300_000,
-          encoding: 'utf-8',
-          windowsHide: true,
-        });
-        stdout = (result || '').trim();
-      } catch (execErr: unknown) {
-        // execFileSync attaches stdout/stderr to the error on failure
-        const e = execErr as { stdout?: string; stderr?: string; status?: number; message?: string };
-        appLog('update:apply', 'error', 'Update.exe --update failed', {
-          meta: {
-            exitCode: e.status ?? null,
-            stdout: (e.stdout || '').trim().slice(0, 2000),
-            stderr: (e.stderr || '').trim().slice(0, 2000),
-            message: e.message,
-          },
-        });
-        throw execErr;
-      }
-
-      appLog('update:apply', 'info', 'Update.exe --update completed', {
-        meta: { stdout: stdout.slice(0, 2000) },
-      });
-
-      // Relaunch via Update.exe --processStart to start the LATEST version.
-      // app.relaunch() would restart the current (old) exe.
-      appLog('update:apply', 'info', 'Relaunching via Update.exe --processStart', {
-        meta: { appExeName },
-      });
-      flushLogs();
-
-      const { spawn } = require('child_process');
-      spawn(updateExe, ['--processStart', appExeName], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-      }).unref();
-
-      app.exit(0);
-      return;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      appLog('update:apply', 'error', `Failed to apply Windows update: ${msg}`);
-      flushLogs();
-      setState('error', {
-        error: `Update failed: ${msg}`,
-        availableVersion: savedVersion,
-        artifactUrl: savedArtifactUrl,
-      });
-      throw err;
-    }
+  try {
+    const applied = await applyPlatformUpdate(context, { relaunch: true });
+    if (applied) return;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    appLog('update:apply', 'error', `Failed to apply update: ${msg}`);
+    setState('error', { error: `Update failed: ${msg}`, availableVersion: context.version, artifactUrl: context.artifactUrl });
+    throw err;
   }
-
-  // Linux: attempt to install the .deb via pkexec, then relaunch.
-  // If pkexec is unavailable or the user cancels, fall back to opening
-  // the download in the file manager so they can install manually.
-  if (process.platform === 'linux' && downloadPath && await pathExists(downloadPath)) {
-    try {
-      const { execFileSync } = require('child_process');
-
-      if (downloadPath.endsWith('.deb')) {
-        appLog('update:apply', 'info', 'Linux: installing .deb via pkexec dpkg -i', {
-          meta: { downloadPath },
-        });
-        execFileSync('pkexec', ['dpkg', '-i', downloadPath], { timeout: 120_000 });
-        appLog('update:apply', 'info', 'Linux: .deb installed successfully, relaunching');
-        app.relaunch();
-        app.exit(0);
-        return;
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      appLog('update:apply', 'warn', `Linux: pkexec install failed, falling back to file manager: ${msg}`);
-    }
-
-    // Fallback: open the containing folder so the user can install manually
-    try {
-      const { shell } = require('electron');
-      shell.showItemInFolder(downloadPath);
-    } catch {
-      // Non-critical
-    }
-
-    setState('error', {
-      error: 'Automatic install cancelled — use "Download manually" to install the update',
-      availableVersion: savedVersion,
-      artifactUrl: savedArtifactUrl,
-    });
-    return;
-  }
-
-  // Fallback for other platforms: just relaunch
   app.relaunch();
   app.exit(0);
+  return;
 }
 
 // ---------------------------------------------------------------------------
@@ -873,102 +823,14 @@ export async function applyUpdateOnQuit(updateStatus: UpdateStatus = status): Pr
     return; // No update ready — nothing to do
   }
 
-  const downloadPath = updateStatus.downloadPath;
+  const context = await prepareApply(updateStatus, 'update:apply-on-quit');
 
-  // Persist release notes for the What's New dialog after next launch
-  if (updateStatus.availableVersion && updateStatus.releaseNotes) {
-    await writePendingReleaseNotes({
-      version: updateStatus.availableVersion,
-      releaseNotes: updateStatus.releaseNotes,
-    });
+  try {
+    await applyPlatformUpdate(context, { relaunch: false });
+  } catch (err) {
+    appLog('update:apply-on-quit', 'warn', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
   }
-
-  await clearPendingUpdateInfo();
-
-  // Record apply attempt so we can detect silent failures on next launch
-  await writeApplyAttempt({
-    version: updateStatus.availableVersion!,
-    artifactUrl: updateStatus.artifactUrl,
-    attemptedAt: new Date().toISOString(),
-  });
-
-  appLog('update:apply-on-quit', 'info', 'Applying update on quit (silent)', {
-    meta: { version: updateStatus.availableVersion, downloadPath },
-  });
-
-  if (process.platform === 'darwin') {
-    try {
-      const appPath = app.getPath('exe');
-      const appBundlePath = appPath.replace(/\/Contents\/MacOS\/.*$/, '');
-
-      if (appBundlePath.endsWith('.app') && await pathExists(downloadPath)) {
-        const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
-
-        // Write a shell script that extracts and applies the update after
-        // the app has exited.  All heavy work (unzip) happens in the
-        // detached script so the main process never blocks during quit.
-        const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
-        await fsp.writeFile(script, buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, script), { mode: 0o755 });
-
-        const { spawn } = require('child_process');
-        spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
-      }
-    } catch (err) {
-      appLog('update:apply-on-quit', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  } else if (process.platform === 'win32') {
-    // Squirrel native update — no relaunch since the user chose to quit.
-    // Spawn Update.exe as a detached process so the main process can exit
-    // immediately without blocking on Squirrel's download/apply cycle.
-    try {
-      const updateExe = getSquirrelUpdateExePath();
-      if (!await pathExists(updateExe)) {
-        appLog('update:apply-on-quit', 'warn', 'Update.exe not found, skipping quit-update', {
-          meta: { expectedPath: updateExe },
-        });
-        return;
-      }
-
-      const settings = getSettings();
-      const releasesUrl = getSquirrelReleasesUrl(settings.previewChannel);
-
-      appLog('update:apply-on-quit', 'info', 'Applying via Squirrel Update.exe (no relaunch)', {
-        meta: { updateExe, releasesUrl },
-      });
-
-      const child = spawn(updateExe, ['--update', releasesUrl], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-      });
-      child.on('error', (spawnErr: Error) => {
-        appLog('update:apply-on-quit', 'error', `Update.exe failed to start: ${spawnErr.message}`);
-      });
-      child.unref();
-
-      flushLogs();
-    } catch (err) {
-      appLog('update:apply-on-quit', 'error', `Failed to apply Windows update on quit: ${err instanceof Error ? err.message : String(err)}`);
-      flushLogs();
-    }
-  }
-  // Linux: attempt silent install on quit via pkexec.
-  // If it fails (no polkit agent, user cancels), the pending-update-info
-  // file remains on disk so the banner re-appears on next launch.
-  if (process.platform === 'linux' && downloadPath && await pathExists(downloadPath)) {
-    try {
-      if (downloadPath.endsWith('.deb')) {
-        const { execSync } = require('child_process');
-        appLog('update:apply-on-quit', 'info', 'Linux: installing .deb via pkexec dpkg -i', {
-          meta: { downloadPath },
-        });
-        execSync(`pkexec dpkg -i "${downloadPath}"`, { timeout: 120_000 });
-        appLog('update:apply-on-quit', 'info', 'Linux: .deb installed successfully');
-      }
-    } catch (err) {
-      appLog('update:apply-on-quit', 'warn', `Linux: pkexec install failed on quit: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
+  return;
 }
 
 // ---------------------------------------------------------------------------
