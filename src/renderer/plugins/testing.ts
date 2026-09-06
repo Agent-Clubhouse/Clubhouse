@@ -1,4 +1,95 @@
+import { vi } from 'vitest';
 import type { PluginContext, PluginAPI } from '../../shared/plugin-types';
+
+export const mockLog = {
+  write: vi.fn(),
+};
+
+export const mockPlugin = {
+  storageRead: vi.fn(),
+  storageWrite: vi.fn(),
+  storageDelete: vi.fn(),
+  storageList: vi.fn(),
+};
+
+export const mockFile = {
+  read: vi.fn(),
+  write: vi.fn(),
+  delete: vi.fn(),
+  readTree: vi.fn(),
+  readBinary: vi.fn(),
+  showInFolder: vi.fn(),
+  mkdir: vi.fn(),
+  rename: vi.fn(),
+  copy: vi.fn(),
+  stat: vi.fn(),
+};
+
+export const mockGit = {
+  info: vi.fn(),
+  diff: vi.fn(),
+};
+
+export const mockAgent = {
+  listDurable: vi.fn(),
+  killAgent: vi.fn(),
+  getModelOptions: vi.fn(),
+  createDurable: vi.fn(),
+};
+
+export const mockPty = {
+  spawnShell: vi.fn(),
+  write: vi.fn(),
+  resize: vi.fn(),
+  kill: vi.fn(),
+  getBuffer: vi.fn(),
+  onData: vi.fn(),
+  onExit: vi.fn(),
+};
+
+export const mockProcess = {
+  exec: vi.fn(),
+};
+
+export const mockWindow = {
+  createPopout: vi.fn(),
+};
+
+export const mockAgentSettings = {
+  readProjectAgentDefaults: vi.fn().mockResolvedValue({}),
+  writeProjectAgentDefaults: vi.fn().mockResolvedValue(undefined),
+  writeSourceSkillContent: vi.fn().mockResolvedValue(undefined),
+  deleteSourceSkill: vi.fn().mockResolvedValue(undefined),
+  writeSourceAgentTemplateContent: vi.fn().mockResolvedValue(undefined),
+  deleteSourceAgentTemplate: vi.fn().mockResolvedValue(undefined),
+};
+
+export const mockApp = {
+  openExternalUrl: vi.fn(),
+};
+
+export function installMockWindowClubhouse(): void {
+  Object.defineProperty(globalThis, 'window', {
+    value: {
+      clubhouse: {
+        plugin: mockPlugin,
+        file: mockFile,
+        git: mockGit,
+        agent: mockAgent,
+        pty: mockPty,
+        log: mockLog,
+        process: mockProcess,
+        window: mockWindow,
+        agentSettings: mockAgentSettings,
+        app: mockApp,
+      },
+      confirm: vi.fn(),
+      prompt: vi.fn(),
+    },
+    configurable: true,
+    writable: true,
+  });
+}
 
 export function createMockContext(overrides?: Partial<PluginContext>): PluginContext {
   return {

@@ -11,7 +11,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { validateManifest, SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
-import { createMockAPI, createMockContext } from './testing';
+import { createMockAPI, createMockContext, installMockWindowClubhouse } from './testing';
+import { createPluginAPI } from './plugin-api-factory';
 import type {
   PluginAPI,
   ProjectAPI,
@@ -153,6 +154,25 @@ const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme',
   'workspace', 'canvas', 'window', 'mcp', 'annex', 'context',
 ];
+
+function makeAllPermsManifest(overrides?: Partial<PluginManifest>): PluginManifest {
+  return {
+    id: 'test-plugin',
+    name: 'Test Plugin',
+    version: '1.0.0',
+    engine: { api: 0.8 },
+    scope: 'project',
+    permissions: [...ALL_PLUGIN_PERMISSIONS],
+    contributes: { help: {} },
+    ...overrides,
+  };
+}
+
+function expectKeySet<T extends object>(value: T, expectedKeys: readonly string[]): void {
+  expect(Object.keys(value).sort()).toEqual([...expectedKeys].sort());
+}
+
+installMockWindowClubhouse();
 
 // ── Helper: minimal valid manifest per version ─────────────────────────────
 
@@ -1263,8 +1283,92 @@ describe('§2b v0.7 pack plugins and new contributions', () => {
 });
 
 // =============================================================================
-// § 3. API surface area contracts (mock API completeness)
+// § 3. API surface area contracts (real factory + mock API completeness)
 // =============================================================================
+
+describe('§3 API surface area contracts — createPluginAPI()', () => {
+  const unrestrictedProjectManifest = makeAllPermsManifest({
+    engine: { api: 0.8 },
+    scope: 'project',
+    permissions: [...ALL_PLUGIN_PERMISSIONS],
+  });
+  const legacyProjectManifest = makeAllPermsManifest({
+    engine: { api: 0.5 },
+    scope: 'project',
+    permissions: [...ALL_PLUGIN_PERMISSIONS],
+  });
+
+  const scenarios = [
+    {
+      label: 'project mode',
+      api: createPluginAPI(createMockContext({
+        scope: 'project',
+        projectId: 'test-project',
+        projectPath: '/tmp/test-project',
+      }), undefined, unrestrictedProjectManifest),
+    },
+    {
+      label: 'app mode',
+      api: createPluginAPI(createMockContext({
+        scope: 'app',
+        projectId: undefined,
+        projectPath: undefined,
+      }), 'app', unrestrictedProjectManifest),
+    },
+    {
+      label: 'dual project mode',
+      api: createPluginAPI(createMockContext({
+        scope: 'dual',
+        projectId: 'test-project',
+        projectPath: '/tmp/test-project',
+      }), 'project', unrestrictedProjectManifest),
+    },
+    {
+      label: 'dual app mode',
+      api: createPluginAPI(createMockContext({
+        scope: 'dual',
+        projectId: 'test-project',
+        projectPath: '/tmp/test-project',
+      }), 'app', unrestrictedProjectManifest),
+    },
+  ];
+
+  for (const { label, api } of scenarios) {
+    it(`has exactly the expected top-level namespaces in ${label}`, () => {
+      expectKeySet(api, PLUGIN_API_NAMESPACES);
+    });
+  }
+
+  it('project mode exposes the full project namespace contract', () => {
+    const api = createPluginAPI(createMockContext(), undefined, unrestrictedProjectManifest);
+    expectKeySet(api.project, PROJECT_API_METHODS);
+    expect(api.project.readFile).toBeDefined();
+    expect(api.project.writeFile).toBeDefined();
+  });
+
+  it('v0.5 project mode keeps the projects namespace gated off until API >= 0.8', () => {
+    const api = createPluginAPI(createMockContext(), undefined, legacyProjectManifest);
+    expect(() => api.projects.list()).toThrow(/api\.projects is not available for project-scoped plugins/);
+  });
+
+  it('v0.8 project mode exposes the full projects namespace contract', () => {
+    const api = createPluginAPI(createMockContext(), undefined, unrestrictedProjectManifest);
+    expectKeySet(api.projects, PROJECTS_API_METHODS);
+    expect(() => api.projects.list()).not.toThrow();
+  });
+
+  it('app mode leaves project-specific namespaces gated off, while keeping the root namespace contract intact', () => {
+    const api = createPluginAPI(createMockContext({
+      scope: 'app',
+      projectId: undefined,
+      projectPath: undefined,
+    }), 'app', unrestrictedProjectManifest);
+    expectKeySet(api, PLUGIN_API_NAMESPACES);
+    expect(() => api.project.readFile('/tmp/example.txt')).toThrow(/api\.project is not available for app-scoped plugins/);
+    expect(() => api.git.status()).toThrow(/api\.git is not available for app-scoped plugins/);
+    expect(() => api.files.readFile('/tmp/example.txt')).toThrow(/api\.files is not available for app-scoped plugins/);
+  });
+});
 
 describe('§3 API surface area contracts — createMockAPI()', () => {
   const api = createMockAPI();

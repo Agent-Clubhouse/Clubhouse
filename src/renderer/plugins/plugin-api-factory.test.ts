@@ -1,6 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act } from '@testing-library/react';
 import { createPluginAPI, _resetEnforcedViolations, computeDataDir } from './plugin-api-factory';
+import {
+  installMockWindowClubhouse,
+  mockAgent,
+  mockAgentSettings,
+  mockApp,
+  mockFile,
+  mockGit,
+  mockLog,
+  mockPlugin,
+  mockProcess,
+  mockPty,
+  mockWindow,
+} from './testing';
 import { pluginEventBus } from './plugin-events';
 import { pluginCommandRegistry } from './plugin-commands';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
@@ -11,91 +24,7 @@ import { useQuickAgentStore } from '../stores/quickAgentStore';
 import type { PluginContext, PluginAPI, PluginManifest } from '../../shared/plugin-types';
 import { ALL_PLUGIN_PERMISSIONS } from '../../shared/plugin-types';
 
-// Mock window.clubhouse for IPC calls
-const mockLog = {
-  write: vi.fn(),
-};
-
-const mockPlugin = {
-  storageRead: vi.fn(),
-  storageWrite: vi.fn(),
-  storageDelete: vi.fn(),
-  storageList: vi.fn(),
-};
-const mockFile = {
-  read: vi.fn(),
-  write: vi.fn(),
-  delete: vi.fn(),
-  readTree: vi.fn(),
-  readBinary: vi.fn(),
-  showInFolder: vi.fn(),
-  mkdir: vi.fn(),
-  rename: vi.fn(),
-  copy: vi.fn(),
-  stat: vi.fn(),
-};
-const mockGit = {
-  info: vi.fn(),
-  diff: vi.fn(),
-};
-
-const mockAgent = {
-  listDurable: vi.fn(),
-  killAgent: vi.fn(),
-  getModelOptions: vi.fn(),
-  createDurable: vi.fn(),
-};
-
-const mockPty = {
-  spawnShell: vi.fn(),
-  write: vi.fn(),
-  resize: vi.fn(),
-  kill: vi.fn(),
-  getBuffer: vi.fn(),
-  onData: vi.fn(),
-  onExit: vi.fn(),
-};
-
-const mockProcess = {
-  exec: vi.fn(),
-};
-
-const mockWindow = {
-  createPopout: vi.fn(),
-};
-
-const mockAgentSettings = {
-  readProjectAgentDefaults: vi.fn().mockResolvedValue({}),
-  writeProjectAgentDefaults: vi.fn().mockResolvedValue(undefined),
-  writeSourceSkillContent: vi.fn().mockResolvedValue(undefined),
-  deleteSourceSkill: vi.fn().mockResolvedValue(undefined),
-  writeSourceAgentTemplateContent: vi.fn().mockResolvedValue(undefined),
-  deleteSourceAgentTemplate: vi.fn().mockResolvedValue(undefined),
-};
-
-const mockApp = {
-  openExternalUrl: vi.fn(),
-};
-
-Object.defineProperty(globalThis, 'window', {
-  value: {
-    clubhouse: {
-      plugin: mockPlugin,
-      file: mockFile,
-      git: mockGit,
-      agent: mockAgent,
-      pty: mockPty,
-      log: mockLog,
-      process: mockProcess,
-      window: mockWindow,
-      agentSettings: mockAgentSettings,
-      app: mockApp,
-    },
-    confirm: vi.fn(),
-    prompt: vi.fn(),
-  },
-  writable: true,
-});
+installMockWindowClubhouse();
 
 function makeCtx(overrides?: Partial<PluginContext>): PluginContext {
   return {
