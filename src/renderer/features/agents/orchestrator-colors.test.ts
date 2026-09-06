@@ -18,6 +18,21 @@ describe('orchestrator-colors', () => {
       expect(getOrchestratorColor('copilot-cli')).toEqual(ORCHESTRATOR_COLORS['copilot-cli']);
     });
 
+    it('returns teal for codex-cli', () => {
+      expect(getOrchestratorColor('codex-cli')).toEqual(ORCHESTRATOR_COLORS['codex-cli']);
+    });
+
+    it('gives every built-in orchestrator its own colour', () => {
+      // Codex had no entry and fell through to grey, so its badge was the same
+      // as an unknown orchestrator's while the other two were branded.
+      const builtins = ['claude-code', 'copilot-cli', 'codex-cli'];
+      for (const id of builtins) {
+        expect(getOrchestratorColor(id)).not.toEqual(DEFAULT_ORCH_COLOR);
+      }
+      const swatches = builtins.map((id) => getOrchestratorColor(id).text);
+      expect(new Set(swatches).size).toBe(builtins.length);
+    });
+
     it('returns default grey for unknown orchestrator', () => {
       expect(getOrchestratorColor('unknown')).toEqual(DEFAULT_ORCH_COLOR);
     });

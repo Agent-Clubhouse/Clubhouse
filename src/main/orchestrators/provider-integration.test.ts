@@ -739,10 +739,10 @@ describe('Provider integration tests', () => {
       expect(caps.permissions).toBe(true);
     });
 
-    it('CodexCli: headless, hooks, permissions, and structuredMode, no structuredOutput', () => {
+    it('CodexCli: headless, structuredOutput, hooks, permissions, and structuredMode', () => {
       const caps = new CodexCliProvider().getCapabilities();
       expect(caps.headless).toBe(true);
-      expect(caps.structuredOutput).toBe(false);
+      expect(caps.structuredOutput).toBe(true);
       expect(caps.hooks).toBe(true);
       expect(caps.sessionResume).toBe(true);
       expect(caps.permissions).toBe(true);

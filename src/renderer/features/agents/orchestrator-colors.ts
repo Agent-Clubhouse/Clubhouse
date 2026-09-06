@@ -6,6 +6,7 @@
 export const ORCHESTRATOR_COLORS: Record<string, { bg: string; text: string }> = {
   'claude-code': { bg: 'rgb(var(--ctp-badge-orange) / 0.2)', text: 'rgb(var(--ctp-badge-orange))' },
   'copilot-cli': { bg: 'rgb(var(--ctp-badge-blue) / 0.2)', text: 'rgb(var(--ctp-badge-blue))' },
+  'codex-cli': { bg: 'rgb(var(--ctp-badge-teal) / 0.2)', text: 'rgb(var(--ctp-badge-teal))' },
 };
 export const DEFAULT_ORCH_COLOR = { bg: 'rgb(var(--ctp-badge-grey) / 0.2)', text: 'rgb(var(--ctp-badge-grey))' };
 
