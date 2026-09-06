@@ -1,11 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath } from './auto-update-service';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyPlatformUpdate, platformUpdateHandlers } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 
 describe('auto-update-service', () => {
+  describe('platform update dispatch', () => {
+    it('uses the same platform implementation for apply and apply-on-quit options', async () => {
+      const applyLinuxUpdate = vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
+      const context = { downloadPath: '/tmp/Clubhouse.deb', version: '1.0.0', artifactUrl: null };
+
+      await expect(applyPlatformUpdate(context, { relaunch: true }, 'linux')).resolves.toBe(true);
+      await expect(applyPlatformUpdate(context, { relaunch: false }, 'linux')).resolves.toBe(true);
+
+      expect(applyLinuxUpdate).toHaveBeenNthCalledWith(1, context, { relaunch: true });
+      expect(applyLinuxUpdate).toHaveBeenNthCalledWith(2, context, { relaunch: false });
+      applyLinuxUpdate.mockRestore();
+    });
+
+  });
+
   describe('isNewerVersion', () => {
     it('returns true when major version is higher', () => {
       expect(isNewerVersion('1.0.0', '0.25.0')).toBe(true);
@@ -544,4 +559,3 @@ describe('auto-update-service', () => {
     });
   });
 });
-

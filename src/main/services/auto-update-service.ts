@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import * as https from 'https';
 import * as http from 'http';
 import * as fs from 'fs';
@@ -770,16 +770,26 @@ export async function applyLinuxUpdate(context: ApplyContext, { relaunch }: Appl
   return true;
 }
 
-async function applyPlatformUpdate(context: ApplyContext, options: ApplyOptions): Promise<boolean> {
-  if (process.platform === 'darwin') {
-    await applyMacUpdate(context, options);
+export const platformUpdateHandlers = {
+  applyMacUpdate,
+  applyWindowsUpdate,
+  applyLinuxUpdate,
+};
+
+export async function applyPlatformUpdate(
+  context: ApplyContext,
+  options: ApplyOptions,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
+  if (platform === 'darwin') {
+    await platformUpdateHandlers.applyMacUpdate(context, options);
     return true;
   }
-  if (process.platform === 'win32') {
-    await applyWindowsUpdate(context, options);
+  if (platform === 'win32') {
+    await platformUpdateHandlers.applyWindowsUpdate(context, options);
     return true;
   }
-  if (process.platform === 'linux') return applyLinuxUpdate(context, options);
+  if (platform === 'linux') return platformUpdateHandlers.applyLinuxUpdate(context, options);
   return false;
 }
 
@@ -806,6 +816,21 @@ export async function applyUpdate(): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:apply', 'error', `Failed to apply update: ${msg}`);
+    if (process.platform === 'linux') {
+      if (context.downloadPath) {
+        try {
+          shell.showItemInFolder(context.downloadPath);
+        } catch {
+          // Opening the file manager is only a convenience fallback.
+        }
+      }
+      setState('error', {
+        error: 'Automatic install cancelled — use "Download manually" to install the update',
+        availableVersion: context.version,
+        artifactUrl: context.artifactUrl,
+      });
+      return;
+    }
     setState('error', { error: `Update failed: ${msg}`, availableVersion: context.version, artifactUrl: context.artifactUrl });
     throw err;
   }
