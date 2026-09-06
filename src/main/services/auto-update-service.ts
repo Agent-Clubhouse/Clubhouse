@@ -793,12 +793,12 @@ export async function applyPlatformUpdate(
   return false;
 }
 
-export async function applyUpdate(): Promise<void> {
-  if (status.state !== 'ready') {
+export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<void> {
+  if (updateStatus.state !== 'ready') {
     throw new Error('No update ready to apply');
   }
 
-  const context = await prepareApply(status, 'update:apply');
+  const context = await prepareApply(updateStatus, 'update:apply');
 
   setState('idle', {
     availableVersion: null,

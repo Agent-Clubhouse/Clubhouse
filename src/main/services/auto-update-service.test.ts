@@ -1,22 +1,66 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyPlatformUpdate, platformUpdateHandlers } from './auto-update-service';
+import { execFileSync } from 'child_process';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, platformUpdateHandlers } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 
+vi.mock('child_process', () => ({
+  execFileSync: vi.fn(),
+  spawn: vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })),
+}));
+
 describe('auto-update-service', () => {
   describe('platform update dispatch', () => {
-    it('uses the same platform implementation for apply and apply-on-quit options', async () => {
-      const applyLinuxUpdate = vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
-      const context = { downloadPath: '/tmp/Clubhouse.deb', version: '1.0.0', artifactUrl: null };
+    it('routes apply and apply-on-quit through the same platform implementation', async () => {
+      const readyStatus = {
+        state: 'ready' as const,
+        availableVersion: '1.0.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        downloadPath: '/tmp/Clubhouse.deb',
+        error: null,
+        artifactUrl: null,
+        applyAttempted: false,
+      };
+      const handler = process.platform === 'darwin'
+        ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue()
+        : process.platform === 'win32'
+          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue()
+          : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
 
-      await expect(applyPlatformUpdate(context, { relaunch: true }, 'linux')).resolves.toBe(true);
-      await expect(applyPlatformUpdate(context, { relaunch: false }, 'linux')).resolves.toBe(true);
+      await applyUpdate(readyStatus);
+      await applyUpdateOnQuit(readyStatus);
 
-      expect(applyLinuxUpdate).toHaveBeenNthCalledWith(1, context, { relaunch: true });
-      expect(applyLinuxUpdate).toHaveBeenNthCalledWith(2, context, { relaunch: false });
-      applyLinuxUpdate.mockRestore();
+      expect(handler).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        downloadPath: readyStatus.downloadPath,
+        version: readyStatus.availableVersion,
+      }), { relaunch: true });
+      expect(handler).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        downloadPath: readyStatus.downloadPath,
+        version: readyStatus.availableVersion,
+      }), { relaunch: false });
+      handler.mockRestore();
+    });
+
+    it('uses execFileSync argument arrays for Linux package installation', async () => {
+      const downloadPath = path.join(os.tmpdir(), 'Clubhouse update.deb');
+      fs.writeFileSync(downloadPath, '');
+      try {
+        await applyLinuxUpdate(
+          { downloadPath, version: '1.0.0', artifactUrl: null },
+          { relaunch: false },
+        );
+        expect(execFileSync).toHaveBeenCalledWith(
+          'pkexec',
+          ['dpkg', '-i', downloadPath],
+          { timeout: 120_000 },
+        );
+      } finally {
+        fs.unlinkSync(downloadPath);
+      }
     });
 
   });
