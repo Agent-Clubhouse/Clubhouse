@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { execFileSync } from 'child_process';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, platformUpdateHandlers } from './auto-update-service';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyPlatformUpdate, platformUpdateHandlers } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -26,7 +26,7 @@ describe('auto-update-service', () => {
         applyAttempted: false,
       };
       const handler = process.platform === 'darwin'
-        ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue()
+        ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue(true)
         : process.platform === 'win32'
           ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue()
           : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
@@ -61,6 +61,22 @@ describe('auto-update-service', () => {
       } finally {
         fs.unlinkSync(downloadPath);
       }
+    });
+
+    it('preserves the Darwin fallback when no update is applicable', async () => {
+      const handler = vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue(false);
+
+      await expect(applyPlatformUpdate(
+        { downloadPath: null, version: '1.0.0', artifactUrl: null },
+        { relaunch: true },
+        'darwin',
+      )).resolves.toBe(false);
+
+      expect(handler).toHaveBeenCalledWith(
+        { downloadPath: null, version: '1.0.0', artifactUrl: null },
+        { relaunch: true },
+      );
+      handler.mockRestore();
     });
 
   });

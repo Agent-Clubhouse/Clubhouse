@@ -694,11 +694,11 @@ async function prepareApply(updateStatus: UpdateStatus, logScope: string): Promi
   };
 }
 
-export async function applyMacUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<void> {
+export async function applyMacUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
   const { downloadPath } = context;
-  if (!downloadPath) return;
+  if (!downloadPath) return false;
   const appBundlePath = app.getPath('exe').replace(/\/Contents\/MacOS\/.*$/, '');
-  if (!appBundlePath.endsWith('.app') || !await pathExists(downloadPath)) return;
+  if (!appBundlePath.endsWith('.app') || !await pathExists(downloadPath)) return false;
   const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
   const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
   if (relaunch) {
@@ -720,6 +720,7 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch }: ApplyO
     flushLogs();
     app.exit(0);
   }
+  return true;
 }
 
 export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<void> {
@@ -782,8 +783,7 @@ export async function applyPlatformUpdate(
   platform: NodeJS.Platform = process.platform,
 ): Promise<boolean> {
   if (platform === 'darwin') {
-    await platformUpdateHandlers.applyMacUpdate(context, options);
-    return true;
+    return platformUpdateHandlers.applyMacUpdate(context, options);
   }
   if (platform === 'win32') {
     await platformUpdateHandlers.applyWindowsUpdate(context, options);
