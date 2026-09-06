@@ -593,6 +593,27 @@ describe('hydrateFromRemote', () => {
     expect(store.getState().activeCanvasId).toBe('c2');
   });
 
+  it('filters removed views and recovers malformed remote canvases', () => {
+    expect(() => store.getState().hydrateFromRemote([
+      {
+        id: 'valid',
+        name: 'Valid',
+        views: [
+          { id: 'terminal', type: 'terminal', title: 'Terminal' },
+          { id: 'agent', type: 'agent', title: 'Agent' },
+        ],
+        viewport: { panX: 0, panY: 0, zoom: 1 },
+        nextZIndex: 1,
+        zoomedViewId: null,
+      },
+      null,
+    ], 'valid')).not.toThrow();
+
+    expect(store.getState().canvases[0].views).toHaveLength(1);
+    expect(store.getState().canvases[0].views[0].type).toBe('agent');
+    expect(store.getState().canvases[1].views).toEqual([]);
+  });
+
   // ── Wire persistence ──────────────────────────────────────────────
 
   describe('wire persistence', () => {
