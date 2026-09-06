@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useUpdateStore } from '../../stores/updateStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { UpdateGateModal, UpdateGateAgent } from './UpdateGateModal';
+import type { LiveAgentInfo } from '../../../shared/types';
 
 export function UpdateBanner() {
   const status = useUpdateStore((s) => s.status);
@@ -28,10 +29,11 @@ export function UpdateBanner() {
     try {
       const live = await window.clubhouse.app.getLiveAgentsForUpdate();
       setGateAgents(
-        live.map((a: { agentId: string; projectPath: string; orchestrator: string; isWorking: boolean }) => ({
+        // resumeStrategy comes from the main process, which derives it from the
+        // provider's session capability — the same source the capture path uses.
+        live.map((a: LiveAgentInfo) => ({
           ...a,
           agentName: agents[a.agentId]?.name || a.agentId,
-          resumeStrategy: (a.orchestrator === 'claude-code' ? 'auto' : 'manual') as 'auto' | 'manual',
         })),
       );
     } catch { /* ignore */ }

@@ -6,7 +6,7 @@ import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
 import { getProvider, isSessionCapable } from '../orchestrators';
 import { pathExists } from './fs-utils';
-import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo, FreeAgentPermissionMode } from '../../shared/types';
+import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo, FreeAgentPermissionMode, ResumeStrategy } from '../../shared/types';
 import * as freeAgentSettings from './free-agent-settings';
 import { getDurableConfig } from './agent-config';
 import { isAssistantAgent } from '../../shared/assistant-utils';
@@ -34,14 +34,35 @@ export async function captureSessionState(
     const provider = getProvider(reg.orchestrator);
     if (!provider) continue;
 
+    const meta0 = agentMeta?.get(agentId);
+    const cwd = meta0?.worktreePath || reg.projectPath;
+
     let sessionId: string | null = null;
     if (isSessionCapable(provider)) {
+      // Preferred: scrape the id the CLI printed into its own terminal.
       const buffer = ptyManager.getBuffer(agentId);
       sessionId = provider.extractSessionId(buffer);
+
+      // Fallback: ask the provider what it has on disk for this directory.
+      // Not every CLI prints an id — Codex's TUI doesn't — and without one the
+      // resume degrades to "most recent session here", which picks the wrong
+      // conversation whenever two agents share a working directory (any agent
+      // with worktrees disabled). The newest recorded session for this cwd is
+      // this agent's, because it is the one that was just running in it.
+      if (!sessionId) {
+        try {
+          const [newest] = await provider.listSessions(cwd);
+          if (newest) sessionId = newest.sessionId;
+        } catch (err) {
+          appLog('update:session-resume', 'warn', 'Session lookup failed; will resume the most recent session', {
+            meta: { agentId, cwd, error: err instanceof Error ? err.message : String(err) },
+          });
+        }
+      }
     }
 
-    const canResume = isSessionCapable(provider);
-    const meta = agentMeta?.get(agentId);
+    const canResume = resumeStrategyFor(reg.orchestrator) === 'auto';
+    const meta = meta0;
 
     // Capture the permission mode the agent was running with.
     // Prefer per-agent meta (future-proofing), fall back to project-level setting.
@@ -149,6 +170,20 @@ async function silentUnlink(filePath: string): Promise<void> {
   }
 }
 
+/**
+ * Whether an agent can be brought back automatically after an update restart.
+ *
+ * Session resume is a provider capability, not a property of one orchestrator:
+ * an agent is auto-resumable exactly when its provider can enumerate and resume
+ * sessions.  Both the pre-restart badge and the capture path read this, so the
+ * two can't drift — they previously did, with the badge hardcoded to Claude
+ * Code while the capture already marked Codex auto.
+ */
+function resumeStrategyFor(orchestrator: string): ResumeStrategy {
+  const provider = getProvider(orchestrator);
+  return provider && isSessionCapable(provider) ? 'auto' : 'manual';
+}
+
 export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
   const all = agentRegistry.getAllRegistrations();
   const result: LiveAgentInfo[] = [];
@@ -168,6 +203,7 @@ export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
       runtime: reg.runtime,
       isWorking,
       lastActivity,
+      resumeStrategy: resumeStrategyFor(reg.orchestrator),
     });
   }
 

@@ -410,5 +410,123 @@ describe('restart-session-service', () => {
       // Headless agent must not appear
       expect(result.find((r) => r.agentId === 'agent-gamma-headless')).toBeUndefined();
     });
+
+    it('reports auto-resume for any provider that can resume sessions', () => {
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      vi.mocked(getProvider).mockReturnValue({ id: 'codex-cli' } as never);
+      agentRegistry.register('agent-codex', {
+        runtime: 'pty', projectPath: '/proj', orchestrator: 'codex-cli',
+      });
+
+      const [entry] = getLiveAgentsForUpdate().filter((r) => r.agentId === 'agent-codex');
+      // Previously hardcoded to claude-code in UpdateBanner, so Codex showed
+      // "Manual resume" while the capture path already treated it as auto.
+      expect(entry.resumeStrategy).toBe('auto');
+    });
+
+    it('reports manual resume when the provider cannot resume sessions', () => {
+      vi.mocked(isSessionCapable).mockReturnValue(false);
+      vi.mocked(getProvider).mockReturnValue({ id: 'basic-cli' } as never);
+      agentRegistry.register('agent-basic', {
+        runtime: 'pty', projectPath: '/proj', orchestrator: 'basic-cli',
+      });
+
+      const [entry] = getLiveAgentsForUpdate().filter((r) => r.agentId === 'agent-basic');
+      expect(entry.resumeStrategy).toBe('manual');
+    });
+
+    it('agrees with the strategy the capture path records', async () => {
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      vi.mocked(getProvider).mockReturnValue({
+        id: 'codex-cli',
+        extractSessionId: vi.fn().mockReturnValue(null),
+        listSessions: vi.fn().mockResolvedValue([]),
+      } as never);
+      agentRegistry.register('agent-both', {
+        runtime: 'pty', projectPath: '/proj', orchestrator: 'codex-cli',
+      });
+
+      const [preview] = getLiveAgentsForUpdate().filter((r) => r.agentId === 'agent-both');
+      await captureSessionState(new Map());
+      const written = JSON.parse(await fsp.readFile(statePath, 'utf-8'));
+      const captured = written.sessions.find((x: { agentId: string }) => x.agentId === 'agent-both');
+
+      // The badge shown before restarting must match what actually happens.
+      expect(preview.resumeStrategy).toBe(captured.resumeStrategy);
+    });
+  });
+
+  describe('session id resolution', () => {
+    it('falls back to the provider session list when the CLI prints no id', async () => {
+      // Codex's TUI prints no session id, so the buffer scrape finds nothing.
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      vi.mocked(ptyManager.getBuffer).mockReturnValue('no id in here');
+      const listSessions = vi.fn().mockResolvedValue([
+        { sessionId: 'newest-session', startedAt: 'a', lastActiveAt: 'b' },
+        { sessionId: 'older-session', startedAt: 'c', lastActiveAt: 'd' },
+      ]);
+      vi.mocked(getProvider).mockReturnValue({
+        id: 'codex-cli',
+        capabilities: { sessionResume: true },
+        extractSessionId: vi.fn().mockReturnValue(null),
+        listSessions,
+      } as never);
+
+      agentRegistry.register('agent-fallback', {
+        runtime: 'pty', projectPath: '/proj', orchestrator: 'codex-cli',
+      });
+      await captureSessionState(new Map());
+
+      const written = JSON.parse(await fsp.readFile(statePath, 'utf-8'));
+      const entry = written.sessions.find((x: { agentId: string }) => x.agentId === 'agent-fallback');
+      // Without this the resume degrades to "most recent session in this cwd",
+      // which picks the wrong conversation when agents share a directory.
+      expect(entry.sessionId).toBe('newest-session');
+    });
+
+    it('prefers the id the CLI printed over the session list', async () => {
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      const listSessions = vi.fn().mockResolvedValue([
+        { sessionId: 'from-disk', startedAt: 'a', lastActiveAt: 'b' },
+      ]);
+      vi.mocked(getProvider).mockReturnValue({
+        id: 'claude-code',
+        capabilities: { sessionResume: true },
+        extractSessionId: vi.fn().mockReturnValue('from-buffer'),
+        listSessions,
+      } as never);
+
+      agentRegistry.register('agent-scraped', {
+        runtime: 'pty', projectPath: '/proj', orchestrator: 'claude-code',
+      });
+      await captureSessionState(new Map());
+
+      const written = JSON.parse(await fsp.readFile(statePath, 'utf-8'));
+      const entry = written.sessions.find((x: { agentId: string }) => x.agentId === 'agent-scraped');
+      expect(entry.sessionId).toBe('from-buffer');
+      expect(listSessions).not.toHaveBeenCalled();
+    });
+
+    it('still captures the agent when the session lookup fails', async () => {
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      vi.mocked(getProvider).mockReturnValue({
+        id: 'codex-cli',
+        capabilities: { sessionResume: true },
+        extractSessionId: vi.fn().mockReturnValue(null),
+        listSessions: vi.fn().mockRejectedValue(new Error('store unreadable')),
+      } as never);
+
+      agentRegistry.register('agent-broken-store', {
+        runtime: 'pty', projectPath: '/proj', orchestrator: 'codex-cli',
+      });
+      await captureSessionState(new Map());
+
+      const written = JSON.parse(await fsp.readFile(statePath, 'utf-8'));
+      const entry = written.sessions.find((x: { agentId: string }) => x.agentId === 'agent-broken-store');
+      // A failed lookup degrades to resume-most-recent, never to losing the agent.
+      expect(entry).toBeDefined();
+      expect(entry.sessionId).toBeNull();
+      expect(entry.resumeStrategy).toBe('auto');
+    });
   });
 });
