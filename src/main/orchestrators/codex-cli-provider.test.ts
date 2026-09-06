@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
+import * as os from 'os';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
@@ -17,6 +18,7 @@ vi.mock('fs/promises', () => ({
   realpath: vi.fn(async (p: string) => p),
   access: vi.fn(async () => { throw new Error('ENOENT'); }),
   readdir: vi.fn(async () => []),
+  open: vi.fn(async () => { throw new Error('ENOENT'); }),
 }));
 
 vi.mock('child_process', () => ({
@@ -1013,139 +1015,229 @@ describe('CodexCliProvider', () => {
     });
   });
 
+  /**
+   * Stand up a virtual Codex session store over the fs/promises mock.
+   *
+   * `tree` maps a directory to its entries; `metaByFile` maps a rollout
+   * filename to the `session_meta` record that opens it.  Paths are built with
+   * path.join so the fixture matches the platform the test runs on — see the
+   * Windows-path note in listSessions.
+   */
+  function mockCodexStore(
+    sessionsDir: string,
+    tree: Record<string, Array<{ name: string; dir: boolean }>>,
+    metaByFile: Record<string, unknown>,
+    mtimes: Record<string, string> = {},
+  ) {
+    vi.mocked(fsp.readdir).mockImplementation((async (dir: string) => {
+      const entries = tree[dir];
+      if (!entries) throw new Error('ENOENT');
+      return entries.map((e) => ({
+        name: e.name,
+        isDirectory: () => e.dir,
+        isFile: () => !e.dir,
+      }));
+    }) as never);
+
+    vi.mocked(fsp.stat).mockImplementation((async (f: string) => ({
+      isDirectory: () => false,
+      birthtime: new Date('2026-01-01T00:00:00Z'),
+      mtime: new Date(mtimes[path.basename(f)] ?? '2026-04-01T12:00:00Z'),
+    })) as never);
+
+    vi.mocked(fsp.open).mockImplementation((async (f: string) => {
+      const meta = metaByFile[path.basename(f)];
+      if (meta === undefined) throw new Error('ENOENT');
+      const text = typeof meta === 'string' ? meta : JSON.stringify(meta) + '\n';
+      return {
+        read: async (buf: Buffer) => {
+          const bytes = Buffer.from(text, 'utf-8');
+          bytes.copy(buf);
+          return { bytesRead: Math.min(bytes.length, buf.length) };
+        },
+        close: async () => {},
+      };
+    }) as never);
+
+    return sessionsDir;
+  }
+
+  /** A rollout `session_meta` line as Codex actually writes it. */
+  const rolloutMeta = (cwd: string, timestamp: string, id: string, legacy = false) => ({
+    timestamp,
+    type: 'session_meta',
+    // Older Codex releases key the id as `payload.id`; newer ones add `session_id`.
+    payload: legacy
+      ? { id, timestamp, cwd, originator: 'codex_tui', cli_version: '0.153.4' }
+      : { session_id: id, id, timestamp, cwd, originator: 'codex_tui', cli_version: '0.153.4' },
+  });
+
   describe('listSessions', () => {
-    it('returns empty array when no session directories exist', async () => {
-      const sessions = await provider.listSessions('/project');
-      expect(sessions).toEqual([]);
+    // homePath() goes through the electron mock, which roots app paths in tmpdir
+    const HOME = path.join(os.tmpdir(), 'clubhouse-test-home');
+    const SESSIONS = path.join(HOME, '.codex', 'sessions');
+    const PROJECT = path.join(path.sep, 'work', 'my-project');
+    const OTHER = path.join(path.sep, 'work', 'other-project');
+
+    const F1 = 'rollout-2026-09-05T17-28-00-01a0741d-6c83-7720-8fc2-6412909a95ab.jsonl';
+    const F2 = 'rollout-2026-09-04T09-00-00-019cc073-4ae3-79c3-bc68-eef17cd515f9.jsonl';
+    const F3 = 'rollout-2026-09-03T08-00-00-019d0eff-598f-7ce2-92f2-200d97c54271.jsonl';
+
+    const datePartitionedTree = () => ({
+      [SESSIONS]: [{ name: '2026', dir: true }],
+      [path.join(SESSIONS, '2026')]: [{ name: '09', dir: true }],
+      [path.join(SESSIONS, '2026', '09')]: [
+        { name: '05', dir: true }, { name: '04', dir: true }, { name: '03', dir: true },
+      ],
+      [path.join(SESSIONS, '2026', '09', '05')]: [{ name: F1, dir: false }],
+      [path.join(SESSIONS, '2026', '09', '04')]: [{ name: F2, dir: false }],
+      [path.join(SESSIONS, '2026', '09', '03')]: [{ name: F3, dir: false }],
     });
 
-    it('lists sessions from accessible thread directory', async () => {
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).includes('threads')) return;
-        throw new Error('ENOENT');
+    it('finds sessions in the date-partitioned rollout store', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+        [F2]: rolloutMeta(PROJECT, '2026-09-04T09:00:00.000Z', '019cc073-4ae3-79c3-bc68-eef17cd515f9', true),
+        [F3]: rolloutMeta(PROJECT, '2026-09-03T08:00:00.000Z', '019d0eff-598f-7ce2-92f2-200d97c54271'),
       });
-      vi.mocked(fsp.readdir).mockResolvedValueOnce([
-        { name: 'thread_abc123def456ghij.jsonl', isFile: () => true, isDirectory: () => false },
-        { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false },
-        { name: 'config.toml', isFile: () => true, isDirectory: () => false },
-      ] as any);
 
-      const sessions = await provider.listSessions('/project');
-      expect(sessions).toHaveLength(2);
-      const ids = sessions.map(s => s.sessionId);
-      expect(ids).toContain('thread_abc123def456ghij');
-      expect(ids).toContain('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      const sessions = await provider.listSessions(PROJECT);
+      expect(sessions.map((s) => s.sessionId)).toEqual([
+        '01a0741d-6c83-7720-8fc2-6412909a95ab',
+        '019cc073-4ae3-79c3-bc68-eef17cd515f9',
+        '019d0eff-598f-7ce2-92f2-200d97c54271',
+      ]);
     });
 
-    it('sorts sessions by most recently active first', async () => {
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).includes('threads')) return;
-        throw new Error('ENOENT');
+    it('takes the session id from the filename, including legacy metadata', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        // Legacy record: payload.id only, no session_id
+        [F2]: rolloutMeta(PROJECT, '2026-09-04T09:00:00.000Z', '019cc073-4ae3-79c3-bc68-eef17cd515f9', true),
       });
-      vi.mocked(fsp.readdir).mockResolvedValueOnce([
-        { name: 'a1b2c3d4-e5f6-7890-abcd-000000000001.jsonl', isFile: () => true, isDirectory: () => false },
-        { name: 'a1b2c3d4-e5f6-7890-abcd-000000000002.jsonl', isFile: () => true, isDirectory: () => false },
-      ] as any);
-      vi.mocked(fsp.stat)
-        .mockResolvedValueOnce({ isDirectory: () => false, birthtime: new Date('2026-04-01T10:00:00Z'), mtime: new Date('2026-04-01T11:00:00Z') } as any)
-        .mockResolvedValueOnce({ isDirectory: () => false, birthtime: new Date('2026-04-01T10:00:00Z'), mtime: new Date('2026-04-01T14:00:00Z') } as any);
 
-      const sessions = await provider.listSessions('/project');
-      expect(sessions[0].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-000000000002');
-      expect(sessions[1].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-000000000001');
-    });
-
-    it('deduplicates sessions across directories', async () => {
-      let accessCallCount = 0;
-      vi.mocked(fsp.access).mockImplementation(async () => {
-        accessCallCount++;
-        // Let first two dirs succeed
-        if (accessCallCount <= 2) return;
-        throw new Error('ENOENT');
-      });
-      const entry = { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false };
-      vi.mocked(fsp.readdir)
-        .mockResolvedValueOnce([entry] as any)
-        .mockResolvedValueOnce([entry] as any);
-
-      const sessions = await provider.listSessions('/project');
+      const sessions = await provider.listSessions(PROJECT);
       expect(sessions).toHaveLength(1);
+      expect(sessions[0].sessionId).toBe('019cc073-4ae3-79c3-bc68-eef17cd515f9');
     });
 
-    it('skips non-UUID/non-thread filenames', async () => {
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).includes('threads')) return;
-        throw new Error('ENOENT');
+    it('excludes sessions recorded against a different project', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+        [F2]: rolloutMeta(OTHER, '2026-09-04T09:00:00.000Z', '019cc073-4ae3-79c3-bc68-eef17cd515f9'),
       });
-      vi.mocked(fsp.readdir).mockResolvedValueOnce([
-        { name: 'README.md', isFile: () => true, isDirectory: () => false },
-        { name: 'config.json', isFile: () => true, isDirectory: () => false },
-      ] as any);
 
-      const sessions = await provider.listSessions('/project');
-      expect(sessions).toEqual([]);
+      const sessions = await provider.listSessions(PROJECT);
+      expect(sessions.map((s) => s.sessionId)).toEqual(['01a0741d-6c83-7720-8fc2-6412909a95ab']);
+    });
+
+    it('skips a rollout whose metadata has no cwd rather than showing it everywhere', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: { timestamp: 'x', type: 'session_meta', payload: { id: 'no-cwd' } },
+      });
+      expect(await provider.listSessions(PROJECT)).toEqual([]);
+    });
+
+    it('reports recorded start time and file mtime as last activity', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+      }, { [F1]: '2026-09-05T19:00:00Z' });
+
+      const [session] = await provider.listSessions(PROJECT);
+      expect(session.startedAt).toBe('2026-09-05T17:28:00.000Z');
+      expect(session.lastActiveAt).toBe('2026-09-05T19:00:00.000Z');
+    });
+
+    it('sorts by most recently active first', async () => {
+      mockCodexStore(SESSIONS, datePartitionedTree(), {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+        [F3]: rolloutMeta(PROJECT, '2026-09-03T08:00:00.000Z', '019d0eff-598f-7ce2-92f2-200d97c54271'),
+      }, {
+        [F1]: '2026-09-05T10:00:00Z',
+        [F3]: '2026-09-09T10:00:00Z',   // touched later despite the older name
+      });
+
+      const sessions = await provider.listSessions(PROJECT);
+      expect(sessions[0].sessionId).toBe('019d0eff-598f-7ce2-92f2-200d97c54271');
+    });
+
+    it('honours CODEX_HOME from a profile instead of the default store', async () => {
+      const profileHome = path.join(path.sep, 'profiles', 'agent-a', '.codex');
+      const profileSessions = path.join(profileHome, 'sessions');
+      mockCodexStore(profileSessions, {
+        [profileSessions]: [{ name: '2026', dir: true }],
+        [path.join(profileSessions, '2026')]: [{ name: '09', dir: true }],
+        [path.join(profileSessions, '2026', '09')]: [{ name: '05', dir: true }],
+        [path.join(profileSessions, '2026', '09', '05')]: [{ name: F1, dir: false }],
+      }, {
+        [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+      });
+
+      const sessions = await provider.listSessions(PROJECT, { CODEX_HOME: profileHome });
+      expect(sessions).toHaveLength(1);
+      // The default store must not have been consulted
+      expect(vi.mocked(fsp.readdir)).not.toHaveBeenCalledWith(SESSIONS, expect.anything());
+    });
+
+    it('ignores files that are not rollouts', async () => {
+      mockCodexStore(SESSIONS, {
+        [SESSIONS]: [
+          { name: 'notes.txt', dir: false },
+          { name: 'rollout-bogus.jsonl', dir: false },
+        ],
+      }, {});
+      expect(await provider.listSessions(PROJECT)).toEqual([]);
+    });
+
+    it('returns empty when the store does not exist', async () => {
+      mockCodexStore(SESSIONS, {}, {});
+      expect(await provider.listSessions(PROJECT)).toEqual([]);
     });
   });
 
   describe('readSessionTranscript', () => {
-    it('returns null when no transcript file found', async () => {
-      const result = await provider.readSessionTranscript('nonexistent', '/project');
-      expect(result).toBeNull();
+    const HOME = path.join(os.tmpdir(), 'clubhouse-test-home');
+    const SESSIONS = path.join(HOME, '.codex', 'sessions');
+    const ID = '01a0741d-6c83-7720-8fc2-6412909a95ab';
+    const FILE = `rollout-2026-09-05T17-28-00-${ID}.jsonl`;
+
+    beforeEach(() => {
+      vi.mocked(fsp.readdir).mockImplementation((async (dir: string) => {
+        const tree: Record<string, Array<{ name: string; dir: boolean }>> = {
+          [SESSIONS]: [{ name: '2026', dir: true }],
+          [path.join(SESSIONS, '2026')]: [{ name: '09', dir: true }],
+          [path.join(SESSIONS, '2026', '09')]: [{ name: '05', dir: true }],
+          [path.join(SESSIONS, '2026', '09', '05')]: [{ name: FILE, dir: false }],
+        };
+        const entries = tree[dir];
+        if (!entries) throw new Error('ENOENT');
+        return entries.map((e) => ({ name: e.name, isDirectory: () => e.dir, isFile: () => !e.dir }));
+      }) as never);
     });
 
-    it('reads and parses JSONL transcript', async () => {
-      const jsonlContent = '{"type":"text","content":"hello"}\n{"type":"tool","name":"shell"}\n';
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).endsWith('nonexistent.jsonl') && String(p).includes('threads')) return;
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fsp.readFile).mockResolvedValueOnce(jsonlContent);
-
-      const result = await provider.readSessionTranscript('nonexistent', '/project');
-      expect(result).toHaveLength(2);
-      expect(result![0]).toEqual({ type: 'text', content: 'hello' });
-      expect(result![1]).toEqual({ type: 'tool', name: 'shell' });
+    it('locates the rollout by the session id in its filename', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue(
+        '{"type":"assistant","message":{"role":"assistant"}}\n' as never,
+      );
+      const events = await provider.readSessionTranscript(ID, '/any');
+      expect(events).not.toBeNull();
+      expect(vi.mocked(fsp.readFile)).toHaveBeenCalledWith(
+        path.join(SESSIONS, '2026', '09', '05', FILE),
+        'utf-8',
+      );
     });
 
-    it('skips malformed JSONL lines', async () => {
-      const jsonlContent = '{"type":"text"}\n{INVALID JSON}\n{"type":"tool"}\n';
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).endsWith('.jsonl') && String(p).includes('threads')) return;
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fsp.readFile).mockResolvedValueOnce(jsonlContent);
-
-      const result = await provider.readSessionTranscript('test-id', '/project');
-      expect(result).toHaveLength(2);
+    it('returns null for a session id with no matching rollout', async () => {
+      expect(await provider.readSessionTranscript('does-not-exist', '/any')).toBeNull();
     });
 
-    it('returns null for empty transcript', async () => {
-      vi.mocked(fsp.access).mockImplementation(async (p) => {
-        if (String(p).endsWith('.jsonl') && String(p).includes('threads')) return;
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fsp.readFile).mockResolvedValueOnce('\n\n');
-
-      const result = await provider.readSessionTranscript('test-id', '/project');
-      expect(result).toBeNull();
-    });
-
-    it('checks directory-style thread storage', async () => {
-      // All direct file paths fail
-      vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
-      // But directory-style stat succeeds
-      vi.mocked(fsp.stat).mockImplementation(async (p) => {
-        if (String(p).includes('threads') && String(p).endsWith('my-thread-id')) {
-          return { isDirectory: () => true } as any;
-        }
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fsp.readdir).mockResolvedValueOnce(['transcript.jsonl', 'meta.json']);
-      vi.mocked(fsp.readFile).mockResolvedValueOnce('{"type":"text","content":"from dir"}\n');
-
-      const result = await provider.readSessionTranscript('my-thread-id', '/project');
-      expect(result).toHaveLength(1);
-      expect(result![0]).toEqual({ type: 'text', content: 'from dir' });
+    it('reads from the profile store when CODEX_HOME is set', async () => {
+      const profileHome = path.join(path.sep, 'profiles', 'agent-a', '.codex');
+      vi.mocked(fsp.readdir).mockImplementation((async () => { throw new Error('ENOENT'); }) as never);
+      expect(await provider.readSessionTranscript(ID, '/any', { CODEX_HOME: profileHome })).toBeNull();
+      expect(vi.mocked(fsp.readdir)).toHaveBeenCalledWith(
+        path.join(profileHome, 'sessions'),
+        expect.anything(),
+      );
     });
   });
 

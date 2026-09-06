@@ -876,12 +876,15 @@ describe('Provider integration tests', () => {
       expect(keys).toHaveLength(2);
     });
 
-    it('CodexCli: returns OPENAI_API_KEY and OPENAI_BASE_URL', () => {
+    it('CodexCli: returns CODEX_HOME, OPENAI_API_KEY and OPENAI_BASE_URL', () => {
       const provider = new CodexCliProvider();
       const keys = provider.getProfileEnvKeys();
       expect(keys).toContain('OPENAI_API_KEY');
       expect(keys).toContain('OPENAI_BASE_URL');
-      expect(keys).toHaveLength(2);
+      // CODEX_HOME is the config-isolation root, the analogue of
+      // CLAUDE_CONFIG_DIR — a profile needs it to sandbox an agent's Codex state.
+      expect(keys).toContain('CODEX_HOME');
+      expect(keys).toHaveLength(3);
     });
 
     it('all providers return non-empty arrays', () => {
