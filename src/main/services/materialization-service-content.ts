@@ -252,7 +252,7 @@ when Clubhouse Mode runs:
     "mcpJson": "{ \\"mcpServers\\": { ... } }",
     "freeAgentMode": false,
     "sourceControlProvider": "github",
-    "buildCommand": "npm run build",
+    "buildCommand": "npm run package",
     "testCommand": "npm test",
     "lintCommand": "npm run lint",
     "mission": "implement-and-ship"
@@ -275,7 +275,7 @@ Each entry in the \`agents\` array supports per-agent overrides:
   "branch": "bold-falcon/standby",
   "persona": "qa",
   "mission": "investigate-and-report",
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run package",
   "testCommand": "npm test",
   "lintCommand": "npm run lint",
   "sourceControlProvider": "github",

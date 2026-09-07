@@ -8,7 +8,7 @@ description: Build the project using the configured build command
 Run the project build:
 
 ```bash
-npm run build
+npm run package
 ```
 
 If the build fails, analyze the error output and attempt to fix the issue. Re-run until the build succeeds.
