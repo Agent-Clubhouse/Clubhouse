@@ -1,6 +1,6 @@
 # Creating Plugins
 
-Build custom plugins to extend Clubhouse with new views, commands, and integrations. Study the built-in plugins (Hub, Terminal, Files) for working examples of all patterns.
+Build custom plugins to extend Clubhouse with new views, commands, and integrations. Built-in plugins are host-integrated examples, not portable community-plugin templates: they may import internal stores, hooks, features, and components that are unavailable to dynamically loaded plugins. Use the public `PluginAPI` surface below for community plugins; in particular, use `api.ui.EmptyState` for empty panels and `api.navigation.popOutAgent` for agent pop-outs.
 
 ## Plugin Structure
 
