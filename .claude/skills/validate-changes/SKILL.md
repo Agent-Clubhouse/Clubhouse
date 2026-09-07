@@ -11,7 +11,7 @@ Run the full validation pipeline to ensure your changes are ready to push.
 
 1. **Build** the project:
    ```bash
-   npm run build
+   npm run package
    ```
 2. **Run tests**:
    ```bash
