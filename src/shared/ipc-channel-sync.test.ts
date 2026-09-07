@@ -35,17 +35,20 @@ import { api } from '../preload/index';
 
 const ROOT = path.resolve(__dirname, '..');
 
-/** Read a file relative to src/ */
-function readSrc(relPath: string): string {
-  return fs.readFileSync(path.join(ROOT, relPath), 'utf-8');
-}
-
 /** Read all handler files and concatenate their contents */
 function readAllHandlerFiles(): string {
   const handlersDir = path.join(ROOT, 'main', 'ipc');
   const files = fs.readdirSync(handlersDir)
     .filter((f) => f.endsWith('-handlers.ts') && !f.endsWith('.test.ts'));
   return files.map((f) => fs.readFileSync(path.join(handlersDir, f), 'utf-8')).join('\n');
+}
+
+/** Read all preload bridge files and concatenate their contents */
+function readAllPreloadFiles(): string {
+  const preloadDir = path.join(ROOT, 'preload');
+  const files = fs.readdirSync(preloadDir)
+    .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
+  return files.map((f) => fs.readFileSync(path.join(preloadDir, f), 'utf-8')).join('\n');
 }
 
 /**
@@ -160,7 +163,7 @@ describe('IPC Channel Sync', () => {
 
   const channelMap = buildChannelMap();
   const allHandlersSource = readAllHandlerFiles();
-  const preloadSource = readSrc('preload/index.ts');
+  const preloadSource = readAllPreloadFiles();
 
   describe('all channels defined in ipc-channels.ts have a handler registered', () => {
     for (const [dottedPath, channelValue] of channelMap) {

@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { invoke, send, exposeInMainWorld } = vi.hoisted(() => ({
-  invoke: vi.fn(),
-  send: vi.fn(),
-  exposeInMainWorld: vi.fn(),
-}));
+const { invoke, send, exposeInMainWorld, exposedApi } = vi.hoisted(() => {
+  const exposedApi = { value: undefined as unknown };
+
+  return {
+    invoke: vi.fn(),
+    send: vi.fn(),
+    exposeInMainWorld: vi.fn((_name: string, value: unknown) => {
+      exposedApi.value = value;
+    }),
+    exposedApi,
+  };
+});
 
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld },
@@ -13,11 +20,78 @@ vi.mock('electron', () => ({
 }));
 
 import { api } from './index';
+import { agentQueue } from './agentQueue';
+import { groupProject } from './groupProject';
+import { annexClient } from './annexClient';
+import { pluginMcp } from './pluginMcp';
+import { git } from './git';
+import { annex } from './annex';
+import { window as windowApi } from './window';
+import { log } from './log';
+import { blueprint } from './blueprint';
+import { mcpBinding } from './mcpBinding';
+import { hookServer } from './hookServer';
+import { plugin } from './plugin';
+import { profile } from './profile';
+import { marketplace } from './marketplace';
+import { file } from './file';
+import { assistant } from './assistant';
+import { agentSettings } from './agentSettings';
+import { commandPalette } from './commandPalette';
+import { pty } from './pty';
+import { agent } from './agent';
+import { canvas } from './canvas';
+import { project } from './project';
+import { process as processApi } from './process';
+import { app } from './app';
 
 describe('preload IPC bridge', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    invoke.mockClear();
+    send.mockClear();
     invoke.mockResolvedValue('bridge-result');
+  });
+
+  it('exposes the complete composed API surface', () => {
+    const domainSlices = [
+      pty,
+      project,
+      agent,
+      git,
+      agentSettings,
+      file,
+      blueprint,
+      plugin,
+      marketplace,
+      pluginMcp,
+      log,
+      processApi,
+      app,
+      profile,
+      annex,
+      annexClient,
+      windowApi,
+      agentQueue,
+      groupProject,
+      mcpBinding,
+      assistant,
+      canvas,
+      commandPalette,
+      hookServer,
+    ];
+    const expectedApi = {
+      platform: api.platform,
+      getPathForFile: api.getPathForFile,
+      settings: api.settings,
+      ...Object.assign({}, ...domainSlices),
+    };
+    const exposed = exposedApi.value as typeof api;
+
+    expect(exposed).toBe(api);
+    expect(Object.keys(exposed).sort()).toEqual(Object.keys(expectedApi).sort());
+    for (const [key, value] of Object.entries(expectedApi)) {
+      expect(exposed[key]).toBe(value);
+    }
   });
 
   describe('pty', () => {
