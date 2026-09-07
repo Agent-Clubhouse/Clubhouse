@@ -97,6 +97,8 @@ import * as gitExcludeManager from './git-exclude-manager';
 import type { DurableAgentConfig } from '../../shared/types';
 import type { OrchestratorProvider, OrchestratorConventions } from '../orchestrators/types';
 
+const realFs = process.getBuiltinModule('fs') as typeof import('node:fs');
+
 // --- Fixtures ---
 
 const testAgent: DurableAgentConfig = {
@@ -482,6 +484,44 @@ describe('materialization-service', () => {
   });
 
   describe('materializeAgent', () => {
+    it('substitutes the standby branch in the checked-in skill template', async () => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p: unknown) => {
+        const dirPath = String(p).replace(/\\/g, '/');
+        if (dirPath.endsWith('.clubhouse/skills')) {
+          return [{ name: 'go-standby', isDirectory: () => true }] as any;
+        }
+        if (dirPath.includes('.clubhouse/skills/go-standby')) {
+          return [{ name: 'SKILL.md', isDirectory: () => false }] as any;
+        }
+        return [];
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const filePath = String(p);
+        if (filePath.includes('settings.json')) {
+          return JSON.stringify({
+            defaults: {},
+            quickOverrides: {},
+            agentDefaults: { instructions: 'test' },
+          });
+        }
+        if (filePath.includes('.claude/skills/go-standby/SKILL.md')) {
+          return '';
+        }
+        if (filePath.includes('.clubhouse/skills/go-standby/SKILL.md')) {
+          return GO_STANDBY_SKILL_CONTENT;
+        }
+        throw new Error('ENOENT');
+      });
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+
+      const skillWrite = vi.mocked(fsp.writeFile).mock.calls.find(
+        (call) => (call[0] as string).replace(/\\/g, '/').endsWith('/.claude/skills/go-standby/SKILL.md'),
+      );
+      expect(skillWrite?.[1]).toContain('git checkout bold-falcon/standby');
+      expect(skillWrite?.[1]).not.toContain('@@StandbyBranch');
+    });
+
     it('writes instructions with wildcards replaced', async () => {
       mockSettingsFile(JSON.stringify({
         defaults: {},
@@ -1380,6 +1420,16 @@ describe('materialization-service', () => {
   });
 
   describe('skill content constants', () => {
+    it('checked-in go-standby skill keeps the standby branch wildcard', () => {
+      const checkedInSkill = realFs.readFileSync(
+        new URL('../../../.claude/skills/go-standby/SKILL.md', import.meta.url),
+        'utf-8',
+      );
+
+      expect(checkedInSkill).toContain('git checkout @@StandbyBranch');
+      expect(checkedInSkill).not.toContain('git checkout mega-camel/standby');
+    });
+
     it('MISSION_SKILL_CONTENT references /validate-changes, /create-pr, and /go-standby', () => {
       expect(MISSION_SKILL_CONTENT).toContain('/validate-changes');
       expect(MISSION_SKILL_CONTENT).toContain('/create-pr');
