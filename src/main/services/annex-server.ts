@@ -1248,6 +1248,804 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
   sendJson(res, 404, { error: 'not_found' });
 }
 
+type AnnexRouteContext = {
+  req: http.IncomingMessage;
+  res: http.ServerResponse;
+  url: string;
+  method: string;
+  requireMtls: () => boolean;
+};
+
+type AnnexHttpRoute = {
+  method: string;
+  pattern: RegExp;
+  handler: (ctx: AnnexRouteContext, match: RegExpMatchArray) => Promise<void>;
+};
+
+async function handleStatusRoute(ctx: AnnexRouteContext): Promise<void> {
+  const { res } = ctx;
+  const settings = annexSettings.getSettings();
+  const projects = await projectStore.list();
+  let agentCount = 0;
+  for (const p of projects) {
+    const durables = await agentConfig.listDurable(p.path);
+    agentCount += durables.length;
+  }
+  sendJson(res, 200, {
+    version: '1',
+    deviceName: settings.deviceName,
+    agentCount,
+    orchestratorCount: getAvailableOrchestrators().length,
+  });
+}
+
+async function handleProjectsRoute(ctx: AnnexRouteContext): Promise<void> {
+  sendJson(ctx.res, 200, await projectStore.list());
+}
+
+async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'project_not_found' });
+    return;
+  }
+  const durables = await agentConfig.listDurable(project.path);
+  sendJson(ctx.res, 200, durables.map((d) => mapDurableAgent(d, projectId)));
+}
+
+async function handleAgentBufferRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const agentId = decodeURIComponent(match[1]);
+  const buffer = ptyManager.getSerializedBuffer(agentId);
+  ctx.res.writeHead(200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Length': Buffer.byteLength(buffer),
+  });
+  ctx.res.end(buffer);
+}
+
+async function handleGroupProjectPatchRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.url.includes('/bulletin/')) return;
+  if (ctx.method !== 'PATCH') return;
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const fields: Record<string, unknown> = {};
+    if (body.name !== undefined) fields.name = body.name;
+    if (body.description !== undefined) fields.description = body.description;
+    if (body.instructions !== undefined) fields.instructions = body.instructions;
+    if (body.metadata !== undefined) fields.metadata = body.metadata;
+    if (Object.keys(fields).length === 0) {
+      sendJson(ctx.res, 400, { error: 'no_fields_to_update' });
+      return;
+    }
+    try {
+      const updated = await groupProjectRegistry.update(gpId, fields as any);
+      if (!updated) {
+        sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+        return;
+      }
+      annexEventBus.emitGroupProjectChanged('updated', updated);
+      sendJson(ctx.res, 200, updated);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'update_failed' });
+    }
+  });
+}
+
+async function handleGroupProjectBulletinProtectionRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const topic = decodeURIComponent(match[2]);
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const isProtected = body.isProtected as boolean;
+    if (typeof isProtected !== 'boolean') {
+      sendJson(ctx.res, 400, { error: 'isProtected (boolean) is required' });
+      return;
+    }
+    const board = getBulletinBoard(gpId);
+    board.setTopicProtected(topic, isProtected);
+    sendJson(ctx.res, 200, { ok: true });
+  });
+}
+
+async function handleIdentityRoute(ctx: AnnexRouteContext): Promise<void> {
+  const identity = annexIdentity.getPublicIdentity();
+  if (!identity) {
+    sendJson(ctx.res, 503, { error: 'identity_not_ready' });
+    return;
+  }
+  const settings = annexSettings.getSettings();
+  sendJson(ctx.res, 200, {
+    alias: settings.alias,
+    icon: settings.icon,
+    color: settings.color,
+    fingerprint: identity.fingerprint,
+    publicKey: identity.publicKey,
+  });
+}
+
+async function handleProjectFilesTreeRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'project_not_found' });
+    return;
+  }
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const relPath = url.searchParams.get('path') || '.';
+  const depth = parseInt(url.searchParams.get('depth') || '2', 10);
+  const includeHidden = url.searchParams.get('includeHidden') === 'true';
+  const resolvedProject = path.resolve(project.path);
+  const fullPath = relPath === '.' ? resolvedProject : path.resolve(resolvedProject, relPath);
+  if (fullPath !== resolvedProject && !fullPath.startsWith(resolvedProject + path.sep)) {
+    sendJson(ctx.res, 403, { error: 'path_traversal' });
+    return;
+  }
+  try {
+    const tree = await fileService.readTree(fullPath, { depth, includeHidden });
+    sendJson(ctx.res, 200, tree);
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'read_tree_failed' });
+  }
+}
+
+async function handleProjectFilesReadRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'project_not_found' });
+    return;
+  }
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const relPath = url.searchParams.get('path');
+  if (!relPath) {
+    sendJson(ctx.res, 400, { error: 'path_required' });
+    return;
+  }
+  const resolvedProject = path.resolve(project.path);
+  const fullPath = path.resolve(resolvedProject, relPath);
+  if (fullPath !== resolvedProject && !fullPath.startsWith(resolvedProject + path.sep)) {
+    sendJson(ctx.res, 403, { error: 'path_traversal' });
+    return;
+  }
+  try {
+    const content = await fileService.readFile(fullPath);
+    ctx.res.writeHead(200, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Length': Buffer.byteLength(content),
+    });
+    ctx.res.end(content);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      sendJson(ctx.res, 404, { error: 'file_not_found' });
+    } else {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'read_failed' });
+    }
+  }
+}
+
+async function handleGitInfoRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  try {
+    const info = await gitService.getGitInfo(project.path);
+    sendJson(ctx.res, 200, info);
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'git_info_failed' });
+  }
+}
+
+async function handleGitLogRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const limit = parseInt(url.searchParams.get('limit') || '50', 10);
+  const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+  try {
+    const log = await gitService.getLog(project.path, limit, offset);
+    sendJson(ctx.res, 200, log);
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'git_log_failed' });
+  }
+}
+
+async function handleGitDiffRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const filePath = url.searchParams.get('file');
+  if (!filePath) { sendJson(ctx.res, 400, { error: 'file_required' }); return; }
+  const staged = url.searchParams.get('staged') === 'true';
+  try {
+    const diff = await gitService.getFileDiff(project.path, filePath, staged);
+    sendJson(ctx.res, 200, diff);
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'git_diff_failed' });
+  }
+}
+
+async function handleGitShowCommitRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const hash = url.searchParams.get('hash');
+  if (!hash) { sendJson(ctx.res, 400, { error: 'hash_required' }); return; }
+  try {
+    const detail = await gitService.showCommit(project.path, hash);
+    sendJson(ctx.res, 200, detail);
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'git_show_commit_failed' });
+  }
+}
+
+async function handleGitCommitDiffRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const hash = url.searchParams.get('hash');
+  const filePath = url.searchParams.get('file');
+  if (!hash || !filePath) { sendJson(ctx.res, 400, { error: 'hash_and_file_required' }); return; }
+  try {
+    const diff = await gitService.getCommitFileDiff(project.path, hash, filePath);
+    sendJson(ctx.res, 200, diff);
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'git_commit_diff_failed' });
+  }
+}
+
+async function handleGitOperationRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const projectId = decodeURIComponent(match[1]);
+  const operation = match[2];
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    try {
+      let result;
+      switch (operation) {
+        case 'stage': result = await gitService.stage(project.path, body.path as string); break;
+        case 'unstage': result = await gitService.unstage(project.path, body.path as string); break;
+        case 'stage-all': result = await gitService.stageAll(project.path); break;
+        case 'unstage-all': result = await gitService.unstageAll(project.path); break;
+        case 'commit': result = await gitService.commit(project.path, body.message as string); break;
+        case 'push': result = await gitService.push(project.path); break;
+        case 'pull': result = await gitService.pull(project.path); break;
+        case 'checkout': result = await gitService.checkout(project.path, body.branch as string); break;
+        case 'stash': result = await gitService.stash(project.path); break;
+        case 'stash-pop': result = await gitService.stashPop(project.path); break;
+        default: sendJson(ctx.res, 400, { error: 'unknown_operation' }); return;
+      }
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'git_operation_failed' });
+    }
+  });
+}
+
+async function handleSessionListRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const agentId = decodeURIComponent(match[1]);
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const projectId = url.searchParams.get('projectId');
+  const orchestrator = url.searchParams.get('orchestrator') || undefined;
+  if (!projectId) { sendJson(ctx.res, 400, { error: 'projectId_required' }); return; }
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  try {
+    const config = await agentConfig.getDurableConfig(project.path, agentId);
+    const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
+    const sessions = isSessionCapable(provider) ? await provider.listSessions(config?.worktreePath || project.path, await resolveProfileEnv(project.path, provider.id)) : [];
+    sendJson(ctx.res, 200, sessions);
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'list_sessions_failed' });
+  }
+}
+
+async function handleSessionTranscriptRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const agentId = decodeURIComponent(match[1]);
+  const sessionId = decodeURIComponent(match[2]);
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const projectId = url.searchParams.get('projectId');
+  const orchestrator = url.searchParams.get('orchestrator') || undefined;
+  const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+  const limit = parseInt(url.searchParams.get('limit') || '100', 10);
+  if (!projectId) { sendJson(ctx.res, 400, { error: 'projectId_required' }); return; }
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  try {
+    const config = await agentConfig.getDurableConfig(project.path, agentId);
+    const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
+    if (!isSessionCapable(provider)) { sendJson(ctx.res, 200, null); return; }
+    const cwd = config?.worktreePath || project.path;
+    const profileEnv = await resolveProfileEnv(project.path, provider.id);
+    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+    if (!rawEvents) { sendJson(ctx.res, 200, null); return; }
+    const events = normalizeSessionEvents(rawEvents);
+    sendJson(ctx.res, 200, paginateEvents(events, offset, limit));
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'read_transcript_failed' });
+  }
+}
+
+async function handleSessionSummaryRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const agentId = decodeURIComponent(match[1]);
+  const sessionId = decodeURIComponent(match[2]);
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const projectId = url.searchParams.get('projectId');
+  const orchestrator = url.searchParams.get('orchestrator') || undefined;
+  if (!projectId) { sendJson(ctx.res, 400, { error: 'projectId_required' }); return; }
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  try {
+    const config = await agentConfig.getDurableConfig(project.path, agentId);
+    const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
+    if (!isSessionCapable(provider)) { sendJson(ctx.res, 200, null); return; }
+    const cwd = config?.worktreePath || project.path;
+    const profileEnv = await resolveProfileEnv(project.path, provider.id);
+    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+    if (!rawEvents) { sendJson(ctx.res, 200, null); return; }
+    const events = normalizeSessionEvents(rawEvents);
+    sendJson(ctx.res, 200, buildSessionSummary(events, provider.id));
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'get_summary_failed' });
+  }
+}
+
+async function handleQuickProjectAgentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const projectId = decodeURIComponent(match[1]);
+  readJsonBody(ctx.req, ctx.res, (body) => handleSpawnQuickAgent(ctx.res, projectId, null, body));
+}
+
+async function handleQuickChildAgentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const parentAgentId = decodeURIComponent(match[1]);
+  const parentInfo = await findAgentAcrossProjects(parentAgentId);
+  if (!parentInfo) {
+    sendJson(ctx.res, 404, { error: 'agent_not_found' });
+    return;
+  }
+  readJsonBody(ctx.req, ctx.res, (body) => handleSpawnQuickAgent(ctx.res, parentInfo.project.id, parentAgentId, body));
+}
+
+async function handleWakeAgentRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const agentId = decodeURIComponent(match[1]);
+  readJsonBody(ctx.req, ctx.res, (body) => handleWakeAgent(ctx.res, agentId, body));
+}
+
+async function handlePermissionResponseRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const agentId = decodeURIComponent(match[1]);
+  readJsonBody(ctx.req, ctx.res, (body) => handlePermissionResponse(ctx.res, agentId, body));
+}
+
+async function handleStructuredPermissionResponseRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const agentId = decodeURIComponent(match[1]);
+  readJsonBody(ctx.req, ctx.res, (body) => handleStructuredPermissionResponse(ctx.res, agentId, body));
+}
+
+async function handleAgentMessageRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const agentId = decodeURIComponent(match[1]);
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const message = body.message as string | undefined;
+    if (!message || typeof message !== 'string') {
+      sendJson(ctx.res, 400, { error: 'message is required' });
+      return;
+    }
+    if (message.length > MAX_PTY_INPUT_SIZE) {
+      sendJson(ctx.res, 400, { error: 'message exceeds 64KB limit' });
+      return;
+    }
+    const mode = getAgentExecutionMode(agentId);
+    try {
+      if (mode === 'structured') {
+        await structuredManager.sendMessage(agentId, message);
+      } else if (mode === 'pty' && ptyManager.isRunning(agentId)) {
+        ptyManager.write(agentId, message);
+      } else {
+        sendJson(ctx.res, 400, { error: `cannot send message to agent in '${mode}' mode` });
+        return;
+      }
+      sendJson(ctx.res, 200, { ok: true, agentId, mode });
+    } catch (err) {
+      appLog('core:annex', 'error', 'Failed to send message to agent', {
+        meta: { agentId, mode, error: err instanceof Error ? err.message : String(err) },
+      });
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'send_failed' });
+    }
+  });
+}
+
+async function handleDurableCreationRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const projectId = decodeURIComponent(match[1]);
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const name = body.name as string;
+    const color = body.color as string;
+    if (!name || !color) {
+      sendJson(ctx.res, 400, { error: 'name and color are required' });
+      return;
+    }
+    try {
+      const config = await agentConfig.createDurable(
+        project.path,
+        name,
+        color,
+        body.model as string | undefined,
+        body.useWorktree !== false,
+        body.orchestrator as string | undefined,
+        body.freeAgentMode as boolean | undefined,
+        body.mcpIds as string[] | undefined,
+        undefined,
+      );
+      broadcastSnapshotRefresh();
+      sendJson(ctx.res, 201, config);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'create_failed' });
+    }
+  });
+}
+
+async function handleDurableDeleteRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const projectId = decodeURIComponent(match[1]);
+  const agentId = decodeURIComponent(match[2]);
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const mode = (body.mode as string) || 'force';
+    if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
+      ptyManager.gracefulKill(agentId);
+    }
+    try {
+      let result: { ok: boolean; message: string };
+      switch (mode) {
+        case 'commit-push': result = await agentConfig.deleteCommitAndPush(project.path, agentId); break;
+        case 'cleanup-branch': result = await agentConfig.deleteWithCleanupBranch(project.path, agentId); break;
+        case 'force': result = await agentConfig.deleteForce(project.path, agentId); break;
+        case 'unregister': result = await agentConfig.deleteUnregister(project.path, agentId); break;
+        default: result = await agentConfig.deleteForce(project.path, agentId);
+      }
+      broadcastSnapshotRefresh();
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
+    }
+  });
+}
+
+async function handleWorktreeStatusRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const projectId = decodeURIComponent(match[1]);
+  const agentId = decodeURIComponent(match[2]);
+  const project = await findProjectById(projectId);
+  if (!project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
+  try {
+    const status = await agentConfig.getWorktreeStatus(project.path, agentId);
+    sendJson(ctx.res, 200, status);
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'status_failed' });
+  }
+}
+
+async function handleGroupProjectsListRoute(ctx: AnnexRouteContext): Promise<void> {
+  const projects = await groupProjectRegistry.list();
+  sendJson(ctx.res, 200, projects);
+}
+
+async function handleGroupProjectGetRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.url.includes('/bulletin/')) return;
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  let members: Array<{ agentId: string; agentName: string; status: string }> = [];
+  try {
+    const allBindings = bindingManager.getAllBindings();
+    members = allBindings
+      .filter(b => b.targetKind === 'group-project' && b.targetId === gpId)
+      .map(b => ({
+        agentId: b.agentId,
+        agentName: b.agentName || b.agentId,
+        status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
+      }));
+  } catch { /* ignore */ }
+  sendJson(ctx.res, 200, { ...project, members });
+}
+
+async function handleGroupProjectDigestRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  let since: DigestSince | undefined;
+  try {
+    since = decodeDigestSince(url.searchParams.get('since'), url.searchParams.get(SINCE_CHANNELS_PARAM));
+  } catch (err) {
+    appLog('core:annex-server', 'warn', 'Rejected bulletin digest request with invalid since', {
+      meta: { gpId, error: err instanceof Error ? err.message : String(err) },
+    });
+    sendJson(ctx.res, 400, { error: 'invalid_since' });
+    return;
+  }
+  const board = getBulletinBoard(gpId);
+  const digest = await board.getDigest(since);
+  sendJson(ctx.res, 200, digest);
+}
+
+async function handleGroupProjectTopicRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const gpId = decodeURIComponent(match[1]);
+  const topic = decodeURIComponent(match[2]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const since = url.searchParams.get('since') || undefined;
+  const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : undefined;
+  const board = getBulletinBoard(gpId);
+  const messages = await board.getTopicMessages(topic, since, limit);
+  sendJson(ctx.res, 200, messages);
+}
+
+async function handleGroupProjectAllMessagesRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  const url = new URL(ctx.req.url || '/', 'http://localhost');
+  const since = url.searchParams.get('since') || undefined;
+  const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : undefined;
+  const board = getBulletinBoard(gpId);
+  const messages = await board.getAllMessages(since, limit);
+  sendJson(ctx.res, 200, messages);
+}
+
+async function handleGroupProjectPostMessageRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const sender = body.sender as string;
+    const topic = body.topic as string;
+    const msgBody = body.body as string;
+    if (!sender || !topic || !msgBody) {
+      sendJson(ctx.res, 400, { error: 'sender, topic, and body are required' });
+      return;
+    }
+    if (topic === 'system') {
+      sendJson(ctx.res, 400, { error: 'system topic is reserved' });
+      return;
+    }
+    try {
+      const board = getBulletinBoard(gpId);
+      const message = await board.postMessage(sender, topic, msgBody);
+      annexEventBus.emitBulletinMessage(gpId, message);
+      sendJson(ctx.res, 201, message);
+    } catch (err) {
+      sendJson(ctx.res, 400, { error: err instanceof Error ? err.message : 'post_failed' });
+    }
+  });
+}
+
+async function handleGroupProjectShoulderTapRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const sender = (body.sender as string) || 'remote';
+    const targetAgentId = (body.targetAgentId as string) || null;
+    const message = body.message as string;
+    if (!message) {
+      sendJson(ctx.res, 400, { error: 'message is required' });
+      return;
+    }
+    try {
+      const result = await executeShoulderTap({ projectId: gpId, senderLabel: sender, targetAgentId, message });
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
+    }
+  });
+}
+
+async function handleGroupProjectPollingRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const enabled = body.enabled;
+    if (typeof enabled !== 'boolean') {
+      sendJson(ctx.res, 400, { error: 'enabled (boolean) is required' });
+      return;
+    }
+    try {
+      const result = await setProjectPolling(gpId, enabled);
+      if (!result) {
+        sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+        return;
+      }
+      sendJson(ctx.res, 200, result);
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'set_polling_failed' });
+    }
+  });
+}
+
+async function handleGroupProjectInjectRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (ctx.requireMtls()) return;
+  readJsonBody(ctx.req, ctx.res, async (body) => {
+    const agentId = body.agentId as string;
+    const message = body.message as string;
+    if (!agentId || !message) {
+      sendJson(ctx.res, 400, { error: 'agentId and message are required' });
+      return;
+    }
+    const reg = agentRegistry.get(agentId);
+    if (!reg) {
+      sendJson(ctx.res, 404, { error: 'agent_not_found' });
+      return;
+    }
+    try {
+      if (reg.runtime === 'pty') {
+        const isMultiLine = message.includes('\n');
+        if (isMultiLine) {
+          const provider = getProvider(reg.orchestrator);
+          const timing = provider?.getPasteSubmitTiming() ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
+          await writeChunkedBracketedPaste(agentId, message, timing.chunkSize, timing.chunkDelayMs);
+          await submitAfterPaste(agentId, timing);
+        } else {
+          ptyManager.write(agentId, message);
+          ptyManager.write(agentId, '\r');
+        }
+      } else if (reg.runtime === 'structured') {
+        await structuredManager.sendMessage(agentId, message);
+      }
+      sendJson(ctx.res, 200, { ok: true });
+    } catch (err) {
+      sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'inject_failed' });
+    }
+  });
+}
+
+async function handleGroupProjectMembersRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const gpId = decodeURIComponent(match[1]);
+  const project = await groupProjectRegistry.get(gpId);
+  if (!project) {
+    sendJson(ctx.res, 404, { error: 'group_project_not_found' });
+    return;
+  }
+  let members: Array<{ agentId: string; agentName: string; status: string }> = [];
+  try {
+    const allBindings = bindingManager.getAllBindings();
+    members = allBindings
+      .filter(b => b.targetKind === 'group-project' && b.targetId === gpId)
+      .map(b => ({
+        agentId: b.agentId,
+        agentName: b.agentName || b.agentId,
+        status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
+      }));
+  } catch { /* ignore */ }
+  sendJson(ctx.res, 200, members);
+}
+
+async function handleGroupProjectDeleteMessageRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const topic = decodeURIComponent(match[2]);
+  const msgId = decodeURIComponent(match[3]);
+  try {
+    const board = getBulletinBoard(gpId);
+    const deleted = await board.deleteMessage(topic, msgId);
+    sendJson(ctx.res, 200, { deleted });
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
+  }
+}
+
+async function handleGroupProjectDeleteTopicRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  if (ctx.requireMtls()) return;
+  const gpId = decodeURIComponent(match[1]);
+  const topic = decodeURIComponent(match[2]);
+  try {
+    const board = getBulletinBoard(gpId);
+    const deleted = await board.deleteTopic(topic);
+    sendJson(ctx.res, 200, { deleted });
+  } catch (err) {
+    sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
+  }
+}
+
+async function handleAgentIconRoute(ctx: AnnexRouteContext): Promise<void> {
+  const handled = await handleIconRequest(ctx.res, ctx.req.url || '/');
+  if (handled) return;
+  sendJson(ctx.res, 404, { error: 'icon_not_found' });
+}
+
+async function handleProjectIconRoute(ctx: AnnexRouteContext): Promise<void> {
+  const handled = await handleIconRequest(ctx.res, ctx.req.url || '/');
+  if (handled) return;
+  sendJson(ctx.res, 404, { error: 'icon_not_found' });
+}
+
+const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
+  { method: 'GET', pattern: /^\/api\/v1\/identity$/, handler: handleIdentityRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/status$/, handler: handleStatusRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects$/, handler: handleProjectsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents$/, handler: handleProjectAgentsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/buffer$/, handler: handleAgentBufferRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/tree(\?.*)?$/, handler: handleProjectFilesTreeRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/files\/read(\?.*)?$/, handler: handleProjectFilesReadRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/info$/, handler: handleGitInfoRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/log(\?.*)?$/, handler: handleGitLogRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/diff(\?.*)?$/, handler: handleGitDiffRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/show-commit(\?.*)?$/, handler: handleGitShowCommitRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/commit-diff(\?.*)?$/, handler: handleGitCommitDiffRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/projects\/([^/]+)\/git\/(stage|unstage|stage-all|unstage-all|commit|push|pull|checkout|stash|stash-pop)$/, handler: handleGitOperationRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/sessions(\?.*)?$/, handler: handleSessionListRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/transcript(\?.*)?$/, handler: handleSessionTranscriptRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/summary(\?.*)?$/, handler: handleSessionSummaryRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents\/quick$/, handler: handleQuickProjectAgentRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/agents\/quick$/, handler: handleQuickChildAgentRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/wake$/, handler: handleWakeAgentRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/permission-response$/, handler: handlePermissionResponseRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/structured-permission$/, handler: handleStructuredPermissionResponseRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/message$/, handler: handleAgentMessageRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents\/durable$/, handler: handleDurableCreationRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents\/([^/]+)\/delete$/, handler: handleDurableDeleteRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents\/([^/]+)\/worktree-status$/, handler: handleWorktreeStatusRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/group-projects$/, handler: handleGroupProjectsListRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+?)(\?.*)?$/, handler: handleGroupProjectGetRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/digest(\?.*)?$/, handler: handleGroupProjectDigestRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)(\?.*)?$/, handler: handleGroupProjectTopicRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages(\?.*)?$/, handler: handleGroupProjectAllMessagesRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages$/, handler: handleGroupProjectPostMessageRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/, handler: handleGroupProjectShoulderTapRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/polling$/, handler: handleGroupProjectPollingRoute },
+  { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/messages\/([^/]+)$/, handler: handleGroupProjectDeleteMessageRoute },
+  { method: 'DELETE', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)$/, handler: handleGroupProjectDeleteTopicRoute },
+  { method: 'PATCH', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/protection$/, handler: handleGroupProjectBulletinProtectionRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/inject-message$/, handler: handleGroupProjectInjectRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/group-projects\/([^/]+)\/members$/, handler: handleGroupProjectMembersRoute },
+  { method: 'PATCH', pattern: /^\/api\/v1\/group-projects\/([^/]+?)$/, handler: handleGroupProjectPatchRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/icons\/agent\/([^/]+)$/, handler: handleAgentIconRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/icons\/project\/([^/]+)$/, handler: handleProjectIconRoute },
+];
+
+export function resolveAnnexHttpRoute(method: string, url: string): AnnexHttpRoute | undefined {
+  return ANNEX_HTTP_ROUTE_TABLE.find((route) => route.method === method && route.pattern.test(url));
+}
+
 // ---------------------------------------------------------------------------
 // Main-port request handler (serves authenticated endpoints)
 // ---------------------------------------------------------------------------
@@ -1310,871 +2108,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return false;
   }
 
-  // GET /api/v1/status
-  if (method === 'GET' && url === '/api/v1/status') {
-    const settings = annexSettings.getSettings();
-    const projects = await projectStore.list();
-    let agentCount = 0;
-    for (const p of projects) {
-      const durables = await agentConfig.listDurable(p.path);
-      agentCount += durables.length;
-    }
-    sendJson(res, 200, {
-      version: '1',
-      deviceName: settings.deviceName,
-      agentCount,
-      orchestratorCount: getAvailableOrchestrators().length,
-    });
-    return;
-  }
-
-  // GET /api/v1/projects
-  if (method === 'GET' && url === '/api/v1/projects') {
-    sendJson(res, 200, await projectStore.list());
-    return;
-  }
-
-  // GET /api/v1/projects/:id/agents
-  const agentsMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents$/);
-  if (method === 'GET' && agentsMatch) {
-    const projectId = decodeURIComponent(agentsMatch[1]);
-    const project = await findProjectById(projectId);
-    if (!project) {
-      sendJson(res, 404, { error: 'project_not_found' });
+  const route = resolveAnnexHttpRoute(method, url);
+  if (route) {
+    const match = url.match(route.pattern);
+    if (match) {
+      await route.handler({ req, res, url, method, requireMtls }, match);
       return;
     }
-    const durables = await agentConfig.listDurable(project.path);
-    sendJson(res, 200, durables.map((d) => mapDurableAgent(d, projectId)));
-    return;
-  }
-
-  // GET /api/v1/agents/:id/buffer
-  const bufferMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/buffer$/);
-  if (method === 'GET' && bufferMatch) {
-    const agentId = decodeURIComponent(bufferMatch[1]);
-    const buffer = ptyManager.getSerializedBuffer(agentId);
-    res.writeHead(200, {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Content-Length': Buffer.byteLength(buffer),
-    });
-    res.end(buffer);
-    return;
-  }
-
-  // --- File system endpoints (plugin remote file access) ---
-
-  // GET /api/v1/projects/:id/files/tree?path=<relative>&depth=<n>&includeHidden=<bool>
-  const fileTreeMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/files\/tree(\?.*)?$/);
-  if (method === 'GET' && fileTreeMatch) {
-    const projectId = decodeURIComponent(fileTreeMatch[1]);
-    const project = await findProjectById(projectId);
-    if (!project) {
-      sendJson(res, 404, { error: 'project_not_found' });
-      return;
-    }
-    const params = new URLSearchParams(fileTreeMatch[2]?.slice(1) || '');
-    const relPath = params.get('path') || '.';
-    const depth = parseInt(params.get('depth') || '2', 10);
-    const includeHidden = params.get('includeHidden') === 'true';
-
-    // Resolve and validate path stays within project
-    const resolvedProject = path.resolve(project.path);
-    const fullPath = relPath === '.' ? resolvedProject : path.resolve(resolvedProject, relPath);
-    if (fullPath !== resolvedProject && !fullPath.startsWith(resolvedProject + path.sep)) {
-      sendJson(res, 403, { error: 'path_traversal' });
-      return;
-    }
-
-    try {
-      const tree = await fileService.readTree(fullPath, { depth, includeHidden });
-      sendJson(res, 200, tree);
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'read_tree_failed' });
-    }
-    return;
-  }
-
-  // GET /api/v1/projects/:id/files/read?path=<relative>
-  const fileReadMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/files\/read(\?.*)?$/);
-  if (method === 'GET' && fileReadMatch) {
-    const projectId = decodeURIComponent(fileReadMatch[1]);
-    const project = await findProjectById(projectId);
-    if (!project) {
-      sendJson(res, 404, { error: 'project_not_found' });
-      return;
-    }
-    const params = new URLSearchParams(fileReadMatch[2]?.slice(1) || '');
-    const relPath = params.get('path');
-    if (!relPath) {
-      sendJson(res, 400, { error: 'path_required' });
-      return;
-    }
-
-    const resolvedProject = path.resolve(project.path);
-    const fullPath = path.resolve(resolvedProject, relPath);
-    if (fullPath !== resolvedProject && !fullPath.startsWith(resolvedProject + path.sep)) {
-      sendJson(res, 403, { error: 'path_traversal' });
-      return;
-    }
-
-    try {
-      const content = await fileService.readFile(fullPath);
-      res.writeHead(200, {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Length': Buffer.byteLength(content),
-      });
-      res.end(content);
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') {
-        sendJson(res, 404, { error: 'file_not_found' });
-      } else {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : 'read_failed' });
-      }
-    }
-    return;
-  }
-
-  // --- Git endpoints (remote plugin support) ---
-
-  // GET /api/v1/projects/:id/git/info
-  const gitInfoMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/info$/);
-  if (method === 'GET' && gitInfoMatch) {
-    const projectId = decodeURIComponent(gitInfoMatch[1]);
-    const project = await findProjectById(projectId);
-    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
-    try {
-      const info = await gitService.getGitInfo(project.path);
-      sendJson(res, 200, info);
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_info_failed' });
-    }
-    return;
-  }
-
-  // GET /api/v1/projects/:id/git/log?limit=N&offset=N
-  const gitLogMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/log(\?.*)?$/);
-  if (method === 'GET' && gitLogMatch) {
-    const projectId = decodeURIComponent(gitLogMatch[1]);
-    const project = await findProjectById(projectId);
-    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
-    const params = new URLSearchParams(gitLogMatch[2]?.slice(1) || '');
-    const limit = parseInt(params.get('limit') || '50', 10);
-    const offset = parseInt(params.get('offset') || '0', 10);
-    try {
-      const log = await gitService.getLog(project.path, limit, offset);
-      sendJson(res, 200, log);
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_log_failed' });
-    }
-    return;
-  }
-
-  // GET /api/v1/projects/:id/git/diff?file=PATH&staged=BOOL
-  const gitDiffMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/diff(\?.*)?$/);
-  if (method === 'GET' && gitDiffMatch) {
-    const projectId = decodeURIComponent(gitDiffMatch[1]);
-    const project = await findProjectById(projectId);
-    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
-    const params = new URLSearchParams(gitDiffMatch[2]?.slice(1) || '');
-    const filePath = params.get('file');
-    if (!filePath) { sendJson(res, 400, { error: 'file_required' }); return; }
-    const staged = params.get('staged') === 'true';
-    try {
-      const diff = await gitService.getFileDiff(project.path, filePath, staged);
-      sendJson(res, 200, diff);
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_diff_failed' });
-    }
-    return;
-  }
-
-  // GET /api/v1/projects/:id/git/show-commit?hash=HASH
-  const gitShowCommitMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/show-commit(\?.*)?$/);
-  if (method === 'GET' && gitShowCommitMatch) {
-    const projectId = decodeURIComponent(gitShowCommitMatch[1]);
-    const project = await findProjectById(projectId);
-    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
-    const params = new URLSearchParams(gitShowCommitMatch[2]?.slice(1) || '');
-    const hash = params.get('hash');
-    if (!hash) { sendJson(res, 400, { error: 'hash_required' }); return; }
-    try {
-      const detail = await gitService.showCommit(project.path, hash);
-      sendJson(res, 200, detail);
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_show_commit_failed' });
-    }
-    return;
-  }
-
-  // GET /api/v1/projects/:id/git/commit-diff?hash=HASH&file=PATH
-  const gitCommitDiffMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/commit-diff(\?.*)?$/);
-  if (method === 'GET' && gitCommitDiffMatch) {
-    const projectId = decodeURIComponent(gitCommitDiffMatch[1]);
-    const project = await findProjectById(projectId);
-    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
-    const params = new URLSearchParams(gitCommitDiffMatch[2]?.slice(1) || '');
-    const hash = params.get('hash');
-    const filePath = params.get('file');
-    if (!hash || !filePath) { sendJson(res, 400, { error: 'hash_and_file_required' }); return; }
-    try {
-      const diff = await gitService.getCommitFileDiff(project.path, hash, filePath);
-      sendJson(res, 200, diff);
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_commit_diff_failed' });
-    }
-    return;
-  }
-
-  // POST /api/v1/projects/:id/git/:operation (destructive — requires mTLS)
-  const gitOpMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/(stage|unstage|stage-all|unstage-all|commit|push|pull|checkout|stash|stash-pop)$/);
-  if (method === 'POST' && gitOpMatch) {
-    if (requireMtls()) return;
-    const projectId = decodeURIComponent(gitOpMatch[1]);
-    const operation = gitOpMatch[2];
-    const project = await findProjectById(projectId);
-    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
-    readJsonBody(req, res, async (body) => {
-      try {
-        let result;
-        switch (operation) {
-          case 'stage': result = await gitService.stage(project.path, body.path as string); break;
-          case 'unstage': result = await gitService.unstage(project.path, body.path as string); break;
-          case 'stage-all': result = await gitService.stageAll(project.path); break;
-          case 'unstage-all': result = await gitService.unstageAll(project.path); break;
-          case 'commit': result = await gitService.commit(project.path, body.message as string); break;
-          case 'push': result = await gitService.push(project.path); break;
-          case 'pull': result = await gitService.pull(project.path); break;
-          case 'checkout': result = await gitService.checkout(project.path, body.branch as string); break;
-          case 'stash': result = await gitService.stash(project.path); break;
-          case 'stash-pop': result = await gitService.stashPop(project.path); break;
-          default: sendJson(res, 400, { error: 'unknown_operation' }); return;
-        }
-        sendJson(res, 200, result);
-      } catch (err) {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_operation_failed' });
-      }
-    });
-    return;
-  }
-
-  // --- Session endpoints (remote sessions plugin support) ---
-
-  // GET /api/v1/agents/:agentId/sessions?projectId=ID&orchestrator=NAME
-  const sessionsListMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/sessions(\?.*)?$/);
-  if (method === 'GET' && sessionsListMatch) {
-    const agentId = decodeURIComponent(sessionsListMatch[1]);
-    const params = new URLSearchParams(sessionsListMatch[2]?.slice(1) || '');
-    const projectId = params.get('projectId');
-    const orchestrator = params.get('orchestrator') || undefined;
-    if (!projectId) { sendJson(res, 400, { error: 'projectId_required' }); return; }
-    const project = await findProjectById(projectId);
-    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
-    try {
-      const sessions = await listSessions(project.path, agentId, orchestrator);
-      sendJson(res, 200, sessions);
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'list_sessions_failed' });
-    }
-    return;
-  }
-
-  // GET /api/v1/agents/:agentId/sessions/:sessionId/transcript?projectId=ID&offset=N&limit=N&orchestrator=NAME
-  const transcriptMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/transcript(\?.*)?$/);
-  if (method === 'GET' && transcriptMatch) {
-    const agentId = decodeURIComponent(transcriptMatch[1]);
-    const sessionId = decodeURIComponent(transcriptMatch[2]);
-    const params = new URLSearchParams(transcriptMatch[3]?.slice(1) || '');
-    const projectId = params.get('projectId');
-    const orchestrator = params.get('orchestrator') || undefined;
-    const offset = parseInt(params.get('offset') || '0', 10);
-    const limit = parseInt(params.get('limit') || '100', 10);
-    if (!projectId) { sendJson(res, 400, { error: 'projectId_required' }); return; }
-    const project = await findProjectById(projectId);
-    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
-    try {
-      const config = await agentConfig.getDurableConfig(project.path, agentId);
-      const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
-      if (!isSessionCapable(provider)) { sendJson(res, 200, null); return; }
-      const cwd = config?.worktreePath || project.path;
-      const profileEnv = await resolveProfileEnv(project.path, provider.id);
-      const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
-      if (!rawEvents) { sendJson(res, 200, null); return; }
-      const events = normalizeSessionEvents(rawEvents);
-      sendJson(res, 200, paginateEvents(events, offset, limit));
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'read_transcript_failed' });
-    }
-    return;
-  }
-
-  // GET /api/v1/agents/:agentId/sessions/:sessionId/summary?projectId=ID&orchestrator=NAME
-  const summaryMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/summary(\?.*)?$/);
-  if (method === 'GET' && summaryMatch) {
-    const agentId = decodeURIComponent(summaryMatch[1]);
-    const sessionId = decodeURIComponent(summaryMatch[2]);
-    const params = new URLSearchParams(summaryMatch[3]?.slice(1) || '');
-    const projectId = params.get('projectId');
-    const orchestrator = params.get('orchestrator') || undefined;
-    if (!projectId) { sendJson(res, 400, { error: 'projectId_required' }); return; }
-    const project = await findProjectById(projectId);
-    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
-    try {
-      const config = await agentConfig.getDurableConfig(project.path, agentId);
-      const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
-      if (!isSessionCapable(provider)) { sendJson(res, 200, null); return; }
-      const cwd = config?.worktreePath || project.path;
-      const profileEnv = await resolveProfileEnv(project.path, provider.id);
-      const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
-      if (!rawEvents) { sendJson(res, 200, null); return; }
-      const events = normalizeSessionEvents(rawEvents);
-      sendJson(res, 200, buildSessionSummary(events, provider.id));
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'get_summary_failed' });
-    }
-    return;
-  }
-
-  // --- Icon endpoints (Issue 2) ---
-  if (method === 'GET' && await handleIconRequest(res, url)) {
-    return;
-  }
-
-  // --- POST endpoints (Issues 4, 6, 7) ---
-
-  // POST /api/v1/projects/:id/agents/quick (destructive — requires mTLS)
-  const quickProjectMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/quick$/);
-  if (method === 'POST' && quickProjectMatch) {
-    if (requireMtls()) return;
-    const projectId = decodeURIComponent(quickProjectMatch[1]);
-    readJsonBody(req, res, (body) => handleSpawnQuickAgent(res, projectId, null, body));
-    return;
-  }
-
-  // POST /api/v1/agents/:id/agents/quick (destructive — requires mTLS)
-  const quickAgentMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/agents\/quick$/);
-  if (method === 'POST' && quickAgentMatch) {
-    if (requireMtls()) return;
-    const parentAgentId = decodeURIComponent(quickAgentMatch[1]);
-    const parentInfo = await findAgentAcrossProjects(parentAgentId);
-    if (!parentInfo) {
-      sendJson(res, 404, { error: 'agent_not_found' });
-      return;
-    }
-    readJsonBody(req, res, (body) => handleSpawnQuickAgent(res, parentInfo.project.id, parentAgentId, body));
-    return;
-  }
-
-  // POST /api/v1/agents/:id/wake (destructive — requires mTLS)
-  const wakeMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/wake$/);
-  if (method === 'POST' && wakeMatch) {
-    if (requireMtls()) return;
-    const agentId = decodeURIComponent(wakeMatch[1]);
-    readJsonBody(req, res, (body) => handleWakeAgent(res, agentId, body));
-    return;
-  }
-
-  // POST /api/v1/agents/:id/permission-response (control — requires mTLS)
-  const permissionMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/permission-response$/);
-  if (method === 'POST' && permissionMatch) {
-    if (requireMtls()) return;
-    const agentId = decodeURIComponent(permissionMatch[1]);
-    readJsonBody(req, res, (body) => handlePermissionResponse(res, agentId, body));
-    return;
-  }
-
-  // POST /api/v1/agents/:id/structured-permission (control — requires mTLS)
-  const structuredPermMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/structured-permission$/);
-  if (method === 'POST' && structuredPermMatch) {
-    if (requireMtls()) return;
-    const agentId = decodeURIComponent(structuredPermMatch[1]);
-    readJsonBody(req, res, (body) => handleStructuredPermissionResponse(res, agentId, body));
-    return;
-  }
-
-  // POST /api/v1/agents/:id/message (control — requires mTLS)
-  const messageMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/message$/);
-  if (method === 'POST' && messageMatch) {
-    if (requireMtls()) return;
-    const agentId = decodeURIComponent(messageMatch[1]);
-    readJsonBody(req, res, async (body) => {
-      const message = body.message as string | undefined;
-      if (!message || typeof message !== 'string') {
-        sendJson(res, 400, { error: 'message is required' });
-        return;
-      }
-      if (message.length > MAX_PTY_INPUT_SIZE) {
-        sendJson(res, 400, { error: 'message exceeds 64KB limit' });
-        return;
-      }
-      const mode = getAgentExecutionMode(agentId);
-      try {
-        if (mode === 'structured') {
-          await structuredManager.sendMessage(agentId, message);
-        } else if (mode === 'pty' && ptyManager.isRunning(agentId)) {
-          ptyManager.write(agentId, message);
-        } else {
-          sendJson(res, 400, { error: `cannot send message to agent in '${mode}' mode` });
-          return;
-        }
-        sendJson(res, 200, { ok: true, agentId, mode });
-      } catch (err) {
-        appLog('core:annex', 'error', 'Failed to send message to agent', {
-          meta: { agentId, mode, error: err instanceof Error ? err.message : String(err) },
-        });
-        sendJson(res, 500, { error: err instanceof Error ? err.message : 'send_failed' });
-      }
-    });
-    return;
-  }
-
-  // POST /api/v1/projects/:id/agents/durable — create a durable agent (destructive — requires mTLS)
-  const durableCreateMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/durable$/);
-  if (method === 'POST' && durableCreateMatch) {
-    if (requireMtls()) return;
-    const projectId = decodeURIComponent(durableCreateMatch[1]);
-    const project = await findProjectById(projectId);
-    if (!project) {
-      sendJson(res, 404, { error: 'project_not_found' });
-      return;
-    }
-    readJsonBody(req, res, async (body) => {
-      const name = body.name as string;
-      const color = body.color as string;
-      if (!name || !color) {
-        sendJson(res, 400, { error: 'name and color are required' });
-        return;
-      }
-      try {
-        const config = await agentConfig.createDurable(
-          project.path,
-          name,
-          color,
-          body.model as string | undefined,
-          body.useWorktree !== false,
-          body.orchestrator as string | undefined,
-          body.freeAgentMode as boolean | undefined,
-          body.mcpIds as string[] | undefined,
-          undefined,
-        );
-        // Broadcast snapshot refresh so controllers see the new agent
-        broadcastSnapshotRefresh();
-        sendJson(res, 201, config);
-      } catch (err) {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : 'create_failed' });
-      }
-    });
-    return;
-  }
-
-  // POST /api/v1/projects/:id/agents/:agentId/delete — delete a durable agent (destructive — requires mTLS)
-  const durableDeleteMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/([^/]+)\/delete$/);
-  if (method === 'POST' && durableDeleteMatch) {
-    if (requireMtls()) return;
-    const projectId = decodeURIComponent(durableDeleteMatch[1]);
-    const agentId = decodeURIComponent(durableDeleteMatch[2]);
-    const project = await findProjectById(projectId);
-    if (!project) {
-      sendJson(res, 404, { error: 'project_not_found' });
-      return;
-    }
-    readJsonBody(req, res, async (body) => {
-      const mode = (body.mode as string) || 'force';
-      // Kill the agent if it's running
-      if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
-        ptyManager.gracefulKill(agentId);
-      }
-      try {
-        let result: { ok: boolean; message: string };
-        switch (mode) {
-          case 'commit-push':
-            result = await agentConfig.deleteCommitAndPush(project.path, agentId);
-            break;
-          case 'cleanup-branch':
-            result = await agentConfig.deleteWithCleanupBranch(project.path, agentId);
-            break;
-          case 'force':
-            result = await agentConfig.deleteForce(project.path, agentId);
-            break;
-          case 'unregister':
-            result = await agentConfig.deleteUnregister(project.path, agentId);
-            break;
-          default:
-            result = await agentConfig.deleteForce(project.path, agentId);
-        }
-        // Broadcast snapshot refresh so controllers see the removal
-        broadcastSnapshotRefresh();
-        sendJson(res, 200, result);
-      } catch (err) {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
-      }
-    });
-    return;
-  }
-
-  // GET /api/v1/projects/:id/agents/:agentId/worktree-status
-  const worktreeStatusMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/([^/]+)\/worktree-status$/);
-  if (method === 'GET' && worktreeStatusMatch) {
-    const projectId = decodeURIComponent(worktreeStatusMatch[1]);
-    const agentId = decodeURIComponent(worktreeStatusMatch[2]);
-    const project = await findProjectById(projectId);
-    if (!project) {
-      sendJson(res, 404, { error: 'project_not_found' });
-      return;
-    }
-    try {
-      const status = await agentConfig.getWorktreeStatus(project.path, agentId);
-      sendJson(res, 200, status);
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'status_failed' });
-    }
-    return;
-  }
-
-  // --- Group Project endpoints (bulletin board wire protocol) ---
-
-  // GET /api/v1/group-projects
-  if (method === 'GET' && url === '/api/v1/group-projects') {
-    const projects = await groupProjectRegistry.list();
-    sendJson(res, 200, projects);
-    return;
-  }
-
-  // GET /api/v1/group-projects/:id
-  const gpGetMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+?)(\?.*)?$/);
-  if (method === 'GET' && gpGetMatch && !url.includes('/bulletin/')) {
-    const gpId = decodeURIComponent(gpGetMatch[1]);
-    const project = await groupProjectRegistry.get(gpId);
-    if (!project) {
-      sendJson(res, 404, { error: 'group_project_not_found' });
-      return;
-    }
-    // Include members
-    let members: Array<{ agentId: string; agentName: string; status: string }> = [];
-    try {
-      const allBindings = bindingManager.getAllBindings();
-      members = allBindings
-        .filter(b => b.targetKind === 'group-project' && b.targetId === gpId)
-        .map(b => ({
-          agentId: b.agentId,
-          agentName: b.agentName || b.agentId,
-          status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
-        }));
-    } catch { /* ignore */ }
-    sendJson(res, 200, { ...project, members });
-    return;
-  }
-
-  // GET /api/v1/group-projects/:id/bulletin/digest?since=<ISO8601>
-  //   or ?sinceChannels=<JSON {channel: ISO8601}> for per-channel unread counts.
-  // Controllers predating per-channel read state send only `since`; this handler
-  // still honours it, so an older controller against a newer satellite keeps working.
-  const gpDigestMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/digest(\?.*)?$/);
-  if (method === 'GET' && gpDigestMatch) {
-    const gpId = decodeURIComponent(gpDigestMatch[1]);
-    const project = await groupProjectRegistry.get(gpId);
-    if (!project) {
-      sendJson(res, 404, { error: 'group_project_not_found' });
-      return;
-    }
-    const params = new URLSearchParams(gpDigestMatch[2]?.slice(1) || '');
-    let since: DigestSince | undefined;
-    try {
-      // Same bounds and prototype-key rejection the local IPC boundary applies.
-      since = decodeDigestSince(params.get('since'), params.get(SINCE_CHANNELS_PARAM));
-    } catch (err) {
-      appLog('core:annex-server', 'warn', 'Rejected bulletin digest request with invalid since', {
-        meta: { gpId, error: err instanceof Error ? err.message : String(err) },
-      });
-      sendJson(res, 400, { error: 'invalid_since' });
-      return;
-    }
-    const board = getBulletinBoard(gpId);
-    const digest = await board.getDigest(since);
-    sendJson(res, 200, digest);
-    return;
-  }
-
-  // GET /api/v1/group-projects/:id/bulletin/topics/:topic?since=<ISO8601>&limit=<n>
-  const gpTopicMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)(\?.*)?$/);
-  if (method === 'GET' && gpTopicMatch) {
-    const gpId = decodeURIComponent(gpTopicMatch[1]);
-    const topic = decodeURIComponent(gpTopicMatch[2]);
-    const project = await groupProjectRegistry.get(gpId);
-    if (!project) {
-      sendJson(res, 404, { error: 'group_project_not_found' });
-      return;
-    }
-    const params = new URLSearchParams(gpTopicMatch[3]?.slice(1) || '');
-    const since = params.get('since') || undefined;
-    const limit = params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined;
-    const board = getBulletinBoard(gpId);
-    const messages = await board.getTopicMessages(topic, since, limit);
-    sendJson(res, 200, messages);
-    return;
-  }
-
-  // GET /api/v1/group-projects/:id/bulletin/messages?since=<ISO8601>&limit=<n>
-  const gpAllMsgsMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages(\?.*)?$/);
-  if (method === 'GET' && gpAllMsgsMatch) {
-    const gpId = decodeURIComponent(gpAllMsgsMatch[1]);
-    const project = await groupProjectRegistry.get(gpId);
-    if (!project) {
-      sendJson(res, 404, { error: 'group_project_not_found' });
-      return;
-    }
-    const params = new URLSearchParams(gpAllMsgsMatch[2]?.slice(1) || '');
-    const since = params.get('since') || undefined;
-    const limit = params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined;
-    const board = getBulletinBoard(gpId);
-    const messages = await board.getAllMessages(since, limit);
-    sendJson(res, 200, messages);
-    return;
-  }
-
-  // POST /api/v1/group-projects/:id/bulletin/messages (destructive — requires mTLS)
-  const gpPostMsgMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/messages$/);
-  if (method === 'POST' && gpPostMsgMatch) {
-    if (requireMtls()) return;
-    const gpId = decodeURIComponent(gpPostMsgMatch[1]);
-    const project = await groupProjectRegistry.get(gpId);
-    if (!project) {
-      sendJson(res, 404, { error: 'group_project_not_found' });
-      return;
-    }
-    readJsonBody(req, res, async (body) => {
-      const sender = body.sender as string;
-      const topic = body.topic as string;
-      const msgBody = body.body as string;
-      if (!sender || !topic || !msgBody) {
-        sendJson(res, 400, { error: 'sender, topic, and body are required' });
-        return;
-      }
-      if (topic === 'system') {
-        sendJson(res, 400, { error: 'system topic is reserved' });
-        return;
-      }
-      try {
-        const board = getBulletinBoard(gpId);
-        const message = await board.postMessage(sender, topic, msgBody);
-        annexEventBus.emitBulletinMessage(gpId, message);
-        sendJson(res, 201, message);
-      } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : 'post_failed' });
-      }
-    });
-    return;
-  }
-
-  // POST /api/v1/group-projects/:id/shoulder-tap (destructive — requires mTLS)
-  const gpShoulderTapMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/shoulder-tap$/);
-  if (method === 'POST' && gpShoulderTapMatch) {
-    if (requireMtls()) return;
-    const gpId = decodeURIComponent(gpShoulderTapMatch[1]);
-    const project = await groupProjectRegistry.get(gpId);
-    if (!project) {
-      sendJson(res, 404, { error: 'group_project_not_found' });
-      return;
-    }
-    readJsonBody(req, res, async (body) => {
-      const sender = (body.sender as string) || 'remote';
-      const targetAgentId = (body.targetAgentId as string) || null;
-      const message = body.message as string;
-      if (!message) {
-        sendJson(res, 400, { error: 'message is required' });
-        return;
-      }
-      try {
-        const result = await executeShoulderTap({
-          projectId: gpId,
-          senderLabel: sender,
-          targetAgentId,
-          message,
-        });
-        sendJson(res, 200, result);
-      } catch (err) {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : 'shoulder_tap_failed' });
-      }
-    });
-    return;
-  }
-
-  // POST /api/v1/group-projects/:id/polling (destructive — requires mTLS)
-  // Sets the project-wide polling setting (persist + member start/stop side-effect),
-  // sharing setProjectPolling with the controller's UI toggle and toggle_polling command.
-  const gpPollingMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/polling$/);
-  if (method === 'POST' && gpPollingMatch) {
-    if (requireMtls()) return;
-    const gpId = decodeURIComponent(gpPollingMatch[1]);
-    readJsonBody(req, res, async (body) => {
-      const enabled = body.enabled;
-      if (typeof enabled !== 'boolean') {
-        sendJson(res, 400, { error: 'enabled (boolean) is required' });
-        return;
-      }
-      try {
-        const result = await setProjectPolling(gpId, enabled);
-        if (!result) {
-          sendJson(res, 404, { error: 'group_project_not_found' });
-          return;
-        }
-        sendJson(res, 200, result);
-      } catch (err) {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : 'set_polling_failed' });
-      }
-    });
-    return;
-  }
-
-  // DELETE /api/v1/group-projects/:id/bulletin/topics/:topic/messages/:msgId (destructive — requires mTLS)
-  const gpDeleteMsgMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/messages\/([^/]+)$/);
-  if (method === 'DELETE' && gpDeleteMsgMatch) {
-    if (requireMtls()) return;
-    const gpId = decodeURIComponent(gpDeleteMsgMatch[1]);
-    const topic = decodeURIComponent(gpDeleteMsgMatch[2]);
-    const msgId = decodeURIComponent(gpDeleteMsgMatch[3]);
-    try {
-      const board = getBulletinBoard(gpId);
-      const deleted = await board.deleteMessage(topic, msgId);
-      sendJson(res, 200, { deleted });
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
-    }
-    return;
-  }
-
-  // DELETE /api/v1/group-projects/:id/bulletin/topics/:topic (destructive — requires mTLS)
-  const gpDeleteTopicMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/?]+)$/);
-  if (method === 'DELETE' && gpDeleteTopicMatch) {
-    if (requireMtls()) return;
-    const gpId = decodeURIComponent(gpDeleteTopicMatch[1]);
-    const topic = decodeURIComponent(gpDeleteTopicMatch[2]);
-    try {
-      const board = getBulletinBoard(gpId);
-      const deleted = await board.deleteTopic(topic);
-      sendJson(res, 200, { deleted });
-    } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
-    }
-    return;
-  }
-
-  // PATCH /api/v1/group-projects/:id/bulletin/topics/:topic/protection (destructive — requires mTLS)
-  const gpProtectionMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/bulletin\/topics\/([^/]+)\/protection$/);
-  if (method === 'PATCH' && gpProtectionMatch) {
-    if (requireMtls()) return;
-    const gpId = decodeURIComponent(gpProtectionMatch[1]);
-    const topic = decodeURIComponent(gpProtectionMatch[2]);
-    readJsonBody(req, res, async (body) => {
-      const isProtected = body.isProtected as boolean;
-      if (typeof isProtected !== 'boolean') {
-        sendJson(res, 400, { error: 'isProtected (boolean) is required' });
-        return;
-      }
-      const board = getBulletinBoard(gpId);
-      board.setTopicProtected(topic, isProtected);
-      sendJson(res, 200, { ok: true });
-    });
-    return;
-  }
-
-  // POST /api/v1/inject-message (destructive — requires mTLS)
-  const gpInjectMatch = url.match(/^\/api\/v1\/inject-message$/);
-  if (method === 'POST' && gpInjectMatch) {
-    if (requireMtls()) return;
-    readJsonBody(req, res, async (body) => {
-      const agentId = body.agentId as string;
-      const message = body.message as string;
-      if (!agentId || !message) {
-        sendJson(res, 400, { error: 'agentId and message are required' });
-        return;
-      }
-      const reg = agentRegistry.get(agentId);
-      if (!reg) {
-        sendJson(res, 404, { error: 'agent_not_found' });
-        return;
-      }
-      try {
-        if (reg.runtime === 'pty') {
-          const isMultiLine = message.includes('\n');
-          if (isMultiLine) {
-            const provider = getProvider(reg.orchestrator);
-            const timing = provider?.getPasteSubmitTiming()
-              ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
-            await writeChunkedBracketedPaste(agentId, message, timing.chunkSize, timing.chunkDelayMs);
-            await submitAfterPaste(agentId, timing);
-          } else {
-            ptyManager.write(agentId, message);
-            ptyManager.write(agentId, '\r');
-          }
-        } else if (reg.runtime === 'structured') {
-          await structuredManager.sendMessage(agentId, message);
-        }
-        sendJson(res, 200, { ok: true });
-      } catch (err) {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : 'inject_failed' });
-      }
-    });
-    return;
-  }
-
-  // GET /api/v1/group-projects/:id/members
-  const gpMembersMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+)\/members$/);
-  if (method === 'GET' && gpMembersMatch) {
-    const gpId = decodeURIComponent(gpMembersMatch[1]);
-    const project = await groupProjectRegistry.get(gpId);
-    if (!project) {
-      sendJson(res, 404, { error: 'group_project_not_found' });
-      return;
-    }
-    let members: Array<{ agentId: string; agentName: string; status: string }> = [];
-    try {
-      const allBindings = bindingManager.getAllBindings();
-      members = allBindings
-        .filter(b => b.targetKind === 'group-project' && b.targetId === gpId)
-        .map(b => ({
-          agentId: b.agentId,
-          agentName: b.agentName || b.agentId,
-          status: isAgentRunning(b.agentId) ? 'connected' : 'sleeping',
-        }));
-    } catch { /* ignore */ }
-    sendJson(res, 200, members);
-    return;
-  }
-
-  // PATCH /api/v1/group-projects/:id (destructive — requires mTLS)
-  const gpPatchMatch = url.match(/^\/api\/v1\/group-projects\/([^/]+?)$/);
-  if (method === 'PATCH' && gpPatchMatch && !url.includes('/bulletin/')) {
-    if (requireMtls()) return;
-    const gpId = decodeURIComponent(gpPatchMatch[1]);
-    const project = await groupProjectRegistry.get(gpId);
-    if (!project) {
-      sendJson(res, 404, { error: 'group_project_not_found' });
-      return;
-    }
-    readJsonBody(req, res, async (body) => {
-      const fields: Record<string, unknown> = {};
-      if (body.name !== undefined) fields.name = body.name;
-      if (body.description !== undefined) fields.description = body.description;
-      if (body.instructions !== undefined) fields.instructions = body.instructions;
-      if (body.metadata !== undefined) fields.metadata = body.metadata;
-      if (Object.keys(fields).length === 0) {
-        sendJson(res, 400, { error: 'no_fields_to_update' });
-        return;
-      }
-      try {
-        const updated = await groupProjectRegistry.update(gpId, fields as any);
-        if (!updated) {
-          sendJson(res, 404, { error: 'group_project_not_found' });
-          return;
-        }
-        annexEventBus.emitGroupProjectChanged('updated', updated);
-        sendJson(res, 200, updated);
-      } catch (err) {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : 'update_failed' });
-      }
-    });
-    return;
   }
 
   sendJson(res, 404, { error: 'not_found' });

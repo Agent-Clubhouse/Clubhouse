@@ -457,6 +457,37 @@ describe('annex-server', () => {
     expect(res.status).toBe(404);
   });
 
+  it('routes bulletin protection updates through the specific bulletin route table entry', () => {
+    const route = annexServer.resolveAnnexHttpRoute('PATCH', '/api/v1/group-projects/gp_1/bulletin/topics/alerts/protection');
+    expect(route).toBeDefined();
+    expect(route?.pattern.test('/api/v1/group-projects/gp_1/bulletin/topics/alerts/protection')).toBe(true);
+  });
+
+  it('routes project agent lookups through the table-based project route', () => {
+    const route = annexServer.resolveAnnexHttpRoute('GET', '/api/v1/projects/proj_1/agents');
+    expect(route).toBeDefined();
+    expect(route?.pattern.test('/api/v1/projects/proj_1/agents')).toBe(true);
+  });
+
+  it('routes the main Annex HTTP endpoints through the declarative table', () => {
+    const cases = [
+      ['GET', '/api/v1/status'],
+      ['GET', '/api/v1/projects/proj_1/files/tree?path=.'],
+      ['POST', '/api/v1/projects/proj_1/agents/quick'],
+      ['POST', '/api/v1/agents/agent_1/message'],
+      ['GET', '/api/v1/group-projects/gp_1/bulletin/digest?since=2025-01-01T00:00:00.000Z'],
+      ['POST', '/api/v1/group-projects/gp_1/bulletin/messages'],
+      ['POST', '/api/v1/inject-message'],
+      ['GET', '/api/v1/group-projects/gp_1/members'],
+    ] as const;
+
+    for (const [method, url] of cases) {
+      const route = annexServer.resolveAnnexHttpRoute(method, url);
+      expect(route).toBeDefined();
+      expect(route?.pattern.test(url)).toBe(true);
+    }
+  });
+
   // -------------------------------------------------------------------------
   // Issue 1: DurableAgent defaults + runtime status
   // -------------------------------------------------------------------------
