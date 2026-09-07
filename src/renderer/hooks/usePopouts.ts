@@ -1,15 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import type { PopoutEntry } from '../../shared/plugin-types';
 
-export interface PopoutEntry {
-  windowId: number;
-  params: {
-    type: 'agent' | 'hub' | 'canvas';
-    agentId?: string;
-    hubId?: string;
-    canvasId?: string;
-    projectId?: string;
-  };
-}
+export type { PopoutEntry };
 
 /**
  * Reactively tracks which views are currently popped out.

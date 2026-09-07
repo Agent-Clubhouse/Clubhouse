@@ -53,6 +53,10 @@ export const mockProcess = {
 
 export const mockWindow = {
   createPopout: vi.fn(),
+  listPopouts: vi.fn().mockResolvedValue([]),
+  onPopoutsChanged: vi.fn().mockReturnValue(() => {}),
+  focusPopout: vi.fn(),
+  closePopout: vi.fn(),
 };
 
 export const mockAgentSettings = {
@@ -209,6 +213,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       SleepingAgent: noop as unknown as PluginAPI['widgets']['SleepingAgent'],
       AgentAvatar: noop as unknown as PluginAPI['widgets']['AgentAvatar'],
       QuickAgentGhost: noop as unknown as PluginAPI['widgets']['QuickAgentGhost'],
+      PopoutPlaceholder: noop as unknown as PluginAPI['widgets']['PopoutPlaceholder'],
     },
     terminal: {
       spawn: asyncNoop,
@@ -311,6 +316,12 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       setTitle: noop,
       resetTitle: noop,
       getTitle: () => '',
+      usePopoutState: () => ({
+        popouts: [],
+        findAgentPopout: () => undefined,
+        findHubPopout: () => undefined,
+        findCanvasPopout: () => undefined,
+      }),
     },
     mcp: {
       contributeTools: asyncNoop as unknown as PluginAPI['mcp']['contributeTools'],

@@ -1,6 +1,6 @@
 # Creating Plugins
 
-Build custom plugins to extend Clubhouse with new views, commands, and integrations. Built-in plugins are host-integrated examples, not portable community-plugin templates: they may import internal stores, hooks, features, and components that are unavailable to dynamically loaded plugins. Use the public `PluginAPI` surface below for community plugins; in particular, use `api.ui.EmptyState` for empty panels and `api.navigation.popOutAgent` for agent pop-outs.
+Build custom plugins to extend Clubhouse with new views, commands, and integrations. Built-in plugins are host-integrated examples, not portable community-plugin templates: they may import internal stores, hooks, features, and components that are unavailable to dynamically loaded plugins. Use the public `PluginAPI` surface below for community plugins; in particular, use `api.ui.EmptyState` for empty panels, `api.navigation.popOutAgent` to pop an agent out to its own window, and `api.window.usePopoutState()` with `api.widgets.PopoutPlaceholder` to detect when your plugin's own view has been popped out and render a placeholder instead of duplicating it.
 
 ## Plugin Structure
 
