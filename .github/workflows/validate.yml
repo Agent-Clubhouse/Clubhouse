@@ -64,6 +64,9 @@ jobs:
           cache: npm
       - name: Exclude workspace from Windows Defender
         if: runner.os == 'Windows'
+        # Best-effort perf optimization: the runner's Defender service
+        # intermittently rejects this with 0x800106ba. Don't fail the job.
+        continue-on-error: true
         run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
         shell: pwsh
       - run: npm ci
@@ -107,6 +110,9 @@ jobs:
           cache: npm
       - name: Exclude workspace from Windows Defender
         if: runner.os == 'Windows'
+        # Best-effort perf optimization: the runner's Defender service
+        # intermittently rejects this with 0x800106ba. Don't fail the job.
+        continue-on-error: true
         run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
         shell: pwsh
       - run: npm ci
