@@ -7,6 +7,7 @@
  */
 
 import { BrowserWindow } from 'electron';
+import { securitySettings } from './ipc/settings-handlers';
 import { isAllowedNavigation } from './navigation-guard';
 import { appLog } from './services/log-service';
 
@@ -43,8 +44,7 @@ export function applyWindowSecurityGuards(win: BrowserWindow): void {
     if (isHttp) return;
 
     if (isFile) {
-      const { securitySettings } = require('./ipc/settings-handlers');
-      const settings = securitySettings.get();
+      const settings = securitySettings.getSettings();
       if (settings.allowLocalFileWebviews) return;
 
       appLog('core:security', 'info', 'Blocked file:// webview — enable "Allow local file webviews" in Settings > Security', {
