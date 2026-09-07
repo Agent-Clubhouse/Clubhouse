@@ -106,6 +106,7 @@ vi.mock('./group-project-registry', () => ({
   groupProjectRegistry: {
     list: vi.fn().mockResolvedValue([]),
     get: vi.fn().mockResolvedValue(null),
+    update: vi.fn().mockResolvedValue(null),
     onChange: vi.fn().mockReturnValue(() => {}),
   },
 }));
@@ -457,12 +458,6 @@ describe('annex-server', () => {
     expect(res.status).toBe(404);
   });
 
-  it('routes bulletin protection updates through the specific bulletin route table entry', () => {
-    const route = annexServer.resolveAnnexHttpRoute('PATCH', '/api/v1/group-projects/gp_1/bulletin/topics/alerts/protection');
-    expect(route).toBeDefined();
-    expect(route?.pattern.test('/api/v1/group-projects/gp_1/bulletin/topics/alerts/protection')).toBe(true);
-  });
-
   it('routes project agent lookups through the table-based project route', () => {
     const route = annexServer.resolveAnnexHttpRoute('GET', '/api/v1/projects/proj_1/agents');
     expect(route).toBeDefined();
@@ -486,6 +481,144 @@ describe('annex-server', () => {
       expect(route).toBeDefined();
       expect(route?.pattern.test(url)).toBe(true);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Route-dispatch regression coverage — every case below sends a real HTTP
+  // request through handleRequest (not just resolveAnnexHttpRoute) and asserts
+  // the selected handler actually ran with the expected side effects.
+  // -------------------------------------------------------------------------
+
+  describe('route dispatch (declarative table)', () => {
+    it('GET /api/v1/status dispatches to the status handler', async () => {
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body).toEqual({ version: '1', deviceName: 'Test Machine', agentCount: 0, orchestratorCount: 0 });
+    });
+
+    it('GET /api/v1/projects dispatches to the projects handler and reflects project-store data', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'Test Project', path: '/test/path', icon: '' } as any,
+      ]);
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'GET', '/api/v1/projects', undefined, authHeaders(token));
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body).toHaveLength(1);
+      expect(body[0].id).toBe('proj_1');
+    });
+
+    it('PATCH bulletin protection route dispatches to handleGroupProjectBulletinProtectionRoute', async () => {
+      const { getBulletinBoard } = await import('./group-project-bulletin');
+      const setTopicProtected = vi.fn();
+      vi.mocked(getBulletinBoard).mockReturnValue({ setTopicProtected } as any);
+
+      const { port, token } = await startAndPair();
+      const res = await request(
+        port, 'PATCH', '/api/v1/group-projects/gp_1/bulletin/topics/alerts/protection',
+        { isProtected: true }, authHeaders(token),
+      );
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({ ok: true });
+      expect(setTopicProtected).toHaveBeenCalledWith('alerts', true);
+    });
+
+    it('PATCH bulletin protection route rejects a non-boolean isProtected without touching the board', async () => {
+      const { getBulletinBoard } = await import('./group-project-bulletin');
+      const setTopicProtected = vi.fn();
+      vi.mocked(getBulletinBoard).mockReturnValue({ setTopicProtected } as any);
+
+      const { port, token } = await startAndPair();
+      const res = await request(
+        port, 'PATCH', '/api/v1/group-projects/gp_1/bulletin/topics/alerts/protection',
+        { isProtected: 'yes' }, authHeaders(token),
+      );
+
+      expect(res.status).toBe(400);
+      expect(setTopicProtected).not.toHaveBeenCalled();
+    });
+
+    it('PATCH /api/v1/group-projects/:id (rename) dispatches to handleGroupProjectPatchRoute, not the bulletin route', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValue({ id: 'gp_1', name: 'GP' } as any);
+      vi.mocked(groupProjectRegistry.update).mockResolvedValue({ id: 'gp_1', name: 'Renamed' } as any);
+
+      const { port, token } = await startAndPair();
+      const res = await request(
+        port, 'PATCH', '/api/v1/group-projects/gp_1',
+        { name: 'Renamed' }, authHeaders(token),
+      );
+
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.name).toBe('Renamed');
+      expect(groupProjectRegistry.update).toHaveBeenCalledWith('gp_1', { name: 'Renamed' });
+      expect(annexEventBus.emitGroupProjectChanged).toHaveBeenCalledWith('updated', body);
+    });
+
+    it('PATCH /api/v1/group-projects/:id returns 404 when the group project does not exist', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.update).mockResolvedValue(null);
+
+      const { port, token } = await startAndPair();
+      const res = await request(
+        port, 'PATCH', '/api/v1/group-projects/missing',
+        { name: 'Renamed' }, authHeaders(token),
+      );
+
+      expect(res.status).toBe(404);
+    });
+
+    it('DELETE bulletin message route dispatches to handleGroupProjectDeleteMessageRoute (destructive)', async () => {
+      const { getBulletinBoard } = await import('./group-project-bulletin');
+      const deleteMessage = vi.fn().mockResolvedValue(true);
+      vi.mocked(getBulletinBoard).mockReturnValue({ deleteMessage } as any);
+
+      const { port, token } = await startAndPair();
+      const res = await request(
+        port, 'DELETE', '/api/v1/group-projects/gp_1/bulletin/topics/alerts/messages/msg_1',
+        undefined, authHeaders(token),
+      );
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({ deleted: true });
+      expect(deleteMessage).toHaveBeenCalledWith('alerts', 'msg_1');
+    });
+
+    it('POST /api/v1/projects/:id/agents/:agentId/delete dispatches to the destructive durable-delete handler', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'Test Project', path: '/test/path', icon: '' } as any,
+      ]);
+      vi.mocked(agentConfigModule.deleteForce).mockResolvedValue({ ok: true, message: 'Force deleted' });
+
+      const { port, token } = await startAndPair();
+      const res = await request(
+        port, 'POST', '/api/v1/projects/proj_1/agents/durable_1/delete',
+        { mode: 'force' }, authHeaders(token),
+      );
+
+      expect(res.status).toBe(200);
+      expect(agentConfigModule.deleteForce).toHaveBeenCalledWith('/test/path', 'durable_1');
+    });
+
+    it('GET /api/v1/group-projects/:id/members dispatches to the members handler, not the get-by-id route', async () => {
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
+      vi.mocked(groupProjectRegistry.get).mockResolvedValue({ id: 'gp_1', name: 'GP' } as any);
+      vi.mocked(bindingManager.getAllBindings).mockReturnValue([
+        { targetKind: 'group-project', targetId: 'gp_1', agentId: 'agent_1', agentName: 'swift-fox' } as any,
+      ]);
+
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'GET', '/api/v1/group-projects/gp_1/members', undefined, authHeaders(token));
+
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body).toEqual([{ agentId: 'agent_1', agentName: 'swift-fox', status: 'sleeping' }]);
+    });
   });
 
   // -------------------------------------------------------------------------
