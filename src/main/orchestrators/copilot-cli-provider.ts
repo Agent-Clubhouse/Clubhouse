@@ -141,6 +141,8 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       structuredOutput: true,
       hooks: true,
       sessionResume: true,
+      supportsPositionalMission: false,
+      supportsAutoResumeAfterUpdate: true,
       permissions: true,
       structuredMode: true,
       structuredProtocol: 'acp',

@@ -18,6 +18,8 @@ export interface ProviderCapabilities {
   structuredOutput: boolean;
   hooks: boolean;
   sessionResume: boolean;
+  supportsPositionalMission?: boolean;
+  supportsAutoResumeAfterUpdate?: boolean;
   permissions: boolean;
   structuredMode: boolean;
   structuredProtocol?: 'acp';

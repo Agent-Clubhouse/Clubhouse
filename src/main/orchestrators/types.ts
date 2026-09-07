@@ -123,6 +123,10 @@ export interface ProviderCapabilities {
   structuredOutput: boolean;
   hooks: boolean;
   sessionResume: boolean;
+  /** Whether the provider accepts a mission as a positional CLI argument in interactive PTY mode. */
+  supportsPositionalMission?: boolean;
+  /** Whether the provider can be restored automatically after an app update. */
+  supportsAutoResumeAfterUpdate?: boolean;
   permissions: boolean;
   structuredMode: boolean;
   structuredProtocol?: 'acp';
@@ -253,6 +257,30 @@ export function isStructuredCapable(provider: OrchestratorProvider): provider is
 /** Check if a provider consumes agentFile / agentSource (e.g. Copilot CLI's --agent / --source) */
 export function isAgentFileCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & AgentFileCapable {
   return typeof (provider as unknown as AgentFileCapable).buildAgentFileArgs === 'function';
+}
+
+type CapabilityCarrier = {
+  getCapabilities?: () => Partial<ProviderCapabilities>;
+  capabilities?: Partial<ProviderCapabilities>;
+};
+
+export function supportsPositionalMission(provider: OrchestratorProvider | CapabilityCarrier): boolean {
+  const anyProvider = provider as Partial<CapabilityCarrier> & Partial<OrchestratorProvider>;
+  const caps = typeof anyProvider.getCapabilities === 'function'
+    ? anyProvider.getCapabilities()
+    : anyProvider.capabilities;
+  if (caps?.supportsPositionalMission !== undefined) return !!caps.supportsPositionalMission;
+  return typeof anyProvider.id === 'string' && anyProvider.id === 'claude-code';
+}
+
+export function supportsAutoResumeAfterUpdate(provider: OrchestratorProvider | CapabilityCarrier): boolean {
+  const anyProvider = provider as Partial<CapabilityCarrier> & Partial<OrchestratorProvider>;
+  const caps = typeof anyProvider.getCapabilities === 'function'
+    ? anyProvider.getCapabilities()
+    : anyProvider.capabilities;
+  if (caps?.supportsAutoResumeAfterUpdate !== undefined) return !!caps.supportsAutoResumeAfterUpdate;
+  if (caps?.sessionResume !== undefined) return !!caps.sessionResume;
+  return isSessionCapable(provider as OrchestratorProvider);
 }
 
 // ── Core Interface ──────────────────────────────────────────────────────────

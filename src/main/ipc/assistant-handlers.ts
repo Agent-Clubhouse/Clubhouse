@@ -29,7 +29,7 @@ import { waitReady as waitHookServerReady, portEnv as hookPortEnv } from '../ser
 import { waitReady as waitMcpBridgeReady } from '../services/clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../services/clubhouse-mcp/injection';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { isHookCapable, isHeadlessCapable, isStructuredCapable } from '../orchestrators';
+import { isHookCapable, isHeadlessCapable, isStructuredCapable, supportsPositionalMission } from '../orchestrators';
 import type { OrchestratorId, OrchestratorProvider } from '../orchestrators';
 
 const ASSISTANT_TARGET_ID = 'clubhouse_assistant';
@@ -445,7 +445,7 @@ async function spawnInteractive(
   // Codex) — -p enters one-shot prompt mode and exits, crashing the PTY session.
   // Claude Code handles positional args correctly for interactive mode.
   // The system prompt is never passed — it's in the instructions file.
-  const interactiveMission = provider.id === 'claude-code' ? mission : undefined;
+  const interactiveMission = supportsPositionalMission(provider) ? mission : undefined;
 
   // Parallel: hook server + MCP injection + spawn command
   const [, mcp, spawnCmd] = await Promise.all([
