@@ -103,7 +103,6 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.APP.UPDATE_STATUS_CHANGED',
   'IPC.ANNEX.STATUS_CHANGED',
   'IPC.ANNEX.AGENT_SPAWNED',
-  'IPC.ANNEX.PAIRING_LOCKED',
   'IPC.ANNEX.PEERS_CHANGED',
   'IPC.ANNEX.LOCK_STATE_CHANGED',
   'IPC.ANNEX_CLIENT.SATELLITES_CHANGED',
@@ -132,7 +131,6 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.WINDOW.REQUEST_HUB_MUTATION',
   'IPC.FILE.WATCH_EVENT',
   'IPC.PLUGIN_MCP.TOOL_CALL',
-  'IPC.APP.RESUME_STATUS_UPDATE',
   'IPC.APP.DEV_SIMULATE_UPDATE_RESTART', // Dev-only: handler registered behind !app.isPackaged guard
   // Protocol activation is pushed main→renderer via webContents.send when a
   // clubhouse:// link is opened while the app is running (see protocol-service.ts).

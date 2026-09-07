@@ -114,11 +114,6 @@ export const app = {
     ipcRenderer.on(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener);
     return () => { ipcRenderer.removeListener(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener); };
   },
-  onResumeStatusUpdate: (callback: (data: unknown) => void) => {
-    const listener = (_event: unknown, data: unknown) => callback(data);
-    ipcRenderer.on(IPC.APP.RESUME_STATUS_UPDATE, listener);
-    return () => { ipcRenderer.removeListener(IPC.APP.RESUME_STATUS_UPDATE, listener); };
-  },
   getPendingReleaseNotes: () =>
     ipcRenderer.invoke(IPC.APP.GET_PENDING_RELEASE_NOTES),
   clearPendingReleaseNotes: () =>
