@@ -4,8 +4,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const { mockExecSync, mockShell, mockPathExists, mockApp } = vi.hoisted(() => ({
+const { mockExecSync, mockExecFileSync, mockShell, mockPathExists, mockApp } = vi.hoisted(() => ({
   mockExecSync: vi.fn(),
+  mockExecFileSync: vi.fn(),
   mockShell: { showItemInFolder: vi.fn() },
   mockPathExists: vi.fn(async () => false),
   mockApp: {
@@ -29,8 +30,8 @@ vi.mock('./log-service', () => ({
 
 vi.mock('child_process', () => ({
   execSync: mockExecSync,
+  execFileSync: mockExecFileSync,
   spawn: vi.fn(() => ({ unref: vi.fn() })),
-  execFileSync: vi.fn(),
 }));
 
 vi.mock('fs', async () => {
@@ -67,7 +68,7 @@ vi.mock('./fs-utils', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { applyUpdate, applyUpdateOnQuit, getStatus } from './auto-update-service';
+import { applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, getStatus } from './auto-update-service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -121,6 +122,19 @@ describe.skipIf(process.platform !== 'linux')('Linux update apply', () => {
 });
 
 describe('Linux update code paths (unit)', () => {
+  it('installs deb files through execFileSync argument arrays', async () => {
+    mockPathExists.mockImplementation(async () => true);
+    await applyLinuxUpdate(
+      { downloadPath: '/tmp/update with spaces/Clubhouse.deb', version: '1.0.0', artifactUrl: null },
+      { relaunch: false },
+    );
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'pkexec',
+      ['dpkg', '-i', '/tmp/update with spaces/Clubhouse.deb'],
+      { timeout: 120_000 },
+    );
+  });
+
   it('pkexec command is constructed correctly for .deb files', () => {
     const downloadPath = '/tmp/clubhouse-updates/Clubhouse-1.0.0.deb';
     const expected = `pkexec dpkg -i "${downloadPath}"`;
