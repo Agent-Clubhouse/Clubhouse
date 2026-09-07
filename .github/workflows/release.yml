@@ -422,17 +422,14 @@ jobs:
           merge-multiple: true
 
       - name: Generate update manifest
+        env:
+          RELEASE_MESSAGE: ${{ needs.verify-tag.outputs.release_message }}
+          RELEASE_NOTES: ${{ needs.verify-tag.outputs.release_notes }}
         run: |
           VERSION="${{ needs.verify-tag.outputs.version }}"
           IS_PREVIEW="${{ needs.verify-tag.outputs.is_preview }}"
-          MESSAGE=$(cat <<'MESSAGE_EOF'
-          ${{ needs.verify-tag.outputs.release_message }}
-          MESSAGE_EOF
-          )
-          NOTES=$(cat <<'NOTES_EOF'
-          ${{ needs.verify-tag.outputs.release_notes }}
-          NOTES_EOF
-          )
+          MESSAGE="$RELEASE_MESSAGE"
+          NOTES="$RELEASE_NOTES"
           BASE_URL="https://stclubhousereleases.blob.core.windows.net/releases/artifacts"
 
           # Write to preview.json for rc tags, latest.json for stable
@@ -510,18 +507,15 @@ jobs:
 
       - name: Update history.json
         if: needs.verify-tag.outputs.is_preview != 'true'
+        env:
+          RELEASE_MESSAGE: ${{ needs.verify-tag.outputs.release_message }}
+          RELEASE_NOTES: ${{ needs.verify-tag.outputs.release_notes }}
         run: |
           VERSION="${{ needs.verify-tag.outputs.version }}"
           ACCOUNT="stclubhousereleases"
           CONTAINER="releases"
-          MESSAGE=$(cat <<'MESSAGE_EOF'
-          ${{ needs.verify-tag.outputs.release_message }}
-          MESSAGE_EOF
-          )
-          NOTES=$(cat <<'NOTES_EOF'
-          ${{ needs.verify-tag.outputs.release_notes }}
-          NOTES_EOF
-          )
+          MESSAGE="$RELEASE_MESSAGE"
+          NOTES="$RELEASE_NOTES"
 
           # Download existing history.json (or start with empty array)
           az storage blob download \
@@ -793,15 +787,14 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_MESSAGE: ${{ needs.verify-tag.outputs.release_message }}
+          RELEASE_NOTES: ${{ needs.verify-tag.outputs.release_notes }}
         run: |
           VERSION="${{ needs.verify-tag.outputs.version }}"
           IS_PREVIEW="${{ needs.verify-tag.outputs.is_preview }}"
 
-          RELEASE_TITLE="v${VERSION} — ${{ needs.verify-tag.outputs.release_message }}"
-          RELEASE_BODY=$(cat <<'BODY_EOF'
-          ${{ needs.verify-tag.outputs.release_notes }}
-          BODY_EOF
-          )
+          RELEASE_TITLE="v${VERSION} — ${RELEASE_MESSAGE}"
+          RELEASE_BODY="$RELEASE_NOTES"
 
           PRERELEASE_FLAG=""
           MANIFEST_FILE="artifacts/latest.json"
