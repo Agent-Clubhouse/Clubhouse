@@ -7,7 +7,7 @@ import type {
   MarketplacePluginWithSource,
 } from '../../../shared/marketplace-types';
 import { SUPPORTED_REGISTRY_VERSION } from '../../../shared/marketplace-types';
-import { SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from '../../plugins/manifest-validator';
+import { SUPPORTED_PLUGIN_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useProjectStore } from '../../stores/projectStore';
 import { refreshCommunityPlugins } from '../../plugins/plugin-loader';
@@ -64,7 +64,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
   const release = plugin.releases[plugin.latest];
   if (!release) return null;
 
-  const compatible = SUPPORTED_API_VERSIONS.includes(release.api);
+  const compatible = SUPPORTED_PLUGIN_API_VERSIONS.includes(release.api);
   const deprecatedRemoval = DEPRECATED_PLUGIN_API_VERSIONS[release.api];
   const [showPerms, setShowPerms] = useState(false);
 
@@ -171,7 +171,7 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
       )}
       {betaPlugin && (() => {
         const betaRelease = betaPlugin.releases[betaPlugin.latest];
-        const betaCompatible = betaRelease ? SUPPORTED_API_VERSIONS.includes(betaRelease.api) : false;
+        const betaCompatible = betaRelease ? SUPPORTED_PLUGIN_API_VERSIONS.includes(betaRelease.api) : false;
         return (
           <div className="mt-3 pt-3 border-t border-surface-0 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap">
