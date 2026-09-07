@@ -1177,7 +1177,7 @@ describe('plugin-loader', () => {
 
       const entry = usePluginStore.getState().plugins['comm-fail'];
       expect(entry.status).toBe('errored');
-      expect(entry.error).toContain('Failed to load module');
+      expect(entry.error).toContain('module-graph resolution');
       expect(entry.error).toContain('Module not found');
     });
 

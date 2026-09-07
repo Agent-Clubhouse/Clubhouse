@@ -18,9 +18,11 @@ import { useAgentStore } from '../stores/agentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { useUIStore } from '../stores/uiStore';
+import { EmptyState } from '../components/EmptyState';
 
 export function createUIAPI(ctx: PluginContext): UIAPI {
   return {
+    EmptyState,
     showNotice(message: string): void {
       // Simple notification using existing notification system
       console.log(`[Plugin Notice] ${message}`);

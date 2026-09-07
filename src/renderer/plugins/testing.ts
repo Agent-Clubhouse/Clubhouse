@@ -107,6 +107,7 @@ export function createMockContext(overrides?: Partial<PluginContext>): PluginCon
 function noop(): void {}
 async function asyncNoop(): Promise<void> {}
 async function asyncNull(): Promise<null> { return null; }
+const mockEmptyState: PluginAPI['ui']['EmptyState'] = () => null;
 
 export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
   return {
@@ -150,6 +151,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       },
     },
     ui: {
+      EmptyState: mockEmptyState,
       showNotice: noop,
       showError: noop,
       showConfirm: async () => false,

@@ -63,7 +63,7 @@ const SCOPED_STORAGE_METHODS: (keyof ScopedStorage)[] = ['read', 'write', 'delet
 const STORAGE_API_KEYS: (keyof StorageAPI)[] = ['project', 'projectLocal', 'global'];
 
 const UI_API_METHODS: (keyof UIAPI)[] = [
-  'showNotice', 'showError', 'showConfirm', 'showInput', 'openExternalUrl',
+  'EmptyState', 'showNotice', 'showError', 'showConfirm', 'showInput', 'openExternalUrl',
 ];
 
 const COMMANDS_API_METHODS: (keyof CommandsAPI)[] = [

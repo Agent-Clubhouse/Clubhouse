@@ -596,6 +596,8 @@ export interface ApprovalDialogOptions {
 }
 
 export interface UIAPI {
+  /** Render the host's consistent empty-state presentation in plugin panels. */
+  EmptyState: React.ComponentType<EmptyStateProps>;
   showNotice(message: string): void;
   showError(message: string): void;
   showConfirm(message: string): Promise<boolean>;
@@ -607,6 +609,14 @@ export interface UIAPI {
    */
   showApprovalDialog(options: ApprovalDialogOptions): Promise<string | null>;
   openExternalUrl(url: string): Promise<void>;
+}
+
+export interface EmptyStateProps {
+  icon?: React.ReactNode;
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+  compact?: boolean;
 }
 
 export interface CommandsAPI {
