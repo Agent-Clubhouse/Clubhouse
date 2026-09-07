@@ -1,13 +1,18 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../shared/types';
+import { typedInvoke } from '../shared/ipc-types';
 
 export const project = {
   project: {
   list: () => ipcRenderer.invoke(IPC.PROJECT.LIST),
   add: (path: string) => ipcRenderer.invoke(IPC.PROJECT.ADD, path),
   remove: (id: string) => ipcRenderer.invoke(IPC.PROJECT.REMOVE, id),
-  pickDirectory: () => ipcRenderer.invoke(IPC.PROJECT.PICK_DIR),
+  pickDirectory: () =>
+    typedInvoke(
+      (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+      IPC.PROJECT.PICK_DIR,
+    ),
   checkGit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.CHECK_GIT, dirPath),
   gitInit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.GIT_INIT, dirPath),
   update: (id: string, updates: Record<string, unknown>) =>
