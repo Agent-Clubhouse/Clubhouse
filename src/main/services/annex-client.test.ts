@@ -843,6 +843,174 @@ describe('annex-client', () => {
     });
   });
 
+  // ---- bearer-token-before-verification leak fix (PR #1734 merge-review finding) ----
+
+  describe('bearer token pre-verification gate', () => {
+    const FP = 'TLS:LEAK:FIX';
+
+    it('retries with bearer token after an auth error, deferring req.end() via finishRequest', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: FP,
+        alias: 'Gate Sat',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'gate-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FP,
+        alias: 'Gate Sat',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'gate-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      const wsCtorArgsList: any[] = [];
+      let errorCb: ((err: Error) => void) | null = null;
+
+      vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
+        wsCtorArgsList.push(opts);
+        this.readyState = 1;
+        this.socket = makeMockSocket(FP);
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'error') errorCb = cb;
+          // Intentionally do NOT auto-fire 'open' — we want this attempt to fail with an auth error.
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+
+      // Give the satellite a bearer token from a prior pairing, as if reconnecting.
+      annexClient._setSatelliteTokenStateForTesting(FP, 'super-secret-token', Date.now());
+
+      // First (mTLS-only) attempt fails with an auth-shaped error, triggering the
+      // bearer-token retry path.
+      expect(errorCb).not.toBeNull();
+      errorCb!(new Error('401 Unauthorized'));
+
+      // A second WebSocket must have been opened, carrying the bearer token —
+      // but only via finishRequest, which gates the actual header transmission.
+      expect(wsCtorArgsList.length).toBe(2);
+      const retryOpts = wsCtorArgsList[1];
+      expect(retryOpts?.headers?.Authorization).toBe('Bearer super-secret-token');
+      expect(typeof retryOpts?.finishRequest).toBe('function');
+
+      // Simulate the underlying http.ClientRequest for that retry connection.
+      const req = {
+        end: vi.fn(),
+        destroy: vi.fn(),
+        on: vi.fn(),
+      };
+      let socketCb: ((socket: any) => void) | null = null;
+      req.on.mockImplementation((event: string, cb: any) => {
+        if (event === 'socket') socketCb = cb;
+      });
+
+      retryOpts.finishRequest(req);
+      expect(socketCb).not.toBeNull();
+
+      // Peer certificate does not match this satellite's pinned fingerprint (e.g. an
+      // on-path attacker completing the handshake with a different certificate) —
+      // the token must never be flushed to the wire.
+      const mismatchedSocket = { encrypted: true, pending: false, getPeerCertificate: () => ({ subject: { CN: 'NOT:THE:RIGHT:FP' } }) };
+      socketCb!(mismatchedSocket);
+      expect(req.end).not.toHaveBeenCalled();
+      expect(req.destroy).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('flushes the bearer-token request once the peer certificate is verified on that socket', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: FP,
+        alias: 'Gate Sat',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'gate-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FP,
+        alias: 'Gate Sat',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'gate-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      const wsCtorArgsList: any[] = [];
+      let errorCb: ((err: Error) => void) | null = null;
+
+      vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
+        wsCtorArgsList.push(opts);
+        this.readyState = 1;
+        this.socket = makeMockSocket(FP);
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'error') errorCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      annexClient._setSatelliteTokenStateForTesting(FP, 'super-secret-token', Date.now());
+
+      expect(errorCb).not.toBeNull();
+      errorCb!(new Error('403 Forbidden'));
+
+      const retryOpts = wsCtorArgsList[1];
+      const req = { end: vi.fn(), destroy: vi.fn(), on: vi.fn() };
+      let socketCb: ((socket: any) => void) | null = null;
+      req.on.mockImplementation((event: string, cb: any) => {
+        if (event === 'socket') socketCb = cb;
+      });
+
+      retryOpts.finishRequest(req);
+
+      // Socket hasn't completed its TLS handshake yet — finishRequest must wait for
+      // 'secureConnect' rather than flushing the request immediately.
+      const pendingSocket: any = {
+        encrypted: false,
+        pending: true,
+        getPeerCertificate: () => ({ subject: { CN: FP } }),
+        once: vi.fn(),
+      };
+      let secureConnectCb: (() => void) | null = null;
+      pendingSocket.once.mockImplementation((event: string, cb: any) => {
+        if (event === 'secureConnect') secureConnectCb = cb;
+      });
+
+      socketCb!(pendingSocket);
+      expect(req.end).not.toHaveBeenCalled();
+      expect(secureConnectCb).not.toBeNull();
+
+      // Handshake completes and the certificate matches the pinned fingerprint —
+      // only now is it safe to send the bearer token.
+      secureConnectCb!();
+      expect(req.end).toHaveBeenCalledTimes(1);
+      expect(req.destroy).not.toHaveBeenCalled();
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Directional peer role filtering
   // -------------------------------------------------------------------------

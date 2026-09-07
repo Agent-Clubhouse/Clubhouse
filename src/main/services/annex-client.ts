@@ -364,11 +364,16 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
   }
 }
 
+function getPeerCertificateFingerprintFromSocket(socket: tls.TLSSocket): string | null {
+  if (!socket || !('getPeerCertificate' in socket)) return null;
+  return annexTls.extractPeerFingerprint(socket);
+}
+
 function getPeerCertificateFingerprint(ws: WebSocket): string | null {
   const candidate = (ws as unknown as { socket?: tls.TLSSocket; _socket?: tls.TLSSocket }).socket
     ?? (ws as unknown as { _socket?: tls.TLSSocket })._socket;
-  if (!candidate || !('getPeerCertificate' in candidate)) return null;
-  return annexTls.extractPeerFingerprint(candidate as tls.TLSSocket);
+  if (!candidate) return null;
+  return getPeerCertificateFingerprintFromSocket(candidate);
 }
 
 async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<void> {
@@ -400,9 +405,39 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       },
     });
 
+    // When retrying with the bearer token, the token must never be written to the
+    // wire until this specific socket's peer certificate has been verified — an
+    // on-path attacker who completes the TLS handshake but presents the wrong
+    // certificate must not receive the Authorization header. `finishRequest` is
+    // ws's hook for delaying `req.end()` (and therefore the header flush) until
+    // after we've inspected the socket, instead of the default immediate `end()`.
+    const finishRequest = (req: http.ClientRequest): void => {
+      req.on('socket', (socket: tls.TLSSocket) => {
+        const proceed = () => {
+          const peerFingerprint = getPeerCertificateFingerprintFromSocket(socket);
+          if (peerFingerprint !== sat.fingerprint) {
+            appLog('core:annex-client', 'warn', 'Refusing to send bearer token: peer certificate not verified', {
+              meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort },
+            });
+            req.destroy(new Error('Peer certificate fingerprint mismatch'));
+            return;
+          }
+          req.end();
+        };
+
+        if (socket.encrypted && !socket.pending) {
+          proceed();
+        } else {
+          socket.once('secureConnect', proceed);
+        }
+      });
+    };
+
     const ws = new WebSocket(wsUrl, {
       ...tlsOptions,
-      ...(withBearerToken && sat.bearerToken ? { headers: { Authorization: `Bearer ${sat.bearerToken}` } } : {}),
+      ...(withBearerToken && sat.bearerToken
+        ? { headers: { Authorization: `Bearer ${sat.bearerToken}` }, finishRequest }
+        : {}),
       handshakeTimeout: 10_000,
     });
 
