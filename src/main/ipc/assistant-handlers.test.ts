@@ -124,6 +124,7 @@ vi.mock('../orchestrators', () => ({
   isHookCapable: vi.fn(() => false),
   isHeadlessCapable: vi.fn(() => true),
   isStructuredCapable: vi.fn(() => true),
+  supportsPositionalMission: vi.fn((provider: any) => provider?.getCapabilities?.().supportsPositionalMission ?? provider?.capabilities?.supportsPositionalMission ?? false),
 }));
 
 vi.mock('fs', async () => {
