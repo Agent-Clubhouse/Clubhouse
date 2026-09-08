@@ -536,6 +536,11 @@ export function getBulletinBoard(projectId: string): BulletinBoard {
   return board;
 }
 
+/** Flush all live bulletin boards before shutdown so pending writes hit disk. */
+export async function flushAllBulletinBoards(): Promise<void> {
+  await Promise.all([...boards.values()].map((board) => board.flush()));
+}
+
 /** Destroy a bulletin board instance and remove its data directory from disk. */
 export async function destroyBulletinBoard(projectId: string): Promise<void> {
   const board = boards.get(projectId);

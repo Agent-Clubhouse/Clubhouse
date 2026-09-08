@@ -181,3 +181,8 @@ class AgentQueueRegistry {
 }
 
 export const agentQueueRegistry = new AgentQueueRegistry();
+
+/** Flush the pending queue registry write before shutdown. */
+export async function flushAllAgentQueues(): Promise<void> {
+  await agentQueueRegistry.flush();
+}

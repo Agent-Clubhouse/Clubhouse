@@ -17,6 +17,9 @@ import * as annexServer from './services/annex-server';
 import { bridgeServer as mcpBridgeServer } from './services/clubhouse-mcp';
 import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast';
 import { flushAllAgentConfigs } from './services/agent-config';
+import { groupProjectRegistry } from './services/group-project-registry';
+import { flushAllBulletinBoards } from './services/group-project-bulletin';
+import { flushAllAgentQueues } from './services/agent-queue-registry';
 import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
@@ -340,6 +343,9 @@ app.on('activate', () => {
 app.on('before-quit', createBeforeQuitHandler({
   killAll,
   flushAllAgentConfigs,
+  flushAllGroupProjects: () => groupProjectRegistry.flush(),
+  flushAllBulletinBoards,
+  flushAllAgentQueues,
   applyUpdateOnQuit,
   appQuit: () => app.quit(),
   onCleanupError: (operation, error) => {
