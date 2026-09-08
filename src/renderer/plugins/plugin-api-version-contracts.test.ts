@@ -63,7 +63,7 @@ const SCOPED_STORAGE_METHODS: (keyof ScopedStorage)[] = ['read', 'write', 'delet
 const STORAGE_API_KEYS: (keyof StorageAPI)[] = ['project', 'projectLocal', 'global'];
 
 const UI_API_METHODS: (keyof UIAPI)[] = [
-  'showNotice', 'showError', 'showConfirm', 'showInput', 'openExternalUrl',
+  'EmptyState', 'showNotice', 'showError', 'showConfirm', 'showInput', 'openExternalUrl',
 ];
 
 const COMMANDS_API_METHODS: (keyof CommandsAPI)[] = [
@@ -85,7 +85,7 @@ const NAVIGATION_API_METHODS: (keyof NavigationAPI)[] = [
 ];
 
 const WIDGETS_API_COMPONENTS: (keyof WidgetsAPI)[] = [
-  'AgentTerminal', 'SleepingAgent', 'AgentAvatar', 'QuickAgentGhost',
+  'AgentTerminal', 'SleepingAgent', 'AgentAvatar', 'QuickAgentGhost', 'PopoutPlaceholder',
 ];
 
 const TERMINAL_API_METHODS: (keyof TerminalAPI)[] = [
@@ -120,7 +120,7 @@ const WORKSPACE_API_METHODS: (keyof WorkspaceAPI)[] = [
   'listDir', 'readTree', 'watch', 'forPlugin', 'forProject',
 ];
 
-const WINDOW_API_METHODS: (keyof WindowAPI)[] = ['setTitle', 'resetTitle', 'getTitle'];
+const WINDOW_API_METHODS: (keyof WindowAPI)[] = ['setTitle', 'resetTitle', 'getTitle', 'usePopoutState'];
 
 const ANNEX_API_METHODS: (keyof AnnexAPI)[] = [
   // Discovery & connection
@@ -1367,6 +1367,12 @@ describe('§3 API surface area contracts — createPluginAPI()', () => {
     expect(() => api.project.readFile('/tmp/example.txt')).toThrow(/api\.project is not available for app-scoped plugins/);
     expect(() => api.git.status()).toThrow(/api\.git is not available for app-scoped plugins/);
     expect(() => api.files.readFile('/tmp/example.txt')).toThrow(/api\.files is not available for app-scoped plugins/);
+  });
+
+  it('api.widgets.PopoutPlaceholder is the promoted host surface, not a stub', () => {
+    const api = createPluginAPI(createMockContext(), undefined, unrestrictedProjectManifest);
+    expect(api.widgets.PopoutPlaceholder).toBeDefined();
+    expect(typeof api.widgets.PopoutPlaceholder).toBe('function');
   });
 });
 

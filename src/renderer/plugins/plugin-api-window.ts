@@ -1,5 +1,6 @@
 import type { PluginContext, PluginManifest, WindowAPI } from '../../shared/plugin-types';
 import { usePluginStore } from './plugin-store';
+import { usePopouts } from '../hooks/usePopouts';
 
 /**
  * Resolve the manifest default title for this plugin.
@@ -30,5 +31,7 @@ export function createWindowAPI(ctx: PluginContext, manifest?: PluginManifest): 
       const dynamic = usePluginStore.getState().pluginTitles[pluginId];
       return dynamic ?? defaultTitle;
     },
+
+    usePopoutState: usePopouts,
   };
 }

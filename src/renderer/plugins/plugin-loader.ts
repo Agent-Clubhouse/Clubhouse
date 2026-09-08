@@ -599,7 +599,11 @@ export async function activatePlugin(
         rendererLog('core:plugins', 'error', `Failed to load module for plugin "${pluginId}"`, {
           meta: { pluginId, modulePath: fullModulePath, moduleUrl, error: errMsg, stack: errStack },
         });
-        store.setPluginStatus(pluginId, 'errored', `Failed to load module: ${errMsg}`);
+        store.setPluginStatus(
+          pluginId,
+          'errored',
+          `Failed to load module due to module-graph resolution: ${errMsg}`,
+        );
         recordActivationFailure(pluginId, projectId, projectPath);
         return;
       }
