@@ -131,7 +131,7 @@ function resetAllMocks() {
     autoReconnect: true,
   });
   vi.mocked(annexTls.extractPeerFingerprint).mockImplementation((socket: any) => socket.getPeerCertificate().subject?.CN ?? null);
-  WebSocketMock.mockImplementation(function (this: any, _url?: string, opts?: Record<string, any>) {
+  WebSocketMock.mockImplementation(function (this: any, _url?: string, _opts?: Record<string, any>) {
     this.readyState = WebSocketMock.OPEN;
     this.socket = {
       getPeerCertificate: () => ({ subject: { CN: 'PP:QQ:RR:SS' } }),
