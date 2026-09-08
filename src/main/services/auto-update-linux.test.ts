@@ -74,18 +74,17 @@ import { applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, getStatus } from './a
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Force the module's internal `status` into 'ready' state so applyUpdate()
- * can proceed. We do this by importing checkForUpdates and mocking the
- * manifest fetch — but that's complex. Instead, we directly test the
- * exported functions' behavior given the module state.
- *
- * Since applyUpdate checks `status.state !== 'ready'`, and there's no
- * public setState, we rely on testing that:
- * 1. applyUpdate throws when state is not 'ready' (default)
- * 2. The Linux-specific code paths are correct via unit tests of the
- *    branching logic
- */
+const readyStatus = {
+  state: 'ready' as const,
+  availableVersion: '1.0.0',
+  releaseNotes: null,
+  releaseMessage: null,
+  downloadProgress: 100,
+  error: null,
+  downloadPath: '/tmp/update with $()/Clubhouse-1.0.0.deb',
+  artifactUrl: 'https://example.com/Clubhouse-1.0.0.deb',
+  applyAttempted: false,
+};
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -101,6 +100,19 @@ describe.skipIf(process.platform !== 'linux')('Linux update apply', () => {
       await expect(applyUpdate()).rejects.toThrow('No update ready to apply');
     });
 
+    it('installs a ready update through execFileSync without shell interpolation', async () => {
+      mockPathExists.mockImplementation(async () => true);
+
+      await applyUpdate(readyStatus);
+
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        'pkexec',
+        ['dpkg', '-i', readyStatus.downloadPath],
+        { timeout: 120_000 },
+      );
+      expect(mockExecSync).not.toHaveBeenCalled();
+    });
+
     it('is exported as a function', () => {
       expect(typeof applyUpdate).toBe('function');
     });
@@ -113,6 +125,19 @@ describe.skipIf(process.platform !== 'linux')('Linux update apply', () => {
       await applyUpdateOnQuit();
       expect(mockExecSync).not.toHaveBeenCalled();
       expect(mockPathExists).not.toHaveBeenCalled();
+    });
+
+    it('installs a ready update through execFileSync without shell interpolation', async () => {
+      mockPathExists.mockImplementation(async () => true);
+
+      await applyUpdateOnQuit(readyStatus);
+
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        'pkexec',
+        ['dpkg', '-i', readyStatus.downloadPath],
+        { timeout: 120_000 },
+      );
+      expect(mockExecSync).not.toHaveBeenCalled();
     });
 
     it('is exported as a function', () => {
@@ -133,12 +158,6 @@ describe('Linux update code paths (unit)', () => {
       ['dpkg', '-i', '/tmp/update with spaces/Clubhouse.deb'],
       { timeout: 120_000 },
     );
-  });
-
-  it('pkexec command is constructed correctly for .deb files', () => {
-    const downloadPath = '/tmp/clubhouse-updates/Clubhouse-1.0.0.deb';
-    const expected = `pkexec dpkg -i "${downloadPath}"`;
-    expect(expected).toBe('pkexec dpkg -i "/tmp/clubhouse-updates/Clubhouse-1.0.0.deb"');
   });
 
   it('.deb extension check works for valid paths', () => {
