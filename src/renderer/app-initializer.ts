@@ -36,12 +36,14 @@ import { initCommandPaletteHandler } from './features/command-palette/command-pa
 // ─── Settings Loading ───────────────────────────────────────────────────────
 
 async function loadAllSettings(): Promise<void> {
-  // All store loads are independent — run them in parallel.
+  // All store loads are independent — run them in parallel. Availability
+  // requires the orchestrator list loaded by loadSettings first.
   await Promise.all([
     useProjectStore.getState().loadProjects(),
     useNotificationStore.getState().loadSettings(),
     useThemeStore.getState().loadTheme(),
-    useOrchestratorStore.getState().loadSettings(),
+    Promise.resolve(useOrchestratorStore.getState().loadSettings())
+      .then(() => useOrchestratorStore.getState().checkAllAvailability()),
     useLoggingStore.getState().loadSettings(),
     useHeadlessStore.getState().loadSettings(),
     useBadgeSettingsStore.getState().loadSettings(),
