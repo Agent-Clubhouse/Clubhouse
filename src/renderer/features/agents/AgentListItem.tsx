@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
@@ -13,8 +13,8 @@ interface Props {
   agent: Agent;
   isActive: boolean;
   isThinking: boolean;
-  onSelect: () => void;
-  onSpawnQuickChild?: () => void;
+  onSelect: (agentId: string) => void;
+  onSpawnQuickChild?: (agentId: string) => void;
   isNested?: boolean;
 }
 
@@ -125,7 +125,7 @@ function ContextMenu({ actions, position, onClose }: {
 
 // ── Main component ─────────────────────────────────────────────────
 
-export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested }: Props) {
+function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested }: Props) {
   // Fine-grained selectors: subscribe only to the specific state/actions needed
   const isRemote = isRemoteAgentId(agent.id);
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agent.id) : null, [agent.id, isRemote]);
@@ -231,8 +231,8 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   }, [agent.id, openAgentSettings]);
 
   const handleSpawnChild = useCallback(() => {
-    if (onSpawnQuickChild) onSpawnQuickChild();
-  }, [onSpawnQuickChild]);
+    if (onSpawnQuickChild) onSpawnQuickChild(agent.id);
+  }, [agent.id, onSpawnQuickChild]);
 
   // ── Build ordered action list (highest priority first) ─────────
 
@@ -421,7 +421,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   return (
     <>
       <div
-        onClick={onSelect}
+        onClick={() => onSelect(agent.id)}
         onContextMenu={handleContextMenu}
         data-testid={`agent-item-${agent.id}`}
         data-agent-name={agent.name}
@@ -541,3 +541,5 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     </>
   );
 }
+
+export const AgentListItem = memo(AgentListItemInner);

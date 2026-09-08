@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, act, renderHook, within } from '@testing-library/react';
+import { memo } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -10,15 +11,24 @@ import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 // Mock child components
 const isThinkingCaptures: boolean[] = [];
+const itemRenderCounts: Record<string, number> = {};
+let memoizeAgentItems = false;
 
-vi.mock('./AgentListItem', () => ({
-  AgentListItem: (props: any) => {
+vi.mock('./AgentListItem', () => {
+  const renderItem = (props: any) => {
     isThinkingCaptures.push(props.isThinking);
+    itemRenderCounts[props.agent.id] = (itemRenderCounts[props.agent.id] ?? 0) + 1;
     return (
       <div data-testid={`agent-item-${props.agent.id}`} data-thinking={props.isThinking}>{props.agent.name}</div>
     );
-  },
-}));
+  };
+  const MemoizedAgentListItem = memo(renderItem);
+  return {
+    AgentListItem: (props: any) => memoizeAgentItems
+      ? <MemoizedAgentListItem {...props} />
+      : renderItem(props),
+  };
+});
 
 vi.mock('./AddAgentDialog', () => ({
   AddAgentDialog: ({ onClose, onCreate }: any) => (
@@ -87,6 +97,7 @@ const defaultAgent: Agent = {
 };
 
 function resetStores() {
+  Object.keys(itemRenderCounts).forEach((key) => delete itemRenderCounts[key]);
   useAgentStore.setState({
     agents: { [defaultAgent.id]: defaultAgent },
     activeAgentId: defaultAgent.id,
@@ -123,6 +134,7 @@ function resetStores() {
 describe('AgentList dropdown', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    memoizeAgentItems = false;
     resetStores();
     // pty.onData must return a cleanup function (used directly as useEffect cleanup)
     window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
@@ -762,10 +774,42 @@ describe('AgentList isThinking callback stability', () => {
 describe('P-C-3: AgentList polling-tick re-render optimization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    memoizeAgentItems = false;
     resetStores();
     isThinkingCaptures.length = 0;
     Object.keys(activityTimestamps).forEach((k) => delete activityTimestamps[k]);
     window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+  });
+
+  describe('AgentList row memoization', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      resetStores();
+      isThinkingCaptures.length = 0;
+      window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+    });
+
+    it('does not re-render a sibling row when one agent status changes', () => {
+      memoizeAgentItems = true;
+      const first: Agent = { ...defaultAgent, id: 'first', name: 'first' };
+      const second: Agent = { ...defaultAgent, id: 'second', name: 'second' };
+      useAgentStore.setState({ agents: { first, second } });
+
+      render(<AgentList />);
+      expect(itemRenderCounts).toEqual({ first: 1, second: 1 });
+
+      act(() => {
+        useAgentStore.setState({
+          agents: {
+            first: { ...first, status: 'running' },
+            second,
+          },
+        });
+      });
+
+      expect(itemRenderCounts.first).toBe(2);
+      expect(itemRenderCounts.second).toBe(1);
+    });
   });
 
   it('renders only once when 5 polling ticks fire with no agent state changes (P-C-3)', () => {
