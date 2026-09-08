@@ -2,6 +2,7 @@ import * as fsp from 'fs/promises';
 import { registerMcpCommand, toCommandId } from '../mcp-command-adapter';
 import * as projectStore from '../../project-store';
 import { requireString } from './validation';
+import { homePath } from '../../../orchestrators/shared';
 
 /** Register project write tools (add, remove, update). */
 export function registerProjectTools(): void {
@@ -28,7 +29,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'add_project',
   handler: async (_targetId, _agentId, args) => {
-    const dirPath = requireString(args, 'path').replace(/^~/, process.env.HOME || '/tmp');
+    const dirPath = requireString(args, 'path').replace(/^~/, homePath());
     try {
       const stat = await fsp.stat(dirPath);
       if (!stat.isDirectory()) {

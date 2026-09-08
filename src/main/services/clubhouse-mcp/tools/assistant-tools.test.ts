@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/clubhouse-test' },
+  app: { getPath: () => os.homedir() },
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
@@ -232,6 +232,27 @@ describe('assistant-tools', () => {
     expect(result.isError).toBeFalsy();
     const data = JSON.parse(result.content[0].text);
     expect(Array.isArray(data)).toBe(true);
+  });
+
+  it('list_directory expands ~ from the app home when HOME is unset', async () => {
+    const homeDirectory = await fsp.mkdtemp(path.join(os.homedir(), 'assistant-home-'));
+    const originalHome = process.env.HOME;
+    delete process.env.HOME;
+
+    try {
+      const result = await callAssistantTool('list_directory', {
+        path: `~/${path.basename(homeDirectory)}`,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(JSON.parse(result.content[0].text)).toEqual([]);
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      await fsp.rm(homeDirectory, { recursive: true, force: true });
+    }
   });
 
   it('list_directory returns error for missing directory', async () => {
