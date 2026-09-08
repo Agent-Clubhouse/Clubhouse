@@ -32,7 +32,7 @@ import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
 import { isSessionCapable, getProvider } from '../orchestrators';
 import { writeChunkedBracketedPaste, submitAfterPaste } from './clubhouse-mcp/tools/agent-tools';
-import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, listSessions, resolveOrchestrator, resolveProfileEnv } from './agent-system';
+import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 
 /**

@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import * as fs from 'fs/promises';
 import { promisify } from 'util';
 import * as path from 'path';
 const picomatch = require('picomatch') as (
@@ -12,6 +13,9 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_MAX_RESULTS = 1_000;
 const DEFAULT_CONTEXT_LINES = 0;
 const MAX_LINE_CONTENT_LENGTH = 500;
+const IGNORED_DIRS = new Set([
+  'node_modules', '.git', '.DS_Store', '.webpack', 'dist', '.next', '__pycache__',
+]);
 
 /**
  * Try to locate the ripgrep binary asynchronously. Returns the path or null if not found.
@@ -146,7 +150,9 @@ function buildRgArgs(query: string, rootPath: string, options?: FileSearchOption
   }
 
   // Always exclude common dirs
-  args.push('--glob', '!.git/');
+  for (const ignoredDir of IGNORED_DIRS) {
+    args.push('--glob', `!**/${ignoredDir}`, '--glob', `!**/${ignoredDir}/**`);
+  }
 
   // The search pattern and path
   args.push('--', query, rootPath);
@@ -287,12 +293,6 @@ function parseRipgrepOutput(
 }
 
 // ── Node.js fallback implementation ────────────────────────────────────
-
-import * as fs from 'fs/promises';
-
-const IGNORED_DIRS = new Set([
-  'node_modules', '.git', '.DS_Store', '.webpack', 'dist', '.next', '__pycache__',
-]);
 
 async function searchWithNodeFs(
   rootPath: string,
