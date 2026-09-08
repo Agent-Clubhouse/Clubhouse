@@ -55,6 +55,15 @@ describe('plugin-storage', () => {
       vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
       const result = await readKey({ pluginId: 'my-plugin', scope: 'global', key: 'missing' });
       expect(result).toBeUndefined();
+      expect(fsp.rename).not.toHaveBeenCalled();
+    });
+
+    it('quarantines corrupt JSON instead of silently treating it as missing', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'broken.json');
+      vi.mocked(fsp.readFile).mockResolvedValue('{not valid json');
+      const result = await readKey({ pluginId: 'my-plugin', scope: 'global', key: 'broken' });
+      expect(result).toBeUndefined();
+      expect(fsp.rename).toHaveBeenCalledWith(file, expect.stringMatching(/\.corrupt-/));
     });
 
     it('uses project-scoped path when scope is project', async () => {
@@ -75,16 +84,20 @@ describe('plugin-storage', () => {
   });
 
   describe('writeKey', () => {
-    it('writes JSON to kv directory and ensures dir exists', async () => {
+    it('writes JSON atomically via temp file + rename', async () => {
       await writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: { a: 1 } });
       expect(fsp.mkdir).toHaveBeenCalledWith(
         path.join(GLOBAL_BASE, 'my-plugin', 'kv'),
         { recursive: true },
       );
       expect(fsp.writeFile).toHaveBeenCalledWith(
-        path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json'),
+        expect.stringMatching(/config\.json\.tmp\./),
         JSON.stringify({ a: 1 }),
         'utf-8',
+      );
+      expect(fsp.rename).toHaveBeenCalledWith(
+        expect.stringMatching(/config\.json\.tmp\./),
+        path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json'),
       );
     });
 
@@ -329,9 +342,13 @@ describe('plugin-storage', () => {
       vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
       await writeKey({ pluginId: 'my-plugin', scope: 'project-local', key: 'config', value: 42, projectPath });
       expect(fsp.writeFile).toHaveBeenCalledWith(
-        path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv', 'config.json'),
+        expect.stringMatching(/config\.json\.tmp\./),
         '42',
         'utf-8',
+      );
+      expect(fsp.rename).toHaveBeenCalledWith(
+        expect.stringMatching(/config\.json\.tmp\./),
+        path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv', 'config.json'),
       );
     });
 

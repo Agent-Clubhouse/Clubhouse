@@ -83,13 +83,33 @@ async function assertSafePath(base: string, target: string): Promise<void> {
 
 // ── Key-Value Storage ──────────────────────────────────────────────────
 
+function getJsonTempPath(file: string): string {
+  return `${file}.tmp.${process.pid}.${Date.now()}`;
+}
+
+function getCorruptQuarantinePath(file: string): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return path.join(path.dirname(file), `.corrupt-${stamp}-${path.basename(file)}`);
+}
+
 export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   const file = path.join(dir, `${req.key}.json`);
   await assertSafePath(dir, `${req.key}.json`);
+
   try {
     const raw = await fs.readFile(file, 'utf-8');
-    return JSON.parse(raw);
+    try {
+      return JSON.parse(raw);
+    } catch {
+      const quarantinePath = getCorruptQuarantinePath(file);
+      try {
+        await fs.rename(file, quarantinePath);
+      } catch {
+        // If the file vanished or is already quarantined, keep the read as absent
+      }
+      return undefined;
+    }
   } catch {
     return undefined;
   }
@@ -103,7 +123,17 @@ export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
   await assertSafePath(dir, `${req.key}.json`);
   await ensureDir(dir);
   const file = path.join(dir, `${req.key}.json`);
-  await fs.writeFile(file, JSON.stringify(req.value), 'utf-8');
+  const tmpFile = getJsonTempPath(file);
+
+  try {
+    await fs.writeFile(tmpFile, JSON.stringify(req.value), 'utf-8');
+    await fs.rename(tmpFile, file);
+  } catch (err) {
+    await fs.unlink(tmpFile).catch((_: unknown): void => {
+      // Temp cleanup failed — the original file is already the source of truth.
+    });
+    throw err;
+  }
 }
 
 export async function deleteKey(req: PluginStorageDeleteRequest): Promise<void> {
