@@ -101,4 +101,44 @@ describe('before-quit handler', () => {
 
     expect(appQuit).toHaveBeenCalledOnce();
   });
+
+  it('awaits buffered registry and bulletin flushes before quitting', async () => {
+    const events: string[] = [];
+    const appQuit = vi.fn(() => {
+      events.push('quit');
+    });
+
+    await new Promise<void>((resolve) => {
+      const handleBeforeQuit = createBeforeQuitHandler({
+        killAll: async () => {
+          events.push('kill');
+        },
+        flushAllAgentConfigs: async () => {
+          events.push('configs');
+        },
+        flushAllGroupProjects: async () => {
+          events.push('group-projects');
+        },
+        flushAllBulletinBoards: async () => {
+          events.push('bulletins');
+        },
+        flushAllAgentQueues: async () => {
+          events.push('agent-queues');
+        },
+        applyUpdateOnQuit: async () => {
+          events.push('apply-update');
+        },
+        appQuit: () => {
+          appQuit();
+          resolve();
+        },
+        onCleanupError: vi.fn(),
+      });
+
+      handleBeforeQuit({ preventDefault: vi.fn() });
+    });
+
+    expect(events).toEqual(['kill', 'configs', 'group-projects', 'bulletins', 'agent-queues', 'apply-update', 'quit']);
+    expect(appQuit).toHaveBeenCalledOnce();
+  });
 });

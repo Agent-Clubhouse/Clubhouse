@@ -191,3 +191,8 @@ class GroupProjectRegistry {
 }
 
 export const groupProjectRegistry = new GroupProjectRegistry();
+
+/** Flush the registry if a pending write is queued. */
+export async function flushAllGroupProjects(): Promise<void> {
+  await groupProjectRegistry.flush();
+}
