@@ -93,24 +93,62 @@ function saveIdentity(identity: AnnexIdentity): void {
   }
 }
 
+function isValidAnnexIdentity(value: unknown): value is AnnexIdentity {
+  if (!value || typeof value !== 'object') return false;
+
+  const identity = value as Record<string, unknown>;
+  return typeof identity.publicKey === 'string'
+    && typeof identity.privateKey === 'string'
+    && typeof identity.fingerprint === 'string'
+    && typeof identity.createdAt === 'string';
+}
+
+function backupCorruptedIdentity(filePath: string): void {
+  const backupPath = `${filePath}.bak`;
+  try {
+    fs.copyFileSync(filePath, backupPath);
+  } catch (error) {
+    appLog('core:annex', 'warn', 'Failed to back up corrupted Annex identity file', {
+      meta: {
+        filePath,
+        backupPath,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+  }
+}
+
 /**
- * Load identity from disk, or return null if not found / corrupt.
+ * Load identity from disk, or return its status so corruption can be handled
+ * separately from first-run initialization.
  */
-function loadIdentity(): AnnexIdentity | null {
+function loadIdentity(): { status: 'missing' | 'corrupt' | 'valid'; identity: AnnexIdentity | null } {
   const filePath = getIdentityPath();
+
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = JSON.parse(raw);
 
-    // Validate required fields
-    if (!parsed.publicKey || !parsed.privateKey || !parsed.fingerprint || !parsed.createdAt) {
-      appLog('core:annex', 'warn', 'Identity file is missing required fields, regenerating');
-      return null;
+    if (!isValidAnnexIdentity(parsed)) {
+      appLog('core:annex', 'error', 'Annex identity file is corrupted or incomplete; regenerating a new identity', {
+        meta: { filePath, reason: 'missing-required-fields' },
+      });
+      return { status: 'corrupt', identity: null };
     }
 
-    return parsed as AnnexIdentity;
-  } catch {
-    return null;
+    return { status: 'valid', identity: parsed };
+  } catch (error) {
+    if (!fs.existsSync(filePath)) {
+      return { status: 'missing', identity: null };
+    }
+
+    appLog('core:annex', 'error', 'Annex identity file is corrupted or unreadable; regenerating a new identity', {
+      meta: {
+        filePath,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+    return { status: 'corrupt', identity: null };
   }
 }
 
@@ -127,13 +165,21 @@ function loadIdentity(): AnnexIdentity | null {
 export function getOrCreateIdentity(): AnnexIdentity {
   if (cachedIdentity) return cachedIdentity;
 
-  // Try loading from disk
-  cachedIdentity = loadIdentity();
-  if (cachedIdentity) {
+  const loadResult = loadIdentity();
+  if (loadResult.status === 'valid' && loadResult.identity) {
+    cachedIdentity = loadResult.identity;
     appLog('core:annex', 'info', 'Loaded existing Annex identity', {
       meta: { fingerprint: cachedIdentity.fingerprint },
     });
     return cachedIdentity;
+  }
+
+  // A corrupt file indicates the trust anchor was lost; preserve a backup and
+  // notify the user so paired devices can be re-established.
+  if (loadResult.status === 'corrupt') {
+    const filePath = getIdentityPath();
+    backupCorruptedIdentity(filePath);
+    appLog('core:annex', 'error', 'Your device identity was reset - re-pair your devices');
   }
 
   // Generate new identity
@@ -152,7 +198,9 @@ export function getOrCreateIdentity(): AnnexIdentity {
  */
 export function getIdentity(): AnnexIdentity | null {
   if (cachedIdentity) return cachedIdentity;
-  cachedIdentity = loadIdentity();
+
+  const loadResult = loadIdentity();
+  cachedIdentity = loadResult.status === 'valid' ? loadResult.identity : null;
   return cachedIdentity;
 }
 
