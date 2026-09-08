@@ -784,6 +784,33 @@ describe('BulletinBoard', () => {
       expect(Object.keys(written.topics)).toEqual(['inbox-my-agent']);
       expect(written.topics['inbox-my-agent']).toHaveLength(2);
     });
+
+    it('loads concurrently without duplicating messages and deduplicates persisted IDs', async () => {
+      const p = bulletinPathFor('gp_mig_concurrent');
+      store.set(p, JSON.stringify({
+        topics: {
+          updates: [
+            { id: 'm1', sender: 'a', topic: 'updates', body: 'first', timestamp: '2026-01-01T00:00:01.000Z' },
+            { id: 'm1', sender: 'a', topic: 'updates', body: 'first', timestamp: '2026-01-01T00:00:01.000Z' },
+            { id: 'm2', sender: 'b', topic: 'updates', body: 'second', timestamp: '2026-01-01T00:00:02.000Z' },
+          ],
+        },
+      }));
+
+      const board = getBulletinBoard('gp_mig_concurrent');
+      const reads = vi.mocked(fsp.readFile);
+      reads.mockClear();
+      await Promise.all([
+        board.hasTopic('updates'),
+        board.getDigest(),
+        board.getAllMessages(),
+      ]);
+
+      expect(reads).toHaveBeenCalledTimes(1);
+      expect(await board.getTopicMessages('updates', undefined, 100)).toHaveLength(2);
+      await board.flush();
+      expect(JSON.parse(store.get(p)!).topics.updates).toHaveLength(2);
+    });
   });
 });
 

@@ -93,6 +93,7 @@ class BulletinBoard {
   private topics = new Map<string, BulletinMessage[]>();
   private protectedTopics = new Set<string>();
   private loaded = false;
+  private loadPromise: Promise<void> | null = null;
   private dirty = false;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingFlush: Promise<void> | null = null;
@@ -113,52 +114,74 @@ class BulletinBoard {
 
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
-    const bp = bulletinPath(this.projectId);
-    if (await pathExists(bp)) {
-      try {
-        const data: BulletinData = JSON.parse(await fsp.readFile(bp, 'utf-8'));
-        // Silent one-time migration: canonicalize topic keys to lowercase. Boards
-        // written before channel names were case-insensitive may hold mixed-case
-        // keys (e.g. `inbox-My-Agent`) that collide with the canonical form once
-        // lowercased. Merge colliding topics — concatenated and re-sorted by
-        // timestamp — so no message history is dropped.
-        let migrated = false;
-        for (const [topic, messages] of Object.entries(data.topics || {})) {
-          const key = normalizeChannelName(topic);
-          if (key !== topic) migrated = true;
-          // Rewrite each message's stored topic to the canonical form too.
-          const canonical = messages.map(m => (m.topic === key ? m : { ...m, topic: key }));
-          const existing = this.topics.get(key);
-          if (existing) {
-            migrated = true;
-            const merged = [...existing, ...canonical].sort(
-              (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-            );
-            this.topics.set(key, merged);
-          } else {
-            this.topics.set(key, canonical);
+    if (this.loadPromise) return this.loadPromise;
+
+    this.loadPromise = (async () => {
+      const bp = bulletinPath(this.projectId);
+      if (await pathExists(bp)) {
+        try {
+          const data: BulletinData = JSON.parse(await fsp.readFile(bp, 'utf-8'));
+          // Silent one-time migration: canonicalize topic keys to lowercase. Boards
+          // written before channel names were case-insensitive may hold mixed-case
+          // keys (e.g. `inbox-My-Agent`) that collide with the canonical form once
+          // lowercased. Merge colliding topics — concatenated and re-sorted by
+          // timestamp — so no message history is dropped.
+          let migrated = false;
+          const sourceTopics = new Map<string, string>();
+          for (const [topic, messages] of Object.entries(data.topics || {})) {
+            const key = normalizeChannelName(topic);
+            if (key !== topic) migrated = true;
+            // Rewrite each message's stored topic to the canonical form too.
+            const canonical = messages.map(m => (m.topic === key ? m : { ...m, topic: key }));
+            const seenIds = new Set<string>();
+            const unique = canonical.filter(message => {
+              if (seenIds.has(message.id)) return false;
+              seenIds.add(message.id);
+              return true;
+            });
+            if (unique.length !== canonical.length) migrated = true;
+            const existing = this.topics.get(key);
+            const existingTopic = sourceTopics.get(key);
+            if (existing && existingTopic !== undefined && existingTopic !== topic) {
+              migrated = true;
+              const mergedIds = new Set<string>();
+              const merged = [...existing, ...unique].filter(message => {
+                if (mergedIds.has(message.id)) return false;
+                mergedIds.add(message.id);
+                return true;
+              }).sort(
+                (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+              );
+              if (merged.length !== existing.length + unique.length) migrated = true;
+              this.topics.set(key, merged);
+            } else {
+              this.topics.set(key, unique);
+            }
+            sourceTopics.set(key, existingTopic ?? topic);
           }
-        }
-        if (Array.isArray(data.protectedTopics)) {
-          for (const t of data.protectedTopics) {
-            const key = normalizeChannelName(t);
-            if (key !== t) migrated = true;
-            this.protectedTopics.add(key);
+          if (Array.isArray(data.protectedTopics)) {
+            for (const t of data.protectedTopics) {
+              const key = normalizeChannelName(t);
+              if (key !== t) migrated = true;
+              this.protectedTopics.add(key);
+            }
           }
+          // Persist the canonical form once so the migration is durable rather than
+          // re-run on every load.
+          if (migrated) {
+            this.dirty = true;
+            this.scheduleFlush();
+          }
+        } catch (err) {
+          appLog('core:group-project', 'error', 'Failed to parse bulletin board', {
+            meta: { projectId: this.projectId, error: err instanceof Error ? err.message : String(err) },
+          });
         }
-        // Persist the canonical form once so the migration is durable rather than
-        // re-run on every load.
-        if (migrated) {
-          this.dirty = true;
-          this.scheduleFlush();
-        }
-      } catch (err) {
-        appLog('core:group-project', 'error', 'Failed to parse bulletin board', {
-          meta: { projectId: this.projectId, error: err instanceof Error ? err.message : String(err) },
-        });
       }
-    }
-    this.loaded = true;
+      this.loaded = true;
+    })();
+
+    return this.loadPromise;
   }
 
   private scheduleFlush(): void {
@@ -516,6 +539,7 @@ class BulletinBoard {
     this.topics.clear();
     this.protectedTopics.clear();
     this.loaded = false;
+    this.loadPromise = null;
     this.dirty = false;
     this.maxPerTopic = DEFAULT_MAX_PER_TOPIC;
     this.maxTotal = DEFAULT_MAX_TOTAL;
