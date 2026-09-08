@@ -9,6 +9,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: ESLint (errors only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # This repo currently has a large warning backlog; the gate is intentionally
+      # set to fail on ESLint errors only, not on warnings.
+      - run: npm run lint
+
   typecheck:
     name: Typecheck (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
