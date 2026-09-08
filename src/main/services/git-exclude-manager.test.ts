@@ -4,6 +4,7 @@ vi.mock('fs/promises', () => ({
   stat: vi.fn(() => Promise.resolve({ isFile: () => false })),
   readFile: vi.fn(() => Promise.resolve('')),
   writeFile: vi.fn(() => Promise.resolve(undefined)),
+  rename: vi.fn(() => Promise.resolve(undefined)),
   mkdir: vi.fn(() => Promise.resolve(undefined)),
 }));
 
@@ -28,6 +29,7 @@ describe('git-exclude-manager', () => {
       const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
       expect(written).toContain('CLAUDE.md # clubhouse-mode');
       expect(written).toContain('.mcp.json # clubhouse-mode');
+      expect(fsp.rename).toHaveBeenCalledWith(expect.stringContaining('.tmp.'), expect.stringContaining('.git/info/exclude'));
     });
 
     it('appends to existing exclude file content', async () => {
@@ -71,6 +73,31 @@ describe('git-exclude-manager', () => {
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
 
       expect(fsp.mkdir).toHaveBeenCalled();
+    });
+
+    it('serializes concurrent additions for the same project', async () => {
+      let excludeContent = '';
+      const tempFiles = new Map<string, string>();
+      vi.mocked(fsp.readFile).mockImplementation(async (filePath) => {
+        const file = String(filePath);
+        return tempFiles.get(file) ?? excludeContent;
+      });
+      vi.mocked(fsp.writeFile).mockImplementation(async (filePath, content) => {
+        tempFiles.set(String(filePath), String(content));
+      });
+      vi.mocked(fsp.rename).mockImplementation(async (oldPath, newPath) => {
+        excludeContent = tempFiles.get(String(oldPath)) ?? '';
+        tempFiles.delete(String(oldPath));
+        expect(newPath).toContain('.git/info/exclude');
+      });
+
+      await Promise.all([
+        addExclusions('/project', 'first', ['first.txt']),
+        addExclusions('/project', 'second', ['second.txt']),
+      ]);
+
+      expect(excludeContent).toContain('first.txt # first');
+      expect(excludeContent).toContain('second.txt # second');
     });
   });
 

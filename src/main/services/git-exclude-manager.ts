@@ -1,4 +1,5 @@
 import * as fsp from 'fs/promises';
+import { randomUUID } from 'crypto';
 import * as path from 'path';
 
 /**
@@ -32,47 +33,70 @@ function tagFor(tag: string): string {
   return `# ${tag}`;
 }
 
+const writeQueues = new Map<string, Promise<void>>();
+
+function enqueueWrite(excludePath: string, operation: () => Promise<void>): Promise<void> {
+  const previous = writeQueues.get(excludePath) ?? Promise.resolve();
+  const current = previous.then(operation);
+  writeQueues.set(excludePath, current);
+  return current.finally(() => {
+    if (writeQueues.get(excludePath) === current) {
+      writeQueues.delete(excludePath);
+    }
+  });
+}
+
+async function writeAtomically(filePath: string, content: string): Promise<void> {
+  const tempPath = `${filePath}.tmp.${randomUUID().slice(0, 8)}`;
+  await fsp.writeFile(tempPath, content, 'utf-8');
+  await fsp.rename(tempPath, filePath);
+}
+
 export async function addExclusions(projectPath: string, tag: string, patterns: string[]): Promise<void> {
   const excludePath = await getExcludePath(projectPath);
-  const marker = tagFor(tag);
-  const newLines = patterns.map((p) => `${p} ${marker}`);
+  return enqueueWrite(excludePath, async () => {
+    const marker = tagFor(tag);
+    const newLines = patterns.map((p) => `${p} ${marker}`);
 
-  // Ensure the info/ directory exists
-  const dir = path.dirname(excludePath);
-  await fsp.mkdir(dir, { recursive: true });
+    // Ensure the info/ directory exists
+    const dir = path.dirname(excludePath);
+    await fsp.mkdir(dir, { recursive: true });
 
-  let existing = '';
-  try {
-    existing = await fsp.readFile(excludePath, 'utf-8');
-  } catch {
-    // File doesn't exist yet
-  }
+    let existing = '';
+    try {
+      existing = await fsp.readFile(excludePath, 'utf-8');
+    } catch {
+      // File doesn't exist yet
+    }
 
-  const linesToAdd = newLines.filter((line) => !existing.includes(line));
-  if (linesToAdd.length === 0) return;
+    const linesToAdd = newLines.filter((line) => !existing.includes(line));
+    if (linesToAdd.length === 0) return;
 
-  const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
-  await fsp.writeFile(excludePath, existing + separator + linesToAdd.join('\n') + '\n', 'utf-8');
+    const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+    await writeAtomically(excludePath, existing + separator + linesToAdd.join('\n') + '\n');
+  });
 }
 
 export async function removeExclusions(projectPath: string, tag: string): Promise<void> {
   const excludePath = await getExcludePath(projectPath);
-  const marker = tagFor(tag);
+  return enqueueWrite(excludePath, async () => {
+    const marker = tagFor(tag);
 
-  let existing: string;
-  try {
-    existing = await fsp.readFile(excludePath, 'utf-8');
-  } catch {
-    return; // No exclude file
-  }
+    let existing: string;
+    try {
+      existing = await fsp.readFile(excludePath, 'utf-8');
+    } catch {
+      return; // No exclude file
+    }
 
-  const lines = existing.split('\n');
-  const filtered = lines.filter((line) => !line.includes(marker));
+    const lines = existing.split('\n');
+    const filtered = lines.filter((line) => !line.includes(marker));
 
-  // Remove trailing blank lines
-  while (filtered.length > 0 && filtered[filtered.length - 1] === '') {
-    filtered.pop();
-  }
+    // Remove trailing blank lines
+    while (filtered.length > 0 && filtered[filtered.length - 1] === '') {
+      filtered.pop();
+    }
 
-  await fsp.writeFile(excludePath, filtered.join('\n') + (filtered.length > 0 ? '\n' : ''), 'utf-8');
+    await writeAtomically(excludePath, filtered.join('\n') + (filtered.length > 0 ? '\n' : ''));
+  });
 }
