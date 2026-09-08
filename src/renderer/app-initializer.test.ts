@@ -8,6 +8,7 @@ const {
   mockLoadTheme,
   mockLoadOrchestratorSettings,
   mockCheckOrchestratorAvailability,
+  mockOrchestratorAvailability,
   mockLoadLoggingSettings,
   mockLoadHeadlessSettings,
   mockLoadBadgeSettings,
@@ -23,6 +24,7 @@ const {
   mockLoadTheme: vi.fn().mockResolvedValue(undefined),
   mockLoadOrchestratorSettings: vi.fn().mockResolvedValue(undefined),
   mockCheckOrchestratorAvailability: vi.fn().mockResolvedValue(undefined),
+  mockOrchestratorAvailability: {} as Record<string, { available: boolean; error?: string }>,
   mockLoadLoggingSettings: vi.fn().mockResolvedValue(undefined),
   mockLoadHeadlessSettings: vi.fn().mockResolvedValue(undefined),
   mockLoadBadgeSettings: vi.fn().mockResolvedValue(undefined),
@@ -57,6 +59,7 @@ vi.mock('./stores/orchestratorStore', () => ({
     getState: vi.fn(() => ({
       loadSettings: mockLoadOrchestratorSettings,
       checkAllAvailability: mockCheckOrchestratorAvailability,
+      availability: mockOrchestratorAvailability,
     })),
   }),
 }));
@@ -134,6 +137,12 @@ describe('initApp', () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     mockOnboardingCompleted = true;
+    for (const key of Object.keys(mockOrchestratorAvailability)) {
+      delete mockOrchestratorAvailability[key];
+    }
+    mockCheckOrchestratorAvailability.mockImplementation(async () => {
+      mockOrchestratorAvailability['claude-code'] = { available: false, error: 'CLI not found' };
+    });
     mockInitializePluginSystem.mockResolvedValue(undefined);
     (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
@@ -153,6 +162,9 @@ describe('initApp', () => {
     expect(mockLoadTheme).toHaveBeenCalled();
     expect(mockLoadOrchestratorSettings).toHaveBeenCalled();
     expect(mockCheckOrchestratorAvailability).toHaveBeenCalled();
+    expect(mockOrchestratorAvailability).toEqual({
+      'claude-code': { available: false, error: 'CLI not found' },
+    });
     expect(mockLoadLoggingSettings).toHaveBeenCalled();
     expect(mockLoadHeadlessSettings).toHaveBeenCalled();
     expect(mockLoadBadgeSettings).toHaveBeenCalled();
