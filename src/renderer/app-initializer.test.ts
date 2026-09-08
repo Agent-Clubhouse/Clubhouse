@@ -7,6 +7,7 @@ const {
   mockLoadNotificationSettings,
   mockLoadTheme,
   mockLoadOrchestratorSettings,
+  mockCheckOrchestratorAvailability,
   mockLoadLoggingSettings,
   mockLoadHeadlessSettings,
   mockLoadBadgeSettings,
@@ -21,6 +22,7 @@ const {
   mockLoadNotificationSettings: vi.fn().mockResolvedValue(undefined),
   mockLoadTheme: vi.fn().mockResolvedValue(undefined),
   mockLoadOrchestratorSettings: vi.fn().mockResolvedValue(undefined),
+  mockCheckOrchestratorAvailability: vi.fn().mockResolvedValue(undefined),
   mockLoadLoggingSettings: vi.fn().mockResolvedValue(undefined),
   mockLoadHeadlessSettings: vi.fn().mockResolvedValue(undefined),
   mockLoadBadgeSettings: vi.fn().mockResolvedValue(undefined),
@@ -52,7 +54,10 @@ vi.mock('./stores/themeStore', () => ({
 
 vi.mock('./stores/orchestratorStore', () => ({
   useOrchestratorStore: Object.assign(vi.fn(), {
-    getState: vi.fn(() => ({ loadSettings: mockLoadOrchestratorSettings })),
+    getState: vi.fn(() => ({
+      loadSettings: mockLoadOrchestratorSettings,
+      checkAllAvailability: mockCheckOrchestratorAvailability,
+    })),
   }),
 }));
 
@@ -147,6 +152,7 @@ describe('initApp', () => {
     expect(mockLoadNotificationSettings).toHaveBeenCalled();
     expect(mockLoadTheme).toHaveBeenCalled();
     expect(mockLoadOrchestratorSettings).toHaveBeenCalled();
+    expect(mockCheckOrchestratorAvailability).toHaveBeenCalled();
     expect(mockLoadLoggingSettings).toHaveBeenCalled();
     expect(mockLoadHeadlessSettings).toHaveBeenCalled();
     expect(mockLoadBadgeSettings).toHaveBeenCalled();
