@@ -8,6 +8,7 @@
 import * as https from 'https';
 import * as http from 'http';
 import * as net from 'net';
+import * as tls from 'tls';
 import Bonjour, { Browser, Service as RemoteService } from 'bonjour-service';
 import { WebSocket } from 'ws';
 import * as annexIdentity from './annex-identity';
@@ -363,6 +364,18 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
   }
 }
 
+function getPeerCertificateFingerprintFromSocket(socket: tls.TLSSocket): string | null {
+  if (!socket || !('getPeerCertificate' in socket)) return null;
+  return annexTls.extractPeerFingerprint(socket);
+}
+
+function getPeerCertificateFingerprint(ws: WebSocket): string | null {
+  const candidate = (ws as unknown as { socket?: tls.TLSSocket; _socket?: tls.TLSSocket }).socket
+    ?? (ws as unknown as { _socket?: tls.TLSSocket })._socket;
+  if (!candidate) return null;
+  return getPeerCertificateFingerprintFromSocket(candidate);
+}
+
 async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<void> {
   setState(sat, 'connecting');
 
@@ -378,27 +391,93 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     sat.bearerTokenIssuedAt = null;
   }
 
-  // Connect via WebSocket using mTLS (preferred) with optional bearer token fallback
-  try {
+  const attemptConnection = (withBearerToken: boolean): void => {
     const tlsOptions = annexTls.createTlsClientOptions(identity);
     const wsUrl = `wss://${bracketHost(sat.host)}:${sat.mainPort}/ws`;
 
     appLog('core:annex-client', 'info', 'Connecting to satellite', {
-      meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort, hasBearerToken: !!sat.bearerToken },
+      meta: {
+        fingerprint: sat.fingerprint,
+        host: sat.host,
+        port: sat.mainPort,
+        hasBearerToken: !!sat.bearerToken,
+        authMode: withBearerToken ? 'bearer' : 'mtls-first',
+      },
     });
 
-    // Pass bearer token in Authorization header (SEC-CRIT-07).  Query-param form
-    // (?token=…) is intentionally removed — the Go mobile client uses the header
-    // as of Clubhouse-Go#76; existing mTLS peers don't need a token at all.
+    // When retrying with the bearer token, the token must never be written to the
+    // wire until this specific socket's peer certificate has been verified — an
+    // on-path attacker who completes the TLS handshake but presents the wrong
+    // certificate must not receive the Authorization header. `finishRequest` is
+    // ws's hook for delaying `req.end()` (and therefore the header flush) until
+    // after we've inspected the socket, instead of the default immediate `end()`.
+    const finishRequest = (req: http.ClientRequest): void => {
+      req.on('socket', (socket: tls.TLSSocket) => {
+        const proceed = () => {
+          const peerFingerprint = getPeerCertificateFingerprintFromSocket(socket);
+          if (peerFingerprint !== sat.fingerprint) {
+            appLog('core:annex-client', 'warn', 'Refusing to send bearer token: peer certificate not verified', {
+              meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort },
+            });
+            req.destroy(new Error('Peer certificate fingerprint mismatch'));
+            return;
+          }
+          req.end();
+        };
+
+        if (socket.encrypted && !socket.pending) {
+          proceed();
+        } else {
+          socket.once('secureConnect', proceed);
+        }
+      });
+    };
+
     const ws = new WebSocket(wsUrl, {
       ...tlsOptions,
-      ...(sat.bearerToken ? { headers: { Authorization: `Bearer ${sat.bearerToken}` } } : {}),
+      ...(withBearerToken && sat.bearerToken
+        ? { headers: { Authorization: `Bearer ${sat.bearerToken}` }, finishRequest }
+        : {}),
       handshakeTimeout: 10_000,
     });
 
     sat.ws = ws;
 
     ws.on('open', () => {
+      const peerFingerprint = getPeerCertificateFingerprint(ws);
+      if (!peerFingerprint) {
+        appLog('core:annex-client', 'warn', 'Peer certificate is unavailable on the TLS socket; rejecting connection', {
+          meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort },
+        });
+        try { ws.close(); } catch {}
+        sat.ws = null;
+        setState(sat, 'disconnected', 'Peer certificate unavailable');
+        if (!sat.reconnectTimer) scheduleReconnect(sat);
+        return;
+      }
+
+      if (peerFingerprint !== sat.fingerprint) {
+        appLog('core:annex-client', 'warn', 'Peer certificate fingerprint mismatch', {
+          meta: {
+            expected: sat.fingerprint,
+            actual: peerFingerprint,
+            host: sat.host,
+            port: sat.mainPort,
+          },
+        });
+        try { ws.close(); } catch {}
+        sat.ws = null;
+        setState(sat, 'disconnected', 'Peer certificate mismatch');
+        if (!sat.reconnectTimer) scheduleReconnect(sat);
+        return;
+      }
+
+      if (!withBearerToken && sat.bearerToken) {
+        appLog('core:annex-client', 'debug', 'Paired TLS socket verified; bearer token remains deferred until the next authenticated retry', {
+          meta: { fingerprint: sat.fingerprint },
+        });
+      }
+
       appLog('core:annex-client', 'info', 'Connected to satellite', {
         meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort },
       });
@@ -436,15 +515,30 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     });
 
     ws.on('error', (err) => {
+      const errorText = (err && typeof err === 'object' && 'message' in err) ? String((err as Error).message) : String(err);
+      const retryWithBearerToken = !withBearerToken && sat.bearerToken && /401|unauthorized|forbidden|authentication/i.test(errorText);
+      if (retryWithBearerToken) {
+        appLog('core:annex-client', 'info', 'Retrying connection with bearer token after TLS verification', {
+          meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort },
+        });
+        sat.ws = null;
+        attemptConnection(true);
+        return;
+      }
+
       // Downgrade to 'warn' after 3 consecutive reconnect attempts to reduce log noise
       const level = sat.reconnectAttempt >= 3 ? 'warn' : 'error';
       appLog('core:annex-client', level, 'WebSocket error', {
-        meta: { fingerprint: sat.fingerprint, error: err.message, attempt: sat.reconnectAttempt },
+        meta: { fingerprint: sat.fingerprint, error: errorText, attempt: sat.reconnectAttempt },
       });
       sat.ws = null;
-      setState(sat, 'disconnected', err.message);
+      setState(sat, 'disconnected', errorText);
       if (!sat.reconnectTimer) scheduleReconnect(sat);
     });
+  };
+
+  try {
+    attemptConnection(false);
   } catch (err) {
     setState(sat, 'disconnected', err instanceof Error ? err.message : 'Connection failed');
     scheduleReconnect(sat);

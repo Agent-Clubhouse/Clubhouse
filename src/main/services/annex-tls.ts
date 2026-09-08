@@ -133,8 +133,10 @@ export function getOrCreateCert(identity: AnnexIdentity): TlsCertificateInfo {
 }
 
 /**
- * Create a TLS server options object for the Annex main port.
- * Requests client certificates but validates manually (against peer list).
+ * Create TLS server options for the Annex main port.
+ * The server requests client certs but leaves `rejectUnauthorized` off because
+ * the controller verifies the peer fingerprint on the established TLS socket
+ * before accepting the connection.
  */
 export function createTlsServerOptions(identity: AnnexIdentity): tls.TlsOptions {
   const cert = getOrCreateCert(identity);
@@ -142,20 +144,21 @@ export function createTlsServerOptions(identity: AnnexIdentity): tls.TlsOptions 
     cert: cert.certPem,
     key: cert.keyPem,
     requestCert: true,
-    rejectUnauthorized: false, // We validate manually against peer list
+    rejectUnauthorized: false, // mTLS is checked by fingerprint on the active socket
   };
 }
 
 /**
- * Create TLS connection options for connecting to a peer's TLS server.
- * Uses our own cert for mutual authentication.
+ * Create TLS client options for connecting to a peer's TLS server.
+ * We present our certificate and verify the peer cert fingerprint after the
+ * socket opens, before treating the connection as authenticated.
  */
 export function createTlsClientOptions(identity: AnnexIdentity): tls.ConnectionOptions {
   const cert = getOrCreateCert(identity);
   return {
     cert: cert.certPem,
     key: cert.keyPem,
-    rejectUnauthorized: false, // We validate the peer's cert manually
+    rejectUnauthorized: false, // Client verifies the peer fingerprint before accepting the socket
   };
 }
 
