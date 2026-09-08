@@ -9,6 +9,9 @@ const mockProcess = {
   resize: vi.fn(),
   kill: vi.fn(),
 };
+const mockActiveChange = vi.hoisted(() => ({
+  listener: undefined as ((active: boolean) => void) | undefined,
+}));
 vi.mock('node-pty', () => ({
   spawn: vi.fn(() => mockProcess),
 }));
@@ -43,6 +46,11 @@ vi.mock('../util/ipc-broadcast', () => ({
 vi.mock('./annex-event-bus', () => ({
   emitPtyExit: vi.fn(),
   emitPtyData: vi.fn(),
+  isActive: vi.fn(() => false),
+  onActiveChange: vi.fn((fn: (active: boolean) => void) => {
+    mockActiveChange.listener = fn;
+    return vi.fn();
+  }),
 }));
 
 // Mock pty-headless-terminal
@@ -82,6 +90,7 @@ async function spawnAndActivate(agentId: string, cwd = '/test', binary = '/usr/l
 describe('pty-manager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(annexEventBus.isActive).mockReturnValue(false);
     mockProcess.onData.mockReset();
     mockProcess.onExit.mockReset();
     mockProcess.write.mockReset();
@@ -120,19 +129,40 @@ describe('pty-manager', () => {
 
   describe('headless terminal integration', () => {
     it('feeds PTY data to headless terminal', async () => {
+      vi.mocked(annexEventBus.isActive).mockReturnValue(true);
       await spawnAndActivate('agent_hl');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('hello');
       expect(vi.mocked(headlessTerminal).feedData).toHaveBeenCalledWith('agent_hl', 'hello');
     });
 
+    it('does not feed PTY data to headless terminal when Annex is inactive', async () => {
+      vi.mocked(annexEventBus.isActive).mockReturnValue(false);
+      await spawnAndActivate('agent_hl_inactive');
+      const onDataCb = mockProcess.onData.mock.calls[0][0];
+      onDataCb('hello');
+      expect(vi.mocked(headlessTerminal).feedData).not.toHaveBeenCalled();
+    });
+
+    it('backfills existing PTY output when Annex activates', async () => {
+      await spawnAndActivate('agent_hl_backfill');
+      const onDataCb = mockProcess.onData.mock.calls[0][0];
+      onDataCb('existing output');
+
+      mockActiveChange.listener?.(true);
+
+      expect(vi.mocked(headlessTerminal).feedData).toHaveBeenCalledWith('agent_hl_backfill', 'existing output');
+    });
+
     it('resizes headless terminal on pty resize', async () => {
+      vi.mocked(annexEventBus.isActive).mockReturnValue(true);
       await spawnAndActivate('agent_hlr');
       resize('agent_hlr', 100, 50);
       expect(vi.mocked(headlessTerminal).resize).toHaveBeenCalledWith('agent_hlr', 100, 50);
     });
 
     it('disposes headless terminal on PTY exit', async () => {
+      vi.mocked(annexEventBus.isActive).mockReturnValue(true);
       await spawnAndActivate('agent_hle');
       const onExitCb = mockProcess.onExit.mock.calls[0][0];
       onExitCb({ exitCode: 0 });
@@ -140,6 +170,7 @@ describe('pty-manager', () => {
     });
 
     it('disposes headless terminal on kill', async () => {
+      vi.mocked(annexEventBus.isActive).mockReturnValue(true);
       await spawnAndActivate('agent_hlk');
       kill('agent_hlk');
       expect(vi.mocked(headlessTerminal).dispose).toHaveBeenCalledWith('agent_hlk');
