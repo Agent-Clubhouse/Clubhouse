@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { app, BrowserWindow, clipboard, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings, ThemeId } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
@@ -234,6 +234,13 @@ export function registerAppHandlers(): void {
     (_event, count) => {
       if (process.platform === 'darwin') {
         app.dock.setBadge(count > 0 ? String(count) : '');
+      } else if (process.platform === 'win32') {
+        const icon = count > 0 ? nativeImage.createFromPath(app.getPath('exe')) : null;
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.setOverlayIcon(icon, String(count));
+          }
+        }
       } else {
         app.setBadgeCount(count);
       }

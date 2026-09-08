@@ -7,6 +7,9 @@ vi.mock('electron', () => ({
     dock: { setBadge: vi.fn() },
     setBadgeCount: vi.fn(),
   },
+  nativeImage: {
+    createFromPath: vi.fn(() => ({ isEmpty: () => false })),
+  },
   BrowserWindow: {
     getFocusedWindow: vi.fn(() => ({
       setTitleBarOverlay: vi.fn(),
@@ -156,7 +159,7 @@ vi.mock('./mcp-binding-handlers', () => ({
   onMcpSettingsChanged: vi.fn(),
 }));
 
-import { app, BrowserWindow, clipboard, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAppHandlers } from './app-handlers';
 import * as notificationService from '../services/notification-service';
@@ -477,13 +480,57 @@ describe('app-handlers', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
-  it('SET_DOCK_BADGE uses app.setBadgeCount on non-macOS', async () => {
+  it('SET_DOCK_BADGE uses app.setBadgeCount on Linux', async () => {
     const originalPlatform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'linux' });
 
     const handler = handleHandlers.get(IPC.APP.SET_DOCK_BADGE)!;
     await handler({}, 3);
     expect(app.setBadgeCount).toHaveBeenCalledWith(3);
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  it('SET_DOCK_BADGE sets overlay icons on all live Windows windows', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+
+    const mockSetOverlay1 = vi.fn();
+    const mockSetOverlay2 = vi.fn();
+    const mockSetOverlayDestroyed = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValueOnce([
+      { isDestroyed: () => false, setOverlayIcon: mockSetOverlay1 } as any,
+      { isDestroyed: () => false, setOverlayIcon: mockSetOverlay2 } as any,
+      { isDestroyed: () => true, setOverlayIcon: mockSetOverlayDestroyed } as any,
+    ]);
+
+    const handler = handleHandlers.get(IPC.APP.SET_DOCK_BADGE)!;
+    await handler({}, 3);
+
+    const icon = vi.mocked(nativeImage.createFromPath).mock.results[0]?.value;
+    expect(nativeImage.createFromPath).toHaveBeenCalledWith('/tmp/test-app');
+    expect(mockSetOverlay1).toHaveBeenCalledWith(icon, '3');
+    expect(mockSetOverlay2).toHaveBeenCalledWith(icon, '3');
+    expect(mockSetOverlayDestroyed).not.toHaveBeenCalled();
+    expect(app.setBadgeCount).not.toHaveBeenCalled();
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  it('SET_DOCK_BADGE clears Windows overlays when the count is zero', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+
+    const mockSetOverlay = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValueOnce([
+      { isDestroyed: () => false, setOverlayIcon: mockSetOverlay } as any,
+    ]);
+
+    const handler = handleHandlers.get(IPC.APP.SET_DOCK_BADGE)!;
+    await handler({}, 0);
+
+    expect(nativeImage.createFromPath).not.toHaveBeenCalled();
+    expect(mockSetOverlay).toHaveBeenCalledWith(null, '0');
 
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
