@@ -65,6 +65,7 @@ export const IPC = {
     AGENT_WAKING: 'agent:agent-waking',
     AGENT_AWOKE: 'agent:agent-awoke',
     AGENT_WAKE_FAILED: 'agent:agent-wake-failed',
+    AGENT_MATERIALIZATION_FAILED: 'agent:agent-materialization-failed',
     AGENT_SLEEPING: 'agent:agent-sleeping',
     SPAWN_COMPANION: 'agent:spawn-companion',
     GET_COMPANION_STATUS: 'agent:get-companion-status',

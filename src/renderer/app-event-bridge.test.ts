@@ -22,6 +22,7 @@ const mockRemovers = {
   onAgentWaking: vi.fn(),
   onAgentAwoke: vi.fn(),
   onAgentWakeFailed: vi.fn(),
+  onAgentMaterializationFailed: vi.fn(),
   onAgentSleeping: vi.fn(),
   onAgentSpawned: vi.fn(),
   onEditCommand: vi.fn(),
@@ -69,6 +70,7 @@ vi.stubGlobal('window', {
       onAgentWaking: vi.fn(() => mockRemovers.onAgentWaking),
       onAgentAwoke: vi.fn(() => mockRemovers.onAgentAwoke),
       onAgentWakeFailed: vi.fn(() => mockRemovers.onAgentWakeFailed),
+      onAgentMaterializationFailed: vi.fn(() => mockRemovers.onAgentMaterializationFailed),
       onAgentSleeping: vi.fn(() => mockRemovers.onAgentSleeping),
       readTranscript: vi.fn(),
       readQuickSummary: vi.fn(),
@@ -199,12 +201,13 @@ vi.mock('./stores/uiStore', () => ({
   ),
 }));
 
+const mockAddToast = vi.hoisted(() => vi.fn());
 vi.mock('./stores/toastStore', () => ({
   useToastStore: Object.assign(
     vi.fn(),
     {
       getState: vi.fn(() => ({
-        addToast: vi.fn(),
+        addToast: mockAddToast,
         removeToast: vi.fn(),
       })),
     },
@@ -387,6 +390,18 @@ describe('initAppEventBridge', () => {
     awokeCallback('agent-7');
 
     expect(updateAgentStatus).toHaveBeenCalledWith('agent-7', 'running');
+  });
+
+  it('shows a toast when materialization fails but the agent continues waking', () => {
+    expect(window.clubhouse.agent.onAgentMaterializationFailed).toHaveBeenCalled();
+    const onMaterializationFailed = vi.mocked(window.clubhouse.agent.onAgentMaterializationFailed).mock.calls[0][0];
+
+    onMaterializationFailed('agent-1', 'malformed wildcard template');
+
+    expect(mockAddToast).toHaveBeenCalledWith(
+      'Agent agent-1 started without the latest Clubhouse Mode settings: malformed wildcard template',
+      'error',
+    );
   });
 
   it('should register keyboard event listener', () => {
