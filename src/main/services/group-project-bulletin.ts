@@ -128,12 +128,12 @@ class BulletinBoard {
           // timestamp — so no message history is dropped.
           let migrated = false;
           const sourceTopics = new Map<string, string>();
+          const seenIds = new Set<string>();
           for (const [topic, messages] of Object.entries(data.topics || {})) {
             const key = normalizeChannelName(topic);
             if (key !== topic) migrated = true;
             // Rewrite each message's stored topic to the canonical form too.
             const canonical = messages.map(m => (m.topic === key ? m : { ...m, topic: key }));
-            const seenIds = new Set<string>();
             const unique = canonical.filter(message => {
               if (seenIds.has(message.id)) return false;
               seenIds.add(message.id);

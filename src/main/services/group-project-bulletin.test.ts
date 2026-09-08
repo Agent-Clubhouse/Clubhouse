@@ -811,6 +811,35 @@ describe('BulletinBoard', () => {
       await board.flush();
       expect(JSON.parse(store.get(p)!).topics.updates).toHaveLength(2);
     });
+
+    it('deduplicates persisted IDs across topics, keeping the first occurrence', async () => {
+      const p = bulletinPathFor('gp_mig_cross_topic_dedup');
+      store.set(p, JSON.stringify({
+        topics: {
+          first: [
+            { id: 'shared', sender: 'a', topic: 'first', body: 'keep', timestamp: '2026-01-01T00:00:01.000Z' },
+          ],
+          second: [
+            { id: 'shared', sender: 'b', topic: 'second', body: 'remove', timestamp: '2026-01-01T00:00:02.000Z' },
+            { id: 'unique', sender: 'b', topic: 'second', body: 'keep too', timestamp: '2026-01-01T00:00:03.000Z' },
+          ],
+        },
+      }));
+
+      const board = getBulletinBoard('gp_mig_cross_topic_dedup');
+      await board.getDigest();
+
+      expect(await board.getTopicMessages('first', undefined, 100)).toHaveLength(1);
+      expect(await board.getTopicMessages('second', undefined, 100)).toEqual([
+        expect.objectContaining({ id: 'unique', body: 'keep too' }),
+      ]);
+      await board.flush();
+      const written = JSON.parse(store.get(p)!);
+      expect(written.topics.first).toHaveLength(1);
+      expect(written.topics.second).toEqual([
+        expect.objectContaining({ id: 'unique', body: 'keep too' }),
+      ]);
+    });
   });
 });
 
