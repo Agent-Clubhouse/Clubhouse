@@ -1,11 +1,86 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath } from './auto-update-service';
+import { execFileSync } from 'child_process';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyPlatformUpdate, platformUpdateHandlers } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 
+vi.mock('child_process', () => ({
+  execFileSync: vi.fn(),
+  spawn: vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })),
+}));
+
 describe('auto-update-service', () => {
+  describe('platform update dispatch', () => {
+    it('routes apply and apply-on-quit through the same platform implementation', async () => {
+      const readyStatus = {
+        state: 'ready' as const,
+        availableVersion: '1.0.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        downloadPath: '/tmp/Clubhouse.deb',
+        error: null,
+        artifactUrl: null,
+        applyAttempted: false,
+      };
+      const handler = process.platform === 'darwin'
+        ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue(true)
+        : process.platform === 'win32'
+          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue()
+          : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
+
+      await applyUpdate(readyStatus);
+      await applyUpdateOnQuit(readyStatus);
+
+      expect(handler).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        downloadPath: readyStatus.downloadPath,
+        version: readyStatus.availableVersion,
+      }), { relaunch: true });
+      expect(handler).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        downloadPath: readyStatus.downloadPath,
+        version: readyStatus.availableVersion,
+      }), { relaunch: false });
+      handler.mockRestore();
+    });
+
+    it('uses execFileSync argument arrays for Linux package installation', async () => {
+      const downloadPath = path.join(os.tmpdir(), 'Clubhouse update.deb');
+      fs.writeFileSync(downloadPath, '');
+      try {
+        await applyLinuxUpdate(
+          { downloadPath, version: '1.0.0', artifactUrl: null },
+          { relaunch: false },
+        );
+        expect(execFileSync).toHaveBeenCalledWith(
+          'pkexec',
+          ['dpkg', '-i', downloadPath],
+          { timeout: 120_000 },
+        );
+      } finally {
+        fs.unlinkSync(downloadPath);
+      }
+    });
+
+    it('preserves the Darwin fallback when no update is applicable', async () => {
+      const handler = vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue(false);
+
+      await expect(applyPlatformUpdate(
+        { downloadPath: null, version: '1.0.0', artifactUrl: null },
+        { relaunch: true },
+        'darwin',
+      )).resolves.toBe(false);
+
+      expect(handler).toHaveBeenCalledWith(
+        { downloadPath: null, version: '1.0.0', artifactUrl: null },
+        { relaunch: true },
+      );
+      handler.mockRestore();
+    });
+
+  });
+
   describe('isNewerVersion', () => {
     it('returns true when major version is higher', () => {
       expect(isNewerVersion('1.0.0', '0.25.0')).toBe(true);
@@ -544,4 +619,3 @@ describe('auto-update-service', () => {
     });
   });
 });
-

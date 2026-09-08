@@ -18,9 +18,11 @@ import { useAgentStore } from '../stores/agentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { useUIStore } from '../stores/uiStore';
+import { EmptyState } from '../components/EmptyState';
 
 export function createUIAPI(ctx: PluginContext): UIAPI {
   return {
+    EmptyState,
     showNotice(message: string): void {
       // Simple notification using existing notification system
       console.log(`[Plugin Notice] ${message}`);
@@ -167,12 +169,15 @@ export function createWidgetsAPI(): WidgetsAPI {
 
   let AgentAvatarWithRingComponent: React.ComponentType<any>;
 
+  let PopoutPlaceholderComponent: React.ComponentType<any>;
+
   try {
     AgentTerminalComponent = require('../features/agents/AgentTerminal').AgentTerminal;
     SleepingAgentComponent = require('../features/agents/SleepingAgent').SleepingAgent;
     AgentAvatarComponent = require('../features/agents/AgentAvatar').AgentAvatar;
     AgentAvatarWithRingComponent = require('../features/agents/AgentAvatar').AgentAvatarWithRing;
     QuickAgentGhostComponent = require('../features/agents/QuickAgentGhost').QuickAgentGhost;
+    PopoutPlaceholderComponent = require('../features/popout/PoppedOutPlaceholder').PoppedOutPlaceholder;
   } catch {
     // In test environments, return stub components
     const stub = ((): null => null) as unknown as React.ComponentType<any>;
@@ -181,6 +186,7 @@ export function createWidgetsAPI(): WidgetsAPI {
       SleepingAgent: stub,
       AgentAvatar: stub,
       QuickAgentGhost: stub,
+      PopoutPlaceholder: stub,
     };
     return _widgetsCache;
   }
@@ -213,6 +219,7 @@ export function createWidgetsAPI(): WidgetsAPI {
     SleepingAgent: SleepingAgentAdapter,
     AgentAvatar: AgentAvatarAdapter,
     QuickAgentGhost: QuickAgentGhostComponent,
+    PopoutPlaceholder: PopoutPlaceholderComponent,
   };
   return _widgetsCache;
 }

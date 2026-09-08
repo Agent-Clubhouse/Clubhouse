@@ -263,6 +263,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
       structuredOutput: true,
       hooks: true,
       sessionResume: true,
+      supportsPositionalMission: false,
+      supportsAutoResumeAfterUpdate: true,
       permissions: true,
       structuredMode: true,
     };

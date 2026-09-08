@@ -63,11 +63,6 @@ export const annex = {
     ipcRenderer.on(IPC.ANNEX.PEERS_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.ANNEX.PEERS_CHANGED, listener); };
   },
-  onPairingLocked: (callback: (locked: boolean) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, locked: boolean) => callback(locked);
-    ipcRenderer.on(IPC.ANNEX.PAIRING_LOCKED, listener);
-    return () => { ipcRenderer.removeListener(IPC.ANNEX.PAIRING_LOCKED, listener); };
-  },
   onLockStateChanged: (callback: (state: { locked: boolean; remainingMs: number }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) => callback(state);
     ipcRenderer.on(IPC.ANNEX.LOCK_STATE_CHANGED, listener);

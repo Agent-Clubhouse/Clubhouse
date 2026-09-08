@@ -221,10 +221,14 @@ describe('Provider integration tests', () => {
       expect(args).not.toContain('--last');
     });
 
-    it('all providers declare sessionResume capability', () => {
+    it('all providers declare sessionResume and update-support capability flags', () => {
       const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider()];
-      for (const p of providers) {
+      const positional = [true, false, false];
+
+      for (const [index, p] of providers.entries()) {
         expect(p.getCapabilities().sessionResume).toBe(true);
+        expect(p.getCapabilities().supportsAutoResumeAfterUpdate).toBe(true);
+        expect(p.getCapabilities().supportsPositionalMission).toBe(positional[index]);
       }
     });
   });
@@ -724,6 +728,8 @@ describe('Provider integration tests', () => {
         structuredOutput: true,
         hooks: true,
         sessionResume: true,
+        supportsPositionalMission: true,
+        supportsAutoResumeAfterUpdate: true,
         permissions: true,
         structuredMode: true,
         structuredProtocol: 'acp',
@@ -750,7 +756,7 @@ describe('Provider integration tests', () => {
     });
 
     it('all providers return an object with all required keys', () => {
-      const requiredKeys = ['headless', 'structuredOutput', 'hooks', 'sessionResume', 'permissions'];
+      const requiredKeys = ['headless', 'structuredOutput', 'hooks', 'sessionResume', 'supportsPositionalMission', 'supportsAutoResumeAfterUpdate', 'permissions'];
       const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider()];
       for (const p of providers) {
         const caps = p.getCapabilities();

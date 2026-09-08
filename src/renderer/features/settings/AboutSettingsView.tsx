@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { SUPPORTED_API_VERSIONS } from '../../plugins/manifest-validator';
+import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
 
 interface ArchInfo {
   arch: string;
@@ -52,7 +52,7 @@ export function AboutSettingsView() {
 
           <div>
             <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Supported Plugin API Versions</h3>
-            <p className="text-sm text-ctp-text">{SUPPORTED_API_VERSIONS.join(', ')}</p>
+            <p className="text-sm text-ctp-text">{SUPPORTED_PLUGIN_API_VERSIONS.join(', ')}</p>
           </div>
         </div>
       </div>

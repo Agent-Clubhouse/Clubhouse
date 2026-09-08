@@ -10,7 +10,8 @@
  * @see https://github.com/Agent-Clubhouse/Clubhouse/issues/239
  */
 import { describe, it, expect } from 'vitest';
-import { validateManifest, SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
+import { validateManifest, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
+import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
 import { createMockAPI, createMockContext, installMockWindowClubhouse } from './testing';
 import { createPluginAPI } from './plugin-api-factory';
 import type {
@@ -63,7 +64,7 @@ const SCOPED_STORAGE_METHODS: (keyof ScopedStorage)[] = ['read', 'write', 'delet
 const STORAGE_API_KEYS: (keyof StorageAPI)[] = ['project', 'projectLocal', 'global'];
 
 const UI_API_METHODS: (keyof UIAPI)[] = [
-  'showNotice', 'showError', 'showConfirm', 'showInput', 'openExternalUrl',
+  'EmptyState', 'showNotice', 'showError', 'showConfirm', 'showInput', 'openExternalUrl',
 ];
 
 const COMMANDS_API_METHODS: (keyof CommandsAPI)[] = [
@@ -85,7 +86,7 @@ const NAVIGATION_API_METHODS: (keyof NavigationAPI)[] = [
 ];
 
 const WIDGETS_API_COMPONENTS: (keyof WidgetsAPI)[] = [
-  'AgentTerminal', 'SleepingAgent', 'AgentAvatar', 'QuickAgentGhost',
+  'AgentTerminal', 'SleepingAgent', 'AgentAvatar', 'QuickAgentGhost', 'PopoutPlaceholder',
 ];
 
 const TERMINAL_API_METHODS: (keyof TerminalAPI)[] = [
@@ -120,7 +121,7 @@ const WORKSPACE_API_METHODS: (keyof WorkspaceAPI)[] = [
   'listDir', 'readTree', 'watch', 'forPlugin', 'forProject',
 ];
 
-const WINDOW_API_METHODS: (keyof WindowAPI)[] = ['setTitle', 'resetTitle', 'getTitle'];
+const WINDOW_API_METHODS: (keyof WindowAPI)[] = ['setTitle', 'resetTitle', 'getTitle', 'usePopoutState'];
 
 const ANNEX_API_METHODS: (keyof AnnexAPI)[] = [
   // Discovery & connection
@@ -347,33 +348,33 @@ function agentConfigPackManifest(): Record<string, unknown> {
 }
 
 // =============================================================================
-// § 1. SUPPORTED_API_VERSIONS integrity
+// § 1. SUPPORTED_PLUGIN_API_VERSIONS integrity
 // =============================================================================
 
-describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
+describe('§1 SUPPORTED_PLUGIN_API_VERSIONS integrity', () => {
   it('is a frozen array of numbers', () => {
-    expect(Array.isArray(SUPPORTED_API_VERSIONS)).toBe(true);
-    for (const v of SUPPORTED_API_VERSIONS) {
+    expect(Array.isArray(SUPPORTED_PLUGIN_API_VERSIONS)).toBe(true);
+    for (const v of SUPPORTED_PLUGIN_API_VERSIONS) {
       expect(typeof v).toBe('number');
     }
   });
 
   it('contains exactly [0.5, 0.6, 0.7, 0.8, 0.9]', () => {
-    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8, 0.9]);
+    expect(SUPPORTED_PLUGIN_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8, 0.9]);
   });
 
   it('does NOT contain v0.4 (dropped this cycle)', () => {
-    expect(SUPPORTED_API_VERSIONS).not.toContain(0.4);
+    expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.4);
   });
 
   it('does NOT contain v0.3 or lower', () => {
-    expect(SUPPORTED_API_VERSIONS).not.toContain(0.3);
-    expect(SUPPORTED_API_VERSIONS).not.toContain(0.2);
-    expect(SUPPORTED_API_VERSIONS).not.toContain(0.1);
+    expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.3);
+    expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.2);
+    expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.1);
   });
 
   it('does NOT contain v1.0 or higher (not yet released)', () => {
-    expect(SUPPORTED_API_VERSIONS).not.toContain(1.0);
+    expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(1.0);
   });
 });
 
@@ -453,7 +454,7 @@ describe('§2 Per-version manifest validation', () => {
         engine: { api: 0.4 },
         scope: 'project',
       });
-      for (const v of SUPPORTED_API_VERSIONS) {
+      for (const v of SUPPORTED_PLUGIN_API_VERSIONS) {
         expect(result.errors.some(e => e.includes(String(v)))).toBe(true);
       }
     });
@@ -663,7 +664,7 @@ describe('§2 Per-version manifest validation', () => {
   });
 
   describe('every supported version passes with each valid scope', () => {
-    for (const version of SUPPORTED_API_VERSIONS) {
+    for (const version of SUPPORTED_PLUGIN_API_VERSIONS) {
       for (const scope of ['project', 'app', 'dual'] as const) {
         it(`v${version} with scope="${scope}" passes validation`, () => {
           const result = validateManifest({
@@ -736,7 +737,7 @@ describe('§2 Per-version manifest validation', () => {
   });
 
   describe('scope/contributes consistency for all versions', () => {
-    for (const version of SUPPORTED_API_VERSIONS) {
+    for (const version of SUPPORTED_PLUGIN_API_VERSIONS) {
       it(`v${version}: project-scoped plugin cannot have railItem`, () => {
         const result = validateManifest({
           id: 'test',
@@ -1367,6 +1368,12 @@ describe('§3 API surface area contracts — createPluginAPI()', () => {
     expect(() => api.project.readFile('/tmp/example.txt')).toThrow(/api\.project is not available for app-scoped plugins/);
     expect(() => api.git.status()).toThrow(/api\.git is not available for app-scoped plugins/);
     expect(() => api.files.readFile('/tmp/example.txt')).toThrow(/api\.files is not available for app-scoped plugins/);
+  });
+
+  it('api.widgets.PopoutPlaceholder is the promoted host surface, not a stub', () => {
+    const api = createPluginAPI(createMockContext(), undefined, unrestrictedProjectManifest);
+    expect(api.widgets.PopoutPlaceholder).toBeDefined();
+    expect(typeof api.widgets.PopoutPlaceholder).toBe('function');
   });
 });
 

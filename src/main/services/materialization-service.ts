@@ -318,7 +318,7 @@ export async function getAgentWildcards(
     standbyBranch: agent.branch || `${agent.name}/standby`,
     agentPath,
     sourceControlProvider: { override: agent.sourceControlProvider ?? null, resolved: resolvedScp },
-    buildCommand: { override: agent.buildCommand ?? null, resolved: commands.buildCommand || 'npm run build' },
+    buildCommand: { override: agent.buildCommand ?? null, resolved: commands.buildCommand || 'npm run package' },
     testCommand: { override: agent.testCommand ?? null, resolved: commands.testCommand || 'npm test' },
     lintCommand: { override: agent.lintCommand ?? null, resolved: commands.lintCommand || 'npm run lint' },
     mission: { override: missionOverride, projectDefault: missionDefault, resolved: missionOverride ?? missionDefault },

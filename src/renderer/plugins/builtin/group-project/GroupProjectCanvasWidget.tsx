@@ -404,7 +404,7 @@ function ExpandedProjectView({
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
   ctx: GroupProjectContextValue;
 }) {
-  const { project, members, loaded, loadProjects, update, setPolling, fetchDigest, fetchTopicMessages, fetchAllMessages, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
+  const { project, members, loaded, loadProjects, update, setPolling, fetchDigest, fetchTopicMessages, fetchAllMessages, postBulletinMessage, injectMessage, deleteMessage, deleteTopic, setTopicProtection, clearAllMessages } = ctx;
 
   const {
     topicsWidth,
@@ -425,6 +425,9 @@ function ExpandedProjectView({
   const [showRetentionSettings, setShowRetentionSettings] = useState(false);
   const [confirmDeleteTopic, setConfirmDeleteTopic] = useState<string | null>(null);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [bulletinTopic, setBulletinTopic] = useState('');
+  const [bulletinBody, setBulletinBody] = useState('');
+  const [postingBulletin, setPostingBulletin] = useState(false);
 
   // Read state is pulled at call time rather than subscribed to, so marking a
   // channel read doesn't tear down and restart the polling interval.
@@ -633,6 +636,20 @@ function ExpandedProjectView({
     setConfirmClearAll(false);
   }, [groupProjectId, clearAllMessages]);
 
+  const handlePostBulletin = useCallback(async () => {
+    const topic = bulletinTopic.trim();
+    const body = bulletinBody.trim();
+    if (!topic || !body || postingBulletin) return;
+    setPostingBulletin(true);
+    try {
+      await postBulletinMessage(groupProjectId, topic, body);
+      setBulletinTopic('');
+      setBulletinBody('');
+    } finally {
+      setPostingBulletin(false);
+    }
+  }, [bulletinTopic, bulletinBody, postingBulletin, postBulletinMessage, groupProjectId]);
+
   return (
     <div className="flex flex-col h-full text-ctp-text">
       {/* Header */}
@@ -667,6 +684,31 @@ function ExpandedProjectView({
       {showRetentionSettings && (
         <RetentionSettings groupProjectId={groupProjectId} />
       )}
+
+      <div className="flex items-end gap-2 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/50">
+        <input
+          value={bulletinTopic}
+          onChange={(e) => setBulletinTopic(e.target.value)}
+          placeholder="Topic"
+          aria-label="Bulletin topic"
+          className="w-28 px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
+        />
+        <textarea
+          value={bulletinBody}
+          onChange={(e) => setBulletinBody(e.target.value)}
+          placeholder="Post a bulletin message..."
+          aria-label="Bulletin message"
+          rows={2}
+          className="flex-1 px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
+        />
+        <button
+          onClick={() => void handlePostBulletin()}
+          disabled={!bulletinTopic.trim() || !bulletinBody.trim() || postingBulletin}
+          className="px-2 py-1.5 text-xs font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
+        >
+          {postingBulletin ? 'Posting...' : 'Post'}
+        </button>
+      </div>
 
       {/* Inline Description & Instructions Editor */}
       <div className="flex gap-3 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/50">

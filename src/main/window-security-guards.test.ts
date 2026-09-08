@@ -11,13 +11,14 @@ vi.mock('./services/log-service', () => ({
 }));
 
 vi.mock('./ipc/settings-handlers', () => ({
-  securitySettings: { get: () => ({ allowLocalFileWebviews: false }) },
+  securitySettings: { getSettings: vi.fn(() => ({ allowLocalFileWebviews: false })) },
 }));
 
 vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
 }));
 
+import { securitySettings } from './ipc/settings-handlers';
 import { applyWindowSecurityGuards } from './window-security-guards';
 
 type Listener = (...args: unknown[]) => unknown;
@@ -103,6 +104,14 @@ describe('applyWindowSecurityGuards', () => {
       const webPreferences: Record<string, unknown> = {};
       mockWin._trigger('will-attach-webview', event, webPreferences, { src: 'data:text/html,<h1>hi</h1>' });
       expect(event.preventDefault).toHaveBeenCalled();
+    });
+
+    it('allows file: URLs when local file webviews are enabled', () => {
+      const event = { preventDefault: vi.fn() };
+      const webPreferences: Record<string, unknown> = {};
+      vi.mocked(securitySettings.getSettings).mockReturnValue({ allowLocalFileWebviews: true });
+      mockWin._trigger('will-attach-webview', event, webPreferences, { src: 'file:///tmp/test.html' });
+      expect(event.preventDefault).not.toHaveBeenCalled();
     });
 
     it('allows http: URLs', () => {

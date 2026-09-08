@@ -15,10 +15,23 @@
  *
  * @see https://github.com/Agent-Clubhouse/Clubhouse/issues/238
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IPC } from './ipc-channels';
+
+const { invoke, exposeInMainWorld } = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  exposeInMainWorld: vi.fn(),
+}));
+
+vi.mock('electron', () => ({
+  contextBridge: { exposeInMainWorld },
+  ipcRenderer: { invoke, send: vi.fn(), on: vi.fn(), removeListener: vi.fn() },
+  webUtils: { getPathForFile: vi.fn() },
+}));
+
+import { api } from '../preload/index';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -90,7 +103,6 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.APP.UPDATE_STATUS_CHANGED',
   'IPC.ANNEX.STATUS_CHANGED',
   'IPC.ANNEX.AGENT_SPAWNED',
-  'IPC.ANNEX.PAIRING_LOCKED',
   'IPC.ANNEX.PEERS_CHANGED',
   'IPC.ANNEX.LOCK_STATE_CHANGED',
   'IPC.ANNEX_CLIENT.SATELLITES_CHANGED',
@@ -119,7 +131,6 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.WINDOW.REQUEST_HUB_MUTATION',
   'IPC.FILE.WATCH_EVENT',
   'IPC.PLUGIN_MCP.TOOL_CALL',
-  'IPC.APP.RESUME_STATUS_UPDATE',
   'IPC.APP.DEV_SIMULATE_UPDATE_RESTART', // Dev-only: handler registered behind !app.isPackaged guard
   // Protocol activation is pushed main→renderer via webContents.send when a
   // clubhouse:// link is opened while the app is running (see protocol-service.ts).
@@ -136,6 +147,18 @@ const _BIDIRECTIONAL_CHANNELS = new Set([
 ]);
 
 describe('IPC Channel Sync', () => {
+  describe('typed project channel contract', () => {
+    it('preserves selected and canceled responses through the preload wrapper', async () => {
+      invoke.mockResolvedValueOnce('/tmp/project').mockResolvedValueOnce(null);
+
+      await expect(api.project.pickDirectory()).resolves.toBe('/tmp/project');
+      await expect(api.project.pickDirectory()).resolves.toBeNull();
+
+      expect(invoke).toHaveBeenNthCalledWith(1, IPC.PROJECT.PICK_DIR);
+      expect(invoke).toHaveBeenNthCalledWith(2, IPC.PROJECT.PICK_DIR);
+    });
+  });
+
   const channelMap = buildChannelMap();
   const allHandlersSource = readAllHandlerFiles();
   const preloadSource = readAllPreloadFiles();

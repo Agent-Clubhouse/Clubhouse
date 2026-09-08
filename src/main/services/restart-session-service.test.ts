@@ -38,10 +38,12 @@ vi.mock('./pty-manager', () => ({
 vi.mock('../orchestrators', () => ({
   getProvider: vi.fn().mockReturnValue({
     id: 'claude-code',
-    capabilities: { sessionResume: true },
+    capabilities: { sessionResume: true, supportsAutoResumeAfterUpdate: true },
     extractSessionId: vi.fn().mockReturnValue(null),
   }),
   isSessionCapable: vi.fn().mockReturnValue(true),
+  supportsAutoResumeAfterUpdate: vi.fn((provider: any) => provider.capabilities?.supportsAutoResumeAfterUpdate ?? provider.capabilities?.sessionResume ?? false),
+  supportsPositionalMission: vi.fn((provider: any) => provider.capabilities?.supportsPositionalMission ?? false),
 }));
 
 vi.mock('./agent-config', () => ({
@@ -413,7 +415,10 @@ describe('restart-session-service', () => {
 
     it('reports auto-resume for any provider that can resume sessions', () => {
       vi.mocked(isSessionCapable).mockReturnValue(true);
-      vi.mocked(getProvider).mockReturnValue({ id: 'codex-cli' } as never);
+      vi.mocked(getProvider).mockReturnValue({
+        id: 'codex-cli',
+        capabilities: { sessionResume: true, supportsAutoResumeAfterUpdate: true },
+      } as never);
       agentRegistry.register('agent-codex', {
         runtime: 'pty', projectPath: '/proj', orchestrator: 'codex-cli',
       });

@@ -118,6 +118,8 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       structuredOutput: true,
       hooks: true,
       sessionResume: true,
+      supportsPositionalMission: true,
+      supportsAutoResumeAfterUpdate: true,
       permissions: true,
       structuredMode: true,
       structuredProtocol: 'acp',

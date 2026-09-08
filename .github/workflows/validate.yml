@@ -66,6 +66,9 @@ jobs:
           cache: npm
       - name: Exclude workspace from Windows Defender
         if: runner.os == 'Windows'
+        # Best-effort perf optimization: the runner's Defender service
+        # intermittently rejects this with 0x800106ba. Don't fail the job.
+        continue-on-error: true
         run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
         shell: pwsh
       - run: npm ci
@@ -109,6 +112,9 @@ jobs:
           cache: npm
       - name: Exclude workspace from Windows Defender
         if: runner.os == 'Windows'
+        # Best-effort perf optimization: the runner's Defender service
+        # intermittently rejects this with 0x800106ba. Don't fail the job.
+        continue-on-error: true
         run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
         shell: pwsh
       - run: npm ci
@@ -167,8 +173,8 @@ jobs:
       - run: npm ci
       # Frozen v0.4 snapshot compile check
       - run: npx tsc --noEmit
-      # API version contract tests only
-      - run: npx vitest run --project shared -- plugin-api-versions
+      # This is the plugin-API compatibility gate, independent of the broader test suite.
+      - run: npx vitest run --project renderer plugin-api-version-contracts
       # Annotate PR if plugin-types.ts was modified
       - name: Check plugin-types changes
         if: github.event_name == 'pull_request'

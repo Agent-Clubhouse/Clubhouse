@@ -4,7 +4,7 @@ import * as path from 'path';
 import { appLog } from './log-service';
 import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
-import { getProvider, isSessionCapable } from '../orchestrators';
+import { getProvider, isSessionCapable, supportsAutoResumeAfterUpdate } from '../orchestrators';
 import { pathExists } from './fs-utils';
 import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo, FreeAgentPermissionMode, ResumeStrategy } from '../../shared/types';
 import * as freeAgentSettings from './free-agent-settings';
@@ -181,7 +181,8 @@ async function silentUnlink(filePath: string): Promise<void> {
  */
 function resumeStrategyFor(orchestrator: string): ResumeStrategy {
   const provider = getProvider(orchestrator);
-  return provider && isSessionCapable(provider) ? 'auto' : 'manual';
+  if (!provider) return 'manual';
+  return supportsAutoResumeAfterUpdate(provider) ? 'auto' : 'manual';
 }
 
 export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
