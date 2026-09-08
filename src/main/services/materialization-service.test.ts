@@ -496,7 +496,7 @@ describe('materialization-service', () => {
         return [];
       });
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const filePath = String(p);
+        const filePath = String(p).replace(/\\/g, '/');
         if (filePath.includes('settings.json')) {
           return JSON.stringify({
             defaults: {},
