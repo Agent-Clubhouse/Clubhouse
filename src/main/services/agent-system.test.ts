@@ -1770,6 +1770,11 @@ describe('agent-system', () => {
 
       expect(mockMaterializeAgent).toHaveBeenCalled();
       expect(mockPtySpawn).toHaveBeenCalled();
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+        'agent:agent-materialization-failed',
+        'agent-1',
+        'materialization failed',
+      );
     });
   });
 

@@ -349,6 +349,12 @@ function initAgentWakingListener(): () => void {
   const removeWakeFailedListener = window.clubhouse.agent.onAgentWakeFailed((agentId: string, errorMessage: string) => {
     useAgentStore.getState().updateAgentStatus(agentId, 'error', undefined, errorMessage);
   });
+  const removeMaterializationFailedListener = window.clubhouse.agent.onAgentMaterializationFailed((agentId: string, errorMessage: string) => {
+    useToastStore.getState().addToast(
+      `Agent ${agentId} started without the latest Clubhouse Mode settings: ${errorMessage}`,
+      'error',
+    );
+  });
   const removeSleepingListener = window.clubhouse.agent.onAgentSleeping((agentId: string) => {
     useAgentStore.getState().updateAgentStatus(agentId, 'sleeping');
   });
@@ -356,6 +362,7 @@ function initAgentWakingListener(): () => void {
     removeWakingListener();
     removeAwokeListener();
     removeWakeFailedListener();
+    removeMaterializationFailedListener();
     removeSleepingListener();
   };
 }

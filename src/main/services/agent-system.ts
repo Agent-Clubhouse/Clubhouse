@@ -148,9 +148,11 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
           await materializeAgent({ projectPath: params.projectPath, agent: config, provider });
         }
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
         appLog('core:agent', 'warn', 'Clubhouse mode materialization failed, continuing spawn', {
-          meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+          meta: { agentId: params.agentId, error: errorMessage },
         });
+        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, errorMessage);
       }
     }
 

@@ -149,6 +149,13 @@ export const agent = {
     return () => { ipcRenderer.removeListener(IPC.AGENT.AGENT_WAKE_FAILED, listener); };
   },
 
+  onAgentMaterializationFailed: (callback: (agentId: string, errorMessage: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, agentId: string, errorMessage: string) =>
+      callback(agentId, errorMessage);
+    ipcRenderer.on(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, listener); };
+  },
+
   onAgentSleeping: (callback: (agentId: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, agentId: string) =>
       callback(agentId);
