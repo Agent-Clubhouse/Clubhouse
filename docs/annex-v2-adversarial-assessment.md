@@ -41,11 +41,11 @@ Annex V2 enables desktop-to-desktop remote control over LAN. The primary threat 
 
 ## 3. Known Weaknesses
 
-### 3a. Bearer token never expires
-Tokens issued during pairing persist until the server restarts or PIN is regenerated. A leaked token grants indefinite access.
+### 3a. Bearer-token expiry is fixed
+`SEC-11` already enforces a 24-hour token lifetime in `src/main/services/annex-server.ts:91`, validates it at `:335-338`, and evicts expired entries during the cleanup loop at `:2788-2795`. Sessions no longer persist indefinitely after the TTL expires.
 
-### 3b. No snapshot versioning/sequencing
-Snapshots have no sequence number or version. A stale snapshot can overwrite newer state if network delivers them out of order.
+### 3b. Snapshot versioning/sequencing is fixed
+The client already tracks snapshot sequencing and rejects stale snapshots when they arrive out of order (`src/main/services/annex-client.ts:458-463`).
 
 ### 3c. `rejectUnauthorized: false` for TLS
 The client disables certificate validation and relies on manual peer fingerprint checking. This is fragile and could be bypassed if the fingerprint check has a bug.
@@ -56,30 +56,28 @@ The brute-force lockout counter (`checkBruteForce`) is stored in memory. A serve
 ### 3e. Quick agent state is in-memory only
 `trackedQuickAgents` is lost on server crash. Running quick agents become invisible to remote controllers.
 
-### 3f. PTY input size limit is silent
-Inputs exceeding `MAX_PTY_INPUT_SIZE` (64KB) are silently dropped. No error is reported to the sender.
+### 3f. PTY input size limit is fixed
+The PTY HTTP and WebSocket handlers explicitly reject oversized input rather than silently dropping it (`src/main/services/annex-server.ts:1706-1709`, `:2260-2262`; issue #936). This matches the documented error path for inputs larger than 64KB.
 
 ### 3g. No PTY flow control / backpressure
 PTY data is broadcast to all WS clients without backpressure. A slow client can miss data or cause memory buildup.
 
 ## 4. Deferred to Issues
 
-| Issue | Title | Label |
-|-------|-------|-------|
-| [#933](https://github.com/Agent-Clubhouse/Clubhouse/issues/933) | Quick agent persistence to disk | enhancement |
-| [#934](https://github.com/Agent-Clubhouse/Clubhouse/issues/934) | Snapshot versioning/sequencing | enhancement |
-| [#935](https://github.com/Agent-Clubhouse/Clubhouse/issues/935) | Bearer token expiration/rotation | enhancement |
-| [#936](https://github.com/Agent-Clubhouse/Clubhouse/issues/936) | PTY write size error reporting | bug |
-| [#937](https://github.com/Agent-Clubhouse/Clubhouse/issues/937) | PTY flow control / backpressure | enhancement |
-| [#938](https://github.com/Agent-Clubhouse/Clubhouse/issues/938) | TLS validation model overhaul | enhancement |
-| [#939](https://github.com/Agent-Clubhouse/Clubhouse/issues/939) | Plugin version negotiation enforcement | enhancement |
+| Issue | Status | Title | Label |
+|-------|--------|-------|-------|
+| [#933](https://github.com/Agent-Clubhouse/Clubhouse/issues/933) | Open | Quick agent persistence to disk | enhancement |
+| [#934](https://github.com/Agent-Clubhouse/Clubhouse/issues/934) | Fixed in code; no longer an open weakness | Snapshot versioning/sequencing | enhancement |
+| [#935](https://github.com/Agent-Clubhouse/Clubhouse/issues/935) | Fixed in code; no longer an open weakness | Bearer-token expiration/rotation | enhancement |
+| [#936](https://github.com/Agent-Clubhouse/Clubhouse/issues/936) | Closed | PTY write size error reporting | bug |
+| [#937](https://github.com/Agent-Clubhouse/Clubhouse/issues/937) | Open | PTY flow control / backpressure | enhancement |
+| [#938](https://github.com/Agent-Clubhouse/Clubhouse/issues/938) | Open | TLS validation model overhaul | enhancement |
+| [#939](https://github.com/Agent-Clubhouse/Clubhouse/issues/939) | Open | Plugin version negotiation enforcement | enhancement |
 
 ## 5. Recommendations (Prioritized)
 
-1. **Bearer token rotation** — Implement token expiration (e.g., 24h) with refresh mechanism. Highest impact on token theft vector.
-2. **Quick agent persistence** — Write `trackedQuickAgents` to disk so server crash recovery doesn't lose agent visibility.
-3. **Snapshot versioning** — Add monotonically increasing `seq` to snapshots. Clients discard snapshots with seq <= their current.
-4. **TLS validation** — Replace `rejectUnauthorized: false` with a custom CA that signs peer certificates during pairing.
-5. **PTY backpressure** — Implement WebSocket-level flow control. Pause PTY reads when WS send buffer exceeds threshold.
-6. **Persistent brute-force state** — Write lockout state to disk so restarts don't reset the counter.
-7. **PTY input error reporting** — Return `{ type: 'error', payload: { message: 'input_too_large' } }` when input exceeds limit.
+1. **Quick agent persistence** — Write `trackedQuickAgents` to disk so server crash recovery doesn't lose agent visibility.
+2. **TLS validation** — Replace `rejectUnauthorized: false` with a custom CA that signs peer certificates during pairing.
+3. **PTY backpressure** — Implement WebSocket-level flow control. Pause PTY reads when WS send buffer exceeds threshold.
+4. **Persistent brute-force state** — Write lockout state to disk so restarts don't reset the counter.
+5. **Audit remaining weaknesses** — Re-check the assessment whenever code changes near Annex security boundaries so old fixes are not re-listed as open issues.
