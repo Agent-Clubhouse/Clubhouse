@@ -451,12 +451,15 @@ describe('GroupProjectCanvasWidget — annex PATCH route', () => {
   const serverSource = readFileSync(join(__dirname, '../../../../main/services/annex-server.ts'), 'utf-8');
 
   it('annex server has PATCH route for group project updates', () => {
-    expect(serverSource).toContain("method === 'PATCH' && gpPatchMatch");
+    expect(serverSource).toContain(
+      "{ method: 'PATCH', pattern: /^\\/api\\/v1\\/group-projects\\/([^/]+?)$/, handler: handleGroupProjectPatchRoute }",
+    );
   });
 
   it('PATCH route requires mTLS', () => {
-    // The PATCH handler should call requireMtls()
-    expect(serverSource).toMatch(/PATCH.*gpPatchMatch[\s\S]*?requireMtls\(\)/);
+    expect(serverSource).toMatch(
+      /async function handleGroupProjectPatchRoute[\s\S]*?if \(ctx\.requireMtls\(\)\) return;/,
+    );
   });
 
   it('PATCH route supports name, description, instructions, and metadata fields', () => {
