@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import path from 'node:path';
+import { ESLint } from 'eslint';
 import { usePluginStore } from './plugin-store';
 import type { PluginManifest, PluginModule } from '../../shared/plugin-types';
 
@@ -1092,6 +1094,25 @@ describe('plugin-loader', () => {
   // ── Community plugin ESM loading (P0a) ───────────────────────────────
 
   describe('community plugin loading', () => {
+    it('rejects disallowed host imports in builtin plugins at lint time', async () => {
+      const eslint = new ESLint({
+        overrideConfigFile: path.resolve(process.cwd(), 'eslint.config.mjs'),
+      });
+      const [result] = await eslint.lintText(
+        "import { useProjectStore } from '../../../stores/project-store';",
+        {
+          filePath: path.resolve(
+            process.cwd(),
+            'src/renderer/plugins/builtin/example/main.ts',
+          ),
+        },
+      );
+
+      expect(result.errorCount).toBeGreaterThan(0);
+      expect(result.messages.map((message) => message.message)).toContain(
+        'Builtin plugins may not import host internals outside the documented allowlist.',
+      );
+    });
     const mockDynamicImport = dynamicImportModule as ReturnType<typeof vi.fn>;
 
     it('builds a clubhouse-plugin: URL from a unix path for dynamic import', async () => {
@@ -1177,7 +1198,7 @@ describe('plugin-loader', () => {
 
       const entry = usePluginStore.getState().plugins['comm-fail'];
       expect(entry.status).toBe('errored');
-      expect(entry.error).toContain('Failed to load module');
+      expect(entry.error).toContain('module-graph resolution');
       expect(entry.error).toContain('Module not found');
     });
 

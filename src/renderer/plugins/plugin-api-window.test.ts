@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { renderHook, waitFor } from '@testing-library/react';
 import { createWindowAPI } from './plugin-api-window';
 import { usePluginStore } from './plugin-store';
 import { createMockContext } from './testing';
@@ -99,5 +100,40 @@ describe('createWindowAPI', () => {
     api1.resetTitle();
     expect(api1.getTitle()).toBe('Custom Title');
     expect(api2.getTitle()).toBe('Title B');
+  });
+
+  describe('usePopoutState', () => {
+    const originalClubhouse = (window as any).clubhouse;
+
+    afterEach(() => {
+      (window as any).clubhouse = originalClubhouse;
+    });
+
+    it('promotes the real usePopouts hook, reflecting host popout state reactively', async () => {
+      const listeners: Array<() => void> = [];
+      (window as any).clubhouse = {
+        window: {
+          listPopouts: async () => [{ windowId: 3, params: { type: 'canvas', canvasId: 'c1' } }],
+          onPopoutsChanged: (cb: () => void) => {
+            listeners.push(cb);
+            return () => {};
+          },
+        },
+      };
+
+      const ctx = createMockContext({ pluginId: 'test-plugin' });
+      const api = createWindowAPI(ctx, manifest);
+
+      const { result } = renderHook(() => api.usePopoutState());
+      await waitFor(() => expect(result.current.popouts).toHaveLength(1));
+
+      expect(result.current.findCanvasPopout('c1')).toEqual({
+        windowId: 3,
+        params: { type: 'canvas', canvasId: 'c1' },
+      });
+      expect(result.current.findCanvasPopout('nope')).toBeUndefined();
+      expect(result.current.findAgentPopout('c1')).toBeUndefined();
+      expect(result.current.findHubPopout('c1')).toBeUndefined();
+    });
   });
 });

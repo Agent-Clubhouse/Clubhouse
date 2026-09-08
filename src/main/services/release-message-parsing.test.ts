@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 /**
@@ -55,7 +58,85 @@ function extractReleaseNotes(prBody: string): string {
   return lines.join('\n');
 }
 
+function extractRunScripts(workflow: string): string[] {
+  const lines = workflow.split('\n');
+  const scripts: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const runMatch = lines[index].match(/^(\s*)run: \|$/);
+    if (!runMatch) {
+      continue;
+    }
+
+    const runIndent = runMatch[1].length;
+    const scriptLines: string[] = [];
+    for (index += 1; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (line.trim() !== '' && line.search(/\S/) <= runIndent) {
+        index -= 1;
+        break;
+      }
+      scriptLines.push(line.slice(runIndent + 2));
+    }
+    scripts.push(scriptLines.join('\n'));
+  }
+
+  return scripts;
+}
+
 describe('release message parsing (workflow shell pipeline)', () => {
+  it('passes release text through environment bindings instead of run expressions', () => {
+    const workflow = readFileSync(
+      resolve(__dirname, '../../../.github/workflows/release.yml'),
+      'utf8',
+    );
+    const publishJob = workflow.slice(workflow.indexOf('\n  publish:'));
+    const runScripts = extractRunScripts(workflow).join('\n');
+
+    expect(runScripts).not.toMatch(
+      /\$\{\{\s*needs\.verify-tag\.outputs\.(release_message|release_notes)\s*\}\}/,
+    );
+    expect(publishJob).toContain(
+      'RELEASE_MESSAGE: ${{ needs.verify-tag.outputs.release_message }}',
+    );
+    expect(publishJob).toContain(
+      'RELEASE_NOTES: ${{ needs.verify-tag.outputs.release_notes }}',
+    );
+    expect(publishJob).toContain('MESSAGE="$RELEASE_MESSAGE"');
+    expect(publishJob).toContain('NOTES="$RELEASE_NOTES"');
+    expect(publishJob).toContain('RELEASE_TITLE="v${VERSION} — ${RELEASE_MESSAGE}"');
+    expect(publishJob).toContain('RELEASE_BODY="$RELEASE_NOTES"');
+  });
+
+  it('passes shell-special release text literally through title and body construction', () => {
+    const releaseText = [
+      'A "quoted" `release` with $(printf hacked)',
+      'MESSAGE_EOF',
+      'and a final line',
+    ].join('\n');
+    const shellScript = [
+      'set -eu',
+      'MESSAGE="$RELEASE_MESSAGE"',
+      'NOTES="$RELEASE_NOTES"',
+      'RELEASE_TITLE="v0.41.0 — ${RELEASE_MESSAGE}"',
+      'RELEASE_BODY="$RELEASE_NOTES"',
+      'printf "%s\\0%s\\0%s\\0" "$RELEASE_TITLE" "$RELEASE_BODY" "$MESSAGE"',
+    ].join('\n');
+    const output = execFileSync('bash', ['-c', shellScript], {
+      env: {
+        ...process.env,
+        RELEASE_MESSAGE: releaseText,
+        RELEASE_NOTES: releaseText,
+      },
+      encoding: 'utf8',
+    });
+    const [title, body, message] = output.split('\0');
+
+    expect(title).toBe(`v0.41.0 — ${releaseText}`);
+    expect(body).toBe(releaseText);
+    expect(message).toBe(releaseText);
+  });
+
   describe('extractReleaseMessage', () => {
     it('extracts title from "Release: ..." first line', () => {
       const body = 'Release: Plugin Improvements & More\n\n# New Features\n- Added widget';

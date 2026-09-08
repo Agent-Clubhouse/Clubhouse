@@ -596,6 +596,8 @@ export interface ApprovalDialogOptions {
 }
 
 export interface UIAPI {
+  /** Render the host's consistent empty-state presentation in plugin panels. */
+  EmptyState: React.ComponentType<EmptyStateProps>;
   showNotice(message: string): void;
   showError(message: string): void;
   showConfirm(message: string): Promise<boolean>;
@@ -607,6 +609,14 @@ export interface UIAPI {
    */
   showApprovalDialog(options: ApprovalDialogOptions): Promise<string | null>;
   openExternalUrl(url: string): Promise<void>;
+}
+
+export interface EmptyStateProps {
+  icon?: React.ReactNode;
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+  compact?: boolean;
 }
 
 export interface CommandsAPI {
@@ -717,6 +727,15 @@ export interface WidgetsAPI {
     onDismiss: () => void;
     onDelete?: () => void;
   }>;
+  /**
+   * Placeholder shown in place of a view that is currently popped out to a
+   * separate window (v0.9+). Pair with `window.usePopoutState()`.
+   */
+  PopoutPlaceholder: React.ComponentType<{
+    type: 'agent' | 'hub' | 'canvas';
+    name?: string;
+    windowId: number;
+  }>;
 }
 
 // ── Canvas widget metadata ───────────────────────────────────────────
@@ -785,6 +804,26 @@ export interface CanvasWidgetComponentProps {
   size: { width: number; height: number };
 }
 
+/** A view currently popped out to a separate OS window. */
+export interface PopoutEntry {
+  windowId: number;
+  params: {
+    type: 'agent' | 'hub' | 'canvas';
+    agentId?: string;
+    hubId?: string;
+    canvasId?: string;
+    projectId?: string;
+  };
+}
+
+/** Reactive snapshot of currently popped-out views, returned by `window.usePopoutState()`. */
+export interface PopoutState {
+  popouts: PopoutEntry[];
+  findAgentPopout(agentId: string): PopoutEntry | undefined;
+  findHubPopout(hubId: string): PopoutEntry | undefined;
+  findCanvasPopout(canvasId: string): PopoutEntry | undefined;
+}
+
 // ── Window API (v0.8+) ────────────────────────────────────────────────
 export interface WindowAPI {
   /** Set a custom title for the plugin's tab/window. Overrides the manifest default. */
@@ -793,6 +832,13 @@ export interface WindowAPI {
   resetTitle(): void;
   /** Get the current effective title. */
   getTitle(): string;
+  /**
+   * React hook: reactively tracks which views are currently popped out to separate
+   * windows. Call from a plugin panel component to detect when its own view (e.g. a
+   * specific agent, hub, or canvas) has been popped out, so it can render
+   * `widgets.PopoutPlaceholder` instead of duplicating the content. @since 0.9
+   */
+  usePopoutState(): PopoutState;
 }
 
 export interface CanvasAPI {

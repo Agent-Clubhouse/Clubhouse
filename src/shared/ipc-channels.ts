@@ -239,7 +239,6 @@ export const IPC = {
     // Session resume on update
     GET_PENDING_RESUMES: 'app:get-pending-resumes',
     RESUME_MANUAL_AGENT: 'app:resume-manual-agent',
-    RESUME_STATUS_UPDATE: 'app:resume-status-update',
     GET_LIVE_AGENTS_FOR_UPDATE: 'app:get-live-agents-for-update',
     RESOLVE_WORKING_AGENT: 'app:resolve-working-agent',
     CONFIRM_UPDATE_RESTART: 'app:confirm-update-restart',
@@ -350,7 +349,6 @@ export const IPC = {
     REMOVE_PEER: 'annex:remove-peer',
     REMOVE_ALL_PEERS: 'annex:remove-all-peers',
     UNLOCK_PAIRING: 'annex:unlock-pairing',
-    PAIRING_LOCKED: 'annex:pairing-locked',
     PEERS_CHANGED: 'annex:peers-changed',
     LOCK_STATE_CHANGED: 'annex:lock-state-changed',
     NOTIFY_PAUSE: 'annex:notify-pause',
