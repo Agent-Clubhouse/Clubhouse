@@ -24,6 +24,7 @@ vi.mock('./log-service', () => ({
 }));
 
 import { getOrCreateIdentity, getIdentity, getPublicIdentity, computeFingerprint, resetForTests } from './annex-identity';
+import { appLog } from './log-service';
 import { app } from 'electron';
 
 describe('annex-identity', () => {
@@ -32,6 +33,7 @@ describe('annex-identity', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-identity-test-'));
     (app as any).__setUserDataPath(tmpDir);
+    vi.mocked(appLog).mockClear();
     resetForTests();
   });
 
@@ -79,6 +81,48 @@ describe('annex-identity', () => {
       if (process.platform !== 'win32') {
         expect(stats.mode & 0o777).toBe(0o600);
       }
+    });
+
+    it('should log corruption and preserve a .bak file when the identity is invalid', () => {
+      const filePath = path.join(tmpDir, 'annex-identity.json');
+      fs.writeFileSync(filePath, '{not valid json', 'utf-8');
+
+      const identity = getOrCreateIdentity();
+
+      expect(identity.publicKey).toBeTruthy();
+      expect(fs.existsSync(`${filePath}.bak`)).toBe(true);
+      expect(fs.readFileSync(`${filePath}.bak`, 'utf-8')).toBe('{not valid json');
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex',
+        'error',
+        expect.stringContaining('corrupted or unreadable'),
+        expect.objectContaining({
+          meta: expect.objectContaining({ filePath }),
+        }),
+      );
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex',
+        'error',
+        'Your device identity was reset - re-pair your devices',
+      );
+    });
+
+    it('should not signal a reset when the identity file is missing', () => {
+      const filePath = path.join(tmpDir, 'annex-identity.json');
+      getOrCreateIdentity();
+      fs.rmSync(filePath, { force: true });
+      vi.mocked(appLog).mockClear();
+      resetForTests();
+
+      const identity = getOrCreateIdentity();
+
+      expect(identity.publicKey).toBeTruthy();
+      expect(vi.mocked(appLog).mock.calls.some(([ns, level, msg]) =>
+        ns === 'core:annex'
+        && level === 'error'
+        && typeof msg === 'string'
+        && msg.includes('re-pair your devices')
+      )).toBe(false);
     });
   });
 
