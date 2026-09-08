@@ -666,6 +666,8 @@ export interface AnnexPeer {
 
 // ── Annex client (controller) types ───────────────────────────────────
 
+export const ANNEX_PROTOCOL_VERSION = 2;
+
 export type SatelliteConnectionState = 'disconnected' | 'discovering' | 'connecting' | 'connected';
 
 export interface SatelliteConnection {

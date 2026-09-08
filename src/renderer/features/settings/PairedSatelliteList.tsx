@@ -8,17 +8,19 @@ interface Props {
 }
 
 
-function StatusDot({ state }: { state: SatelliteConnection['state'] }) {
+function StatusDot({ state, lastError }: { state: SatelliteConnection['state']; lastError?: string | null }) {
+  const isIncompatible = lastError?.toLowerCase().includes('incompatible');
   const colors: Record<string, string> = {
     connected: 'bg-ctp-success',
     connecting: 'bg-ctp-warning animate-pulse',
     discovering: 'bg-ctp-info animate-pulse',
     disconnected: 'bg-surface-2',
   };
-  return <span className={`w-2 h-2 rounded-full ${colors[state] || 'bg-surface-2'}`} />;
+  return <span className={`w-2 h-2 rounded-full ${isIncompatible ? 'bg-ctp-error' : colors[state] || 'bg-surface-2'}`} />;
 }
 
-function stateLabel(state: SatelliteConnection['state']): string {
+function stateLabel(state: SatelliteConnection['state'], lastError?: string | null): string {
+  if (lastError?.toLowerCase().includes('incompatible')) return 'Incompatible';
   switch (state) {
     case 'connected': return 'Connected';
     case 'connecting': return 'Connecting...';
@@ -57,8 +59,8 @@ export function PairedSatelliteList({ satellites }: Props) {
             <div className="min-w-0">
               <div className="text-sm text-ctp-text font-medium truncate">{sat.alias}</div>
               <div className="flex items-center gap-1.5 text-xs text-ctp-subtext0">
-                <StatusDot state={sat.state} />
-                <span>{stateLabel(sat.state)}</span>
+                <StatusDot state={sat.state} lastError={sat.lastError} />
+                <span>{stateLabel(sat.state, sat.lastError)}</span>
                 {sat.lastError && sat.state === 'disconnected' && (
                   <span className="text-ctp-error ml-1 truncate">({sat.lastError})</span>
                 )}
