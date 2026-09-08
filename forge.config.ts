@@ -34,6 +34,26 @@ function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string)
   }
 }
 
+const windowsSignConfig =
+  process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID && process.env.AZURE_SUBSCRIPTION_ID
+    ? {
+        windowsSign: {
+          timestampServer: 'http://timestamp.acs.microsoft.com',
+          hashes: ['sha256'],
+          signWithParams: [
+            '/fd',
+            'SHA256',
+            '/td',
+            'SHA256',
+            '/tr',
+            'http://timestamp.acs.microsoft.com',
+            '/a',
+            '/sm',
+          ],
+        },
+      }
+    : {};
+
 const config: ForgeConfig = {
   packagerConfig: {
     name: 'Clubhouse',
@@ -103,6 +123,7 @@ const config: ForgeConfig = {
       ...(fs.existsSync(path.resolve(__dirname, 'assets', 'icon.ico'))
         ? { setupIcon: path.resolve(__dirname, 'assets', 'icon.ico') }
         : {}),
+      ...windowsSignConfig,
     }),
     new MakerDeb({
       options: {
