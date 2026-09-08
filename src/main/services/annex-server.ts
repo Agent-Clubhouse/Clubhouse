@@ -50,6 +50,7 @@ import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
 import type { StructuredEvent } from '../../shared/structured-events';
+import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
 import type {
   AnnexStatus,
   AgentHookEvent,
@@ -618,7 +619,7 @@ async function buildSnapshot(): Promise<object> {
   }
 
   return {
-    protocolVersion: 2,
+    protocolVersion: ANNEX_PROTOCOL_VERSION,
     projects,
     agents,
     quickAgents,

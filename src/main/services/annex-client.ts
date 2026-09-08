@@ -21,6 +21,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
+import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -551,7 +552,12 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
   switch (type) {
     case 'snapshot': {
       const incoming = msg.payload as SatelliteSnapshot;
+      if (incoming.protocolVersion !== ANNEX_PROTOCOL_VERSION) {
+        setState(sat, 'disconnected', 'Incompatible Annex version');
+        return;
+      }
       if (!sat.snapshot || incoming.lastSeq >= sat.snapshot.lastSeq) {
+        sat.lastError = null;
         sat.snapshot = incoming;
         broadcastSatellitesChanged();
         broadcastSatelliteEvent(sat.id, 'snapshot', msg.payload);

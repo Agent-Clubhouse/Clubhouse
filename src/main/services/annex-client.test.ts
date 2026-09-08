@@ -622,6 +622,78 @@ describe('annex-client', () => {
     });
   });
 
+  // ---- protocol version rejection ----
+
+  describe('snapshot protocol version validation', () => {
+    it('rejects mismatched protocolVersion and keeps the last accepted snapshot intact', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+      const FINGERPRINT = 'PROT:V1:MISMATCH';
+      let messageHandler: ((data: any) => void) | null = null;
+
+      mockHttpGetIdentity({
+        fingerprint: FINGERPRINT,
+        alias: 'Protocol Mismatch',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'protocol-mismatch-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: FINGERPRINT,
+        alias: 'Protocol Mismatch',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'protocol-mismatch-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.socket = makeMockSocket(FINGERPRINT);
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          if (event === 'message') messageHandler = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const accepted = {
+        projects: [],
+        agents: {},
+        quickAgents: {},
+        theme: null,
+        orchestrators: null,
+        pendingPermissions: [],
+        lastSeq: 7,
+        protocolVersion: 2,
+      };
+      messageHandler!(JSON.stringify({ type: 'snapshot', payload: accepted }));
+
+      const mismatched = {
+        ...accepted,
+        lastSeq: 8,
+        protocolVersion: 99,
+      };
+      messageHandler!(JSON.stringify({ type: 'snapshot', payload: mismatched }));
+
+      const sat = annexClient.getSatellites().find((s) => s.id === FINGERPRINT);
+      expect(sat?.snapshot?.lastSeq).toBe(7);
+      expect(sat?.state).toBe('disconnected');
+      expect(sat?.lastError).toBe('Incompatible Annex version');
+    });
+  });
+
   // ---- mTLS reconnection (no bearer token required) ----
 
   describe('mTLS reconnection', () => {
@@ -2092,7 +2164,7 @@ describe('annex-client', () => {
     it('applies snapshot with higher sequence number', async () => {
       const { messageCb } = await connectSatelliteAN005();
 
-      const snapshot1 = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 5 };
+      const snapshot1 = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 5, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot1 }));
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(5);
@@ -2106,7 +2178,7 @@ describe('annex-client', () => {
     it('discards snapshot with lower sequence number (stale on reconnect)', async () => {
       const { messageCb } = await connectSatelliteAN005();
 
-      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 20 };
+      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 20, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_new }));
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(20);
@@ -2124,7 +2196,7 @@ describe('annex-client', () => {
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot).toBeNull();
 
-      const snapshot = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1 };
+      const snapshot = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot }));
 
       expect(annexClient.getSatellites().find((s) => s.id === FINGERPRINT)?.snapshot?.lastSeq).toBe(1);
@@ -2135,7 +2207,7 @@ describe('annex-client', () => {
       const { broadcastToAllWindows: bcast } = await import('../util/ipc-broadcast');
       vi.mocked(bcast).mockClear();
 
-      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 15 };
+      const snapshot_new = { projects: [], agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 15, protocolVersion: 2 };
       messageCb()!(JSON.stringify({ type: 'snapshot', payload: snapshot_new }));
       const broadcastCountAfterNew = vi.mocked(bcast).mock.calls.length;
 
