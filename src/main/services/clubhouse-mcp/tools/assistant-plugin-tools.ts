@@ -7,6 +7,7 @@ import { fetchAllRegistries, installPlugin as marketplaceInstallPlugin } from '.
 import { listCustomMarketplaces } from '../../custom-marketplace-service';
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../../../shared/marketplace-types';
 import { IPC } from '../../../../shared/ipc-channels';
+import { homePath } from '../../../orchestrators/shared';
 import { requireString, optionalString, stringWithDefault, booleanWithDefault } from './validation';
 
 /** Register plugin management and marketplace tools. */
@@ -81,7 +82,7 @@ registerMcpCommand({
     required: ['source_path'],
   },
   handler: async (_t, _a, args) => {
-  const sourcePath = requireString(args, 'source_path').replace(/^~/, process.env.HOME || '/tmp');
+  const sourcePath = requireString(args, 'source_path').replace(/^~/, homePath());
   try {
     // Validate source path exists and has manifest.json
     const manifestPath = path.join(sourcePath, 'manifest.json');

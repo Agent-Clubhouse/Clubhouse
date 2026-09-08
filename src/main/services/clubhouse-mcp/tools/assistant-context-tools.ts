@@ -6,6 +6,7 @@ import { listDurable } from '../../agent-config';
 import { getAvailableOrchestrators, checkAvailability } from '../../agent-system';
 import { HELP_SECTIONS } from '../../../../renderer/features/help/help-content';
 import { searchHelpTopics } from '../../../../renderer/features/help/help-search';
+import { homePath } from '../../../orchestrators/shared';
 import { requireString, numberWithDefault } from './validation';
 
 /** Register filesystem, app-state, and help-content read tools. */
@@ -60,7 +61,7 @@ registerMcpCommand({
       }
     }
 
-    const resolvedDir = dir.replace(/^~/, process.env.HOME || '/tmp');
+    const resolvedDir = dir.replace(/^~/, homePath());
     await scan(resolvedDir, 0);
 
     return {
@@ -92,7 +93,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'check_path',
   handler: async (_targetId, _agentId, args) => {
-    const targetPath = requireString(args, 'path').replace(/^~/, process.env.HOME || '/tmp');
+    const targetPath = requireString(args, 'path').replace(/^~/, homePath());
     try {
       const stat = await fsp.stat(targetPath);
       const type = stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'unknown';
@@ -125,7 +126,7 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'list_directory',
   handler: async (_targetId, _agentId, args) => {
-    const targetPath = requireString(args, 'path').replace(/^~/, process.env.HOME || '/tmp');
+    const targetPath = requireString(args, 'path').replace(/^~/, homePath());
     try {
       const entries = await fsp.readdir(targetPath, { withFileTypes: true });
       const items = entries
