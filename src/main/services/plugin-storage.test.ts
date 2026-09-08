@@ -101,6 +101,27 @@ describe('plugin-storage', () => {
       );
     });
 
+    it('keeps the previous good value readable if a write crashes before the atomic rename', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
+      const priorValue = { keep: 'me' };
+
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p) === file) return JSON.stringify(priorValue);
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.writeFile).mockImplementation(async (p: any) => {
+        if (String(p).includes('.tmp.')) {
+          throw new Error('EIO');
+        }
+      });
+      vi.mocked(fsp.unlink).mockResolvedValue(undefined as any);
+
+      await expect(
+        writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: { replace: 'me' } }),
+      ).rejects.toThrow('EIO');
+      await expect(readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' })).resolves.toEqual(priorValue);
+    });
+
     it('rejects path traversal in key', async () => {
       await expect(
         writeKey({ pluginId: 'p', scope: 'global', key: '../../../evil', value: 'x' }),
