@@ -5,12 +5,9 @@ import {
   installMockWindowClubhouse,
   mockAgent,
   mockAgentSettings,
-  mockApp,
   mockFile,
-  mockGit,
   mockLog,
   mockPlugin,
-  mockProcess,
   mockPty,
   mockWindow,
 } from './testing';
