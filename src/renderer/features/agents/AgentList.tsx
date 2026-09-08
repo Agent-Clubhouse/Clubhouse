@@ -255,10 +255,15 @@ function AgentListInner() {
     openQuickAgentDialog();
   };
 
-  const handleSpawnQuickChild = (durableId: string) => {
+  const handleSpawnQuickChild = useCallback((durableId: string) => {
     setQuickTargetParentId(durableId);
     setShowMissionInput(true);
-  };
+  }, []);
+
+  const handleSelectAgent = useCallback((agentId: string) => {
+    selectCompleted(null);
+    setActiveAgent(agentId, activeProjectId ?? undefined);
+  }, [selectCompleted, setActiveAgent, activeProjectId]);
 
   const handleMissionSubmit = async () => {
     if (!activeProject || !mission.trim()) return;
@@ -644,8 +649,8 @@ function AgentListInner() {
                       agent={durable}
                       isActive={durable.id === activeAgentId}
                       isThinking={isThinking(durable.id)}
-                      onSelect={() => { selectCompleted(null); setActiveAgent(durable.id, activeProjectId ?? undefined); }}
-                      onSpawnQuickChild={() => handleSpawnQuickChild(durable.id)}
+                      onSelect={handleSelectAgent}
+                      onSpawnQuickChild={handleSpawnQuickChild}
                     />
                     {activeProfile && durable.orchestrator && !isOrchestratorInProfile(durable.orchestrator) && (
                       <span
@@ -666,7 +671,7 @@ function AgentListInner() {
                       agent={child}
                       isActive={child.id === activeAgentId}
                       isThinking={isThinking(child.id)}
-                      onSelect={() => { selectCompleted(null); setActiveAgent(child.id, activeProjectId ?? undefined); }}
+                      onSelect={handleSelectAgent}
                       isNested
                     />
                   ))}
@@ -691,7 +696,7 @@ function AgentListInner() {
                 agent={agent}
                 isActive={agent.id === activeAgentId}
                 isThinking={isThinking(agent.id)}
-                onSelect={() => { selectCompleted(null); setActiveAgent(agent.id, activeProjectId ?? undefined); }}
+                onSelect={handleSelectAgent}
               />
             ))}
           </div>
