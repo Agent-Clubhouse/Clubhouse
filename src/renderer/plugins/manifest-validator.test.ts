@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { validateManifest, SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
+import { validateManifest, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
+import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
 import { PERMISSION_HIERARCHY } from '../../shared/plugin-types';
 
 describe('manifest-validator', () => {
@@ -13,13 +14,13 @@ describe('manifest-validator', () => {
     contributes: { help: {} },
   };
 
-  describe('SUPPORTED_API_VERSIONS', () => {
+  describe('SUPPORTED_PLUGIN_API_VERSIONS', () => {
     it('includes version 0.5', () => {
-      expect(SUPPORTED_API_VERSIONS).toContain(0.5);
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).toContain(0.5);
     });
 
     it('does not include version 0.4', () => {
-      expect(SUPPORTED_API_VERSIONS).not.toContain(0.4);
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.4);
     });
   });
 
@@ -391,8 +392,8 @@ describe('manifest-validator', () => {
       permissions: ['files', 'git'],
     };
 
-    it('0.5 is in SUPPORTED_API_VERSIONS', () => {
-      expect(SUPPORTED_API_VERSIONS).toContain(0.5);
+    it('0.5 is in SUPPORTED_PLUGIN_API_VERSIONS', () => {
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).toContain(0.5);
     });
 
     it('rejects v0.5 without permissions array', () => {
@@ -581,8 +582,8 @@ describe('manifest-validator', () => {
       contributes: { help: {} },
     };
 
-    it('0.6 is in SUPPORTED_API_VERSIONS', () => {
-      expect(SUPPORTED_API_VERSIONS).toContain(0.6);
+    it('0.6 is in SUPPORTED_PLUGIN_API_VERSIONS', () => {
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).toContain(0.6);
     });
 
     it('accepts v0.6 manifest', () => {
@@ -773,8 +774,8 @@ describe('manifest-validator', () => {
       },
     };
 
-    it('0.7 is in SUPPORTED_API_VERSIONS', () => {
-      expect(SUPPORTED_API_VERSIONS).toContain(0.7);
+    it('0.7 is in SUPPORTED_PLUGIN_API_VERSIONS', () => {
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).toContain(0.7);
     });
 
     it('accepts a valid pack manifest', () => {

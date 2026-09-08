@@ -2,9 +2,6 @@ import type { PluginManifest } from './plugin-types';
 import { ALL_PLUGIN_PERMISSIONS, PERMISSION_HIERARCHY } from './plugin-types';
 import { SUPPORTED_PLUGIN_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './marketplace-types';
 
-/** @deprecated Use SUPPORTED_PLUGIN_API_VERSIONS from shared/marketplace-types instead. */
-export const SUPPORTED_API_VERSIONS = SUPPORTED_PLUGIN_API_VERSIONS;
-
 export { DEPRECATED_PLUGIN_API_VERSIONS };
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
@@ -48,8 +45,8 @@ export function validateManifest(raw: unknown): ValidationResult {
     const engine = m.engine as Record<string, unknown>;
     if (typeof engine.api !== 'number') {
       errors.push('engine.api must be a number');
-    } else if (!SUPPORTED_API_VERSIONS.includes(engine.api)) {
-      errors.push(`Plugin requires API version ${engine.api}, which is not supported by this version of Clubhouse. Supported API versions: ${SUPPORTED_API_VERSIONS.join(', ')}`);
+    } else if (!SUPPORTED_PLUGIN_API_VERSIONS.includes(engine.api)) {
+      errors.push(`Plugin requires API version ${engine.api}, which is not supported by this version of Clubhouse. Supported API versions: ${SUPPORTED_PLUGIN_API_VERSIONS.join(', ')}`);
     }
   }
 

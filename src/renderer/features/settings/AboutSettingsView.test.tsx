@@ -2,9 +2,9 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AboutSettingsView } from './AboutSettingsView';
 
-// Mock the manifest-validator module
-vi.mock('../../plugins/manifest-validator', () => ({
-  SUPPORTED_API_VERSIONS: ['0.5'],
+// Mock the marketplace types module
+vi.mock('../../../shared/marketplace-types', () => ({
+  SUPPORTED_PLUGIN_API_VERSIONS: ['0.5'],
 }));
 
 // Set up window.clubhouse mock
