@@ -214,6 +214,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
       homePath('.npm-global', 'bin', 'codex'),
     ];
     if (process.platform === 'win32') {
+      // Windows apps inherit the full persistent user/system environment, so
+      // unlike packaged macOS apps they do not need version-manager paths here.
       paths.push(
         homePath('AppData', 'Roaming', 'npm', 'codex.cmd'),
         homePath('AppData', 'Roaming', 'npm', 'codex'),

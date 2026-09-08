@@ -83,6 +83,8 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       homePath('.npm-global', 'bin', 'claude'),
     ];
     if (process.platform === 'win32') {
+      // Windows apps inherit the full persistent user/system environment, so
+      // unlike packaged macOS apps they do not need version-manager paths here.
       paths.push(
         homePath('AppData', 'Roaming', 'npm', 'claude.cmd'),
         homePath('AppData', 'Roaming', 'npm', 'claude'),
