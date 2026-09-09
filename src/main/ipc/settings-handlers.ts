@@ -13,14 +13,20 @@
  * That's it — no IPC channels, handler registration, or preload changes needed.
  */
 import { createManagedSettings } from '../services/managed-settings';
-import { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS } from '../../shared/settings-definitions';
+import {
+  CLIPBOARD_SETTINGS,
+  EDITOR_SETTINGS,
+  isClipboardCompatPlatform,
+  MCP_SETTINGS,
+  SECURITY_SETTINGS,
+} from '../../shared/settings-definitions';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 
 export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
 
 export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
   defaultsOverride: {
-    clipboardCompat: process.platform === 'win32',
+    clipboardCompat: isClipboardCompatPlatform(process.platform),
   },
 });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useClipboardSettingsStore } from './clipboardSettingsStore';
+import { isClipboardCompatPlatform } from '../../shared/settings-definitions';
 
 // Mock the generic settings bridge (used by the updated store)
 const mockSettingsGet = vi.fn(async () => ({ clipboardCompat: false }));
@@ -39,6 +40,11 @@ describe('clipboardSettingsStore', () => {
 
   it('defaults clipboardCompat to false', () => {
     expect(useClipboardSettingsStore.getState().clipboardCompat).toBe(false);
+  });
+
+  it.each(['darwin', 'linux', 'win32'])('uses the shared platform rule for %s', (platform) => {
+    mockPlatform = platform;
+    expect(isClipboardCompatPlatform(mockPlatform)).toBe(platform === 'win32');
   });
 
   it('loads settings from main process via generic bridge', async () => {
