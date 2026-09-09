@@ -147,4 +147,13 @@ describe('McpJsonSection', () => {
     // Should still render after error
     expect(await screen.findByText('MCP Servers')).toBeInTheDocument();
   });
+
+  it('shows the shadowing warning when a GHCP config is blocked by .mcp.json precedence', async () => {
+    const warning = 'Warning: .mcp.json also exists in this worktree and takes precedence over .github/mcp.json. Copilot CLI may ignore the Clubhouse materialized config here.';
+    window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockRejectedValue(new Error(warning));
+
+    renderSection();
+
+    expect(await screen.findByText(warning)).toBeInTheDocument();
+  });
 });

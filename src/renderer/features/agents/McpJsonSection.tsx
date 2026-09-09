@@ -24,9 +24,11 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
       setLoaded(true);
       setDirty(false);
       setError(null);
-    } catch {
+    } catch (err) {
       setContent('{\n  "mcpServers": {}\n}');
       setLoaded(true);
+      setDirty(false);
+      setError(err instanceof Error ? err.message : 'Failed to read MCP config');
     }
   }, [worktreePath, projectPath]);
 
