@@ -5,7 +5,9 @@ import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
+import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { WebpackPlugin } from '@electron-forge/plugin-webpack';
+import { FuseV1Options, FuseVersion, getCurrentFuseWire } from '@electron/fuses';
 import path from 'path';
 import fs from 'fs';
 
@@ -53,6 +55,72 @@ const windowsSignConfig =
         },
       }
     : {};
+
+export const hardenedFuseValues = {
+  [FuseV1Options.RunAsNode]: false,
+  [FuseV1Options.EnableCookieEncryption]: true,
+  [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+  [FuseV1Options.EnableNodeCliInspectArguments]: false,
+  [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+  [FuseV1Options.OnlyLoadAppFromAsar]: true,
+} as const;
+
+export function findPackagedElectronBinary(outputPath: string): string | undefined {
+  const queue = [outputPath];
+  while (queue.length > 0) {
+    const currentPath = queue.pop();
+    if (!currentPath || !fs.existsSync(currentPath)) continue;
+
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(currentPath, entry.name);
+
+      if (entry.isDirectory()) {
+        const bundledAppBinary = path.join(fullPath, 'Contents', 'MacOS', 'Clubhouse');
+        if (fs.existsSync(bundledAppBinary)) {
+          return bundledAppBinary;
+        }
+        queue.push(fullPath);
+        continue;
+      }
+
+      if (entry.name === 'Clubhouse' || entry.name === 'clubhouse' || entry.name === 'Clubhouse.exe') {
+        return fullPath;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+export async function assertHardenedFuseWire(appPath: string): Promise<void> {
+  const currentWire = await getCurrentFuseWire(appPath);
+  const mismatches: string[] = [];
+
+  for (const [fuseKey, expectedValue] of Object.entries(hardenedFuseValues)) {
+    const optionIndex = Number(fuseKey);
+    const currentValue = currentWire[optionIndex];
+
+    if (currentValue === undefined) {
+      mismatches.push(`${FuseV1Options[optionIndex]} is unset`);
+      continue;
+    }
+
+    const actualValue = currentValue === 49 ? true : currentValue === 48 ? false : undefined;
+    if (actualValue === undefined) {
+      mismatches.push(`${FuseV1Options[optionIndex]} has unexpected state ${currentValue}`);
+      continue;
+    }
+
+    if (actualValue !== expectedValue) {
+      mismatches.push(`${FuseV1Options[optionIndex]} expected ${expectedValue} but found ${actualValue}`);
+    }
+  }
+
+  if (mismatches.length > 0) {
+    throw new Error(`Electron fuse assertion failed for ${appPath}: ${mismatches.join('; ')}`);
+  }
+}
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -144,8 +212,29 @@ const config: ForgeConfig = {
       },
     }),
   ],
+  hooks: {
+    postPackage: async (_forgeConfig, packageResult) => {
+      for (const outputPath of packageResult.outputPaths) {
+        const packagedAppPath = findPackagedElectronBinary(outputPath);
+        if (!packagedAppPath) {
+          throw new Error(`Could not locate the packaged Clubhouse app under ${outputPath}`);
+        }
+
+        await assertHardenedFuseWire(packagedAppPath);
+      }
+    },
+  },
   plugins: [
     new AutoUnpackNativesPlugin({}),
+    new FusesPlugin({
+      version: FuseVersion.V1,
+      [FuseV1Options.RunAsNode]: false,
+      [FuseV1Options.EnableCookieEncryption]: true,
+      [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+      [FuseV1Options.EnableNodeCliInspectArguments]: false,
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+      [FuseV1Options.OnlyLoadAppFromAsar]: true,
+    }),
     new WebpackPlugin({
       port: 3456,
       mainConfig,
