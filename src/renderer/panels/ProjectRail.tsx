@@ -254,8 +254,12 @@ function AnnexGatedPluginRailButton({ entry, pluginMatches, isActive, onClick, e
 }
 
 export function ProjectRail() {
-  const { projects, activeProjectId, setActiveProject, pickAndAddProject, reorderProjects, removeProject } =
-    useProjectStore();
+  const projects = useProjectStore((s) => s.projects);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const setActiveProject = useProjectStore((s) => s.setActiveProject);
+  const pickAndAddProject = useProjectStore((s) => s.pickAndAddProject);
+  const reorderProjects = useProjectStore((s) => s.reorderProjects);
+  const removeProject = useProjectStore((s) => s.removeProject);
   const openProjectSettings = useUIStore((s) => s.openProjectSettings);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
   const toggleAssistant = useUIStore((s) => s.toggleAssistant);
