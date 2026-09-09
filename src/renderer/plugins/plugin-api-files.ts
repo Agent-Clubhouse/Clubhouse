@@ -1,5 +1,6 @@
 import type { PluginContext, PluginManifest, FilesAPI, Disposable } from '../../shared/plugin-types';
 import type { FileNode } from '../../shared/types';
+import * as path from 'path';
 import { hasPermission } from './plugin-api-shared';
 import { rendererLog } from './renderer-logger';
 import { usePluginStore } from './plugin-store';
@@ -10,21 +11,24 @@ let _watchIdCounter = 0;
 
 export function resolvePath(projectPath: string, relativePath: string): string {
   // Normalize: join project path with relative path, then check for traversal
-  const resolved = relativePath.startsWith('/')
+  const normalizedRelative = relativePath.replace(/[\\/]+/g, path.sep);
+  const resolved = path.isAbsolute(normalizedRelative) || /^[A-Za-z]:[\\/]/.test(relativePath)
     ? relativePath
-    : `${projectPath}/${relativePath}`;
+    : `${projectPath}${path.sep}${relativePath}`;
 
   // Simple traversal check: resolved must start with projectPath
   // Normalize double slashes and resolve .. manually
-  const normalizedProject = projectPath.replace(/\/+$/, '');
-  const normalizedResolved = resolved.replace(/\/+/g, '/');
+  const normalizedProject = projectPath.replace(/[\\/]+/g, path.sep).replace(/[\\/]+$/, '');
+  const normalizedResolved = resolved.replace(/[\\/]+/g, path.sep);
 
   // Check for path traversal via ..
-  if (normalizedResolved.includes('/../') || normalizedResolved.endsWith('/..') || normalizedResolved === '..') {
+  if (normalizedResolved.includes(`${path.sep}..${path.sep}`) ||
+      normalizedResolved.endsWith(`${path.sep}..`) ||
+      normalizedResolved === '..') {
     throw new Error('Path traversal is not allowed');
   }
 
-  if (!normalizedResolved.startsWith(normalizedProject + '/') && normalizedResolved !== normalizedProject) {
+  if (!normalizedResolved.startsWith(normalizedProject + path.sep) && normalizedResolved !== normalizedProject) {
     throw new Error('Path traversal is not allowed');
   }
 
@@ -41,8 +45,9 @@ export function computeDataDir(pluginId: string, projectId?: string): string {
     ? (process.env.HOME || process.env.USERPROFILE)
     : undefined;
   const root = home || '/tmp';
-  const base = `${root}/.clubhouse/plugin-data/${pluginId}/files`;
-  return projectId ? `${base}/${projectId}` : base;
+  const normalizedRoot = root.replace(/[\\/]+/g, path.sep);
+  const base = path.join(normalizedRoot, '.clubhouse', 'plugin-data', pluginId, 'files');
+  return projectId ? path.join(base, projectId) : base;
 }
 
 /**
@@ -54,7 +59,7 @@ export function computeWorkspaceRoot(pluginId: string): string {
     ? (process.env.HOME || process.env.USERPROFILE)
     : undefined;
   const root = home || '/tmp';
-  return `${root}/.clubhouse/plugin-data/${pluginId}/workspace`;
+  return path.join(root.replace(/[\\/]+/g, path.sep), '.clubhouse', 'plugin-data', pluginId, 'workspace');
 }
 
 /** Creates a FilesAPI scoped to an arbitrary base path (for external roots). forRoot() throws (no nesting). */

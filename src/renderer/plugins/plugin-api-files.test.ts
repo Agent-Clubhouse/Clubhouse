@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createFilesAPI, resolvePath } from './plugin-api-files';
+import * as path from 'path';
+import { computeDataDir, createFilesAPI, resolvePath } from './plugin-api-files';
 
 // Mock dependencies
 vi.mock('../stores/remoteProjectStore', () => ({
@@ -74,6 +75,20 @@ describe('plugin-api-files', () => {
 
     it('throws when resolved path escapes project root', () => {
       expect(() => resolvePath('/project', '/etc/passwd')).toThrow('Path traversal');
+    });
+  });
+
+  describe('computeDataDir', () => {
+    it('uses the platform separator for Windows-style home paths', () => {
+      vi.stubEnv('HOME', 'C:\\Users\\name');
+
+      try {
+        expect(computeDataDir('my-plugin', 'project-1')).toBe(
+          path.join('C:', 'Users', 'name', '.clubhouse', 'plugin-data', 'my-plugin', 'files', 'project-1'),
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
   });
 
