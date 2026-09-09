@@ -73,6 +73,8 @@ jobs:
         # Pin Windows to windows-2022 (VS2022). windows-latest rolled to the
         # windows-2025 image (VS2026), which @electron/node-gyp can't detect,
         # breaking the node-pty rebuild during `electron-forge package`.
+        # Track this pin in #1652 and revisit when the upstream fix lands or
+        # GitHub announces windows-2022 deprecation, whichever comes first.
         os: [macos-latest, windows-2022, ubuntu-latest]
     steps:
       - uses: actions/checkout@v7
@@ -119,6 +121,8 @@ jobs:
         # Pin Windows to windows-2022 (VS2022). windows-latest rolled to the
         # windows-2025 image (VS2026), which @electron/node-gyp can't detect,
         # breaking the node-pty rebuild during `electron-forge package`.
+        # Track this pin in #1652 and revisit when the upstream fix lands or
+        # GitHub announces windows-2022 deprecation, whichever comes first.
         os: [macos-latest, windows-2022, ubuntu-latest]
     steps:
       - uses: actions/checkout@v7
