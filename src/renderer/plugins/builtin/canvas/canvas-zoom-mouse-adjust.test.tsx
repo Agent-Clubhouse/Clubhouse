@@ -5,6 +5,15 @@ import { CanvasViewComponent } from './CanvasView';
 import type { CanvasView } from './canvas-types';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 
+const { agentRenderCount } = vi.hoisted(() => ({ agentRenderCount: { value: 0 } }));
+
+vi.mock('./AgentCanvasView', () => ({
+  AgentCanvasView: () => {
+    agentRenderCount.value += 1;
+    return null;
+  },
+}));
+
 // ── Fixtures ────────────────────────────────────────────────────────────
 
 const baseView: CanvasView = {
@@ -49,14 +58,15 @@ const noop = () => {};
 describe('canvas zoom mouse coordinate adjustment', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    agentRenderCount.value = 0;
   });
 
   function renderView(zoom: number) {
     return render(
-      <CanvasViewComponent
-        view={baseView}
-        api={stubApi()}
-        zoom={zoom}
+      <div style={{ '--canvas-zoom': zoom } as React.CSSProperties}>
+        <CanvasViewComponent
+          view={baseView}
+          api={stubApi()}
         isSelected={false}
         onClose={noop}
         onFocus={noop}
@@ -68,9 +78,56 @@ describe('canvas zoom mouse coordinate adjustment', () => {
         onDragEnd={noop}
         onResizeEnd={noop}
         onUpdate={noop}
-      />,
+        />
+      </div>,
     );
   }
+
+  it('does not re-render a card when only the wrapper zoom changes', () => {
+    const api = stubApi();
+    const rendered = render(
+      <div style={{ '--canvas-zoom': 1 } as React.CSSProperties}>
+        <CanvasViewComponent
+          view={baseView}
+          api={api}
+          isSelected={false}
+          onClose={noop}
+          onFocus={noop}
+          onSelect={noop}
+          onToggleSelect={noop}
+          onCenterView={noop}
+          onZoomView={noop}
+          onDragStart={noop}
+          onDragEnd={noop}
+          onResizeEnd={noop}
+          onUpdate={noop}
+        />
+      </div>,
+    );
+    expect(agentRenderCount.value).toBe(1);
+
+    rendered.rerender(
+      <div style={{ '--canvas-zoom': 0.5 } as React.CSSProperties}>
+        <CanvasViewComponent
+          view={baseView}
+          api={api}
+          isSelected={false}
+          onClose={noop}
+          onFocus={noop}
+          onSelect={noop}
+          onToggleSelect={noop}
+          onCenterView={noop}
+          onZoomView={noop}
+          onDragStart={noop}
+          onDragEnd={noop}
+          onResizeEnd={noop}
+          onUpdate={noop}
+        />
+      </div>,
+    );
+
+    expect(agentRenderCount.value).toBe(1);
+  });
 
   /**
    * Helper: dispatch a MouseEvent on a target element and return the

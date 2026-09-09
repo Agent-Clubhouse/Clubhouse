@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import type { CanvasView, CanvasViewType, ZoneCanvasView, AgentCanvasView as AgentCanvasViewType, Viewport, Position, Size } from './canvas-types';
+import type { CanvasView, CanvasViewType, ZoneCanvasView, AgentCanvasView as AgentCanvasViewType, Viewport, Position, Size, CanvasViewAttention } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
 import type { ResizeDirection } from './CanvasView';
 import { snapSize, snapPosition, screenToCanvas, viewportToCenterView } from './canvas-operations';
@@ -81,6 +81,110 @@ interface CanvasWorkspaceProps {
   bidirectionalWires?: boolean;
   createBidirectionalWires?: boolean;
 }
+
+interface CanvasViewCardProps {
+  view: CanvasView;
+  api: PluginAPI;
+  isZoomed: boolean;
+  isSelected: boolean;
+  isMultiSelected: boolean;
+  dragOffset?: { dx: number; dy: number };
+  attention: CanvasViewAttention | null;
+  allViews: CanvasView[];
+  mcpEnabled: boolean;
+  zoneThemeId?: string;
+  onStartWireDrag: (view: AgentCanvasViewType) => void;
+  onRemoveView: (viewId: string) => void;
+  onFocusView: (viewId: string) => void;
+  onSelectView: (viewId: string | null) => void;
+  onClearSelection: () => void;
+  onToggleSelectView: (viewId: string) => void;
+  onCenterView: (viewId: string) => void;
+  onZoomView: (viewId: string) => void;
+  onDragStart: (viewId: string, mouseX: number, mouseY: number) => void;
+  onDragMove?: (viewId: string, position: Position) => void;
+  onDragEnd: (viewId: string, position: Position) => void;
+  onResizeEnd: (viewId: string, size: Size, position: Position) => void;
+  onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
+  onViewContextMenu: (viewId: string, event: React.MouseEvent) => void;
+  isLayoutCenter: boolean;
+}
+
+const CanvasViewCard = React.memo(function CanvasViewCard({
+  view,
+  api,
+  isZoomed,
+  isSelected,
+  isMultiSelected,
+  dragOffset,
+  attention,
+  allViews,
+  mcpEnabled,
+  zoneThemeId,
+  onStartWireDrag,
+  onRemoveView,
+  onFocusView,
+  onSelectView,
+  onClearSelection,
+  onToggleSelectView,
+  onCenterView,
+  onZoomView,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onResizeEnd,
+  onUpdateView,
+  onCreateAgentCard,
+  onViewContextMenu,
+  isLayoutCenter,
+}: CanvasViewCardProps) {
+  const onClose = useCallback(() => onRemoveView(view.id), [onRemoveView, view.id]);
+  const onFocus = useCallback(() => onFocusView(view.id), [onFocusView, view.id]);
+  const onSelect = useCallback(() => {
+    onClearSelection();
+    onSelectView(view.id);
+  }, [onClearSelection, onSelectView, view.id]);
+  const onToggleSelect = useCallback(() => onToggleSelectView(view.id), [onToggleSelectView, view.id]);
+  const onCenter = useCallback(() => onCenterView(view.id), [onCenterView, view.id]);
+  const onZoom = useCallback(() => onZoomView(view.id), [onZoomView, view.id]);
+  const onDragEndForView = useCallback((position: Position) => onDragEnd(view.id, position), [onDragEnd, view.id]);
+  const onResizeEndForView = useCallback((size: Size, position: Position) => onResizeEnd(view.id, size, position), [onResizeEnd, view.id]);
+  const onUpdate = useCallback((updates: Partial<CanvasView>) => onUpdateView(view.id, updates), [onUpdateView, view.id]);
+  const onContextMenu = useCallback((event: React.MouseEvent) => onViewContextMenu(view.id, event), [onViewContextMenu, view.id]);
+
+  return (
+    <ZoneThemeProvider themeId={zoneThemeId}>
+      <CanvasViewComponent
+        view={view}
+        api={api}
+        isZoomed={isZoomed}
+        isSelected={isSelected}
+        isMultiSelected={isMultiSelected}
+        dragOffset={dragOffset}
+        attention={attention}
+        allViews={allViews}
+        mcpEnabled={mcpEnabled}
+        zoneThemeId={zoneThemeId}
+        onStartWireDrag={onStartWireDrag}
+        onClose={onClose}
+        onFocus={onFocus}
+        onSelect={onSelect}
+        onToggleSelect={onToggleSelect}
+        onCenterView={onCenter}
+        onZoomView={onZoom}
+        onDragStart={onDragStart}
+        onDragMove={onDragMove}
+        onDragEnd={onDragEndForView}
+        onResizeEnd={onResizeEndForView}
+        onUpdate={onUpdate}
+        onCreateAgentCard={onCreateAgentCard}
+        onViewContextMenu={onContextMenu}
+        isLayoutCenter={isLayoutCenter}
+      />
+    </ZoneThemeProvider>
+  );
+});
 
 export function CanvasWorkspace({
   views,
@@ -471,6 +575,10 @@ export function CanvasWorkspace({
   }, [singleDragPos, multiDrag, multiDragDelta, views, selectedViewIds]);
 
   const zoomedView = zoomedViewId ? views.find((v) => v.id === zoomedViewId) : null;
+  const handleViewDragEndForCard = useCallback(
+    (viewId: string, position: Position) => handleViewDragEnd(viewId, position, onMoveView),
+    [handleViewDragEnd, onMoveView],
+  );
 
   const gridSpacing = GRID_SIZE * viewport.zoom;
   const dotGridStyle: React.CSSProperties = {
@@ -496,11 +604,12 @@ export function CanvasWorkspace({
       <div
         style={{
           transform: `scale(${viewport.zoom}) translate(${viewport.panX}px, ${viewport.panY}px)`,
+          '--canvas-zoom': viewport.zoom,
           transformOrigin: '0 0',
           position: 'absolute',
           top: 0,
           left: 0,
-        }}
+        } as React.CSSProperties}
       >
         {/* Layer 1: Zone backgrounds */}
         {zones.map((zone) => (
@@ -541,42 +650,41 @@ export function CanvasWorkspace({
         {nonZoneViews.map((view) => {
           const themeOverride = getViewThemeOverride(view.id, zoneContainment);
           return (
-            <ZoneThemeProvider key={view.id} themeId={themeOverride}>
-              <CanvasViewComponent
-                view={view}
-                api={api}
-                zoom={viewport.zoom}
-                isZoomed={zoomedViewId === view.id}
-                isSelected={selectedViewId === view.id}
-                isMultiSelected={selectedViewIds.includes(view.id)}
-                dragOffset={
-                  (multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId)
-                    ? multiDragDelta
-                    : (zoneDrag != null && zoneDrag.containedViewIds.includes(view.id))
-                      ? zoneDragDelta
-                      : undefined
-                }
-                attention={attentionMap.get(view.id) ?? null}
-                allViews={views}
-                mcpEnabled={mcpEnabled}
-                zoneThemeId={themeOverride}
-                onStartWireDrag={startWireDrag}
-                onClose={() => onRemoveView(view.id)}
-                onFocus={() => onFocusView(view.id)}
-                onSelect={() => { onClearSelection(); onSelectView(view.id); }}
-                onToggleSelect={() => onToggleSelectView(view.id)}
-                onCenterView={() => handleCenterView(view.id)}
-                onZoomView={() => handleToggleZoomView(view.id)}
-                onDragStart={handleViewMultiDragStart}
-                onDragMove={handleViewDragMove}
-                onDragEnd={(pos) => handleViewDragEnd(view.id, pos, onMoveView)}
-                onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
-                onUpdate={(updates) => onUpdateView(view.id, updates)}
-                onCreateAgentCard={onCreateAgentCard}
-                onViewContextMenu={(e) => handleViewContextMenu(view.id, e)}
-                isLayoutCenter={layoutCenterId === view.id}
-              />
-            </ZoneThemeProvider>
+            <CanvasViewCard
+              key={view.id}
+              view={view}
+              api={api}
+              isZoomed={zoomedViewId === view.id}
+              isSelected={selectedViewId === view.id}
+              isMultiSelected={selectedViewIds.includes(view.id)}
+              dragOffset={
+                (multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId)
+                  ? multiDragDelta
+                  : (zoneDrag != null && zoneDrag.containedViewIds.includes(view.id))
+                    ? zoneDragDelta
+                    : undefined
+              }
+              attention={attentionMap.get(view.id) ?? null}
+              allViews={views}
+              mcpEnabled={mcpEnabled}
+              zoneThemeId={themeOverride}
+              onStartWireDrag={startWireDrag}
+              onRemoveView={onRemoveView}
+              onFocusView={onFocusView}
+              onSelectView={onSelectView}
+              onClearSelection={onClearSelection}
+              onToggleSelectView={onToggleSelectView}
+              onCenterView={handleCenterView}
+              onZoomView={handleToggleZoomView}
+              onDragStart={handleViewMultiDragStart}
+              onDragMove={handleViewDragMove}
+              onDragEnd={handleViewDragEndForCard}
+              onResizeEnd={handleViewResizeEnd}
+              onUpdateView={onUpdateView}
+              onCreateAgentCard={onCreateAgentCard}
+              onViewContextMenu={handleViewContextMenu}
+              isLayoutCenter={layoutCenterId === view.id}
+            />
           );
         })}
 
