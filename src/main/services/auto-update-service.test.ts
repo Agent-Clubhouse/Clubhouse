@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { execFileSync } from 'child_process';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyPlatformUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt } from './auto-update-service';
+import { EventEmitter } from 'events';
+import { execFileSync, spawn } from 'child_process';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyPlatformUpdate, applyWindowsUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt } from './auto-update-service';
+import * as fsUtils from './fs-utils';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -8,7 +10,7 @@ import * as crypto from 'crypto';
 
 vi.mock('child_process', () => ({
   execFileSync: vi.fn(),
-  spawn: vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })),
+  spawn: vi.fn(() => new EventEmitter()),
 }));
 
 const testUserDataPath = path.join(os.tmpdir(), 'clubhouse-test-userData');
@@ -154,6 +156,40 @@ describe('auto-update-service', () => {
       }));
       expect(handler).toHaveBeenCalledOnce();
       handler.mockRestore();
+    });
+
+    it('rejects when the Windows updater fails to spawn', async () => {
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      const child = new EventEmitter();
+      (child as EventEmitter & { unref: () => void }).unref = vi.fn();
+      vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+      const update = applyWindowsUpdate(
+        { downloadPath: null, version: '1.0.0', artifactUrl: null },
+        { relaunch: false },
+      );
+
+      await Promise.resolve();
+      child.emit('error', new Error('spawn failed'));
+
+      await expect(update).rejects.toThrow('spawn failed');
+      pathExists.mockRestore();
+    });
+
+    it('resolves after the Windows updater spawns successfully', async () => {
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      const child = new EventEmitter();
+      (child as EventEmitter & { unref: () => void }).unref = vi.fn();
+      vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+      const update = applyWindowsUpdate(
+        { downloadPath: null, version: '1.0.0', artifactUrl: null },
+        { relaunch: false },
+      );
+
+      await Promise.resolve();
+      child.emit('spawn');
+
+      await expect(update).resolves.toBeUndefined();
+      pathExists.mockRestore();
     });
 
   });

@@ -740,11 +740,13 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: Ap
       windowsHide: true,
     });
     flushLogs();
-    spawn(updateExe, ['--processStart', appExeName], {
+    const child = spawn(updateExe, ['--processStart', appExeName], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
-    }).unref();
+    });
+    await waitForChildSpawn(child);
+    child.unref();
     app.exit(0);
     return;
   }
@@ -753,16 +755,24 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: Ap
     stdio: 'ignore',
     windowsHide: true,
   });
-  child.on('error', (spawnErr: Error) => {
-    appLog('update:apply-on-quit', 'error', `Update.exe failed to start: ${spawnErr.message}`);
-  });
+  await waitForChildSpawn(child);
   child.unref();
   flushLogs();
 }
 
+function waitForChildSpawn(child: ReturnType<typeof spawn>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    child.once('spawn', resolve);
+    child.once('error', (spawnErr: Error) => {
+      appLog('update:apply-on-quit', 'error', `Update.exe failed to start: ${spawnErr.message}`);
+      reject(spawnErr);
+    });
+  });
+}
+
 export async function applyLinuxUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
   const { downloadPath } = context;
-  // Linux currently installs downloaded Debian packages; RPM updates are not supported.
+  // Linux applies downloaded Debian packages during quit; RPM updates are not supported.
   if (!downloadPath || !await pathExists(downloadPath) || !downloadPath.endsWith('.deb')) return false;
   execFileSync('pkexec', ['dpkg', '-i', downloadPath], { timeout: 120_000 });
   appLog(relaunch ? 'update:apply' : 'update:apply-on-quit', 'info', 'Linux: .deb installed successfully', {
