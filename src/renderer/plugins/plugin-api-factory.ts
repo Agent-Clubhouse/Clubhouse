@@ -142,37 +142,34 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       true, scopeLabel, 'annex', 'annex',
       ctx.pluginId, manifest, () => createAnnexAPI(ctx),
     ),
-    mcp: gated(
-      true, scopeLabel, 'mcp', 'mcp.tools',
-      ctx.pluginId, manifest, () => ({
-        async contributeTools(tools) {
-          await window.clubhouse.pluginMcp.contributeTools(ctx.pluginId, tools);
-        },
-        async removeTools() {
-          await window.clubhouse.pluginMcp.removeTools(ctx.pluginId);
-        },
-        async listContributedTools() {
-          return window.clubhouse.pluginMcp.listTools(ctx.pluginId);
-        },
-        onToolCall(handler) {
-          const cleanup = window.clubhouse.pluginMcp.onToolCall(async (data) => {
-            if (data.pluginId !== ctx.pluginId) return;
-            try {
-              const result = await handler(data.toolName, data.args);
-              window.clubhouse.pluginMcp.sendToolResult(data.callId, result);
-            } catch (err) {
-              window.clubhouse.pluginMcp.sendToolResult(data.callId, {
-                content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-                isError: true,
-              });
-            }
-          });
-          const disposable = { dispose() { cleanup(); } };
-          ctx.subscriptions.push(disposable);
-          return disposable;
-        },
-      }),
-    ),
+    mcp: {
+      async contributeTools(tools) {
+        await window.clubhouse.pluginMcp.contributeTools(ctx.pluginId, tools);
+      },
+      async removeTools() {
+        await window.clubhouse.pluginMcp.removeTools(ctx.pluginId);
+      },
+      async listContributedTools() {
+        return window.clubhouse.pluginMcp.listTools(ctx.pluginId);
+      },
+      onToolCall(handler) {
+        const cleanup = window.clubhouse.pluginMcp.onToolCall(async (data) => {
+          if (data.pluginId !== ctx.pluginId) return;
+          try {
+            const result = await handler(data.toolName, data.args);
+            window.clubhouse.pluginMcp.sendToolResult(data.callId, result);
+          } catch (err) {
+            window.clubhouse.pluginMcp.sendToolResult(data.callId, {
+              content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+              isError: true,
+            });
+          }
+        });
+        const disposable = { dispose() { cleanup(); } };
+        ctx.subscriptions.push(disposable);
+        return disposable;
+      },
+    },
     context: contextInfo, // always available
   };
 
