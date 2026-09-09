@@ -1831,6 +1831,30 @@ describe('write-back cache', () => {
     expect(readCalls).toHaveLength(1);
   });
 
+  it('preserves external edits made before a debounced flush', async () => {
+    const writtenData = setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    await renameDurable(PROJECT_PATH, 'durable_1', 'renamed-in-app');
+    writtenData[agentsJsonPath] = JSON.stringify([{
+      id: 'durable_1',
+      name: 'agent-1',
+      color: 'indigo',
+      persona: 'hand-edited persona',
+      createdAt: '2024-01-01',
+    }]);
+
+    await flushAgentConfig(PROJECT_PATH);
+
+    const tempWrite = vi.mocked(fsp.writeFile).mock.calls
+      .find((call) => String(call[0]).includes('agents.json.tmp.'));
+    expect(tempWrite).toBeDefined();
+    const persisted = JSON.parse(String(tempWrite![1]));
+    expect(persisted[0].name).toBe('renamed-in-app');
+    expect(persisted[0].persona).toBe('hand-edited persona');
+  });
+
   it('clearAgentConfigCache discards pending writes', async () => {
     setupCacheTest([
       { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
