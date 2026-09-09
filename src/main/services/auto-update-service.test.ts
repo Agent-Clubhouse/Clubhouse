@@ -123,6 +123,44 @@ describe('auto-update-service', () => {
       handler.mockRestore();
     });
 
+    it('keeps the pending marker when the Windows updater process emits a spawn error', async () => {
+      if (process.platform !== 'win32') return;
+
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      const child = new EventEmitter();
+      (child as EventEmitter & { unref: () => void }).unref = vi.fn();
+      vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+      const readyStatus = {
+        state: 'ready' as const,
+        availableVersion: '1.0.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        downloadPath: null,
+        error: null,
+        artifactUrl: null,
+        applyAttempted: false,
+      };
+
+      await writePendingUpdateInfo({
+        version: readyStatus.availableVersion,
+        downloadPath: 'C:\\Clubhouse update.nupkg',
+        releaseNotes: null,
+        releaseMessage: null,
+      });
+      const apply = applyUpdateOnQuit(readyStatus);
+      await Promise.resolve();
+      await Promise.resolve();
+      child.emit('error', new Error('spawn failed'));
+      await apply;
+
+      expect(await readPendingUpdateInfo()).toEqual(expect.objectContaining({
+        version: readyStatus.availableVersion,
+      }));
+      expect(await readApplyAttempt()).toBeNull();
+      pathExists.mockRestore();
+    });
+
     it('clears the marker and records one attempt after the updater starts', async () => {
       const readyStatus = {
         state: 'ready' as const,
