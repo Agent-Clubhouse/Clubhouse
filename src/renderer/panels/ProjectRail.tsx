@@ -95,7 +95,13 @@ const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick
   const letter = label.charAt(0).toUpperCase();
   const hasImage = !!project.icon && !!iconDataUrl;
   const hasEmoji = !!project.emoji;
-  const projectBadge = useBadgeStore((s) => s.getProjectBadge(project.id));
+  const projectBadgeSettings = useBadgeSettingsStore((s) => {
+    const settings = s.getProjectSettings(project.id);
+    return `${settings.enabled}:${settings.pluginBadges}:${settings.projectRailBadges}`;
+  });
+  const projectBadge = useBadgeStore((s) => (
+    projectBadgeSettings ? s.getProjectBadge(project.id) : null
+  ));
 
   return (
     <button
@@ -160,7 +166,10 @@ function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
 }) {
   const label = entry.manifest.contributes!.railItem!.label;
   const customIcon = entry.manifest.contributes!.railItem!.icon;
-  const pluginBadge = useBadgeStore((s) => s.getAppPluginBadge(entry.manifest.id));
+  const pluginBadgeSettings = useBadgeSettingsStore((s) => `${s.enabled}:${s.pluginBadges}`);
+  const pluginBadge = useBadgeStore((s) => (
+    pluginBadgeSettings ? s.getAppPluginBadge(entry.manifest.id) : null
+  ));
 
   return (
     <button

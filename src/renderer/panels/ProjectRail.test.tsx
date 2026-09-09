@@ -318,6 +318,30 @@ describe('ProjectRail store subscriptions', () => {
     });
     expect(getAgentColorHex.mock.calls.map(([color]) => color)).toEqual(['red']);
   });
+
+  it('updates project badges when badge settings change', async () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+    });
+    useBadgeStore.getState().setBadge('test', 'dot', 1, {
+      kind: 'explorer-tab',
+      projectId: 'p1',
+      tabId: 'agents',
+    });
+
+    render(<ProjectRail />);
+    expect(screen.getByTestId('badge-dot')).toBeInTheDocument();
+
+    useBadgeSettingsStore.setState({ projectRailBadges: false });
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId('badge-dot')).not.toBeInTheDocument();
+    });
+
+    useBadgeSettingsStore.setState({ projectRailBadges: true });
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('badge-dot')).toBeInTheDocument();
+    });
+  });
 });
 
 describe('ProjectRail pin button', () => {
