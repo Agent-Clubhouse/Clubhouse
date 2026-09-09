@@ -760,6 +760,9 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: Ap
 export async function applyLinuxUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
   const { downloadPath } = context;
   if (!downloadPath || !await pathExists(downloadPath) || !downloadPath.endsWith('.deb')) return false;
+  // Use an argument vector instead of a shell string here. A template literal would run
+  // through /bin/sh -c, letting shell metacharacters in the downloaded path (e.g. $, `,
+  // or quotes) be reinterpreted by pkexec/dpkg after the path has already been staged.
   execFileSync('pkexec', ['dpkg', '-i', downloadPath], { timeout: 120_000 });
   appLog(relaunch ? 'update:apply' : 'update:apply-on-quit', 'info', 'Linux: .deb installed successfully', {
     meta: { downloadPath },
