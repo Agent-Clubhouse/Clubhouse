@@ -57,6 +57,7 @@ For each commit, assign exactly one category using the rules below. Apply them i
 
 ### Special handling
 - **Version bump commits** (e.g., `chore: bump version to X.Y.Z` or `chore: bump version to X.Y.Z-beta.N`) — skip entirely, these are release mechanics.
+- **Runtime-critical dependency bumps** — a `chore(deps)` commit that bumps Electron, `node-pty`, `@xterm/xterm`, or any dependency listed in `.github/dependabot.yml`'s `ignore` list is classified as **Internal**, not **Non-User**. These bumps can affect runtime behavior and should remain visible to beta testers.
 - **Merge commits** are already excluded by `--no-merges`.
 
 ## Phase 3: Coalesce
@@ -67,7 +68,7 @@ Reduce the classified list by merging related entries:
 2. **Multiple fixes in one area → one row:** If several bug fixes target the same component or behavior, combine into a single descriptive bug fix row.
 3. **Keep distinct items separate:** Don't over-merge. Two unrelated bug fixes stay as two rows.
 
-After coalescing, you should have a clean list with categories: **Feature**, **Bug Fix**, **Internal**. **Non-User** items are dropped entirely.
+After coalescing, you should have a clean list with categories: **Feature**, **Bug Fix**, **Internal**. **Non-User** items are dropped entirely, but runtime-critical dependency bumps classified as **Internal** remain in the release-notes table.
 
 ## Phase 4: Propose Beta Release
 
@@ -108,7 +109,7 @@ Present a markdown table:
 ```
 
 - **Non-User** items are excluded from this table.
-- **Internal** items are included in the table but excluded from the release title.
+- **Internal** items, including runtime-critical dependency bumps, are included in the table but excluded from the release title.
 - If a category is empty, omit its rows entirely.
 - Descriptions should be user-friendly, concise, and written in past tense.
 
