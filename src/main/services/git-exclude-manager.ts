@@ -49,7 +49,18 @@ function enqueueWrite(excludePath: string, operation: () => Promise<void>): Prom
 async function writeAtomically(filePath: string, content: string): Promise<void> {
   const tempPath = `${filePath}.tmp.${randomUUID().slice(0, 8)}`;
   await fsp.writeFile(tempPath, content, 'utf-8');
-  await fsp.rename(tempPath, filePath);
+
+  try {
+    await fsp.rename(tempPath, filePath);
+  } catch (error) {
+    const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as NodeJS.ErrnoException).code) : '';
+    if (code !== 'EEXIST' && code !== 'EPERM' && process.platform !== 'win32') {
+      throw error;
+    }
+
+    await fsp.rm(filePath, { force: true });
+    await fsp.rename(tempPath, filePath);
+  }
 }
 
 export async function addExclusions(projectPath: string, tag: string, patterns: string[]): Promise<void> {

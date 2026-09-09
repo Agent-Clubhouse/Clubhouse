@@ -5,6 +5,7 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(() => Promise.resolve('')),
   writeFile: vi.fn(() => Promise.resolve(undefined)),
   rename: vi.fn(() => Promise.resolve(undefined)),
+  rm: vi.fn(() => Promise.resolve(undefined)),
   mkdir: vi.fn(() => Promise.resolve(undefined)),
 }));
 
@@ -98,6 +99,18 @@ describe('git-exclude-manager', () => {
 
       expect(excludeContent).toContain('first.txt # first');
       expect(excludeContent).toContain('second.txt # second');
+    });
+
+    it('removes an existing target before rename on platforms that reject overwrites', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('');
+      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+      vi.mocked(fsp.rename).mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+      vi.mocked(fsp.rm).mockResolvedValue(undefined);
+
+      await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
+
+      expect(fsp.rm).toHaveBeenCalledWith(expect.stringContaining('.git/info/exclude'), { force: true });
+      expect(fsp.rename).toHaveBeenCalledTimes(2);
     });
   });
 
