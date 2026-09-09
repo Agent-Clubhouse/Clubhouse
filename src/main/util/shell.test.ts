@@ -156,6 +156,11 @@ describe('winQuoteArg', () => {
     expect(winQuoteArg('a&b|c')).toBe('"a&b|c"');
   });
 
+  it('doubles percent signs so %VAR% is not expanded by cmd.exe', () => {
+    expect(winQuoteArg('%PATH%')).toBe('"%%PATH%%"');
+    expect(winQuoteArg('prefix %USERNAME% suffix')).toBe('"prefix %%USERNAME%% suffix"');
+  });
+
   it('handles a long mission-text-like argument', () => {
     const longArg = 'Fix the bug in src/main/services/foo.ts where the "parser" fails';
     const result = winQuoteArg(longArg);
