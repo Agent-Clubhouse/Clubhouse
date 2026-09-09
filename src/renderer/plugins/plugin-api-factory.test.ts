@@ -88,6 +88,15 @@ describe('plugin-api-factory', () => {
       expect(api.process).toBeDefined();
       expect(api.context).toBeDefined();
     });
+
+    it('requires the mcp.tools permission before exposing api.mcp', () => {
+      const api = createPluginAPI(makeCtx(), undefined, makeAllPermsManifest({
+        permissions: ['files'],
+      }));
+
+      expect(() => api.mcp.contributeTools([])).toThrow("requires 'mcp.tools' permission");
+      expect(() => api.mcp.listContributedTools()).toThrow("requires 'mcp.tools' permission");
+    });
   });
 
   // ── Scope restrictions ────────────────────────────────────────────────
