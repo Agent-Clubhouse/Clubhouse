@@ -1,6 +1,4 @@
-import * as fsp from 'fs/promises';
-import * as path from 'path';
-import { app, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import { registerMcpCommand, toCommandId } from '../mcp-command-adapter';
 import * as themeService from '../../theme-service';
 import { BUILTIN_THEMES } from '../../../../renderer/themes';
@@ -11,18 +9,6 @@ import { requireString } from './validation';
 /** Keys the assistant is permitted to modify via update_settings. */
 const SETTINGS_ALLOWLIST = new Set([
   'theme', 'themeId',
-  'soundEnabled', 'soundVolume', 'soundPack',
-  'notificationEnabled', 'notificationSound',
-  'zoomLevel',
-  'fontSize', 'fontFamily', 'uiFontFamily',
-  'showMinimap', 'minimapScale',
-  'sidebarWidth', 'sidebarCollapsed',
-  'showLineNumbers', 'wordWrap', 'tabSize',
-  'terminalFontSize', 'terminalFontFamily',
-  'windowBounds',
-  'locale', 'language',
-  'autoUpdate', 'updateChannel',
-  'telemetryEnabled',
 ]);
 
 /** Register settings and theme read/write tools. */
@@ -42,19 +28,10 @@ registerMcpCommand({
   targetKind: 'assistant',
   nameSuffix: 'get_settings',
   handler: async (_targetId, _agentId, _args) => {
-    // Settings are managed via renderer stores. For the main process,
-    // read the settings file from the standard location.
-    try {
-      const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-      const raw = await fsp.readFile(settingsPath, 'utf-8');
-      return {
-        content: [{ type: 'text', text: raw }],
-      };
-    } catch {
-      return {
-        content: [{ type: 'text', text: '{}' }],
-      };
-    }
+    const { themeId } = themeService.getSettings() || { themeId: 'catppuccin-mocha' };
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ theme: themeId, themeId }) }],
+    };
   },
 });
 
@@ -152,21 +129,7 @@ registerMcpCommand({
         };
       }
 
-      // All other settings go to the general settings file
-      const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-      let settings: Record<string, unknown> = {};
-      try {
-        const raw = await fsp.readFile(settingsPath, 'utf-8');
-        settings = JSON.parse(raw);
-      } catch {
-        // File doesn't exist or is invalid — start fresh
-      }
-
-      settings[key] = value;
-      await fsp.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-      return {
-        content: [{ type: 'text', text: `Setting "${key}" updated to ${JSON.stringify(value)}.` }],
-      };
+      throw new Error(`Unsupported settings key: ${key}`);
     } catch (err) {
       return {
         content: [{ type: 'text', text: `Failed to update settings: ${err instanceof Error ? err.message : String(err)}` }],
