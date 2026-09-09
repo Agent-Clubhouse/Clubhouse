@@ -612,7 +612,7 @@ export async function readMcpRawJson(worktreePath: string, conv?: SettingsConven
 
   const shadowWarning = await getMcpShadowWarning(worktreePath, c);
   if (shadowWarning) {
-    throw new Error(shadowWarning);
+    appLog(LOG_NS, 'warn', shadowWarning, { meta: { worktreePath, mcpConfigFile: c.mcpConfigFile } });
   }
 
   const filePath = path.join(worktreePath, c.mcpConfigFile);

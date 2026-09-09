@@ -28,6 +28,7 @@ describe('McpJsonSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue('{\n  "mcpServers": {}\n}');
+    window.clubhouse.agentSettings.getMcpShadowWarning = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.agentSettings.writeMcpRawJson = vi.fn().mockResolvedValue({ ok: true });
   });
 
@@ -150,7 +151,8 @@ describe('McpJsonSection', () => {
 
   it('shows the shadowing warning when a GHCP config is blocked by .mcp.json precedence', async () => {
     const warning = 'Warning: .mcp.json also exists in this worktree and takes precedence over .github/mcp.json. Copilot CLI may ignore the Clubhouse materialized config here.';
-    window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockRejectedValue(new Error(warning));
+    window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue('{\n  "mcpServers": {}\n}');
+    window.clubhouse.agentSettings.getMcpShadowWarning = vi.fn().mockResolvedValue(warning);
 
     renderSection();
 

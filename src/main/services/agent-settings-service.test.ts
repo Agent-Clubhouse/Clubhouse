@@ -535,6 +535,33 @@ describe('readMcpRawJson', () => {
     expect(await readMcpRawJson(WORKTREE)).toBe('{"mcpServers": {"test": {}}}');
   });
 
+  it('logs a warning without failing when a shadowing .mcp.json exists for GHCP', async () => {
+    vi.mocked(pathExists).mockResolvedValue(true);
+    vi.mocked(fsp.readFile).mockResolvedValue('{"mcpServers": {"test": {"command": "npx"}}}');
+
+    const conv: SettingsConventions = {
+      configDir: '.github',
+      skillsDir: 'skills',
+      agentTemplatesDir: 'agents',
+      mcpConfigFile: '.github/mcp.json',
+      localSettingsFile: 'hooks/hooks.json',
+    };
+
+    const result = await readMcpRawJson(WORKTREE, conv);
+    expect(result).toContain('"test"');
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings',
+      'warn',
+      expect.stringContaining('.mcp.json also exists'),
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          worktreePath: WORKTREE,
+          mcpConfigFile: '.github/mcp.json',
+        }),
+      }),
+    );
+  });
+
   it('returns default JSON when file does not exist', async () => {
     vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent());
     const result = await readMcpRawJson(WORKTREE);
