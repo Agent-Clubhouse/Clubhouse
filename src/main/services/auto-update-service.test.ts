@@ -39,7 +39,7 @@ describe('auto-update-service', () => {
       const handler = process.platform === 'darwin'
         ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue(true)
         : process.platform === 'win32'
-          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue()
+          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue(true)
           : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
 
       await applyUpdate(readyStatus);
@@ -176,7 +176,7 @@ describe('auto-update-service', () => {
       const handler = process.platform === 'darwin'
         ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue(true)
         : process.platform === 'win32'
-          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue()
+          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue(true)
           : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
 
       await writePendingUpdateInfo({
@@ -226,7 +226,7 @@ describe('auto-update-service', () => {
       await Promise.resolve();
       child.emit('spawn');
 
-      await expect(update).resolves.toBeUndefined();
+      await expect(update).resolves.toBe(true);
       pathExists.mockRestore();
     });
 

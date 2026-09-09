@@ -726,7 +726,7 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch }: ApplyO
   return true;
 }
 
-export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<void> {
+export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
   const updateExe = getSquirrelUpdateExePath();
   if (!await pathExists(updateExe)) {
     throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
@@ -748,7 +748,7 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: Ap
     await waitForChildSpawn(child);
     child.unref();
     app.exit(0);
-    return;
+    return true;
   }
   const child = spawn(updateExe, ['--update', releasesUrl], {
     detached: true,
@@ -758,6 +758,7 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: Ap
   await waitForChildSpawn(child);
   child.unref();
   flushLogs();
+  return true;
 }
 
 function waitForChildSpawn(child: ReturnType<typeof spawn>): Promise<void> {
@@ -800,8 +801,7 @@ export async function applyPlatformUpdate(
     return platformUpdateHandlers.applyMacUpdate(context, options);
   }
   if (platform === 'win32') {
-    await platformUpdateHandlers.applyWindowsUpdate(context, options);
-    return true;
+    return platformUpdateHandlers.applyWindowsUpdate(context, options);
   }
   if (platform === 'linux') return platformUpdateHandlers.applyLinuxUpdate(context, options);
   return false;
