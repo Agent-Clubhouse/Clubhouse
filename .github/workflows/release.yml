@@ -5,6 +5,8 @@ on:
     tags:
       - 'v*'
 
+# Recovery: after fixing the underlying cause of a failed release run, use
+# GitHub's "re-run failed jobs" action instead of cutting a new version.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -565,8 +567,14 @@ jobs:
               releaseNotes: $notes
             }' > new-entry.json
 
-          # Prepend new entry to history array
-          jq --slurpfile entry new-entry.json '. = [$entry[0]] + .' history-existing.json > artifacts/history.json
+          # Replace an existing version in place; prepend new versions.
+          jq --slurpfile entry new-entry.json '
+            if any(.[]; .version == $entry[0].version) then
+              map(if .version == $entry[0].version then $entry[0] else . end)
+            else
+              [$entry[0]] + .
+            end
+          ' history-existing.json > artifacts/history.json
 
           echo "Updated history.json ($(jq length artifacts/history.json) entries):"
           jq '.[0]' artifacts/history.json
