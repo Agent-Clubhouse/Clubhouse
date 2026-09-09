@@ -26,7 +26,12 @@ vi.mock('fs', () => ({
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from '../services/settings-store';
-import { clipboardSettings, CLIPBOARD_SETTINGS, registerSettingsHandlers } from './settings-handlers';
+import {
+  clipboardSettings,
+  CLIPBOARD_SETTINGS,
+  getClipboardCompatDefault as getMainClipboardCompatDefault,
+  registerSettingsHandlers,
+} from './settings-handlers';
 import { CLIPBOARD_COMPAT_DEFAULT, isClipboardCompatPlatform } from '../../shared/settings-definitions';
 
 // IPC handlers are deferred — call register to bind them
@@ -57,6 +62,10 @@ describe('settings-handlers', () => {
     it.each(['darwin', 'linux', 'win32'])('uses the shared platform rule for %s', (platform) => {
       expect(isClipboardCompatPlatform(platform)).toBe(platform === 'win32');
     });
+  });
+
+  it.each(['darwin', 'linux', 'win32'])('resolves clipboard defaults for %s', (platform) => {
+    expect(getMainClipboardCompatDefault(platform)).toBe(platform === 'win32');
   });
 
   describe('clipboardSettings managed instance', () => {

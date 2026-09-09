@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useClipboardSettingsStore } from './clipboardSettingsStore';
+import {
+  getClipboardCompatDefault as getRendererClipboardCompatDefault,
+  useClipboardSettingsStore,
+} from './clipboardSettingsStore';
+import { getClipboardCompatDefault as getMainClipboardCompatDefault } from '../../main/ipc/settings-handlers';
 import { isClipboardCompatPlatform } from '../../shared/settings-definitions';
 
 // Mock the generic settings bridge (used by the updated store)
@@ -45,6 +49,11 @@ describe('clipboardSettingsStore', () => {
   it.each(['darwin', 'linux', 'win32'])('uses the shared platform rule for %s', (platform) => {
     mockPlatform = platform;
     expect(isClipboardCompatPlatform(mockPlatform)).toBe(platform === 'win32');
+  });
+
+  it.each(['darwin', 'linux', 'win32'])('matches main default resolution for %s', (platform) => {
+    mockPlatform = platform;
+    expect(getRendererClipboardCompatDefault(platform)).toBe(getMainClipboardCompatDefault(platform));
   });
 
   it('loads settings from main process via generic bridge', async () => {

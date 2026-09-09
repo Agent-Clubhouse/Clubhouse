@@ -24,9 +24,12 @@ import { onMcpSettingsChanged } from './mcp-binding-handlers';
 
 export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
 
+export const getClipboardCompatDefault = (platform: string = process.platform): boolean =>
+  isClipboardCompatPlatform(platform);
+
 export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
   defaultsOverride: {
-    clipboardCompat: isClipboardCompatPlatform(process.platform),
+    clipboardCompat: getClipboardCompatDefault(),
   },
 });
 
