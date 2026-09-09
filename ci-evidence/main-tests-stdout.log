@@ -1,0 +1,647 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/cazzone/Repos/goobers-instance/gaggles/clubhouse/workcopies/39a19d016c8ee0ad/runs/wt-2fa8e449998679f3c54b820c[39m
+
+[90mstderr[2m | src/main/services/pty-manager.test.ts[2m > [22m[2mpty-manager[2m > [22m[2mkillAll[2m > [22m[2mclears all sessions after kill timeout
+[22m[39m[pty-manager] killAll: process agent_ser did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_fallback did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_hl did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_hlr did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_buf did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_dup did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_concat did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_cache did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_evict did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_cached_evict did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_a did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_b did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_suppress did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_autofire did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_clear did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process shell-1 did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process shell-dup did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process shell-exit did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_w did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_big did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_exact did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_r did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_pc did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_pc2 did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_gk did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_gk_custom did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_gk_double did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_gk_stale did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_ka_1 did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_ka_2 did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_ka_3 did not exit within grace period, sending SIGKILL
+
+[90mstderr[2m | src/main/services/pty-manager.test.ts[2m > [22m[2mpty-manager[2m > [22m[2mkillAll[2m > [22m[2mreturns a promise that resolves after cleanup
+[22m[39m[pty-manager] killAll: process agent_ka_4 did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_ka_5 did not exit within grace period, sending SIGKILL
+
+[90mstderr[2m | src/main/services/pty-manager.test.ts[2m > [22m[2mpty-manager[2m > [22m[2mkillAll[2m > [22m[2mclears active gracefulKill timers via cleanupSession
+[22m[39m[pty-manager] killAll: process agent_ka_gk did not exit within grace period, sending SIGKILL
+
+[90mstderr[2m | src/main/services/pty-manager.test.ts[2m > [22m[2mpty-manager[2m > [22m[2mkillAll — additional edge cases[2m > [22m[2mhandles write errors for dead processes gracefully
+[22m[39m[pty-manager] killAll: process agent_guard_data did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_guard_exit did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_gen_data did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_gen_exit did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process shell_buf did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process shell_ipc did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_compact did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_dead_write did not exit within grace period, sending SIGKILL
+
+[90mstderr[2m | src/main/services/pty-manager.test.ts[2m > [22m[2mpty-manager[2m > [22m[2mkillAll — additional edge cases[2m > [22m[2mcleans up multiple sessions
+[22m[39m[pty-manager] killAll: process agent_multi_1 did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_multi_2 did not exit within grace period, sending SIGKILL
+[pty-manager] killAll: process agent_multi_3 did not exit within grace period, sending SIGKILL
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/pty-manager.test.ts [2m([22m[2m115 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/headless-manager.test.ts [2m([22m[2m106 tests[22m[2m)[22m[32m 57[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/agent-system.test.ts [2m([22m[2m124 tests[22m[2m)[22m[32m 86[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/codex-cli-provider.test.ts [2m([22m[2m151 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/materialization-service.test.ts [2m([22m[2m104 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-client.test.ts [2m([22m[2m55 tests[22m[2m)[22m[32m 212[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/agent-settings-service.test.ts [2m([22m[2m104 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/project-store.test.ts [2m([22m[2m72 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/copilot-cli-provider.test.ts [2m([22m[2m121 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/agent-tools.test.ts [2m([22m[2m59 tests[22m[2m)[22m[32m 53[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/provider-integration.test.ts [2m([22m[2m85 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mstarts and stops without error
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/adapters/codex-app-server-adapter.test.ts [2m([22m[2m61 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mrejects pairing with wrong PIN
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/git-service.test.ts [2m([22m[2m93 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2maccepts pairing with correct PIN and returns token
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/group-project-bulletin.test.ts [2m([22m[2m77 tests[22m[2m)[22m[32m 36[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/browser-tools.test.ts [2m([22m[2m71 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tool-registry.test.ts [2m([22m[2m66 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mrejects authenticated endpoints without token
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mallows authenticated endpoints with valid token
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/agent-config.test.ts [2m([22m[2m109 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mregeneratePin invalidates existing tokens
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/claude-code-provider.test.ts [2m([22m[2m69 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/adapters/stream-json-adapter.test.ts [2m([22m[2m41 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/app-handlers.test.ts [2m([22m[2m64 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/agent-handlers.test.ts [2m([22m[2m60 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mrejects expired bearer tokens after 24 hours
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/shared.test.ts [2m([22m[2m77 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/plugin-discovery.test.ts [2m([22m[2m46 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/project-handlers.test.ts [2m([22m[2m60 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mrejects pairing with invalid public key
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/assistant-tools.test.ts [2m([22m[2m117 tests[22m[2m)[22m[32m 149[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/adapters/acp-adapter.test.ts [2m([22m[2m43 tests[22m[2m)[22m[33m 358[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/group-project-handlers.test.ts [2m([22m[2m58 tests[22m[2m)[22m[32m 68[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2maccepts pairing with valid Ed25519 SPKI public key
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mreturns 404 for unknown routes
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/window-handlers.test.ts [2m([22m[2m31 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/config-pipeline.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-service.test.ts [2m([22m[2m80 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mroute dispatch (declarative table)[2m > [22m[2mGET /api/v1/status dispatches to the status handler
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/config-diff-service.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+Warning: A vi.mock("fs/promises") call in "/Users/cazzone/Repos/goobers-instance/gaggles/clubhouse/workcopies/39a19d016c8ee0ad/runs/wt-2fa8e449998679f3c54b820c/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "/Users/cazzone/Repos/goobers-instance/gaggles/clubhouse/workcopies/39a19d016c8ee0ad/runs/wt-2fa8e449998679f3c54b820c/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "/Users/cazzone/Repos/goobers-instance/gaggles/clubhouse/workcopies/39a19d016c8ee0ad/runs/wt-2fa8e449998679f3c54b820c/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "/Users/cazzone/Repos/goobers-instance/gaggles/clubhouse/workcopies/39a19d016c8ee0ad/runs/wt-2fa8e449998679f3c54b820c/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+Warning: A vi.mock("fs/promises") call in "/Users/cazzone/Repos/goobers-instance/gaggles/clubhouse/workcopies/39a19d016c8ee0ad/runs/wt-2fa8e449998679f3c54b820c/src/main/services/plugin-storage.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/plugin-storage.test.ts [2m([22m[2m41 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/assistant-handlers.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/adapters/acp-client.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mroute dispatch (declarative table)[2m > [22m[2mGET /api/v1/projects dispatches to the projects handler and reflects project-store data
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mroute dispatch (declarative table)[2m > [22m[2mPATCH bulletin protection route dispatches to handleGroupProjectBulletinProtectionRoute
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/agent-settings-handlers.test.ts [2m([22m[2m48 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/agent-queue-runner.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 286[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/injection.test.ts [2m([22m[2m47 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/adapters/codex-app-server-client.test.ts [2m([22m[2m31 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mroute dispatch (declarative table)[2m > [22m[2mPATCH bulletin protection route rejects a non-boolean isProtected without touching the board
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/blueprint-handlers.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+[90mstderr[2m | src/main/services/log-service.test.ts[2m > [22m[2mlog-service[2m > [22m[2mflush[2m > [22m[2mdoes not throw when appendFile fails
+[22m[39m[log-service] Failed to write log entries: disk full
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/log-service.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/file-handlers.test.ts [2m([22m[2m38 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/restart-session-service.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mroute dispatch (declarative table)[2m > [22m[2mPATCH /api/v1/group-projects/:id (rename) dispatches to handleGroupProjectPatchRoute, not the bulletin route
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/mcp-binding-handlers.test.ts [2m([22m[2m38 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/plugin-update-service.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mroute dispatch (declarative table)[2m > [22m[2mPATCH /api/v1/group-projects/:id returns 404 when the group project does not exist
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/marketplace-service.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/index.integration.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+[90mstderr[2m | src/main/services/settings-store.test.ts[2m > [22m[2msettings-store[2m > [22m[2mget[2m > [22m[2mreturns defaults on corrupt JSON
+[22m[39m[settings-store] Failed to parse test.json, using defaults: Unexpected token 'o', "not valid json {{{" is not valid JSON
+
+[90mstderr[2m | src/main/services/settings-store.test.ts[2m > [22m[2msettings-store[2m > [22m[2mget[2m > [22m[2mreturns defaults on empty string file content
+[22m[39m[settings-store] Failed to parse test.json, using defaults: Unexpected end of JSON input
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/hook-server-toggle.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mroute dispatch (declarative table)[2m > [22m[2mDELETE bulletin message route dispatches to handleGroupProjectDeleteMessageRoute (destructive)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/hook-server.test.ts [2m([22m[2m48 tests[22m[2m)[22m[33m 1345[2mms[22m[39m
+[90mstderr[2m | src/main/services/settings-store.test.ts[2m > [22m[2mLB-SP-003: write errors are surfaced, not silently swallowed[2m > [22m[2mlogs previous write failure at warn level and lets the next write proceed
+[22m[39m[settings-store] Write to test.json failed — cache may diverge from disk: disk full
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/settings-store.test.ts [2m([22m[2m29 tests[22m[2m)[22m[32m 111[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/bridge-server.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 82[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/agent-queue-tools.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mroute dispatch (declarative table)[2m > [22m[2mPOST /api/v1/projects/:id/agents/:agentId/delete dispatches to the destructive durable-delete handler
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/sound-service.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/binding-manager.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/session-reader.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mroute dispatch (declarative table)[2m > [22m[2mGET /api/v1/group-projects/:id/members dispatches to the members handler, not the get-by-id route
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/process-handlers.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+[90mstderr[2m | src/main/services/headless-integration.test.ts[2m > [22m[2mHeadless integration[2m > [22m[2moutputKind passthrough[2m > [22m[2mpasses stream-json outputKind to headless manager
+[22m[39m[log-service] Failed to write log entries: [vitest] No "appendFile" export is defined on the "fs/promises" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/headless-integration.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/agent-queue-handlers.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 69[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/annex-handlers.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent mapping[2m > [22m[2mincludes status and defaults for missing fields in projects/:id/agents
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/util/ipc-broadcast.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/base-provider.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/config-provenance-service.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent mapping[2m > [22m[2mshows running status when PTY is active
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/annex-client-handlers.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+[90mstderr[2m | src/main/services/orchestrator-settings.test.ts[2m > [22m[2morchestrator-settings[2m > [22m[2mgetSettings[2m > [22m[2mreturns defaults on corrupt JSON
+[22m[39m[settings-store] Failed to parse orchestrator-settings.json, using defaults: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/orchestrator-settings.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/safe-mode.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/plugin-handlers.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2micon endpoints[2m > [22m[2mGET /api/v1/icons/agent/:id returns icon data
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/transcript-parser.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/structured-manager.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 679[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-permission-queue.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/release-message-parsing.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2micon endpoints[2m > [22m[2mGET /api/v1/icons/agent/:id returns 404 for missing icon
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/mcp-adapter.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/toml-utils.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/command-integration.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 158[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2micon endpoints[2m > [22m[2mGET /api/v1/icons/project/:id returns 404 for missing icon
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/headless-settings.test.ts[2m > [22m[2mheadless-settings[2m > [22m[2mgetSettings backward compat[2m > [22m[2mreturns defaults when file contains invalid JSON
+[22m[39m[settings-store] Failed to parse headless-settings.json, using defaults: Unexpected token 'o', "not json" is not valid JSON
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/headless-settings.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/elk-layout.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 99[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-check.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/plugin-manifest-registry.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mquick agent spawning[2m > [22m[2mPOST /api/v1/projects/:id/agents/quick spawns a quick agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/agent-queue-task-store.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/util/shell.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/agent-config-recovery.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/managed-settings.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mquick agent spawning[2m > [22m[2mPOST /api/v1/projects/:id/agents/quick notifies desktop renderer via IPC
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/agent-registry.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/protocol-handler.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+[90mstderr[2m | src/main/services/session-settings.test.ts[2m > [22m[2msession-settings[2m > [22m[2mgetSettings[2m > [22m[2mreturns defaults on corrupt JSON
+[22m[39m[settings-store] Failed to parse session-settings.json, using defaults: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/session-settings.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mquick agent spawning[2m > [22m[2mPOST /api/v1/projects/:id/agents/quick returns 400 without prompt
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-download.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-settings.test.ts[2m > [22m[2mannex-settings[2m > [22m[2mgetSettings[2m > [22m[2mreturns defaults on corrupt JSON
+[22m[39m[settings-store] Failed to parse annex-settings.json, using defaults: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-settings.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/profile-settings.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/search-service.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 103[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mquick agent spawning[2m > [22m[2mPOST /api/v1/projects/:id/agents/quick returns 404 for unknown project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/jsonl-parser.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/group-project-registry.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/group-project-tools.test.ts [2m([22m[2m53 tests[22m[2m)[22m[33m 2682[2mms[22m[39m
+     [33m[2m✓[22m[39m shoulder_tap delivers message to target agent [33m 1305[2mms[22m[39m
+     [33m[2m✓[22m[39m broadcast delivers message to all agents except sender [33m 1358[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-client-buffer.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mquick agent spawning[2m > [22m[2mPOST /api/v1/agents/:id/agents/quick spawns under a parent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/file-service.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-identity.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/marketplace-handlers.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mquick agent spawning[2m > [22m[2mPOST /api/v1/agents/:id/agents/quick returns 404 for unknown parent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/assistant-module-registration.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-linux.test.ts [2m([22m[2m10 tests[22m[2m | [22m[33m6 skipped[39m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/instructions-paths.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-persistence.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mode-settings.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mquick agent spawning[2m > [22m[2mCQ-RC-01: re-spawning with the same agentId within 60s cancels the stale cleanup timer
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-event-replay.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/group-project-polling.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/version-history.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mwake agent[2m > [22m[2mPOST /api/v1/agents/:id/wake wakes a sleeping agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/codex-headless-events.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/notification-service.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/canvas-command.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/git-handlers.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/path-sandbox.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/gitignore-manager.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-lifecycle.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/validation.test.ts [2m([22m[2m36 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/mcp-command-adapter.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 159[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/custom-marketplace-service.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/headless-fallback.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/notification-service-win32.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-event-bus.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+[90mstderr[2m | src/main/services/badge-settings.test.ts[2m > [22m[2mbadge-settings[2m > [22m[2mgetSettings[2m > [22m[2mreturns defaults on corrupt JSON
+[22m[39m[settings-store] Failed to parse badge-settings.json, using defaults: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/badge-settings.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/index.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/window-security-guards.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-peers.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/registry.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/profile-handlers.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/plugin-protocol.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/protocol-service.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-quit.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/util/ipc-broadcast-audit.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/git-exclude-manager.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-history.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/agent-queue-registry.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/shutdown-guard.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/mcp-settings.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/canvas-layout.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/pty-handlers.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+[90mstderr[2m | src/main/services/file-watch-service.test.ts[2m > [22m[2mextractBaseDir[2m > [22m[2mreturns "." for empty string
+[22m[39mextractBaseDir: Could not extract base from glob "", falling back to '.'
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/file-watch-service.test.ts [2m([22m[2m56 tests[22m[2m)[22m[33m 3598[2mms[22m[39m
+       [33m[2m✓[22m[39m classifies rename of a new file as created [33m 504[2mms[22m[39m
+       [33m[2m✓[22m[39m classifies rename of a deleted file as deleted [33m 1005[2mms[22m[39m
+       [33m[2m✓[22m[39m does not push events if watch was stopped during async check [33m 505[2mms[22m[39m
+       [33m[2m✓[22m[39m should only forward events for files matching the glob pattern [33m 503[2mms[22m[39m
+       [33m[2m✓[22m[39m should forward events for nested files matching the glob [33m 502[2mms[22m[39m
+       [33m[2m✓[22m[39m should not forward events for files outside the glob scope [33m 504[2mms[22m[39m
+[90mstderr[2m | src/main/services/clipboard-settings.test.ts[2m > [22m[2mclipboard-settings[2m > [22m[2mgetSettings[2m > [22m[2mreturns defaults on corrupt JSON
+[22m[39m[settings-store] Failed to parse clipboard-settings.json, using defaults: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clipboard-settings.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/process-bridge.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/orchestrators/adapters/async-queue.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/companion-workspace.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/csp-nonce.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clipboard-guard.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/settings-handlers.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/util/ipc-broadcast-policies.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/pty-headless-terminal.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/__mocks__/electron-mock.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/theme-service.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mwake agent[2m > [22m[2mPOST /api/v1/agents/:id/wake returns 409 for running agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/stale-sweeper.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/plugin-mcp-handlers.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/log-settings.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/command-prefix-validation.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mwake agent[2m > [22m[2mPOST /api/v1/agents/:id/wake returns 404 for unknown agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/preview-eligible.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/title-bar-colors.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/notify-tools.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/ipc/validation.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mwake agent[2m > [22m[2mPOST /api/v1/agents/:id/wake wakes without a mission
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/agent-exit-broadcast.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/menu.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-windows.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/navigation-guard.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/plugin-theme-store.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/forge-plist-entries.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/dev-ipc-guard.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/group-project-admin-service.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/fs-utils.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/clubhouse-mcp/tools/canvas-tools.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-tls.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 805[2mms[22m[39m
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/auto-update-apply.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 3412[2mms[22m[39m
+     [33m[2m✓[22m[39m quit script extracts zip, replaces the app bundle and cleans up all temp files [33m 1138[2mms[22m[39m
+     [33m[2m✓[22m[39m relaunch script replaces the app bundle and cleans up [33m 1127[2mms[22m[39m
+     [33m[2m✓[22m[39m script does not exit prematurely if the old app bundle is missing [33m 1144[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mwake agent[2m > [22m[2mPOST /api/v1/agents/:id/wake supports resume flag
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mpermission response[2m > [22m[2mPOST /api/v1/agents/:id/permission-response resolves a pending permission
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mpermission response[2m > [22m[2mreturns 400 for invalid decision
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mpermission response[2m > [22m[2mreturns 400 for missing requestId
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mpermission response[2m > [22m[2mreturns 404 for expired/unknown requestId
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mreadBody error handling[2m > [22m[2mhandles aborted request to quick agent spawn (project)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mreadBody error handling[2m > [22m[2mhandles aborted request to quick agent spawn (agent)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/group-project-shoulder-tap.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 5238[2mms[22m[39m
+     [33m[2m✓[22m[39m delivers PTY tap with bracketed paste and submit [33m 1309[2mms[22m[39m
+     [33m[2m✓[22m[39m broadcasts to all members (excluding sender) [33m 1305[2mms[22m[39m
+     [33m[2m✓[22m[39m does NOT record tap to any bulletin channel (ephemeral) [33m 1311[2mms[22m[39m
+     [33m[2m✓[22m[39m injected message points reply at sender inbox when sender is an agent [33m 1308[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mreadBody error handling[2m > [22m[2mhandles aborted request to wake agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mreadBody error handling[2m > [22m[2mhandles aborted request to permission response
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mreadBody error handling[2m > [22m[2mhandles aborted request to structured permission
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mexecution mode[2m > [22m[2mincludes executionMode=pty for PTY agents
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mexecution mode[2m > [22m[2mincludes executionMode=structured for structured agents
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mexecution mode[2m > [22m[2mincludes executionMode=headless for headless agents
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mexecution mode[2m > [22m[2mincludes executionMode=null for sleeping agents
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mstructured permission response[2m > [22m[2mPOST /api/v1/agents/:id/structured-permission resolves permission
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mstructured permission response[2m > [22m[2mPOST /api/v1/agents/:id/structured-permission denies permission
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mstructured permission response[2m > [22m[2mreturns 400 for missing requestId
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mstructured permission response[2m > [22m[2mreturns 400 for missing approved field
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mstructured permission response[2m > [22m[2mreturns 404 for non-structured agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2msnapshot agent projectId[2m > [22m[2mincludes projectId in durable agent snapshot objects
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mpairing stores directional role[2m > [22m[2mstores paired client with role "controller"
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/group-project-lifecycle.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 8762[2mms[22m[39m
+     [33m[2m✓[22m[39m injects polling instruction on join when polling is enabled [33m 802[2mms[22m[39m
+     [33m[2m✓[22m[39m uses orchestrator-specific paste timing for PTY injection [33m 1602[2mms[22m[39m
+     [33m[2m✓[22m[39m includes project name in polling start message [33m 801[2mms[22m[39m
+     [33m[2m✓[22m[39m sends Claude Code-specific polling instruction with /loop [33m 802[2mms[22m[39m
+     [33m[2m✓[22m[39m does not inject duplicate loop when concurrent notifyChange calls fire before members.add [33m 803[2mms[22m[39m
+     [33m[2m✓[22m[39m sends generic polling instruction for non-claude orchestrators [33m 804[2mms[22m[39m
+     [33m[2m✓[22m[39m does not inject polling instruction when polling is disabled [33m 803[2mms[22m[39m
+     [33m[2m✓[22m[39m passes the inbox channel to the polling instruction [33m 804[2mms[22m[39m
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mbuildSnapshot error handling[2m > [22m[2mlogs error when buildSnapshot throws during WS connect
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mbroadcastWs resilience[2m > [22m[2mbroadcastWs logs warning on send failure (verified via code inspection)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mWebSocket protocol integration[2m > [22m[2mdisconnect tracking — connectedCount decrements on WS close
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mWebSocket protocol integration[2m > [22m[2mmTLS gating — bearer-only WS cannot access mTLS-only features
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mWebSocket protocol integration[2m > [22m[2maccepts WS upgrade with token in Authorization header (SEC-CRIT-07)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mWebSocket protocol integration[2m > [22m[2munauthorized WS upgrade is rejected
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mserver-side heartbeat[2m > [22m[2mstarts heartbeat interval when server starts
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mserver-side heartbeat[2m > [22m[2mclears heartbeat interval on server stop
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent REST endpoints[2m > [22m[2mPOST /api/v1/projects/:id/agents/durable creates a durable agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent REST endpoints[2m > [22m[2mPOST /agents/durable returns 404 for unknown project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent REST endpoints[2m > [22m[2mPOST /agents/durable returns 400 when name/color missing
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent REST endpoints[2m > [22m[2mPOST /api/v1/projects/:id/agents/:agentId/delete force-deletes an agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent REST endpoints[2m > [22m[2mPOST /agents/:id/delete supports unregister mode
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent REST endpoints[2m > [22m[2mPOST /agents/:id/delete returns 404 for unknown project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent REST endpoints[2m > [22m[2mGET /api/v1/projects/:id/agents/:agentId/worktree-status returns status
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mdurable agent REST endpoints[2m > [22m[2mGET /worktree-status returns 404 for unknown project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/tree[2m > [22m[2mreturns file tree for existing project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/tree[2m > [22m[2mcalls fileService.readTree with project path and default options
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/tree[2m > [22m[2mpasses query parameters (path, depth, includeHidden)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/tree[2m > [22m[2mreturns 404 for unknown project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/tree[2m > [22m[2mreturns 403 for path traversal via ../ sequences
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/tree[2m > [22m[2mreturns 403 for path traversal via sibling directory prefix
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/tree[2m > [22m[2mreturns 500 when fileService.readTree fails
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/read[2m > [22m[2mreturns file content for existing file
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/read[2m > [22m[2mcalls fileService.readFile with resolved path
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/read[2m > [22m[2mreturns 400 when path parameter is missing
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/read[2m > [22m[2mreturns 404 for unknown project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/read[2m > [22m[2mreturns 403 for path traversal via ../ sequences
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/read[2m > [22m[2mreturns 403 for path traversal via absolute path
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/read[2m > [22m[2mreturns 404 when file does not exist (ENOENT)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mfile system endpoints[2m > [22m[2mGET /api/v1/projects/:id/files/read[2m > [22m[2mreturns 500 for non-ENOENT errors
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2magent message endpoint[2m > [22m[2mPOST /api/v1/agents/:id/message sends to PTY agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2magent message endpoint[2m > [22m[2mPOST /api/v1/agents/:id/message sends to structured agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2magent message endpoint[2m > [22m[2mreturns 400 when message is missing
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2magent message endpoint[2m > [22m[2mreturns 400 for headless agent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project polling endpoint[2m > [22m[2mPOST /api/v1/group-projects/:id/polling sets the setting via setProjectPolling
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project polling endpoint[2m > [22m[2mreturns 400 when enabled is not a boolean
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project polling endpoint[2m > [22m[2mreturns 404 for an unknown group project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project bulletin digest endpoint[2m > [22m[2mpasses a plain `since` through — an older controller keeps working
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project bulletin digest endpoint[2m > [22m[2mdecodes `sinceChannels` into a per-channel map
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project bulletin digest endpoint[2m > [22m[2mrequests no cutoff when neither param is sent
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project bulletin digest endpoint[2m > [22m[2mrejects malformed JSON in sinceChannels with 400
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project bulletin digest endpoint[2m > [22m[2mrejects prototype-polluting keys from a paired peer with 400
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project bulletin digest endpoint[2m > [22m[2mrejects an over-long sinceChannels param with 400 rather than doing the work
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project bulletin digest endpoint[2m > [22m[2maccepts exactly what the controller's encoder produces
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mgroup project bulletin digest endpoint[2m > [22m[2mstill 404s for an unknown group project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2msnapshot includes canvas wires[2m > [22m[2mbuildSnapshot reads canvas-wires key for each project
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2msnapshot includes canvas wires[2m > [22m[2mbuildSnapshot reads canvas-wires for app-level (global) canvas state
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mwake handler waits for agent running[2m > [22m[2magent shows running status after wake (not sleeping)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mwake handler waits for agent running[2m > [22m[2mwake handler tolerates agent that takes multiple polls to register
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mGP member status checks all execution modes[2m > [22m[2mheadless agent shows as connected in GP members endpoint
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mGP member status checks all execution modes[2m > [22m[2mstructured agent shows as connected in GP members endpoint
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mGP member status checks all execution modes[2m > [22m[2msleeping agent shows as sleeping in GP members endpoint
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mmTLS lock state broadcast ordering[2m > [22m[2mbroadcasts LOCK_STATE_CHANGED before buildSnapshot resolves (LB-AN-006 behavioral)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+[90mstderr[2m | src/main/services/annex-server.test.ts[2m > [22m[2mannex-server[2m > [22m[2mmTLS lock state broadcast ordering[2m > [22m[2mregisters ws.on(close) before buildSnapshot resolves (LB-AN-006 behavioral)
+[22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ [32m✓[39m [30m[45m main [49m[39m src/main/services/annex-server.test.ts [2m([22m[2m148 tests[22m[2m)[22m[33m 22936[2mms[22m[39m
+       [33m[2m✓[22m[39m POST /api/v1/agents/:id/wake wakes a sleeping agent [33m 1113[2mms[22m[39m
+       [33m[2m✓[22m[39m POST /api/v1/agents/:id/wake wakes without a mission [33m 1122[2mms[22m[39m
+       [33m[2m✓[22m[39m POST /api/v1/agents/:id/wake supports resume flag [33m 1125[2mms[22m[39m
+       [33m[2m✓[22m[39m logs error when buildSnapshot throws during WS connect [33m 1105[2mms[22m[39m
+       [33m[2m✓[22m[39m disconnect tracking — connectedCount decrements on WS close [33m 5105[2mms[22m[39m
+       [33m[2m✓[22m[39m accepts WS upgrade with token in Authorization header (SEC-CRIT-07) [33m 406[2mms[22m[39m
+       [33m[2m✓[22m[39m buildSnapshot reads canvas-wires key for each project [33m 609[2mms[22m[39m
+       [33m[2m✓[22m[39m buildSnapshot reads canvas-wires for app-level (global) canvas state [33m 607[2mms[22m[39m
+       [33m[2m✓[22m[39m wake handler tolerates agent that takes multiple polls to register [33m 312[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m167 passed[39m[22m[90m (167)[39m
+[2m      Tests [22m [1m[32m4764 passed[39m[22m[2m | [22m[33m6 skipped[39m[90m (4770)[39m
+[2m   Start at [22m 21:39:03
+[2m   Duration [22m 23.96s[2m (transform 7.27s, setup 0ms, import 13.76s, tests 52.93s, environment 9ms)[22m
+
