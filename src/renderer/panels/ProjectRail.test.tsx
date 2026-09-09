@@ -11,6 +11,7 @@ import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { ProjectRail } from './ProjectRail';
 import { showConfirmDialog } from '../plugins/PluginDialog';
+import * as nameGenerator from '../../shared/name-generator';
 import type { Project } from '../../shared/types';
 
 vi.mock('../plugins/PluginDialog', () => ({
@@ -286,6 +287,59 @@ describe('ProjectRail store subscriptions', () => {
 
     await vi.waitFor(() => {
       expect(onRender).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not re-render other project icons when one project badge changes', async () => {
+    useProjectStore.setState({
+      projects: [
+        makeProject({ id: 'p1', name: 'Alpha', color: 'red' }),
+        makeProject({ id: 'p2', name: 'Beta', color: 'blue' }),
+      ],
+    });
+
+    const getAgentColorHex = vi.spyOn(nameGenerator, 'getAgentColorHex');
+    render(<ProjectRail />);
+    await vi.waitFor(() => {
+      expect(getAgentColorHex).toHaveBeenCalledWith('red');
+      expect(getAgentColorHex).toHaveBeenCalledWith('blue');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    getAgentColorHex.mockClear();
+
+    useBadgeStore.getState().setBadge('test', 'dot', 1, {
+      kind: 'explorer-tab',
+      projectId: 'p1',
+      tabId: 'agents',
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('badge-dot')).toBeInTheDocument();
+    });
+    expect(getAgentColorHex.mock.calls.map(([color]) => color)).toEqual(['red']);
+  });
+
+  it('updates project badges when badge settings change', async () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+    });
+    useBadgeStore.getState().setBadge('test', 'dot', 1, {
+      kind: 'explorer-tab',
+      projectId: 'p1',
+      tabId: 'agents',
+    });
+
+    render(<ProjectRail />);
+    expect(screen.getByTestId('badge-dot')).toBeInTheDocument();
+
+    useBadgeSettingsStore.setState({ projectRailBadges: false });
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId('badge-dot')).not.toBeInTheDocument();
+    });
+
+    useBadgeSettingsStore.setState({ projectRailBadges: true });
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('badge-dot')).toBeInTheDocument();
     });
   });
 });
