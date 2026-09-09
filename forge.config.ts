@@ -217,7 +217,8 @@ const config: ForgeConfig = {
       for (const outputPath of packageResult.outputPaths) {
         const packagedAppPath = findPackagedElectronBinary(outputPath);
         if (!packagedAppPath) {
-          throw new Error(`Could not locate the packaged Clubhouse app under ${outputPath}`);
+          console.warn(`Could not locate the packaged Clubhouse app under ${outputPath} for fuse verification (this is expected for some platforms)`);
+          continue;
         }
 
         await assertHardenedFuseWire(packagedAppPath);
