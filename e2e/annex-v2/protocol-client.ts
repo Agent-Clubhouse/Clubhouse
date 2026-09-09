@@ -11,6 +11,7 @@ import * as http from 'http';
 export interface AnnexProtocolClientOptions {
   host: string;
   port: number;
+  pairingPort?: number;
 }
 
 export interface PairResponse {
@@ -26,6 +27,7 @@ export interface PairResponse {
 export class AnnexProtocolClient {
   private host: string;
   private port: number;
+  private pairingPort: number;
   private token: string | null = null;
   private ws: WebSocket | null = null;
   private messageQueue: Array<Record<string, unknown>> = [];
@@ -34,6 +36,7 @@ export class AnnexProtocolClient {
   constructor(options: AnnexProtocolClientOptions) {
     this.host = options.host;
     this.port = options.port;
+    this.pairingPort = options.pairingPort ?? options.port;
   }
 
   get isConnected(): boolean {
@@ -48,12 +51,12 @@ export class AnnexProtocolClient {
   // HTTP methods
   // ---------------------------------------------------------------------------
 
-  private httpRequest(method: string, path: string, body?: unknown): Promise<{ status: number; body: unknown }> {
+  private httpRequest(method: string, path: string, body?: unknown, port = this.port): Promise<{ status: number; body: unknown }> {
     return new Promise((resolve, reject) => {
       const jsonBody = body ? JSON.stringify(body) : undefined;
       const req = http.request({
         hostname: this.host,
-        port: this.port,
+        port,
         path,
         method,
         headers: {
@@ -86,7 +89,7 @@ export class AnnexProtocolClient {
     const body: Record<string, unknown> = { pin };
     if (publicKey) body.publicKey = publicKey;
 
-    const res = await this.httpRequest('POST', '/pair', body);
+    const res = await this.httpRequest('POST', '/pair', body, this.pairingPort);
     const data = res.body as PairResponse;
 
     if (res.status === 200 && data.token) {
