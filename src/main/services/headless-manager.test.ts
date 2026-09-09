@@ -40,12 +40,15 @@ const mockFsPromises = vi.hoisted(() => ({
 }));
 vi.mock('fs/promises', () => mockFsPromises);
 
-// Mock shell environment
-vi.mock('../util/shell', () => ({
-  getShellEnvironment: vi.fn(() => ({ PATH: '/usr/local/bin' })),
-  cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
-  winQuoteArg: vi.fn((arg: string) => arg.length === 0 ? '""' : '"' + arg.replace(/"/g, '""') + '"'),
-}));
+// Mock shell environment while exercising the real winQuoteArg escaping logic.
+vi.mock('../util/shell', async () => {
+  const actual = await vi.importActual<typeof import('../util/shell')>('../util/shell');
+  return {
+    ...actual,
+    getShellEnvironment: vi.fn(() => ({ PATH: '/usr/local/bin' })),
+    cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
+  };
+});
 
 // Mock log service
 vi.mock('./log-service', () => ({
@@ -671,23 +674,21 @@ describe('headless-manager', () => {
   // ============================================================
   describe('Windows spawn options', () => {
     it('uses cmd.exe with windowsVerbatimArguments on Windows', async () => {
-      await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'test']);
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      try {
+        await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'test']);
 
-      if (process.platform === 'win32') {
-        // On Windows, binary and args are wrapped in cmd.exe /d /s /c "..."
         const spawnArgs = (mockCpSpawn.mock.calls[0] as any[]);
         expect(spawnArgs[0]).toBe('cmd.exe');
         expect(spawnArgs[1][0]).toBe('/d');
         expect(spawnArgs[1][1]).toBe('/s');
         expect(spawnArgs[1][2]).toBe('/c');
-        // The 4th arg is the quoted command string
         expect(spawnArgs[1][3]).toContain('claude.cmd');
         expect(spawnArgs[1][3]).toContain('-p');
         expect(spawnArgs[2].windowsVerbatimArguments).toBe(true);
-      } else {
-        // On non-Windows, binary is called directly
-        const spawnArgs = (mockCpSpawn.mock.calls[0] as any[]);
-        expect(spawnArgs[0]).toBe('C:\\npm\\claude.cmd');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
       }
     });
 
@@ -705,13 +706,37 @@ describe('headless-manager', () => {
     });
 
     it('properly quotes arguments with spaces in Windows command line', async () => {
-      if (process.platform !== 'win32') return; // Windows-only test
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      try {
+        await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'Fix the login bug', '--verbose']);
 
-      await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'Fix the login bug', '--verbose']);
+        const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
+        expect(cmdLine).toContain('"Fix the login bug"');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
 
-      const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
-      // Mission text should be wrapped in double quotes
-      expect(cmdLine).toContain('"Fix the login bug"');
+    it('doubles percent signs in Windows command strings so %USERNAME% stays literal', async () => {
+      const originalPlatform = process.platform;
+      const originalUsername = process.env.USERNAME;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      process.env.USERNAME = 'builder';
+      try {
+        await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['%USERNAME%']);
+
+        const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
+        expect(cmdLine).toContain('%%USERNAME%%');
+        expect(cmdLine).not.toContain('"%USERNAME%"');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+        if (originalUsername === undefined) {
+          delete process.env.USERNAME;
+        } else {
+          process.env.USERNAME = originalUsername;
+        }
+      }
     });
   });
 
