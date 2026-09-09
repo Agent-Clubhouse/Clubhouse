@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import { Profiler } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
@@ -250,6 +251,42 @@ describe('ProjectRail context menu', () => {
     expect(ui.settingsSubPage).toBe('project');
     // Also makes it the active project.
     expect(useProjectStore.getState().activeProjectId).toBe('p1');
+  });
+});
+
+describe('ProjectRail store subscriptions', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(_cb: () => void) {}
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    resetStores();
+  });
+
+  it('does not re-render when only gitStatus/projectIcons change without project list changes', async () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+      activeProjectId: 'p1',
+    });
+
+    const onRender = vi.fn();
+    render(
+      <Profiler id="project-rail" onRender={onRender}>
+        <ProjectRail />
+      </Profiler>,
+    );
+
+    await vi.waitFor(() => {
+      expect(onRender).toHaveBeenCalledTimes(1);
+    });
+
+    useProjectStore.setState({ gitStatus: { p1: true } });
+    useProjectStore.setState({ projectIcons: { p1: 'data:image/png;base64,abc123' } });
+
+    await vi.waitFor(() => {
+      expect(onRender).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
