@@ -1,6 +1,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { randomUUID } from 'crypto';
 import { app } from 'electron';
 import { Project } from '../../shared/types';
 import { appLog } from './log-service';
@@ -24,6 +25,15 @@ async function getBaseDir(): Promise<string> {
 
 async function getStorePath(): Promise<string> {
   return path.join(await getBaseDir(), 'projects.json');
+}
+
+async function getBackupPath(): Promise<string> {
+  return path.join(await getBaseDir(), 'projects.json.bak');
+}
+
+async function getQuarantinePath(): Promise<string> {
+  const timestamp = Date.now();
+  return path.join(await getBaseDir(), `projects.json.corrupt-${timestamp}`);
 }
 
 async function getIconsDir(): Promise<string> {
@@ -185,31 +195,104 @@ function migrate(raw: unknown): ProjectStoreV1 {
 
 async function readStore(): Promise<ProjectStoreV1> {
   const storePath = await getStorePath();
-  if (!await pathExists(storePath)) {
-    return { version: CURRENT_VERSION, projects: [] };
-  }
-  try {
-    const raw = JSON.parse(await fsp.readFile(storePath, 'utf-8'));
-    const store = migrate(raw);
-    // Re-write if we migrated from an older format
-    if (!raw.version || raw.version !== CURRENT_VERSION) {
-      appLog('core:project-store', 'info', 'Migrated project store from older format', {
-        meta: { fromVersion: raw.version, toVersion: CURRENT_VERSION },
+  const backupPath = await getBackupPath();
+
+  appLog('core:project-store', 'debug', 'Reading project store from disk', {
+    meta: { storePath, backupPath },
+  });
+
+  let store: ProjectStoreV1 | null = null;
+
+  // Try to read main store
+  if (await pathExists(storePath)) {
+    try {
+      const raw = JSON.parse(await fsp.readFile(storePath, 'utf-8'));
+      store = migrate(raw);
+      appLog('core:project-store', 'info', `Loaded ${store.projects.length} project(s) from disk`, {
+        meta: { storePath, projects: store.projects.map((p) => ({ id: p.id, name: p.name })) },
       });
-      await writeStore(store);
+      // Re-write if we migrated from an older format
+      if (raw.version == null || raw.version !== CURRENT_VERSION) {
+        appLog('core:project-store', 'info', 'Migrated project store from older format', {
+          meta: { fromVersion: (raw as Record<string, unknown>).version, toVersion: CURRENT_VERSION },
+        });
+        await writeStore(store);
+      }
+    } catch (err) {
+      appLog('core:project-store', 'error', 'Failed to parse projects.json — quarantining and attempting recovery from backup', {
+        meta: { storePath, error: err instanceof Error ? err.message : String(err) },
+      });
+      // Quarantine the corrupt file so it is not silently overwritten by the next write
+      try {
+        const quarantinePath = await getQuarantinePath();
+        await fsp.rename(storePath, quarantinePath);
+        appLog('core:project-store', 'info', 'Corrupt projects.json quarantined', {
+          meta: { corrupted: storePath, quarantined: quarantinePath },
+        });
+      } catch (quarantineErr) {
+        appLog('core:project-store', 'error', 'Failed to quarantine corrupt projects.json', {
+          meta: { storePath, error: quarantineErr instanceof Error ? quarantineErr.message : String(quarantineErr) },
+        });
+      }
     }
-    return store;
-  } catch (err) {
-    appLog('core:project-store', 'error', 'Failed to parse projects.json, returning empty list', {
-      meta: { storePath, error: err instanceof Error ? err.message : String(err) },
+  }
+
+  // Main file missing or corrupt — fall back to backup
+  if (!store && await pathExists(backupPath)) {
+    try {
+      const raw = JSON.parse(await fsp.readFile(backupPath, 'utf-8'));
+      store = migrate(raw);
+      if (store.projects.length > 0) {
+        appLog('core:project-store', 'warn', `Recovered ${store.projects.length} project(s) from backup`, {
+          meta: {
+            backupPath,
+            projects: store.projects.map((p) => ({ id: p.id, name: p.name })),
+          },
+        });
+        // Restore backup to main file so future reads succeed
+        await writeStore(store);
+      }
+    } catch (backupErr) {
+      appLog('core:project-store', 'error', 'Backup projects.json.bak is also corrupt', {
+        meta: { backupPath, error: backupErr instanceof Error ? backupErr.message : String(backupErr) },
+      });
+    }
+  }
+
+  if (!store) {
+    appLog('core:project-store', 'info', 'No project store found on disk, starting with empty list', {
+      meta: { storePath, backupPath },
     });
     return { version: CURRENT_VERSION, projects: [] };
   }
+
+  return store;
 }
 
 async function writeStore(store: ProjectStoreV1): Promise<void> {
   const storePath = await getStorePath();
-  await fsp.writeFile(storePath, JSON.stringify(store, null, 2), 'utf-8');
+  const backupPath = await getBackupPath();
+
+  // Back up existing projects.json before overwriting — the backup preserves
+  // the last known-good state so that a crash mid-write or corrupt write
+  // can be auto-recovered on the next read.
+  if (await pathExists(storePath)) {
+    try {
+      await fsp.copyFile(storePath, backupPath);
+    } catch {
+      // Non-fatal — best-effort backup
+    }
+  }
+
+  // Atomic write: write to temp file then rename — prevents partial/corrupt
+  // files if the process crashes mid-write.
+  const tmpPath = storePath + '.tmp.' + randomUUID().slice(0, 8);
+  await fsp.writeFile(tmpPath, JSON.stringify(store, null, 2), 'utf-8');
+  await fsp.rename(tmpPath, storePath);
+
+  appLog('core:project-store', 'info', `Wrote ${store.projects.length} project(s) to disk`, {
+    meta: { storePath, projectIds: store.projects.map((p) => p.id) },
+  });
 }
 
 async function readProjects(): Promise<Project[]> {
