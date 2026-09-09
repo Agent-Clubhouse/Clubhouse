@@ -370,6 +370,19 @@ export async function callTool(
     }
   }
 
+  // Defense in depth: for group-project targets, verify the caller is authorized
+  // to invoke this tool at call time, not just at listing time.
+  if (binding.targetKind === 'group-project') {
+    const project = await groupProjectRegistry.getSync(binding.targetId);
+    const denied = deniedGroupProjectTools(project?.metadata, agentId, binding.disabledTools);
+    if (denied.has(parsed.suffix)) {
+      return {
+        content: [{ type: 'text', text: 'Only a project admin can invoke this tool.' }],
+        isError: true,
+      };
+    }
+  }
+
   return template.handler(binding.targetId, agentId, args);
 }
 
