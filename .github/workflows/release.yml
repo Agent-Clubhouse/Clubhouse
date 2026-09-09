@@ -568,13 +568,7 @@ jobs:
             }' > new-entry.json
 
           # Replace an existing version in place; prepend new versions.
-          jq --slurpfile entry new-entry.json '
-            if any(.[]; .version == $entry[0].version) then
-              map(if .version == $entry[0].version then $entry[0] else . end)
-            else
-              [$entry[0]] + .
-            end
-          ' history-existing.json > artifacts/history.json
+          jq --slurpfile entry new-entry.json 'if any(.[]; .version == $entry[0].version) then map(if .version == $entry[0].version then $entry[0] else . end) else [$entry[0]] + . end' history-existing.json > artifacts/history.json
 
           echo "Updated history.json ($(jq length artifacts/history.json) entries):"
           jq '.[0]' artifacts/history.json
