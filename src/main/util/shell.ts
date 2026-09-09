@@ -89,11 +89,13 @@ export function cleanSpawnEnv(env: Record<string, string>): Record<string, strin
  * Quote a single argument for use in a Windows cmd.exe command line.
  * Always wraps in double quotes to safely handle spaces, special chars,
  * and long argument values (e.g. mission text, system prompts).
- * Embedded double quotes are escaped by doubling them ("").
+ * Percent signs must be doubled to prevent cmd.exe from expanding
+ * %VAR% references inside quoted arguments.
  */
 export function winQuoteArg(arg: string): string {
   if (arg.length === 0) return '""';
-  return '"' + arg.replace(/"/g, '""') + '"';
+  const escaped = arg.replace(/%/g, '%%').replace(/"/g, '""');
+  return '"' + escaped + '"';
 }
 
 /** Returns the platform-appropriate default shell. */

@@ -15,13 +15,17 @@ vi.mock('node-pty', () => ({
 
 // Mock electron (aliased via vitest.config.ts)
 
-// Mock shell utility
-vi.mock('../util/shell', () => ({
-  getShellEnvironment: vi.fn(() => ({ ...process.env })),
-  getDefaultShell: vi.fn(() => process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/zsh')),
-  cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
-  winQuoteArg: vi.fn((arg: string) => arg.length === 0 ? '""' : '"' + arg.replace(/"/g, '""') + '"'),
-}));
+// Mock shell utility, but keep the real winQuoteArg so Windows percent-escaping
+// is exercised in PTY command construction without changing other behavior.
+vi.mock('../util/shell', async () => {
+  const actual = await vi.importActual<typeof import('../util/shell')>('../util/shell');
+  return {
+    ...actual,
+    getShellEnvironment: vi.fn(() => ({ ...process.env })),
+    getDefaultShell: vi.fn(() => process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/zsh')),
+    cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
+  };
+});
 
 // Mock the IPC channels
 vi.mock('../../shared/ipc-channels', () => ({
@@ -1470,17 +1474,45 @@ describe('pty-manager', () => {
 
   describe('winQuoteArg', () => {
     it('handles empty string argument', async () => {
-      if (process.platform !== 'win32') return;
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      try {
+        await spawn('agent_winquote', '/test', '/usr/local/bin/claude', ['']);
+        resize('agent_winquote', 120, 30);
 
-      await spawn('agent_winquote', '/test', '/usr/local/bin/claude', ['']);
-      resize('agent_winquote', 120, 30);
+        const writeCall = mockProcess.write.mock.calls.find(
+          (c: string[]) => typeof c[0] === 'string' && c[0].includes('& exit')
+        );
+        expect(writeCall).toBeDefined();
+        expect(writeCall![0]).toContain('""');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
 
-      const writeCall = mockProcess.write.mock.calls.find(
-        (c: string[]) => typeof c[0] === 'string' && c[0].includes('& exit')
-      );
-      expect(writeCall).toBeDefined();
-      // Empty arg should become ""
-      expect(writeCall![0]).toContain('""');
+    it('preserves %USERNAME% by escaping percent signs in Windows PTY args', async () => {
+      const originalPlatform = process.platform;
+      const originalUsername = process.env.USERNAME;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      process.env.USERNAME = 'builder';
+
+      try {
+        await spawn('agent_winquote_percent', '/test', '/usr/local/bin/claude', ['%USERNAME%']);
+        resize('agent_winquote_percent', 120, 30);
+
+        const writeCall = mockProcess.write.mock.calls.find(
+          (c: string[]) => typeof c[0] === 'string' && c[0].includes('%%USERNAME%%')
+        );
+        expect(writeCall).toBeDefined();
+        expect(writeCall![0]).toContain('%%USERNAME%%');
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+        if (originalUsername === undefined) {
+          delete process.env.USERNAME;
+        } else {
+          process.env.USERNAME = originalUsername;
+        }
+      }
     });
   });
 
