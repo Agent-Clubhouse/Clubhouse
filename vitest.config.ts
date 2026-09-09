@@ -51,7 +51,7 @@ export default defineConfig({
         test: {
           name: 'main',
           ...sharedTestConfig,
-          include: ['src/main/**/*.test.ts'],
+          include: ['src/main/**/*.test.ts', 'scripts/**/*.test.ts'],
           environment: 'node',
         },
         resolve: { alias: aliases },
