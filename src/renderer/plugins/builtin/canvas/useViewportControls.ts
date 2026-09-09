@@ -8,6 +8,7 @@
 import { useCallback, useRef } from 'react';
 import type { CanvasView, ZoneCanvasView, Viewport, Position } from './canvas-types';
 import { zoomTowardPoint, clampZoom, viewportToCenterView, viewportToFitViews, resolveRadialRootId } from './canvas-operations';
+import { useBatchedViewportChange } from './canvas-viewport-batching';
 import type { AutolayoutOptions } from './CanvasControls';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 
@@ -54,6 +55,7 @@ export function useViewportControls({
   onFocusView,
 }: ViewportControlsOptions): ViewportControlsResult {
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const { scheduleViewportChange } = useBatchedViewportChange(onViewportChange);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (!containerRef.current) return;
@@ -62,15 +64,15 @@ export function useViewportControls({
       const delta = -e.deltaY * 0.002;
       const newZoom = clampZoom(viewport.zoom * (1 + delta));
       const rect = containerRef.current.getBoundingClientRect();
-      onViewportChange(zoomTowardPoint(viewport, newZoom, e.clientX, e.clientY, rect));
+      scheduleViewportChange(zoomTowardPoint(viewport, newZoom, e.clientX, e.clientY, rect));
     } else {
-      onViewportChange({
+      scheduleViewportChange({
         panX: viewport.panX - e.deltaX / viewport.zoom,
         panY: viewport.panY - e.deltaY / viewport.zoom,
         zoom: viewport.zoom,
       });
     }
-  }, [viewport, onViewportChange, containerRef]);
+  }, [viewport, scheduleViewportChange, containerRef]);
 
   const handleKeyDown = useCallback((
     e: React.KeyboardEvent,
