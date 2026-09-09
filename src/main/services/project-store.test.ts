@@ -40,68 +40,6 @@ import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } fr
 // and app.isPackaged = false → dirName = '.clubhouse-dev'
 const BASE_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse-dev');
 const STORE_PATH = path.join(BASE_DIR, 'projects.json');
-const BACKUP_PATH = path.join(BASE_DIR, 'projects.json.bak');
-
-/** 
- * Helper to capture written data in tests.
- * With atomic writes, data is written to a temp file, then rename() is called.
- * This helper sets up mocks that work with the atomic write pattern.
- */
-function setupWriteCapture() {
-  let lastJsonData = '';
-  
-  vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
-    const pathStr = String(p);
-    // Capture JSON string writes (both to STORE_PATH and temp files)
-    if (typeof data === 'string' && pathStr.includes('projects')) {
-      lastJsonData = data;
-    }
-  });
-
-  vi.mocked(fsp.rename).mockResolvedValue(undefined);
-  vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
-
-  return () => lastJsonData;
-}
-
-/** 
- * Helper to capture written data in tests.
- * With atomic writes, data is written to a temp file, then rename() is called.
- * This helper tracks writes and returns a function to get the latest data written.
- */
-function setupDataCapture() {
-  let lastWrittenData: string = '';
-  let lastTempPath: string = '';
-
-  vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
-    const pathStr = String(p);
-    // Capture writes to temp files or direct STORE_PATH writes
-    if (typeof data === 'string' && (pathStr.includes('.tmp.') || pathStr === STORE_PATH)) {
-      lastWrittenData = data;
-      lastTempPath = pathStr;
-    } else if (Buffer.isBuffer(data)) {
-      // Icon writes - don't capture as JSON
-    }
-  });
-
-  vi.mocked(fsp.rename).mockImplementation(async (src: any, dst: any) => {
-    // If renaming from temp file, mark that as the final write target
-    if (String(src).includes('.tmp.') && String(dst) === STORE_PATH) {
-      // Data already captured in writeFile
-    } else if (String(dst).includes('corrupt')) {
-      // Quarantine rename - don't interfere
-    }
-  });
-
-  return {
-    getWrittenData: () => lastWrittenData,
-    getTempPath: () => lastTempPath,
-    reset: () => {
-      lastWrittenData = '';
-      lastTempPath = '';
-    },
-  };
-}
 
 function mockStoreFile(content: any) {
   vi.mocked(pathExists).mockImplementation(async (p: any) => {
@@ -1680,6 +1618,7 @@ describe('Atomic write and backup recovery', () => {
 
     let tempFilePath = '';
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
+      void data;
       tempFilePath = String(p);
     });
     vi.mocked(fsp.rename).mockResolvedValue(undefined);
@@ -1689,6 +1628,8 @@ describe('Atomic write and backup recovery', () => {
     // Verify that rename was called (atomic move)
     expect(vi.mocked(fsp.rename)).toHaveBeenCalledWith(tempFilePath, STORE_PATH);
     expect(tempFilePath).toMatch(/\.tmp\./);
+    expect(project.name).toBe('new-project');
+    expect(project.path).toBe('/Users/me/new-project');
   });
 
   it('recovers from corrupt projects.json by falling back to backup', async () => {
@@ -1764,11 +1705,6 @@ describe('Atomic write and backup recovery', () => {
   });
 
   it('subsequent write does not overwrite quarantined corrupt file', async () => {
-    const goodStore = {
-      version: 1,
-      projects: [{ id: 'proj_new', name: 'New', path: '/new' }],
-    };
-
     // First: corrupt main file, no backup
     vi.mocked(pathExists).mockImplementation(async (p: any) => {
       const s = String(p);
@@ -1824,7 +1760,7 @@ describe('Atomic write and backup recovery', () => {
     // not to touch the quarantine
     const renameCalls = vi.mocked(fsp.rename).mock.calls;
     for (const call of renameCalls) {
-      const [src, dst] = call;
+      const [, dst] = call;
       expect(String(dst)).not.toMatch(/corrupt-\d+/);
     }
   });

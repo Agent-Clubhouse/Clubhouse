@@ -202,14 +202,12 @@ async function readStore(): Promise<ProjectStoreV1> {
   });
 
   let store: ProjectStoreV1 | null = null;
-  let source: 'main' | 'backup' | 'empty' = 'empty';
 
   // Try to read main store
   if (await pathExists(storePath)) {
     try {
       const raw = JSON.parse(await fsp.readFile(storePath, 'utf-8'));
       store = migrate(raw);
-      source = 'main';
       appLog('core:project-store', 'info', `Loaded ${store.projects.length} project(s) from disk`, {
         meta: { storePath, projects: store.projects.map((p) => ({ id: p.id, name: p.name })) },
       });
@@ -245,7 +243,6 @@ async function readStore(): Promise<ProjectStoreV1> {
       const raw = JSON.parse(await fsp.readFile(backupPath, 'utf-8'));
       store = migrate(raw);
       if (store.projects.length > 0) {
-        source = 'backup';
         appLog('core:project-store', 'warn', `Recovered ${store.projects.length} project(s) from backup`, {
           meta: {
             backupPath,
@@ -275,7 +272,6 @@ async function readStore(): Promise<ProjectStoreV1> {
 async function writeStore(store: ProjectStoreV1): Promise<void> {
   const storePath = await getStorePath();
   const backupPath = await getBackupPath();
-  const baseDir = await getBaseDir();
 
   // Back up existing projects.json before overwriting — the backup preserves
   // the last known-good state so that a crash mid-write or corrupt write
