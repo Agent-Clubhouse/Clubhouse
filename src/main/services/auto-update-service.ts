@@ -678,12 +678,6 @@ async function prepareApply(updateStatus: UpdateStatus, logScope: string): Promi
       releaseNotes: updateStatus.releaseNotes,
     });
   }
-  await clearPendingUpdateInfo();
-  await writeApplyAttempt({
-    version: updateStatus.availableVersion!,
-    artifactUrl: updateStatus.artifactUrl,
-    attemptedAt: new Date().toISOString(),
-  });
   appLog(logScope, 'info', logScope === 'update:apply' ? 'Applying update' : 'Applying update on quit (silent)', {
     meta: { version: updateStatus.availableVersion, downloadPath: updateStatus.downloadPath },
   });
@@ -692,6 +686,15 @@ async function prepareApply(updateStatus: UpdateStatus, logScope: string): Promi
     version: updateStatus.availableVersion!,
     artifactUrl: updateStatus.artifactUrl,
   };
+}
+
+async function recordSuccessfulApply(context: ApplyContext): Promise<void> {
+  await clearPendingUpdateInfo();
+  await writeApplyAttempt({
+    version: context.version,
+    artifactUrl: context.artifactUrl,
+    attemptedAt: new Date().toISOString(),
+  });
 }
 
 export async function applyMacUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
@@ -759,6 +762,7 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: Ap
 
 export async function applyLinuxUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
   const { downloadPath } = context;
+  // Linux currently installs downloaded Debian packages; RPM updates are not supported.
   if (!downloadPath || !await pathExists(downloadPath) || !downloadPath.endsWith('.deb')) return false;
   execFileSync('pkexec', ['dpkg', '-i', downloadPath], { timeout: 120_000 });
   appLog(relaunch ? 'update:apply' : 'update:apply-on-quit', 'info', 'Linux: .deb installed successfully', {
@@ -812,7 +816,10 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
 
   try {
     const applied = await applyPlatformUpdate(context, { relaunch: true });
-    if (applied) return;
+    if (applied) {
+      await recordSuccessfulApply(context);
+      return;
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:apply', 'error', `Failed to apply update: ${msg}`);
@@ -851,7 +858,8 @@ export async function applyUpdateOnQuit(updateStatus: UpdateStatus = status): Pr
   const context = await prepareApply(updateStatus, 'update:apply-on-quit');
 
   try {
-    await applyPlatformUpdate(context, { relaunch: false });
+    const applied = await applyPlatformUpdate(context, { relaunch: false });
+    if (applied) await recordSuccessfulApply(context);
   } catch (err) {
     appLog('update:apply-on-quit', 'warn', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
   }

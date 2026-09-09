@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { execFileSync } from 'child_process';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyPlatformUpdate, platformUpdateHandlers } from './auto-update-service';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyPlatformUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -11,7 +11,16 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })),
 }));
 
+const testUserDataPath = path.join(os.tmpdir(), 'clubhouse-test-userData');
+
 describe('auto-update-service', () => {
+  beforeEach(() => {
+    fs.mkdirSync(testUserDataPath, { recursive: true });
+    for (const filename of ['pending-update-info.json', 'update-apply-attempt.json']) {
+      try { fs.unlinkSync(path.join(testUserDataPath, filename)); } catch {}
+    }
+  });
+
   describe('platform update dispatch', () => {
     it('routes apply and apply-on-quit through the same platform implementation', async () => {
       const readyStatus = {
@@ -76,6 +85,74 @@ describe('auto-update-service', () => {
         { downloadPath: null, version: '1.0.0', artifactUrl: null },
         { relaunch: true },
       );
+      handler.mockRestore();
+    });
+
+    it('keeps the pending marker when the updater fails to spawn', async () => {
+      const readyStatus = {
+        state: 'ready' as const,
+        availableVersion: '1.0.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        downloadPath: '/tmp/Clubhouse.deb',
+        error: null,
+        artifactUrl: null,
+        applyAttempted: false,
+      };
+      const handler = process.platform === 'darwin'
+        ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockRejectedValue(new Error('spawn failed'))
+        : process.platform === 'win32'
+          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockRejectedValue(new Error('spawn failed'))
+          : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockRejectedValue(new Error('spawn failed'));
+
+      await writePendingUpdateInfo({
+        version: readyStatus.availableVersion,
+        downloadPath: readyStatus.downloadPath,
+        releaseNotes: null,
+        releaseMessage: null,
+      });
+      await applyUpdateOnQuit(readyStatus);
+
+      expect(await readPendingUpdateInfo()).toEqual(expect.objectContaining({
+        version: readyStatus.availableVersion,
+      }));
+      expect(await readApplyAttempt()).toBeNull();
+      handler.mockRestore();
+    });
+
+    it('clears the marker and records one attempt after the updater starts', async () => {
+      const readyStatus = {
+        state: 'ready' as const,
+        availableVersion: '1.0.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        downloadPath: '/tmp/Clubhouse.deb',
+        error: null,
+        artifactUrl: null,
+        applyAttempted: false,
+      };
+      const handler = process.platform === 'darwin'
+        ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue(true)
+        : process.platform === 'win32'
+          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue()
+          : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
+
+      await writePendingUpdateInfo({
+        version: readyStatus.availableVersion,
+        downloadPath: readyStatus.downloadPath,
+        releaseNotes: null,
+        releaseMessage: null,
+      });
+      await applyUpdateOnQuit(readyStatus);
+
+      expect(await readPendingUpdateInfo()).toBeNull();
+      expect(await readApplyAttempt()).toEqual(expect.objectContaining({
+        version: readyStatus.availableVersion,
+        artifactUrl: readyStatus.artifactUrl,
+      }));
+      expect(handler).toHaveBeenCalledOnce();
       handler.mockRestore();
     });
 
