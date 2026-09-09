@@ -109,6 +109,28 @@ describe('canvas keyboard focus', () => {
     );
   });
 
+  it('batches viewport writes across wheel events until the next animation frame', async () => {
+    const onViewportChange = vi.fn();
+    renderWorkspace({ onViewportChange });
+    const ws = screen.getByTestId('canvas-workspace');
+
+    await act(async () => {
+      fireEvent.wheel(ws, { deltaY: 12, deltaX: 0, clientX: 20, clientY: 30 });
+      fireEvent.wheel(ws, { deltaY: 24, deltaX: 0, clientX: 20, clientY: 30 });
+    });
+
+    expect(onViewportChange).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+
+    expect(onViewportChange).toHaveBeenCalledTimes(1);
+    expect(onViewportChange).toHaveBeenCalledWith(
+      expect.objectContaining({ zoom: 1 }),
+    );
+  });
+
   it('does NOT pan canvas with arrow keys when a widget is selected', () => {
     const onViewportChange = vi.fn();
     renderWorkspace({

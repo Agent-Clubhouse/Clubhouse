@@ -22,6 +22,7 @@ export interface ViewportControlsOptions {
   layoutCenterId: string | null;
   containerRef: React.RefObject<HTMLDivElement | null>;
   onViewportChange: (viewport: Viewport) => void;
+  onViewportGestureChange?: (viewport: Viewport) => void;
   onMoveViews: (positions: Map<string, Position>) => void;
   onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
   onFocusView?: (viewId: string) => void;
@@ -49,6 +50,7 @@ export function useViewportControls({
   layoutCenterId,
   containerRef,
   onViewportChange,
+  onViewportGestureChange,
   onMoveViews,
   onUpdateWireDefinition,
   onFocusView,
@@ -57,20 +59,21 @@ export function useViewportControls({
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (!containerRef.current) return;
+    const commitViewport = onViewportGestureChange ?? onViewportChange;
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       const delta = -e.deltaY * 0.002;
       const newZoom = clampZoom(viewport.zoom * (1 + delta));
       const rect = containerRef.current.getBoundingClientRect();
-      onViewportChange(zoomTowardPoint(viewport, newZoom, e.clientX, e.clientY, rect));
+      commitViewport(zoomTowardPoint(viewport, newZoom, e.clientX, e.clientY, rect));
     } else {
-      onViewportChange({
+      commitViewport({
         panX: viewport.panX - e.deltaX / viewport.zoom,
         panY: viewport.panY - e.deltaY / viewport.zoom,
         zoom: viewport.zoom,
       });
     }
-  }, [viewport, onViewportChange, containerRef]);
+  }, [viewport, onViewportChange, onViewportGestureChange, containerRef]);
 
   const handleKeyDown = useCallback((
     e: React.KeyboardEvent,

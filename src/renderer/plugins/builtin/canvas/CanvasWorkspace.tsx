@@ -391,7 +391,39 @@ export function CanvasWorkspace({
     return () => ro.disconnect();
   }, []);
 
-  const offScreenIndicators = computeOffScreenIndicators(views, attentionMap, viewport, containerSize);
+  const [liveViewport, setLiveViewport] = useState(viewport);
+  const liveViewportRef = useRef(viewport);
+  const viewportRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    liveViewportRef.current = viewport;
+    setLiveViewport((prev) => {
+      if (prev.panX === viewport.panX && prev.panY === viewport.panY && prev.zoom === viewport.zoom) {
+        return prev;
+      }
+      return viewport;
+    });
+  }, [viewport]);
+
+  useEffect(() => () => {
+    if (viewportRafRef.current !== null) {
+      cancelAnimationFrame(viewportRafRef.current);
+    }
+  }, []);
+
+  const handleViewportChange = useCallback((nextViewport: Viewport) => {
+    liveViewportRef.current = nextViewport;
+    setLiveViewport(nextViewport);
+    if (viewportRafRef.current !== null) return;
+
+    viewportRafRef.current = requestAnimationFrame(() => {
+      viewportRafRef.current = null;
+      onViewportChange(liveViewportRef.current);
+    });
+  }, [onViewportChange]);
+
+  const effectiveViewport = liveViewport;
+  const offScreenIndicators = computeOffScreenIndicators(views, attentionMap, effectiveViewport, containerSize);
 
   // ── Viewport controls hook ────────────────────────────────────
   const {
@@ -407,13 +439,14 @@ export function CanvasWorkspace({
     handleCenterView,
     panStartRef,
   } = useViewportControls({
-    viewport,
+    viewport: effectiveViewport,
     views,
     wireDefinitions,
     selectedViewId,
     layoutCenterId,
     containerRef,
     onViewportChange,
+    onViewportGestureChange: handleViewportChange,
     onMoveViews,
     onUpdateWireDefinition,
     onFocusView,
@@ -432,7 +465,7 @@ export function CanvasWorkspace({
     startSelectionRect,
   } = useSelectionManager({
     views,
-    viewport,
+    viewport: effectiveViewport,
     selectedViewIds,
     containerRef,
     onSetSelectedViewIds,
@@ -454,7 +487,7 @@ export function CanvasWorkspace({
   } = useZoneManager({
     zones,
     views,
-    viewport,
+    viewport: effectiveViewport,
     onRemoveZone,
     onMoveViews,
     onMoveView,
@@ -475,7 +508,7 @@ export function CanvasWorkspace({
     handleDismissViewContextMenu: _handleDismissViewContextMenu,
     handleCenterViewFromMenu,
   } = useCanvasContextMenu({
-    viewport,
+    viewport: effectiveViewport,
     containerRef,
     layoutCenterId,
     onAddView,
@@ -500,9 +533,9 @@ export function CanvasWorkspace({
   useEffect(() => {
     if (!isPanning) return;
     const handleMouseMove = (e: MouseEvent) => {
-      const dx = (e.clientX - panStartRef.current.x) / viewport.zoom;
-      const dy = (e.clientY - panStartRef.current.y) / viewport.zoom;
-      onViewportChange({ panX: panStartRef.current.panX + dx, panY: panStartRef.current.panY + dy, zoom: viewport.zoom });
+      const dx = (e.clientX - panStartRef.current.x) / effectiveViewport.zoom;
+      const dy = (e.clientY - panStartRef.current.y) / effectiveViewport.zoom;
+      handleViewportChange({ panX: panStartRef.current.panX + dx, panY: panStartRef.current.panY + dy, zoom: effectiveViewport.zoom });
     };
     const handleMouseUp = () => setIsPanning(false);
     window.addEventListener('mousemove', handleMouseMove);
@@ -511,7 +544,7 @@ export function CanvasWorkspace({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPanning, viewport.zoom, onViewportChange, panStartRef]);
+  }, [isPanning, effectiveViewport.zoom, handleViewportChange, panStartRef]);
 
   // ── Mouse down: initiate pan or lasso selection ───────────────
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -523,7 +556,7 @@ export function CanvasWorkspace({
       onSelectView(null);
       containerRef.current?.focus();
       setIsPanning(true);
-      panStartRef.current = { x: e.clientX, y: e.clientY, panX: viewport.panX, panY: viewport.panY };
+      panStartRef.current = { x: e.clientX, y: e.clientY, panX: effectiveViewport.panX, panY: effectiveViewport.panY };
       return;
     }
 
@@ -534,10 +567,10 @@ export function CanvasWorkspace({
       containerRef.current?.focus();
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const canvasPos = screenToCanvas(e.clientX, e.clientY, rect, viewport);
+      const canvasPos = screenToCanvas(e.clientX, e.clientY, rect, effectiveViewport);
       startSelectionRect(canvasPos.x, canvasPos.y);
     }
-  }, [viewport, onSelectView, onClearSelection, isWireDragging, startSelectionRect, panStartRef]);
+  }, [effectiveViewport, onSelectView, onClearSelection, isWireDragging, startSelectionRect, panStartRef]);
 
   // ── View drag/resize end handlers ────────────────────────────
   const handleViewResizeEnd = useCallback((viewId: string, size: Size, position: Position) => {
@@ -554,11 +587,11 @@ export function CanvasWorkspace({
       if (view) {
         const rect = containerRef.current?.getBoundingClientRect();
         if (rect) {
-          onViewportChange(viewportToCenterView(view, rect.width, rect.height, viewport.zoom));
+          handleViewportChange(viewportToCenterView(view, rect.width, rect.height, effectiveViewport.zoom));
         }
       }
     }
-  }, [views, viewport.zoom, zoomedViewId, onZoomView, onViewportChange]);
+  }, [views, effectiveViewport.zoom, zoomedViewId, onZoomView, handleViewportChange]);
 
   // ── Merged positions for wire overlay ────────────────────────
   const wireViewPositions = useMemo(() => {
@@ -580,11 +613,11 @@ export function CanvasWorkspace({
     [handleViewDragEnd, onMoveView],
   );
 
-  const gridSpacing = GRID_SIZE * viewport.zoom;
+  const gridSpacing = GRID_SIZE * effectiveViewport.zoom;
   const dotGridStyle: React.CSSProperties = {
     backgroundImage: `radial-gradient(circle, color-mix(in srgb, rgb(var(--ctp-overlay0)) 45%, transparent) 0.75px, transparent 0.75px)`,
     backgroundSize: `${gridSpacing}px ${gridSpacing}px`,
-    backgroundPosition: `${viewport.panX * viewport.zoom}px ${viewport.panY * viewport.zoom}px`,
+    backgroundPosition: `${effectiveViewport.panX * effectiveViewport.zoom}px ${effectiveViewport.panY * effectiveViewport.zoom}px`,
   };
 
   return (
@@ -603,8 +636,8 @@ export function CanvasWorkspace({
       {/* Transform container */}
       <div
         style={{
-          transform: `scale(${viewport.zoom}) translate(${viewport.panX}px, ${viewport.panY}px)`,
-          '--canvas-zoom': viewport.zoom,
+          transform: `scale(${effectiveViewport.zoom}) translate(${effectiveViewport.panX}px, ${effectiveViewport.panY}px)`,
+          '--canvas-zoom': effectiveViewport.zoom,
           transformOrigin: '0 0',
           position: 'absolute',
           top: 0,
@@ -789,12 +822,12 @@ export function CanvasWorkspace({
       {views.length > 0 && !zoomedView && (
         <CanvasMinimap
           views={views}
-          viewport={viewport}
+          viewport={effectiveViewport}
           containerSize={containerSize}
           selectedViewId={selectedViewId}
           selectedViewIds={selectedViewIds}
           attentionMap={attentionMap}
-          onViewportChange={onViewportChange}
+          onViewportChange={handleViewportChange}
           autoHide={minimapAutoHide}
           onAutoHideChange={onMinimapAutoHideChange}
         />
@@ -805,7 +838,7 @@ export function CanvasWorkspace({
         <ZoomedViewOverlay
           view={zoomedView}
           api={api}
-          viewport={viewport}
+          viewport={effectiveViewport}
           onClose={() => onZoomView(null)}
           onUpdateView={onUpdateView}
           onCreateAgentCard={onCreateAgentCard}
@@ -821,7 +854,7 @@ export function CanvasWorkspace({
       {/* Canvas controls + pinned widgets — hidden while a view is maximized */}
       {!zoomedView && (
         <CanvasControls
-          zoom={viewport.zoom}
+          zoom={effectiveViewport.zoom}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onZoomReset={handleZoomReset}
@@ -845,7 +878,7 @@ export function CanvasWorkspace({
       {!zoomedView && (
         <PinnedWidgetBar
           views={views}
-          viewport={viewport}
+          viewport={effectiveViewport}
           containerRef={containerRef}
           containerSize={containerSize}
           api={api}
