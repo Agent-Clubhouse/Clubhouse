@@ -3021,36 +3021,72 @@ describe('annex-server', () => {
       vi.mocked(projectStore.list).mockReturnValue([]);
     });
 
-    it('returns 429 pairing_locked when brute-force lockout is active', async () => {
-      // Setup: mock checkBruteForce to return locked state
-      vi.mocked(annexPeers.checkBruteForce).mockReturnValue({
-        allowed: false,
-        locked: true,
-        delayMs: 0,
-        attemptsRemaining: 0,
-      } as any);
+    it('returns 429 pairing_locked after six consecutive wrong PIN attempts trigger lockout', async () => {
+      // Simulate brute-force state tracking by counting failed attempts.
+      // After 6 failed attempts, lockedUntil is set, and the next attempt returns 429.
+      let failedAttempts = 0;
+      const sourceIp = '127.0.0.1';
+
+      // Mock checkBruteForce to check our counter
+      vi.mocked(annexPeers.checkBruteForce).mockImplementation((source: string) => {
+        if (source === sourceIp && failedAttempts >= 6) {
+          // After 6+ failed attempts, return locked
+          return {
+            allowed: false,
+            locked: true,
+            delayMs: 0,
+            attemptsRemaining: 0,
+          } as any;
+        }
+        if (source === sourceIp && failedAttempts >= 3 && failedAttempts < 6) {
+          // Attempts 3-5 are rate limited but still allowed
+          return {
+            allowed: true,
+            locked: false,
+            delayMs: 0,
+            attemptsRemaining: 6 - failedAttempts,
+          } as any;
+        }
+        // Attempts 0-2 are allowed without backoff
+        return {
+          allowed: true,
+          locked: false,
+          delayMs: 0,
+          attemptsRemaining: 3,
+        } as any;
+      });
+
+      // Mock recordFailedAttempt to increment our counter
+      vi.mocked(annexPeers.recordFailedAttempt).mockImplementation((source: string) => {
+        if (source === sourceIp) {
+          failedAttempts += 1;
+        }
+      });
 
       annexServer.start();
       await new Promise((r) => setTimeout(r, 50));
       const status = annexServer.getStatus();
       const pairingPort = (status as any).pairingPort || status.port;
+      const wrongPin = '000000'; // Definitely wrong
 
-      // Attempt to pair with any PIN when lockout is active
-      const res = await request(pairingPort, 'POST', '/pair', { pin: '123456' });
+      // Make 6 wrong PIN attempts (these trigger recordFailedAttempt)
+      for (let i = 1; i <= 6; i++) {
+        const res = await request(pairingPort, 'POST', '/pair', { pin: wrongPin });
+        // All 6 should return 401 invalid_pin
+        expect(res.status).toBe(401);
+        const body = JSON.parse(res.body);
+        expect(body.error).toBe('invalid_pin');
+      }
 
-      // Should return 429 pairing_locked
-      expect(res.status).toBe(429);
-      const body = JSON.parse(res.body);
-      expect(body.error).toBe('pairing_locked');
-      expect(body.message).toContain('Too many failed attempts');
+      // The 7th attempt should return 429 pairing_locked (lockout triggered after 6 failures)
+      const lockedRes = await request(pairingPort, 'POST', '/pair', { pin: wrongPin });
+      expect(lockedRes.status).toBe(429);
+      const lockedBody = JSON.parse(lockedRes.body);
+      expect(lockedBody.error).toBe('pairing_locked');
+      expect(lockedBody.message).toContain('Too many failed attempts');
 
-      // Restore checkBruteForce mock
-      vi.mocked(annexPeers.checkBruteForce).mockReturnValue({
-        allowed: true,
-        locked: false,
-        delayMs: 0,
-        attemptsRemaining: 3,
-      } as any);
+      // Verify recordFailedAttempt was called 6 times (not 7, because 7th is blocked before that)
+      expect(vi.mocked(annexPeers.recordFailedAttempt)).toHaveBeenCalledTimes(6);
     });
   });
 });
