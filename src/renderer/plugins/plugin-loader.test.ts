@@ -1754,6 +1754,34 @@ describe('plugin-loader', () => {
       expect(getActiveContext('perm-escalate')).toBeUndefined();
     });
 
+    it('blocks activation when update adds annex permission', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'annex-escalate', scope: 'app', engine: { api: 0.8 }, permissions: ['storage'] });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/annex-escalate', 'registered');
+      usePluginStore.getState().enableApp('annex-escalate');
+      await activatePlugin('annex-escalate');
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        {
+          manifest: makeManifest({
+            id: 'annex-escalate', scope: 'app', version: '2.0.0', engine: { api: 0.8 },
+            permissions: ['storage', 'annex'],
+          }),
+          pluginPath: '/plugins/annex-escalate',
+          fromMarketplace: false,
+        },
+      ]);
+
+      await hotReloadPlugin('annex-escalate');
+
+      const entry = usePluginStore.getState().plugins['annex-escalate'];
+      expect(entry.status).toBe('pending-approval');
+      expect(entry.pendingPermissions).toEqual(['annex']);
+      expect(getActiveContext('annex-escalate')).toBeUndefined();
+    });
+
     it('allows activation when update only adds safe permissions', async () => {
       const mod: PluginModule = { activate: vi.fn() };
       mockDynamicImport.mockResolvedValue(mod);

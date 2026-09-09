@@ -76,6 +76,7 @@ describe('permission hierarchy', () => {
       expect(PERMISSION_RISK_LEVELS['files.watch']).toBe('elevated');
       expect(PERMISSION_RISK_LEVELS['terminal']).toBe('elevated');
       expect(PERMISSION_RISK_LEVELS['process']).toBe('elevated');
+      expect(PERMISSION_RISK_LEVELS['annex']).toBe('elevated');
     });
   });
 

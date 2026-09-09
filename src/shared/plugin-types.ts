@@ -156,8 +156,8 @@ export const PERMISSION_RISK_LEVELS: Readonly<Record<PluginPermission, Permissio
   // elevated — canvas widget registration
   canvas: 'elevated',
 
-  // safe — annex remote-control opt-in
-  annex: 'safe',
+  // elevated — annex remote control
+  annex: 'elevated',
 
   // elevated — workspace access
   workspace: 'elevated',
