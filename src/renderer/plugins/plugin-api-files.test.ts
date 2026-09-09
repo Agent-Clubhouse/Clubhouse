@@ -194,6 +194,22 @@ describe('plugin-api-files', () => {
       expect(window.clubhouse.file.watchStop).toHaveBeenCalledWith(watchId);
     });
 
+    it('tracks duplicate callback identity as separate subscriptions until each disposes', () => {
+      const api = createFilesAPI(localCtx);
+      const callback = vi.fn();
+      const first = api.watch('**/*', callback);
+      const second = api.watch('**/*', callback);
+
+      expect(window.clubhouse.file.watchStart).toHaveBeenCalledTimes(1);
+      expect(window.clubhouse.file.watchStop).not.toHaveBeenCalled();
+
+      first.dispose();
+      expect(window.clubhouse.file.watchStop).not.toHaveBeenCalled();
+
+      second.dispose();
+      expect(window.clubhouse.file.watchStop).toHaveBeenCalledTimes(1);
+    });
+
     it('does not call annexClient methods', async () => {
       const api = createFilesAPI(localCtx);
       await api.readTree('src');

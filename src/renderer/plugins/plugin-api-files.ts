@@ -7,10 +7,11 @@ import { isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectSto
 
 /** Global counter for unique file watch subscription IDs. */
 let _watchIdCounter = 0;
+let _watchSubscriptionIdCounter = 0;
 
 interface SharedWatchRegistration {
   watchId: string;
-  callbacks: Set<(events: import('../../shared/plugin-types').FileEvent[]) => void>;
+  subscribers: Map<number, (events: import('../../shared/plugin-types').FileEvent[]) => void>;
   listener: ((event: unknown, data: { watchId: string; events: import('../../shared/plugin-types').FileEvent[] }) => void) | null;
 }
 
@@ -279,14 +280,14 @@ export function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): F
         const fullGlob = `${projectPath}/${glob}`;
         const handler = (_event: unknown, data: { watchId: string; events: import('../../shared/plugin-types').FileEvent[] }) => {
           if (data.watchId !== watchId) return;
-          for (const entry of registration!.callbacks) {
+          for (const entry of registration!.subscribers.values()) {
             entry(data.events);
           }
         };
 
         registration = {
           watchId,
-          callbacks: new Set(),
+          subscribers: new Map(),
           listener: handler,
         };
 
@@ -297,13 +298,14 @@ export function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): F
         window.clubhouse.file.onWatchEvent(handler);
       }
 
-      registration.callbacks.add(callback);
+      const subscriptionId = ++_watchSubscriptionIdCounter;
+      registration.subscribers.set(subscriptionId, callback);
 
       return {
         dispose() {
-          if (!registration) return;
-          registration.callbacks.delete(callback);
-          if (registration.callbacks.size === 0) {
+          if (!registration || !registration.subscribers.has(subscriptionId)) return;
+          registration.subscribers.delete(subscriptionId);
+          if (registration.subscribers.size === 0) {
             if (registration.listener) {
               window.clubhouse.file.offWatchEvent(registration.listener);
             }
