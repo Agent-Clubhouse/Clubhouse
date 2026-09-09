@@ -126,6 +126,6 @@ test.describe('clubhouse-plugin: protocol — real multi-file resolution', () =>
 
     // New version → whole subtree re-fetched, new sibling code observed.
     const reloaded = await importAndActivate(pluginUrl(entryAbs(), v1 + 1));
-    expect(reloaded.marker).toBe('sibling-resolved-ok:nested-RELOADED');
+    expect(reloaded.marker).toBe('sibling-resolved-ok:nested-RELOADED:dynamic-import-ok');
   });
 });
