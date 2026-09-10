@@ -1071,6 +1071,10 @@ export function getStatus(): UpdateStatus {
   return { ...status };
 }
 
+export function _setStatusForTesting(nextStatus: UpdateStatus): void {
+  status = { ...nextStatus };
+}
+
 /**
  * Whether the app should kick off automatic update checks on startup.
  *
