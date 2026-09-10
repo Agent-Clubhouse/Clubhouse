@@ -3,13 +3,32 @@ name: Validate
 on:
   pull_request:
     branches: [main, dev/*]
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 concurrency:
   group: validate-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  dependency-preflight:
+    name: Dependency resolution preflight
+    if: ${{ github.event_name == 'schedule' || github.actor == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check the install graph resolves for Dependabot updates
+        run: node scripts/dependabot-preflight.mjs
+
   lint:
+    needs: dependency-preflight
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
     name: ESLint (errors only)
     runs-on: ubuntu-latest
     steps:
@@ -26,6 +45,8 @@ jobs:
       - run: npm run lint
 
   typecheck:
+    needs: dependency-preflight
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
     name: Typecheck (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -44,6 +65,8 @@ jobs:
       - run: npm run check:test-coverage-ratchet
 
   unit-and-component:
+    needs: dependency-preflight
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
     name: Unit + Component Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -65,6 +88,8 @@ jobs:
           path: test-results.xml
 
   e2e:
+    needs: dependency-preflight
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
     name: E2E Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -113,6 +138,8 @@ jobs:
           path: test-results/
 
   e2e-annex:
+    needs: dependency-preflight
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
     name: Annex E2E Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -156,6 +183,8 @@ jobs:
           path: test-results/
 
   make-linux:
+    needs: dependency-preflight
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
     name: Linux Package Smoke Test
     runs-on: ubuntu-latest
     steps:
@@ -182,6 +211,8 @@ jobs:
           fi
 
   api-surface:
+    needs: dependency-preflight
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
     name: API Surface Check
     runs-on: ubuntu-latest
     steps:
