@@ -1026,7 +1026,7 @@ describe('error logging in catch blocks', () => {
     await readProjectAgentDefaults(PROJECT);
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
-      expect.stringContaining('attempting recovery from backup'),
+      expect.stringContaining('Failed to read project settings'),
       expect.objectContaining({ meta: { error: 'EACCES' } }),
     );
   });

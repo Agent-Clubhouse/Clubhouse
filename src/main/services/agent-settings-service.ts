@@ -147,7 +147,7 @@ async function readSettings(projectPath: string): Promise<ProjectSettings> {
       return emptySettings;
     }
 
-    appLog(LOG_NS, 'warn', `Failed to parse project settings from ${settingsFile} — attempting recovery from backup`, {
+    appLog(LOG_NS, 'warn', `Failed to read project settings from ${settingsFile} — failed to parse; attempting recovery from backup`, {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
 
