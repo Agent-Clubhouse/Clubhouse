@@ -1026,8 +1026,31 @@ describe('error logging in catch blocks', () => {
     await readProjectAgentDefaults(PROJECT);
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
-      expect.stringContaining('Failed to read project settings'),
+      expect.stringContaining('attempting recovery from backup'),
       expect.objectContaining({ meta: { error: 'EACCES' } }),
+    );
+  });
+
+  it('readProjectAgentDefaults recovers from a backup when settings JSON is corrupt', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (filePath: any) => {
+      if (String(filePath).endsWith('settings.json.bak')) {
+        return JSON.stringify({
+          defaults: {},
+          quickOverrides: {},
+          agentDefaults: { instructions: 'Recovered settings' },
+        });
+      }
+      return '{invalid json';
+    });
+
+    const result = await readProjectAgentDefaults(PROJECT);
+
+    expect(result).toEqual({ instructions: 'Recovered settings' });
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings',
+      'warn',
+      expect.stringContaining('attempting recovery from backup'),
+      expect.objectContaining({ meta: { error: expect.any(String) } }),
     );
   });
 
