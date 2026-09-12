@@ -9,6 +9,7 @@ type AgentSpawnedListener = (agentId: string, kind: string, projectId: string, m
 type StructuredEventListener = (agentId: string, event: StructuredEvent) => void;
 type GroupProjectChangedListener = (action: 'created' | 'updated' | 'deleted', project: GroupProject) => void;
 type BulletinMessageListener = (projectId: string, message: BulletinMessage) => void;
+type ActiveChangeListener = (active: boolean) => void;
 
 let active = false;
 
@@ -19,9 +20,12 @@ const agentSpawnedListeners = new Set<AgentSpawnedListener>();
 const structuredEventListeners = new Set<StructuredEventListener>();
 const groupProjectChangedListeners = new Set<GroupProjectChangedListener>();
 const bulletinMessageListeners = new Set<BulletinMessageListener>();
+const activeChangeListeners = new Set<ActiveChangeListener>();
 
 export function setActive(flag: boolean): void {
+  if (active === flag) return;
   active = flag;
+  for (const fn of activeChangeListeners) fn(flag);
 }
 
 export function isActive(): boolean {
@@ -98,6 +102,12 @@ export function onBulletinMessage(fn: BulletinMessageListener): () => void {
   return () => { bulletinMessageListeners.delete(fn); };
 }
 
+export function onActiveChange(fn: ActiveChangeListener): () => void {
+  activeChangeListeners.add(fn);
+  fn(active);
+  return () => { activeChangeListeners.delete(fn); };
+}
+
 /** Remove all listeners. Used during shutdown. */
 export function removeAllListeners(): void {
   ptyDataListeners.clear();
@@ -107,6 +117,7 @@ export function removeAllListeners(): void {
   structuredEventListeners.clear();
   groupProjectChangedListeners.clear();
   bulletinMessageListeners.clear();
+  activeChangeListeners.clear();
 }
 
 /** Return current listener counts for diagnostics and leak detection. */

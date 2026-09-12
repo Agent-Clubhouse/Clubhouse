@@ -11,16 +11,30 @@
  * 3. Call .register() inside registerSettingsHandlers()
  * 4. Create a renderer store with createSettingsStore() in the renderer
  * That's it — no IPC channels, handler registration, or preload changes needed.
+ *
+ * The badge, session, headless, clubhouse-mode, orchestrator, free-agent,
+ * notification, sound, logging, and marketplace settings are per-window
+ * session. Popout windows must be reopened to see changes to these settings;
+ * they do not have generalized settings-changed broadcasts (see #1709).
  */
 import { createManagedSettings } from '../services/managed-settings';
-import { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS } from '../../shared/settings-definitions';
+import {
+  CLIPBOARD_SETTINGS,
+  EDITOR_SETTINGS,
+  isClipboardCompatPlatform,
+  MCP_SETTINGS,
+  SECURITY_SETTINGS,
+} from '../../shared/settings-definitions';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 
 export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
 
+export const getClipboardCompatDefault = (platform: string = process.platform): boolean =>
+  isClipboardCompatPlatform(platform);
+
 export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
   defaultsOverride: {
-    clipboardCompat: process.platform === 'win32',
+    clipboardCompat: getClipboardCompatDefault(),
   },
 });
 

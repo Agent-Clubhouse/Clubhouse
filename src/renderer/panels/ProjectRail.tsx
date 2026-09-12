@@ -5,7 +5,7 @@ import { usePluginStore } from '../plugins/plugin-store';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore, type PluginMatchResult } from '../stores/remoteProjectStore';
 import { LocalHostRow, SatelliteHostRow, SatelliteSections, SatelliteProjectList } from './SatelliteSection';
-import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
+import { useBadgeStore } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { usePanelStore } from '../stores/panelStore';
 import { Badge } from '../components/Badge';
@@ -95,24 +95,13 @@ const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick
   const letter = label.charAt(0).toUpperCase();
   const hasImage = !!project.icon && !!iconDataUrl;
   const hasEmoji = !!project.emoji;
-  const badges = useBadgeStore((s) => s.badges);
-  const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
-  const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
-  const bsProjectRailBadges = useBadgeSettingsStore((s) => s.projectRailBadges);
-  const bsProjectOverride = useBadgeSettingsStore((s) => s.projectOverrides[project.id]);
-  const projectBadge = useMemo(() => {
-    const enabled = bsProjectOverride?.enabled ?? bsEnabled;
-    const projectRailBadges = bsProjectOverride?.projectRailBadges ?? bsProjectRailBadges;
-    if (!enabled || !projectRailBadges) return null;
-    let filtered = Object.values(badges).filter(
-      (b) => b.target.kind === 'explorer-tab' && b.target.projectId === project.id,
-    );
-    const pluginBadges = bsProjectOverride?.pluginBadges ?? bsPluginBadges;
-    if (!pluginBadges) {
-      filtered = filtered.filter((b) => !b.source.startsWith('plugin:'));
-    }
-    return aggregateBadges(filtered);
-  }, [badges, project.id, bsEnabled, bsPluginBadges, bsProjectRailBadges, bsProjectOverride]);
+  const projectBadgeSettings = useBadgeSettingsStore((s) => {
+    const settings = s.getProjectSettings(project.id);
+    return `${settings.enabled}:${settings.pluginBadges}:${settings.projectRailBadges}`;
+  });
+  const projectBadge = useBadgeStore((s) => (
+    projectBadgeSettings ? s.getProjectBadge(project.id) : null
+  ));
 
   return (
     <button
@@ -177,16 +166,10 @@ function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
 }) {
   const label = entry.manifest.contributes!.railItem!.label;
   const customIcon = entry.manifest.contributes!.railItem!.icon;
-  const pluginBadges = useBadgeStore((s) => s.badges);
-  const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
-  const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
-  const pluginBadge = useMemo(() => {
-    if (!bsEnabled || !bsPluginBadges) return null;
-    const filtered = Object.values(pluginBadges).filter(
-      (b) => b.target.kind === 'app-plugin' && b.target.pluginId === entry.manifest.id,
-    );
-    return aggregateBadges(filtered);
-  }, [pluginBadges, entry.manifest.id, bsEnabled, bsPluginBadges]);
+  const pluginBadgeSettings = useBadgeSettingsStore((s) => `${s.enabled}:${s.pluginBadges}`);
+  const pluginBadge = useBadgeStore((s) => (
+    pluginBadgeSettings ? s.getAppPluginBadge(entry.manifest.id) : null
+  ));
 
   return (
     <button
@@ -254,8 +237,12 @@ function AnnexGatedPluginRailButton({ entry, pluginMatches, isActive, onClick, e
 }
 
 export function ProjectRail() {
-  const { projects, activeProjectId, setActiveProject, pickAndAddProject, reorderProjects, removeProject } =
-    useProjectStore();
+  const projects = useProjectStore((s) => s.projects);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const setActiveProject = useProjectStore((s) => s.setActiveProject);
+  const pickAndAddProject = useProjectStore((s) => s.pickAndAddProject);
+  const reorderProjects = useProjectStore((s) => s.reorderProjects);
+  const removeProject = useProjectStore((s) => s.removeProject);
   const openProjectSettings = useUIStore((s) => s.openProjectSettings);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
   const toggleAssistant = useUIStore((s) => s.toggleAssistant);

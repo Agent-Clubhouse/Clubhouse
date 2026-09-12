@@ -183,6 +183,48 @@ describe('plugin-api-files', () => {
       expect(window.clubhouse.file.search).toHaveBeenCalledWith('/project', 'TODO', { caseSensitive: true });
     });
 
+    it('deduplicates identical project-root watches and keeps them alive until all subscribers dispose', () => {
+      const api = createFilesAPI(localCtx);
+      const callbackA = vi.fn();
+      const callbackB = vi.fn();
+      const disposableA = api.watch('**/*', callbackA);
+      const disposableB = api.watch('**/*', callbackB);
+
+      expect(window.clubhouse.file.watchStart).toHaveBeenCalledTimes(1);
+      expect(window.clubhouse.file.watchStart.mock.calls[0][0]).toMatch(/^plugin:files:/);
+      expect(window.clubhouse.file.watchStart).toHaveBeenCalledWith(expect.stringMatching(/^plugin:files:/), '/project/**/*');
+      expect(window.clubhouse.file.onWatchEvent).toHaveBeenCalledTimes(1);
+
+      const handler = vi.mocked(window.clubhouse.file.onWatchEvent).mock.calls[0][0];
+      const watchId = window.clubhouse.file.watchStart.mock.calls[0][0] as string;
+      handler(null, { watchId, events: [{ type: 'modified', path: '/project/src/index.ts' }] });
+      expect(callbackA).toHaveBeenCalledTimes(1);
+      expect(callbackB).toHaveBeenCalledTimes(1);
+
+      disposableA.dispose();
+      expect(window.clubhouse.file.watchStop).not.toHaveBeenCalled();
+
+      disposableB.dispose();
+      expect(window.clubhouse.file.watchStop).toHaveBeenCalledTimes(1);
+      expect(window.clubhouse.file.watchStop).toHaveBeenCalledWith(watchId);
+    });
+
+    it('tracks duplicate callback identity as separate subscriptions until each disposes', () => {
+      const api = createFilesAPI(localCtx);
+      const callback = vi.fn();
+      const first = api.watch('**/*', callback);
+      const second = api.watch('**/*', callback);
+
+      expect(window.clubhouse.file.watchStart).toHaveBeenCalledTimes(1);
+      expect(window.clubhouse.file.watchStop).not.toHaveBeenCalled();
+
+      first.dispose();
+      expect(window.clubhouse.file.watchStop).not.toHaveBeenCalled();
+
+      second.dispose();
+      expect(window.clubhouse.file.watchStop).toHaveBeenCalledTimes(1);
+    });
+
     it('does not call annexClient methods', async () => {
       const api = createFilesAPI(localCtx);
       await api.readTree('src');
