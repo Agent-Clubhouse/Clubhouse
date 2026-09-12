@@ -588,7 +588,7 @@ describe('materialization-service', () => {
           mcpJson: '{"mcpServers": {"test": {"command": "hi"}}}',
         },
       }));
-      vi.mocked(pathExists).mockImplementation(async (p: unknown) => String(p).endsWith('/.mcp.json'));
+      vi.mocked(pathExists).mockImplementation(async (p: unknown) => String(p).replaceAll('\\', '/').endsWith('/.mcp.json'));
       const copilotProvider = {
         ...mockProvider,
         conventions: {
