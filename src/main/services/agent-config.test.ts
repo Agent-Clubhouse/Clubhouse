@@ -2040,8 +2040,8 @@ describe('backup and recovery', () => {
       await flushAgentConfig(PROJECT_PATH);
 
       const renameCalls = vi.mocked(fsp.rename).mock.calls;
-      const mainRenameIndex = renameCalls.findIndex(([from, to]) => String(to).endsWith('agents.json'));
-      const backupRenameIndex = renameCalls.findIndex(([from, to]) => String(to).endsWith('agents.json.bak'));
+      const mainRenameIndex = renameCalls.findIndex(([, to]) => String(to).endsWith('agents.json'));
+      const backupRenameIndex = renameCalls.findIndex(([, to]) => String(to).endsWith('agents.json.bak'));
 
       expect(mainRenameIndex).toBeGreaterThan(-1);
       expect(backupRenameIndex).toBeGreaterThan(-1);
