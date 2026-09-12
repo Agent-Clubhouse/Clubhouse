@@ -122,6 +122,20 @@ describe('plugin-storage', () => {
       await expect(readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' })).resolves.toEqual(priorValue);
     });
 
+    it('uses distinct temp files for concurrent writes to the same key', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(1234);
+      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+      vi.mocked(fsp.rename).mockResolvedValue(undefined);
+
+      await Promise.all([
+        writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: 1 }),
+        writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: 2 }),
+      ]);
+
+      const tempPaths = vi.mocked(fsp.writeFile).mock.calls.map(([file]) => String(file));
+      expect(new Set(tempPaths).size).toBe(2);
+    });
+
     it('rejects path traversal in key', async () => {
       await expect(
         writeKey({ pluginId: 'p', scope: 'global', key: '../../../evil', value: 'x' }),

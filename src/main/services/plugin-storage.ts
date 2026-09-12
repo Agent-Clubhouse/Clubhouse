@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { app } from 'electron';
 import type {
   PluginStorageReadRequest,
@@ -84,7 +85,7 @@ async function assertSafePath(base: string, target: string): Promise<void> {
 // ── Key-Value Storage ──────────────────────────────────────────────────
 
 function getJsonTempPath(file: string): string {
-  return `${file}.tmp.${process.pid}.${Date.now()}`;
+  return `${file}.tmp.${process.pid}.${randomUUID()}`;
 }
 
 function getCorruptQuarantinePath(file: string): string {
