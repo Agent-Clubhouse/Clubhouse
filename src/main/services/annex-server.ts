@@ -4,7 +4,7 @@ import * as tls from 'tls';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { randomInt, randomUUID } from 'crypto';
+import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as annexTls from './annex-tls';
 import Bonjour, { Service } from 'bonjour-service';
@@ -326,8 +326,22 @@ function setTrackedQuickAgent(agentId: string, entry: TrackedQuickAgent): void {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const PIN_LENGTH = 6;
+const PIN_PATTERN = /^\d{6}$/;
+
 function generatePin(): string {
-  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+  return String(randomInt(0, 1_000_000)).padStart(PIN_LENGTH, '0');
+}
+
+function comparePins(providedPin: string, expectedPin: string): boolean {
+  if (!PIN_PATTERN.test(providedPin) || !PIN_PATTERN.test(expectedPin)) {
+    return false;
+  }
+
+  return timingSafeEqual(
+    Buffer.from(providedPin, 'utf8'),
+    Buffer.from(expectedPin, 'utf8'),
+  );
 }
 
 function isValidToken(token: string | undefined): boolean {
@@ -1191,7 +1205,7 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
       const pin = body.pin;
       if (typeof pin !== 'string') { sendJson(res, 400, { error: 'invalid_json' }); return; }
 
-      if (pin !== currentPin) {
+      if (!comparePins(pin, currentPin)) {
         annexPeers.recordFailedAttempt(source);
         sendJson(res, 401, { error: 'invalid_pin' });
         return;
