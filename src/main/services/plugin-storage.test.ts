@@ -55,6 +55,44 @@ describe('plugin-storage', () => {
       vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
       const result = await readKey({ pluginId: 'my-plugin', scope: 'global', key: 'missing' });
       expect(result).toBeUndefined();
+      expect(fsp.rename).not.toHaveBeenCalled();
+    });
+
+    it('quarantines corrupt JSON instead of silently treating it as missing', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'broken.json');
+      const backupFile = `${file}.bak`;
+      vi.mocked(fsp.readFile).mockResolvedValue('{not valid json');
+      const result = await readKey({ pluginId: 'my-plugin', scope: 'global', key: 'broken' });
+      expect(result).toBeUndefined();
+      // Both primary and backup are corrupt in this scenario, so both get quarantined.
+      expect(fsp.rename).toHaveBeenCalledWith(file, expect.stringMatching(/\.corrupt-/));
+      expect(fsp.rename).toHaveBeenCalledWith(backupFile, expect.stringMatching(/\.corrupt-/));
+    });
+
+    it('falls back to the backup when the primary is corrupt', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
+      const backupFile = `${file}.bak`;
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p) === file) return '{not valid json';
+        if (String(p) === backupFile) return JSON.stringify({ recovered: true });
+        throw new Error('ENOENT');
+      });
+      const result = await readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' });
+      expect(result).toEqual({ recovered: true });
+      expect(fsp.rename).toHaveBeenCalledWith(file, expect.stringMatching(/\.corrupt-/));
+      expect(fsp.rename).not.toHaveBeenCalledWith(backupFile, expect.anything());
+    });
+
+    it('falls back to the backup when the primary is missing', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
+      const backupFile = `${file}.bak`;
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p) === backupFile) return JSON.stringify({ from: 'backup' });
+        throw new Error('ENOENT');
+      });
+      const result = await readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' });
+      expect(result).toEqual({ from: 'backup' });
+      expect(fsp.rename).not.toHaveBeenCalled();
     });
 
     it('uses project-scoped path when scope is project', async () => {
@@ -75,17 +113,64 @@ describe('plugin-storage', () => {
   });
 
   describe('writeKey', () => {
-    it('writes JSON to kv directory and ensures dir exists', async () => {
+    it('writes JSON to the backup file first, then the primary', async () => {
       await writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: { a: 1 } });
       expect(fsp.mkdir).toHaveBeenCalledWith(
         path.join(GLOBAL_BASE, 'my-plugin', 'kv'),
         { recursive: true },
       );
-      expect(fsp.writeFile).toHaveBeenCalledWith(
-        path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json'),
-        JSON.stringify({ a: 1 }),
-        'utf-8',
-      );
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
+      const writeCalls = vi.mocked(fsp.writeFile).mock.calls.map(([p]) => String(p));
+      expect(writeCalls).toEqual([`${file}.bak`, file]);
+      expect(fsp.writeFile).toHaveBeenCalledWith(`${file}.bak`, JSON.stringify({ a: 1 }), 'utf-8');
+      expect(fsp.writeFile).toHaveBeenCalledWith(file, JSON.stringify({ a: 1 }), 'utf-8');
+      // No temp file / rename churn — this is the whole point of the double-write.
+      expect(fsp.rename).not.toHaveBeenCalled();
+    });
+
+    it('keeps the previous good value readable if a write crashes before the primary is overwritten', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
+      const priorValue = { keep: 'me' };
+
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p) === file) return JSON.stringify(priorValue);
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.writeFile).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('.bak')) {
+          throw new Error('EIO');
+        }
+      });
+
+      await expect(
+        writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: { replace: 'me' } }),
+      ).rejects.toThrow('EIO');
+      // The backup write failed before the primary was ever touched, so the
+      // prior value is still there, untouched.
+      await expect(readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' })).resolves.toEqual(priorValue);
+    });
+
+    it('recovers the new value from the backup if a write crashes writing the primary', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
+      const backupFile = `${file}.bak`;
+      const newValue = { replace: 'me' };
+
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p) === backupFile) return JSON.stringify(newValue);
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fsp.writeFile).mockImplementation(async (p: any) => {
+        if (String(p) === file) {
+          throw new Error('EIO');
+        }
+      });
+
+      await expect(
+        writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: newValue }),
+      ).rejects.toThrow('EIO');
+      // The backup already has the complete new value even though the primary
+      // write itself failed.
+      await expect(readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' })).resolves.toEqual(newValue);
     });
 
     it('rejects path traversal in key', async () => {
@@ -96,11 +181,11 @@ describe('plugin-storage', () => {
   });
 
   describe('deleteKey', () => {
-    it('unlinks the key file', async () => {
+    it('unlinks the key file and its backup', async () => {
       await deleteKey({ pluginId: 'my-plugin', scope: 'global', key: 'old' });
-      expect(fsp.unlink).toHaveBeenCalledWith(
-        path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'old.json'),
-      );
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'old.json');
+      expect(fsp.unlink).toHaveBeenCalledWith(file);
+      expect(fsp.unlink).toHaveBeenCalledWith(`${file}.bak`);
     });
 
     it('does not throw when file does not exist', async () => {
@@ -328,11 +413,9 @@ describe('plugin-storage', () => {
       // The gitignore ensurer will try to readFile for .gitignore - mock that too
       vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
       await writeKey({ pluginId: 'my-plugin', scope: 'project-local', key: 'config', value: 42, projectPath });
-      expect(fsp.writeFile).toHaveBeenCalledWith(
-        path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv', 'config.json'),
-        '42',
-        'utf-8',
-      );
+      const file = path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv', 'config.json');
+      expect(fsp.writeFile).toHaveBeenCalledWith(`${file}.bak`, '42', 'utf-8');
+      expect(fsp.writeFile).toHaveBeenCalledWith(file, '42', 'utf-8');
     });
 
     it('deleteKey uses plugin-data-local path', async () => {
