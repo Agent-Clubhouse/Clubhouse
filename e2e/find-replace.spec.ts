@@ -280,7 +280,7 @@ test.describe('Search and Match Highlighting', () => {
 // ===========================================================================
 
 test.describe('Replace Functionality', () => {
-  test('replaces a single match and undo restores clean state', async () => {
+  test('replace a single match and verify dirty state', async () => {
     await openFindReplace();
 
     // Type search query in the find textarea
@@ -308,16 +308,18 @@ test.describe('Replace Functionality', () => {
     // Dirty indicator should appear (orange dot in header)
     const dirtyDot = window.locator('.bg-ctp-warning');
     await expect(dirtyDot).toBeVisible({ timeout: 5_000 });
+  });
 
-    // Keep replacement and undo atomic. A failed serial attempt is retried in
-    // a fresh worker, so a follow-up test cannot safely depend on its editor.
+  test('undo reverses the replacement', async () => {
     await closeFindWidget();
+    await focusEditor();
 
-    // Monaco restores editor focus when Escape closes its find widget.
+    // Undo the replacement
     await window.keyboard.press('ControlOrMeta+z');
     await window.waitForTimeout(500);
 
     // Dirty state should clear since we're back to original
+    const dirtyDot = window.locator('.bg-ctp-warning');
     await expect(dirtyDot).not.toBeVisible({ timeout: 5_000 });
   });
 });
