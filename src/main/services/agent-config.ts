@@ -460,6 +460,7 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
       pendingFlush: null,
     };
     configCache.set(projectPath, entry);
+    ensureConfigWatcher(projectPath);
     appLog('core:agent-config', 'info', `Cache initialized with ${agents.length} agent(s)`, {
       meta: { projectPath, agentIds: agents.map((a) => a.id) },
     });

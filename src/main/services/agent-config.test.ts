@@ -24,6 +24,10 @@ vi.mock('fs', () => ({
   rmSync: vi.fn(),
   readdirSync: vi.fn(() => []),
   unlinkSync: vi.fn(),
+  watch: vi.fn(() => ({
+    on: vi.fn().mockReturnThis(),
+    close: vi.fn(),
+  })),
   promises: {
     readFile: vi.fn(async () => '{}'),
     writeFile: vi.fn(async () => undefined),
@@ -60,6 +64,7 @@ vi.mock('./git-service', () => ({
 }));
 
 import * as fsp from 'fs/promises';
+import { watch } from 'fs';
 import { exec, execFile } from 'child_process';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
@@ -1784,6 +1789,25 @@ describe('write-back cache', () => {
     const readCalls = vi.mocked(fsp.readFile).mock.calls
       .filter((c) => String(c[0]).endsWith('agents.json'));
     expect(readCalls).toHaveLength(1);
+  });
+
+  it('invalidates a clean read cache when agents.json changes externally', async () => {
+    const diskAgents = [
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    mockAgentsFile(diskAgents);
+
+    expect((await listDurable(PROJECT_PATH))[0].name).toBe('agent-1');
+    expect(watch).toHaveBeenCalledWith(path.join(PROJECT_PATH, '.clubhouse'), expect.any(Function));
+
+    diskAgents[0].name = 'renamed-outside-clubhouse';
+    const watcherCallback = vi.mocked(watch).mock.calls[0][1] as (eventType: string, filename: string) => void;
+    watcherCallback('change', 'agents.json');
+
+    expect((await listDurable(PROJECT_PATH))[0].name).toBe('renamed-outside-clubhouse');
+    const readCalls = vi.mocked(fsp.readFile).mock.calls
+      .filter((call) => String(call[0]).endsWith('agents.json'));
+    expect(readCalls).toHaveLength(2);
   });
 
   it('coalesces multiple writes into one disk write on flush', async () => {
