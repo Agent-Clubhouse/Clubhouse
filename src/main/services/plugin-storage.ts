@@ -1,6 +1,5 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
 import { app } from 'electron';
 import type {
   PluginStorageReadRequest,
@@ -83,9 +82,19 @@ async function assertSafePath(base: string, target: string): Promise<void> {
 }
 
 // ── Key-Value Storage ──────────────────────────────────────────────────
+//
+// writeKey/readKey use an ordered double-write (primary + `.bak` sibling)
+// rather than a temp-file-plus-rename. A crash can tear at most one of the
+// two files, so the other is always a complete (old-or-new) copy readKey
+// can fall back to. This mirrors canvas-store.ts's saveCanvas, which
+// documents why: a temp+rename here generates extra filesystem events that
+// regressed the Ubuntu find-replace E2E suite (the #1548/#1551 history that
+// #1627 traces back to) via file-watch-service.ts's recursive project
+// watcher. An ordered pair of plain writes gives the same crash-safety
+// guarantee without that churn.
 
-function getJsonTempPath(file: string): string {
-  return `${file}.tmp.${process.pid}.${randomUUID()}`;
+function getBackupPath(file: string): string {
+  return `${file}.bak`;
 }
 
 function getCorruptQuarantinePath(file: string): string {
@@ -93,27 +102,38 @@ function getCorruptQuarantinePath(file: string): string {
   return path.join(path.dirname(file), `.corrupt-${stamp}-${path.basename(file)}`);
 }
 
+/** Read and parse one JSON file, quarantining it if it exists but is corrupt. */
+async function readJsonFileOrQuarantine(file: string): Promise<{ found: boolean; value?: unknown }> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, 'utf-8');
+  } catch {
+    return { found: false };
+  }
+  try {
+    return { found: true, value: JSON.parse(raw) };
+  } catch {
+    const quarantinePath = getCorruptQuarantinePath(file);
+    try {
+      await fs.rename(file, quarantinePath);
+    } catch {
+      // If the file vanished or is already quarantined, keep the read as absent
+    }
+    return { found: false };
+  }
+}
+
 export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   const file = path.join(dir, `${req.key}.json`);
   await assertSafePath(dir, `${req.key}.json`);
 
-  try {
-    const raw = await fs.readFile(file, 'utf-8');
-    try {
-      return JSON.parse(raw);
-    } catch {
-      const quarantinePath = getCorruptQuarantinePath(file);
-      try {
-        await fs.rename(file, quarantinePath);
-      } catch {
-        // If the file vanished or is already quarantined, keep the read as absent
-      }
-      return undefined;
-    }
-  } catch {
-    return undefined;
-  }
+  const primary = await readJsonFileOrQuarantine(file);
+  if (primary.found) return primary.value;
+
+  // Primary missing or corrupt (and now quarantined) — fall back to the backup.
+  const backup = await readJsonFileOrQuarantine(getBackupPath(file));
+  return backup.found ? backup.value : undefined;
 }
 
 export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
@@ -124,28 +144,27 @@ export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
   await assertSafePath(dir, `${req.key}.json`);
   await ensureDir(dir);
   const file = path.join(dir, `${req.key}.json`);
-  const tmpFile = getJsonTempPath(file);
+  const json = JSON.stringify(req.value);
 
-  try {
-    await fs.writeFile(tmpFile, JSON.stringify(req.value), 'utf-8');
-    await fs.rename(tmpFile, file);
-  } catch (err) {
-    await fs.unlink(tmpFile).catch((_: unknown): void => {
-      // Temp cleanup failed — the original file is already the source of truth.
-    });
-    throw err;
-  }
+  // Backup first, then primary. A crash between the two leaves one intact,
+  // complete copy on disk for readKey to recover from either way.
+  await fs.writeFile(getBackupPath(file), json, 'utf-8');
+  await fs.writeFile(file, json, 'utf-8');
 }
 
 export async function deleteKey(req: PluginStorageDeleteRequest): Promise<void> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   const file = path.join(dir, `${req.key}.json`);
   await assertSafePath(dir, `${req.key}.json`);
-  try {
-    await fs.unlink(file);
-  } catch {
-    // File doesn't exist, that's fine
-  }
+  await Promise.all(
+    [file, getBackupPath(file)].map(async (f) => {
+      try {
+        await fs.unlink(f);
+      } catch {
+        // File doesn't exist, that's fine
+      }
+    }),
+  );
 }
 
 export async function listKeys(req: PluginStorageListRequest): Promise<string[]> {
