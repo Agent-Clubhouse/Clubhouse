@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'http';
 import net from 'net';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 const mockBonjourService = { stop: vi.fn() };
@@ -354,6 +356,17 @@ describe('annex-server', () => {
     const pairingPort = (status as any).pairingPort || status.port;
 
     const res = await request(pairingPort, 'POST', '/pair', { pin: '000000' });
+    expect(res.status).toBe(401);
+    expect(JSON.parse(res.body)).toEqual({ error: 'invalid_pin' });
+  });
+
+  it('rejects a six-character non-ASCII PIN without throwing', async () => {
+    annexServer.start();
+    await new Promise((r) => setTimeout(r, 50));
+    const status = annexServer.getStatus();
+    const pairingPort = (status as any).pairingPort || status.port;
+
+    const res = await request(pairingPort, 'POST', '/pair', { pin: 'éééééé' });
     expect(res.status).toBe(401);
     expect(JSON.parse(res.body)).toEqual({ error: 'invalid_pin' });
   });
@@ -1582,9 +1595,9 @@ describe('annex-server', () => {
     }, 10_000);
 
     it('mTLS gating — bearer-only WS cannot access mTLS-only features', async () => {
-      // Bearer token auth gives limited access. This test verifies that
+      // Bearer auth gives limited access. This test verifies that
       // a bearer-auth WS connection is tracked as 'bearer' auth type.
-      // Full mTLS gating is tested in E2E tests.
+      // Full mTLS gating on destructive REST routes is tested in unit tests.
       const { port, token } = await startAndPair();
 
       const res = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
@@ -2954,6 +2967,140 @@ describe('annex-server', () => {
 
       expect(released).toBe(true);
       expect(_testing.sessionPauseOwner).toBeNull();
+    });
+  });
+
+  // ── mTLS and brute-force security gates coverage (F-14-3) ──
+  describe('security gate coverage: requireMtls and checkBruteForce', () => {
+    it('requires mTLS for destructive routes when TLS is enabled (git operation)', async () => {
+      // Setup: mock projectStore to include a test project
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'test-proj-id', name: 'Test Project', path: '/test/path', icon: '' } as any,
+      ]);
+
+      // Setup: enable TLS by using real certificate
+      const annexTlsOriginal = await vi.importActual<typeof import('./annex-tls')>('./annex-tls');
+      const identity = annexIdentity.getOrCreateIdentity();
+      fs.mkdirSync(path.join(os.tmpdir(), 'clubhouse-test-userData'), { recursive: true });
+      const cert = annexTlsOriginal.getOrCreateCert(identity);
+      
+      vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({
+        cert: cert.certPem,
+        key: cert.keyPem,
+        requestCert: true,
+        rejectUnauthorized: false,
+      } as any);
+
+      // Mock extractPeerFingerprint to return null — simulating no mTLS cert
+      vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(null);
+
+      const { port, token } = await startAndPair();
+
+      // Make HTTPS request to a destructive route with bearer token but no mTLS
+      const httpsRes = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const https = require('https');
+        const postData = JSON.stringify({ branch: 'main' });
+        const options = {
+          hostname: '127.0.0.1',
+          port,
+          path: '/api/v1/projects/test-proj-id/git/pull',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData),
+            'Authorization': `Bearer ${token}`,
+          },
+          rejectUnauthorized: false, // Skip cert verification for self-signed cert
+        };
+
+        const req = https.request(options, (res: any) => {
+          let data = '';
+          res.on('data', (chunk: any) => { data += chunk; });
+          res.on('end', () => resolve({ status: res.statusCode, body: data }));
+        });
+        req.on('error', reject);
+        req.write(postData);
+        req.end();
+      });
+
+      // Should return 403 mtls_required because TLS is enabled but no mTLS cert provided
+      expect(httpsRes.status).toBe(403);
+      const body = JSON.parse(httpsRes.body);
+      expect(body.error).toBe('mtls_required');
+
+      // Restore mocks
+      vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => {
+        throw new Error('TLS not available in test');
+      });
+      vi.mocked(projectStore.list).mockReturnValue([]);
+    });
+
+    it('returns 429 pairing_locked after six consecutive wrong PIN attempts trigger lockout', async () => {
+      // Simulate brute-force state tracking by counting failed attempts.
+      // After 6 failed attempts, lockedUntil is set, and the next attempt returns 429.
+      let failedAttempts = 0;
+      const sourceIp = '127.0.0.1';
+
+      // Mock checkBruteForce to check our counter
+      vi.mocked(annexPeers.checkBruteForce).mockImplementation((source: string) => {
+        if (source === sourceIp && failedAttempts >= 6) {
+          // After 6+ failed attempts, return locked
+          return {
+            allowed: false,
+            locked: true,
+            delayMs: 0,
+            attemptsRemaining: 0,
+          } as any;
+        }
+        if (source === sourceIp && failedAttempts >= 3 && failedAttempts < 6) {
+          // Attempts 3-5 are rate limited but still allowed
+          return {
+            allowed: true,
+            locked: false,
+            delayMs: 0,
+            attemptsRemaining: 6 - failedAttempts,
+          } as any;
+        }
+        // Attempts 0-2 are allowed without backoff
+        return {
+          allowed: true,
+          locked: false,
+          delayMs: 0,
+          attemptsRemaining: 3,
+        } as any;
+      });
+
+      // Mock recordFailedAttempt to increment our counter
+      vi.mocked(annexPeers.recordFailedAttempt).mockImplementation((source: string) => {
+        if (source === sourceIp) {
+          failedAttempts += 1;
+        }
+      });
+
+      annexServer.start();
+      await new Promise((r) => setTimeout(r, 50));
+      const status = annexServer.getStatus();
+      const pairingPort = (status as any).pairingPort || status.port;
+      const wrongPin = status.pin === '000000' ? '000001' : '000000';
+
+      // Make 6 wrong PIN attempts (these trigger recordFailedAttempt)
+      for (let i = 1; i <= 6; i++) {
+        const res = await request(pairingPort, 'POST', '/pair', { pin: wrongPin });
+        // All 6 should return 401 invalid_pin
+        expect(res.status).toBe(401);
+        const body = JSON.parse(res.body);
+        expect(body.error).toBe('invalid_pin');
+      }
+
+      // The 7th attempt should return 429 pairing_locked (lockout triggered after 6 failures)
+      const lockedRes = await request(pairingPort, 'POST', '/pair', { pin: wrongPin });
+      expect(lockedRes.status).toBe(429);
+      const lockedBody = JSON.parse(lockedRes.body);
+      expect(lockedBody.error).toBe('pairing_locked');
+      expect(lockedBody.message).toContain('Too many failed attempts');
+
+      // Verify recordFailedAttempt was called 6 times (not 7, because 7th is blocked before that)
+      expect(vi.mocked(annexPeers.recordFailedAttempt)).toHaveBeenCalledTimes(6);
     });
   });
 });
