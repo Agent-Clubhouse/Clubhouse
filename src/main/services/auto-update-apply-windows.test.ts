@@ -234,7 +234,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
       expect(child.once).toHaveBeenCalledWith('error', expect.any(Function));
     });
 
-    it('logs and rejects when child.once("error") is triggered', async () => {
+    it('logs a handled failure when child.once("error") is triggered', async () => {
       mockPathExists.mockImplementation(async () => true);
       const child = createSpawnedChild();
       const testError = new Error('Failed to start');
@@ -246,11 +246,16 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
       const { appLog } = await vi.importMock('./log-service');
 
-      await expect(applyUpdateOnQuit(readyStatus)).rejects.toThrow('Failed to start');
+      await expect(applyUpdateOnQuit(readyStatus)).resolves.toBeUndefined();
       expect(appLog).toHaveBeenCalledWith(
         'update:apply-on-quit',
         'error',
         expect.stringContaining('Updater failed to start'),
+      );
+      expect(appLog).toHaveBeenCalledWith(
+        'update:apply-on-quit',
+        'warn',
+        expect.stringContaining('Failed to apply update on quit: Failed to start'),
       );
     });
 
