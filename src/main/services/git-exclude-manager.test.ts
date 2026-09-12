@@ -12,6 +12,10 @@ vi.mock('fs/promises', () => ({
 import * as fsp from 'fs/promises';
 import { addExclusions, removeExclusions } from './git-exclude-manager';
 
+function normalizedPath(value: unknown): string {
+  return String(value).replaceAll('\\', '/');
+}
+
 describe('git-exclude-manager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -30,7 +34,10 @@ describe('git-exclude-manager', () => {
       const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
       expect(written).toContain('CLAUDE.md # clubhouse-mode');
       expect(written).toContain('.mcp.json # clubhouse-mode');
-      expect(fsp.rename).toHaveBeenCalledWith(expect.stringContaining('.tmp.'), expect.stringContaining('.git/info/exclude'));
+      expect(fsp.rename).toHaveBeenCalledTimes(1);
+      const [tempPath, excludePath] = vi.mocked(fsp.rename).mock.calls[0];
+      expect(normalizedPath(tempPath)).toContain('.tmp.');
+      expect(normalizedPath(excludePath)).toContain('.git/info/exclude');
     });
 
     it('appends to existing exclude file content', async () => {
@@ -89,7 +96,7 @@ describe('git-exclude-manager', () => {
       vi.mocked(fsp.rename).mockImplementation(async (oldPath, newPath) => {
         excludeContent = tempFiles.get(String(oldPath)) ?? '';
         tempFiles.delete(String(oldPath));
-        expect(newPath).toContain('.git/info/exclude');
+        expect(normalizedPath(newPath)).toContain('.git/info/exclude');
       });
 
       await Promise.all([
@@ -109,7 +116,10 @@ describe('git-exclude-manager', () => {
 
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
 
-      expect(fsp.rm).toHaveBeenCalledWith(expect.stringContaining('.git/info/exclude'), { force: true });
+      expect(fsp.rm).toHaveBeenCalledTimes(1);
+      const [removedPath, options] = vi.mocked(fsp.rm).mock.calls[0];
+      expect(normalizedPath(removedPath)).toContain('.git/info/exclude');
+      expect(options).toEqual({ force: true });
       expect(fsp.rename).toHaveBeenCalledTimes(2);
     });
 
