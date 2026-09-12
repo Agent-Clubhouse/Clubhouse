@@ -23,7 +23,7 @@ function getState() {
 
 function reset() {
   useBadgeSettingsStore.setState({
-    enabled: false,
+    enabled: true,
     pluginBadges: true,
     projectRailBadges: true,
     projectOverrides: {},
@@ -37,6 +37,19 @@ describe('badgeSettingsStore', () => {
   });
 
   describe('loadSettings', () => {
+    it('uses the main-process default before IPC resolves', async () => {
+      let resolveSettings: (value: null) => void = () => {};
+      mockGetBadgeSettings.mockReturnValue(new Promise<null>((resolve) => {
+        resolveSettings = resolve;
+      }));
+
+      const loading = getState().loadSettings();
+      expect(getState().enabled).toBe(true);
+
+      resolveSettings(null);
+      await loading;
+    });
+
     it('loads settings from IPC', async () => {
       mockGetBadgeSettings.mockResolvedValue({
         enabled: false,
@@ -54,7 +67,7 @@ describe('badgeSettingsStore', () => {
     it('uses defaults when IPC returns null', async () => {
       mockGetBadgeSettings.mockResolvedValue(null);
       await getState().loadSettings();
-      expect(getState().enabled).toBe(false);
+      expect(getState().enabled).toBe(true);
       expect(getState().pluginBadges).toBe(true);
       expect(getState().projectRailBadges).toBe(true);
     });
@@ -62,7 +75,7 @@ describe('badgeSettingsStore', () => {
     it('keeps defaults on error', async () => {
       mockGetBadgeSettings.mockRejectedValue(new Error('fail'));
       await getState().loadSettings();
-      expect(getState().enabled).toBe(false);
+      expect(getState().enabled).toBe(true);
     });
   });
 
@@ -90,7 +103,7 @@ describe('badgeSettingsStore', () => {
   describe('getProjectSettings', () => {
     it('returns app defaults when no project override exists', () => {
       const settings = getState().getProjectSettings('proj1');
-      expect(settings).toEqual({ enabled: false, pluginBadges: true, projectRailBadges: true });
+      expect(settings).toEqual({ enabled: true, pluginBadges: true, projectRailBadges: true });
     });
 
     it('merges project overrides with app defaults', () => {

@@ -1,0 +1,134 @@
+name: Real-CLI E2E
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Provider to install and exercise
+        required: false
+        type: choice
+        default: copilot-cli
+        options:
+          - copilot-cli
+          - claude-code
+          - codex-cli
+      break_spawn_command:
+        description: Inject a deliberately broken CLI shim to verify failure handling
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-real-cli-e2e
+  cancel-in-progress: false
+
+jobs:
+  real-cli-e2e:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.provider || 'copilot-cli' }} real CLI
+    runs-on: macos-latest
+    timeout-minutes: 60
+    continue-on-error: ${{ github.event_name != 'workflow_dispatch' || !inputs.break_spawn_command }}
+    env:
+      CLUBHOUSE_REAL_CLI_E2E: '1'
+      GH_HOST: github.com
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Resolve provider
+        id: provider
+        shell: bash
+        run: |
+          PROVIDER="${{ github.event_name == 'workflow_dispatch' && inputs.provider || 'copilot-cli' }}"
+          case "$PROVIDER" in
+            copilot-cli)
+              echo "package=@github/copilot" >> "$GITHUB_OUTPUT"
+              echo "binary=copilot" >> "$GITHUB_OUTPUT"
+              echo "version=1.0.82" >> "$GITHUB_OUTPUT"
+              ;;
+            claude-code)
+              echo "package=@anthropic-ai/claude-code" >> "$GITHUB_OUTPUT"
+              echo "binary=claude" >> "$GITHUB_OUTPUT"
+              echo "version=2.1.261" >> "$GITHUB_OUTPUT"
+              ;;
+            codex-cli)
+              echo "package=@openai/codex" >> "$GITHUB_OUTPUT"
+              echo "binary=codex" >> "$GITHUB_OUTPUT"
+              echo "version=0.153.4" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unsupported provider '$PROVIDER'"
+              exit 1
+              ;;
+          esac
+
+      - name: Install pinned provider CLI
+        shell: bash
+        run: |
+          npm install -g "${{ steps.provider.outputs.package }}@${{ steps.provider.outputs.version }}"
+
+      - name: Record resolved version in summary
+        id: installed-version
+        shell: bash
+        run: |
+          BIN="${{ steps.provider.outputs.binary }}"
+          RESOLVED="$(${BIN} --version 2>/dev/null || ${BIN} version 2>/dev/null || true)"
+          echo "resolved=${RESOLVED:-unknown}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Real CLI E2E"
+            echo "- provider: ${{ steps.provider.outputs.package }}"
+            echo "- pinned version: ${{ steps.provider.outputs.version }}"
+            echo "- resolved version: ${RESOLVED:-unknown}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Inject intentionally broken spawn command
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.break_spawn_command }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bad-cli"
+          cat > "$RUNNER_TEMP/bad-cli/${{ steps.provider.outputs.binary }}" <<'EOF'
+          #!/usr/bin/env bash
+          echo "::error::Injected broken CLI shim for real-CLI E2E validation" >&2
+          exit 1
+          EOF
+          chmod +x "$RUNNER_TEMP/bad-cli/${{ steps.provider.outputs.binary }}"
+          echo "$RUNNER_TEMP/bad-cli" >> "$GITHUB_PATH"
+
+      - name: Build app package
+        run: npx electron-forge package
+
+      - name: Run real CLI E2E
+        id: real-cli
+        shell: bash
+        run: npx playwright test e2e/agent-real-cli.spec.ts
+
+      - name: Publish final status summary
+        if: always()
+        shell: bash
+        run: |
+          RESULT="${{ steps.real-cli.outcome }}"
+          {
+            echo "## Real CLI E2E status"
+            echo "- provider: ${{ steps.provider.outputs.package }}"
+            echo "- pinned version: ${{ steps.provider.outputs.version }}"
+            echo "- resolved version: ${{ steps.installed-version.outputs.resolved }}"
+            if [ "$RESULT" = "success" ]; then
+              echo "- result: passed"
+            else
+              echo "- result: failed"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

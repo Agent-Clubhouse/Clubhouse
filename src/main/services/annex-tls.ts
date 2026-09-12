@@ -99,7 +99,10 @@ function loadCert(): TlsCertificateInfo | null {
 
 function saveCert(cert: TlsCertificateInfo): void {
   const filePath = getCertPath();
-  fs.writeFileSync(filePath, JSON.stringify(cert, null, 2), 'utf-8');
+  fs.writeFileSync(filePath, JSON.stringify(cert, null, 2), {
+    encoding: 'utf-8',
+    mode: 0o600,
+  });
   try {
     fs.chmodSync(filePath, 0o600);
   } catch {
