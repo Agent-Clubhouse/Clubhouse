@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
 
 const fixture = process.env.DEPENDABOT_PRECHECK_FIXTURE;
-const output = fixture
-  ? fixture
+const result = fixture !== undefined
+  ? { output: fixture, status: Number(process.env.DEPENDABOT_PRECHECK_STATUS ?? 0) }
   : (() => {
       const result = spawnSync(
         'npm',
@@ -17,12 +17,16 @@ const output = fixture
         throw result.error;
       }
 
-      return [result.stdout, result.stderr].join('\n');
+      return {
+        output: [result.stdout, result.stderr].join('\n'),
+        status: result.status ?? 1,
+      };
     })();
 
+const { output, status } = result;
 const hasConflict = /ERESOLVE|peer dep|peer dependency|conflicting peer dependency/i.test(output);
 
-if (!hasConflict) {
+if (status === 0) {
   console.log('Dependency resolution check passed: the install graph resolves cleanly.');
   process.exit(0);
 }
@@ -33,7 +37,9 @@ const packageNames = [...new Set(
     .filter(Boolean),
 )];
 
-console.error('Dependency resolution check failed: peer dependency conflict detected.');
+console.error(hasConflict
+  ? 'Dependency resolution check failed: peer dependency conflict detected.'
+  : `Dependency resolution check failed: npm exited with status ${status}.`);
 if (packageNames.length > 0) {
   console.error(`Conflicting packages: ${packageNames.join(', ')}`);
 }

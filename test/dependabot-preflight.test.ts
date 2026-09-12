@@ -30,6 +30,7 @@ npm ERR! Could not resolve dependency:
 npm ERR! peer @electron/fuses@"^2.0.0" from @electron-forge/plugin-fuses@7.11.2
 npm ERR! Fix the upstream dependency graph to avoid a broken lockfile.
 `,
+        DEPENDABOT_PRECHECK_STATUS: '1',
       },
     });
 

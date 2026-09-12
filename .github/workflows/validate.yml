@@ -3,9 +3,6 @@ name: Validate
 on:
   pull_request:
     branches: [main, dev/*]
-  schedule:
-    - cron: '0 6 * * 1'
-  workflow_dispatch:
 
 concurrency:
   group: validate-${{ github.ref }}
@@ -14,15 +11,15 @@ concurrency:
 jobs:
   dependency-preflight:
     name: Dependency resolution preflight
-    if: ${{ github.event_name == 'schedule' || github.actor == 'dependabot[bot]' }}
+    if: ${{ github.actor == 'dependabot[bot]' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
       - name: Check the install graph resolves for Dependabot updates
         run: node scripts/dependabot-preflight.mjs
 
