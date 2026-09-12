@@ -81,7 +81,7 @@ vi.mock('./settings-store', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { applyUpdate, applyUpdateOnQuit, applyWindowsUpdate, getStatus } from './auto-update-service';
+import { applyUpdate, applyUpdateOnQuit, applyWindowsUpdate, getStatus, _setStatusForTesting } from './auto-update-service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -106,6 +106,18 @@ const readyStatus = {
 describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetSettings.mockReturnValue({ previewChannel: false });
+    _setStatusForTesting({
+      state: 'idle',
+      availableVersion: null,
+      releaseNotes: null,
+      releaseMessage: null,
+      downloadProgress: 0,
+      error: null,
+      downloadPath: null,
+      artifactUrl: null,
+      applyAttempted: false,
+    });
   });
 
   describe('applyUpdate', () => {
@@ -134,7 +146,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
       expect(mockSpawn).toHaveBeenCalledWith(
         expect.stringContaining('Update.exe'),
-        ['--processStart', 'Clubhouse.exe'],
+        ['--processStart', path.basename(process.execPath)],
         expect.objectContaining({ detached: true, windowsHide: true }),
       );
     });
@@ -232,7 +244,6 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
           'update:apply-on-quit',
           'error',
           expect.stringContaining('Update.exe failed to start'),
-          expect.any(Object),
         );
       }
     });
@@ -290,7 +301,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
       expect(mockSpawn).toHaveBeenCalledWith(
         expect.stringContaining('Update.exe'),
-        ['--processStart', 'Clubhouse.exe'],
+        ['--processStart', path.basename(process.execPath)],
         expect.objectContaining({ detached: true, windowsHide: true }),
       );
     });
