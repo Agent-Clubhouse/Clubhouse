@@ -46,7 +46,8 @@ describe('fix-node-pty darwin patch', () => {
     const runner = new Function('require', 'module', 'exports', '__dirname', 'process', scriptSource);
     runner(requireFromScript, module, module.exports, path.dirname(scriptPath), fakeProcess);
 
-    expect(chmodCalls).toEqual([
+    const normalizedChmodCalls = chmodCalls.map(([target, mode]) => [target.replaceAll('\\', '/'), mode]);
+    expect(normalizedChmodCalls).toEqual([
       [expect.stringContaining('darwin-arm64/spawn-helper'), 0o755],
       [expect.stringContaining('darwin-x64/spawn-helper'), 0o755],
     ]);
