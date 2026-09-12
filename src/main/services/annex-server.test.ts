@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'http';
 import net from 'net';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 const mockBonjourService = { stop: vi.fn() };
@@ -2968,6 +2970,7 @@ describe('annex-server', () => {
       // Setup: enable TLS by using real certificate
       const annexTlsOriginal = await vi.importActual<typeof import('./annex-tls')>('./annex-tls');
       const identity = annexIdentity.getOrCreateIdentity();
+      fs.mkdirSync(path.join(os.tmpdir(), 'clubhouse-test-userData'), { recursive: true });
       const cert = annexTlsOriginal.getOrCreateCert(identity);
       
       vi.mocked(annexTls.createTlsServerOptions).mockReturnValue({
@@ -3067,7 +3070,7 @@ describe('annex-server', () => {
       await new Promise((r) => setTimeout(r, 50));
       const status = annexServer.getStatus();
       const pairingPort = (status as any).pairingPort || status.port;
-      const wrongPin = '000000'; // Definitely wrong
+      const wrongPin = status.pin === '000000' ? '000001' : '000000';
 
       // Make 6 wrong PIN attempts (these trigger recordFailedAttempt)
       for (let i = 1; i <= 6; i++) {
