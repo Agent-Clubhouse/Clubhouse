@@ -1,14 +1,35 @@
 /**
  * Integration tests for the Annex protocol client.
  *
- * These tests validate that the AnnexProtocolClient can pair with a real
- * (in-process) Annex server, connect via WebSocket, and receive snapshots.
+ * These tests validate that the AnnexProtocolClient can pair with a protocol
+ * test server, connect via WebSocket, and receive snapshots.
  *
  * Note: These use vitest's integration project and require the annex server
  * modules to be importable (no Electron runtime needed for the HTTP/WS layer).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { AnnexProtocolClient } from '../../e2e/annex-v2/protocol-client';
+
+vi.mock('../../src/main/services/annex-identity', () => ({
+  getOrCreateIdentity: () => ({
+    publicKey: 'test-public-key',
+    privateKey: 'test-private-key',
+    fingerprint: 'AA:BB:CC:DD',
+  }),
+  getPublicIdentity: () => ({
+    publicKey: 'test-public-key',
+    fingerprint: 'AA:BB:CC:DD',
+  }),
+}));
+
+vi.mock('../../src/main/services/annex-tls', () => ({
+  createTlsServerOptions: () => {
+    throw new Error('TLS disabled in integration test');
+  },
+  extractPeerFingerprint: () => null,
+}));
+
+import * as annexServer from '../../src/main/services/annex-server';
 import * as http from 'http';
 import { WebSocketServer } from 'ws';
 import { randomInt, randomUUID } from 'crypto';
@@ -198,5 +219,35 @@ describe('AnnexProtocolClient', () => {
     client.disconnect();
     expect(client.isConnected).toBe(false);
     expect(client.authToken).toBeNull();
+  });
+});
+
+describe('AnnexProtocolClient with the Annex server implementation', () => {
+  let client: AnnexProtocolClient;
+
+  afterEach(() => {
+    client?.disconnect();
+    annexServer.stop();
+  });
+
+  it('pairs and authenticates against the plain-HTTP TLS fallback', async () => {
+    annexServer.start();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const status = annexServer.getStatus();
+    expect(status.tlsEnabled).toBe(false);
+
+    client = new AnnexProtocolClient({
+      host: '127.0.0.1',
+      port: status.port,
+      pairingPort: status.pairingPort,
+    });
+
+    const pairResult = await client.pair(status.pin);
+    expect(pairResult.token).toBeDefined();
+
+    const statusResult = await client.get('/api/v1/status');
+    expect(statusResult.status).toBe(200);
+    expect((statusResult.body as { version: string }).version).toBe('1');
   });
 });
