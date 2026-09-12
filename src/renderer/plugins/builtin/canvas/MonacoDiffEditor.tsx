@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { loadMonaco, ensureThemes, applyMonacoTheme } from '../files/monaco-theme';
+import { loadMonaco, ensureThemes, applyMonacoTheme, monacoThemeName } from '../files/monaco-theme';
 import { useThemeStore } from '../../../stores/themeStore';
 import { languageFromPath } from './ReadOnlyMonacoEditor';
 
@@ -15,6 +15,7 @@ export function MonacoDiffEditor({ original, modified, filePath }: MonacoDiffEdi
   const monacoRef = useRef<any>(null);
   const themeId = useThemeStore((s) => s.themeId);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Create diff editor once on mount
   useEffect(() => {
@@ -31,7 +32,7 @@ export function MonacoDiffEditor({ original, modified, filePath }: MonacoDiffEdi
       const modifiedModel = m.editor.createModel(modified, language);
 
       const editor = m.editor.createDiffEditor(containerRef.current, {
-        theme: `clubhouse-${themeId}`,
+        theme: monacoThemeName(themeId),
         readOnly: true,
         fontSize: 12,
         fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
@@ -53,6 +54,11 @@ export function MonacoDiffEditor({ original, modified, filePath }: MonacoDiffEdi
       });
 
       editorRef.current = editor;
+      setLoading(false);
+    }).catch((err) => {
+      if (disposed) return;
+      console.error('[MonacoDiffEditor] Monaco failed to initialise:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
       setLoading(false);
     });
 
@@ -103,6 +109,11 @@ export function MonacoDiffEditor({ original, modified, filePath }: MonacoDiffEdi
       ? React.createElement('div', {
           className: 'absolute inset-0 flex items-center justify-center text-ctp-subtext0 text-xs',
         }, 'Loading diff\u2026')
+      : null,
+    loadError
+      ? React.createElement('div', {
+          className: 'absolute inset-0 flex items-center justify-center p-4 text-center text-ctp-error text-xs',
+        }, `Could not load the diff viewer: ${loadError}`)
       : null,
   );
 }

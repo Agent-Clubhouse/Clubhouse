@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateMonacoTheme, registerAllMonacoThemes, applyMonacoTheme } from './monaco-theme';
+import { generateMonacoTheme, registerAllMonacoThemes, applyMonacoTheme, monacoThemeName } from './monaco-theme';
 import { registerTheme, unregisterTheme, BUILTIN_THEMES } from '../../../themes';
 import type { ThemeDefinition } from '../../../../shared/types';
 
@@ -125,5 +125,86 @@ describe('applyMonacoTheme', () => {
     const m = mockMonaco();
     applyMonacoTheme(m, 'catppuccin-mocha');
     expect(m.editor.setTheme).toHaveBeenCalledWith('clubhouse-catppuccin-mocha');
+  });
+});
+
+// ── Monaco theme-name legality ───────────────────────────────────────
+//
+// Regression coverage for the "Loading editor…" hang: Monaco rejects any theme
+// name that is not /^[a-z0-9\-]+$/i, and plugin themes are namespaced
+// `plugin:<pluginId>:<themeId>`. The old code passed that id straight to
+// defineTheme, which threw, rejected ensureThemes(), and left every Monaco
+// surface on its loading placeholder forever.
+
+/** Mock that enforces Monaco's real theme-name validation. */
+function strictMockMonaco() {
+  const assertLegal = (name: string) => {
+    if (!/^[a-z0-9\-]+$/i.test(name)) throw new Error('Illegal theme name!');
+  };
+  return {
+    editor: {
+      defineTheme: vi.fn((name: string) => assertLegal(name)),
+      setTheme: vi.fn((name: string) => assertLegal(name)),
+    },
+  };
+}
+
+describe('monacoThemeName', () => {
+  it('leaves already-legal ids untouched', () => {
+    expect(monacoThemeName('catppuccin-mocha')).toBe('clubhouse-catppuccin-mocha');
+  });
+
+  it('produces a Monaco-legal name for namespaced plugin theme ids', () => {
+    const name = monacoThemeName('plugin:fall-themes:maple');
+    expect(name).toMatch(/^[a-z0-9-]+$/i);
+    expect(name.startsWith('clubhouse-plugin-fall-themes-maple-')).toBe(true);
+  });
+
+  it('is stable across calls', () => {
+    const id = 'plugin:winter-themes:frost';
+    expect(monacoThemeName(id)).toBe(monacoThemeName(id));
+  });
+
+  it('does not collide when two distinct ids sanitise to the same string', () => {
+    expect(monacoThemeName('plugin:a:b')).not.toBe(monacoThemeName('plugin-a-b'));
+  });
+});
+
+describe('plugin themes with namespaced ids', () => {
+  const PLUGIN_ID = 'plugin:fall-themes:maple';
+
+  it('registerAllMonacoThemes registers every builtin even with a namespaced plugin theme present', () => {
+    registerTheme({ ...mockTheme, id: PLUGIN_ID as any, name: 'Maple' });
+    try {
+      const m = strictMockMonaco();
+      expect(() => registerAllMonacoThemes(m)).not.toThrow();
+      for (const id of Object.keys(BUILTIN_THEMES)) {
+        expect(m.editor.defineTheme).toHaveBeenCalledWith(`clubhouse-${id}`, expect.anything());
+      }
+      expect(m.editor.defineTheme).toHaveBeenCalledWith(monacoThemeName(PLUGIN_ID), expect.anything());
+    } finally {
+      unregisterTheme(PLUGIN_ID as any);
+    }
+  });
+
+  it('applyMonacoTheme applies a namespaced plugin theme without throwing', () => {
+    registerTheme({ ...mockTheme, id: PLUGIN_ID as any, name: 'Maple' });
+    try {
+      const m = strictMockMonaco();
+      expect(() => applyMonacoTheme(m, PLUGIN_ID)).not.toThrow();
+      expect(m.editor.setTheme).toHaveBeenCalledWith(monacoThemeName(PLUGIN_ID));
+    } finally {
+      unregisterTheme(PLUGIN_ID as any);
+    }
+  });
+
+  it('a theme that Monaco still rejects does not stop the other themes registering', () => {
+    const m = strictMockMonaco();
+    // Force a rejection for one specific name to simulate a future bad theme.
+    m.editor.defineTheme = vi.fn((name: string) => {
+      if (name === 'clubhouse-terminal') throw new Error('Illegal theme name!');
+    });
+    expect(() => registerAllMonacoThemes(m)).not.toThrow();
+    expect(m.editor.defineTheme).toHaveBeenCalledWith('clubhouse-catppuccin-mocha', expect.anything());
   });
 });

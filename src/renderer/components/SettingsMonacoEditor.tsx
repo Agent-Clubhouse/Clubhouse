@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useThemeStore } from '../stores/themeStore';
-import { loadMonaco, ensureThemes, applyMonacoTheme } from '../plugins/builtin/files/monaco-theme';
+import { loadMonaco, ensureThemes, applyMonacoTheme, monacoThemeName } from '../plugins/builtin/files/monaco-theme';
 
 interface SettingsMonacoEditorProps {
   value: string;
@@ -26,6 +26,7 @@ export function SettingsMonacoEditor({
   const onChangeRef = useRef(onChange);
   const themeId = useThemeStore((s) => s.themeId);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   onChangeRef.current = onChange;
 
@@ -42,7 +43,7 @@ export function SettingsMonacoEditor({
       const editor = m.editor.create(containerRef.current, {
         value,
         language,
-        theme: `clubhouse-${themeId}`,
+        theme: monacoThemeName(themeId),
         fontSize: 12,
         fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
         minimap: { enabled: false },
@@ -70,7 +71,11 @@ export function SettingsMonacoEditor({
       editor.onDidChangeModelContent(() => {
         onChangeRef.current(editor.getValue());
       });
-
+      setLoading(false);
+    }).catch((err) => {
+      if (disposed) return;
+      console.error('[SettingsMonacoEditor] Monaco failed to initialise:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
       setLoading(false);
     });
 
@@ -112,6 +117,11 @@ export function SettingsMonacoEditor({
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center text-ctp-subtext0 text-xs">
           Loading editor…
+        </div>
+      )}
+      {loadError && (
+        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-ctp-error text-xs">
+          {`Could not load the editor: ${loadError}`}
         </div>
       )}
     </div>

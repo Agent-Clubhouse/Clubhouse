@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
-import { loadMonaco, ensureThemes, applyMonacoTheme } from './monaco-theme';
+import { loadMonaco, ensureThemes, applyMonacoTheme, monacoThemeName } from './monaco-theme';
 import { useThemeStore } from '../../../stores/themeStore';
 import type { ScrollState } from './state';
 
@@ -113,6 +113,7 @@ export function MonacoEditor({
   const wordWrapRef = useRef<'off' | 'on'>('off');
   const themeId = useThemeStore((s) => s.themeId);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const contentChangeDisposableRef = useRef<any>(null);
   const cursorChangeDisposableRef = useRef<any>(null);
 
@@ -155,7 +156,7 @@ export function MonacoEditor({
 
       const editor = m.editor.create(containerRef.current, {
         model: cached.model,
-        theme: `clubhouse-${themeId}`,
+        theme: monacoThemeName(themeId),
         fontSize: 13,
         fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
         bracketPairColorization: { enabled: true },
@@ -263,7 +264,11 @@ export function MonacoEditor({
           column: initialScrollState.cursorColumn,
         });
       }
-
+      setLoading(false);
+    }).catch((err) => {
+      if (disposed) return;
+      console.error('[MonacoEditor] Monaco failed to initialise:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
       setLoading(false);
     });
 
@@ -359,6 +364,11 @@ export function MonacoEditor({
       ? React.createElement('div', {
           className: 'absolute inset-0 flex items-center justify-center text-ctp-subtext0 text-xs',
         }, 'Loading editor\u2026')
+      : null,
+    loadError
+      ? React.createElement('div', {
+          className: 'absolute inset-0 flex items-center justify-center p-4 text-center text-ctp-error text-xs',
+        }, `Could not load the editor: ${loadError}`)
       : null,
   );
 }
