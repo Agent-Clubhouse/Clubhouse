@@ -358,6 +358,17 @@ describe('annex-server', () => {
     expect(JSON.parse(res.body)).toEqual({ error: 'invalid_pin' });
   });
 
+  it('rejects a six-character non-ASCII PIN without throwing', async () => {
+    annexServer.start();
+    await new Promise((r) => setTimeout(r, 50));
+    const status = annexServer.getStatus();
+    const pairingPort = (status as any).pairingPort || status.port;
+
+    const res = await request(pairingPort, 'POST', '/pair', { pin: 'éééééé' });
+    expect(res.status).toBe(401);
+    expect(JSON.parse(res.body)).toEqual({ error: 'invalid_pin' });
+  });
+
   it('accepts pairing with correct PIN and returns token', async () => {
     annexServer.start();
     await new Promise((r) => setTimeout(r, 50));
