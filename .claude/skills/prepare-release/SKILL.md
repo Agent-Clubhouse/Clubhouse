@@ -57,6 +57,7 @@ For each commit, assign exactly one category using the rules below. Apply them i
 
 ### Special handling
 - **Version bump commits** (e.g., `chore: bump version to X.Y.Z`) — skip entirely, these are release mechanics.
+- **Runtime-critical dependency bumps** — a `chore(deps)` commit that bumps Electron, `node-pty`, `@xterm/xterm`, or any dependency listed in `.github/dependabot.yml`'s `ignore` list is classified as **Internal**, not **Non-User**. These bumps can affect runtime behavior and should remain visible in release notes.
 - **Merge commits** are already excluded by `--no-merges`.
 
 ## Phase 3: Coalesce
