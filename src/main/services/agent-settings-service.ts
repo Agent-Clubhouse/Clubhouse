@@ -34,6 +34,18 @@ const CLAUDE_CODE_CONVENTIONS: SettingsConventions = {
   localSettingsFile: 'settings.local.json',
 };
 
+export async function getMcpShadowWarning(worktreePath: string, conv?: SettingsConventions): Promise<string | undefined> {
+  const c = conv || CLAUDE_CODE_CONVENTIONS;
+  if (!worktreePath || c.mcpConfigFile !== '.github/mcp.json') return undefined;
+
+  const shadowPath = path.join(worktreePath, '.mcp.json');
+  if (await pathExists(shadowPath)) {
+    return 'Warning: .mcp.json also exists in this worktree and takes precedence over .github/mcp.json. Copilot CLI may ignore the Clubhouse materialized config here.';
+  }
+
+  return undefined;
+}
+
 /** Local settings shape for .clubhouse/settings.json */
 interface ProjectSettings {
   defaults: Record<string, unknown>;
@@ -619,6 +631,12 @@ export async function readMcpRawJson(worktreePath: string, conv?: SettingsConven
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   // Non-JSON config files (e.g. TOML) cannot be read as JSON — return empty default
   if (c.settingsFormat && c.settingsFormat !== 'json') return '{\n  "mcpServers": {}\n}';
+
+  const shadowWarning = await getMcpShadowWarning(worktreePath, c);
+  if (shadowWarning) {
+    appLog(LOG_NS, 'warn', shadowWarning, { meta: { worktreePath, mcpConfigFile: c.mcpConfigFile } });
+  }
+
   const filePath = path.join(worktreePath, c.mcpConfigFile);
   try {
     return await fsp.readFile(filePath, 'utf-8');
@@ -645,6 +663,12 @@ export async function writeMcpRawJson(worktreePath: string, content: string, con
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Invalid JSON' };
   }
+
+  const shadowWarning = await getMcpShadowWarning(worktreePath, c);
+  if (shadowWarning) {
+    appLog(LOG_NS, 'warn', shadowWarning, { meta: { worktreePath, mcpConfigFile: c.mcpConfigFile } });
+  }
+
   const filePath = path.join(worktreePath, c.mcpConfigFile);
   // Ensure parent directory exists (e.g. .github/ for copilot)
   const dir = path.dirname(filePath);

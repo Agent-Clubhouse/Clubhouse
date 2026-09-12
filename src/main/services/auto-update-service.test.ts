@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { execFileSync } from 'child_process';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyPlatformUpdate, platformUpdateHandlers, platformKey } from './auto-update-service';
+import { EventEmitter } from 'events';
+import { execFileSync, spawn } from 'child_process';
+import { app } from 'electron';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyMacUpdate, applyPlatformUpdate, applyWindowsUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt, platformKey } from './auto-update-service';
+import * as fsUtils from './fs-utils';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -8,10 +11,19 @@ import * as crypto from 'crypto';
 
 vi.mock('child_process', () => ({
   execFileSync: vi.fn(),
-  spawn: vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })),
+  spawn: vi.fn(() => new EventEmitter()),
 }));
 
+const testUserDataPath = path.join(os.tmpdir(), 'clubhouse-test-userData');
+
 describe('auto-update-service', () => {
+  beforeEach(() => {
+    fs.mkdirSync(testUserDataPath, { recursive: true });
+    for (const filename of ['pending-update-info.json', 'update-apply-attempt.json']) {
+      try { fs.unlinkSync(path.join(testUserDataPath, filename)); } catch {}
+    }
+  });
+
   describe('platform update dispatch', () => {
     it('routes apply and apply-on-quit through the same platform implementation', async () => {
       const readyStatus = {
@@ -28,7 +40,7 @@ describe('auto-update-service', () => {
       const handler = process.platform === 'darwin'
         ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue(true)
         : process.platform === 'win32'
-          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue()
+          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue(true)
           : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
 
       await applyUpdate(readyStatus);
@@ -111,6 +123,177 @@ describe('auto-update-service', () => {
         { relaunch: true },
       );
       handler.mockRestore();
+    });
+
+    it('keeps the pending marker when the updater fails to spawn', async () => {
+      const readyStatus = {
+        state: 'ready' as const,
+        availableVersion: '1.0.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        downloadPath: '/tmp/Clubhouse.deb',
+        error: null,
+        artifactUrl: null,
+        applyAttempted: false,
+      };
+      const handler = process.platform === 'darwin'
+        ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockRejectedValue(new Error('spawn failed'))
+        : process.platform === 'win32'
+          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockRejectedValue(new Error('spawn failed'))
+          : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockRejectedValue(new Error('spawn failed'));
+
+      await writePendingUpdateInfo({
+        version: readyStatus.availableVersion,
+        downloadPath: readyStatus.downloadPath,
+        releaseNotes: null,
+        releaseMessage: null,
+      });
+      await applyUpdateOnQuit(readyStatus);
+
+      expect(await readPendingUpdateInfo()).toEqual(expect.objectContaining({
+        version: readyStatus.availableVersion,
+      }));
+      expect(await readApplyAttempt()).toBeNull();
+      handler.mockRestore();
+    });
+
+    it('keeps the pending marker when the Windows updater process emits a spawn error', async () => {
+      if (process.platform !== 'win32') return;
+
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      const child = new EventEmitter();
+      (child as EventEmitter & { unref: () => void }).unref = vi.fn();
+      vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+      const readyStatus = {
+        state: 'ready' as const,
+        availableVersion: '1.0.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        downloadPath: null,
+        error: null,
+        artifactUrl: null,
+        applyAttempted: false,
+      };
+
+      await writePendingUpdateInfo({
+        version: readyStatus.availableVersion,
+        downloadPath: 'C:\\Clubhouse update.nupkg',
+        releaseNotes: null,
+        releaseMessage: null,
+      });
+      const apply = applyUpdateOnQuit(readyStatus);
+      await Promise.resolve();
+      await Promise.resolve();
+      child.emit('error', new Error('spawn failed'));
+      await apply;
+
+      expect(await readPendingUpdateInfo()).toEqual(expect.objectContaining({
+        version: readyStatus.availableVersion,
+      }));
+      expect(await readApplyAttempt()).toBeNull();
+      pathExists.mockRestore();
+    });
+
+    it('clears the marker and records one attempt after the updater starts', async () => {
+      const readyStatus = {
+        state: 'ready' as const,
+        availableVersion: '1.0.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        downloadPath: '/tmp/Clubhouse.deb',
+        error: null,
+        artifactUrl: null,
+        applyAttempted: false,
+      };
+      const handler = process.platform === 'darwin'
+        ? vi.spyOn(platformUpdateHandlers, 'applyMacUpdate').mockResolvedValue(true)
+        : process.platform === 'win32'
+          ? vi.spyOn(platformUpdateHandlers, 'applyWindowsUpdate').mockResolvedValue(true)
+          : vi.spyOn(platformUpdateHandlers, 'applyLinuxUpdate').mockResolvedValue(true);
+
+      await writePendingUpdateInfo({
+        version: readyStatus.availableVersion,
+        downloadPath: readyStatus.downloadPath,
+        releaseNotes: null,
+        releaseMessage: null,
+      });
+      await applyUpdateOnQuit(readyStatus);
+
+      expect(await readPendingUpdateInfo()).toBeNull();
+      expect(await readApplyAttempt()).toEqual(expect.objectContaining({
+        version: readyStatus.availableVersion,
+        artifactUrl: readyStatus.artifactUrl,
+      }));
+      expect(handler).toHaveBeenCalledOnce();
+      handler.mockRestore();
+    });
+
+    it('rejects when the Windows updater fails to spawn', async () => {
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      const child = new EventEmitter();
+      (child as EventEmitter & { unref: () => void }).unref = vi.fn();
+      vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+      const update = applyWindowsUpdate(
+        { downloadPath: null, version: '1.0.0', artifactUrl: null },
+        { relaunch: false },
+      );
+
+      await Promise.resolve();
+      child.emit('error', new Error('spawn failed'));
+
+      await expect(update).rejects.toThrow('spawn failed');
+      pathExists.mockRestore();
+    });
+
+    it('rejects when the macOS updater script fails to spawn', async () => {
+      const tempDir = path.join(os.tmpdir(), `clubhouse-update-spawn-test-${process.pid}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      const getPath = vi.spyOn(app, 'getPath').mockImplementation((name: string) =>
+        name === 'exe' ? '/Applications/Clubhouse.app/Contents/MacOS/Clubhouse' : tempDir,
+      );
+      const child = new EventEmitter();
+      (child as EventEmitter & { unref: () => void }).unref = vi.fn();
+      vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+
+      try {
+        const update = applyMacUpdate(
+          { downloadPath: '/tmp/Clubhouse.zip', version: '1.0.0', artifactUrl: null },
+          { relaunch: false },
+        );
+        await vi.waitFor(() => expect(spawn).toHaveBeenCalledWith(
+          'bash',
+          [path.join(tempDir, 'clubhouse-update.sh')],
+          { detached: true, stdio: 'ignore' },
+        ));
+        child.emit('error', new Error('spawn failed'));
+
+        await expect(update).rejects.toThrow('spawn failed');
+      } finally {
+        pathExists.mockRestore();
+        getPath.mockRestore();
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('resolves after the Windows updater spawns successfully', async () => {
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      const child = new EventEmitter();
+      (child as EventEmitter & { unref: () => void }).unref = vi.fn();
+      vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+      const update = applyWindowsUpdate(
+        { downloadPath: null, version: '1.0.0', artifactUrl: null },
+        { relaunch: false },
+      );
+
+      await Promise.resolve();
+      child.emit('spawn');
+
+      await expect(update).resolves.toBe(true);
+      pathExists.mockRestore();
     });
 
   });

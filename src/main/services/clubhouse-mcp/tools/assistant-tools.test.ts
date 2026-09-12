@@ -329,7 +329,11 @@ describe('assistant-tools', () => {
   it('get_settings returns valid JSON', async () => {
     const result = await callAssistantTool('get_settings');
     expect(result.isError).toBeFalsy();
-    expect(() => JSON.parse(result.content[0].text)).not.toThrow();
+    expect(JSON.parse(result.content[0].text)).toEqual({
+      theme: 'catppuccin-mocha',
+      themeId: 'catppuccin-mocha',
+    });
+    expect(mockThemeGetSettings).toHaveBeenCalled();
   });
 
   // ── Write tools ──────────────────────────────────────────────────────
@@ -529,14 +533,14 @@ describe('assistant-tools', () => {
     }
   });
 
-  it('update_settings writes non-theme keys to settings file', async () => {
+  it('update_settings rejects non-theme keys', async () => {
     const result = await callAssistantTool('update_settings', {
-      key: 'soundEnabled',
+      key: 'autoUpdate',
       value: 'true',
     });
-    if (!result.isError) {
-      expect(result.content[0].text).toContain('updated');
-    }
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('not in the allowed list');
+    expect(mockThemeSave).not.toHaveBeenCalled();
   });
 
   it('update_settings with theme key uses themeService and notifies renderer', async () => {

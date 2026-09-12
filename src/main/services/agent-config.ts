@@ -1,4 +1,5 @@
 import { exec, execFile } from 'child_process';
+import { watch, type FSWatcher } from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -86,6 +87,8 @@ export async function ensureGitignore(projectPath: string): Promise<void> {
 
 interface CacheEntry {
   agents: DurableAgentConfig[];
+  baselineAgents: DurableAgentConfig[];
+  diskSnapshot: string;
   agentsById: Map<string, DurableAgentConfig>;
   dirty: boolean;
   flushTimer: ReturnType<typeof setTimeout> | null;
@@ -103,6 +106,7 @@ async function readAgentsEntry(projectPath: string): Promise<{ agents: DurableAg
 }
 
 const configCache = new Map<string, CacheEntry>();
+const configWatchers = new Map<string, FSWatcher>();
 
 /** How long to wait before flushing dirty cache entries to disk (ms) */
 const FLUSH_DELAY_MS = 100;
@@ -233,8 +237,10 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
             agents: agents.map((a) => ({ id: a.id, name: a.name })),
           },
         });
-        // Restore backup to main file so future reads succeed
-        await writeAgentsToDisk(projectPath, agents);
+        // Restore the main file from the backup without clobbering the backup
+        // itself. The backup is the last known-good snapshot and must survive
+        // the recovery path to preserve future recovery options.
+        await writeAgentsToDiskSkippingBackup(projectPath, agents);
       }
     } catch (backupErr) {
       appLog('core:agent-config', 'error', 'Backup agents.json.bak is also corrupt', {
@@ -264,40 +270,144 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
         removedAgents: removed.map((a) => ({ id: a.id, name: a.name })),
       },
     });
-    // Persist the deduplicated list
-    await writeAgentsToDisk(projectPath, deduped);
+    // Persist the deduplicated list without clobbering a valid backup when the
+    // current file had to be recovered from backup first.
+    if (source === 'backup') {
+      await writeAgentsToDiskSkippingBackup(projectPath, deduped);
+    } else {
+      await writeAgentsToDisk(projectPath, deduped);
+    }
   }
 
   return deduped;
 }
 
 async function writeAgentsToDisk(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
+  await writeAgentsToDiskWithOptions(projectPath, agents, { skipBackup: false });
+}
+
+async function writeAgentsToDiskSkippingBackup(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
+  await writeAgentsToDiskWithOptions(projectPath, agents, { skipBackup: true });
+}
+
+async function writeAgentsToDiskWithOptions(
+  projectPath: string,
+  agents: DurableAgentConfig[],
+  options: { skipBackup?: boolean },
+): Promise<void> {
   const dir = clubhouseDir(projectPath);
   await ensureDir(dir);
+  ensureConfigWatcher(projectPath);
 
   const configPath = agentsConfigPath(projectPath);
   const backupPath = agentsBackupPath(projectPath);
+  const skipBackup = options.skipBackup ?? false;
 
-  // Back up existing agents.json before overwriting — the backup preserves
-  // the last known-good state so that a crash mid-write or corrupt write
-  // can be auto-recovered on the next read.
-  if (await pathExists(configPath)) {
+  let previousConfig: string | null = null;
+  if (!skipBackup && await pathExists(configPath)) {
     try {
-      await fsp.copyFile(configPath, backupPath);
+      previousConfig = await fsp.readFile(configPath, 'utf-8');
     } catch {
-      // Non-fatal — best-effort backup
+      // Non-fatal — if the current config is unreadable, we still write the
+      // new config and leave the backup untouched rather than clobbering it.
     }
   }
 
   // Atomic write: write to temp file then rename — prevents partial/corrupt
-  // files if the process crashes mid-write.
+  // files if the process crashes mid-write. We update the backup only after the
+  // main file rename succeeds so a crash can never leave both files corrupt.
   const tmpPath = configPath + '.tmp.' + randomUUID().slice(0, 8);
   await fsp.writeFile(tmpPath, JSON.stringify(agents, null, 2), 'utf-8');
   await fsp.rename(tmpPath, configPath);
 
+  if (!skipBackup && previousConfig !== null) {
+    const backupTmpPath = backupPath + '.tmp.' + randomUUID().slice(0, 8);
+    try {
+      await fsp.writeFile(backupTmpPath, previousConfig, 'utf-8');
+      await fsp.rename(backupTmpPath, backupPath);
+    } catch {
+      // Non-fatal — best-effort backup refresh. The main file is already written.
+    }
+  }
+
   appLog('core:agent-config', 'info', `Wrote ${agents.length} agent(s) to disk`, {
-    meta: { configPath, agentIds: agents.map((a) => a.id) },
+    meta: { configPath, agentIds: agents.map((a) => a.id), skippedBackup: skipBackup },
   });
+}
+
+function cloneAgents(agents: DurableAgentConfig[]): DurableAgentConfig[] {
+  return JSON.parse(JSON.stringify(agents)) as DurableAgentConfig[];
+}
+
+function mergeExternalAgents(
+  baseline: DurableAgentConfig[],
+  local: DurableAgentConfig[],
+  external: DurableAgentConfig[],
+): DurableAgentConfig[] {
+  const baselineById = new Map(baseline.map((agent) => [agent.id, agent]));
+  const localById = new Map(local.map((agent) => [agent.id, agent]));
+  const externalById = new Map(external.map((agent) => [agent.id, agent]));
+  const ids = new Set([...baselineById.keys(), ...localById.keys(), ...externalById.keys()]);
+  const merged = [...ids].flatMap((id) => {
+    const baselineAgent = baselineById.get(id);
+    const localAgent = localById.get(id);
+    const externalAgent = externalById.get(id);
+    // A baseline agent missing locally was deliberately deleted in the app.
+    // Do not resurrect it merely because the same agent was edited on disk.
+    if (!localAgent) return baselineAgent ? [] : externalAgent ? [externalAgent] : [];
+    if (!externalAgent) return baselineAgent ? [] : [localAgent];
+    if (!baselineAgent) return [externalAgent];
+
+    const agent = { ...localAgent };
+    const keys = new Set([...Object.keys(baselineAgent), ...Object.keys(localAgent), ...Object.keys(externalAgent)]);
+    for (const key of keys) {
+      const baselineValue = JSON.stringify(baselineAgent[key as keyof DurableAgentConfig]);
+      const localValue = JSON.stringify(localAgent[key as keyof DurableAgentConfig]);
+      const externalValue = JSON.stringify(externalAgent[key as keyof DurableAgentConfig]);
+      if (externalValue !== baselineValue && localValue === baselineValue) {
+        if (externalAgent[key as keyof DurableAgentConfig] === undefined) {
+          delete (agent as Partial<DurableAgentConfig>)[key as keyof DurableAgentConfig];
+        } else {
+          Object.assign(agent, { [key]: externalAgent[key as keyof DurableAgentConfig] });
+        }
+      }
+    }
+    return [agent];
+  });
+
+  const baselineIds = baseline.map((agent) => agent.id).join('\0');
+  const externalIds = external.map((agent) => agent.id).join('\0');
+  if (baselineIds !== externalIds) {
+    const order = new Map(external.map((agent, index) => [agent.id, index]));
+    merged.sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+  } else {
+    const order = new Map(local.map((agent, index) => [agent.id, index]));
+    merged.sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+  }
+  return merged;
+}
+
+function ensureConfigWatcher(projectPath: string): void {
+  if (configWatchers.has(projectPath)) return;
+  try {
+    const watcher = watch(clubhouseDir(projectPath), (_eventType, filename) => {
+      if (String(filename) !== 'agents.json') return;
+      const entry = configCache.get(projectPath);
+      if (entry && !entry.dirty && !entry.pendingFlush) {
+        clearAgentConfigCache(projectPath);
+      }
+    });
+    watcher.on('error', (err) => {
+      appLog('core:agent-config', 'warn', 'Failed to watch agents.json for external changes', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+    configWatchers.set(projectPath, watcher);
+  } catch (err) {
+    appLog('core:agent-config', 'warn', 'Failed to watch agents.json for external changes', {
+      meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
 }
 
 async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void> {
@@ -312,10 +422,31 @@ async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void>
     return;
   }
 
-  const flushPromise = writeAgentsToDisk(projectPath, entry.agents)
-    .then(() => {
-      entry.dirty = false;
-    })
+  const flushPromise = (async () => {
+    let agentsToWrite = entry.agents;
+    if (await pathExists(agentsConfigPath(projectPath))) {
+      const currentRaw = await fsp.readFile(agentsConfigPath(projectPath), 'utf-8');
+      let currentAgents: DurableAgentConfig[];
+      try {
+        currentAgents = JSON.parse(currentRaw) as DurableAgentConfig[];
+      } catch {
+        throw new Error('Cannot flush agents.json because it was externally changed to invalid JSON');
+      }
+      const currentSnapshot = JSON.stringify(currentAgents);
+      if (currentSnapshot !== entry.diskSnapshot) {
+        appLog('core:agent-config', 'warn', 'Detected external agents.json change; merging instead of overwriting it', {
+          meta: { projectPath },
+        });
+        agentsToWrite = mergeExternalAgents(entry.baselineAgents, entry.agents, currentAgents);
+      }
+    }
+    await writeAgentsToDisk(projectPath, agentsToWrite);
+    entry.agents = agentsToWrite;
+    entry.agentsById = buildAgentsById(agentsToWrite);
+    entry.baselineAgents = cloneAgents(agentsToWrite);
+    entry.diskSnapshot = JSON.stringify(agentsToWrite);
+    entry.dirty = false;
+  })()
     .catch((err) => {
       appLog('core:agent-config', 'error', 'Failed to write agents.json', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
@@ -337,7 +468,11 @@ function scheduleFlush(projectPath: string, entry: CacheEntry): void {
     clearTimeout(entry.flushTimer);
   }
   entry.flushTimer = setTimeout(() => {
-    void flushEntry(projectPath, entry);
+    void flushEntry(projectPath, entry).catch((err) => {
+      appLog('core:agent-config', 'error', 'Debounced agents.json flush failed', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
+    });
   }, FLUSH_DELAY_MS);
 }
 
@@ -345,8 +480,17 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
   let entry = configCache.get(projectPath);
   if (!entry) {
     const agents = await readAgentsFromDisk(projectPath);
-    entry = { agents, agentsById: buildAgentsById(agents), dirty: false, flushTimer: null, pendingFlush: null };
+    entry = {
+      agents,
+      baselineAgents: cloneAgents(agents),
+      diskSnapshot: JSON.stringify(agents),
+      agentsById: buildAgentsById(agents),
+      dirty: false,
+      flushTimer: null,
+      pendingFlush: null,
+    };
     configCache.set(projectPath, entry);
+    ensureConfigWatcher(projectPath);
     appLog('core:agent-config', 'info', `Cache initialized with ${agents.length} agent(s)`, {
       meta: { projectPath, agentIds: agents.map((a) => a.id) },
     });
@@ -357,7 +501,15 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
 async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
   let entry = configCache.get(projectPath);
   if (!entry) {
-    entry = { agents, agentsById: buildAgentsById(agents), dirty: true, flushTimer: null, pendingFlush: null };
+    entry = {
+      agents,
+      baselineAgents: cloneAgents(agents),
+      diskSnapshot: JSON.stringify(agents),
+      agentsById: buildAgentsById(agents),
+      dirty: true,
+      flushTimer: null,
+      pendingFlush: null,
+    };
     configCache.set(projectPath, entry);
   } else {
     // Log when agent count decreases — this is the signal for data loss
@@ -400,14 +552,25 @@ export async function flushAllAgentConfigs(): Promise<void> {
 }
 
 /** Clear the in-memory cache (cancels pending timers without flushing). Useful for tests. */
-export function clearAgentConfigCache(): void {
-  for (const entry of configCache.values()) {
+export function clearAgentConfigCache(projectPath?: string): void {
+  const entries = projectPath ? [configCache.get(projectPath)].filter((entry): entry is CacheEntry => !!entry) : configCache.values();
+  for (const entry of entries) {
     if (entry.flushTimer) {
       clearTimeout(entry.flushTimer);
       entry.flushTimer = null;
     }
   }
-  configCache.clear();
+  if (projectPath) {
+    configCache.delete(projectPath);
+    configWatchers.get(projectPath)?.close();
+    configWatchers.delete(projectPath);
+  } else {
+    configCache.clear();
+    for (const [watchedProjectPath, watcher] of configWatchers) {
+      watcher.close();
+      configWatchers.delete(watchedProjectPath);
+    }
+  }
 }
 
 export async function listDurable(projectPath: string): Promise<DurableAgentConfig[]> {

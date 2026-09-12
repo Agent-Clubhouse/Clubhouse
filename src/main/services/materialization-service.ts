@@ -16,6 +16,7 @@ import {
   readSourceMissionContent,
   listSourcePersonaFiles,
   readSourcePersonaContent,
+  getMcpShadowWarning,
 } from './agent-settings-service';
 import { SettingsConventions } from './agent-settings-service';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
@@ -401,6 +402,10 @@ export async function materializeAgent(params: {
       const resolved = replaceWildcards(defaults.mcpJson, ctx);
       const mcpPath = path.join(worktreePath, conv.mcpConfigFile);
       const dir = path.dirname(mcpPath);
+      const shadowWarning = await getMcpShadowWarning(worktreePath, conv);
+      if (shadowWarning) {
+        appLog('core:materialization', 'warn', shadowWarning, { meta: { agentName: agent.name, mcpConfigFile: conv.mcpConfigFile } });
+      }
       await fsp.mkdir(dir, { recursive: true });
 
       if (conv.settingsFormat === 'toml') {

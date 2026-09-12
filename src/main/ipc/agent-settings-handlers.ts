@@ -177,6 +177,13 @@ export function registerAgentSettingsHandlers(): void {
     },
   ));
 
+  ipcMain.handle(IPC.AGENT.GET_MCP_SHADOW_WARNING, withValidatedArgs(
+    [stringArg(), stringArg({ optional: true })],
+    async (_event, worktreePath, projectPath) => {
+      return agentSettings.getMcpShadowWarning(worktreePath, await getConventions(projectPath));
+    },
+  ));
+
   ipcMain.handle(IPC.AGENT.WRITE_MCP_RAW_JSON, withValidatedArgs(
     [stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true })],
     async (_event, worktreePath, content, projectPath) => {

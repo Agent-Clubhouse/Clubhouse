@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createFilesAPI, resolvePath } from './plugin-api-files';
+import { computeDataDir, computeWorkspaceRoot, createFilesAPI, resolvePath } from './plugin-api-files';
 
 // Mock dependencies
 vi.mock('../stores/remoteProjectStore', () => ({
@@ -74,6 +74,33 @@ describe('plugin-api-files', () => {
 
     it('throws when resolved path escapes project root', () => {
       expect(() => resolvePath('/project', '/etc/passwd')).toThrow('Path traversal');
+    });
+
+    it('resolves Windows paths using Windows separators on every host', () => {
+      expect(resolvePath('C:\\Users\\name\\project', 'src/index.ts')).toBe(
+        'C:\\Users\\name\\project\\src\\index.ts',
+      );
+    });
+
+    it('rejects traversal outside a Windows project root', () => {
+      expect(() => resolvePath('C:\\project', 'C:\\other\\file.txt')).toThrow('Path traversal');
+    });
+  });
+
+  describe('computeDataDir', () => {
+    it('uses the platform separator for Windows-style home paths', () => {
+      vi.stubEnv('HOME', 'C:\\Users\\name');
+
+      try {
+        expect(computeDataDir('my-plugin', 'project-1')).toBe(
+          'C:\\Users\\name\\.clubhouse\\plugin-data\\my-plugin\\files\\project-1',
+        );
+        expect(computeWorkspaceRoot('my-plugin')).toBe(
+          'C:\\Users\\name\\.clubhouse\\plugin-data\\my-plugin\\workspace',
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
   });
 

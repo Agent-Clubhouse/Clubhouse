@@ -32,6 +32,7 @@ import { getProjectCanvasStore, useAppCanvasStore } from './main';
 import { buildWireDefinitionsFromResult, type ParseResult } from '../../../features/blueprints/parse-blueprint';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useViewportControls } from './useViewportControls';
+import { useBatchedViewportChange } from './canvas-viewport-batching';
 import { useSelectionManager } from './useSelectionManager';
 import { useZoneManager } from './useZoneManager';
 import { useCanvasContextMenu } from './useCanvasContextMenu';
@@ -229,6 +230,7 @@ export function CanvasWorkspace({
   createBidirectionalWires,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { scheduleViewportChange, flushViewportChange } = useBatchedViewportChange(onViewportChange, viewport);
   const [isPanning, setIsPanning] = useState(false);
   const [containerSize, setContainerSize] = useState<Size>({ width: 0, height: 0 });
 
@@ -502,16 +504,19 @@ export function CanvasWorkspace({
     const handleMouseMove = (e: MouseEvent) => {
       const dx = (e.clientX - panStartRef.current.x) / viewport.zoom;
       const dy = (e.clientY - panStartRef.current.y) / viewport.zoom;
-      onViewportChange({ panX: panStartRef.current.panX + dx, panY: panStartRef.current.panY + dy, zoom: viewport.zoom });
+      scheduleViewportChange({ panX: panStartRef.current.panX + dx, panY: panStartRef.current.panY + dy, zoom: viewport.zoom });
     };
-    const handleMouseUp = () => setIsPanning(false);
+    const handleMouseUp = () => {
+      flushViewportChange();
+      setIsPanning(false);
+    };
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPanning, viewport.zoom, onViewportChange, panStartRef]);
+  }, [isPanning, viewport.zoom, scheduleViewportChange, flushViewportChange, panStartRef]);
 
   // ── Mouse down: initiate pan or lasso selection ───────────────
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
