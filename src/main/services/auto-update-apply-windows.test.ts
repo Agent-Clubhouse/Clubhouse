@@ -99,6 +99,18 @@ const readyStatus = {
   applyAttempted: false,
 };
 
+function createSpawnedChild() {
+  const child = {
+    once: vi.fn(),
+    unref: vi.fn(),
+  };
+  child.once.mockImplementation((event: string, handler: () => void) => {
+    if (event === 'spawn') handler();
+    return child;
+  });
+  return child;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -127,7 +139,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('calls Update.exe --update with releasesUrl', async () => {
       mockPathExists.mockImplementation(async () => true);
-      mockSpawn.mockReturnValue({ unref: vi.fn() });
+      mockSpawn.mockReturnValue(createSpawnedChild());
 
       await applyUpdate(readyStatus);
 
@@ -140,7 +152,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('spawns Update.exe --processStart after execFileSync', async () => {
       mockPathExists.mockImplementation(async () => true);
-      mockSpawn.mockReturnValue({ unref: vi.fn() });
+      mockSpawn.mockReturnValue(createSpawnedChild());
 
       await applyUpdate(readyStatus);
 
@@ -153,7 +165,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('calls app.exit(0) after spawning', async () => {
       mockPathExists.mockImplementation(async () => true);
-      mockSpawn.mockReturnValue({ unref: vi.fn() });
+      mockSpawn.mockReturnValue(createSpawnedChild());
 
       await applyUpdate(readyStatus);
 
@@ -183,7 +195,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('spawns Update.exe --update with detached process', async () => {
       mockPathExists.mockImplementation(async () => true);
-      mockSpawn.mockReturnValue({ on: vi.fn(), unref: vi.fn() });
+      mockSpawn.mockReturnValue(createSpawnedChild());
 
       await applyUpdateOnQuit(readyStatus);
 
@@ -196,7 +208,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('does not call execFileSync (unlike applyUpdate)', async () => {
       mockPathExists.mockImplementation(async () => true);
-      mockSpawn.mockReturnValue({ on: vi.fn(), unref: vi.fn() });
+      mockSpawn.mockReturnValue(createSpawnedChild());
 
       await applyUpdateOnQuit(readyStatus);
 
@@ -205,7 +217,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('does not call app.exit', async () => {
       mockPathExists.mockImplementation(async () => true);
-      mockSpawn.mockReturnValue({ on: vi.fn(), unref: vi.fn() });
+      mockSpawn.mockReturnValue(createSpawnedChild());
 
       await applyUpdateOnQuit(readyStatus);
 
@@ -214,38 +226,37 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('registers error handler on child process', async () => {
       mockPathExists.mockImplementation(async () => true);
-      const mockChildOn = vi.fn();
-      const mockChildUnref = vi.fn();
-      mockSpawn.mockReturnValue({ on: mockChildOn, unref: mockChildUnref });
+      const child = createSpawnedChild();
+      mockSpawn.mockReturnValue(child);
 
       await applyUpdateOnQuit(readyStatus);
 
-      expect(mockChildOn).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(child.once).toHaveBeenCalledWith('error', expect.any(Function));
     });
 
-    it('logs error when child.on("error") is triggered', async () => {
+    it('logs a handled failure when child.once("error") is triggered', async () => {
       mockPathExists.mockImplementation(async () => true);
-      let capturedErrorHandler: ((err: Error) => void) | null = null;
-      const mockChildOn = vi.fn((event, handler) => {
-        if (event === 'error') {
-          capturedErrorHandler = handler;
-        }
+      const child = createSpawnedChild();
+      const testError = new Error('Failed to start');
+      child.once.mockImplementation((event: string, handler: (error?: Error) => void) => {
+        if (event === 'error') handler(testError);
+        return child;
       });
-      mockSpawn.mockReturnValue({ on: mockChildOn, unref: vi.fn() });
+      mockSpawn.mockReturnValue(child);
 
       const { appLog } = await vi.importMock('./log-service');
 
-      await applyUpdateOnQuit(readyStatus);
-
-      const testError = new Error('Failed to start');
-      if (capturedErrorHandler) {
-        capturedErrorHandler(testError);
-        expect(appLog).toHaveBeenCalledWith(
-          'update:apply-on-quit',
-          'error',
-          expect.stringContaining('Update.exe failed to start'),
-        );
-      }
+      await expect(applyUpdateOnQuit(readyStatus)).resolves.toBeUndefined();
+      expect(appLog).toHaveBeenCalledWith(
+        'update:apply-on-quit',
+        'error',
+        expect.stringContaining('Updater failed to start'),
+      );
+      expect(appLog).toHaveBeenCalledWith(
+        'update:apply-on-quit',
+        'warn',
+        expect.stringContaining('Failed to apply update on quit: Failed to start'),
+      );
     });
 
     it('is exported as a function', () => {
@@ -270,7 +281,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('calls Update.exe with correct arguments on relaunch=true', async () => {
       mockPathExists.mockImplementation(async () => true);
-      mockSpawn.mockReturnValue({ unref: vi.fn() });
+      mockSpawn.mockReturnValue(createSpawnedChild());
 
       const context = {
         version: '1.0.0',
@@ -289,7 +300,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('calls spawn with --processStart on relaunch=true', async () => {
       mockPathExists.mockImplementation(async () => true);
-      mockSpawn.mockReturnValue({ unref: vi.fn() });
+      mockSpawn.mockReturnValue(createSpawnedChild());
 
       const context = {
         version: '1.0.0',
@@ -308,7 +319,7 @@ describe.skipIf(process.platform !== 'win32')('Windows update apply', () => {
 
     it('respects previewChannel setting', async () => {
       mockPathExists.mockImplementation(async () => true);
-      mockSpawn.mockReturnValue({ unref: vi.fn() });
+      mockSpawn.mockReturnValue(createSpawnedChild());
       mockGetSettings.mockReturnValue({ previewChannel: true });
 
       const context = {
