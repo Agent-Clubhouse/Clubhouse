@@ -79,7 +79,7 @@
     "@xterm/xterm": "^6.0.0",
     "adm-zip": "^0.6.0",
     "bonjour-service": "^1.4.4",
-    "dompurify": "^3.3.3",
+    "dompurify": "^3.4.8",
     "electron-squirrel-startup": "^1.0.1",
     "elkjs": "^0.12.0",
     "highlight.js": "^11.12.0",
@@ -98,7 +98,7 @@
     "webpack-dev-server": "^5.2.1",
     "selfsigned": "^2.4.1",
     "@inquirer/prompts": "^7.10.1",
-    "dompurify": "^3.3.3",
+    "dompurify": "^3.4.8",
     "tinyglobby": {
       "picomatch": "^4.0.4"
     }
