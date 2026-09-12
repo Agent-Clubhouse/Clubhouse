@@ -230,7 +230,7 @@ export function CanvasWorkspace({
   createBidirectionalWires,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { scheduleViewportChange, flushViewportChange } = useBatchedViewportChange(onViewportChange);
+  const { scheduleViewportChange, flushViewportChange } = useBatchedViewportChange(onViewportChange, viewport);
   const [isPanning, setIsPanning] = useState(false);
   const [containerSize, setContainerSize] = useState<Size>({ width: 0, height: 0 });
 
