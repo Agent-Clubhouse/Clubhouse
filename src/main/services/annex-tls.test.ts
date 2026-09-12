@@ -4,6 +4,11 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  return { ...actual, chmodSync: vi.fn(actual.chmodSync) };
+});
+
 vi.mock('electron', () => {
   let userDataPath = '';
   return {
@@ -72,6 +77,16 @@ describe('annex-tls', () => {
       const cert2 = getOrCreateCert(identity);
       expect(cert1.certPem).toBe(cert2.certPem);
       expect(cert1.keyPem).toBe(cert2.keyPem);
+    });
+
+    it('should create the certificate file with 0600 permissions before chmod', () => {
+      vi.mocked(fs.chmodSync).mockImplementation(() => undefined);
+      getOrCreateCert(identity);
+      const filePath = path.join(tmpDir, 'annex-tls-cert.json');
+      const stats = fs.statSync(filePath);
+      if (process.platform !== 'win32') {
+        expect(stats.mode & 0o777).toBe(0o600);
+      }
     });
 
     it('should return same cert on repeated calls', () => {
