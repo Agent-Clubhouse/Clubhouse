@@ -278,7 +278,7 @@ function setState(sat: SatelliteConnectionInternal, state: SatelliteState, error
  * and `new WebSocket()` throw `ERR_INVALID_URL`. IPv4 addresses and hostnames
  * pass through unchanged.
  */
-function bracketHost(host: string): string {
+export function bracketHost(host: string): string {
   return net.isIPv6(host) ? `[${host}]` : host;
 }
 

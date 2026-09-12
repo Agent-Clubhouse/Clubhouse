@@ -1,6 +1,10 @@
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 
+// Keep DOMPurify above the monaco-editor-bundled version via package.json
+// overrides; this avoids the monaco-editor 0.56.0 bump while still resolving
+// the advisory-backed XSS issues in the direct runtime dependency.
+
 const ALLOWED_TAGS = [
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'p', 'a', 'ul', 'ol', 'li',

@@ -33,7 +33,7 @@ function persist(state: BadgeSettingsState): void {
 const _projectSettingsCache = new Map<string, { result: ResolvedBadgeSettings; enabled: boolean; pluginBadges: boolean; projectRailBadges: boolean; override: Partial<ResolvedBadgeSettings> | undefined }>();
 
 export const useBadgeSettingsStore = create<BadgeSettingsState>((set, get) => ({
-  enabled: false,
+  enabled: true,
   pluginBadges: true,
   projectRailBadges: true,
   projectOverrides: {},
@@ -42,7 +42,7 @@ export const useBadgeSettingsStore = create<BadgeSettingsState>((set, get) => ({
     try {
       const settings = await window.clubhouse.app.getBadgeSettings();
       set({
-        enabled: settings?.enabled ?? false,
+        enabled: settings?.enabled ?? true,
         pluginBadges: settings?.pluginBadges ?? true,
         projectRailBadges: settings?.projectRailBadges ?? true,
         projectOverrides: settings?.projectOverrides ?? {},
