@@ -235,7 +235,6 @@ describe('canvas view pointer-events', () => {
       <CanvasViewComponent
         view={baseView}
         api={stubApi()}
-        zoom={1}
         isSelected={isSelected}
         onClose={vi.fn()}
         onFocus={vi.fn()}
