@@ -56,6 +56,19 @@ async function importAndActivate(url: string): Promise<{ ok: boolean; marker: st
   }, url);
 }
 
+function writeExternalEntry(version: number): string {
+  const entryPath = path.join(pluginsDir, 'e2e-multifile', 'dist', 'external.js');
+  const nestedPath = path.join(pluginsDir, 'e2e-multifile', 'dist', 'lib', 'nested.js');
+  fs.writeFileSync(
+    entryPath,
+    [
+      `import { NESTED } from '${pluginUrl(nestedPath, version)}';`,
+      "export function activate() { document.documentElement.setAttribute('data-e2e-multifile', `external:${NESTED}`); }",
+    ].join('\n'),
+  );
+  return entryPath;
+}
+
 test.beforeAll(async () => {
   // Install the fixture into a sandbox plugins dir the app + handler will use.
   pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-e2e-plugins-'));
@@ -77,8 +90,18 @@ test.describe('clubhouse-plugin: protocol — real multi-file resolution', () =>
     const res = await importAndActivate(pluginUrl(entryAbs(), Date.now()));
     expect(res.error ?? '').toBe('');
     expect(res.ok).toBe(true);
-    // marker = `${MARKER}:${NESTED}` — proves BOTH sibling hops resolved.
-    expect(res.marker).toBe('sibling-resolved-ok:nested-ok');
+    // marker = `${MARKER}:${NESTED}:${DYNAMIC}` — proves static and dynamic
+    // sibling hops resolved.
+    expect(res.marker).toBe('sibling-resolved-ok:nested-ok:dynamic-import-ok');
+  });
+
+  test('resolves an absolute protocol import from a multi-file plugin', async () => {
+    const version = Date.now();
+    const entryPath = writeExternalEntry(version);
+    const res = await importAndActivate(pluginUrl(entryPath, version));
+    expect(res.error ?? '').toBe('');
+    expect(res.ok).toBe(true);
+    expect(res.marker).toBe('external:nested-ok');
   });
 
   test('a malformed / out-of-root request is denied (404), not served', async () => {
@@ -91,7 +114,7 @@ test.describe('clubhouse-plugin: protocol — real multi-file resolution', () =>
   test('path-version cache-busting picks up rebuilt sibling code', async () => {
     const v1 = Date.now();
     const first = await importAndActivate(pluginUrl(entryAbs(), v1));
-    expect(first.marker).toBe('sibling-resolved-ok:nested-ok');
+    expect(first.marker).toBe('sibling-resolved-ok:nested-ok:dynamic-import-ok');
 
     // "Rebuild" the deepest sibling.
     const nestedPath = path.join(pluginsDir, 'e2e-multifile', 'dist', 'lib', 'nested.js');
@@ -99,10 +122,10 @@ test.describe('clubhouse-plugin: protocol — real multi-file resolution', () =>
 
     // Same version → still cached (per-URL immutability).
     const cached = await importAndActivate(pluginUrl(entryAbs(), v1));
-    expect(cached.marker).toBe('sibling-resolved-ok:nested-ok');
+    expect(cached.marker).toBe('sibling-resolved-ok:nested-ok:dynamic-import-ok');
 
     // New version → whole subtree re-fetched, new sibling code observed.
     const reloaded = await importAndActivate(pluginUrl(entryAbs(), v1 + 1));
-    expect(reloaded.marker).toBe('sibling-resolved-ok:nested-RELOADED');
+    expect(reloaded.marker).toBe('sibling-resolved-ok:nested-RELOADED:dynamic-import-ok');
   });
 });

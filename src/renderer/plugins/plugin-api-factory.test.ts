@@ -1183,6 +1183,16 @@ describe('plugin-api-factory', () => {
         const limited = createPluginAPI(makeCtx(), undefined, manifest);
         await expect(limited.agentConfig.injectMcpServers({})).rejects.toThrow();
       });
+
+      it('mcp namespace denied without mcp.tools permission', () => {
+        const manifest = makeAllPermsManifest({
+          permissions: ['files'], // no mcp.tools
+        });
+        const limited = createPluginAPI(makeCtx(), undefined, manifest);
+
+        expect(() => limited.mcp.contributeTools([{ name: 'x', description: 'y', inputSchema: { type: 'object', properties: {} } }])).toThrow(/requires 'mcp.tools' permission/);
+        expect(() => limited.mcp.onToolCall(() => {})).toThrow(/requires 'mcp.tools' permission/);
+      });
     });
 
     describe('scope gating', () => {
