@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { GroupProjectPanelSidebar, useGroupProjectPanelLayout, stopPlainWheelPropagation } from './GroupProjectPanelSidebar';
+import { GroupProjectPanelSidebar, useGroupProjectPanelLayout } from './GroupProjectPanelSidebar';
+import { useWheelContainment } from '../../../hooks/useWheelContainment';
 import type { CanvasWidgetComponentProps, AnnexAPI } from '../../../../shared/plugin-types';
 import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
@@ -585,6 +586,8 @@ function ExpandedProjectView({
     }
   }, [topics, groupProjectId, markTopicRead]);
 
+  const handleWheelContainment = useWheelContainment();
+
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
     // Delegate persist + member start/stop side-effect to the shared main-process
@@ -927,7 +930,7 @@ function ExpandedProjectView({
         {/* Message Detail (main content area) */}
         <div
           className="flex-1 min-w-0 overflow-y-auto p-3"
-          onWheel={stopPlainWheelPropagation}
+          onWheel={handleWheelContainment}
           data-testid="group-project-message-detail-scroll"
         >
           {selectedMessage ? (

@@ -10,6 +10,7 @@
 import type { McpToolDefinition, McpToolResult } from './types';
 import { registerToolTemplate, unregisterToolTemplate, sanitizeId } from './tool-registry';
 import { appLog } from '../log-service';
+import { getManifest } from '../plugin-manifest-registry';
 import { IPC } from '../../../shared/ipc-channels';
 
 interface PluginToolEntry {
@@ -41,6 +42,11 @@ export function registerPluginTools(
   pluginId: string,
   tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>,
 ): void {
+  const manifest = getManifest(pluginId);
+  if (!manifest || !manifest.permissions?.includes('mcp.tools')) {
+    throw new Error(`Plugin '${pluginId}' requires 'mcp.tools' permission to contribute MCP tools`);
+  }
+
   // Remove any existing tools for this plugin first
   removePluginTools(pluginId);
 
