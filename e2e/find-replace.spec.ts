@@ -112,7 +112,11 @@ async function closeFindWidget() {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  // Isolate the app profile from other E2E files and from a failed serial
+  // attempt. Playwright restarts this worker and replays the whole file on
+  // retry, so reusing the default Electron profile can restore a stale
+  // project/tab/editor model and make the replay start midway through state.
+  ({ electronApp, window } = await launchApp({ experimental: {} }));
   // Ensure the window is wide enough for Monaco's find widget to show all
   // elements (matchesCount, toggle buttons). With the minimap enabled the
   // editor viewport is narrower and Monaco hides these at small widths.
