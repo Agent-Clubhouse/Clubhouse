@@ -51,6 +51,12 @@ updates:
       # ReferenceError in the renderer and blank-screens the app at launch.
       - dependency-name: "@vercel/webpack-asset-relocator-loader"
         versions: [">1.7.3"]
+      # Electron and its Forge packages require coordinated Chromium, native
+      # module, and packaging migrations before adopting a new major version.
+      - dependency-name: "electron"
+        versions: [">=44.0.0"]
+      - dependency-name: "@electron-forge/*"
+        versions: [">=8.0.0"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
