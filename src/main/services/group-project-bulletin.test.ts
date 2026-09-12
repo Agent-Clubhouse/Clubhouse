@@ -784,6 +784,62 @@ describe('BulletinBoard', () => {
       expect(Object.keys(written.topics)).toEqual(['inbox-my-agent']);
       expect(written.topics['inbox-my-agent']).toHaveLength(2);
     });
+
+    it('loads concurrently without duplicating messages and deduplicates persisted IDs', async () => {
+      const p = bulletinPathFor('gp_mig_concurrent');
+      store.set(p, JSON.stringify({
+        topics: {
+          updates: [
+            { id: 'm1', sender: 'a', topic: 'updates', body: 'first', timestamp: '2026-01-01T00:00:01.000Z' },
+            { id: 'm1', sender: 'a', topic: 'updates', body: 'first', timestamp: '2026-01-01T00:00:01.000Z' },
+            { id: 'm2', sender: 'b', topic: 'updates', body: 'second', timestamp: '2026-01-01T00:00:02.000Z' },
+          ],
+        },
+      }));
+
+      const board = getBulletinBoard('gp_mig_concurrent');
+      const reads = vi.mocked(fsp.readFile);
+      reads.mockClear();
+      await Promise.all([
+        board.hasTopic('updates'),
+        board.getDigest(),
+        board.getAllMessages(),
+      ]);
+
+      expect(reads).toHaveBeenCalledTimes(1);
+      expect(await board.getTopicMessages('updates', undefined, 100)).toHaveLength(2);
+      await board.flush();
+      expect(JSON.parse(store.get(p)!).topics.updates).toHaveLength(2);
+    });
+
+    it('deduplicates persisted IDs across topics, keeping the first occurrence', async () => {
+      const p = bulletinPathFor('gp_mig_cross_topic_dedup');
+      store.set(p, JSON.stringify({
+        topics: {
+          first: [
+            { id: 'shared', sender: 'a', topic: 'first', body: 'keep', timestamp: '2026-01-01T00:00:01.000Z' },
+          ],
+          second: [
+            { id: 'shared', sender: 'b', topic: 'second', body: 'remove', timestamp: '2026-01-01T00:00:02.000Z' },
+            { id: 'unique', sender: 'b', topic: 'second', body: 'keep too', timestamp: '2026-01-01T00:00:03.000Z' },
+          ],
+        },
+      }));
+
+      const board = getBulletinBoard('gp_mig_cross_topic_dedup');
+      await board.getDigest();
+
+      expect(await board.getTopicMessages('first', undefined, 100)).toHaveLength(1);
+      expect(await board.getTopicMessages('second', undefined, 100)).toEqual([
+        expect.objectContaining({ id: 'unique', body: 'keep too' }),
+      ]);
+      await board.flush();
+      const written = JSON.parse(store.get(p)!);
+      expect(written.topics.first).toHaveLength(1);
+      expect(written.topics.second).toEqual([
+        expect.objectContaining({ id: 'unique', body: 'keep too' }),
+      ]);
+    });
   });
 });
 
