@@ -20,6 +20,10 @@ let window: Page;
 
 const FIXTURE_DIR = path.resolve(__dirname, 'fixtures/project-find-replace');
 
+// These tests intentionally build on one editor session. Serial mode makes a
+// retry replay the whole file instead of restarting midway without that state.
+test.describe.configure({ mode: 'serial' });
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
