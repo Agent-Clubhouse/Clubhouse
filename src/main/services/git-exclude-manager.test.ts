@@ -104,13 +104,27 @@ describe('git-exclude-manager', () => {
     it('removes an existing target before rename on platforms that reject overwrites', async () => {
       vi.mocked(fsp.readFile).mockResolvedValue('');
       vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-      vi.mocked(fsp.rename).mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+      vi.mocked(fsp.rename).mockRejectedValueOnce(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
       vi.mocked(fsp.rm).mockResolvedValue(undefined);
 
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
 
       expect(fsp.rm).toHaveBeenCalledWith(expect.stringContaining('.git/info/exclude'), { force: true });
       expect(fsp.rename).toHaveBeenCalledTimes(2);
+    });
+
+    it('continues a queued write after an earlier write fails', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('');
+      vi.mocked(fsp.writeFile)
+        .mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }))
+        .mockResolvedValue(undefined);
+
+      const first = addExclusions('/project', 'first', ['first.txt']);
+      const second = addExclusions('/project', 'second', ['second.txt']);
+
+      await expect(first).rejects.toThrow('disk full');
+      await expect(second).resolves.toBeUndefined();
+      expect(fsp.rename).toHaveBeenCalledTimes(1);
     });
   });
 

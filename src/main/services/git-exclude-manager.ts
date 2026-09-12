@@ -37,7 +37,7 @@ const writeQueues = new Map<string, Promise<void>>();
 
 function enqueueWrite(excludePath: string, operation: () => Promise<void>): Promise<void> {
   const previous = writeQueues.get(excludePath) ?? Promise.resolve();
-  const current = previous.then(operation);
+  const current = previous.then(operation, operation);
   writeQueues.set(excludePath, current);
   return current.finally(() => {
     if (writeQueues.get(excludePath) === current) {
@@ -54,12 +54,20 @@ async function writeAtomically(filePath: string, content: string): Promise<void>
     await fsp.rename(tempPath, filePath);
   } catch (error) {
     const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as NodeJS.ErrnoException).code) : '';
-    if (code !== 'EEXIST' && code !== 'EPERM' && process.platform !== 'win32') {
+    const canRetryAfterRemovingDestination = code === 'EEXIST'
+      || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'));
+    if (!canRetryAfterRemovingDestination) {
+      await fsp.rm(tempPath, { force: true });
       throw error;
     }
 
-    await fsp.rm(filePath, { force: true });
-    await fsp.rename(tempPath, filePath);
+    try {
+      await fsp.rm(filePath, { force: true });
+      await fsp.rename(tempPath, filePath);
+    } catch (retryError) {
+      await fsp.rm(tempPath, { force: true });
+      throw retryError;
+    }
   }
 }
 
