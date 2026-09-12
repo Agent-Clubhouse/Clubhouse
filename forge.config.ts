@@ -122,10 +122,26 @@ export async function assertHardenedFuseWire(appPath: string): Promise<void> {
   }
 }
 
+/**
+ * Linux `.deb`/`.rpm` packaging requires a lowercase binary name, so the
+ * packager is told to emit `clubhouse` there.
+ *
+ * On macOS `executableName` also becomes `CFBundleDisplayName`, and it wins
+ * over the explicit `extendInfo.CFBundleDisplayName` below — which made Finder,
+ * Get Info and the Dock show a lowercase "clubhouse" while the menu bar (fed by
+ * `CFBundleName`) showed "Clubhouse" (#1833). Scoping the override to Linux
+ * keeps the bundle branded "Clubhouse" on every macOS surface.
+ */
+export function packagerExecutableName(
+  platform: NodeJS.Platform = process.platform,
+): { executableName?: string } {
+  return platform === 'linux' ? { executableName: 'clubhouse' } : {};
+}
+
 const config: ForgeConfig = {
   packagerConfig: {
     name: 'Clubhouse',
-    executableName: 'clubhouse',
+    ...packagerExecutableName(),
     appBundleId: 'com.mason-allen.clubhouse',
     icon: path.resolve(__dirname, 'assets', 'icon'),
     extendInfo: {
