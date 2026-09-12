@@ -20,7 +20,7 @@ registerMcpCommand({
   id: toCommandId('assistant', 'get_settings'),
   category: 'assistant',
   label: 'Get Settings',
-  description: 'Get current Clubhouse app settings (theme, notifications, etc.).',
+  description: 'Get the current Clubhouse theme setting.',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -79,8 +79,7 @@ registerMcpCommand({
   id: toCommandId('assistant', 'update_settings'),
   category: 'assistant',
   label: 'Update Settings',
-  description:
-    'Update a Clubhouse app setting. Reads the current settings, merges the update, and writes back.',
+  description: 'Update the current Clubhouse theme and apply it immediately.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -90,7 +89,7 @@ registerMcpCommand({
       },
       value: {
         type: 'string',
-        description: 'The new value (as a JSON string for non-string values, e.g. "true", "42", or \'"dark"\').',
+        description: 'The theme ID to apply.',
       },
     },
     required: ['key', 'value'],
