@@ -39,6 +39,8 @@ import type {
   WorkspaceAPI,
   WindowAPI,
   AnnexAPI,
+  CanvasAPI,
+  McpAPI,
   PluginContextInfo,
   PluginManifest,
   PluginPermission,
@@ -141,9 +143,15 @@ const ANNEX_API_METHODS: (keyof AnnexAPI)[] = [
   // Group projects
   'gpGet', 'gpUpdate', 'gpBulletinDigest', 'gpBulletinTopic', 'gpBulletinAll',
   'gpBulletinPost', 'gpShoulderTap', 'gpDeleteMessage', 'gpDeleteTopic',
-  'gpSetTopicProtection', 'gpInjectMessage',
+  'gpSetTopicProtection', 'gpInjectMessage', 'gpSetPolling',
   // Events
   'onSatellitesChanged', 'onDiscoveredChanged', 'onSatelliteEvent',
+];
+
+const CANVAS_API_METHODS: (keyof CanvasAPI)[] = ['registerWidgetType', 'queryWidgets'];
+
+const MCP_API_METHODS: (keyof McpAPI)[] = [
+  'contributeTools', 'removeTools', 'listContributedTools', 'onToolCall',
 ];
 
 const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'projectPath'];
@@ -1417,6 +1425,22 @@ describe('§3 API surface area contracts — createMockAPI()', () => {
     }
   });
 
+  describe('api.canvas surface', () => {
+    for (const method of CANVAS_API_METHODS) {
+      it(`api.canvas.${method} exists and is callable`, () => {
+        expect(typeof api.canvas[method]).toBe('function');
+      });
+    }
+  });
+
+  describe('api.mcp surface', () => {
+    for (const method of MCP_API_METHODS) {
+      it(`api.mcp.${method} exists and is callable`, () => {
+        expect(typeof api.mcp[method]).toBe('function');
+      });
+    }
+  });
+
   describe('api.git surface', () => {
     for (const method of GIT_API_METHODS) {
       it(`api.git.${method} exists and is callable`, () => {
@@ -1969,6 +1993,20 @@ describe('§6 Regression guards — API surface removal detection', () => {
     const api = createMockAPI();
     for (const method of ANNEX_API_METHODS) {
       expect(method in api.annex).toBe(true);
+    }
+  });
+
+  it('removing any CanvasAPI method would be detected', () => {
+    const api = createMockAPI();
+    for (const method of CANVAS_API_METHODS) {
+      expect(method in api.canvas).toBe(true);
+    }
+  });
+
+  it('removing any McpAPI method would be detected', () => {
+    const api = createMockAPI();
+    for (const method of MCP_API_METHODS) {
+      expect(method in api.mcp).toBe(true);
     }
   });
 });
