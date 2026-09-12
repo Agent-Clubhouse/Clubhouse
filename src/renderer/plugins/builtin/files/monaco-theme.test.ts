@@ -139,7 +139,7 @@ describe('applyMonacoTheme', () => {
 /** Mock that enforces Monaco's real theme-name validation. */
 function strictMockMonaco() {
   const assertLegal = (name: string) => {
-    if (!/^[a-z0-9\-]+$/i.test(name)) throw new Error('Illegal theme name!');
+    if (!/^[a-z0-9-]+$/i.test(name)) throw new Error('Illegal theme name!');
   };
   return {
     editor: {
