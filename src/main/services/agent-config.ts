@@ -237,8 +237,10 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
             agents: agents.map((a) => ({ id: a.id, name: a.name })),
           },
         });
-        // Restore backup to main file so future reads succeed
-        await writeAgentsToDisk(projectPath, agents);
+        // Restore the main file from the backup without clobbering the backup
+        // itself. The backup is the last known-good snapshot and must survive
+        // the recovery path to preserve future recovery options.
+        await writeAgentsToDiskSkippingBackup(projectPath, agents);
       }
     } catch (backupErr) {
       appLog('core:agent-config', 'error', 'Backup agents.json.bak is also corrupt', {
@@ -268,40 +270,68 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
         removedAgents: removed.map((a) => ({ id: a.id, name: a.name })),
       },
     });
-    // Persist the deduplicated list
-    await writeAgentsToDisk(projectPath, deduped);
+    // Persist the deduplicated list without clobbering a valid backup when the
+    // current file had to be recovered from backup first.
+    if (source === 'backup') {
+      await writeAgentsToDiskSkippingBackup(projectPath, deduped);
+    } else {
+      await writeAgentsToDisk(projectPath, deduped);
+    }
   }
 
   return deduped;
 }
 
 async function writeAgentsToDisk(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
+  await writeAgentsToDiskWithOptions(projectPath, agents, { skipBackup: false });
+}
+
+async function writeAgentsToDiskSkippingBackup(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
+  await writeAgentsToDiskWithOptions(projectPath, agents, { skipBackup: true });
+}
+
+async function writeAgentsToDiskWithOptions(
+  projectPath: string,
+  agents: DurableAgentConfig[],
+  options: { skipBackup?: boolean },
+): Promise<void> {
   const dir = clubhouseDir(projectPath);
   await ensureDir(dir);
   ensureConfigWatcher(projectPath);
 
   const configPath = agentsConfigPath(projectPath);
   const backupPath = agentsBackupPath(projectPath);
+  const skipBackup = options.skipBackup ?? false;
 
-  // Back up existing agents.json before overwriting — the backup preserves
-  // the last known-good state so that a crash mid-write or corrupt write
-  // can be auto-recovered on the next read.
-  if (await pathExists(configPath)) {
+  let previousConfig: string | null = null;
+  if (!skipBackup && await pathExists(configPath)) {
     try {
-      await fsp.copyFile(configPath, backupPath);
+      previousConfig = await fsp.readFile(configPath, 'utf-8');
     } catch {
-      // Non-fatal — best-effort backup
+      // Non-fatal — if the current config is unreadable, we still write the
+      // new config and leave the backup untouched rather than clobbering it.
     }
   }
 
   // Atomic write: write to temp file then rename — prevents partial/corrupt
-  // files if the process crashes mid-write.
+  // files if the process crashes mid-write. We update the backup only after the
+  // main file rename succeeds so a crash can never leave both files corrupt.
   const tmpPath = configPath + '.tmp.' + randomUUID().slice(0, 8);
   await fsp.writeFile(tmpPath, JSON.stringify(agents, null, 2), 'utf-8');
   await fsp.rename(tmpPath, configPath);
 
+  if (!skipBackup && previousConfig !== null) {
+    const backupTmpPath = backupPath + '.tmp.' + randomUUID().slice(0, 8);
+    try {
+      await fsp.writeFile(backupTmpPath, previousConfig, 'utf-8');
+      await fsp.rename(backupTmpPath, backupPath);
+    } catch {
+      // Non-fatal — best-effort backup refresh. The main file is already written.
+    }
+  }
+
   appLog('core:agent-config', 'info', `Wrote ${agents.length} agent(s) to disk`, {
-    meta: { configPath, agentIds: agents.map((a) => a.id) },
+    meta: { configPath, agentIds: agents.map((a) => a.id), skippedBackup: skipBackup },
   });
 }
 
