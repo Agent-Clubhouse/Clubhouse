@@ -1855,6 +1855,27 @@ describe('write-back cache', () => {
     expect(persisted[0].persona).toBe('hand-edited persona');
   });
 
+  it('does not resurrect a locally deleted agent after an external edit', async () => {
+    const writtenData = setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    await deleteDurable(PROJECT_PATH, 'durable_1');
+    writtenData[agentsJsonPath] = JSON.stringify([{
+      id: 'durable_1',
+      name: 'renamed-outside-clubhouse',
+      color: 'indigo',
+      createdAt: '2024-01-01',
+    }]);
+
+    await flushAgentConfig(PROJECT_PATH);
+
+    const tempWrite = vi.mocked(fsp.writeFile).mock.calls
+      .find((call) => String(call[0]).includes('agents.json.tmp.'));
+    expect(tempWrite).toBeDefined();
+    expect(JSON.parse(String(tempWrite![1]))).toEqual([]);
+  });
+
   it('clearAgentConfigCache discards pending writes', async () => {
     setupCacheTest([
       { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },

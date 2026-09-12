@@ -322,7 +322,9 @@ function mergeExternalAgents(
     const baselineAgent = baselineById.get(id);
     const localAgent = localById.get(id);
     const externalAgent = externalById.get(id);
-    if (!localAgent) return externalAgent ? [externalAgent] : [];
+    // A baseline agent missing locally was deliberately deleted in the app.
+    // Do not resurrect it merely because the same agent was edited on disk.
+    if (!localAgent) return baselineAgent ? [] : externalAgent ? [externalAgent] : [];
     if (!externalAgent) return baselineAgent ? [] : [localAgent];
     if (!baselineAgent) return [externalAgent];
 
