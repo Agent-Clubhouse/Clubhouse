@@ -83,7 +83,10 @@ function generateIdentity(): AnnexIdentity {
  */
 function saveIdentity(identity: AnnexIdentity): void {
   const filePath = getIdentityPath();
-  fs.writeFileSync(filePath, JSON.stringify(identity, null, 2), 'utf-8');
+  fs.writeFileSync(filePath, JSON.stringify(identity, null, 2), {
+    encoding: 'utf-8',
+    mode: 0o600,
+  });
 
   // Restrict permissions to owner-only (ignore errors on Windows)
   try {

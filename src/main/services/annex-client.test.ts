@@ -115,6 +115,24 @@ import { IPC } from '../../shared/ipc-channels';
 import * as http from 'http';
 import * as https from 'https';
 
+describe('bracketHost', () => {
+  it('passes through IPv4 addresses', () => {
+    expect(annexClient.bracketHost('192.168.1.50')).toBe('192.168.1.50');
+  });
+
+  it('passes through hostnames', () => {
+    expect(annexClient.bracketHost('satellite.local')).toBe('satellite.local');
+  });
+
+  it('brackets IPv6 addresses', () => {
+    expect(annexClient.bracketHost('2001:db8::1')).toBe('[2001:db8::1]');
+  });
+
+  it('does not double-bracket an already-bracketed IPv6 address', () => {
+    expect(annexClient.bracketHost('[2001:db8::1]')).toBe('[2001:db8::1]');
+  });
+});
+
 /** Reset all mock implementations after vi.clearAllMocks() */
 function resetAllMocks() {
   resetBonjourMocks();

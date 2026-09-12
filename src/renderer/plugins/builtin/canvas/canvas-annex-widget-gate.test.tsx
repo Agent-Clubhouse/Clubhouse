@@ -54,7 +54,6 @@ function renderPluginView(projectId: string, view: PluginCanvasView) {
     <CanvasViewComponent
       view={view}
       api={stubApi(projectId)}
-      zoom={1}
       isSelected={false}
       onClose={noop}
       onFocus={noop}

@@ -7,9 +7,14 @@
 // dev and prod. A successful activation — observable via the DOM marker below —
 // is runtime proof that sibling resolution works.
 import { MARKER, NESTED } from './marker.js';
+import { loadDynamicMarker } from './dynamic.js';
 
-export function activate() {
-  document.documentElement.setAttribute('data-e2e-multifile', `${MARKER}:${NESTED}`);
+export async function activate() {
+  const dynamicMarker = await loadDynamicMarker();
+  document.documentElement.setAttribute(
+    'data-e2e-multifile',
+    `${MARKER}:${NESTED}:${dynamicMarker}`,
+  );
 }
 
 export function deactivate() {

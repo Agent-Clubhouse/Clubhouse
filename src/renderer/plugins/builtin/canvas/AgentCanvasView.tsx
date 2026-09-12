@@ -3,6 +3,7 @@ import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canva
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
 import { EmptyState } from '../../../components/EmptyState';
+import { useWheelContainment } from '../../../hooks/useWheelContainment';
 
 interface AgentCanvasViewProps {
   view: AgentCanvasViewType;
@@ -103,10 +104,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
   // pan the canvas at the same time, including at the list's top/bottom
   // boundary. Ctrl/Cmd+wheel is a canvas zoom gesture and is intentionally
   // allowed to bubble so zoom keeps working while hovering the picker.
-  const handlePickerWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) return;
-    e.stopPropagation();
-  }, []);
+  const handlePickerWheel = useWheelContainment();
 
   // Resolve the active project for agent creation
   const activeProjectForCreate = useMemo(() => {

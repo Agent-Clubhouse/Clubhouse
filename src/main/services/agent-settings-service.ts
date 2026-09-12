@@ -145,6 +145,9 @@ export async function listAgentTemplates(worktreePath: string, conv?: SettingsCo
 
 async function readSettings(projectPath: string): Promise<ProjectSettings> {
   const settingsFile = path.join(projectPath, '.clubhouse', 'settings.json');
+  const backupFile = `${settingsFile}.bak`;
+  const emptySettings = { defaults: {}, quickOverrides: {} };
+
   try {
     const raw = JSON.parse(await fsp.readFile(settingsFile, 'utf-8'));
     if (!raw.defaults) raw.defaults = {};
@@ -152,10 +155,29 @@ async function readSettings(projectPath: string): Promise<ProjectSettings> {
     return raw;
   } catch (err) {
     // Missing settings file is a normal condition — most projects won't have one.
-    if (!isEnoent(err)) {
-      appLog(LOG_NS, 'warn', `Failed to read project settings from ${settingsFile}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
+    if (isEnoent(err)) {
+      return emptySettings;
     }
-    return { defaults: {}, quickOverrides: {} };
+
+    appLog(LOG_NS, 'warn', `Failed to read project settings from ${settingsFile} — failed to parse; attempting recovery from backup`, {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+
+    try {
+      const raw = JSON.parse(await fsp.readFile(backupFile, 'utf-8'));
+      if (!raw.defaults) raw.defaults = {};
+      if (!raw.quickOverrides) raw.quickOverrides = {};
+      appLog(LOG_NS, 'warn', `Recovered project settings from backup ${backupFile}`);
+      return raw;
+    } catch (backupErr) {
+      if (!isEnoent(backupErr)) {
+        appLog(LOG_NS, 'error', `Failed to parse project settings backup from ${backupFile}`, {
+          meta: { error: backupErr instanceof Error ? backupErr.message : String(backupErr) },
+        });
+      }
+    }
+
+    return emptySettings;
   }
 }
 
