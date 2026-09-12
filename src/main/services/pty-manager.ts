@@ -211,6 +211,18 @@ export function getBuffer(agentId: string): string {
   return session ? getSessionBuffer(session) : '';
 }
 
+annexEventBus.onActiveChange((active) => {
+  if (!active) {
+    headlessTerminal.disposeAll();
+    return;
+  }
+
+  for (const [agentId, session] of sessions) {
+    const buffer = getSessionBuffer(session);
+    if (buffer) headlessTerminal.feedData(agentId, buffer);
+  }
+});
+
 /** Get the last activity timestamp for an agent's PTY session, or null if no session exists. */
 export function getLastActivity(agentId: string): number | null {
   const session = sessions.get(agentId);
@@ -319,7 +331,9 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
 
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
-    headlessTerminal.feedData(agentId, data);
+    if (annexEventBus.isActive()) {
+      headlessTerminal.feedData(agentId, data);
+    }
     broadcastToAllWindows(IPC.PTY.DATA, agentId, data);
     annexEventBus.emitPtyData(agentId, data);
   });
@@ -334,7 +348,9 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
     });
 
-    headlessTerminal.dispose(agentId);
+    if (annexEventBus.isActive()) {
+      headlessTerminal.dispose(agentId);
+    }
     cleanupSession(agentId);
     onExit?.(agentId, exitCode, fullBuffer);
     // Include last PTY output so the renderer can show diagnostics on early exit
@@ -381,7 +397,9 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
 
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
-    headlessTerminal.feedData(id, data);
+    if (annexEventBus.isActive()) {
+      headlessTerminal.feedData(id, data);
+    }
     broadcastToAllWindows(IPC.PTY.DATA, id, data);
     annexEventBus.emitPtyData(id, data);
   });
@@ -390,7 +408,9 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
     const current = sessions.get(id);
     if (!current || current.generation !== expectedGeneration) return;
 
-    headlessTerminal.dispose(id);
+    if (annexEventBus.isActive()) {
+      headlessTerminal.dispose(id);
+    }
     cleanupSession(id);
     broadcastToAllWindows(IPC.PTY.EXIT, id, exitCode);
   });
@@ -417,7 +437,9 @@ export function resize(agentId: string, cols: number, rows: number): void {
   const session = sessions.get(agentId);
   if (session) {
     session.process.resize(cols, rows);
-    headlessTerminal.resize(agentId, cols, rows);
+    if (annexEventBus.isActive()) {
+      headlessTerminal.resize(agentId, cols, rows);
+    }
   }
   // If there's a pending command, the terminal just sent its real size — fire it now.
   if (session) {
@@ -481,7 +503,9 @@ export function kill(agentId: string): void {
   const session = sessions.get(agentId);
   if (session) {
     try { session.process.kill(); } catch { /* dead */ }
-    headlessTerminal.dispose(agentId);
+    if (annexEventBus.isActive()) {
+      headlessTerminal.dispose(agentId);
+    }
     cleanupSession(agentId);
   }
 }
