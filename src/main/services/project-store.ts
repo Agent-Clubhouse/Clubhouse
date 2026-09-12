@@ -303,17 +303,24 @@ async function writeProjects(projects: Project[]): Promise<void> {
   await writeStore({ version: CURRENT_VERSION, projects });
 }
 
+let projectUpdateQueue: Promise<unknown> = Promise.resolve();
+
 /**
- * Sequential read-modify-write the projects list to prevent lost updates
- * within a single Node.js process. The `fn` callback receives the current
- * projects array and must return a new array that will be written back to disk.
- * Callbacks should be pure transforms — avoid filesystem side effects inside.
+ * Serialize project mutations behind a single in-process promise chain so
+ * concurrent IPC operations cannot read the same stale snapshot and overwrite
+ * one another.
  */
-async function updateProjects(fn: (projects: Project[]) => Project[]): Promise<Project[]> {
-  const projects = await readProjects();
-  const updated = fn(projects);
-  await writeProjects(updated);
-  return updated;
+async function updateProjects(fn: (projects: Project[]) => Project[] | Promise<Project[]>): Promise<Project[]> {
+  const run = async (): Promise<Project[]> => {
+    const projects = await readProjects();
+    const updated = await fn(projects);
+    await writeProjects(updated);
+    return updated;
+  };
+
+  const next = projectUpdateQueue.then(run, run);
+  projectUpdateQueue = next.then((): void => undefined, (): void => undefined);
+  return next;
 }
 
 export async function list(): Promise<Project[]> {
@@ -347,22 +354,20 @@ export async function add(dirPath: string): Promise<Project> {
 }
 
 export async function remove(id: string): Promise<void> {
-  // Read the project first so we can operate on its icon before modifying projects.json.
-  // Icon preservation/deletion happens BEFORE the JSON write to avoid orphaned icon files
-  // if the process crashes between the two filesystem operations.
-  const projects = await readProjects();
-  const removedProject = projects.find((p) => p.id === id);
+  await updateProjects(async (projects: Project[]): Promise<Project[]> => {
+    const removedProject = projects.find((p) => p.id === id);
 
-  if (removedProject) {
-    await preserveSettings(removedProject);
-    if (removedProject.icon) {
-      await preserveIcon(removedProject);
-    } else {
-      await removeIconFile(id);
+    if (removedProject) {
+      await preserveSettings(removedProject);
+      if (removedProject.icon) {
+        await preserveIcon(removedProject);
+      } else {
+        await removeIconFile(id);
+      }
     }
-  }
 
-  await updateProjects((ps) => ps.filter((p) => p.id !== id));
+    return projects.filter((p) => p.id !== id);
+  });
 }
 
 export async function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'emoji' | 'name' | 'displayName' | 'orchestrator'>>): Promise<Project[]> {

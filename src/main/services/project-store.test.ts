@@ -180,6 +180,37 @@ describe('remove', () => {
     expect(vi.mocked(fsp.unlink)).toHaveBeenCalled();
   });
 
+  it('serializes concurrent removals to avoid resurrecting a project', async () => {
+    const initial = {
+      version: 1,
+      projects: [
+        { id: 'proj_a', name: 'A', path: '/a' },
+        { id: 'proj_b', name: 'B', path: '/b' },
+      ],
+    };
+
+    let current = structuredClone(initial);
+    vi.mocked(pathExists).mockImplementation(async (p: any) => {
+      const s = String(p);
+      if (s === STORE_PATH || s === BASE_DIR) return true;
+      if (s.includes('project-icons')) return true;
+      return false;
+    });
+    vi.mocked(fsp.readFile).mockImplementation(async () => JSON.stringify(current));
+    vi.mocked(fsp.writeFile).mockImplementation(async (_p: any, data: any) => {
+      if (typeof data === 'string' && data.includes('"version"')) {
+        current = JSON.parse(data);
+      }
+    });
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+    vi.mocked(fsp.rename).mockResolvedValue(undefined);
+    vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
+
+    await Promise.all([remove('proj_a'), remove('proj_b')]);
+
+    expect(current.projects).toEqual([]);
+  });
+
   it('preserves icon file when project has an icon', async () => {
     const store = {
       version: 1,
