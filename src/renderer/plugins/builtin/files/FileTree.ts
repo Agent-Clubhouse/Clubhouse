@@ -110,7 +110,7 @@ function GitBadge({ status }: { status: string }) {
 function getRelativePath(fullPath: string, projectPath: string): string {
   if (fullPath.startsWith(projectPath)) {
     const rel = fullPath.slice(projectPath.length);
-    return rel.startsWith('/') ? rel.slice(1) : rel;
+    return rel.replace(/^[\\/]+/, '');
   }
   return fullPath;
 }

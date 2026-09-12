@@ -23,6 +23,10 @@ import { ALL_PLUGIN_PERMISSIONS } from '../../shared/plugin-types';
 
 installMockWindowClubhouse();
 
+function normalizedPath(value: string): string {
+  return value.replaceAll('\\', '/');
+}
+
 function makeCtx(overrides?: Partial<PluginContext>): PluginContext {
   return {
     pluginId: 'test-plugin',
@@ -3634,11 +3638,11 @@ describe('plugin-api-factory', () => {
     const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
 
     it('returns global path without projectId', () => {
-      expect(computeDataDir('my-plugin')).toBe(`${home}/.clubhouse/plugin-data/my-plugin/files`);
+      expect(normalizedPath(computeDataDir('my-plugin'))).toBe(`${normalizedPath(home)}/.clubhouse/plugin-data/my-plugin/files`);
     });
 
     it('includes projectId in path when provided', () => {
-      expect(computeDataDir('my-plugin', 'proj-42')).toBe(`${home}/.clubhouse/plugin-data/my-plugin/files/proj-42`);
+      expect(normalizedPath(computeDataDir('my-plugin', 'proj-42'))).toBe(`${normalizedPath(home)}/.clubhouse/plugin-data/my-plugin/files/proj-42`);
     });
 
     it('uses plugin id for isolation', () => {
@@ -3733,21 +3737,21 @@ describe('plugin-api-factory', () => {
 
     it('exposes dataDir as absolute path for project-scoped plugin', () => {
       const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
-      expect(api.files.dataDir).toBe(`${home}/.clubhouse/plugin-data/test-plugin/files/proj-1`);
+      expect(normalizedPath(api.files.dataDir)).toBe(`${normalizedPath(home)}/.clubhouse/plugin-data/test-plugin/files/proj-1`);
     });
 
     it('dataDir does not include projectId when absent', () => {
       const projectCtx = makeCtx({ scope: 'project', projectId: undefined, projectPath: '/projects/my-project' });
       const projectApi = createPluginAPI(projectCtx, undefined, allPermsManifest);
       const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
-      expect(projectApi.files.dataDir).toBe(`${home}/.clubhouse/plugin-data/test-plugin/files`);
+      expect(normalizedPath(projectApi.files.dataDir)).toBe(`${normalizedPath(home)}/.clubhouse/plugin-data/test-plugin/files`);
     });
 
     it('dataDir includes projectId when present', () => {
       const ctx = makeCtx({ projectId: 'my-proj-42' });
       const projApi = createPluginAPI(ctx, undefined, allPermsManifest);
       const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
-      expect(projApi.files.dataDir).toBe(`${home}/.clubhouse/plugin-data/test-plugin/files/my-proj-42`);
+      expect(normalizedPath(projApi.files.dataDir)).toBe(`${normalizedPath(home)}/.clubhouse/plugin-data/test-plugin/files/my-proj-42`);
     });
 
     it('dataDir throws on external root FilesAPI', () => {
@@ -3906,7 +3910,7 @@ describe('plugin-api-factory', () => {
     it('workspace API is available when permission is granted', () => {
       const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
       expect(api.workspace).toBeDefined();
-      expect(api.workspace.root).toContain('.clubhouse/plugin-data/test-plugin/workspace');
+      expect(normalizedPath(api.workspace.root)).toContain('.clubhouse/plugin-data/test-plugin/workspace');
     });
 
     it('workspace.readFile delegates to file IPC', async () => {
@@ -3914,14 +3918,15 @@ describe('plugin-api-factory', () => {
       const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
       const result = await api.workspace.readFile('test.txt');
       expect(result).toBe('hello');
-      expect(mockFile.read).toHaveBeenCalledWith(expect.stringContaining('workspace/test.txt'));
+      expect(normalizedPath(mockFile.read.mock.calls[0][0])).toContain('workspace/test.txt');
     });
 
     it('workspace.writeFile delegates to file IPC', async () => {
       mockFile.write.mockResolvedValue(undefined);
       const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
       await api.workspace.writeFile('test.txt', 'content');
-      expect(mockFile.write).toHaveBeenCalledWith(expect.stringContaining('workspace/test.txt'), 'content');
+      expect(normalizedPath(mockFile.write.mock.calls[0][0])).toContain('workspace/test.txt');
+      expect(mockFile.write.mock.calls[0][1]).toBe('content');
     });
 
     it('workspace.exists returns true when stat succeeds', async () => {
@@ -3995,7 +4000,7 @@ describe('plugin-api-factory', () => {
       const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
       const readonlyApi = api.workspace.forPlugin('other-plugin');
       expect(readonlyApi).toBeDefined();
-      expect(readonlyApi.root).toContain('other-plugin/workspace');
+      expect(normalizedPath(readonlyApi.root)).toContain('other-plugin/workspace');
       expect(typeof readonlyApi.readFile).toBe('function');
     });
 

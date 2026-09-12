@@ -47,6 +47,11 @@ if (process.platform === 'darwin' && !process.env.UV_THREADPOOL_SIZE) {
 // app.getPath('userData') calls after 'ready' resolve to the custom directory.
 if (process.env.CLUBHOUSE_USER_DATA) {
   app.setPath('userData', process.env.CLUBHOUSE_USER_DATA);
+  // Several app-owned registries intentionally live below app.getPath('home')
+  // rather than userData. Redirect home as well for explicitly isolated
+  // instances so E2E workers and Annex dual-instance tests cannot share
+  // projects, agent state, or group-project state with another app process.
+  app.setPath('home', process.env.CLUBHOUSE_USER_DATA);
 }
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"

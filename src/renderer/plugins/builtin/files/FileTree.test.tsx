@@ -107,6 +107,25 @@ describe('FileTree', () => {
     expect(fileState.selectedPath).toBe('README.md');
   });
 
+  it('opens Windows file paths relative to the project root', async () => {
+    const projectPath = 'C:\\project';
+    const readTree = vi.fn(async (path: string) => {
+      if (path === '.') {
+        return [{ name: 'sample.ts', path: `${projectPath}\\sample.ts`, isDirectory: false }];
+      }
+      return [];
+    });
+    const api = createFilesAPI({
+      files: { ...createMockAPI().files, readTree },
+      context: { mode: 'project', projectId: 'test-project', projectPath },
+    });
+
+    render(<FileTree api={api} />);
+    fireEvent.click(await screen.findByText('sample.ts'));
+
+    expect(fileState.selectedPath).toBe('sample.ts');
+  });
+
   it('refresh button calls api.files.readTree()', async () => {
     const readTree = mockReadTree();
     const api = createFilesAPI({
