@@ -1,6 +1,5 @@
 import type { PluginContext, PluginManifest, FilesAPI, Disposable } from '../../shared/plugin-types';
 import type { FileNode } from '../../shared/types';
-import * as path from 'path';
 import { hasPermission } from './plugin-api-shared';
 import { rendererLog } from './renderer-logger';
 import { usePluginStore } from './plugin-store';
@@ -18,30 +17,48 @@ interface SharedWatchRegistration {
 
 const projectWatchRegistry = new Map<string, SharedWatchRegistration>();
 
+function hostPathSeparator(basePath: string): '/' | '\\' {
+  return /^[A-Za-z]:[\\/]/.test(basePath) || basePath.startsWith('\\\\') ? '\\' : '/';
+}
+
+function normalizeHostPath(value: string, separator: '/' | '\\'): string {
+  const isUnc = separator === '\\' && value.startsWith('\\\\');
+  const normalized = value.replace(/[\\/]+/g, separator);
+  return isUnc ? `\\\\${normalized.replace(/^\\+/, '')}` : normalized;
+}
+
+function joinHostPath(basePath: string, ...segments: string[]): string {
+  const separator = hostPathSeparator(basePath);
+  const normalizedBase = normalizeHostPath(basePath, separator).replace(/[\\/]+$/, '');
+  const normalizedSegments = segments.map((segment) =>
+    normalizeHostPath(segment, separator).replace(/^[\\/]+|[\\/]+$/g, ''),
+  );
+  return [normalizedBase, ...normalizedSegments].filter(Boolean).join(separator);
+}
+
 function getProjectWatchKey(projectPath: string, glob: string): string {
   return `${projectPath}:${glob}`;
 }
 
 export function resolvePath(projectPath: string, relativePath: string): string {
-  // Normalize: join project path with relative path, then check for traversal
-  const normalizedRelative = relativePath.replace(/[\\/]+/g, path.sep);
-  const resolved = path.isAbsolute(normalizedRelative) || /^[A-Za-z]:[\\/]/.test(relativePath)
-    ? relativePath
-    : `${projectPath}${path.sep}${relativePath}`;
-
-  // Simple traversal check: resolved must start with projectPath
-  // Normalize double slashes and resolve .. manually
-  const normalizedProject = projectPath.replace(/[\\/]+/g, path.sep).replace(/[\\/]+$/, '');
-  const normalizedResolved = resolved.replace(/[\\/]+/g, path.sep);
+  const separator = hostPathSeparator(projectPath);
+  const normalizedProject = normalizeHostPath(projectPath, separator).replace(/[\\/]+$/, '');
+  const isAbsolute = /^[\\/]/.test(relativePath) || /^[A-Za-z]:[\\/]/.test(relativePath);
+  const normalizedResolved = isAbsolute
+    ? normalizeHostPath(relativePath, separator)
+    : joinHostPath(normalizedProject, relativePath);
 
   // Check for path traversal via ..
-  if (normalizedResolved.includes(`${path.sep}..${path.sep}`) ||
-      normalizedResolved.endsWith(`${path.sep}..`) ||
+  if (normalizedResolved.includes(`${separator}..${separator}`) ||
+      normalizedResolved.endsWith(`${separator}..`) ||
       normalizedResolved === '..') {
     throw new Error('Path traversal is not allowed');
   }
 
-  if (!normalizedResolved.startsWith(normalizedProject + path.sep) && normalizedResolved !== normalizedProject) {
+  // Windows paths compare case-insensitively; POSIX paths do not.
+  const comparisonProject = separator === '\\' ? normalizedProject.toLowerCase() : normalizedProject;
+  const comparisonResolved = separator === '\\' ? normalizedResolved.toLowerCase() : normalizedResolved;
+  if (!comparisonResolved.startsWith(comparisonProject + separator) && comparisonResolved !== comparisonProject) {
     throw new Error('Path traversal is not allowed');
   }
 
@@ -58,9 +75,8 @@ export function computeDataDir(pluginId: string, projectId?: string): string {
     ? (process.env.HOME || process.env.USERPROFILE)
     : undefined;
   const root = home || '/tmp';
-  const normalizedRoot = root.replace(/[\\/]+/g, path.sep);
-  const base = path.join(normalizedRoot, '.clubhouse', 'plugin-data', pluginId, 'files');
-  return projectId ? path.join(base, projectId) : base;
+  const base = joinHostPath(root, '.clubhouse', 'plugin-data', pluginId, 'files');
+  return projectId ? joinHostPath(base, projectId) : base;
 }
 
 /**
@@ -72,7 +88,7 @@ export function computeWorkspaceRoot(pluginId: string): string {
     ? (process.env.HOME || process.env.USERPROFILE)
     : undefined;
   const root = home || '/tmp';
-  return path.join(root.replace(/[\\/]+/g, path.sep), '.clubhouse', 'plugin-data', pluginId, 'workspace');
+  return joinHostPath(root, '.clubhouse', 'plugin-data', pluginId, 'workspace');
 }
 
 /** Creates a FilesAPI scoped to an arbitrary base path (for external roots). forRoot() throws (no nesting). */
