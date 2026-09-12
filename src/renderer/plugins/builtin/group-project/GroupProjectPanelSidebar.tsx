@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ResizeDivider } from '../../../components/ResizeDivider';
+import { stopPlainWheelPropagation, useWheelContainment } from '../../../hooks/useWheelContainment';
 
 /* ---------- Constants ---------- */
 
@@ -106,10 +107,7 @@ export function useGroupProjectPanelLayout() {
 // handlePickerWheel there for the full rationale). Ctrl/Cmd+wheel is a canvas
 // zoom gesture and is intentionally allowed to bubble so zoom keeps working
 // while hovering the panel.
-export function stopPlainWheelPropagation(e: React.WheelEvent): void {
-  if (e.ctrlKey || e.metaKey) return;
-  e.stopPropagation();
-}
+export { stopPlainWheelPropagation };
 
 /* ---------- Component ---------- */
 
@@ -134,6 +132,7 @@ export function GroupProjectPanelSidebar({
 }: GroupProjectPanelSidebarProps) {
   const [hovered, setHovered] = useState(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleWheelContainment = useWheelContainment();
 
   const handleEnter = useCallback(() => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
@@ -178,7 +177,7 @@ export function GroupProjectPanelSidebar({
             style={{ width }}
             onMouseEnter={handleEnter}
             onMouseLeave={handleLeave}
-            onWheel={stopPlainWheelPropagation}
+            onWheel={handleWheelContainment}
             data-testid="panel-rail-overlay"
           >
             {children}
@@ -193,7 +192,7 @@ export function GroupProjectPanelSidebar({
       <div
         className="flex-shrink-0 overflow-y-auto"
         style={{ width }}
-        onWheel={stopPlainWheelPropagation}
+        onWheel={handleWheelContainment}
         data-testid="group-project-panel-sidebar"
       >
         {children}
