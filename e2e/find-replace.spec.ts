@@ -312,9 +312,8 @@ test.describe('Replace Functionality', () => {
     // Keep replacement and undo atomic. A failed serial attempt is retried in
     // a fresh worker, so a follow-up test cannot safely depend on its editor.
     await closeFindWidget();
-    await focusEditor();
 
-    // Undo the replacement
+    // Monaco restores editor focus when Escape closes its find widget.
     await window.keyboard.press('ControlOrMeta+z');
     await window.waitForTimeout(500);
 
