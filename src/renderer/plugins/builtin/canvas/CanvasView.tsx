@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
+import React, { memo, useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, AnchorCanvasView as AnchorCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { InlineRename } from './InlineRename';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, ANCHOR_HEIGHT } from './canvas-types';
@@ -58,7 +58,6 @@ interface ResizeState {
 interface CanvasViewComponentProps {
   view: CanvasView;
   api: PluginAPI;
-  zoom: number;
   isZoomed?: boolean;
   isSelected?: boolean;
   isMultiSelected?: boolean;
@@ -96,10 +95,9 @@ interface CanvasViewComponentProps {
   isLayoutCenter?: boolean;
 }
 
-export function CanvasViewComponent({
+export const CanvasViewComponent = memo(function CanvasViewComponent({
   view,
   api,
-  zoom,
   isZoomed,
   isSelected,
   isMultiSelected,
@@ -154,12 +152,20 @@ export function CanvasViewComponent({
   const onDragMoveRef = useRef(onDragMove);
   onDragMoveRef.current = onDragMove;
   const dragPosRef = useRef<Position | null>(null);
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
   const viewIdRef = useRef(view.id);
   viewIdRef.current = view.id;
 
   const contentRef = useRef<HTMLDivElement>(null);
+  const getZoom = useCallback(() => {
+    let element: HTMLElement | null = contentRef.current;
+    let rawValue = element ? getComputedStyle(element).getPropertyValue('--canvas-zoom') : '';
+    while (!rawValue && element) {
+      rawValue = element.style.getPropertyValue('--canvas-zoom');
+      element = element.parentElement;
+    }
+    const value = Number.parseFloat(rawValue);
+    return Number.isFinite(value) && value > 0 ? value : 1;
+  }, []);
 
   const currentPos = resizeState?.position ?? dragPos ?? view.position;
   const currentSize = resizeState?.size ?? view.size;
@@ -231,8 +237,9 @@ export function CanvasViewComponent({
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const dx = (e.clientX - dragStartRef.current.mouseX) / zoomRef.current;
-      const dy = (e.clientY - dragStartRef.current.mouseY) / zoomRef.current;
+      const zoom = getZoom();
+      const dx = (e.clientX - dragStartRef.current.mouseX) / zoom;
+      const dy = (e.clientY - dragStartRef.current.mouseY) / zoom;
       const newPos = {
         x: dragStartRef.current.startX + dx,
         y: dragStartRef.current.startY + dy,
@@ -257,7 +264,7 @@ export function CanvasViewComponent({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]);
+  }, [getZoom, isDragging]);
 
   // ── Resize (multi-directional) ─────────────────────────────────
 
@@ -283,6 +290,7 @@ export function CanvasViewComponent({
 
     const handleMouseMove = (e: MouseEvent) => {
       const ref = resizeStartRef.current;
+      const zoom = getZoom();
       const dx = (e.clientX - ref.mouseX) / zoom;
       const dy = (e.clientY - ref.mouseY) / zoom;
       const dir = ref.direction;
@@ -351,7 +359,7 @@ export function CanvasViewComponent({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [resizeState, zoom, onResizeEnd]);
+  }, [getZoom, resizeState, onResizeEnd]);
 
   // ── Mouse coordinate compensation for CSS scale(zoom) ─────────
   // The canvas workspace wraps all views in `transform: scale(zoom)`.
@@ -370,7 +378,7 @@ export function CanvasViewComponent({
     if (!el) return;
 
     const adjustEvent = (e: MouseEvent) => {
-      const z = zoomRef.current;
+      const z = getZoom();
       if (z === 1) return;
       const rect = el.getBoundingClientRect();
       const adjustedX = rect.left + (e.clientX - rect.left) / z;
@@ -389,7 +397,7 @@ export function CanvasViewComponent({
         el.removeEventListener(type, adjustEvent as EventListener, true);
       }
     };
-  }, []);
+  }, [getZoom]);
 
   // ── Content based on view type ─────────────────────────────────
 
@@ -414,7 +422,6 @@ export function CanvasViewComponent({
         viewUpdates.displayName = generatePluginWidgetDisplayName(registered, mergedMetadata);
       }
     }
-
     onUpdate(viewUpdates);
   }, [view.metadata, view.type, view.position, view.size, onUpdate]);
 
@@ -937,4 +944,4 @@ export function CanvasViewComponent({
       </div>
     </div>
   );
-}
+});
