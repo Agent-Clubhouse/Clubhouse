@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import { execFileSync, spawn } from 'child_process';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyPlatformUpdate, applyWindowsUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt } from './auto-update-service';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyPlatformUpdate, applyWindowsUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt, platformKey } from './auto-update-service';
 import * as fsUtils from './fs-utils';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -72,6 +72,40 @@ describe('auto-update-service', () => {
       } finally {
         fs.unlinkSync(downloadPath);
       }
+    });
+
+    it('installs RPM packages with the RPM updater instead of the dpkg path', async () => {
+      const downloadPath = path.join(os.tmpdir(), 'Clubhouse update.rpm');
+      fs.writeFileSync(downloadPath, '');
+      try {
+        await applyLinuxUpdate(
+          { downloadPath, version: '1.0.0', artifactUrl: null },
+          { relaunch: false },
+        );
+        expect(execFileSync).toHaveBeenCalledWith(
+          'pkexec',
+          ['rpm', '-Uvh', downloadPath],
+          { timeout: 120_000 },
+        );
+      } finally {
+        fs.unlinkSync(downloadPath);
+      }
+    });
+
+    it('uses the RPM-specific manifest key when the installed package manager is RPM', () => {
+      vi.mocked(execFileSync).mockImplementation(((command: string, args: string[] | string) => {
+        if ((command === 'rpm' || command === 'dpkg-query') && Array.isArray(args) && args[0] === '-q') {
+          return 'clubhouse-1.0.0';
+        }
+        if (command === 'dpkg-query' && Array.isArray(args) && args[2] === 'Clubhouse') {
+          throw new Error('not installed');
+        }
+        throw new Error('not installed');
+      }) as typeof execFileSync);
+
+      const expected = process.platform === 'linux' ? `${process.platform}-${process.arch}-rpm` : `${process.platform}-${process.arch}`;
+      expect(platformKey()).toBe(expected);
+      vi.mocked(execFileSync).mockReset();
     });
 
     it('preserves the Darwin fallback when no update is applicable', async () => {

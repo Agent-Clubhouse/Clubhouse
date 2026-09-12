@@ -112,8 +112,46 @@ let checkTimer: ReturnType<typeof setInterval> | null = null;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function platformKey(): string {
-  return `${process.platform}-${process.arch}`;
+function detectLinuxPackageFormat(): 'deb' | 'rpm' | 'unknown' {
+  if (process.platform !== 'linux') return 'unknown';
+
+  const packageNames = ['Clubhouse', 'clubhouse'];
+  for (const packageName of packageNames) {
+    try {
+      const dpkgStatus = execFileSync('dpkg-query', ['-W', '-f=${Status}', packageName], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      if (typeof dpkgStatus === 'string' && dpkgStatus.includes('install ok installed')) {
+        return 'deb';
+      }
+    } catch {
+      // Not installed via Debian package manager.
+    }
+
+    try {
+      const rpmStatus = execFileSync('rpm', ['-q', packageName], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      if (typeof rpmStatus === 'string' && rpmStatus.trim().toLowerCase().startsWith(packageName.toLowerCase())) {
+        return 'rpm';
+      }
+    } catch {
+      // Not installed via RPM package manager.
+    }
+  }
+
+  return 'unknown';
+}
+
+export function platformKey(): string {
+  const base = `${process.platform}-${process.arch}`;
+  if (process.platform !== 'linux') return base;
+
+  const packageFormat = detectLinuxPackageFormat();
+  if (packageFormat === 'rpm') return `${base}-rpm`;
+  return base;
 }
 
 /**
@@ -773,8 +811,21 @@ function waitForChildSpawn(child: ReturnType<typeof spawn>): Promise<void> {
 
 export async function applyLinuxUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
   const { downloadPath } = context;
-  // Linux applies downloaded Debian packages during quit; RPM updates are not supported.
-  if (!downloadPath || !await pathExists(downloadPath) || !downloadPath.endsWith('.deb')) return false;
+  if (!downloadPath || !await pathExists(downloadPath)) return false;
+
+  if (downloadPath.endsWith('.rpm')) {
+    execFileSync('pkexec', ['rpm', '-Uvh', downloadPath], { timeout: 120_000 });
+    appLog(relaunch ? 'update:apply' : 'update:apply-on-quit', 'info', 'Linux: .rpm installed successfully', {
+      meta: { downloadPath },
+    });
+    if (relaunch) {
+      app.relaunch();
+      app.exit(0);
+    }
+    return true;
+  }
+
+  if (!downloadPath.endsWith('.deb')) return false;
   execFileSync('pkexec', ['dpkg', '-i', downloadPath], { timeout: 120_000 });
   appLog(relaunch ? 'update:apply' : 'update:apply-on-quit', 'info', 'Linux: .deb installed successfully', {
     meta: { downloadPath },
@@ -1087,6 +1138,10 @@ export async function getVersionHistory(): Promise<{ markdown: string; entries: 
 
 export function getStatus(): UpdateStatus {
   return { ...status };
+}
+
+export function _setStatusForTesting(nextStatus: UpdateStatus): void {
+  status = { ...nextStatus };
 }
 
 /**
