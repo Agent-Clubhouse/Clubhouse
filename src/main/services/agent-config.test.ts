@@ -24,6 +24,10 @@ vi.mock('fs', () => ({
   rmSync: vi.fn(),
   readdirSync: vi.fn(() => []),
   unlinkSync: vi.fn(),
+  watch: vi.fn(() => ({
+    on: vi.fn().mockReturnThis(),
+    close: vi.fn(),
+  })),
   promises: {
     readFile: vi.fn(async () => '{}'),
     writeFile: vi.fn(async () => undefined),
@@ -60,6 +64,7 @@ vi.mock('./git-service', () => ({
 }));
 
 import * as fsp from 'fs/promises';
+import { watch } from 'fs';
 import { exec, execFile } from 'child_process';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
@@ -1794,6 +1799,25 @@ describe('write-back cache', () => {
     expect(readCalls).toHaveLength(1);
   });
 
+  it('invalidates a clean read cache when agents.json changes externally', async () => {
+    const diskAgents = [
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    mockAgentsFile(diskAgents);
+
+    expect((await listDurable(PROJECT_PATH))[0].name).toBe('agent-1');
+    expect(watch).toHaveBeenCalledWith(path.join(PROJECT_PATH, '.clubhouse'), expect.any(Function));
+
+    diskAgents[0].name = 'renamed-outside-clubhouse';
+    const watcherCallback = vi.mocked(watch).mock.calls[0][1] as (eventType: string, filename: string) => void;
+    watcherCallback('change', 'agents.json');
+
+    expect((await listDurable(PROJECT_PATH))[0].name).toBe('renamed-outside-clubhouse');
+    const readCalls = vi.mocked(fsp.readFile).mock.calls
+      .filter((call) => String(call[0]).endsWith('agents.json'));
+    expect(readCalls).toHaveLength(2);
+  });
+
   it('coalesces multiple writes into one disk write on flush', async () => {
     setupCacheTest([
       { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
@@ -1837,6 +1861,51 @@ describe('write-back cache', () => {
     const readCalls = vi.mocked(fsp.readFile).mock.calls
       .filter((c) => String(c[0]).endsWith('agents.json'));
     expect(readCalls).toHaveLength(1);
+  });
+
+  it('preserves external edits made before a debounced flush', async () => {
+    const writtenData = setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    await renameDurable(PROJECT_PATH, 'durable_1', 'renamed-in-app');
+    writtenData[agentsJsonPath] = JSON.stringify([{
+      id: 'durable_1',
+      name: 'agent-1',
+      color: 'indigo',
+      persona: 'hand-edited persona',
+      createdAt: '2024-01-01',
+    }]);
+
+    await flushAgentConfig(PROJECT_PATH);
+
+    const tempWrite = vi.mocked(fsp.writeFile).mock.calls
+      .find((call) => String(call[0]).includes('agents.json.tmp.'));
+    expect(tempWrite).toBeDefined();
+    const persisted = JSON.parse(String(tempWrite![1]));
+    expect(persisted[0].name).toBe('renamed-in-app');
+    expect(persisted[0].persona).toBe('hand-edited persona');
+  });
+
+  it('does not resurrect a locally deleted agent after an external edit', async () => {
+    const writtenData = setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    await deleteDurable(PROJECT_PATH, 'durable_1');
+    writtenData[agentsJsonPath] = JSON.stringify([{
+      id: 'durable_1',
+      name: 'renamed-outside-clubhouse',
+      color: 'indigo',
+      createdAt: '2024-01-01',
+    }]);
+
+    await flushAgentConfig(PROJECT_PATH);
+
+    const tempWrite = vi.mocked(fsp.writeFile).mock.calls
+      .find((call) => String(call[0]).includes('agents.json.tmp.'));
+    expect(tempWrite).toBeDefined();
+    expect(JSON.parse(String(tempWrite![1]))).toEqual([]);
   });
 
   it('clearAgentConfigCache discards pending writes', async () => {
