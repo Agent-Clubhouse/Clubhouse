@@ -40,10 +40,13 @@ export function settingsChannels(key: string) {
 
 import type { ClipboardSettings, EditorSettings, McpSettings, SecuritySettings } from './types';
 
+export const CLIPBOARD_COMPAT_DEFAULT = false;
+export const isClipboardCompatPlatform = (platform: string): boolean => platform === 'win32';
+
 export const CLIPBOARD_SETTINGS: SettingsDefinition<ClipboardSettings> = {
   key: 'clipboard',
   filename: 'clipboard-settings.json',
-  defaults: { clipboardCompat: false },
+  defaults: { clipboardCompat: CLIPBOARD_COMPAT_DEFAULT },
 };
 
 export const EDITOR_SETTINGS: SettingsDefinition<EditorSettings> = {

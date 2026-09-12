@@ -27,9 +27,9 @@ You cannot disable the last remaining orchestrator.
 | Capability | Claude Code | Copilot CLI | Codex CLI |
 |-----------|:-----------:|:-----------:|:---------:|
 | Headless mode | Yes | Yes | Yes |
-| Structured output | Yes | — | — |
-| Hooks | Yes | Yes | — |
-| Session resume | Yes | — | Yes |
+| Structured output | Yes | Yes | Yes |
+| Hooks | Yes | Yes | Yes |
+| Session resume | Yes | Yes | Yes (`--last` / most recent only; no resume-by-ID) |
 | Permissions | Yes | Yes | Yes (sandbox) |
 
 ## Per-Project Selection

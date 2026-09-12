@@ -22,13 +22,16 @@ Automates the release preparation workflow: analyze changes since the last relea
 
 2. **Read current version** from `package.json` (the `"version"` field).
 
-3. **Find the last tagged release:**
+3. **Check for prerelease suffix:**
+   If the current `package.json` version carries a prerelease suffix (`-beta.N`, `-rc.N`, etc.), the target stable version **is** the base version with the suffix stripped. Do not apply minor or patch bump logic; record the prerelease base version as the target (e.g., `0.41.0-beta.5` → `0.41.0`) and continue to Phase 4 so the user can review and confirm it. This mirrors the promotion path documented in `prepare-beta/SKILL.md:199-207`.
+
+4. **Find the last tagged release:**
    ```bash
    git tag --list 'v*' --sort=-v:refname | head -1
    ```
-   This is the baseline. All commits between this tag and `HEAD` are candidates.
+   This is the baseline. All commits between this tag and `HEAD` are candidates. (Only used if the current version is already a clean release; skipped for prerelease promotion.)
 
-4. **Collect commits since the last tag:**
+5. **Collect commits since the last tag:**
    ```bash
    git log <last-tag>..HEAD --oneline --no-merges
    ```
@@ -36,6 +39,7 @@ Automates the release preparation workflow: analyze changes since the last relea
    ```bash
    git log <last-tag>..HEAD --format='%H %s' --no-merges
    ```
+   Only use this command if the current version is already a clean release; skip it for prerelease promotion.
 
 ## Phase 2: Classify Commits
 
@@ -71,9 +75,11 @@ Present the following to the user:
 
 ### Recommended Version
 
-- If the classified list contains at least one **Feature** → **minor** version bump (e.g., `0.26.0` → `0.27.0`)
-- If no features, only bug fixes and/or internals → **patch** version bump (e.g., `0.26.0` → `0.26.1`)
-- **Never** propose a major version bump
+- If the current version carries a prerelease suffix (`-beta.N`, `-rc.N`, etc.), recommend the prerelease base version as the target (determined in Phase 1, step 3). Still present it to the user and wait for explicit confirmation before proceeding.
+- If the current version is a clean release (no prerelease suffix):
+  - If the classified list contains at least one **Feature** → **minor** version bump (e.g., `0.26.0` → `0.27.0`)
+  - If no features, only bug fixes and/or internals → **patch** version bump (e.g., `0.26.0` → `0.26.1`)
+  - **Never** propose a major version bump
 
 ### Release Title
 

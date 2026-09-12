@@ -3,6 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  return { ...actual, chmodSync: vi.fn(actual.chmodSync) };
+});
+
 // Mock electron before importing module
 vi.mock('electron', () => {
   let userDataPath = '';
@@ -73,7 +78,8 @@ describe('annex-identity', () => {
       expect(identity1.fingerprint).toBe(identity2.fingerprint);
     });
 
-    it('should set 0600 permissions on identity file', () => {
+    it('should create the identity file with 0600 permissions before chmod', () => {
+      vi.mocked(fs.chmodSync).mockImplementation(() => undefined);
       getOrCreateIdentity();
       const filePath = path.join(tmpDir, 'annex-identity.json');
       const stats = fs.statSync(filePath);

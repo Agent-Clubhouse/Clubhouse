@@ -117,11 +117,6 @@ vi.mock('../services/badge-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
-vi.mock('../services/clipboard-settings', () => ({
-  getSettings: vi.fn(() => ({ clipboardCompat: false })),
-  saveSettings: vi.fn(),
-}));
-
 vi.mock('../services/auto-update-service', () => ({
   getSettings: vi.fn(() => ({ autoUpdate: true })),
   saveSettings: vi.fn(),
