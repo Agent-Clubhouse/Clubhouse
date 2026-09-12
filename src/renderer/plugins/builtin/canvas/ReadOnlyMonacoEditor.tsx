@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { loadMonaco, ensureThemes, applyMonacoTheme } from '../files/monaco-theme';
+import { loadMonaco, ensureThemes, applyMonacoTheme, monacoThemeName } from '../files/monaco-theme';
 import { EXT_TO_LANG } from '../files/file-icons';
 import { useThemeStore } from '../../../stores/themeStore';
 
@@ -27,6 +27,7 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
   const themeId = useThemeStore((s) => s.themeId);
   const themeIdRef = useRef(themeId);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Keep ref in sync so the async creation effect always uses the latest theme
   useEffect(() => {
@@ -48,7 +49,7 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
 
       const editor = m.editor.create(containerRef.current, {
         model,
-        theme: `clubhouse-${themeIdRef.current}`,
+        theme: monacoThemeName(themeIdRef.current),
         readOnly,
         fontSize: 12,
         fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
@@ -87,6 +88,11 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
       });
 
       editorRef.current = editor;
+      setLoading(false);
+    }).catch((err) => {
+      if (disposed) return;
+      console.error('[ReadOnlyMonacoEditor] Monaco failed to initialise:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
       setLoading(false);
     });
 
@@ -139,6 +145,11 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
       ? React.createElement('div', {
           className: 'absolute inset-0 flex items-center justify-center text-ctp-subtext0 text-xs',
         }, 'Loading\u2026')
+      : null,
+    loadError
+      ? React.createElement('div', {
+          className: 'absolute inset-0 flex items-center justify-center p-4 text-center text-ctp-error text-xs',
+        }, `Could not load the editor: ${loadError}`)
       : null,
   );
 }

@@ -13,6 +13,7 @@ vi.mock('./monaco-theme', () => ({
   loadMonaco: () => import('monaco-editor'),
   ensureThemes: async () => {},
   applyMonacoTheme: () => {},
+  monacoThemeName: (id: string) => `clubhouse-${id}`,
 }));
 
 vi.mock('../../../stores/themeStore', () => ({

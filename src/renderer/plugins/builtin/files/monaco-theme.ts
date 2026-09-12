@@ -100,6 +100,38 @@ let monacoModule: any | null = null;
 let themesRegistered = false;
 let registryListenerAttached = false;
 
+// ── Monaco theme names ───────────────────────────────────────────────
+//
+// Monaco validates theme names against /^[a-z0-9\-]+$/i and throws
+// "Illegal theme name!" for anything else. Plugin-contributed themes are
+// namespaced as `plugin:<pluginId>:<themeId>`, so feeding the raw theme id to
+// defineTheme threw and rejected ensureThemes() — which left every Monaco
+// surface stuck on its "Loading editor…" placeholder for anyone with a theme
+// plugin installed. Sanitise the id instead.
+
+/** FNV-1a, base36 — short, stable disambiguator for sanitised ids. */
+function shortHash(input: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
+/**
+ * Map a Clubhouse theme id to a Monaco-legal theme name.
+ *
+ * Ids that are already legal map to `clubhouse-<id>` so builtin names are
+ * unchanged. Anything else is sanitised and given a hash suffix, so two ids
+ * that sanitise to the same string (`a:b` and `a-b`) still get distinct names.
+ */
+export function monacoThemeName(themeId: string): string {
+  if (/^[a-z0-9-]+$/i.test(themeId)) return `clubhouse-${themeId}`;
+  const sanitized = themeId.replace(/[^a-z0-9-]/gi, '-');
+  return `clubhouse-${sanitized}-${shortHash(themeId)}`;
+}
+
 export async function loadMonaco(): Promise<any> {
   if (!monacoModule) {
     monacoModule = await import('monaco-editor');
@@ -110,7 +142,13 @@ export async function loadMonaco(): Promise<any> {
 /** Define every theme in the dynamic registry (builtins + plugin-contributed) with Monaco. */
 export function registerAllMonacoThemes(m: any): void {
   for (const [id, theme] of Object.entries(getAllThemes())) {
-    m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as ThemeDefinition) as any);
+    // One malformed plugin theme must not stop the rest from registering —
+    // a failure here used to leave every editor stuck on "Loading editor…".
+    try {
+      m.editor.defineTheme(monacoThemeName(id), generateMonacoTheme(theme as ThemeDefinition) as any);
+    } catch (err) {
+      console.warn(`[monaco-theme] Skipped theme "${id}":`, err);
+    }
   }
 }
 
@@ -138,9 +176,14 @@ export async function ensureThemes(m: any): Promise<void> {
  * sets it. Falls back to a plain setTheme if the id is unknown.
  */
 export function applyMonacoTheme(m: any, themeId: string): void {
+  const name = monacoThemeName(themeId);
   const theme = getTheme(themeId);
-  if (theme) {
-    m.editor.defineTheme(`clubhouse-${themeId}`, generateMonacoTheme(theme) as any);
+  try {
+    if (theme) {
+      m.editor.defineTheme(name, generateMonacoTheme(theme) as any);
+    }
+    m.editor.setTheme(name);
+  } catch (err) {
+    console.warn(`[monaco-theme] Could not apply theme "${themeId}":`, err);
   }
-  m.editor.setTheme(`clubhouse-${themeId}`);
 }
