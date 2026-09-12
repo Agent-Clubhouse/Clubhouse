@@ -77,6 +77,8 @@ export const agentSettings = {
     ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, worktreePath, projectPath),
   readMcpRawJson: (worktreePath: string, projectPath?: string): Promise<string> =>
     ipcRenderer.invoke(IPC.AGENT.READ_MCP_RAW_JSON, worktreePath, projectPath),
+  getMcpShadowWarning: (worktreePath: string, projectPath?: string): Promise<string | undefined> =>
+    ipcRenderer.invoke(IPC.AGENT.GET_MCP_SHADOW_WARNING, worktreePath, projectPath),
   writeMcpRawJson: (worktreePath: string, content: string, projectPath?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.AGENT.WRITE_MCP_RAW_JSON, worktreePath, content, projectPath),
   readProjectAgentDefaults: (projectPath: string): Promise<{

@@ -94,6 +94,7 @@ export const IPC = {
     DELETE_AGENT_TEMPLATE: 'agent:delete-agent-template',
     LIST_AGENT_TEMPLATE_FILES: 'agent:list-agent-template-files',
     READ_MCP_RAW_JSON: 'agent:read-mcp-raw-json',
+    GET_MCP_SHADOW_WARNING: 'agent:get-mcp-shadow-warning',
     WRITE_MCP_RAW_JSON: 'agent:write-mcp-raw-json',
     READ_PROJECT_AGENT_DEFAULTS: 'agent:read-project-agent-defaults',
     WRITE_PROJECT_AGENT_DEFAULTS: 'agent:write-project-agent-defaults',

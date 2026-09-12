@@ -57,6 +57,7 @@ vi.mock('./clubhouse-mode-settings', () => ({
 }));
 
 import * as fsp from 'fs/promises';
+import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
 import {
   buildWildcardContext,
@@ -577,6 +578,35 @@ describe('materialization-service', () => {
       );
       expect(writeCall).toBeDefined();
       expect(writeCall![1]).toContain('bold-falcon');
+    });
+
+    it('logs a warning when a GHCP agent worktree contains a shadowing .mcp.json', async () => {
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: {
+          mcpJson: '{"mcpServers": {"test": {"command": "hi"}}}',
+        },
+      }));
+      vi.mocked(pathExists).mockImplementation(async (p: unknown) => String(p).replaceAll('\\', '/').endsWith('/.mcp.json'));
+      const copilotProvider = {
+        ...mockProvider,
+        conventions: {
+          ...mockProvider.conventions,
+          configDir: '.github',
+          mcpConfigFile: '.github/mcp.json',
+          localSettingsFile: 'hooks/hooks.json',
+        },
+      };
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: copilotProvider });
+
+      expect(vi.mocked(appLog)).toHaveBeenCalledWith(
+        'core:materialization',
+        'warn',
+        expect.stringContaining('.mcp.json also exists'),
+        expect.objectContaining({ meta: expect.objectContaining({ agentName: testAgent.name }) }),
+      );
     });
 
     it('no-ops when no defaults exist and no source dirs', async () => {
