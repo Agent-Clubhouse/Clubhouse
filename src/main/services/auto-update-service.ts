@@ -756,7 +756,9 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch }: ApplyO
   } else {
     await fsp.writeFile(script, buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, script), { mode: 0o755 });
   }
-  spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
+  const child = spawn('bash', [script], { detached: true, stdio: 'ignore' });
+  await waitForChildSpawn(child);
+  child.unref();
   if (relaunch) {
     flushLogs();
     app.exit(0);
@@ -803,7 +805,7 @@ function waitForChildSpawn(child: ReturnType<typeof spawn>): Promise<void> {
   return new Promise((resolve, reject) => {
     child.once('spawn', resolve);
     child.once('error', (spawnErr: Error) => {
-      appLog('update:apply-on-quit', 'error', `Update.exe failed to start: ${spawnErr.message}`);
+      appLog('update:apply-on-quit', 'error', `Updater failed to start: ${spawnErr.message}`);
       reject(spawnErr);
     });
   });
