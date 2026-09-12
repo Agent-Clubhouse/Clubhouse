@@ -327,13 +327,14 @@ function setTrackedQuickAgent(agentId: string, entry: TrackedQuickAgent): void {
 // ---------------------------------------------------------------------------
 
 const PIN_LENGTH = 6;
+const PIN_PATTERN = /^\d{6}$/;
 
 function generatePin(): string {
   return String(randomInt(0, 1_000_000)).padStart(PIN_LENGTH, '0');
 }
 
 function comparePins(providedPin: string, expectedPin: string): boolean {
-  if (providedPin.length !== PIN_LENGTH || expectedPin.length !== PIN_LENGTH) {
+  if (!PIN_PATTERN.test(providedPin) || !PIN_PATTERN.test(expectedPin)) {
     return false;
   }
 
