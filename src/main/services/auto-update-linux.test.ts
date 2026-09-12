@@ -68,7 +68,7 @@ vi.mock('./fs-utils', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, getStatus } from './auto-update-service';
+import { applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, getStatus, _setStatusForTesting } from './auto-update-service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -102,8 +102,9 @@ describe.skipIf(process.platform !== 'linux')('Linux update apply', () => {
 
     it('installs a ready update through execFileSync without shell interpolation', async () => {
       mockPathExists.mockImplementation(async () => true);
+      _setStatusForTesting(readyStatus);
 
-      await applyUpdate(readyStatus);
+      await applyUpdate();
 
       expect(mockExecFileSync).toHaveBeenCalledWith(
         'pkexec',
@@ -129,8 +130,9 @@ describe.skipIf(process.platform !== 'linux')('Linux update apply', () => {
 
     it('installs a ready update through execFileSync without shell interpolation', async () => {
       mockPathExists.mockImplementation(async () => true);
+      _setStatusForTesting(readyStatus);
 
-      await applyUpdateOnQuit(readyStatus);
+      await applyUpdateOnQuit();
 
       expect(mockExecFileSync).toHaveBeenCalledWith(
         'pkexec',

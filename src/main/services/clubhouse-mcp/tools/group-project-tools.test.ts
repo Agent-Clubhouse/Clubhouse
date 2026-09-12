@@ -478,6 +478,7 @@ describe('GroupProjectTools', () => {
 
   it('shoulder_tap delivers message to target agent', async () => {
     const project = await groupProjectRegistry.create('TapDelivery');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
@@ -515,6 +516,7 @@ describe('GroupProjectTools', () => {
 
   it('broadcast delivers message to all agents except sender', async () => {
     const project = await groupProjectRegistry.create('BroadcastProj');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
@@ -691,6 +693,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent returns error for non-member agent', async () => {
     const project = await groupProjectRegistry.create('WakeProj');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -710,6 +713,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent returns already_running when agent is alive', async () => {
     const project = await groupProjectRegistry.create('WakeRunning');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -742,6 +746,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent spawns sleeping agent and broadcasts waking state', async () => {
     const project = await groupProjectRegistry.create('WakeSpawn');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     // Mock project store and agent config for wake
     mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
@@ -790,6 +795,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent can resume the target agent session', async () => {
     const project = await groupProjectRegistry.create('WakeResume');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
     mockListDurable.mockResolvedValue([
@@ -843,6 +849,7 @@ describe('GroupProjectTools', () => {
 
   it('wake_agent broadcasts wake_failed when spawn fails', async () => {
     const project = await groupProjectRegistry.create('WakeFail');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     mockProjectList.mockResolvedValue([{ id: 'proj_1', path: '/test/proj', name: 'Test' }]);
     mockListDurable.mockResolvedValue([
@@ -882,6 +889,7 @@ describe('GroupProjectTools', () => {
 
   it('sleep_agent stops a connected member via agent lifecycle', async () => {
     const project = await groupProjectRegistry.create('SleepAgent');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     agentRegistry.register('agent-2', { projectPath: '/test/proj', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -917,6 +925,7 @@ describe('GroupProjectTools', () => {
 
   it('sleep_agent reports already_sleeping for a sleeping member', async () => {
     const project = await groupProjectRegistry.create('AlreadySleep');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -945,6 +954,7 @@ describe('GroupProjectTools', () => {
 
   it('toggle_polling(enabled=true) persists the setting and injects start to connected members', async () => {
     const project = await groupProjectRegistry.create('PollToggle');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -981,7 +991,7 @@ describe('GroupProjectTools', () => {
 
   it('toggle_polling without enabled flips the current value and injects stop when turning off', async () => {
     const project = await groupProjectRegistry.create('PollFlip');
-    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true, admins: ['agent-1'] } });
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -1040,6 +1050,7 @@ describe('GroupProjectTools', () => {
 
   it('nudge_polling injects a nudge into a connected agent without changing the setting', async () => {
     const project = await groupProjectRegistry.create('PollNudge');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
     mockIsRunning.mockImplementation((id: string) => id === 'agent-2');
@@ -1074,6 +1085,7 @@ describe('GroupProjectTools', () => {
 
   it('nudge_polling returns error for sleeping agent', async () => {
     const project = await groupProjectRegistry.create('NudgeSleep');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id, targetKind: 'group-project', label: 'NS', agentName: 'robin', targetName: 'NudgeSleep',
@@ -1209,6 +1221,7 @@ describe('GroupProjectTools', () => {
 
   it('clear_topic deletes a topic and returns result', async () => {
     const project = await groupProjectRegistry.create('ClearProj');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1242,6 +1255,7 @@ describe('GroupProjectTools', () => {
 
   it('clear_topic rejects system topic', async () => {
     const project = await groupProjectRegistry.create('SysProj');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1261,6 +1275,7 @@ describe('GroupProjectTools', () => {
 
   it('delete_messages removes specific messages by ID', async () => {
     const project = await groupProjectRegistry.create('DelMsgProj');
+    await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
 
     bindingManager.bind('agent-1', {
       targetId: project.id,
@@ -1368,9 +1383,46 @@ describe('GroupProjectTools', () => {
     });
   });
 
+  describe('call-time admin check for privileged tools', () => {
+    it('rejects all ten unchecked privileged suffixes for non-admin callers', async () => {
+      const project = await groupProjectRegistry.create('AdminCheckProj');
+      await groupProjectRegistry.update(project.id, { metadata: { admins: ['someone-else'] } });
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'ACP', agentName: 'member', targetName: 'AdminCheckProj',
+      });
+      // Also bind agent-2 so we can pass it to tools that require target_agent_id
+      bindingManager.bind('agent-2', {
+        targetId: project.id, targetKind: 'group-project', label: 'ACP', agentName: 'other', targetName: 'AdminCheckProj',
+      });
+
+      const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'AdminCheckProj' });
+
+      const toolTests = [
+        { suffix: 'wake_agent', args: { target_agent_id: 'agent-2' } },
+        { suffix: 'broadcast', args: { message: 'test' } },
+        { suffix: 'shoulder_tap', args: { target_agent_id: 'agent-2', message: 'test' } },
+        { suffix: 'sleep_agent', args: { target_agent_id: 'agent-2' } },
+        { suffix: 'toggle_polling', args: { enabled: true } },
+        { suffix: 'nudge_polling', args: { target_agent_id: 'agent-2' } },
+        { suffix: 'clear_topic', args: { topic: 'test' } },
+        { suffix: 'clear_agent', args: { target_agent_id: 'agent-2' } },
+        { suffix: 'compact_agent', args: { target_agent_id: 'agent-2' } },
+        { suffix: 'delete_messages', args: { topic: 'test', message_ids: ['msg1'] } },
+      ];
+
+      for (const test of toolTests) {
+        const toolName = buildToolName(binding, test.suffix);
+        const result = await callTool('agent-1', toolName, test.args);
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('admin');
+      }
+    });
+  });
+
   describe('clear_agent', () => {
     it('injects /clear into connected agent PTY', async () => {
       const project = await groupProjectRegistry.create('ClearProj');
+      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
       bindingManager.bind('agent-1', {
         targetId: project.id,
         targetKind: 'group-project',
@@ -1402,6 +1454,7 @@ describe('GroupProjectTools', () => {
 
     it('returns error when target is not a member', async () => {
       const project = await groupProjectRegistry.create('ClearProj2');
+      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
       });
@@ -1416,6 +1469,7 @@ describe('GroupProjectTools', () => {
 
     it('returns error when target is sleeping', async () => {
       const project = await groupProjectRegistry.create('ClearProj3');
+      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
       });
@@ -1436,6 +1490,7 @@ describe('GroupProjectTools', () => {
   describe('compact_agent', () => {
     it('injects /compact into connected agent PTY', async () => {
       const project = await groupProjectRegistry.create('CompactProj');
+      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
       bindingManager.bind('agent-1', {
         targetId: project.id,
         targetKind: 'group-project',
@@ -1467,6 +1522,7 @@ describe('GroupProjectTools', () => {
 
     it('returns error when target is sleeping', async () => {
       const project = await groupProjectRegistry.create('CompactProj2');
+      await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
       bindingManager.bind('agent-1', {
         targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin',
       });

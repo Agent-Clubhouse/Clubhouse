@@ -80,6 +80,50 @@ describe('dynamicImportModule', () => {
       expect(createObjectURL).not.toHaveBeenCalled();
     });
 
+    it('keeps production protocol URLs intact for modules with sibling imports', async () => {
+      setOrigin('file:');
+      setClubhouse(vi.fn().mockResolvedValue(FAKE_SOURCE));
+      const siblingUrl = buildPluginModuleUrl('/Users/me/.clubhouse/plugins/automations/dist/util.js', 1780813375562);
+      const fakeModule: PluginModule = {};
+
+      const mod = await loadModule();
+      const rawImport = vi.spyOn(mod._internals, 'rawImport').mockResolvedValue(fakeModule);
+
+      const result = await mod.dynamicImportModule(siblingUrl);
+
+      expect(result).toBe(fakeModule);
+      expect(rawImport).toHaveBeenCalledWith(siblingUrl);
+      expect(getLoadModuleSource()).not.toHaveBeenCalled();
+    });
+
+    it('passes external specifiers through unchanged at the packaged origin', async () => {
+      setOrigin('file:');
+      const externalSpecifier = 'https://cdn.example.test/plugin-util.js';
+      const fakeModule: PluginModule = {};
+
+      const mod = await loadModule();
+      const rawImport = vi.spyOn(mod._internals, 'rawImport').mockResolvedValue(fakeModule);
+
+      const result = await mod.dynamicImportModule(externalSpecifier);
+
+      expect(result).toBe(fakeModule);
+      expect(rawImport).toHaveBeenCalledWith(externalSpecifier);
+    });
+
+    it('passes bare specifiers through unchanged at the packaged origin', async () => {
+      setOrigin('file:');
+      const bareSpecifier = '@example/plugin-util';
+      const fakeModule: PluginModule = {};
+
+      const mod = await loadModule();
+      const rawImport = vi.spyOn(mod._internals, 'rawImport').mockResolvedValue(fakeModule);
+
+      const result = await mod.dynamicImportModule(bareSpecifier);
+
+      expect(result).toBe(fakeModule);
+      expect(rawImport).toHaveBeenCalledWith(bareSpecifier);
+    });
+
     it('falls back to IPC + blob when the cross-origin protocol import fails', async () => {
       setOrigin('http:');
       setClubhouse(vi.fn().mockResolvedValue(FAKE_SOURCE));

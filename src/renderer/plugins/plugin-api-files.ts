@@ -7,6 +7,19 @@ import { isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectSto
 
 /** Global counter for unique file watch subscription IDs. */
 let _watchIdCounter = 0;
+let _watchSubscriptionIdCounter = 0;
+
+interface SharedWatchRegistration {
+  watchId: string;
+  subscribers: Map<number, (events: import('../../shared/plugin-types').FileEvent[]) => void>;
+  listener: ((event: unknown, data: { watchId: string; events: import('../../shared/plugin-types').FileEvent[] }) => void) | null;
+}
+
+const projectWatchRegistry = new Map<string, SharedWatchRegistration>();
+
+function getProjectWatchKey(projectPath: string, glob: string): string {
+  return `${projectPath}:${glob}`;
+}
 
 export function resolvePath(projectPath: string, relativePath: string): string {
   // Normalize: join project path with relative path, then check for traversal
@@ -259,26 +272,46 @@ export function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): F
       if (!hasPermission(manifest, 'files.watch')) {
         throw new Error(`Plugin '${ctx.pluginId}' requires 'files.watch' permission to use api.files.watch()`);
       }
-      const watchId = `plugin:${ctx.pluginId}:${++_watchIdCounter}`;
-      const fullGlob = projectPath ? `${projectPath}/${glob}` : glob;
+      const key = getProjectWatchKey(projectPath, glob);
+      let registration = projectWatchRegistry.get(key);
 
-      // Start the watch on the main process
-      window.clubhouse.file.watchStart(watchId, fullGlob).catch((err: Error) => {
-        rendererLog(ctx.pluginId, 'error', `Failed to start file watch: ${err.message}`);
-      });
+      if (!registration) {
+        const watchId = `plugin:${ctx.pluginId}:${++_watchIdCounter}`;
+        const fullGlob = `${projectPath}/${glob}`;
+        const handler = (_event: unknown, data: { watchId: string; events: import('../../shared/plugin-types').FileEvent[] }) => {
+          if (data.watchId !== watchId) return;
+          for (const entry of registration!.subscribers.values()) {
+            entry(data.events);
+          }
+        };
 
-      // Listen for events
-      const handler = (_event: unknown, data: { watchId: string; events: import('../../shared/plugin-types').FileEvent[] }) => {
-        if (data.watchId === watchId) {
-          callback(data.events);
-        }
-      };
-      window.clubhouse.file.onWatchEvent(handler);
+        registration = {
+          watchId,
+          subscribers: new Map(),
+          listener: handler,
+        };
+
+        projectWatchRegistry.set(key, registration);
+        window.clubhouse.file.watchStart(watchId, fullGlob).catch((err: Error) => {
+          rendererLog(ctx.pluginId, 'error', `Failed to start file watch: ${err.message}`);
+        });
+        window.clubhouse.file.onWatchEvent(handler);
+      }
+
+      const subscriptionId = ++_watchSubscriptionIdCounter;
+      registration.subscribers.set(subscriptionId, callback);
 
       return {
         dispose() {
-          window.clubhouse.file.offWatchEvent(handler);
-          window.clubhouse.file.watchStop(watchId).catch(() => {});
+          if (!registration || !registration.subscribers.has(subscriptionId)) return;
+          registration.subscribers.delete(subscriptionId);
+          if (registration.subscribers.size === 0) {
+            if (registration.listener) {
+              window.clubhouse.file.offWatchEvent(registration.listener);
+            }
+            projectWatchRegistry.delete(key);
+            window.clubhouse.file.watchStop(registration.watchId).catch(() => {});
+          }
         },
       };
     },
