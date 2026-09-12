@@ -18,9 +18,10 @@ describe('fix-node-pty darwin patch', () => {
     const chmodCalls: Array<[string, number]> = [];
     const fakeFs = {
       existsSync: (target: string) => {
-      const helper = String(target);
+        const helper = String(target);
         const normalizedHelper = helper.replaceAll('\\', '/');
-        return normalizedHelper.includes('/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper') || normalizedHelper.includes('/node_modules/node-pty/prebuilds/darwin-x64/spawn-helper');
+        return normalizedHelper.includes('/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper')
+          || normalizedHelper.includes('/node_modules/node-pty/prebuilds/darwin-x64/spawn-helper');
       },
       chmodSync: (target: string, mode: number) => {
         chmodCalls.push([String(target), Number(mode)]);
