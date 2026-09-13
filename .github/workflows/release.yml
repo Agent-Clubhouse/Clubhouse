@@ -269,11 +269,57 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Authenticate to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Azure Trusted Signing client tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $toolsDir = Join-Path $env:RUNNER_TEMP "trusted-signing-tools"
+          New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+
+          # Fetch nuget.exe and use it to pull down the Trusted Signing dlib
+          # (the plugin signtool.exe needs to talk to the Trusted Signing
+          # service instead of a local certificate store).
+          $nugetPath = Join-Path $toolsDir "nuget.exe"
+          Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile $nugetPath
+          & $nugetPath install Microsoft.ArtifactSigning.Client -OutputDirectory $toolsDir -NonInteractive -NoCache
+
+          $dlib = Get-ChildItem -Path $toolsDir -Recurse -Filter "Azure.CodeSigning.Dlib.dll" |
+            Where-Object { $_.FullName -match "\\x64\\" } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $dlib) {
+            Write-Error "Could not locate Azure.CodeSigning.Dlib.dll after installing Microsoft.ArtifactSigning.Client"
+            exit 1
+          }
+
+          # The Windows SDK (with signtool.exe) already ships on this runner image.
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" |
+            Where-Object { $_.FullName -match "\\x64\\" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) {
+            Write-Error "Could not locate signtool.exe from the Windows SDK"
+            exit 1
+          }
+
+          $metadataPath = Join-Path $toolsDir "metadata.json"
+          @{
+            Endpoint               = "https://wus2.codesigning.azure.net/"
+            CodeSigningAccountName = "Clubhouse-Win-Signing"
+            CertificateProfileName = "clubhouse-win-codesign"
+          } | ConvertTo-Json | Set-Content -Path $metadataPath
+
+          echo "AZURE_SIGNTOOL_PATH=$signtool" >> $env:GITHUB_ENV
+          echo "AZURE_TRUSTED_SIGNING_DLIB=$dlib" >> $env:GITHUB_ENV
+          echo "AZURE_TRUSTED_SIGNING_METADATA=$metadataPath" >> $env:GITHUB_ENV
+
       - name: Build Windows installer
-        env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: npx electron-forge make --arch=${{ matrix.arch }}
 
       - name: Verify Squirrel payload signatures
