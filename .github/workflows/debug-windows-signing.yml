@@ -21,9 +21,15 @@ jobs:
     runs-on: windows-2022
     environment: release
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Authenticate to Azure
         uses: azure/login@v3
@@ -154,26 +160,32 @@ jobs:
             Write-Host "All concurrent signtool.exe invocations succeeded."
           }
 
-      - name: Sign a large real PE file (same size ballpark as the packaged Clubhouse.exe)
+      - name: Package the real app (no signing involved) to get the real Clubhouse.exe
+        run: npx electron-forge package --arch=x64
+
+      - name: Sign a COPY of the real packaged Clubhouse.exe directly (bypassing Squirrel)
         shell: pwsh
         run: |
-          # The prior two tests used a tiny notepad.exe copy, which succeeded
-          # both singly and concurrently — ruling out an Azure/auth problem and
-          # a credential-cache race. The one thing neither test covered is that
-          # the actual file Squirrel failed to sign is the packaged Clubhouse.exe,
-          # a full Electron binary (100+MB), not a small system exe. node.exe
-          # (already on PATH via actions/setup-node) is a real, legitimately
-          # large PE with no extra network download needed — sign that instead
-          # to see if file size/duration is what's actually breaking things.
-          $nodeExe = (Get-Command node).Source
-          $size = (Get-Item $nodeExe).Length
-          Write-Host "node.exe path: $nodeExe"
-          Write-Host "node.exe size: $([math]::Round($size / 1MB, 1)) MB"
+          # Every synthetic-file test so far (small file, 3 concurrent small files,
+          # an 83MB real node.exe) succeeded. A follow-up that tried to fabricate a
+          # ~200MB file by appending random bytes was invalid — signtool rejected it
+          # locally as a corrupt PE (0x800700C1 / badexeformat) before ever reaching
+          # Azure, which was a bug in that test, not evidence of anything. Use the
+          # ACTUAL packaged Clubhouse.exe instead: no synthetic files, real size,
+          # real PE structure.
+          $realExe = Get-ChildItem -Path "out" -Recurse -Filter "Clubhouse.exe" | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $realExe) {
+            Write-Error "Could not find the packaged Clubhouse.exe under out/"
+            exit 1
+          }
+          $size = (Get-Item $realExe).Length
+          Write-Host "Real Clubhouse.exe path: $realExe"
+          Write-Host "Real Clubhouse.exe size: $([math]::Round($size / 1MB, 1)) MB"
 
-          $testFile = Join-Path $env:RUNNER_TEMP "signing-large-file-test.exe"
-          Copy-Item -Path $nodeExe -Destination $testFile -Force
+          $testFile = Join-Path $env:RUNNER_TEMP "signing-real-clubhouse-test.exe"
+          Copy-Item -Path $realExe -Destination $testFile -Force
 
-          Write-Host "Invoking signtool.exe directly against the large node.exe..."
+          Write-Host "Invoking signtool.exe directly against a copy of the real Clubhouse.exe..."
           Write-Host "----------------------------------------------------------------------"
           $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -192,78 +204,10 @@ jobs:
           Write-Host "signtool.exe exit code: $exitCode (took $($sw.Elapsed.TotalSeconds)s)"
 
           if ($exitCode -ne 0) {
-            Write-Error "Signing the large real electron.exe failed directly (outside Squirrel) with exit code $exitCode — this reproduces the failure via file size/shape, not concurrency or auth."
+            Write-Error "Signing a copy of the REAL Clubhouse.exe failed directly (outside Squirrel) with exit code $exitCode — this is real evidence of a genuine signing problem, not a synthetic-test artifact."
             exit $exitCode
           }
+          Write-Host "Direct signing of the real Clubhouse.exe succeeded. Now running the REAL electron-forge make (invokes Squirrel's own signing pass) to see if it reproduces beta.10/11's failure with today's forge.config.ts."
 
-          Write-Host "Large-file signing succeeded too. Now reproducing Squirrel's ACTUAL real-world sizes: the last successful"
-          Write-Host "release's win32 Setup.exe was ~160-170MB, and the packaged app exe is bigger still — meaning TWO of the"
-          Write-Host "three files Squirrel signs concurrently are huge, not just one. Pad copies of node.exe with appended"
-          Write-Host "overlay bytes (valid for Authenticode — this is literally how Setup.exe's own zip-payload-appended-to-stub"
-          Write-Host "bootstrapper works) to ~220MB and ~170MB, plus a small file, and sign all three concurrently."
-
-          function Pad-File($source, $dest, $targetBytes) {
-            Copy-Item -Path $source -Destination $dest -Force
-            $current = (Get-Item $dest).Length
-            $toAdd = $targetBytes - $current
-            if ($toAdd -gt 0) {
-              $stream = [System.IO.File]::Open($dest, [System.IO.FileMode]::Append)
-              try {
-                $bufSize = 16MB
-                $buf = New-Object byte[] $bufSize
-                (New-Object System.Random).NextBytes($buf)
-                $remaining = $toAdd
-                while ($remaining -gt 0) {
-                  $chunk = [Math]::Min($bufSize, $remaining)
-                  $stream.Write($buf, 0, $chunk)
-                  $remaining -= $chunk
-                }
-              } finally {
-                $stream.Close()
-              }
-            }
-          }
-
-          $largeFile2 = Join-Path $env:RUNNER_TEMP "signing-mixed-large-220mb.exe"
-          Pad-File $nodeExe $largeFile2 (220 * 1MB)
-          $largeFile3 = Join-Path $env:RUNNER_TEMP "signing-mixed-large-170mb.exe"
-          Pad-File $nodeExe $largeFile3 (170 * 1MB)
-          $smallFile = Join-Path $env:RUNNER_TEMP "signing-mixed-small.exe"
-          Copy-Item -Path "C:\Windows\System32\notepad.exe" -Destination $smallFile -Force
-
-          Write-Host "Padded file sizes: $([math]::Round((Get-Item $largeFile2).Length / 1MB, 1)) MB, $([math]::Round((Get-Item $largeFile3).Length / 1MB, 1)) MB, $([math]::Round((Get-Item $smallFile).Length / 1MB, 1)) MB"
-
-          $allFiles = @($largeFile2, $largeFile3, $smallFile)
-
-          $signtool = $env:AZURE_SIGNTOOL_PATH
-          $dlib = $env:AZURE_TRUSTED_SIGNING_DLIB
-          $metadata = $env:AZURE_TRUSTED_SIGNING_METADATA
-
-          $jobs = foreach ($f in $allFiles) {
-            Start-Job -ScriptBlock {
-              param($signtool, $dlib, $metadata, $file)
-              $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
-              $out = & $signtool sign /v /fd SHA256 /tr "http://timestamp.acs.microsoft.com" /td SHA256 /dlib "$dlib" /dmdf "$metadata" "$file" 2>&1
-              $sw2.Stop()
-              [PSCustomObject]@{ File = $file; ExitCode = $LASTEXITCODE; Seconds = $sw2.Elapsed.TotalSeconds; Output = ($out | Out-String) }
-            } -ArgumentList $signtool, $dlib, $metadata, $f
-          }
-
-          $results2 = $jobs | Wait-Job | Receive-Job
-          $jobs | Remove-Job
-
-          $anyFailed2 = $false
-          foreach ($r in $results2) {
-            Write-Host "----------------------------------------------------------------------"
-            Write-Host "File: $($r.File)"
-            Write-Host "Exit code: $($r.ExitCode) (took $($r.Seconds)s)"
-            Write-Host $r.Output
-            if ($r.ExitCode -ne 0) { $anyFailed2 = $true }
-          }
-
-          if ($anyFailed2) {
-            Write-Error "Concurrent signing of two ~200MB files + one small file reproduced a failure — this matches Squirrel's real-world signing pattern by size."
-            exit 1
-          } else {
-            Write-Host "Concurrent signing at realistic Setup.exe/Clubhouse.exe sizes also succeeded."
-          }
+      - name: Run the REAL electron-forge make (reproduces Squirrel's own signing pass exactly)
+        run: npx electron-forge make --arch=x64
