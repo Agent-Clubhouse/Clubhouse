@@ -10,8 +10,7 @@ import { WebpackPlugin } from '@electron-forge/plugin-webpack';
 import { FuseV1Options, FuseVersion, getCurrentFuseWire } from '@electron/fuses';
 import path from 'path';
 import fs from 'fs';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import os from 'os';
 
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
@@ -38,39 +37,47 @@ function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string)
   }
 }
 
-const execFileAsync = promisify(execFile);
+// electron-winstaller's "modern" windowsSign.hookFunction path (used prior to
+// this fix) makes @electron/windows-sign compile a Node "Single Executable
+// Application" binary that stands in for signtool.exe, since Squirrel's own
+// .NET Squirrel.Update.exe can only shell out to a real executable, never to
+// JS directly. That SEA binary is freshly built and unsigned on every run
+// (its own Node code-signature is stripped, then a blob is injected via
+// postject) — exactly the profile Windows Defender's CI image flags and
+// kills, which is what turned into the generic "Failed to sign" / exit
+// 0xFFFFFFFF failures on beta.10.
+//
+// We don't need any of that JS-hook machinery: Trusted Signing only needs
+// extra signtool.exe command-line flags (/dlib, /dmdf), which the "legacy"
+// signWithParams option forwards verbatim to a real signtool.exe. The
+// caveat is that signWithParams still signs with electron-winstaller's own
+// *bundled* vendor/signtool.exe, which predates Trusted Signing and doesn't
+// understand /dlib — so we point vendorDirectory at a copy of that vendor
+// folder with signtool.exe swapped for the real Windows SDK one the release
+// workflow already locates (see .github/workflows/release.yml).
+function prepareTrustedSigningVendorDir(realSigntoolPath: string): string {
+  const winstallerVendorDir = path.join(__dirname, 'node_modules', 'electron-winstaller', 'vendor');
+  const vendorDir = path.join(os.tmpdir(), 'clubhouse-winstaller-vendor');
+  fs.rmSync(vendorDir, { recursive: true, force: true });
+  fs.cpSync(winstallerVendorDir, vendorDir, { recursive: true });
+  fs.copyFileSync(realSigntoolPath, path.join(vendorDir, 'signtool.exe'));
+  return vendorDir;
+}
 
-// Signs each file Squirrel produces (the packaged app exe, Update.exe, and
-// Setup.exe) against Azure Trusted Signing. @electron/windows-sign has no
-// built-in Trusted Signing support and its generic `signtool /a /sm` only
-// looks at the local machine certificate store, which is empty on CI
-// runners — so we bypass it with a hookFunction that shells out to the real
-// Windows SDK signtool.exe with the Trusted Signing dlib and metadata file
-// set up by the release workflow (see .github/workflows/release.yml).
 const windowsSignConfig =
   process.env.AZURE_SIGNTOOL_PATH &&
   process.env.AZURE_TRUSTED_SIGNING_DLIB &&
   process.env.AZURE_TRUSTED_SIGNING_METADATA
     ? {
-        windowsSign: {
-          hookFunction: async (fileToSign: string) => {
-            await execFileAsync(process.env.AZURE_SIGNTOOL_PATH as string, [
-              'sign',
-              '/v',
-              '/fd',
-              'SHA256',
-              '/tr',
-              'http://timestamp.acs.microsoft.com',
-              '/td',
-              'SHA256',
-              '/dlib',
-              process.env.AZURE_TRUSTED_SIGNING_DLIB as string,
-              '/dmdf',
-              process.env.AZURE_TRUSTED_SIGNING_METADATA as string,
-              fileToSign,
-            ]);
-          },
-        },
+        vendorDirectory: prepareTrustedSigningVendorDir(process.env.AZURE_SIGNTOOL_PATH),
+        signWithParams: [
+          '/v',
+          '/fd', 'SHA256',
+          '/tr', 'http://timestamp.acs.microsoft.com',
+          '/td', 'SHA256',
+          '/dlib', `"${process.env.AZURE_TRUSTED_SIGNING_DLIB}"`,
+          '/dmdf', `"${process.env.AZURE_TRUSTED_SIGNING_METADATA}"`,
+        ].join(' '),
       }
     : {};
 
