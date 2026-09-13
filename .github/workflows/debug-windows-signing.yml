@@ -21,15 +21,9 @@ jobs:
     runs-on: windows-2022
     environment: release
     steps:
-      - uses: actions/checkout@v7
-
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
-
-      - name: Install dependencies (to get the real win32 electron.exe)
-        run: npm ci
 
       - name: Authenticate to Azure
         uses: azure/login@v3
@@ -160,30 +154,26 @@ jobs:
             Write-Host "All concurrent signtool.exe invocations succeeded."
           }
 
-      - name: Sign the real win32 electron.exe (same size/PE shape as the packaged Clubhouse.exe)
+      - name: Sign a large real PE file (same size ballpark as the packaged Clubhouse.exe)
         shell: pwsh
         run: |
           # The prior two tests used a tiny notepad.exe copy, which succeeded
           # both singly and concurrently — ruling out an Azure/auth problem and
           # a credential-cache race. The one thing neither test covered is that
           # the actual file Squirrel failed to sign is the packaged Clubhouse.exe,
-          # which IS Electron's own win32 binary (~150-200MB) after packaging.
-          # node_modules/electron/dist/electron.exe (fetched by npm ci on this
-          # windows-2022 runner) is that exact same binary before packager
-          # renames/re-resources it — so sign that directly to see if size/PE
-          # shape is what's actually breaking Azure Trusted Signing.
-          $electronExe = Join-Path (Get-Location) "node_modules\electron\dist\electron.exe"
-          if (-not (Test-Path $electronExe)) {
-            Write-Error "Could not find node_modules/electron/dist/electron.exe after npm ci"
-            exit 1
-          }
-          $size = (Get-Item $electronExe).Length
-          Write-Host "electron.exe size: $([math]::Round($size / 1MB, 1)) MB"
+          # a full Electron binary (100+MB), not a small system exe. node.exe
+          # (already on PATH via actions/setup-node) is a real, legitimately
+          # large PE with no extra network download needed — sign that instead
+          # to see if file size/duration is what's actually breaking things.
+          $nodeExe = (Get-Command node).Source
+          $size = (Get-Item $nodeExe).Length
+          Write-Host "node.exe path: $nodeExe"
+          Write-Host "node.exe size: $([math]::Round($size / 1MB, 1)) MB"
 
           $testFile = Join-Path $env:RUNNER_TEMP "signing-large-file-test.exe"
-          Copy-Item -Path $electronExe -Destination $testFile -Force
+          Copy-Item -Path $nodeExe -Destination $testFile -Force
 
-          Write-Host "Invoking signtool.exe directly against the real electron.exe..."
+          Write-Host "Invoking signtool.exe directly against the large node.exe..."
           Write-Host "----------------------------------------------------------------------"
           $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -212,7 +202,7 @@ jobs:
             Copy-Item -Path "C:\Windows\System32\notepad.exe" -Destination $n -Force
           }
           $largeFile2 = Join-Path $env:RUNNER_TEMP "signing-mixed-large.exe"
-          Copy-Item -Path $electronExe -Destination $largeFile2 -Force
+          Copy-Item -Path $nodeExe -Destination $largeFile2 -Force
           $allFiles = @($largeFile2) + $smallNames
 
           $signtool = $env:AZURE_SIGNTOOL_PATH
