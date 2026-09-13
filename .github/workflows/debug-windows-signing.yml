@@ -21,6 +21,16 @@ jobs:
     runs-on: windows-2022
     environment: release
     steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (to get the real win32 electron.exe)
+        run: npm ci
+
       - name: Authenticate to Azure
         uses: azure/login@v3
         with:
@@ -148,4 +158,92 @@ jobs:
             exit 1
           } else {
             Write-Host "All concurrent signtool.exe invocations succeeded."
+          }
+
+      - name: Sign the real win32 electron.exe (same size/PE shape as the packaged Clubhouse.exe)
+        shell: pwsh
+        run: |
+          # The prior two tests used a tiny notepad.exe copy, which succeeded
+          # both singly and concurrently — ruling out an Azure/auth problem and
+          # a credential-cache race. The one thing neither test covered is that
+          # the actual file Squirrel failed to sign is the packaged Clubhouse.exe,
+          # which IS Electron's own win32 binary (~150-200MB) after packaging.
+          # node_modules/electron/dist/electron.exe (fetched by npm ci on this
+          # windows-2022 runner) is that exact same binary before packager
+          # renames/re-resources it — so sign that directly to see if size/PE
+          # shape is what's actually breaking Azure Trusted Signing.
+          $electronExe = Join-Path (Get-Location) "node_modules\electron\dist\electron.exe"
+          if (-not (Test-Path $electronExe)) {
+            Write-Error "Could not find node_modules/electron/dist/electron.exe after npm ci"
+            exit 1
+          }
+          $size = (Get-Item $electronExe).Length
+          Write-Host "electron.exe size: $([math]::Round($size / 1MB, 1)) MB"
+
+          $testFile = Join-Path $env:RUNNER_TEMP "signing-large-file-test.exe"
+          Copy-Item -Path $electronExe -Destination $testFile -Force
+
+          Write-Host "Invoking signtool.exe directly against the real electron.exe..."
+          Write-Host "----------------------------------------------------------------------"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
+          & "$env:AZURE_SIGNTOOL_PATH" sign `
+            /v `
+            /fd SHA256 `
+            /tr "http://timestamp.acs.microsoft.com" `
+            /td SHA256 `
+            /dlib "$env:AZURE_TRUSTED_SIGNING_DLIB" `
+            /dmdf "$env:AZURE_TRUSTED_SIGNING_METADATA" `
+            "$testFile" 2>&1 | ForEach-Object { Write-Host $_ }
+
+          $exitCode = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "----------------------------------------------------------------------"
+          Write-Host "signtool.exe exit code: $exitCode (took $($sw.Elapsed.TotalSeconds)s)"
+
+          if ($exitCode -ne 0) {
+            Write-Error "Signing the large real electron.exe failed directly (outside Squirrel) with exit code $exitCode — this reproduces the failure via file size/shape, not concurrency or auth."
+            exit $exitCode
+          }
+
+          Write-Host "Large-file signing succeeded too. Now reproducing Squirrel's exact pattern: one large file + two small files, all concurrently."
+          $smallNames = 1..2 | ForEach-Object { Join-Path $env:RUNNER_TEMP "signing-mixed-small-$_.exe" }
+          foreach ($n in $smallNames) {
+            Copy-Item -Path "C:\Windows\System32\notepad.exe" -Destination $n -Force
+          }
+          $largeFile2 = Join-Path $env:RUNNER_TEMP "signing-mixed-large.exe"
+          Copy-Item -Path $electronExe -Destination $largeFile2 -Force
+          $allFiles = @($largeFile2) + $smallNames
+
+          $signtool = $env:AZURE_SIGNTOOL_PATH
+          $dlib = $env:AZURE_TRUSTED_SIGNING_DLIB
+          $metadata = $env:AZURE_TRUSTED_SIGNING_METADATA
+
+          $jobs = foreach ($f in $allFiles) {
+            Start-Job -ScriptBlock {
+              param($signtool, $dlib, $metadata, $file)
+              $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
+              $out = & $signtool sign /v /fd SHA256 /tr "http://timestamp.acs.microsoft.com" /td SHA256 /dlib "$dlib" /dmdf "$metadata" "$file" 2>&1
+              $sw2.Stop()
+              [PSCustomObject]@{ File = $file; ExitCode = $LASTEXITCODE; Seconds = $sw2.Elapsed.TotalSeconds; Output = ($out | Out-String) }
+            } -ArgumentList $signtool, $dlib, $metadata, $f
+          }
+
+          $results2 = $jobs | Wait-Job | Receive-Job
+          $jobs | Remove-Job
+
+          $anyFailed2 = $false
+          foreach ($r in $results2) {
+            Write-Host "----------------------------------------------------------------------"
+            Write-Host "File: $($r.File)"
+            Write-Host "Exit code: $($r.ExitCode) (took $($r.Seconds)s)"
+            Write-Host $r.Output
+            if ($r.ExitCode -ne 0) { $anyFailed2 = $true }
+          }
+
+          if ($anyFailed2) {
+            Write-Error "Mixed large+small concurrent signing reproduced a failure — this matches Squirrel's exact signing pattern."
+            exit 1
+          } else {
+            Write-Host "Mixed large+small concurrent signing also succeeded."
           }
