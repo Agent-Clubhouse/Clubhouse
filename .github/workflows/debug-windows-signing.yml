@@ -101,6 +101,51 @@ jobs:
             Write-Host "verify exit code: $LASTEXITCODE"
           } else {
             Write-Error "signtool.exe failed directly (outside Squirrel) with exit code $exitCode — see output above for the real error."
+            exit $exitCode
           }
 
-          exit $exitCode
+      - name: Sign three files concurrently (reproduce Squirrel's parallel ForEachAsync signing)
+        shell: pwsh
+        run: |
+          # Squirrel.Update.exe signs the packaged exe, Update.exe, and Setup.exe
+          # via Squirrel.Utility.ForEachAsync — i.e. several signtool.exe child
+          # processes launched in parallel, all authenticating against the same
+          # az-cli-backed Trusted Signing credential. AzureCliCredential's MSAL
+          # token cache is a single file on disk; concurrent readers/writers
+          # racing on that file is a known source of intermittent failures.
+          # This reproduces that pattern directly to check if it's the cause.
+          $names = 1..3 | ForEach-Object { Join-Path $env:RUNNER_TEMP "signing-concurrency-test-$_.exe" }
+          foreach ($n in $names) {
+            Copy-Item -Path "C:\Windows\System32\notepad.exe" -Destination $n -Force
+          }
+
+          $signtool = $env:AZURE_SIGNTOOL_PATH
+          $dlib = $env:AZURE_TRUSTED_SIGNING_DLIB
+          $metadata = $env:AZURE_TRUSTED_SIGNING_METADATA
+
+          $jobs = foreach ($n in $names) {
+            Start-Job -ScriptBlock {
+              param($signtool, $dlib, $metadata, $file)
+              $out = & $signtool sign /v /fd SHA256 /tr "http://timestamp.acs.microsoft.com" /td SHA256 /dlib "$dlib" /dmdf "$metadata" "$file" 2>&1
+              [PSCustomObject]@{ File = $file; ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }
+            } -ArgumentList $signtool, $dlib, $metadata, $n
+          }
+
+          $results = $jobs | Wait-Job | Receive-Job
+          $jobs | Remove-Job
+
+          $anyFailed = $false
+          foreach ($r in $results) {
+            Write-Host "----------------------------------------------------------------------"
+            Write-Host "File: $($r.File)"
+            Write-Host "Exit code: $($r.ExitCode)"
+            Write-Host $r.Output
+            if ($r.ExitCode -ne 0) { $anyFailed = $true }
+          }
+
+          if ($anyFailed) {
+            Write-Error "At least one concurrent signtool.exe invocation failed — this reproduces Squirrel's parallel-signing failure mode."
+            exit 1
+          } else {
+            Write-Host "All concurrent signtool.exe invocations succeeded."
+          }
