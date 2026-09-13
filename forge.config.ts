@@ -10,6 +10,8 @@ import { WebpackPlugin } from '@electron-forge/plugin-webpack';
 import { FuseV1Options, FuseVersion, getCurrentFuseWire } from '@electron/fuses';
 import path from 'path';
 import fs from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
@@ -36,22 +38,38 @@ function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string)
   }
 }
 
+const execFileAsync = promisify(execFile);
+
+// Signs each file Squirrel produces (the packaged app exe, Update.exe, and
+// Setup.exe) against Azure Trusted Signing. @electron/windows-sign has no
+// built-in Trusted Signing support and its generic `signtool /a /sm` only
+// looks at the local machine certificate store, which is empty on CI
+// runners — so we bypass it with a hookFunction that shells out to the real
+// Windows SDK signtool.exe with the Trusted Signing dlib and metadata file
+// set up by the release workflow (see .github/workflows/release.yml).
 const windowsSignConfig =
-  process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID && process.env.AZURE_SUBSCRIPTION_ID
+  process.env.AZURE_SIGNTOOL_PATH &&
+  process.env.AZURE_TRUSTED_SIGNING_DLIB &&
+  process.env.AZURE_TRUSTED_SIGNING_METADATA
     ? {
         windowsSign: {
-          timestampServer: 'http://timestamp.acs.microsoft.com',
-          hashes: ['sha256'],
-          signWithParams: [
-            '/fd',
-            'SHA256',
-            '/td',
-            'SHA256',
-            '/tr',
-            'http://timestamp.acs.microsoft.com',
-            '/a',
-            '/sm',
-          ],
+          hookFunction: async (fileToSign: string) => {
+            await execFileAsync(process.env.AZURE_SIGNTOOL_PATH as string, [
+              'sign',
+              '/v',
+              '/fd',
+              'SHA256',
+              '/tr',
+              'http://timestamp.acs.microsoft.com',
+              '/td',
+              'SHA256',
+              '/dlib',
+              process.env.AZURE_TRUSTED_SIGNING_DLIB as string,
+              '/dmdf',
+              process.env.AZURE_TRUSTED_SIGNING_METADATA as string,
+              fileToSign,
+            ]);
+          },
         },
       }
     : {};
