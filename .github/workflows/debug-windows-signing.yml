@@ -196,14 +196,44 @@ jobs:
             exit $exitCode
           }
 
-          Write-Host "Large-file signing succeeded too. Now reproducing Squirrel's exact pattern: one large file + two small files, all concurrently."
-          $smallNames = 1..2 | ForEach-Object { Join-Path $env:RUNNER_TEMP "signing-mixed-small-$_.exe" }
-          foreach ($n in $smallNames) {
-            Copy-Item -Path "C:\Windows\System32\notepad.exe" -Destination $n -Force
+          Write-Host "Large-file signing succeeded too. Now reproducing Squirrel's ACTUAL real-world sizes: the last successful"
+          Write-Host "release's win32 Setup.exe was ~160-170MB, and the packaged app exe is bigger still — meaning TWO of the"
+          Write-Host "three files Squirrel signs concurrently are huge, not just one. Pad copies of node.exe with appended"
+          Write-Host "overlay bytes (valid for Authenticode — this is literally how Setup.exe's own zip-payload-appended-to-stub"
+          Write-Host "bootstrapper works) to ~220MB and ~170MB, plus a small file, and sign all three concurrently."
+
+          function Pad-File($source, $dest, $targetBytes) {
+            Copy-Item -Path $source -Destination $dest -Force
+            $current = (Get-Item $dest).Length
+            $toAdd = $targetBytes - $current
+            if ($toAdd -gt 0) {
+              $stream = [System.IO.File]::Open($dest, [System.IO.FileMode]::Append)
+              try {
+                $bufSize = 16MB
+                $buf = New-Object byte[] $bufSize
+                (New-Object System.Random).NextBytes($buf)
+                $remaining = $toAdd
+                while ($remaining -gt 0) {
+                  $chunk = [Math]::Min($bufSize, $remaining)
+                  $stream.Write($buf, 0, $chunk)
+                  $remaining -= $chunk
+                }
+              } finally {
+                $stream.Close()
+              }
+            }
           }
-          $largeFile2 = Join-Path $env:RUNNER_TEMP "signing-mixed-large.exe"
-          Copy-Item -Path $nodeExe -Destination $largeFile2 -Force
-          $allFiles = @($largeFile2) + $smallNames
+
+          $largeFile2 = Join-Path $env:RUNNER_TEMP "signing-mixed-large-220mb.exe"
+          Pad-File $nodeExe $largeFile2 (220 * 1MB)
+          $largeFile3 = Join-Path $env:RUNNER_TEMP "signing-mixed-large-170mb.exe"
+          Pad-File $nodeExe $largeFile3 (170 * 1MB)
+          $smallFile = Join-Path $env:RUNNER_TEMP "signing-mixed-small.exe"
+          Copy-Item -Path "C:\Windows\System32\notepad.exe" -Destination $smallFile -Force
+
+          Write-Host "Padded file sizes: $([math]::Round((Get-Item $largeFile2).Length / 1MB, 1)) MB, $([math]::Round((Get-Item $largeFile3).Length / 1MB, 1)) MB, $([math]::Round((Get-Item $smallFile).Length / 1MB, 1)) MB"
+
+          $allFiles = @($largeFile2, $largeFile3, $smallFile)
 
           $signtool = $env:AZURE_SIGNTOOL_PATH
           $dlib = $env:AZURE_TRUSTED_SIGNING_DLIB
@@ -232,8 +262,8 @@ jobs:
           }
 
           if ($anyFailed2) {
-            Write-Error "Mixed large+small concurrent signing reproduced a failure — this matches Squirrel's exact signing pattern."
+            Write-Error "Concurrent signing of two ~200MB files + one small file reproduced a failure — this matches Squirrel's real-world signing pattern by size."
             exit 1
           } else {
-            Write-Host "Mixed large+small concurrent signing also succeeded."
+            Write-Host "Concurrent signing at realistic Setup.exe/Clubhouse.exe sizes also succeeded."
           }
