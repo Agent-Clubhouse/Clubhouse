@@ -10,7 +10,6 @@ import { WebpackPlugin } from '@electron-forge/plugin-webpack';
 import { FuseV1Options, FuseVersion, getCurrentFuseWire } from '@electron/fuses';
 import path from 'path';
 import fs from 'fs';
-import os from 'os';
 
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
@@ -37,50 +36,18 @@ function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string)
   }
 }
 
-// electron-winstaller's "modern" windowsSign.hookFunction path (used prior to
-// this fix) makes @electron/windows-sign compile a Node "Single Executable
-// Application" binary that stands in for signtool.exe, since Squirrel's own
-// .NET Squirrel.Update.exe can only shell out to a real executable, never to
-// JS directly. That SEA binary is freshly built and unsigned on every run
-// (its own Node code-signature is stripped, then a blob is injected via
-// postject) — exactly the profile Windows Defender's CI image flags and
-// kills, which is what turned into the generic "Failed to sign" / exit
-// 0xFFFFFFFF failures on beta.10.
-//
-// We don't need any of that JS-hook machinery: Trusted Signing only needs
-// extra signtool.exe command-line flags (/dlib, /dmdf), which the "legacy"
-// signWithParams option forwards verbatim to a real signtool.exe. The
-// caveat is that signWithParams still signs with electron-winstaller's own
-// *bundled* vendor/signtool.exe, which predates Trusted Signing and doesn't
-// understand /dlib — so we point vendorDirectory at a copy of that vendor
-// folder with signtool.exe swapped for the real Windows SDK one the release
-// workflow already locates (see .github/workflows/release.yml).
-function prepareTrustedSigningVendorDir(realSigntoolPath: string): string {
-  const winstallerVendorDir = path.join(__dirname, 'node_modules', 'electron-winstaller', 'vendor');
-  const vendorDir = path.join(os.tmpdir(), 'clubhouse-winstaller-vendor');
-  fs.rmSync(vendorDir, { recursive: true, force: true });
-  fs.cpSync(winstallerVendorDir, vendorDir, { recursive: true });
-  fs.copyFileSync(realSigntoolPath, path.join(vendorDir, 'signtool.exe'));
-  return vendorDir;
-}
-
-const windowsSignConfig =
-  process.env.AZURE_SIGNTOOL_PATH &&
-  process.env.AZURE_TRUSTED_SIGNING_DLIB &&
-  process.env.AZURE_TRUSTED_SIGNING_METADATA
-    ? {
-        vendorDirectory: prepareTrustedSigningVendorDir(process.env.AZURE_SIGNTOOL_PATH),
-        signWithParams: [
-          '/v',
-          '/fd', 'SHA256',
-          '/tr', 'http://timestamp.acs.microsoft.com',
-          '/td', 'SHA256',
-          '/dlib', `"${process.env.AZURE_TRUSTED_SIGNING_DLIB}"`,
-          '/dmdf', `"${process.env.AZURE_TRUSTED_SIGNING_METADATA}"`,
-        ].join(' '),
-      }
-    : {};
-
+// Squirrel does NOT sign anything at build time (see .github/workflows/release.yml,
+// which signs the produced Setup.exe directly with signtool afterward). Every prior
+// attempt at wiring signing through MakerSquirrel's own signing options — a
+// windowsSign.hookFunction (#1836), then signWithParams+vendorDirectory pointed at a
+// real signtool.exe (#1838) — failed identically: Squirrel.Update.exe's own
+// invocation of signtool.exe on the packaged app exe reliably fails with a generic
+// "Failed to sign" / exit 0xFFFFFFFF and no captured output, even though signing that
+// exact same file directly with the exact same signtool.exe/args/credentials outside
+// Squirrel succeeds in a few seconds every time (confirmed via a real end-to-end
+// electron-forge make run against the 228MB packaged Clubhouse.exe). The bug is
+// inside Squirrel.Update.exe's own signing invocation, not anything under our
+// control here — so Squirrel is no longer asked to sign at all.
 export const hardenedFuseValues = {
   [FuseV1Options.RunAsNode]: false,
   [FuseV1Options.EnableCookieEncryption]: true,
@@ -232,7 +199,6 @@ const config: ForgeConfig = {
       ...(fs.existsSync(path.resolve(__dirname, 'assets', 'icon.ico'))
         ? { setupIcon: path.resolve(__dirname, 'assets', 'icon.ico') }
         : {}),
-      ...windowsSignConfig,
     }),
     new MakerDeb({
       options: {

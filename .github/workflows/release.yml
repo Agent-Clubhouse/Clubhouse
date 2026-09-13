@@ -322,36 +322,65 @@ jobs:
       - name: Build Windows installer
         run: npx electron-forge make --arch=${{ matrix.arch }}
 
-      - name: Verify Squirrel payload signatures
+      # MakerSquirrel is not given any signing options (see forge.config.ts):
+      # Squirrel.Update.exe's own signing invocation reliably fails on the
+      # packaged app exe with a generic "Failed to sign" / exit 0xFFFFFFFF and
+      # no captured output — confirmed via a real electron-forge make run
+      # against the actual 228MB packaged Clubhouse.exe, even though signing
+      # that exact file directly with the exact same signtool.exe/args
+      # succeeds in a few seconds every time. So `make` here produces an
+      # UNSIGNED nupkg/Setup.exe, and we sign the standalone Setup.exe
+      # ourselves directly afterward — the same signtool invocation already
+      # proven reliable, just not routed through Squirrel.
+      #
+      # This intentionally leaves the packaged exe and Update.exe *inside*
+      # the nupkg unsigned for now: re-signing them would require unpacking,
+      # re-signing, repacking the nupkg, and regenerating the RELEASES file's
+      # hash/size to match, which risks silently breaking the auto-updater if
+      # done wrong. Signing Setup.exe — the file users actually download and
+      # run, and what SmartScreen evaluates on first run — is the fix that
+      # matters most and carries the least risk. Tracked as a follow-up.
+      - name: Sign the Windows installer (Setup.exe) directly
         shell: pwsh
         run: |
-          $nupkg = Get-ChildItem -Path out/make -Recurse -Filter "*.nupkg" | Select-Object -First 1
-          if (-not $nupkg) {
-            Write-Error "No .nupkg found in out/make"
+          $setupExe = Get-ChildItem -Path out/make -Recurse -Filter "*Setup*.exe" | Select-Object -First 1
+          if (-not $setupExe) {
+            Write-Error "No Setup exe found in out/make"
+            exit 1
+          }
+          Write-Host "Signing $($setupExe.FullName)..."
+
+          & "$env:AZURE_SIGNTOOL_PATH" sign `
+            /v `
+            /fd SHA256 `
+            /tr "http://timestamp.acs.microsoft.com" `
+            /td SHA256 `
+            /dlib "$env:AZURE_TRUSTED_SIGNING_DLIB" `
+            /dmdf "$env:AZURE_TRUSTED_SIGNING_METADATA" `
+            "$($setupExe.FullName)"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "signtool.exe failed to sign $($setupExe.FullName) with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+      - name: Verify installer signature
+        shell: pwsh
+        run: |
+          $setupExe = Get-ChildItem -Path out/make -Recurse -Filter "*Setup*.exe" | Select-Object -First 1
+          if (-not $setupExe) {
+            Write-Error "No Setup exe found in out/make"
             exit 1
           }
 
-          $extractDir = Join-Path $env:RUNNER_TEMP "clubhouse-squirrel-sign-check"
-          Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-          Expand-Archive -LiteralPath $nupkg.FullName -DestinationPath $extractDir -Force
-
-          $exeFiles = Get-ChildItem -Path $extractDir -Recurse -Filter "*.exe" | Select-Object -ExpandProperty FullName
-          if (-not $exeFiles) {
-            Write-Error "No .exe files found inside $($nupkg.Name)"
+          $signature = Get-AuthenticodeSignature -FilePath $setupExe.FullName
+          Write-Host "Checking $($setupExe.FullName) -> $($signature.Status)"
+          if ($signature.Status -ne 'Valid') {
+            Write-Error "Installer is not validly signed: $($setupExe.FullName) (Status: $($signature.Status))"
             exit 1
           }
 
-          foreach ($exe in $exeFiles) {
-            $signature = Get-AuthenticodeSignature -FilePath $exe
-            Write-Host "Checking $exe -> $($signature.Status)"
-            if ($signature.Status -ne 'Valid') {
-              Write-Error "Unsigned executable found in nupkg: $exe (Status: $($signature.Status))"
-              exit 1
-            }
-          }
-
-          Write-Host "All EXEs in the Squirrel payload are validly signed."
+          Write-Host "Windows installer is validly signed."
 
       - name: Compute artifact hashes
         id: hash
