@@ -32,6 +32,7 @@ const builtinHostImportAllowlist = new Set([
   'src/renderer/plugins/builtin/files/MonacoEditor.ts',
   'src/renderer/plugins/builtin/git/GitCanvasWidget.tsx',
   'src/renderer/plugins/builtin/git/remote-git.ts',
+  'src/renderer/plugins/builtin/goobers/main.ts',
   'src/renderer/plugins/builtin/group-project/GroupProjectCanvasWidget.tsx',
   'src/renderer/plugins/builtin/group-project/GroupProjectPanelSidebar.tsx',
   'src/renderer/plugins/builtin/group-project/main.ts',

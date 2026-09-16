@@ -21,6 +21,8 @@ import { manifest as agentQueueManifest } from './agent-queue/manifest';
 import * as agentQueueModule from './agent-queue/main';
 import { manifest as stickyNoteManifest } from './sticky-note/manifest';
 import * as stickyNoteModule from './sticky-note/main';
+import { manifest as goobersManifest } from './goobers/manifest';
+import * as goobersModule from './goobers/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -33,6 +35,12 @@ export interface ExperimentalFlags {
   agentQueue?: boolean;
   goobers?: boolean;
   [key: string]: boolean | undefined;
+}
+
+/** True on the platform Goobers deliberately does not support (spec §2.6, §7.8). */
+function isUnsupportedGoobersPlatform(): boolean {
+  const w = typeof window !== 'undefined' ? (window as unknown as { clubhouse?: { platform?: string } }) : undefined;
+  return w?.clubhouse?.platform === 'win32';
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
@@ -63,6 +71,12 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
 
   if (experimentalFlags.sessions) {
     plugins.push({ manifest: sessionsManifest, module: sessionsModule });
+  }
+
+  // Filtered at registration, not just gated in the service, so nothing
+  // half-appears on an unsupported platform (spec §7.8).
+  if (experimentalFlags.goobers && !isUnsupportedGoobersPlatform()) {
+    plugins.push({ manifest: goobersManifest, module: goobersModule });
   }
 
   return plugins;
