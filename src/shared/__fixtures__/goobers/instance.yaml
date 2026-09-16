@@ -1,0 +1,66 @@
+api: {}
+apiVersion: goobers.dev/v1alpha1
+# Per-capability credential grants. Each sources one capability from its own
+# token ref and overrides the repo token for that capability alone. agent:model
+# is Copilot model auth — a personal fine-grained PAT with "Copilot Requests:
+# read-only" and no repository access, injected as COPILOT_GITHUB_TOKEN into
+# agentic stages that declare the capability. A file ref is read fresh on each
+# resolve, so rotating the PAT is just overwriting the file's contents.
+credentials:
+- capability: agent:model
+  token:
+    file: /Users/cazzone/.goobers/copilot.pat
+externalTelemetry: {}
+kind: Instance
+portal:
+  brand: {}
+  support: {}
+  theme: {}
+# The target repository. Credentials are always a reference — never an inline
+# token (CFG-009 / SEC-010). A keychain ref resolves on demand, so the daemon
+# survives restarts and launchd supervision; an env ref would only ever see the
+# shell that launched `goobers up`. Seeded from the gh CLI login with:
+# security add-generic-password -U -s goobers/github -a "$(whoami)" -w "$(gh auth token)"
+repos:
+- name: Goobers
+  owner: Agent-Clubhouse
+  provider: github
+  token:
+    keychain: goobers/github
+- name: tabletop-sim
+  owner: C-Azzone416
+  provider: github
+  token:
+    keychain: goobers/github
+- name: Clubhouse
+  owner: Agent-Clubhouse
+  provider: github
+  token:
+    keychain: goobers/github
+# firstEnable: immediate (2026-09-12) lifts the default 7-day dry-run grace
+# window that automatic cleanup got on 2026-09-10 (its first-ever enable).
+# That window left retired recovery-inventory snapshots undeletable, so the
+# hard-coded 128-entry cap (cmd/goobers/recovery*.go) filled within 2 hours
+# and every clubhouse-merge-review run has failed since ~22:30 PDT on
+# 2026-09-10 (both its worktree stages collide seconds apart with no free
+# slot to release into). This also lifts the same grace window for the
+# broader worktree/telemetry retention sweep, which had ~3628/~3502
+# candidates queued — expected first-enable backlog, not new deletions.
+retention:
+  firstEnable: immediate
+runConditions:
+  # Raised 1->2 (2026-08-21): implementation runs (30-40min incl. ci-poll)
+  # were fully starving backlog-curation's 15-min cron under the old ceiling
+  # of 1. Disk headroom checked first (89%->83% full, 49GB->76GB free) after
+  # the 2026-08-08 disk-full incident that this same knob was previously
+  # tuned down to guard against.
+  #
+  # Raised 2->3 (2026-08-30): added merge-review (implementation: 2 +
+  # backlog-curation: 1 + merge-review: 1 = 4 possible concurrent demand);
+  # 3 gives merge-review/backlog-curation headroom to run alongside
+  # implementation without the instance cap being the sole bottleneck.
+  maxParallelRuns: 3
+runner: {}
+telemetry: {}
+webhook:
+  secret: {}

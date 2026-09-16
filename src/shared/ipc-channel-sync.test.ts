@@ -136,6 +136,10 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   // Protocol activation is pushed main→renderer via webContents.send when a
   // clubhouse:// link is opened while the app is running (see protocol-service.ts).
   'IPC.APP.PROTOCOL_ACTION',
+  // Goobers connection/daemon/health transitions and targeted cache
+  // invalidation are pushed main→renderer via broadcastToAllWindows (§6.2).
+  'IPC.GOOBERS.STATE_CHANGED',
+  'IPC.GOOBERS.DATA_INVALIDATED',
 ]);
 
 /**

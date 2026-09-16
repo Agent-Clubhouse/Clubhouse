@@ -512,4 +512,25 @@ export const IPC = {
     CHANGED: 'agent-queue:changed',
     TASK_CHANGED: 'agent-queue:task-changed',
   },
+  GOOBERS: {
+    GET_STATE: 'goobers:get-state',
+    VALIDATE_ROOT: 'goobers:validate-root',
+    CONNECT: 'goobers:connect',
+    DISCONNECT: 'goobers:disconnect',
+    LIST_GAGGLES: 'goobers:list-gaggles',
+    LIST_WORKFLOWS: 'goobers:list-workflows',
+    LIST_RUNS: 'goobers:list-runs',
+    GET_RUN: 'goobers:get-run',
+    GET_RUN_EVENTS: 'goobers:get-run-events',
+    GET_STAGE_ATTEMPTS: 'goobers:get-stage-attempts',
+    CANCEL_RUN: 'goobers:cancel-run',
+    DAEMON_STATUS: 'goobers:daemon-status',
+    DAEMON_START: 'goobers:daemon-start',
+    DAEMON_STOP: 'goobers:daemon-stop',
+    OPEN_RUN_DIR: 'goobers:open-run-dir',
+    /** Main → renderer broadcast: connection/daemon/health transitions. */
+    STATE_CHANGED: 'goobers:state-changed',
+    /** Main → renderer broadcast: targeted cache invalidation. */
+    DATA_INVALIDATED: 'goobers:data-invalidated',
+  },
 } as const;

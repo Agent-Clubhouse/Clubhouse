@@ -38,7 +38,7 @@ export function settingsChannels(key: string) {
 // Concrete definitions — importable from both main and renderer
 // ---------------------------------------------------------------------------
 
-import type { ClipboardSettings, EditorSettings, McpSettings, SecuritySettings } from './types';
+import type { ClipboardSettings, EditorSettings, GoobersSettings, McpSettings, SecuritySettings } from './types';
 
 export const CLIPBOARD_COMPAT_DEFAULT = false;
 export const isClipboardCompatPlatform = (platform: string): boolean => platform === 'win32';
@@ -65,4 +65,18 @@ export const SECURITY_SETTINGS: SettingsDefinition<SecuritySettings> = {
   key: 'security',
   filename: 'security-settings.json',
   defaults: { allowLocalFileWebviews: false },
+};
+
+// GOOBERS_SETTINGS is read by the main-process service at app startup —
+// before any renderer or plugin exists (spec §4.1). This must not become
+// plugin storage/settings, which only hydrates at plugin activation.
+export const GOOBERS_SETTINGS: SettingsDefinition<GoobersSettings> = {
+  key: 'goobers',
+  filename: 'goobers-settings.json',
+  defaults: {
+    instanceRoot: '',
+    binaryPath: 'goobers',
+    autoConnect: true,
+    manageDaemon: false,
+  },
 };
