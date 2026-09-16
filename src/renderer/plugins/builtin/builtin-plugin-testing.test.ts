@@ -135,9 +135,23 @@ describe('getBuiltinPlugins catch-all', () => {
   });
 
   it('includes goobers plugin when experimental flag is set (non-Windows)', () => {
-    const plugins = getBuiltinPlugins({ goobers: true });
-    const ids = plugins.map((p) => p.manifest.id);
-    expect(ids).toContain('goobers');
+    // Pin platform explicitly rather than relying on the ambient CI-runner
+    // platform (test/setup-renderer.ts mirrors process.platform, which is
+    // genuinely 'win32' on the Windows runner) — see the M1 lesson: a test
+    // asserting non-Windows behavior must not depend on which OS runs it.
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    Object.defineProperty(globalThis, 'window', {
+      value: { clubhouse: { platform: 'darwin' } },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const plugins = getBuiltinPlugins({ goobers: true });
+      const ids = plugins.map((p) => p.manifest.id);
+      expect(ids).toContain('goobers');
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'window', original);
+    }
   });
 
   it('does not include goobers on win32 even with the experimental flag set', () => {
