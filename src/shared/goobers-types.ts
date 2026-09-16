@@ -49,6 +49,16 @@ export interface GoobersConnectionState {
   instanceRoot: string | null;
   /** From `.instance-id` (never the sibling `instance-id` file — see §4.2). */
   rootIdentity: string | null;
+  /**
+   * Extension beyond §6.4's verbatim shape: `spec.instance.name`/
+   * `.environment` from the optional `config/manifest.yaml` (not in §14.2's
+   * file list — absence is normal). Lets the daemon-down screen show
+   * "Instance identity + config summary from disk" per §8.4/§12 even though
+   * the API hasn't been reachable yet. `null` when unavailable, never an
+   * error.
+   */
+  instanceName?: string | null;
+  instanceEnvironment?: string | null;
   daemon: GoobersDaemonStatus;
   connection: 'idle' | 'connecting' | 'connected' | 'degraded' | 'error';
   stream: 'live' | 'reconnecting' | 'polling' | 'unavailable';

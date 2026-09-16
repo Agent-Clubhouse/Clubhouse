@@ -155,6 +155,28 @@ describe('Goobers MainPanel', () => {
     expect(screen.getByTestId('goobers-start-daemon')).toBeInTheDocument();
   });
 
+  it('shows instance name and environment on daemon-not-running when config/manifest.yaml was readable (§12)', () => {
+    setGoobersSettings({ manageDaemon: true });
+    setConnState(baseConnState({
+      daemon: { ...baseConnState().daemon, state: 'not-running' },
+      instanceName: 'goobers-local',
+      instanceEnvironment: 'dev',
+    }));
+    render(<MainPanel api={api} />);
+    expect(screen.getByTestId('goobers-daemon-not-running-identity')).toHaveTextContent('goobers-local (dev)');
+  });
+
+  it('falls back to the root identity on daemon-not-running when no manifest name is available', () => {
+    setGoobersSettings({ manageDaemon: true });
+    setConnState(baseConnState({
+      daemon: { ...baseConnState().daemon, state: 'not-running' },
+      instanceName: null,
+      instanceEnvironment: null,
+    }));
+    render(<MainPanel api={api} />);
+    expect(screen.getByTestId('goobers-daemon-not-running-identity')).toHaveTextContent('eaf74575d8de50fa5471027ba7fd15cb');
+  });
+
   it('renders auth-required', () => {
     setGoobersSettings({ manageDaemon: true });
     setConnState(baseConnState({ daemon: { ...baseConnState().daemon, state: 'running' }, lastError: { code: 'auth-required', message: 'auth' } }));
