@@ -166,5 +166,29 @@ describe('goobersStore', () => {
 
       expect(unsubscribeSpy).toHaveBeenCalled();
     });
+
+    // M11: a subsequent broadcast carrying `lastError: null` must fully
+    // replace the previous error state, never leave a stale error behind
+    // merged with fresher fields (the panel's self-contradictory "Tried: X
+    // ... 'Y' was not found" bug traced to main never broadcasting the
+    // corrected state — this pins the renderer side of that contract).
+    it('clears a previous error when a later broadcast carries lastError: null', () => {
+      const erroredState: GoobersConnectionState = {
+        ...validState,
+        lastError: { code: 'binary-not-found', message: "'definitely-not-goobers' was not found on PATH" },
+      };
+      useGoobersStore.setState({ state: erroredState });
+
+      let capturedCallback: ((state: unknown) => void) | undefined;
+      mockOnStateChanged.mockImplementation((cb: (state: unknown) => void) => {
+        capturedCallback = cb;
+        return () => {};
+      });
+
+      initGoobersListener();
+      capturedCallback?.({ ...validState, lastError: null });
+
+      expect(useGoobersStore.getState().state?.lastError).toBeNull();
+    });
   });
 });

@@ -23,6 +23,7 @@ import {
   validateInstanceRoot,
   resolveBinaryPath,
 } from './goobers-service';
+import { IPC } from '../../shared/ipc-channels';
 import type { GoobersSettings } from '../../shared/types';
 import type { ManagedSettings } from './managed-settings';
 
@@ -416,6 +417,93 @@ describe('GoobersService — settings-change transitions (§4.1)', () => {
     expect(service.getState().health).toBeNull();
     expect(service.getState().rootIdentity).not.toBe('deadbeefdeadbeefdeadbeefdeadbeef');
     fs.rmSync(otherRoot, { recursive: true, force: true });
+  });
+});
+
+/**
+ * M11: a binaryPath change that now resolves successfully left the *previous*
+ * binary-not-found/binary-not-executable error sitting in `lastError`
+ * (`result.error ?? this.state.lastError` never falls through to `null` on
+ * success) and never broadcast the update, so the renderer kept showing a
+ * stale, self-contradictory message — the new resolved name next to the old
+ * error text. Reproduced live via the actual Settings → Goobers Binary field
+ * before this fix, not just through the settings IPC bridge.
+ */
+describe('GoobersService — binaryPath re-resolution clears stale errors and broadcasts (M11)', () => {
+  function fakeStat(mode: number): fs.Stats {
+    return { isFile: () => true, mode } as fs.Stats;
+  }
+
+  it('clears a stale binary-not-found error once the corrected binaryPath resolves', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const goodBin = path.join(tmpRoot, 'goobers-bin');
+    const realStat = fs.promises.stat.bind(fs.promises);
+    vi.spyOn(fs.promises, 'stat').mockImplementation(async (p) => {
+      if (p === goodBin) return fakeStat(0o100755);
+      return realStat(p as fs.PathLike);
+    });
+
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath: 'definitely-not-goobers' }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    expect(service.getState().lastError?.code).toBe('binary-not-found');
+    expect(service.getState().lastError?.message).toContain('definitely-not-goobers');
+
+    const next = defaultSettings({ instanceRoot: tmpRoot, binaryPath: goodBin });
+    settings.set(next);
+    (service as unknown as { onSettingsChanged: (s: GoobersSettings) => void }).onSettingsChanged(next);
+    await flush();
+
+    expect(service.getState().lastError).toBeNull();
+  });
+
+  it('broadcasts the corrected state to all windows once binaryPath resolves', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const goodBin = path.join(tmpRoot, 'goobers-bin');
+    const realStat = fs.promises.stat.bind(fs.promises);
+    vi.spyOn(fs.promises, 'stat').mockImplementation(async (p) => {
+      if (p === goodBin) return fakeStat(0o100755);
+      return realStat(p as fs.PathLike);
+    });
+
+    const send = vi.fn();
+    mockGetAllWindows.mockReturnValue([{ ...visibleWindow(), webContents: { send } }]);
+
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath: 'definitely-not-goobers' }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+    send.mockClear(); // only care about the broadcast from the binaryPath fix below
+
+    const next = defaultSettings({ instanceRoot: tmpRoot, binaryPath: goodBin });
+    settings.set(next);
+    (service as unknown as { onSettingsChanged: (s: GoobersSettings) => void }).onSettingsChanged(next);
+    await flush();
+
+    expect(send).toHaveBeenCalledWith(IPC.GOOBERS.STATE_CHANGED, expect.objectContaining({ lastError: null }));
+  });
+
+  it('leaves an unrelated lastError (e.g. an invalid root) untouched when only binaryPath changes', async () => {
+    // instanceRoot never contains instance.yaml — stays invalid the whole test.
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath: 'goobers' }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    expect(service.getState().lastError?.code).toBe('not-a-goobers-instance-root');
+
+    const next = defaultSettings({ instanceRoot: tmpRoot, binaryPath: 'still-not-goobers' });
+    settings.set(next);
+    (service as unknown as { onSettingsChanged: (s: GoobersSettings) => void }).onSettingsChanged(next);
+    await flush();
+
+    // The binaryPath re-resolution branch must not clobber a root error that
+    // has nothing to do with it.
+    expect(service.getState().lastError?.code).toBe('not-a-goobers-instance-root');
   });
 });
 
