@@ -101,6 +101,17 @@ export interface BinaryResolution {
 }
 
 function isExecutableMode(mode: number): boolean {
+  // Windows has no POSIX execute bit — fs.Stats.mode there is derived from
+  // the read-only file attribute, never an execute concept, so `mode & 0o111`
+  // is always 0 regardless of the file. Callers already gate on
+  // `stat.isFile()` separately, so on win32 any regular file is
+  // executable-enough here (mirrors how Node's own PATH-resolution tooling
+  // treats it). This function is only reachable pre-activation via direct
+  // calls to the exported `resolveBinaryPath`/`validateInstanceRoot` — the
+  // win32 platform gate (§7.8) still governs whether the service itself
+  // ever calls it.
+  if (process.platform === 'win32') return true;
+
   // Any executable bit (owner/group/other) is good enough here — spawn()
   // will surface a real EACCES if this is wrong for the invoking user.
   return (mode & 0o111) !== 0;

@@ -142,6 +142,38 @@ describe('resolveBinaryPath', () => {
     expect(result.resolved).toBeNull();
     expect(result.error?.code).toBe('binary-not-found');
   });
+
+  describe('on win32', () => {
+    // fs.Stats.mode on Windows is derived from the read-only file attribute,
+    // never a POSIX execute bit — `mode & 0o111` is always 0 there. Any
+    // regular file must resolve as executable-enough on win32.
+    it('resolves an absolute path without a POSIX executable bit', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const binPath = path.join(tmpRoot, 'goobers.exe');
+      fs.writeFileSync(binPath, 'not posix-executable', { mode: 0o644 });
+
+      const result = await resolveBinaryPath(binPath);
+      expect(result).toEqual({ resolved: binPath });
+    });
+
+    it('resolves a bare name found on PATH without a POSIX executable bit', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const binPath = path.join(tmpRoot, 'goobers.exe');
+      fs.writeFileSync(binPath, 'not posix-executable', { mode: 0o644 });
+      vi.mocked(getShellEnvironment).mockReturnValue({ PATH: tmpRoot });
+
+      const result = await resolveBinaryPath('goobers.exe');
+      expect(result).toEqual({ resolved: binPath });
+    });
+
+    it('still reports not-found for a path that does not exist', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+
+      const result = await resolveBinaryPath(path.join(tmpRoot, 'nope.exe'));
+      expect(result.resolved).toBeNull();
+      expect(result.error?.code).toBe('binary-not-found');
+    });
+  });
 });
 
 describe('GoobersService — idle-until-subscribed (§7.7)', () => {
