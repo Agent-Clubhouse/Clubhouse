@@ -46,6 +46,11 @@ function defaultSettings(overrides: Partial<GoobersSettings> = {}): GoobersSetti
 }
 
 let tmpRoot: string;
+// Capture the real platform once — restoring a hardcoded 'darwin' here would
+// permanently coerce process.platform away from its actual value on any
+// non-macOS CI runner (e.g. Windows), breaking every later test that reads
+// process.platform without mocking it itself.
+const realPlatform = process.platform;
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goobers-service-test-'));
@@ -54,7 +59,7 @@ beforeEach(() => {
 afterEach(() => {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   vi.restoreAllMocks();
-  Object.defineProperty(process, 'platform', { value: 'darwin' });
+  Object.defineProperty(process, 'platform', { value: realPlatform });
 });
 
 describe('validateInstanceRoot', () => {
