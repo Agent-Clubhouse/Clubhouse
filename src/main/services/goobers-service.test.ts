@@ -712,6 +712,63 @@ describe('GoobersService — daemon control gating', () => {
   });
 });
 
+describe('GoobersService — daemon-stop-failed (M14, mirrors daemon-start-failed)', () => {
+  it('a genuine stop failure sets both connection:error and lastError, mirroring daemonStart\'s failure path', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    vi.mocked(stopDaemon).mockResolvedValueOnce({ ok: false, error: 'permission denied' });
+    const result = await service.daemonStop();
+
+    expect(result).toEqual({ ok: false, error: 'permission denied' });
+    expect(service.getState().connection).toBe('error');
+    expect(service.getState().lastError).toEqual({ code: 'daemon-stop-failed', message: 'permission denied' });
+  });
+
+  it('a successful stop-request (draining) is unaffected — connection stays connected, no daemon-stop-failed', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    vi.mocked(stopDaemon).mockResolvedValueOnce({ ok: true });
+    const result = await service.daemonStop();
+
+    expect(result).toEqual({ ok: true });
+    expect(service.getState().connection).toBe('connected');
+    expect(service.getState().daemon.draining).toBe(true);
+    expect(service.getState().lastError?.code).not.toBe('daemon-stop-failed');
+  });
+
+  it('lock-contention (alreadyStopped) is treated as success, not a failure', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    vi.mocked(stopDaemon).mockResolvedValueOnce({ ok: true, alreadyStopped: true });
+    const result = await service.daemonStop();
+
+    expect(result).toEqual({ ok: true, alreadyStopped: true });
+    expect(service.getState().connection).not.toBe('error');
+    expect(service.getState().lastError?.code).not.toBe('daemon-stop-failed');
+  });
+});
+
 describe('GoobersService — listRuns', () => {
   it('refuses to fetch runs when the daemon is not running', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');

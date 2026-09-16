@@ -203,6 +203,13 @@ describe('Goobers MainPanel', () => {
     expect(screen.getByTestId('goobers-state-stopping')).toBeInTheDocument();
   });
 
+  it('renders stop-failed with the buffered error and a retry (M14)', () => {
+    setConnState(baseConnState({ connection: 'error', lastError: { code: 'daemon-stop-failed', message: 'stderr: permission denied' } }));
+    render(<MainPanel api={api} />);
+    expect(screen.getByTestId('goobers-state-stop-failed')).toBeInTheDocument();
+    expect(screen.getByText(/stderr: permission denied/)).toBeInTheDocument();
+  });
+
   it('renders port-mismatch and refuses to render another instance\'s data', () => {
     setConnState(baseConnState({ connection: 'error', lastError: { code: 'identity-mismatch', message: 'mismatch' } }));
     render(<MainPanel api={api} />);

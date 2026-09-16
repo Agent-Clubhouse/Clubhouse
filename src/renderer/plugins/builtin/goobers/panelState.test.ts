@@ -83,6 +83,16 @@ describe('deriveGoobersPanelState', () => {
     expect(deriveGoobersPanelState(state, true).kind).toBe('stopping');
   });
 
+  it('stop-failed on daemon-stop-failed code (M14)', () => {
+    const state = baseState({ connection: 'error', lastError: { code: 'daemon-stop-failed', message: 'stderr...' } });
+    expect(deriveGoobersPanelState(state, true).kind).toBe('stop-failed');
+  });
+
+  it('a successful drain (connection still connected, no error) is not mistaken for stop-failed', () => {
+    const state = baseState({ connection: 'connected', daemon: { ...baseState().daemon, state: 'stopping', draining: true }, lastError: null });
+    expect(deriveGoobersPanelState(state, true).kind).toBe('stopping');
+  });
+
   it('port-mismatch when instance.rootIdentity.id differs from configured rootIdentity', () => {
     const state = baseState({
       connection: 'connected',

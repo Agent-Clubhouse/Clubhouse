@@ -68,6 +68,7 @@ const STATUS_PILL: Record<GoobersPanelStateKind, { label: string; color: string;
   starting: { label: 'Starting', color: 'text-ctp-yellow', icon: '◐' },
   'start-failed': { label: 'Start failed', color: 'text-ctp-red', icon: '⚠' },
   stopping: { label: 'Stopping', color: 'text-ctp-yellow', icon: '◐' },
+  'stop-failed': { label: 'Stop failed', color: 'text-ctp-red', icon: '⚠' },
   'port-mismatch': { label: 'Instance mismatch', color: 'text-ctp-red', icon: '⚠' },
   'incompatible-api': { label: 'Incompatible', color: 'text-ctp-red', icon: '⚠' },
   'stream-reconnecting': { label: 'Reconnecting', color: 'text-ctp-yellow', icon: '◐' },
@@ -384,7 +385,20 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [loadState]);
 
   const handleStop = useCallback(() => {
-    window.clubhouse.goobers.daemonStop().then(() => loadState());
+    window.clubhouse.goobers.daemonStop().then((raw) => {
+      // The service already broadcasts state (including a stop-failed
+      // connection:'error' snapshot) before this promise resolves, so
+      // loadState() picks up the real outcome either way — but the result
+      // itself must not be silently discarded here, since that was half of
+      // what let a stop failure go unsurfaced (goobers-service.ts's
+      // daemonStop() fix is the other half). The preload types this as
+      // `Promise<unknown>`, matching every other goobers IPC call.
+      const result = raw as { ok?: boolean; error?: string } | undefined;
+      if (result && result.ok === false) {
+        console.error('[goobers] daemonStop failed:', result.error);
+      }
+      loadState();
+    });
   }, [loadState]);
 
   const handleEnableDaemonControl = useCallback(() => {
@@ -495,6 +509,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         className: 'flex items-center justify-center h-full w-full text-ctp-subtext0 text-xs',
         'data-testid': 'goobers-state-stopping',
       }, 'Stopping — draining in-flight runs…');
+      break;
+    case 'stop-failed':
+      body = React.createElement(ErrorScreen, {
+        title: 'Failed to stop the daemon',
+        detail: panelState.error?.message ?? 'see the daemon log for details',
+        onRetry: handleStop,
+        testId: 'goobers-state-stop-failed',
+      });
       break;
     case 'port-mismatch':
       body = React.createElement(ErrorScreen, {

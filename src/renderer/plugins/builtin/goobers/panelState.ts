@@ -17,6 +17,7 @@ export type GoobersPanelStateKind =
   | 'starting'
   | 'start-failed'
   | 'stopping'
+  | 'stop-failed'
   | 'port-mismatch'
   | 'incompatible-api'
   | 'stream-reconnecting'
@@ -40,6 +41,7 @@ const BINARY_CODES = new Set(['binary-not-found', 'binary-not-executable']);
 /** Conventions for codes M3 has not implemented yet — documented so M3 can match them. */
 const AUTH_REQUIRED = 'auth-required';
 const START_FAILED = 'daemon-start-failed';
+const STOP_FAILED = 'daemon-stop-failed';
 const PORT_MISMATCH = 'identity-mismatch';
 
 /**
@@ -79,6 +81,9 @@ export function deriveGoobersPanelState(
   }
   if (lastError?.code === START_FAILED) {
     return { kind: 'start-failed', raw: state, error: lastError };
+  }
+  if (lastError?.code === STOP_FAILED) {
+    return { kind: 'stop-failed', raw: state, error: lastError };
   }
 
   if (daemon.draining) {
