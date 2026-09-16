@@ -40,7 +40,7 @@ const BINARY_CODES = new Set(['binary-not-found', 'binary-not-executable']);
 /** Conventions for codes M3 has not implemented yet — documented so M3 can match them. */
 const AUTH_REQUIRED = 'auth-required';
 const START_FAILED = 'daemon-start-failed';
-const PORT_MISMATCH = 'root-identity-mismatch';
+const PORT_MISMATCH = 'identity-mismatch';
 
 /**
  * Derive the panel's discriminated state. `manageDaemon` comes from

@@ -92,8 +92,8 @@ describe('deriveGoobersPanelState', () => {
     expect(deriveGoobersPanelState(state, true).kind).toBe('port-mismatch');
   });
 
-  it('port-mismatch on root-identity-mismatch code', () => {
-    const state = baseState({ connection: 'error', lastError: { code: 'root-identity-mismatch', message: 'mismatch' } });
+  it('port-mismatch on the identity-mismatch code goobers-liveness.ts actually emits', () => {
+    const state = baseState({ connection: 'error', lastError: { code: 'identity-mismatch', message: 'mismatch' } });
     expect(deriveGoobersPanelState(state, true).kind).toBe('port-mismatch');
   });
 
