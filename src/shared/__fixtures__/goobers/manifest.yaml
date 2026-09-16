@@ -1,0 +1,25 @@
+apiVersion: goobers.dev/v1alpha1
+kind: Manifest
+metadata:
+  name: goobers-local
+  # The pre-GA DSL is preview and must be acknowledged at instance scope.
+  annotations:
+    goobers.dev/allow-preview-features: "true"
+spec:
+  instance:
+    name: goobers-local
+    environment: dev
+  # Named, reusable connections. Credentials are always references — never
+  # inline tokens (CFG-009, SEC-010). At tiers 1-2, secretRef.name resolves
+  # against a repo token declared in this instance's instance.yaml; leave
+  # keyVault empty locally.
+  connections:
+    - name: repo-token
+      type: repo
+      provider: github
+      secretRef:
+        name: repo-token
+  gaggles:
+    - goobers-repo
+    - game-sim-gaggle
+    - clubhouse
