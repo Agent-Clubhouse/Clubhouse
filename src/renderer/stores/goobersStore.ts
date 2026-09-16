@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { GoobersConnectionState } from '../../shared/goobers-types';
 
-function isGoobersConnectionState(v: unknown): v is GoobersConnectionState {
+export function isGoobersConnectionState(v: unknown): v is GoobersConnectionState {
   return typeof v === 'object' && v !== null && 'connection' in v && 'daemon' in v;
 }
 
