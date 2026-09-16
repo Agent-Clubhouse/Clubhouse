@@ -1,0 +1,25 @@
+{
+  "_comment": "Hand-built fixture — daemon was down during M1; shape matches vendored Instance and spec §14.4's reference-instance snapshot (3 gaggles, 5097 runs on the reference read.db).",
+  "apiVersion": "v1",
+  "schemaVersion": "v1",
+  "name": "goobers-local",
+  "environment": "dev",
+  "instanceRoot": "/Users/cazzone/Repos/goobers-instance",
+  "rootIdentity": {
+    "id": "eaf74575d8de50fa5471027ba7fd15cb"
+  },
+  "ready": true,
+  "status": "ready",
+  "concurrency": {
+    "activeRuns": 0,
+    "maxConcurrentRuns": 3
+  },
+  "counts": {
+    "gaggles": 3,
+    "goobers": 0,
+    "workflows": 17,
+    "activeRuns": 0
+  },
+  "warnings": [],
+  "fleetEnrolled": false
+}

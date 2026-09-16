@@ -1,0 +1,23 @@
+{
+  "_comment": "Hand-built fixture — the reference daemon at /Users/cazzone/Repos/goobers-instance was down during M1 (spec §2.2, §14.4); shape matches vendored Health (goobers-api-types.ts) and the reference snapshot in spec §14.4.",
+  "apiVersion": "v1",
+  "schemaVersion": "v1",
+  "build": {
+    "version": "portal-v0.1.0-21-ga1b2ae99",
+    "commit": "a1b2ae99",
+    "date": "2026-09-10T19:06:55-07:00"
+  },
+  "ready": true,
+  "healthy": true,
+  "instance": {
+    "name": "goobers-local",
+    "environment": "dev"
+  },
+  "freshness": {
+    "observedAt": "2026-09-15T00:02:00Z",
+    "definitionsLoadedAt": "2026-09-14T23:53:00Z",
+    "journalUpdatedAt": "2026-09-15T00:02:00Z",
+    "lastSchedulerTickAt": null,
+    "lastTickAgeMillis": null
+  }
+}

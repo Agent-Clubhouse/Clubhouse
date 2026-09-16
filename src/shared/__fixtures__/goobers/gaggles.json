@@ -1,0 +1,39 @@
+{
+  "_comment": "Hand-built fixture — daemon was down during M1; shape matches vendored GagglePage and spec §14.4's reference-instance snapshot.",
+  "items": [
+    {
+      "name": "clubhouse",
+      "displayName": "Clubhouse",
+      "status": "configured",
+      "project": { "provider": "github", "owner": "Agent-Clubhouse", "name": "Clubhouse" },
+      "backlog": { "provider": "github", "project": "Clubhouse" },
+      "gooberCount": 0,
+      "workflowCount": 4,
+      "activeRunCount": 0,
+      "warnings": []
+    },
+    {
+      "name": "goobers-repo",
+      "displayName": "Goobers",
+      "status": "configured",
+      "project": { "provider": "github", "owner": "Agent-Clubhouse", "name": "Goobers" },
+      "backlog": { "provider": "github", "project": "Goobers" },
+      "gooberCount": 0,
+      "workflowCount": 6,
+      "activeRunCount": 0,
+      "warnings": []
+    },
+    {
+      "name": "game-sim-gaggle",
+      "displayName": "Game Sim Gaggle",
+      "status": "configured",
+      "project": { "provider": "github", "owner": "C-Azzone416", "name": "tabletop-sim" },
+      "backlog": { "provider": "github", "project": "tabletop-sim" },
+      "gooberCount": 0,
+      "workflowCount": 7,
+      "activeRunCount": 0,
+      "warnings": []
+    }
+  ],
+  "page": { "limit": 50, "total": 3, "hasMore": false, "nextCursor": "" }
+}

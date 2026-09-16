@@ -24,6 +24,7 @@ import { assistant } from './assistant';
 import { canvas } from './canvas';
 import { commandPalette } from './commandPalette';
 import { hookServer } from './hookServer';
+import { goobers } from './goobers';
 
 export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -67,6 +68,7 @@ export const api = {
   ...canvas,
   ...commandPalette,
   ...hookServer,
+  ...goobers,
 };
 
 export type ClubhouseAPI = typeof api;

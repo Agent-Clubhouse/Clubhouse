@@ -586,6 +586,19 @@ export interface EditorSettings {
   editorName: string;
 }
 
+// --- Goobers settings ---
+
+export interface GoobersSettings {
+  /** Absolute path to the instance root; '' = unconfigured. */
+  instanceRoot: string;
+  /** Bare name resolved via login shell PATH, or an absolute path. */
+  binaryPath: string;
+  /** Connect on app start when a root is configured. */
+  autoConnect: boolean;
+  /** Allow Start/Stop from Clubhouse. */
+  manageDaemon: boolean;
+}
+
 // --- Experimental settings ---
 
 export interface ExperimentalSettings {
