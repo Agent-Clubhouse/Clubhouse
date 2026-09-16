@@ -162,6 +162,14 @@ export class GoobersService {
   private readonly settings: ManagedSettings<GoobersSettings>;
   private settingsRegistered = false;
   private lastKnownSettings: GoobersSettings | undefined;
+  private reconcileCount = 0;
+
+  /** Exposed for tests to prove `reconcile()` genuinely ran, rather than
+   *  asserting only on `state`/call-count deltas that can be trivially true
+   *  (e.g. unchanged at zero) whether or not activation ever happened. */
+  get reconcileCountForTests(): number {
+    return this.reconcileCount;
+  }
 
   constructor(settings?: ManagedSettings<GoobersSettings>) {
     this.settings = settings ?? createManagedSettings(GOOBERS_SETTINGS, {
@@ -226,6 +234,7 @@ export class GoobersService {
   }
 
   private async reconcile(settings: GoobersSettings): Promise<void> {
+    this.reconcileCount += 1;
     if (!this.isSupportedPlatform) {
       this.state = {
         ...makeIdleState(),

@@ -52,8 +52,18 @@ let tmpRoot: string;
 // process.platform without mocking it itself.
 const realPlatform = process.platform;
 
+// Almost every test in this file exercises POSIX-supported-platform behavior
+// (validateInstanceRoot, resolveBinaryPath's POSIX bitmask branch,
+// GoobersService.isSupportedPlatform-gated activation) and never mocks
+// process.platform itself — it must not inherit whatever platform the suite
+// happens to actually be running on (win32 CI included). Pin a supported,
+// non-win32 platform by default here; the few win32-specific tests
+// (platform-gate describe block, resolveBinaryPath's "on win32" describe
+// block) explicitly re-pin 'win32' as the first line of their own test body,
+// which runs after this beforeEach and overrides it.
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goobers-service-test-'));
+  Object.defineProperty(process, 'platform', { value: 'darwin' });
 });
 
 afterEach(() => {
@@ -219,12 +229,17 @@ describe('GoobersService — idle-until-subscribed (§7.7)', () => {
     await flush();
 
     expect(service.subscriberCountForTests).toBe(3);
+    // Guards against this assertion passing trivially at 0 === 0 if
+    // activation never ran (e.g. an unsupported-platform false negative).
+    expect(statSpy.mock.calls.length).toBeGreaterThan(0);
+    expect(service.reconcileCountForTests).toBe(1);
     const callsAfterThreeSubscribes = statSpy.mock.calls.length;
 
     // A 4th subscribe should not re-run validation.
     service.subscribe();
     await flush();
     expect(statSpy.mock.calls.length).toBe(callsAfterThreeSubscribes);
+    expect(service.reconcileCountForTests).toBe(1);
     expect(service.subscriberCountForTests).toBe(4);
   });
 
@@ -251,6 +266,11 @@ describe('GoobersService — idle-until-subscribed (§7.7)', () => {
     service.subscribe();
     await flush();
 
+    // The constructor's initial state is already { configured: false,
+    // connection: 'idle' } — assert reconcile() genuinely ran (which
+    // requires a supported platform) rather than asserting only on a
+    // state shape indistinguishable from "never activated".
+    expect(service.reconcileCountForTests).toBe(1);
     expect(service.getState().configured).toBe(false);
     expect(service.getState().connection).toBe('idle');
   });
@@ -281,6 +301,7 @@ describe('GoobersService — platform gate (§7.8)', () => {
     await flush();
 
     expect(statSpy).not.toHaveBeenCalled();
+    expect(service.reconcileCountForTests).toBe(0);
   });
 
   it('connect() returns an unsupported-platform error envelope on win32', async () => {
@@ -322,6 +343,7 @@ describe('GoobersService — settings-change transitions (§4.1)', () => {
 
     expect(service.getState().configured).toBe(true);
     expect(service.getState().rootIdentity).toBe('eaf74575d8de50fa5471027ba7fd15cb');
+    expect(service.reconcileCountForTests).toBe(2);
   });
 
   it('does nothing before activation (idle service ignores settings saves)', async () => {
@@ -333,6 +355,7 @@ describe('GoobersService — settings-change transitions (§4.1)', () => {
     await flush();
 
     expect(service.subscriberCountForTests).toBe(0);
+    expect(service.reconcileCountForTests).toBe(0);
     expect(service.getState().connection).toBe('idle');
   });
 });
