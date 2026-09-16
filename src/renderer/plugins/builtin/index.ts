@@ -88,5 +88,8 @@ export function getDefaultEnabledIds(experimentalFlags: ExperimentalFlags = {}):
   if (experimentalFlags.sessions) {
     ids.push('sessions');
   }
+  if (experimentalFlags.goobers) {
+    ids.push('goobers');
+  }
   return new Set(ids);
 }
