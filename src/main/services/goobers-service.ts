@@ -131,6 +131,11 @@ export interface BinaryResolution {
   error?: { code: string; message: string };
 }
 
+/** Error codes `resolveBinaryPath` can produce — used to tell a stale binary
+ *  error apart from an unrelated one (e.g. an invalid root) when deciding
+ *  whether to clear `lastError` after a re-resolution (see `onSettingsChanged`). */
+const BINARY_ERROR_CODES = new Set(['binary-not-found', 'binary-not-executable']);
+
 function isExecutableMode(mode: number): boolean {
   // Windows has no POSIX execute bit — fs.Stats.mode there is derived from
   // the read-only file attribute, never an execute concept, so `mode & 0o111`
@@ -620,7 +625,18 @@ export class GoobersService {
     if (next.binaryPath !== prev.binaryPath) {
       void resolveBinaryPath(next.binaryPath).then((result) => {
         this.resolvedBinaryPath = result.resolved;
-        this.state = { ...this.state, lastError: result.error ?? this.state.lastError };
+        // An unrelated error (e.g. an invalid root) is more fundamental than
+        // binaryPath and must survive regardless of the new resolution result
+        // — this branch only runs when instanceRoot is unchanged (see the
+        // early return above), so a root error can still be current and a
+        // binaryPath edit must not paper over or replace it. Otherwise the
+        // fresh resolution result is authoritative: null on success (never
+        // leave a stale binary-not-found/not-executable error behind), or
+        // the new binary error on failure.
+        const currentIsUnrelatedError = !!this.state.lastError && !BINARY_ERROR_CODES.has(this.state.lastError.code);
+        const lastError = currentIsUnrelatedError ? this.state.lastError : (result.error ?? null);
+        this.state = { ...this.state, lastError };
+        broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
       });
     }
 
