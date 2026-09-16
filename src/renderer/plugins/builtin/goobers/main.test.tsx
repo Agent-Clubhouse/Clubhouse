@@ -204,7 +204,7 @@ describe('Goobers MainPanel', () => {
   });
 
   it('renders port-mismatch and refuses to render another instance\'s data', () => {
-    setConnState(baseConnState({ connection: 'error', lastError: { code: 'root-identity-mismatch', message: 'mismatch' } }));
+    setConnState(baseConnState({ connection: 'error', lastError: { code: 'identity-mismatch', message: 'mismatch' } }));
     render(<MainPanel api={api} />);
     expect(screen.getByTestId('goobers-state-port-mismatch')).toBeInTheDocument();
     expect(screen.queryByTestId('goobers-active-runs')).not.toBeInTheDocument();
