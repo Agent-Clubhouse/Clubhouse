@@ -814,7 +814,15 @@ export class GoobersService {
     }
 
     if (!result.ok) {
-      this.state = { ...this.state, lastError: { code: 'daemon-stop-failed', message: result.error ?? 'failed to stop the daemon' } };
+      // Mirror daemonStart()'s failure path (:752-759) — a genuine stop
+      // failure must enter connection:'error' too, not just set lastError,
+      // or panelState.ts's unknown-error fallback (gated on connection
+      // being 'error') never fires and the failure is silently discarded.
+      this.state = {
+        ...this.state,
+        connection: 'error',
+        lastError: { code: 'daemon-stop-failed', message: result.error ?? 'failed to stop the daemon' },
+      };
       broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
       return { ok: false, error: result.error };
     }
