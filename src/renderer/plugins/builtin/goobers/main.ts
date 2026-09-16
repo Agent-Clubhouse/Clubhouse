@@ -326,6 +326,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const manageDaemon = useGoobersSettingsStore((s) => s.manageDaemon);
   const binaryPath = useGoobersSettingsStore((s) => s.binaryPath);
+  const settingsInstanceRoot = useGoobersSettingsStore((s) => s.instanceRoot);
+  const settingsLoaded = useGoobersSettingsStore((s) => s.loaded);
   const saveGoobersSettings = useGoobersSettingsStore((s) => s.saveSettings);
   const loadGoobersSettings = useGoobersSettingsStore((s) => s.loadSettings);
 
@@ -339,8 +341,21 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const panelState = useMemo(() => {
     if (!storeState) return null;
-    return deriveGoobersPanelState(storeState, manageDaemon);
-  }, [storeState, manageDaemon]);
+    const derived = deriveGoobersPanelState(storeState, manageDaemon);
+    // M12: `goobers:get-state`'s first read always reflects the pre-
+    // activation idle snapshot (configured: false) — subscribe() fires
+    // reconcile() unawaited, so the synchronous getState() that follows it
+    // can't see the result yet. The settings store loads the saved
+    // instanceRoot over its own, unrelated IPC channel, so it isn't subject
+    // to that race. Trust it over a same-tick "not configured" read rather
+    // than falsely asserting the root was never saved; fall back to the
+    // loading state until the STATE_CHANGED broadcast that follows
+    // reconcile() replaces this with the true derived state.
+    if (derived.kind === 'not-configured' && settingsLoaded && settingsInstanceRoot !== '') {
+      return null;
+    }
+    return derived;
+  }, [storeState, manageDaemon, settingsLoaded, settingsInstanceRoot]);
 
   const fetchRuns = useCallback(async () => {
     try {

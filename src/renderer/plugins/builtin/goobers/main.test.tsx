@@ -114,11 +114,25 @@ describe('Goobers MainPanel', () => {
     expect(screen.getByTestId('goobers-state-connecting')).toBeInTheDocument();
   });
 
-  it('renders not-configured with an inline picker', () => {
+  it('renders not-configured with an inline picker when no root is saved', () => {
+    setGoobersSettings({ instanceRoot: '' });
     setConnState(baseConnState({ configured: false, instanceRoot: null }));
     render(<MainPanel api={api} />);
     expect(screen.getByTestId('goobers-state-not-configured')).toBeInTheDocument();
     expect(screen.getByTestId('goobers-inline-picker')).toBeInTheDocument();
+  });
+
+  // M12: `goobers:get-state`'s first read is always the pre-activation idle
+  // snapshot (configured: false), regardless of what's actually saved. The
+  // settings store (loaded independently) says a root IS saved here — the
+  // panel must show loading, never assert "not configured" against a root
+  // it knows exists on disk.
+  it('shows loading, not not-configured, when a root is saved but the connection snapshot has not caught up yet', () => {
+    setGoobersSettings({ instanceRoot: '/Users/cazzone/Repos/goobers-instance' });
+    setConnState(baseConnState({ configured: false, instanceRoot: null }));
+    render(<MainPanel api={api} />);
+    expect(screen.getByTestId('goobers-state-connecting')).toBeInTheDocument();
+    expect(screen.queryByTestId('goobers-state-not-configured')).not.toBeInTheDocument();
   });
 
   it('renders invalid-root', () => {

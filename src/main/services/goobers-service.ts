@@ -542,62 +542,78 @@ export class GoobersService {
     }
   }
 
+  /**
+   * Every exit path below mutates `this.state`. `getState()` is a
+   * fire-and-forget-triggered snapshot (`goobers:get-state` calls
+   * `subscribe()` then immediately reads `this.state` synchronously, before
+   * this async method has a chance to settle it), so the very first read a
+   * renderer gets is always the pre-reconcile idle default. The try/finally
+   * broadcast here is what corrects that — without it, nothing ever tells a
+   * subscribed renderer that reconciliation finished (M12: the panel showed
+   * "Not configured" indefinitely on first open despite a valid saved root,
+   * because none of these branches broadcast on their own).
+   */
   private async reconcile(settings: GoobersSettings): Promise<void> {
     this.reconcileCount += 1;
-    if (!this.isSupportedPlatform) {
-      this.state = {
-        ...makeIdleState(),
-        lastError: { code: 'unsupported-platform', message: 'Goobers is not supported on this platform' },
-        connection: 'error',
-      };
-      return;
-    }
+    try {
+      if (!this.isSupportedPlatform) {
+        this.state = {
+          ...makeIdleState(),
+          lastError: { code: 'unsupported-platform', message: 'Goobers is not supported on this platform' },
+          connection: 'error',
+        };
+        return;
+      }
 
-    if (!settings.instanceRoot) {
-      this.stopPolling();
-      this.closeAddressWatcher();
-      this.state = { ...makeIdleState(), configured: false };
-      this.resolvedBinaryPath = null;
-      return;
-    }
+      if (!settings.instanceRoot) {
+        this.stopPolling();
+        this.closeAddressWatcher();
+        this.state = { ...makeIdleState(), configured: false };
+        this.resolvedBinaryPath = null;
+        return;
+      }
 
-    const [rootResult, binaryResult] = await Promise.all([
-      validateInstanceRoot(settings.instanceRoot),
-      resolveBinaryPath(settings.binaryPath),
-    ]);
+      const [rootResult, binaryResult] = await Promise.all([
+        validateInstanceRoot(settings.instanceRoot),
+        resolveBinaryPath(settings.binaryPath),
+      ]);
 
-    this.resolvedBinaryPath = binaryResult.resolved;
+      this.resolvedBinaryPath = binaryResult.resolved;
 
-    if (!rootResult.ok) {
-      this.stopPolling();
-      this.closeAddressWatcher();
+      if (!rootResult.ok) {
+        this.stopPolling();
+        this.closeAddressWatcher();
+        this.state = {
+          ...makeIdleState(),
+          configured: true,
+          instanceRoot: settings.instanceRoot,
+          connection: 'error',
+          lastError: rootResult.error ?? { code: 'invalid-root', message: 'invalid Goobers instance root' },
+        };
+        return;
+      }
+
+      // Optional, defensive (§9.2) — config/manifest.yaml isn't in §14.2's
+      // file list, so this is display-only and never blocks validation on
+      // failure.
+      const identitySummary = await readInstanceIdentitySummary(settings.instanceRoot);
+
       this.state = {
         ...makeIdleState(),
         configured: true,
         instanceRoot: settings.instanceRoot,
-        connection: 'error',
-        lastError: rootResult.error ?? { code: 'invalid-root', message: 'invalid Goobers instance root' },
+        rootIdentity: rootResult.instanceId ?? null,
+        instanceName: identitySummary?.name ?? null,
+        instanceEnvironment: identitySummary?.environment ?? null,
+        connection: 'idle',
+        daemon: { ...IDLE_DAEMON_STATUS, state: 'unknown' },
+        lastError: binaryResult.error ?? null,
       };
-      return;
+
+      await this.establishConnection(settings, binaryResult.error ?? null);
+    } finally {
+      broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
     }
-
-    // Optional, defensive (§9.2) — config/manifest.yaml isn't in §14.2's file
-    // list, so this is display-only and never blocks validation on failure.
-    const identitySummary = await readInstanceIdentitySummary(settings.instanceRoot);
-
-    this.state = {
-      ...makeIdleState(),
-      configured: true,
-      instanceRoot: settings.instanceRoot,
-      rootIdentity: rootResult.instanceId ?? null,
-      instanceName: identitySummary?.name ?? null,
-      instanceEnvironment: identitySummary?.environment ?? null,
-      connection: 'idle',
-      daemon: { ...IDLE_DAEMON_STATUS, state: 'unknown' },
-      lastError: binaryResult.error ?? null,
-    };
-
-    await this.establishConnection(settings, binaryResult.error ?? null);
   }
 
   /**

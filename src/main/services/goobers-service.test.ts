@@ -576,6 +576,104 @@ describe('GoobersService — binaryPath re-resolution clears stale errors and br
   });
 });
 
+/**
+ * M12: `goobers:get-state` calls `subscribe()` then returns `getState()`
+ * synchronously; `subscribe()` fires `reconcile()` unawaited, so that first
+ * read is always the pre-activation idle snapshot regardless of what's
+ * actually saved. `reconcile()` mutated `this.state` on every exit path but
+ * never broadcast, so nothing corrected a subscribed renderer once
+ * activation genuinely settled — the panel showed "Not configured"
+ * indefinitely, self-correcting only by accident on `[refresh]`, which
+ * merely re-invoked getState() after reconcile happened to have finished.
+ * Pin a broadcast on every exit path, not just the happy one — that absence
+ * is exactly why the bug was invisible before.
+ */
+describe('GoobersService — reconcile() always broadcasts on every exit path (M12)', () => {
+  function lastSendCall(send: ReturnType<typeof vi.fn>): unknown[] | undefined {
+    const calls = send.mock.calls.filter((c) => c[0] === IPC.GOOBERS.STATE_CHANGED);
+    return calls[calls.length - 1];
+  }
+
+  it('broadcasts when the platform is unsupported', async () => {
+    // subscribe()/connect() both gate on isSupportedPlatform before ever
+    // calling reconcile() on win32 (§7.8 — see the platform-gate describe
+    // block above), so this branch is unreachable through the public API in
+    // real usage. Exercise reconcile() directly, the same test-only-accessor
+    // pattern used elsewhere in this file for private methods, to pin its
+    // own broadcast-on-every-path contract regardless of how it's reached.
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const send = vi.fn();
+    mockGetAllWindows.mockReturnValue([{ ...visibleWindow(), webContents: { send } }]);
+
+    const settings = makeFakeSettings(defaultSettings());
+    const service = new GoobersService(settings);
+    await (service as unknown as { reconcile: (s: GoobersSettings) => Promise<void> }).reconcile(settings.getSettings());
+
+    const call = lastSendCall(send);
+    expect(call).toBeDefined();
+    expect((call![1] as { lastError: { code: string } | null }).lastError?.code).toBe('unsupported-platform');
+  });
+
+  it('broadcasts when instanceRoot is empty', async () => {
+    const send = vi.fn();
+    mockGetAllWindows.mockReturnValue([{ ...visibleWindow(), webContents: { send } }]);
+
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: '' }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    const call = lastSendCall(send);
+    expect(call).toBeDefined();
+    expect((call![1] as { configured: boolean }).configured).toBe(false);
+  });
+
+  it('broadcasts when the root is invalid', async () => {
+    const send = vi.fn();
+    mockGetAllWindows.mockReturnValue([{ ...visibleWindow(), webContents: { send } }]);
+
+    // tmpRoot has no instance.yaml — invalid by construction.
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    const call = lastSendCall(send);
+    expect(call).toBeDefined();
+    expect((call![1] as { lastError: { code: string } | null }).lastError?.code).toBe('not-a-goobers-instance-root');
+  });
+
+  it('broadcasts the settled state on the daemon-down success path (establishConnection -> watchAddressFile)', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    fs.mkdirSync(path.join(tmpRoot, 'scheduler'), { recursive: true });
+    const binPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binPath);
+
+    const send = vi.fn();
+    mockGetAllWindows.mockReturnValue([{ ...visibleWindow(), webContents: { send } }]);
+
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath: binPath }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    // This is the exact scenario M12 was invisible in: a valid, configured
+    // root with the daemon down — reconcile() settles via
+    // establishConnection() -> watchAddressFile(), a path with no broadcast
+    // of its own.
+    const call = lastSendCall(send);
+    expect(call).toBeDefined();
+    const broadcastState = call![1] as { configured: boolean; instanceRoot: string | null; daemon: { state: string } };
+    expect(broadcastState.configured).toBe(true);
+    expect(broadcastState.instanceRoot).toBe(tmpRoot);
+    expect(broadcastState.daemon.state).toBe('not-running');
+    // And the broadcast state must match what a subsequent getState() read
+    // would return — no drift between the two.
+    expect(service.getState()).toEqual(broadcastState);
+  });
+});
+
 describe('GoobersService — registerSettings addendum (registerSettings() called from two places)', () => {
   it('handles an instanceRoot change exactly once end-to-end no matter how many times registerSettings() ran', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
