@@ -118,9 +118,20 @@ describe('validateInstanceRoot', () => {
 });
 
 describe('resolveBinaryPath', () => {
+  // A real on-disk file's mode bits are a physical property of the host
+  // OS/filesystem — mocking process.platform does NOT change what a real
+  // fs.promises.stat() returns for .mode (e.g. NTFS never sets POSIX
+  // execute bits, no matter what platform string the code checks). The
+  // POSIX bitmask branch of isExecutableMode must be tested against a
+  // synthetic Stats object with a controlled .mode instead of a real file,
+  // so these tests are deterministic on every CI runner's actual OS.
+  function fakeStat(mode: number): fs.Stats {
+    return { isFile: () => true, mode } as fs.Stats;
+  }
+
   it('resolves an absolute, executable path', async () => {
     const binPath = path.join(tmpRoot, 'goobers-bin');
-    fs.writeFileSync(binPath, '#!/bin/sh\n', { mode: 0o755 });
+    vi.spyOn(fs.promises, 'stat').mockResolvedValue(fakeStat(0o100755));
 
     const result = await resolveBinaryPath(binPath);
     expect(result).toEqual({ resolved: binPath });
@@ -128,7 +139,7 @@ describe('resolveBinaryPath', () => {
 
   it('rejects an absolute, non-executable path', async () => {
     const binPath = path.join(tmpRoot, 'goobers-bin');
-    fs.writeFileSync(binPath, 'not executable', { mode: 0o644 });
+    vi.spyOn(fs.promises, 'stat').mockResolvedValue(fakeStat(0o100644));
 
     const result = await resolveBinaryPath(binPath);
     expect(result.resolved).toBeNull();
@@ -143,7 +154,10 @@ describe('resolveBinaryPath', () => {
 
   it('resolves a bare name found on PATH', async () => {
     const binPath = path.join(tmpRoot, 'goobers');
-    fs.writeFileSync(binPath, '#!/bin/sh\n', { mode: 0o755 });
+    vi.spyOn(fs.promises, 'stat').mockImplementation(async (candidate) => {
+      if (candidate === binPath) return fakeStat(0o100755);
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    });
     vi.mocked(getShellEnvironment).mockReturnValue({ PATH: tmpRoot });
 
     const result = await resolveBinaryPath('goobers');
