@@ -32,6 +32,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Sessions',
     description: 'Browse and replay historical agent conversation sessions with timeline playback. Requires app restart.',
   },
+  {
+    id: 'goobers',
+    label: 'Goobers',
+    description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
+  },
 ];
 
 export function ExperimentalSettingsView() {
