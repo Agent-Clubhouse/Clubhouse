@@ -211,6 +211,27 @@ describe('Goobers MainPanel', () => {
     expect(screen.getByText(/stderr: exit 1/)).toBeInTheDocument();
   });
 
+  it('renders start-unknown with the buffered stderr and log path, and NO retry button (M17)', () => {
+    setConnState(baseConnState({
+      connection: 'connecting',
+      daemon: { ...baseConnState().daemon, state: 'unknown' },
+      lastError: {
+        code: 'daemon-start-unknown',
+        message: 'daemon started but has not become ready after 60s',
+        stderr: 'still initializing…',
+        logPathHint: '/Users/cazzone/Repos/goobers-instance/scheduler',
+      },
+    }));
+    render(<MainPanel api={api} />);
+    expect(screen.getByTestId('goobers-state-start-unknown')).toBeInTheDocument();
+    expect(screen.getByText(/still initializing/)).toBeInTheDocument();
+    expect(screen.getByText(/scheduler/)).toBeInTheDocument();
+    // Retrying here would hit lock contention against the app's own live
+    // daemon — this screen must never offer a Start/retry affordance.
+    expect(screen.queryByTestId('goobers-retry')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('goobers-start-daemon')).not.toBeInTheDocument();
+  });
+
   it('renders stopping while draining', () => {
     setConnState(baseConnState({ daemon: { ...baseConnState().daemon, state: 'stopping', draining: true } }));
     render(<MainPanel api={api} />);

@@ -67,6 +67,7 @@ const STATUS_PILL: Record<GoobersPanelStateKind, { label: string; color: string;
   'daemon-not-running': { label: 'Daemon not running', color: 'text-ctp-subtext0', icon: '○' },
   starting: { label: 'Starting', color: 'text-ctp-yellow', icon: '◐' },
   'start-failed': { label: 'Start failed', color: 'text-ctp-red', icon: '⚠' },
+  'start-unknown': { label: 'Starting (slow)', color: 'text-ctp-yellow', icon: '◐' },
   stopping: { label: 'Stopping', color: 'text-ctp-yellow', icon: '◐' },
   'stop-failed': { label: 'Stop failed', color: 'text-ctp-red', icon: '⚠' },
   'port-mismatch': { label: 'Instance mismatch', color: 'text-ctp-red', icon: '⚠' },
@@ -136,6 +137,35 @@ function ErrorScreen({
       title: detail,
     }, truncate(detail, 200)) : null,
     React.createElement(RetryButton, { onRetry }),
+  );
+}
+
+// ── Start outcome unknown (§7.5) ────────────────────────────────────────
+
+/**
+ * The 60s start wait elapsed but the child never exited — it is running, we
+ * just haven't confirmed readiness yet. Deliberately has NO retry/Start
+ * button: pressing Start again here would hit lock contention against the
+ * app's own daemon (M17). The poll loop (goobers-service.ts) keeps observing
+ * in the background and this screen clears on its own once the daemon
+ * reports ready — no user action required.
+ */
+function StartUnknownScreen({ stderr, logPathHint }: { stderr?: string; logPathHint?: string }) {
+  return React.createElement('div', {
+    className: 'flex flex-col items-center justify-center h-full w-full gap-2 text-center px-6',
+    'data-testid': 'goobers-state-start-unknown',
+  },
+    React.createElement('div', { className: 'text-ctp-text text-sm font-medium' }, 'Daemon started but hasn\'t become ready yet'),
+    React.createElement('div', { className: 'text-ctp-subtext0 text-xs max-w-sm' },
+      'This can take a while on a large instance. Still watching — this will update on its own once it\'s ready.'),
+    logPathHint ? React.createElement('div', {
+      className: 'text-ctp-subtext0 text-xs max-w-md truncate',
+      title: logPathHint,
+    }, `Log: ${logPathHint}`) : null,
+    stderr ? React.createElement('div', {
+      className: 'text-ctp-subtext0 text-xs max-w-md truncate',
+      title: stderr,
+    }, truncate(stderr, 200)) : null,
   );
 }
 
@@ -517,6 +547,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         detail: panelState.error?.message ?? 'see the daemon log for details',
         onRetry: handleStart,
         testId: 'goobers-state-start-failed',
+      });
+      break;
+    case 'start-unknown':
+      body = React.createElement(StartUnknownScreen, {
+        stderr: panelState.error?.stderr,
+        logPathHint: panelState.error?.logPathHint,
       });
       break;
     case 'stopping':
