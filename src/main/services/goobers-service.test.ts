@@ -46,6 +46,36 @@ function visibleWindow() {
   return { isDestroyed: () => false, isVisible: () => true, isMinimized: () => false, webContents: { send: vi.fn() } };
 }
 
+/**
+ * A real on-disk file's mode bits are a physical property of the host
+ * OS/filesystem — mocking process.platform does NOT change what a real
+ * fs.promises.stat() returns for .mode (e.g. NTFS never sets POSIX execute
+ * bits, no matter what platform string the code checks), and chmodSync(0o755)
+ * is a no-op on that front too. Any test that needs an "executable" binary
+ * path MUST use this synthetic Stats object (or a path-scoped stat mock built
+ * from it) instead of a real file + chmodSync — #1852 (M1) burned five CI
+ * rounds on exactly this, and #1859 (M9) reproduced it by using a real file.
+ */
+function fakeStat(mode: number): fs.Stats {
+  return { isFile: () => true, mode } as fs.Stats;
+}
+
+/**
+ * Makes `fs.promises.stat(binaryPath)` report a synthetic executable file
+ * (see `fakeStat` above) while leaving every other path's stat behavior on
+ * the real filesystem — needed by tests that also drive `validateInstanceRoot`
+ * against real on-disk fixtures (instance.yaml / .instance-decommissioned)
+ * in the same call, where a blanket stat mock would falsely report the
+ * decommissioned marker as present.
+ */
+function mockExecutableBinaryStat(binaryPath: string): void {
+  const realStat = fs.promises.stat.bind(fs.promises);
+  vi.spyOn(fs.promises, 'stat').mockImplementation(((candidate: fs.PathLike, ...rest: unknown[]) => {
+    if (candidate === binaryPath) return Promise.resolve(fakeStat(0o100755));
+    return (realStat as (...args: unknown[]) => Promise<fs.Stats>)(candidate, ...rest);
+  }) as typeof fs.promises.stat);
+}
+
 function makeFakeSettings(initial: GoobersSettings): ManagedSettings<GoobersSettings> & { set: (s: GoobersSettings) => void } {
   let current = initial;
   const registered = { value: false };
@@ -150,17 +180,6 @@ describe('validateInstanceRoot', () => {
 });
 
 describe('resolveBinaryPath', () => {
-  // A real on-disk file's mode bits are a physical property of the host
-  // OS/filesystem — mocking process.platform does NOT change what a real
-  // fs.promises.stat() returns for .mode (e.g. NTFS never sets POSIX
-  // execute bits, no matter what platform string the code checks). The
-  // POSIX bitmask branch of isExecutableMode must be tested against a
-  // synthetic Stats object with a controlled .mode instead of a real file,
-  // so these tests are deterministic on every CI runner's actual OS.
-  function fakeStat(mode: number): fs.Stats {
-    return { isFile: () => true, mode } as fs.Stats;
-  }
-
   it('resolves an absolute, executable path', async () => {
     const binPath = path.join(tmpRoot, 'goobers-bin');
     vi.spyOn(fs.promises, 'stat').mockResolvedValue(fakeStat(0o100755));
@@ -659,8 +678,7 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
     mockGetAllWindows.mockReturnValue([visibleWindow()]);
     writeConfiguredRoot();
     const binaryPath = path.join(tmpRoot, 'goobers-bin');
-    fs.writeFileSync(binaryPath, '#!/bin/sh\necho ok\n');
-    fs.chmodSync(binaryPath, 0o755);
+    mockExecutableBinaryStat(binaryPath);
     const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
     const service = new GoobersService(settings);
 
@@ -690,8 +708,7 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
     // binaryPath" fallback error (§4.1) that would otherwise survive
     // recovery and give a false negative on the "clears to null" assertion.
     const binaryPath = path.join(tmpRoot, 'goobers-bin');
-    fs.writeFileSync(binaryPath, '#!/bin/sh\necho ok\n');
-    fs.chmodSync(binaryPath, 0o755);
+    mockExecutableBinaryStat(binaryPath);
     const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath }));
     const service = new GoobersService(settings);
 
