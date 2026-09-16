@@ -35,7 +35,7 @@ const EXPERIMENTAL_FEATURES: Array<{
   {
     id: 'goobers',
     label: 'Goobers',
-    description: 'Monitor and control a Goobers instance from a rail panel. Requires app restart.',
+    description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
   },
 ];
 
