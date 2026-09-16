@@ -148,4 +148,37 @@ describe('probeLiveness', () => {
     expect(result.error?.code).toBe('non-loopback-address');
     expect(httpGetJson).not.toHaveBeenCalled();
   });
+
+  it('a 401 on /api/v1/instance reports auth-required, daemon still running — /readyz already confirmed it (§14.1)', async () => {
+    writeAddressFile();
+    writeUpLock();
+    vi.mocked(httpGetJson)
+      .mockResolvedValueOnce({ status: 200, body: '' }) // /readyz — outside the auth pipeline, never 401s
+      .mockResolvedValueOnce({ status: 401, body: '' }); // /api/v1/instance
+
+    const result = await probeLiveness(tmpRoot);
+    expect(result.daemon.state).toBe('running');
+    expect(result.daemon.pid).toBe(7027); // display metadata from up.lock is still readable — no auth needed for a local file
+    expect(result.error?.code).toBe('auth-required');
+    expect(result.instance).toBeNull();
+    expect(result.health).toBeNull();
+    // Only /readyz and /api/v1/instance were called — never /api/v1/health,
+    // since identity was never confirmed.
+    expect(httpGetJson).toHaveBeenCalledTimes(2);
+  });
+
+  it('a 401 on /api/v1/health reports auth-required but keeps the already-confirmed instance identity', async () => {
+    writeAddressFile();
+    writeUpLock();
+    vi.mocked(httpGetJson)
+      .mockResolvedValueOnce({ status: 200, body: '' }) // /readyz
+      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', instanceRoot: tmpRoot }) }) // /api/v1/instance
+      .mockResolvedValueOnce({ status: 401, body: '' }); // /api/v1/health
+
+    const result = await probeLiveness(tmpRoot);
+    expect(result.daemon.state).toBe('running');
+    expect(result.error?.code).toBe('auth-required');
+    expect(result.instance?.instanceRoot).toBe(tmpRoot);
+    expect(result.health).toBeNull();
+  });
 });

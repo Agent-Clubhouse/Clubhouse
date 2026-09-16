@@ -337,7 +337,11 @@ export class GoobersService {
 
     if (this.state.daemon.state === 'running') {
       const settings = this.lastKnownSettings;
-      void this.refreshConnectionOnce(settings).then(() => this.startPolling(settings));
+      void this.refreshConnectionOnce(settings).then(() => {
+        // §8.4/§10.1 — don't resume into an immediate 401 loop.
+        if (this.state.lastError?.code === 'auth-required') return;
+        this.startPolling(settings);
+      });
     } else if (!this.addressWatcher) {
       // Not currently watching (e.g. we were suspended entirely) — re-arm.
       this.watchAddressFile(this.lastKnownSettings.instanceRoot);
@@ -362,6 +366,14 @@ export class GoobersService {
   private afterPollTick(settings: GoobersSettings): void {
     if (!this.canPollNow()) {
       this.stopPolling();
+      return;
+    }
+    if (this.state.lastError?.code === 'auth-required') {
+      // §8.4/§10.1 — a 401 showed up mid-poll (e.g. auth got enabled on the
+      // daemon between ticks). Stop retrying in a loop and hold; broadcast
+      // once so the renderer switches to the auth-required screen.
+      this.stopPolling();
+      broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
       return;
     }
     if (this.state.daemon.state !== 'running') {
@@ -411,8 +423,13 @@ export class GoobersService {
     const settings = this.lastKnownSettings;
     await this.refreshConnectionOnce(settings);
     if (this.state.daemon.state === 'running') {
+      // The address file exists now — no need to keep watching for it —
+      // regardless of whether we can actually poll it (§8.4/§10.1: a 401
+      // still means "running", just not readable).
       this.closeAddressWatcher();
-      this.startPolling(settings);
+      if (this.state.lastError?.code !== 'auth-required') {
+        this.startPolling(settings);
+      }
     }
     broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
   }
@@ -504,6 +521,14 @@ export class GoobersService {
     }
 
     await this.refreshConnectionOnce(settings, fallbackError);
+
+    if (this.state.lastError?.code === 'auth-required') {
+      // §8.4/§10.1 — do not retry a 401 in a loop; a credential is not
+      // something we can acquire this phase. Hold here: no poll, no
+      // watcher. Daemon control is untouched by this (it's a CLI spawn,
+      // not an authenticated API call) and stays available.
+      return;
+    }
 
     if (this.state.daemon.state === 'running') {
       this.startPolling(settings);
@@ -716,7 +741,10 @@ export class GoobersService {
 
     if (result.ok) {
       await this.refreshConnectionOnce(settings);
-      if (this.state.daemon.state === 'running') this.startPolling(settings);
+      // §8.4/§10.1 — do not start the poll into an immediate 401 loop.
+      if (this.state.daemon.state === 'running' && this.state.lastError?.code !== 'auth-required') {
+        this.startPolling(settings);
+      }
       broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
       return { ok: true, holderKind: result.holderKind };
     }
