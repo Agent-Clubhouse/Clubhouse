@@ -137,6 +137,22 @@ export async function probeLiveness(root: string): Promise<LivenessSnapshot> {
     };
   }
 
+  if (instanceRes.status === 401) {
+    // §2.3/§10.1 — no auth by default, but a user-configured `api.auth` gets
+    // 401s. /readyz already confirmed something is up and ready at this
+    // address (§14.1 — /readyz is outside the auth pipeline), so this is a
+    // running daemon we simply can't read from, not "not running". We do
+    // not source or send a bearer token this phase — just surface it.
+    const upLock = await readUpLockMetadata(root);
+    return {
+      daemon: idleDaemon('running', { address: addressDisplay, pid: upLock.pid, version: upLock.version, startedAt: upLock.startedAt }),
+      instance: null,
+      health: null,
+      degraded: false,
+      error: { code: 'auth-required', message: 'GET /api/v1/instance returned 401 — a credential is required and is not sourced or sent this phase (§10.1)' },
+    };
+  }
+
   const instance = instanceRes.status === 200 ? parseJsonBody<Instance>(instanceRes.body) : null;
   if (!instance) {
     return {
@@ -163,17 +179,30 @@ export async function probeLiveness(root: string): Promise<LivenessSnapshot> {
   }
 
   // Identity confirmed — fetch health for freshness, and up.lock for display metadata only.
+  const upLock = await readUpLockMetadata(root);
   let health: Health | null = null;
   try {
     const healthRes = await httpGetJson(address.host, address.port, '/api/v1/health', READYZ_TIMEOUT_MS);
-    if (healthRes.status === 200) health = parseJsonBody<Health>(healthRes.body);
+    if (healthRes.status === 200) {
+      health = parseJsonBody<Health>(healthRes.body);
+    } else if (healthRes.status === 401) {
+      // Same reasoning as the /api/v1/instance 401 above — identity was
+      // already confirmed via a 200 there, so we keep `instance` but not
+      // `health`, and never retry this in a loop (§8.4/§10.1).
+      return {
+        daemon: { state: 'running', address: addressDisplay, pid: upLock.pid, version: upLock.version, startedAt: upLock.startedAt, lastTickAgeMillis: null, draining: false },
+        instance,
+        health: null,
+        degraded: false,
+        error: { code: 'auth-required', message: 'GET /api/v1/health returned 401 — a credential is required and is not sourced or sent this phase (§10.1)' },
+      };
+    }
   } catch {
     // Health is best-effort here; identity is already confirmed and the
     // daemon is running. A failed health fetch does not demote us to
     // not-running — it just leaves freshness unknown this tick.
   }
 
-  const upLock = await readUpLockMetadata(root);
   const lastTickAgeMillis = health?.freshness?.lastTickAgeMillis ?? null;
   const degraded = lastTickAgeMillis != null && lastTickAgeMillis > upLock.livenessTimeoutMillis;
 
