@@ -31,6 +31,7 @@ export interface BuiltinPlugin {
 export interface ExperimentalFlags {
   sessions?: boolean;
   agentQueue?: boolean;
+  goobers?: boolean;
   [key: string]: boolean | undefined;
 }
 

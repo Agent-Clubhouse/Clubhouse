@@ -32,6 +32,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Sessions',
     description: 'Browse and replay historical agent conversation sessions with timeline playback. Requires app restart.',
   },
+  {
+    id: 'goobers',
+    label: 'Goobers',
+    description: 'Monitor and control a Goobers instance from a rail panel. Requires app restart.',
+  },
 ];
 
 export function ExperimentalSettingsView() {

@@ -29,6 +29,7 @@ import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShor
 import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
 import { McpSettingsView } from '../features/settings/McpSettingsView';
+import { GoobersSettingsView } from '../features/settings/GoobersSettingsView';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { AnnexDisabledView } from './AnnexDisabledView';
 import { SatelliteDisconnectedOverlay } from './SatelliteDisconnectedOverlay';
@@ -265,6 +266,7 @@ export function MainContentView() {
     if (settingsSubPage === 'keyboard-shortcuts') return <KeyboardShortcutsSettingsView />;
     if (settingsSubPage === 'mcp') return <McpSettingsView />;
     if (settingsSubPage === 'experimental') return <ExperimentalSettingsView />;
+    if (settingsSubPage === 'goobers') return <GoobersSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;
   }
