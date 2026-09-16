@@ -114,6 +114,33 @@ export function optional<T>(validator: ArgValidator<T>): ArgValidator<T | undefi
   return (value, argName) => (value === undefined ? undefined : validator(value, argName));
 }
 
+/**
+ * A single URL path segment (e.g. a Goobers `runId`/`gaggle`/`workflow`/
+ * `stage`) that will be `encodeURIComponent`'d and interpolated into an
+ * upstream URL path. Rejects anything that could smuggle a path traversal
+ * or an extra path segment through the encoding step: raw or encoded
+ * slashes/backslashes, `.`/`..`, and absolute paths.
+ */
+export function pathSegmentArg(options: { optional: true }): ArgValidator<string | undefined>;
+export function pathSegmentArg(options?: { optional?: false }): ArgValidator<string>;
+export function pathSegmentArg(options: { optional?: boolean } = {}): ArgValidator<string | undefined> {
+  const { optional: isOptional = false } = options;
+
+  return (value, argName) => {
+    if (isOptional && value === undefined) return undefined;
+    if (typeof value !== 'string' || value.length === 0) {
+      fail(argName, `must be a non-empty string, received ${describeType(value)}`);
+    }
+    if (value !== encodeURIComponent(value)) {
+      fail(argName, 'must not contain path or URL-reserved characters');
+    }
+    if (value === '.' || value === '..') {
+      fail(argName, 'must not be a relative path segment');
+    }
+    return value;
+  };
+}
+
 function validateArgs<Args extends unknown[]>(args: unknown[], validators: { [K in keyof Args]: ArgValidator<Args[K]> }): Args {
   return validators.map((validator, index) => validator(args[index], `arg${index + 1}`)) as Args;
 }
