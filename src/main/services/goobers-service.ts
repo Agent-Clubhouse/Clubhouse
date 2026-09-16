@@ -22,6 +22,7 @@ import { createManagedSettings, ManagedSettings } from './managed-settings';
 import { getShellEnvironment } from '../util/shell';
 import { probeLiveness } from './goobers-liveness';
 import { parseAddressString } from './goobers-address';
+import { readInstanceIdentitySummary } from './goobers-instance-identity';
 import { startDaemon, stopDaemon, isLifecycleBusy, type StartResult, type StopResult } from './goobers-daemon';
 import { httpGetJson, parseJsonBody, destroyAllRequests } from './goobers-http';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -93,13 +94,14 @@ function isAnyWindowVisible(): boolean {
  */
 export async function validateInstanceRoot(root: string): Promise<RootValidationResult> {
   const yamlPath = path.join(root, 'instance.yaml');
+  const missingInstanceYamlMessage = `No 'instance.yaml' found in ${root} — not a Goobers instance root`;
   try {
     const stat = await fs.promises.stat(yamlPath);
     if (!stat.isFile()) {
-      return { ok: false, error: { code: 'not-a-goobers-instance-root', message: 'not a Goobers instance root' } };
+      return { ok: false, error: { code: 'not-a-goobers-instance-root', message: missingInstanceYamlMessage } };
     }
   } catch {
-    return { ok: false, error: { code: 'not-a-goobers-instance-root', message: 'not a Goobers instance root' } };
+    return { ok: false, error: { code: 'not-a-goobers-instance-root', message: missingInstanceYamlMessage } };
   }
 
   const decommissionedPath = path.join(root, '.instance-decommissioned');
@@ -574,11 +576,17 @@ export class GoobersService {
       return;
     }
 
+    // Optional, defensive (§9.2) — config/manifest.yaml isn't in §14.2's file
+    // list, so this is display-only and never blocks validation on failure.
+    const identitySummary = await readInstanceIdentitySummary(settings.instanceRoot);
+
     this.state = {
       ...makeIdleState(),
       configured: true,
       instanceRoot: settings.instanceRoot,
       rootIdentity: rootResult.instanceId ?? null,
+      instanceName: identitySummary?.name ?? null,
+      instanceEnvironment: identitySummary?.environment ?? null,
       connection: 'idle',
       daemon: { ...IDLE_DAEMON_STATUS, state: 'unknown' },
       lastError: binaryResult.error ?? null,

@@ -144,10 +144,12 @@ describe('validateInstanceRoot', () => {
     expect(result).toEqual({ ok: true, instanceId: 'eaf74575d8de50fa5471027ba7fd15cb' });
   });
 
-  it('rejects a root with no instance.yaml', async () => {
+  it('rejects a root with no instance.yaml, naming the exact missing file', async () => {
     const result = await validateInstanceRoot(tmpRoot);
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('not-a-goobers-instance-root');
+    expect(result.error?.message).toContain('instance.yaml');
+    expect(result.error?.message).toContain(tmpRoot);
   });
 
   it('rejects a decommissioned root', async () => {
@@ -349,6 +351,38 @@ describe('GoobersService — idle-until-subscribed (§7.7)', () => {
 
     expect(service.getState().connection).toBe('error');
     expect(service.getState().lastError?.code).toBe('not-a-goobers-instance-root');
+  });
+
+  it('surfaces instance name/environment from an optional config/manifest.yaml on a valid root', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    fs.mkdirSync(path.join(tmpRoot, 'config'));
+    fs.writeFileSync(
+      path.join(tmpRoot, 'config', 'manifest.yaml'),
+      'spec:\n  instance:\n    name: goobers-local\n    environment: dev\n',
+    );
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    service.subscribe();
+    await flush();
+
+    expect(service.getState().instanceName).toBe('goobers-local');
+    expect(service.getState().instanceEnvironment).toBe('dev');
+  });
+
+  it('leaves instance name/environment null (not an error) when config/manifest.yaml is absent', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    service.subscribe();
+    await flush();
+
+    expect(service.getState().instanceName).toBeNull();
+    expect(service.getState().instanceEnvironment).toBeNull();
+    expect(service.getState().connection).not.toBe('error');
   });
 });
 

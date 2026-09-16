@@ -141,18 +141,34 @@ function ErrorScreen({
 // ── Daemon not running / control off ───────────────────────────────────
 
 function DaemonNotRunningScreen({
-  manageDaemon, binaryPath, onStart, onEnableControl, onRetry,
+  manageDaemon, binaryPath, instanceName, instanceEnvironment, rootIdentity, onStart, onEnableControl, onRetry,
 }: {
   manageDaemon: boolean;
   binaryPath: string;
+  instanceName?: string | null;
+  instanceEnvironment?: string | null;
+  rootIdentity: string | null;
   onStart: () => void;
   onEnableControl: () => void;
   onRetry: () => void;
 }) {
+  // §8.4/§12 — "Instance identity + config summary from disk" for the
+  // daemon-down screen. instanceName/instanceEnvironment come from the
+  // optional config/manifest.yaml (§9.2 — absent is normal, never an error);
+  // fall back to the root identity alone when they're unavailable.
+  const identityLine = instanceName
+    ? `${instanceName}${instanceEnvironment ? ` (${instanceEnvironment})` : ''}`
+    : rootIdentity;
   return React.createElement('div', {
     className: 'flex flex-col items-center justify-center h-full w-full gap-3 text-center px-6',
     'data-testid': manageDaemon ? 'goobers-state-daemon-not-running' : 'goobers-state-daemon-control-off',
   },
+    identityLine
+      ? React.createElement('div', {
+          className: 'text-ctp-subtext0 text-xs',
+          'data-testid': 'goobers-daemon-not-running-identity',
+        }, identityLine)
+      : null,
     React.createElement('div', { className: 'text-ctp-text text-sm font-medium' }, 'Daemon is not running'),
     React.createElement('div', { className: 'text-ctp-subtext0 text-xs max-w-sm' },
       manageDaemon
@@ -452,6 +468,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       body = React.createElement(DaemonNotRunningScreen, {
         manageDaemon,
         binaryPath,
+        instanceName: panelState.raw.instanceName,
+        instanceEnvironment: panelState.raw.instanceEnvironment,
+        rootIdentity: panelState.raw.rootIdentity,
         onStart: handleStart,
         onEnableControl: handleEnableDaemonControl,
         onRetry: handleRefresh,
