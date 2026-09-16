@@ -170,6 +170,29 @@ describe('getBuiltinPlugins catch-all', () => {
     }
   });
 
+  it('auto-enables the goobers plugin when the experimental flag is set', () => {
+    const defaultIds = getDefaultEnabledIds({ goobers: true });
+    expect(defaultIds.has('goobers')).toBe(true);
+  });
+
+  it('never enables goobers on win32 even though it is a default id when the flag is set', () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    Object.defineProperty(globalThis, 'window', {
+      value: { clubhouse: { platform: 'win32' } },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const plugins = getBuiltinPlugins({ goobers: true });
+      const defaultIds = getDefaultEnabledIds({ goobers: true });
+      const builtinIds = new Set(plugins.map((p) => p.manifest.id));
+      const enabledOnStartup = [...defaultIds].filter((id) => builtinIds.has(id));
+      expect(enabledOnStartup).not.toContain('goobers');
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'window', original);
+    }
+  });
+
   it('always includes the review plugin (no experimental flag needed)', () => {
     const plugins = getBuiltinPlugins();
     const ids = plugins.map((p) => p.manifest.id);
