@@ -84,6 +84,9 @@ vi.mock('../features/settings/KeyboardShortcutsSettingsView', () => ({
 vi.mock('../features/settings/EditorSettingsView', () => ({
   EditorSettingsView: () => <div data-testid="editor-settings" />,
 }));
+vi.mock('../features/settings/GoobersSettingsView', () => ({
+  GoobersSettingsView: () => <div data-testid="goobers-settings" />,
+}));
 
 const completedAgent: CompletedQuickAgent = {
   id: 'completed-1',
@@ -270,6 +273,13 @@ describe('MainContentView annex plugin gating', () => {
     render(<MainContentView />);
     expect(screen.getByTestId('annex-disabled-view')).toBeInTheDocument();
     expect(screen.queryByTestId('plugin-content-view')).not.toBeInTheDocument();
+  });
+
+  it('routes to GoobersSettingsView when settingsSubPage is goobers', () => {
+    useUIStore.setState({ explorerTab: 'settings', settingsSubPage: 'goobers', settingsContext: 'app' });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('goobers-settings')).toBeInTheDocument();
   });
 });
 

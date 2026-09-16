@@ -90,6 +90,26 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     render(<AccessoryPanel />);
     expect(screen.getByText('Clubhouse MCP')).toBeInTheDocument();
   });
+
+  it('hides Goobers nav item when the goobers experimental flag is off', async () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
+    render(<AccessoryPanel />);
+    await waitFor(() => {
+      expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
+    });
+    expect(screen.queryByText('Goobers')).not.toBeInTheDocument();
+  });
+
+  it('shows Goobers nav item when the goobers experimental flag is on', async () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ goobers: true });
+    const { unmount } = render(<AccessoryPanel />);
+    await waitFor(() => {
+      expect(screen.getByText('Goobers')).toBeInTheDocument();
+    });
+    unmount();
+  });
 });
 
 describe('AccessoryPanel annex plugin sidebar gating', () => {

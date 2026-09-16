@@ -19,11 +19,15 @@ function SettingsCategoryNav() {
   const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
+  const [showGoobers, setShowGoobers] = useState(false);
   useEffect(() => {
     window.clubhouse.app.isPreviewEligible().then((isPreview) => {
       setShowExperimental(isPreview);
       // Annex is always available on preview-eligible builds
       setShowAnnex(isPreview);
+    });
+    window.clubhouse.app.getExperimentalSettings().then((s) => {
+      setShowGoobers(!!s.goobers);
     });
   }, [previewChannel]);
 
@@ -63,6 +67,7 @@ function SettingsCategoryNav() {
             {showAnnex && navButton('Annex', 'annex')}
             {showAnnex && navButton('Annex Control', 'annex-control')}
             {navButton('Clubhouse MCP', 'mcp')}
+            {showGoobers && navButton('Goobers', 'goobers')}
             {navButton('Updates', 'updates')}
             {navButton('Logging', 'logging')}
             {showExperimental && navButton('Experimental', 'experimental')}

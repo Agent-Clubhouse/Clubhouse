@@ -49,6 +49,13 @@ describe('ExperimentalSettingsView', () => {
     expect(screen.getByText('Theme Gradients & Fonts')).toBeInTheDocument();
   });
 
+  it('renders the Goobers feature toggle', async () => {
+    render(<ExperimentalSettingsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Goobers')).toBeInTheDocument();
+    });
+  });
+
   it('does not list Clubhouse MCP as experimental (promoted)', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
