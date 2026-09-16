@@ -66,7 +66,13 @@ export interface GoobersConnectionState {
   health: Health | null;
   /** See §9.4. */
   apiCompatible: boolean;
-  lastError: { code: string; message: string } | null;
+  lastError: {
+    code: string;
+    message: string;
+    /** Only set for 'daemon-start-unknown' (§7.5) — the daemon's buffered stderr and log path. */
+    stderr?: string;
+    logPathHint?: string;
+  } | null;
   /** ISO timestamp. */
   lastUpdatedAt: string;
 }

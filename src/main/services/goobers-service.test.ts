@@ -810,6 +810,102 @@ describe('GoobersService — daemon control gating', () => {
   });
 });
 
+describe('GoobersService — daemon-start-unknown (M17)', () => {
+  it('a genuine start failure (child exited before ready) still sets connection:error and daemon-start-failed', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    vi.mocked(startDaemon).mockResolvedValueOnce({ ok: false, error: 'daemon exited before becoming ready', stderr: 'boom' });
+    const result = await service.daemonStart();
+
+    expect(result).toEqual({ ok: false, error: 'daemon exited before becoming ready' });
+    expect(service.getState().connection).toBe('error');
+    expect(service.getState().lastError?.code).toBe('daemon-start-failed');
+  });
+
+  it('a timeout with the child still alive (outcome: "unknown") is never reported as daemon-start-failed, and keeps polling', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    vi.mocked(startDaemon).mockResolvedValueOnce({
+      ok: false,
+      outcome: 'unknown',
+      error: 'daemon started but has not become ready after 60s',
+      stderr: 'still working…',
+      logPathHint: '/instance/root/scheduler',
+    });
+    const result = await service.daemonStart();
+
+    expect(result).toEqual({ ok: false, error: 'daemon started but has not become ready after 60s', outcome: 'unknown' });
+    // The whole point: this must NOT look like a failure to the panel.
+    expect(service.getState().connection).not.toBe('error');
+    expect(service.getState().lastError?.code).toBe('daemon-start-unknown');
+    expect(service.getState().lastError?.code).not.toBe('daemon-start-failed');
+    expect(service.getState().lastError?.stderr).toBe('still working…');
+    expect(service.getState().lastError?.logPathHint).toBe('/instance/root/scheduler');
+    // §7.5 — must keep observing rather than going silent (this is what a
+    // failure path would never do, and what let the panel wrongly show
+    // "didn't start" for 37 minutes in the M17 report).
+    expect(service.isPollingForTests).toBe(true);
+  });
+
+  it('self-corrects to running with no user action once a later poll tick confirms readiness', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    vi.mocked(startDaemon).mockResolvedValueOnce({
+      ok: false,
+      outcome: 'unknown',
+      error: 'daemon started but has not become ready after 60s',
+      stderr: '',
+      logPathHint: '/instance/root/scheduler',
+    });
+    await service.daemonStart();
+    expect(service.getState().lastError?.code).toBe('daemon-start-unknown');
+
+    // Simulate the next poll tick (same private-method pattern used by the
+    // existing "stops polling once a tick observes a 401" test above) once
+    // the daemon has actually become ready — no refresh/retry from the user.
+    vi.mocked(probeLiveness).mockResolvedValueOnce({
+      daemon: { state: 'running', address: '127.0.0.1:8080', pid: 34419, version: 'v1', startedAt: 'x', lastTickAgeMillis: 0, draining: false },
+      instance: null,
+      health: { ready: true, healthy: true } as unknown as LivenessSnapshot['health'],
+      degraded: false,
+    });
+    const svc = service as unknown as {
+      refreshConnectionOnce: (s: GoobersSettings) => Promise<void>;
+      afterPollTick: (s: GoobersSettings) => void;
+    };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    svc.afterPollTick(settings.getSettings());
+
+    expect(service.getState().daemon.state).toBe('running');
+    expect(service.getState().connection).toBe('connected');
+    expect(service.getState().lastError).toBeNull();
+    expect(service.isPollingForTests).toBe(true); // still polling normally, not knocked back to file-watching
+  });
+});
+
 describe('GoobersService — daemon-stop-failed (M14, mirrors daemon-start-failed)', () => {
   it('a genuine stop failure sets both connection:error and lastError, mirroring daemonStart\'s failure path', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');

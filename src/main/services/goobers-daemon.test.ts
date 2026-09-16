@@ -107,6 +107,7 @@ describe('startDaemon', () => {
 
     const result = await promise;
     expect(result.ok).toBe(false);
+    expect(result.outcome).toBeUndefined(); // a genuine failure, not §7.5's "unknown" (M17)
     expect(result.stderr).toContain('fatal: could not bind');
     expect(result.logPathHint).toContain('scheduler');
   });
@@ -149,7 +150,7 @@ describe('startDaemon', () => {
     expect(result.holderKind).toBe('daemon');
   });
 
-  it('times out after 60s if the daemon never becomes ready, capturing buffered stderr', async () => {
+  it('times out after 60s with the child still alive ⇒ outcome "unknown", never a plain failure (§7.5, M17)', async () => {
     vi.useFakeTimers();
     const child = makeFakeChild();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -163,9 +164,16 @@ describe('startDaemon', () => {
     await vi.advanceTimersByTimeAsync(61_000);
     const result = await promise;
 
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/timed out/i);
+    // The child never exited (still alive) — this must NOT be reported as a
+    // plain start failure. A test that asserted `ok: false` with no further
+    // distinction here is exactly the wrong-requirement-encoded-forever trap
+    // called out in the M17 brief: it would pass on both the buggy and the
+    // fixed implementation, so it isn't a substitute for asserting `outcome`.
+    expect(result.outcome).toBe('unknown');
+    expect(result.error).toMatch(/ready/i);
+    expect(result.error).not.toMatch(/failed/i);
     expect(result.stderr).toContain('config error');
+    expect(result.logPathHint).toContain('scheduler');
   });
 
   it('rejects a second start while one is already in flight (non-reentrant)', async () => {

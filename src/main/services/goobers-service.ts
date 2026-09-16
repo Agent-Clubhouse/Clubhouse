@@ -381,9 +381,15 @@ export class GoobersService {
       broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
       return;
     }
-    if (this.state.daemon.state !== 'running') {
-      // Daemon disappeared between ticks — stop polling, resume watching
-      // for the address file to reappear.
+    if (this.state.daemon.state === 'not-running') {
+      // Daemon disappeared between ticks (address file genuinely gone) —
+      // stop polling, resume watching for the address file to reappear.
+      // Deliberately narrower than "!== 'running'": 'starting'/'unknown'
+      // are still-alive transitional states (§7.5 — includes the M17
+      // post-timeout case) where the address file already exists and won't
+      // fire the fs.watch callback again, so falling back to file-watching
+      // here would silently stop observation. Only a true absence should
+      // hand off to the watcher.
       this.stopPolling();
       this.watchAddressFile(settings.instanceRoot);
     }
@@ -756,7 +762,7 @@ export class GoobersService {
    * `goobers-daemon.ts`; this just wires the service's known root/binary
    * and folds the observed result back into `state`.
    */
-  async daemonStart(): Promise<{ ok: boolean; error?: string; holderKind?: 'daemon' | 'manual' }> {
+  async daemonStart(): Promise<{ ok: boolean; error?: string; holderKind?: 'daemon' | 'manual'; outcome?: 'unknown' }> {
     if (!this.isSupportedPlatform) return { ok: false, error: 'unsupported-platform' };
     if (isLifecycleBusy()) return { ok: false, error: 'lifecycle-busy' };
 
@@ -779,6 +785,30 @@ export class GoobersService {
       }
       broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
       return { ok: true, holderKind: result.holderKind };
+    }
+
+    if (result.outcome === 'unknown') {
+      // §7.5 — the child never exited, so this is NOT a start failure: it is
+      // "started, not confirmed ready yet". Never surface daemon-start-failed
+      // here (that reads as "press Start again", which is wrong against a
+      // live daemon — lock contention). Keep polling so the panel
+      // self-corrects to running the moment api.address/readyz/identity all
+      // confirm, with no [refresh] from the user (M11-class seam: a poll
+      // that never runs again is what leaves lastError stuck forever).
+      this.state = {
+        ...this.state,
+        connection: 'connecting',
+        daemon: { ...this.state.daemon, state: 'unknown' },
+        lastError: {
+          code: 'daemon-start-unknown',
+          message: result.error ?? 'daemon started but has not become ready',
+          stderr: result.stderr,
+          logPathHint: result.logPathHint,
+        },
+      };
+      broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
+      if (!this.pollTimer) this.startPolling(settings);
+      return { ok: false, error: result.error, outcome: 'unknown' };
     }
 
     this.state = {

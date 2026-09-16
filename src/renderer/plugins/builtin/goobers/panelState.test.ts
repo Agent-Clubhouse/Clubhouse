@@ -78,6 +78,19 @@ describe('deriveGoobersPanelState', () => {
     expect(deriveGoobersPanelState(state, true).kind).toBe('start-failed');
   });
 
+  it('start-unknown on daemon-start-unknown code (M17) — distinct from start-failed', () => {
+    const state = baseState({
+      connection: 'connecting',
+      daemon: { ...baseState().daemon, state: 'unknown' },
+      lastError: { code: 'daemon-start-unknown', message: 'daemon started but has not become ready after 60s', stderr: 'x', logPathHint: '/root/scheduler' },
+    });
+    const result = deriveGoobersPanelState(state, true);
+    expect(result.kind).toBe('start-unknown');
+    expect(result.kind).not.toBe('start-failed');
+    expect(result.error?.stderr).toBe('x');
+    expect(result.error?.logPathHint).toBe('/root/scheduler');
+  });
+
   it('stopping when daemon.draining is true', () => {
     const state = baseState({ daemon: { ...baseState().daemon, state: 'stopping', draining: true } });
     expect(deriveGoobersPanelState(state, true).kind).toBe('stopping');

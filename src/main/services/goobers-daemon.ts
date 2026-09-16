@@ -45,6 +45,17 @@ export interface StartResult {
   holderKind?: 'daemon' | 'manual';
   stderr?: string;
   logPathHint?: string;
+  /**
+   * Set only when the 60s wait elapsed with the child still alive (never
+   * exited) — §7.5's `unknown`, not a failure. `ok` stays `false` here
+   * because readiness was never confirmed, but callers MUST branch on this
+   * field before treating the result as a start failure: the child is
+   * running, so reporting "failed to start" and offering a retry would send
+   * the user to press Start again against their own live daemon (lock
+   * contention). Absent on every other path, including the genuine-failure
+   * one (child exited before ready), which is unchanged.
+   */
+  outcome?: 'unknown';
 }
 
 export interface StopResult {
@@ -161,9 +172,14 @@ export async function startDaemon(root: string, resolvedBinaryPath: string): Pro
       await sleep(START_POLL_INTERVAL_MS);
     }
 
+    // Reached only when `exited === false` — the child is alive, we simply
+    // never observed it become ready within the bound. This is §7.5's
+    // `unknown`, not a failure: do not report `ok: false` without `outcome`,
+    // which callers would read as "failed to start" and offer a retry for.
     return {
       ok: false,
-      error: 'timed out waiting for the daemon to become ready (60s)',
+      outcome: 'unknown',
+      error: 'daemon started but has not become ready after 60s',
       stderr: getBuffer(),
       logPathHint: path.join(root, 'scheduler'),
     };
