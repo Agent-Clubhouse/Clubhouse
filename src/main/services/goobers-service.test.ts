@@ -17,6 +17,19 @@ vi.mock('electron', () => ({
   app: { on: mockAppOn },
 }));
 
+// Wraps the real implementations by default — every existing test in this
+// file drives probeLiveness/startDaemon/stopDaemon through real fs (no
+// scheduler/api.address ⇒ 'not-running') and never needed these mocked.
+// Only the auth-required describe block below overrides them per-test.
+vi.mock('./goobers-liveness', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./goobers-liveness')>();
+  return { ...actual, probeLiveness: vi.fn(actual.probeLiveness) };
+});
+vi.mock('./goobers-daemon', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./goobers-daemon')>();
+  return { ...actual, startDaemon: vi.fn(actual.startDaemon), stopDaemon: vi.fn(actual.stopDaemon) };
+});
+
 import { getShellEnvironment } from '../util/shell';
 import {
   GoobersService,
@@ -24,11 +37,44 @@ import {
   resolveBinaryPath,
 } from './goobers-service';
 import { IPC } from '../../shared/ipc-channels';
+import { probeLiveness } from './goobers-liveness';
+import { startDaemon, stopDaemon } from './goobers-daemon';
 import type { GoobersSettings } from '../../shared/types';
 import type { ManagedSettings } from './managed-settings';
+import type { LivenessSnapshot } from './goobers-liveness';
 
 function visibleWindow() {
-  return { isDestroyed: () => false, isVisible: () => true, isMinimized: () => false };
+  return { isDestroyed: () => false, isVisible: () => true, isMinimized: () => false, webContents: { send: vi.fn() } };
+}
+
+/**
+ * A real on-disk file's mode bits are a physical property of the host
+ * OS/filesystem — mocking process.platform does NOT change what a real
+ * fs.promises.stat() returns for .mode (e.g. NTFS never sets POSIX execute
+ * bits, no matter what platform string the code checks), and chmodSync(0o755)
+ * is a no-op on that front too. Any test that needs an "executable" binary
+ * path MUST use this synthetic Stats object (or a path-scoped stat mock built
+ * from it) instead of a real file + chmodSync — #1852 (M1) burned five CI
+ * rounds on exactly this, and #1859 (M9) reproduced it by using a real file.
+ */
+function fakeStat(mode: number): fs.Stats {
+  return { isFile: () => true, mode } as fs.Stats;
+}
+
+/**
+ * Makes `fs.promises.stat(binaryPath)` report a synthetic executable file
+ * (see `fakeStat` above) while leaving every other path's stat behavior on
+ * the real filesystem — needed by tests that also drive `validateInstanceRoot`
+ * against real on-disk fixtures (instance.yaml / .instance-decommissioned)
+ * in the same call, where a blanket stat mock would falsely report the
+ * decommissioned marker as present.
+ */
+function mockExecutableBinaryStat(binaryPath: string): void {
+  const realStat = fs.promises.stat.bind(fs.promises);
+  vi.spyOn(fs.promises, 'stat').mockImplementation(((candidate: fs.PathLike, ...rest: unknown[]) => {
+    if (candidate === binaryPath) return Promise.resolve(fakeStat(0o100755));
+    return (realStat as (...args: unknown[]) => Promise<fs.Stats>)(candidate, ...rest);
+  }) as typeof fs.promises.stat);
 }
 
 function makeFakeSettings(initial: GoobersSettings): ManagedSettings<GoobersSettings> & { set: (s: GoobersSettings) => void } {
@@ -137,17 +183,6 @@ describe('validateInstanceRoot', () => {
 });
 
 describe('resolveBinaryPath', () => {
-  // A real on-disk file's mode bits are a physical property of the host
-  // OS/filesystem — mocking process.platform does NOT change what a real
-  // fs.promises.stat() returns for .mode (e.g. NTFS never sets POSIX
-  // execute bits, no matter what platform string the code checks). The
-  // POSIX bitmask branch of isExecutableMode must be tested against a
-  // synthetic Stats object with a controlled .mode instead of a real file,
-  // so these tests are deterministic on every CI runner's actual OS.
-  function fakeStat(mode: number): fs.Stats {
-    return { isFile: () => true, mode } as fs.Stats;
-  }
-
   it('resolves an absolute, executable path', async () => {
     const binPath = path.join(tmpRoot, 'goobers-bin');
     vi.spyOn(fs.promises, 'stat').mockResolvedValue(fakeStat(0o100755));
@@ -689,5 +724,128 @@ describe('GoobersService — listRuns', () => {
 
     const result = await service.listRuns({ phase: 'running' });
     expect(result).toEqual({ error: { code: 'daemon-not-running', message: expect.any(String) } });
+  });
+});
+
+describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => {
+  function authRequiredSnapshot(): LivenessSnapshot {
+    return {
+      daemon: { state: 'running', address: '127.0.0.1:8080', pid: 7027, version: 'v1', startedAt: 'x', lastTickAgeMillis: null, draining: false },
+      instance: null,
+      health: null,
+      degraded: false,
+      error: { code: 'auth-required', message: 'GET /api/v1/instance returned 401' },
+    };
+  }
+
+  function runningSnapshot(): LivenessSnapshot {
+    return {
+      daemon: { state: 'running', address: '127.0.0.1:8080', pid: 7027, version: 'v1', startedAt: 'x', lastTickAgeMillis: 1000, draining: false },
+      instance: { instanceRoot: tmpRoot } as unknown as LivenessSnapshot['instance'],
+      health: { ready: true, healthy: true } as unknown as LivenessSnapshot['health'],
+      degraded: false,
+    };
+  }
+
+  function writeConfiguredRoot(): void {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+  }
+
+  it('a 401 on connect maps to lastError.code "auth-required" and does not start polling or the address watcher', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
+
+    service.subscribe();
+    await flush();
+
+    expect(service.getState().lastError?.code).toBe('auth-required');
+    expect(service.getState().daemon.state).toBe('running'); // §14.1 — /readyz already confirmed this
+    expect(service.isPollingForTests).toBe(false);
+    expect(service.isWatchingAddressFileForTests).toBe(false);
+  });
+
+  it('stops polling once a tick observes a 401, rather than retrying in a loop', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.isPollingForTests).toBe(true); // connected fine — polling started normally
+
+    // Simulate the next 5s tick observing a 401, by directly driving the same
+    // private sequence the poll interval calls (refreshConnectionOnce then
+    // afterPollTick) — consistent with how this file already reaches into
+    // private methods (see onSettingsChanged/teardown above).
+    vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
+    const svc = service as unknown as {
+      refreshConnectionOnce: (s: GoobersSettings) => Promise<void>;
+      afterPollTick: (s: GoobersSettings) => void;
+    };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    svc.afterPollTick(settings.getSettings());
+
+    expect(service.getState().lastError?.code).toBe('auth-required');
+    expect(service.isPollingForTests).toBe(false);
+  });
+
+  it('daemon start/stop remain callable while auth-required — the read path is disabled, not daemon control', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.getState().lastError?.code).toBe('auth-required');
+
+    vi.mocked(startDaemon).mockResolvedValueOnce({ ok: false, error: 'lock-contention', holderKind: 'daemon' });
+    vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
+    const startResult = await service.daemonStart();
+    expect(startDaemon).toHaveBeenCalledTimes(1);
+    expect(startResult.error).not.toBe('daemon-control-disabled');
+    expect(startResult.error).not.toBe('binary-not-found');
+
+    vi.mocked(stopDaemon).mockResolvedValueOnce({ ok: true });
+    const stopResult = await service.daemonStop();
+    expect(stopDaemon).toHaveBeenCalledTimes(1);
+    expect(stopResult.ok).toBe(true);
+  });
+
+  it('recovers once a later probe returns 200 (e.g. a manual reconnect after fixing the credential)', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    // A resolvable binaryPath, so the only source of lastError in this test
+    // is the auth-required snapshot itself — not the separate "unresolvable
+    // binaryPath" fallback error (§4.1) that would otherwise survive
+    // recovery and give a false negative on the "clears to null" assertion.
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath }));
+    const service = new GoobersService(settings);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.getState().lastError?.code).toBe('auth-required');
+    expect(service.isPollingForTests).toBe(false);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    await service.connect();
+
+    expect(service.getState().lastError).toBeNull();
+    expect(service.getState().connection).toBe('connected');
+    expect(service.getState().instance).not.toBeNull();
+    expect(service.isPollingForTests).toBe(true);
   });
 });
