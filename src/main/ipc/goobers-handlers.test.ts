@@ -11,8 +11,12 @@ const { goobersServiceMock } = vi.hoisted(() => ({
     getState: vi.fn(() => ({ connection: 'idle' })),
     connect: vi.fn(async () => ({ connection: 'idle' })),
     disconnect: vi.fn(() => undefined),
-    notImplemented: vi.fn(() => ({ error: { code: 'not-implemented', message: 'not implemented until M3' } })),
+    notImplemented: vi.fn(() => ({ error: { code: 'not-implemented', message: 'not implemented until Phase 2' } })),
     unsupportedPlatform: vi.fn(() => ({ error: { code: 'unsupported-platform', message: 'unsupported' } })),
+    listRuns: vi.fn(async () => ({ runs: [] })),
+    daemonStatus: vi.fn(async () => ({ state: 'unknown' })),
+    daemonStart: vi.fn(async () => ({ ok: true })),
+    daemonStop: vi.fn(async () => ({ ok: true })),
   },
 }));
 
@@ -148,40 +152,57 @@ describe('goobers-handlers', () => {
   });
 
   describe('goobers:list-runs', () => {
-    it('accepts an empty query', async () => {
+    it('accepts an empty query and delegates to the service', async () => {
       const result = await getHandler(IPC.GOOBERS.LIST_RUNS)(fakeEvent, undefined);
-      expect(result).toEqual({ error: { code: 'not-implemented', message: expect.any(String) } });
+      expect(goobersServiceMock.listRuns).toHaveBeenCalledWith({});
+      expect(result).toEqual({ runs: [] });
     });
 
     it('rejects an unrecognized query field', () => {
       expect(() => getHandler(IPC.GOOBERS.LIST_RUNS)(fakeEvent, { notARealField: true })).toThrow();
     });
 
-    it('accepts a well-formed query', async () => {
+    it('accepts a well-formed query and passes it through', async () => {
       const result = await getHandler(IPC.GOOBERS.LIST_RUNS)(fakeEvent, { gaggle: 'clubhouse', limit: 10 });
-      expect(result).toEqual({ error: { code: 'not-implemented', message: expect.any(String) } });
+      expect(goobersServiceMock.listRuns).toHaveBeenCalledWith({ gaggle: 'clubhouse', limit: 10 });
+      expect(result).toEqual({ runs: [] });
     });
   });
 
-  describe('mutating handlers return not-implemented for M3', () => {
+  describe('Phase 2 handlers still return not-implemented', () => {
     it('cancel-run', async () => {
       const result = await getHandler(IPC.GOOBERS.CANCEL_RUN)(fakeEvent, { runId: 'run-1' });
-      expect(result).toEqual({ error: { code: 'not-implemented', message: expect.any(String) } });
-    });
-
-    it('daemon-start', async () => {
-      const result = await getHandler(IPC.GOOBERS.DAEMON_START)(fakeEvent);
-      expect(result).toEqual({ error: { code: 'not-implemented', message: expect.any(String) } });
-    });
-
-    it('daemon-stop', async () => {
-      const result = await getHandler(IPC.GOOBERS.DAEMON_STOP)(fakeEvent);
       expect(result).toEqual({ error: { code: 'not-implemented', message: expect.any(String) } });
     });
 
     it('open-run-dir', async () => {
       const result = await getHandler(IPC.GOOBERS.OPEN_RUN_DIR)(fakeEvent, { runId: 'run-1' });
       expect(result).toEqual({ error: { code: 'not-implemented', message: expect.any(String) } });
+    });
+
+    it('list-gaggles', async () => {
+      const result = await getHandler(IPC.GOOBERS.LIST_GAGGLES)(fakeEvent);
+      expect(result).toEqual({ error: { code: 'not-implemented', message: expect.any(String) } });
+    });
+  });
+
+  describe('daemon control handlers', () => {
+    it('daemon-status delegates to the service', async () => {
+      const result = await getHandler(IPC.GOOBERS.DAEMON_STATUS)(fakeEvent);
+      expect(goobersServiceMock.daemonStatus).toHaveBeenCalled();
+      expect(result).toEqual({ state: 'unknown' });
+    });
+
+    it('daemon-start delegates to the service', async () => {
+      const result = await getHandler(IPC.GOOBERS.DAEMON_START)(fakeEvent);
+      expect(goobersServiceMock.daemonStart).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('daemon-stop delegates to the service', async () => {
+      const result = await getHandler(IPC.GOOBERS.DAEMON_STOP)(fakeEvent);
+      expect(goobersServiceMock.daemonStop).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
     });
   });
 });

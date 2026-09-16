@@ -7,6 +7,16 @@ vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ PATH: '' })),
 }));
 
+const { mockGetAllWindows, mockAppOn } = vi.hoisted(() => ({
+  mockGetAllWindows: vi.fn(() => []),
+  mockAppOn: vi.fn(),
+}));
+
+vi.mock('electron', () => ({
+  BrowserWindow: { getAllWindows: mockGetAllWindows },
+  app: { on: mockAppOn },
+}));
+
 import { getShellEnvironment } from '../util/shell';
 import {
   GoobersService,
@@ -15,6 +25,10 @@ import {
 } from './goobers-service';
 import type { GoobersSettings } from '../../shared/types';
 import type { ManagedSettings } from './managed-settings';
+
+function visibleWindow() {
+  return { isDestroyed: () => false, isVisible: () => true, isMinimized: () => false };
+}
 
 function makeFakeSettings(initial: GoobersSettings): ManagedSettings<GoobersSettings> & { set: (s: GoobersSettings) => void } {
   let current = initial;
@@ -64,6 +78,8 @@ const realPlatform = process.platform;
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goobers-service-test-'));
   Object.defineProperty(process, 'platform', { value: 'darwin' });
+  mockGetAllWindows.mockReset().mockReturnValue([]);
+  mockAppOn.mockReset();
 });
 
 afterEach(() => {
@@ -371,5 +387,185 @@ describe('GoobersService — settings-change transitions (§4.1)', () => {
     expect(service.subscriberCountForTests).toBe(0);
     expect(service.reconcileCountForTests).toBe(0);
     expect(service.getState().connection).toBe('idle');
+  });
+
+  it('clears cached instance/health state on an instanceRoot change, asserted directly on getState()', async () => {
+    // Start "connected" to a fake prior root by hand-installing state, then
+    // change instanceRoot to a different (unconfigured) value and assert the
+    // previous root's Instance/Health never survive into the new state.
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    (service as unknown as { state: unknown }).state = {
+      ...service.getState(),
+      instance: { name: 'old-instance' },
+      health: { ready: true },
+      rootIdentity: 'deadbeefdeadbeefdeadbeefdeadbeef',
+    };
+    expect(service.getState().instance).not.toBeNull();
+
+    const otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goobers-service-other-'));
+    const next = defaultSettings({ instanceRoot: otherRoot });
+    settings.set(next);
+    (service as unknown as { onSettingsChanged: (s: GoobersSettings) => void }).onSettingsChanged(next);
+    await flush();
+
+    expect(service.getState().instance).toBeNull();
+    expect(service.getState().health).toBeNull();
+    expect(service.getState().rootIdentity).not.toBe('deadbeefdeadbeefdeadbeefdeadbeef');
+    fs.rmSync(otherRoot, { recursive: true, force: true });
+  });
+});
+
+describe('GoobersService — registerSettings addendum (registerSettings() called from two places)', () => {
+  it('handles an instanceRoot change exactly once end-to-end no matter how many times registerSettings() ran', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: '' }));
+    const service = new GoobersService(settings);
+
+    // Simulate settings-handlers.ts registering eagerly at startup, before
+    // any subscribe() — then activate() registers again post-subscribe.
+    service.registerSettings();
+    service.registerSettings();
+    service.registerSettings();
+
+    service.subscribe();
+    await flush();
+    expect(service.reconcileCountForTests).toBe(1);
+
+    const next = defaultSettings({ instanceRoot: tmpRoot });
+    settings.set(next);
+    (service as unknown as { onSettingsChanged: (s: GoobersSettings) => void }).onSettingsChanged(next);
+    await flush();
+
+    // Exactly one additional reconcile — not two or three, regardless of
+    // how many times registerSettings() was called beforehand.
+    expect(service.reconcileCountForTests).toBe(2);
+    expect(service.getState().rootIdentity).toBe('eaf74575d8de50fa5471027ba7fd15cb');
+  });
+});
+
+describe('GoobersService — polling suspend/resume (§7.7)', () => {
+  it('does not start polling or watching when no window is visible', async () => {
+    mockGetAllWindows.mockReturnValue([]); // no visible windows
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+
+    service.subscribe();
+    await flush();
+
+    expect(service.isPollingForTests).toBe(false);
+    expect(service.isWatchingAddressFileForTests).toBe(false);
+  });
+
+  it('watches the address file when subscribed and a window is visible, and stops on release()', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    fs.mkdirSync(path.join(tmpRoot, 'scheduler'), { recursive: true });
+
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    service.subscribe();
+    await flush();
+
+    expect(service.isWatchingAddressFileForTests).toBe(true);
+
+    service.release();
+    expect(service.isWatchingAddressFileForTests).toBe(false);
+  });
+
+  it('registers a before-quit teardown handler and clears the watcher/poll interval on teardown()', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    fs.mkdirSync(path.join(tmpRoot, 'scheduler'), { recursive: true });
+
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    service.subscribe();
+    await flush();
+    expect(service.isWatchingAddressFileForTests).toBe(true);
+    expect(mockAppOn).toHaveBeenCalledWith('before-quit', expect.any(Function));
+
+    (service as unknown as { teardown: () => void }).teardown();
+    expect(service.isWatchingAddressFileForTests).toBe(false);
+    expect(service.isPollingForTests).toBe(false);
+  });
+});
+
+describe('GoobersService — daemon control gating', () => {
+  it('daemonStart refuses when manageDaemon is off', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, manageDaemon: false }));
+    const service = new GoobersService(settings);
+
+    service.subscribe();
+    await flush();
+
+    const result = await service.daemonStart();
+    expect(result).toEqual({ ok: false, error: 'daemon-control-disabled' });
+  });
+
+  it('daemonStop refuses when manageDaemon is off', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, manageDaemon: false }));
+    const service = new GoobersService(settings);
+
+    service.subscribe();
+    await flush();
+
+    const result = await service.daemonStop();
+    expect(result).toEqual({ ok: false, error: 'daemon-control-disabled' });
+  });
+
+  it('daemonStart refuses when the binary is unresolved, even with manageDaemon on', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    // binaryPath 'goobers' will not resolve — mocked getShellEnvironment returns PATH: ''.
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, manageDaemon: true }));
+    const service = new GoobersService(settings);
+
+    service.subscribe();
+    await flush();
+
+    const result = await service.daemonStart();
+    expect(result).toEqual({ ok: false, error: 'binary-not-found' });
+  });
+
+  it('daemonStatus returns idle daemon status when unconfigured', async () => {
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: '' }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    const status = await service.daemonStatus();
+    expect(status).toMatchObject({ state: 'unknown' });
+  });
+});
+
+describe('GoobersService — listRuns', () => {
+  it('refuses to fetch runs when the daemon is not running', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    service.subscribe();
+    await flush();
+
+    const result = await service.listRuns({ phase: 'running' });
+    expect(result).toEqual({ error: { code: 'daemon-not-running', message: expect.any(String) } });
   });
 });

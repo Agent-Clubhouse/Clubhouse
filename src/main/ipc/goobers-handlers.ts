@@ -84,7 +84,7 @@ export function registerGoobersHandlers(): void {
 
   ipcMain.handle(IPC.GOOBERS.LIST_RUNS, gatedHandler(
     objectArg<RunListQuery>({ optional: true, validate: validateRunListQuery }),
-    () => goobersService.notImplemented(),
+    async (_event, args) => goobersService.listRuns(args ?? {}),
   ));
 
   ipcMain.handle(IPC.GOOBERS.GET_RUN, gatedHandler(
@@ -119,17 +119,18 @@ export function registerGoobersHandlers(): void {
     () => goobersService.notImplemented(),
   ));
 
-  ipcMain.handle(IPC.GOOBERS.DAEMON_STATUS, platformGated(() => {
-    return goobersService.notImplemented();
+  ipcMain.handle(IPC.GOOBERS.DAEMON_STATUS, platformGated(async () => {
+    return goobersService.daemonStatus();
   }));
 
-  ipcMain.handle(IPC.GOOBERS.DAEMON_START, platformGated(() => {
-    // Mutating, gated on manageDaemon — enforcement + spawn land with M3.
-    return goobersService.notImplemented();
+  ipcMain.handle(IPC.GOOBERS.DAEMON_START, platformGated(async () => {
+    // Mutating — gated on `manageDaemon` inside daemonStart() itself.
+    return goobersService.daemonStart();
   }));
 
-  ipcMain.handle(IPC.GOOBERS.DAEMON_STOP, platformGated(() => {
-    return goobersService.notImplemented();
+  ipcMain.handle(IPC.GOOBERS.DAEMON_STOP, platformGated(async () => {
+    // Mutating — gated on `manageDaemon` inside daemonStop() itself.
+    return goobersService.daemonStop();
   }));
 
   ipcMain.handle(IPC.GOOBERS.OPEN_RUN_DIR, gatedHandler(
