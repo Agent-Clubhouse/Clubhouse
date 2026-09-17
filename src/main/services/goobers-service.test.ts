@@ -963,6 +963,91 @@ describe('GoobersService — daemon-stop-failed (M14, mirrors daemon-start-faile
   });
 });
 
+/**
+ * M19 — the `manageDaemon` seam. An off switch already exists at the
+ * settings layer (GoobersSettingsView.tsx, M2) and the two guards here
+ * (:770/:834) were already regression-tested in isolation ("daemon control
+ * gating" above), but nothing exercised the *pair* through a live
+ * daemonStart/daemonStop cycle, and nothing asserted the :862 comment's
+ * claim — "a `manageDaemon` toggle to false later must not stop this
+ * tracking" — against an actual in-progress drain.
+ */
+describe('GoobersService — manageDaemon toggle-off preserves tracking (M19)', () => {
+  it('toggling manageDaemon off mid-drain does not stop polling or clear draining state', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    vi.mocked(stopDaemon).mockResolvedValueOnce({ ok: true });
+    const stopResult = await service.daemonStop();
+    expect(stopResult).toEqual({ ok: true });
+    expect(service.getState().daemon.draining).toBe(true);
+    expect(service.isPollingForTests).toBe(true);
+
+    // The toggle to false: same instanceRoot/binaryPath/autoConnect, only
+    // manageDaemon flips — this is exactly the shape a Settings-page save
+    // produces (settings-store-factory.ts always sends the full object).
+    const next = defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: false });
+    settings.set(next);
+    (service as unknown as { onSettingsChanged: (s: GoobersSettings) => void }).onSettingsChanged(next);
+    await flush();
+
+    // Tracking must survive: still polling, still draining, connection
+    // untouched by the toggle itself.
+    expect(service.isPollingForTests).toBe(true);
+    expect(service.getState().daemon.draining).toBe(true);
+    expect(service.getState().connection).toBe('connected');
+  });
+
+  it('on -> off -> on: spawn paths are unreachable while off and reachable again once back on', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+    service.subscribe();
+    await flush();
+
+    // ON: the spawn path is reachable (goobers-daemon.ts's startDaemon is
+    // called; daemonStart() does not short-circuit on the gate).
+    vi.mocked(startDaemon).mockResolvedValueOnce({ ok: true, holderKind: 'daemon' });
+    const onResult = await service.daemonStart();
+    expect(onResult.error).not.toBe('daemon-control-disabled');
+    expect(vi.mocked(startDaemon)).toHaveBeenCalledTimes(1);
+
+    // OFF: both control paths refuse before ever reaching startDaemon/stopDaemon.
+    const off = defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: false });
+    settings.set(off);
+    (service as unknown as { onSettingsChanged: (s: GoobersSettings) => void }).onSettingsChanged(off);
+    await flush();
+
+    const startWhileOff = await service.daemonStart();
+    const stopWhileOff = await service.daemonStop();
+    expect(startWhileOff).toEqual({ ok: false, error: 'daemon-control-disabled' });
+    expect(stopWhileOff).toEqual({ ok: false, error: 'daemon-control-disabled' });
+    expect(vi.mocked(startDaemon)).toHaveBeenCalledTimes(1); // unchanged — no new spawn attempt
+    expect(vi.mocked(stopDaemon)).not.toHaveBeenCalled();
+
+    // ON again: the gate reopens, spawn path reachable once more.
+    const onAgain = defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true });
+    settings.set(onAgain);
+    (service as unknown as { onSettingsChanged: (s: GoobersSettings) => void }).onSettingsChanged(onAgain);
+    await flush();
+
+    vi.mocked(startDaemon).mockResolvedValueOnce({ ok: true, holderKind: 'daemon' });
+    const backOnResult = await service.daemonStart();
+    expect(backOnResult.error).not.toBe('daemon-control-disabled');
+    expect(vi.mocked(startDaemon)).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('GoobersService — listRuns', () => {
   it('refuses to fetch runs when the daemon is not running', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
