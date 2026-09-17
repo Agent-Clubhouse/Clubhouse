@@ -335,12 +335,29 @@ export class GoobersService {
     return this.subscriberCount > 0 && isAnyWindowVisible();
   }
 
+  /**
+   * Whether a daemon in this state should be tracked by polling rather than
+   * the one-shot `api.address` watcher. `not-running` is the only state with
+   * nothing alive to poll — every other state (`starting`, `unknown`,
+   * `stopping`, `running`, and M20's `recovering`, which is `starting` with
+   * `lastError.code === 'recovering'`) already has an address file on disk,
+   * so a poll is meaningful and, per `afterPollTick`'s existing comment, the
+   * file-watch event for that address file already fired once and will not
+   * fire again. Keeping this the single source of truth for the decision
+   * (used at initial connect, on focus/subscribe resume, and when the
+   * watcher itself fires) closes the M21 race: a `fs.watch` armed after
+   * `api.address` already exists never gets a second chance to notice it.
+   */
+  private shouldPoll(daemonState: GoobersDaemonStatus['state']): boolean {
+    return daemonState !== 'not-running';
+  }
+
   private resumeIfNeeded(): void {
     if (!this.activated || !this.lastKnownSettings?.autoConnect) return;
     if (!this.canPollNow()) return;
     if (this.pollTimer) return; // already polling
 
-    if (this.state.daemon.state === 'running') {
+    if (this.shouldPoll(this.state.daemon.state)) {
       const settings = this.lastKnownSettings;
       void this.refreshConnectionOnce(settings).then(() => {
         // §8.4/§10.1 — don't resume into an immediate 401 loop.
@@ -433,10 +450,14 @@ export class GoobersService {
     if (!this.lastKnownSettings) return;
     const settings = this.lastKnownSettings;
     await this.refreshConnectionOnce(settings);
-    if (this.state.daemon.state === 'running') {
+    if (this.shouldPoll(this.state.daemon.state)) {
       // The address file exists now — no need to keep watching for it —
       // regardless of whether we can actually poll it (§8.4/§10.1: a 401
-      // still means "running", just not readable).
+      // still means "running", just not readable). This also covers the
+      // M21 case where the very first probe after the file appears lands on
+      // `starting`/`unknown` rather than `running` — that event already
+      // fired and won't fire again, so the watcher must hand off to polling
+      // now rather than wait for a change that isn't coming.
       this.closeAddressWatcher();
       if (this.state.lastError?.code !== 'auth-required') {
         this.startPolling(settings);
@@ -548,7 +569,7 @@ export class GoobersService {
       return;
     }
 
-    if (this.state.daemon.state === 'running') {
+    if (this.shouldPoll(this.state.daemon.state)) {
       this.startPolling(settings);
     } else {
       this.watchAddressFile(settings.instanceRoot);
