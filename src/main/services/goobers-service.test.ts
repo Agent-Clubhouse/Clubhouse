@@ -758,6 +758,154 @@ describe('GoobersService — polling suspend/resume (§7.7)', () => {
   });
 });
 
+describe('GoobersService — address-watch race, M21', () => {
+  // The bug: `fs.watch()` only fires on a *future* change to `api.address`.
+  // If the daemon already wrote that file before Clubhouse ever starts
+  // watching — the common case, since the daemon can reach readiness in
+  // well under a second — the watcher's target event already happened and
+  // will never fire again. The fix is to poll (not watch) for any daemon
+  // state except `not-running`, since every other state already implies the
+  // address file exists. These tests assert the *symptom* is gone (state
+  // still reaches `running`, with no `[refresh]`/reload involved) rather
+  // than reaching into `fs.watch` internals.
+  function startingSnapshot(): LivenessSnapshot {
+    return {
+      daemon: { state: 'starting', address: '127.0.0.1:8080', pid: null, version: null, startedAt: null, lastTickAgeMillis: null, draining: false },
+      instance: null,
+      health: null,
+      degraded: false,
+    };
+  }
+
+  function unknownSnapshot(): LivenessSnapshot {
+    return {
+      daemon: { state: 'unknown', address: '127.0.0.1:8080', pid: null, version: null, startedAt: null, lastTickAgeMillis: null, draining: false },
+      instance: null,
+      health: null,
+      degraded: false,
+    };
+  }
+
+  function recoveringSnapshot(): LivenessSnapshot {
+    // M20 — 'recovering' is `daemon.state: 'starting'` plus this error code,
+    // not a distinct daemon state. The fallback must recognize it as "poll,
+    // don't watch" without any special-casing of the error code itself.
+    return {
+      daemon: { state: 'starting', address: '127.0.0.1:8080', pid: null, version: null, startedAt: null, lastTickAgeMillis: null, draining: false },
+      instance: null,
+      health: null,
+      degraded: false,
+      recovery: { phase: 'resume', since: new Date().toISOString(), checks: {} },
+      error: { code: 'recovering', message: 'daemon is completing crash recovery' },
+    };
+  }
+
+  function runningSnapshotFor(root: string): LivenessSnapshot {
+    return {
+      daemon: { state: 'running', address: '127.0.0.1:8080', pid: 7027, version: 'v1', startedAt: 'x', lastTickAgeMillis: 1000, draining: false },
+      instance: { instanceRoot: root } as unknown as LivenessSnapshot['instance'],
+      health: { ready: true, healthy: true } as unknown as LivenessSnapshot['health'],
+      degraded: false,
+    };
+  }
+
+  function writeConfiguredRoot(): void {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+  }
+
+  /** A real `fs.watch()` event has genuine OS-level latency on top of the
+   *  async chain it triggers (onAddressFileChanged -> refreshConnectionOnce
+   *  -> probeLiveness) — poll for the condition instead of a single fixed
+   *  flush(), so the test is robust rather than racing a hardcoded delay. */
+  async function waitUntil(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (predicate()) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    if (!predicate()) throw new Error(`waitUntil: condition not met within ${timeoutMs}ms`);
+  }
+
+  it.each([
+    ['starting', startingSnapshot],
+    ['unknown', unknownSnapshot],
+    ['recovering (starting + error.code=recovering)', recoveringSnapshot],
+  ])('polls, does not arm the address watcher, on initial connect when the daemon is already %s (address file pre-existing)', async (_label, snapshotFactory) => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    fs.mkdirSync(path.join(tmpRoot, 'scheduler'), { recursive: true });
+    // The address file already exists before Clubhouse ever subscribes —
+    // exactly the M21 race (the daemon wrote it before the panel opened).
+    fs.writeFileSync(path.join(tmpRoot, 'scheduler', 'api.address'), '127.0.0.1:8080\n');
+
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(snapshotFactory());
+
+    service.subscribe();
+    await flush();
+
+    // The regression: before the fix, only `daemon.state === 'running'`
+    // started polling, so this landed on the one-shot watcher instead — a
+    // watcher that would wait forever for a file-creation event that
+    // already happened.
+    expect(service.isPollingForTests).toBe(true);
+    expect(service.isWatchingAddressFileForTests).toBe(false);
+
+    // And the fallback actually resolves the stuck state: the next tick sees
+    // the daemon reach `running`, entirely through polling — no watcher
+    // event, no `[refresh]`, no reload.
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshotFor(tmpRoot));
+    const svc = service as unknown as {
+      refreshConnectionOnce: (s: GoobersSettings) => Promise<void>;
+      afterPollTick: (s: GoobersSettings) => void;
+    };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    svc.afterPollTick(settings.getSettings());
+
+    expect(service.getState().daemon.state).toBe('running');
+    expect(service.getState().connection).toBe('connected');
+  });
+
+  it('hands off from the watcher to polling when the first post-change probe lands on starting, not running', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    fs.mkdirSync(path.join(tmpRoot, 'scheduler'), { recursive: true });
+    // No address file yet — the watcher genuinely has something to wait for.
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    service.subscribe();
+    await flush();
+    expect(service.isWatchingAddressFileForTests).toBe(true);
+    expect(service.isPollingForTests).toBe(false);
+
+    // The file appears — but the daemon is captured mid-startup, not yet
+    // running, on the very first probe the watcher's callback triggers.
+    // Before the fix, `onAddressFileChanged()` only reacted to `running`, so
+    // this would leave the watcher installed (its one event already spent)
+    // and nothing polling — permanently stuck.
+    vi.mocked(probeLiveness).mockResolvedValueOnce(startingSnapshot());
+    fs.writeFileSync(path.join(tmpRoot, 'scheduler', 'api.address'), '127.0.0.1:8080\n');
+    await waitUntil(() => !service.isWatchingAddressFileForTests);
+
+    expect(service.isWatchingAddressFileForTests).toBe(false);
+    expect(service.isPollingForTests).toBe(true);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshotFor(tmpRoot));
+    const svc = service as unknown as {
+      refreshConnectionOnce: (s: GoobersSettings) => Promise<void>;
+      afterPollTick: (s: GoobersSettings) => void;
+    };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    svc.afterPollTick(settings.getSettings());
+
+    expect(service.getState().daemon.state).toBe('running');
+  });
+});
+
 describe('GoobersService — daemon control gating', () => {
   it('daemonStart refuses when manageDaemon is off', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
