@@ -1185,3 +1185,129 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
     expect(service.isPollingForTests).toBe(true);
   });
 });
+
+/**
+ * M20 — the fifth one-sided seam. `/readyz` 200 + `/api/v1/instance` 503
+ * `recovering` previously fell through to the generic `identity-check-failed`
+ * fallback and rendered as "Something went wrong" about a daemon that was
+ * alive and self-healing. Unlike `auth-required` (a terminal hold — a
+ * credential can't self-heal), `recovering` must NOT stop polling; the two
+ * blocking tests below assert exactly that pair: the 503 is recognized
+ * without stopping observation, and a later 200 clears it with no refresh.
+ */
+describe('GoobersService — 503 recovering (M20)', () => {
+  function recoveringSnapshot(overrides: Partial<LivenessSnapshot['recovery']> = {}): LivenessSnapshot {
+    return {
+      daemon: { state: 'starting', address: '127.0.0.1:8080', pid: null, version: null, startedAt: null, lastTickAgeMillis: null, draining: false },
+      instance: null,
+      health: null,
+      degraded: false,
+      error: { code: 'recovering', message: 'daemon is completing crash recovery' },
+      recovery: {
+        phase: 'worktree-reap-crash-orphan',
+        since: '2026-09-16T22:58:49.213Z',
+        checks: { apiListening: true, configLoaded: true, resumeComplete: false, stateOpen: false, sweepsStarted: false, triggerSweepReady: false },
+        ...overrides,
+      },
+    };
+  }
+
+  function runningSnapshot(): LivenessSnapshot {
+    return {
+      daemon: { state: 'running', address: '127.0.0.1:8080', pid: 7027, version: 'v1', startedAt: 'x', lastTickAgeMillis: 1000, draining: false },
+      instance: { instanceRoot: tmpRoot } as unknown as LivenessSnapshot['instance'],
+      health: { ready: true, healthy: true } as unknown as LivenessSnapshot['health'],
+      degraded: false,
+    };
+  }
+
+  function writeConfiguredRoot(): void {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+  }
+
+  it('maps a 503 recovering tick to lastError.code "recovering" with the /readyz breakdown attached, and does NOT stop polling', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    // Get to an ordinary connected/polling state first — this is the
+    // owner's actual scenario: an already-open panel watching a daemon that
+    // then crashes and comes back up recovering, not a fresh connect.
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.isPollingForTests).toBe(true);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(recoveringSnapshot());
+    const svc = service as unknown as {
+      refreshConnectionOnce: (s: GoobersSettings) => Promise<void>;
+      afterPollTick: (s: GoobersSettings) => void;
+    };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    svc.afterPollTick(settings.getSettings());
+
+    expect(service.getState().lastError?.code).toBe('recovering');
+    expect(service.getState().daemon.state).toBe('starting');
+    expect(service.getState().recovery).toEqual({
+      phase: 'worktree-reap-crash-orphan',
+      since: '2026-09-16T22:58:49.213Z',
+      checks: expect.objectContaining({ resumeComplete: false }),
+    });
+    // The whole point: unlike auth-required, this must not be treated as a
+    // terminal hold — the daemon self-heals, so observation must continue.
+    expect(service.isPollingForTests).toBe(true);
+  });
+
+  it('self-corrects to running with no [refresh] once a later tick observes 200, clearing the recovery breakdown', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(recoveringSnapshot());
+    const svc = service as unknown as {
+      refreshConnectionOnce: (s: GoobersSettings) => Promise<void>;
+      afterPollTick: (s: GoobersSettings) => void;
+    };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    svc.afterPollTick(settings.getSettings());
+    expect(service.getState().lastError?.code).toBe('recovering');
+
+    // The next 5s tick, with no user action in between (no [refresh], no
+    // daemonStart/daemonStop call) — the recovery finished.
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    await svc.refreshConnectionOnce(settings.getSettings());
+    svc.afterPollTick(settings.getSettings());
+
+    expect(service.getState().daemon.state).toBe('running');
+    expect(service.getState().connection).toBe('connected');
+    expect(service.getState().lastError).toBeNull();
+    expect(service.getState().recovery).toBeNull();
+    expect(service.isPollingForTests).toBe(true); // never stopped throughout
+  });
+
+  it('daemon start/stop remain callable while recovering, same as auth-required — only the read path is affected', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const binaryPath = path.join(tmpRoot, 'goobers-bin');
+    mockExecutableBinaryStat(binaryPath);
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
+    const service = new GoobersService(settings);
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(recoveringSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.getState().lastError?.code).toBe('recovering');
+
+    vi.mocked(stopDaemon).mockResolvedValueOnce({ ok: true });
+    const stopResult = await service.daemonStop();
+    expect(stopDaemon).toHaveBeenCalledTimes(1);
+    expect(stopResult.ok).toBe(true);
+  });
+});

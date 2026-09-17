@@ -66,6 +66,7 @@ const STATUS_PILL: Record<GoobersPanelStateKind, { label: string; color: string;
   'auth-required': { label: 'Auth required', color: 'text-ctp-yellow', icon: '⚠' },
   'daemon-not-running': { label: 'Daemon not running', color: 'text-ctp-subtext0', icon: '○' },
   starting: { label: 'Starting', color: 'text-ctp-yellow', icon: '◐' },
+  recovering: { label: 'Recovering', color: 'text-ctp-yellow', icon: '◐' },
   'start-failed': { label: 'Start failed', color: 'text-ctp-red', icon: '⚠' },
   'start-unknown': { label: 'Starting (slow)', color: 'text-ctp-yellow', icon: '◐' },
   stopping: { label: 'Stopping', color: 'text-ctp-yellow', icon: '◐' },
@@ -541,6 +542,21 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         'data-testid': 'goobers-state-starting',
       }, React.createElement('span', null, 'Starting…'));
       break;
+    case 'recovering': {
+      const recovery = panelState.raw.recovery;
+      const checkEntries = recovery ? Object.entries(recovery.checks) : [];
+      body = React.createElement('div', {
+        className: 'flex flex-col items-center justify-center h-full w-full gap-2 text-ctp-subtext0 text-xs px-6',
+        'data-testid': 'goobers-state-recovering',
+      },
+        React.createElement('span', null, 'Recovering — the daemon is alive and completing crash recovery.'),
+        recovery && React.createElement('span', { className: 'text-ctp-overlay0' }, `Phase: ${recovery.phase} (since ${recovery.since})`),
+        checkEntries.length > 0 && React.createElement('ul', { className: 'text-ctp-overlay0 list-none space-y-0.5' },
+          checkEntries.map(([name, done]) => React.createElement('li', { key: name }, `${done ? '✓' : '…'} ${name}`)),
+        ),
+      );
+      break;
+    }
     case 'start-failed':
       body = React.createElement(ErrorScreen, {
         title: 'Failed to start the daemon',

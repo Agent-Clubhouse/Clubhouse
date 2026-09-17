@@ -15,6 +15,7 @@ export type GoobersPanelStateKind =
   | 'auth-required'
   | 'daemon-not-running'
   | 'starting'
+  | 'recovering'
   | 'start-failed'
   | 'start-unknown'
   | 'stopping'
@@ -41,6 +42,8 @@ const DECOMMISSIONED = 'decommissioned-root';
 const BINARY_CODES = new Set(['binary-not-found', 'binary-not-executable']);
 /** Conventions for codes M3 has not implemented yet — documented so M3 can match them. */
 const AUTH_REQUIRED = 'auth-required';
+/** §8.4 (M20) — alive and self-healing; must never route through 'unknown-error'. */
+const RECOVERING = 'recovering';
 const START_FAILED = 'daemon-start-failed';
 /** §7.5 timeout-with-live-child outcome — NOT a failure; see M17. */
 const START_UNKNOWN = 'daemon-start-unknown';
@@ -81,6 +84,12 @@ export function deriveGoobersPanelState(
   }
   if (lastError?.code === AUTH_REQUIRED) {
     return { kind: 'auth-required', raw: state, error: lastError };
+  }
+  if (lastError?.code === RECOVERING) {
+    // Ahead of the generic daemon.state === 'starting' branch below — same
+    // underlying state, but this one carries a `raw.recovery` breakdown
+    // (phase/since/checks) the plain 'starting' screen doesn't have.
+    return { kind: 'recovering', raw: state, error: lastError };
   }
   if (lastError?.code === START_FAILED) {
     return { kind: 'start-failed', raw: state, error: lastError };
