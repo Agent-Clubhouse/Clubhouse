@@ -204,6 +204,23 @@ describe('Goobers MainPanel', () => {
     expect(screen.getByTestId('goobers-state-starting')).toBeInTheDocument();
   });
 
+  it('renders recovering with the /readyz phase and checks breakdown, not the generic error screen (M20)', () => {
+    setConnState(baseConnState({
+      daemon: { ...baseConnState().daemon, state: 'starting' },
+      lastError: { code: 'recovering', message: 'daemon is completing crash recovery' },
+      recovery: {
+        phase: 'worktree-reap-crash-orphan',
+        since: '2026-09-16T22:58:49.213Z',
+        checks: { apiListening: true, resumeComplete: false },
+      },
+    }));
+    render(<MainPanel api={api} />);
+    expect(screen.getByTestId('goobers-state-recovering')).toBeInTheDocument();
+    expect(screen.queryByTestId('goobers-state-unknown-error')).not.toBeInTheDocument();
+    expect(screen.getByText(/worktree-reap-crash-orphan/)).toBeInTheDocument();
+    expect(screen.getByText(/apiListening/)).toBeInTheDocument();
+  });
+
   it('renders start-failed with the buffered error, never a bare message', () => {
     setConnState(baseConnState({ daemon: { ...baseConnState().daemon, state: 'not-running' }, lastError: { code: 'daemon-start-failed', message: 'stderr: exit 1' } }));
     render(<MainPanel api={api} />);

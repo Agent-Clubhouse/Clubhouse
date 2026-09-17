@@ -468,6 +468,7 @@ export class GoobersService {
           stream: 'polling',
           daemon: { ...snapshot.daemon, state: 'stopping', draining: true },
           lastError: null,
+          recovery: null,
           lastUpdatedAt: now,
         };
         return;
@@ -479,10 +480,14 @@ export class GoobersService {
     if (snapshot.error) {
       this.state = {
         ...this.state,
+        // M20 — 'recovering' self-heals via the normal poll loop, exactly
+        // like the M17 daemon-start-unknown case; unlike auth-required it
+        // must never be treated as a terminal hold (see afterPollTick).
         connection: 'error',
         stream: 'unavailable',
         daemon: snapshot.daemon,
         lastError: snapshot.error,
+        recovery: snapshot.recovery ?? null,
         lastUpdatedAt: now,
       };
       return;
@@ -497,6 +502,7 @@ export class GoobersService {
         instance: null,
         health: null,
         lastError: fallbackError,
+        recovery: null,
         lastUpdatedAt: now,
       };
       return;
@@ -513,6 +519,7 @@ export class GoobersService {
       health: snapshot.health,
       apiCompatible,
       lastError: snapshot.degraded ? { code: 'degraded', message: 'scheduler not ticking' } : fallbackError,
+      recovery: null,
       lastUpdatedAt: now,
     };
   }

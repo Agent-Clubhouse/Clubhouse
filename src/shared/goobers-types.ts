@@ -30,6 +30,17 @@ export interface RunListQuery {
   orderByActivity?: boolean;
 }
 
+/**
+ * Extension beyond §6.4's verbatim shape (M20) — the `/readyz` startup
+ * breakdown captured while `/api/v1/instance` is 503 `recovering`. Display
+ * only, mirrors the wire shape's `startup.phase`/`.since` plus `checks`.
+ */
+export interface GoobersRecoveryStatus {
+  phase: string;
+  since: string;
+  checks: Record<string, boolean>;
+}
+
 /** Spec §6.4 — copied verbatim. */
 export interface GoobersDaemonStatus {
   state: 'running' | 'not-running' | 'starting' | 'stopping' | 'unknown';
@@ -64,6 +75,8 @@ export interface GoobersConnectionState {
   stream: 'live' | 'reconnecting' | 'polling' | 'unavailable';
   instance: Instance | null;
   health: Health | null;
+  /** Set only while `lastError.code === 'recovering'` (M20); null otherwise. */
+  recovery?: GoobersRecoveryStatus | null;
   /** See §9.4. */
   apiCompatible: boolean;
   lastError: {

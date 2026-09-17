@@ -73,6 +73,27 @@ describe('deriveGoobersPanelState', () => {
     expect(deriveGoobersPanelState(state, true).kind).toBe('starting');
   });
 
+  it('recovering on recovering code, ahead of the plain starting branch, carrying the raw recovery breakdown (M20)', () => {
+    const state = baseState({
+      daemon: { ...baseState().daemon, state: 'starting' },
+      lastError: { code: 'recovering', message: 'daemon is completing crash recovery' },
+      recovery: { phase: 'worktree-reap-crash-orphan', since: '2026-09-16T22:58:49.213Z', checks: { apiListening: true, resumeComplete: false } },
+    });
+    const result = deriveGoobersPanelState(state, true);
+    expect(result.kind).toBe('recovering');
+    expect(result.error?.code).toBe('recovering');
+    expect(result.raw.recovery?.phase).toBe('worktree-reap-crash-orphan');
+  });
+
+  it('recovery-stalled falls through to unknown-error, not recovering — requirement 4 (M20)', () => {
+    const state = baseState({
+      daemon: { ...baseState().daemon, state: 'unknown' },
+      connection: 'error',
+      lastError: { code: 'recovery-stalled', message: 'daemon has been in startup phase "x" for over 10 minutes without becoming ready' },
+    });
+    expect(deriveGoobersPanelState(state, true).kind).toBe('unknown-error');
+  });
+
   it('start-failed on daemon-start-failed code', () => {
     const state = baseState({ daemon: { ...baseState().daemon, state: 'not-running' }, lastError: { code: 'daemon-start-failed', message: 'stderr...' } });
     expect(deriveGoobersPanelState(state, true).kind).toBe('start-failed');

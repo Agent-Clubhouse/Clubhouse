@@ -13,9 +13,27 @@ import { realpath } from 'fs/promises';
 import { resolveLivenessAddress } from './goobers-address';
 import { httpGetJson, parseJsonBody } from './goobers-http';
 import type { Health, Instance } from '../../shared/goobers-api-types';
-import type { GoobersDaemonStatus } from '../../shared/goobers-types';
+import type { GoobersDaemonStatus, GoobersRecoveryStatus } from '../../shared/goobers-types';
 
 const READYZ_TIMEOUT_MS = 2000;
+
+/**
+ * `/readyz`'s body — not vendored (goobers-api-types.ts is a portal-sourced
+ * copy and this shape isn't part of that vendoring); only the subset M20
+ * actually reads.
+ */
+interface ReadyzBody {
+  checks?: Record<string, boolean>;
+  startup?: { phase: string; since: string };
+}
+
+/**
+ * A `startup.since` older than this while `/api/v1/instance` is still 503
+ * `recovering` is treated as stalled, not merely slow (M20 requirement 4).
+ * Chosen heuristic, not a spec value — the one observed live recovery ran
+ * ~2 minutes; this gives ample room before escalating to a genuine error.
+ */
+const RECOVERY_STALL_MS = 10 * 60 * 1000;
 
 interface UpLockMetadata {
   pid: number | null;
@@ -57,6 +75,8 @@ export interface LivenessSnapshot {
    *  beyond livenessTimeoutMillis — caller maps this to connection:'degraded'. */
   degraded: boolean;
   error?: { code: string; message: string };
+  /** Set only when `error.code === 'recovering'` (M20). */
+  recovery?: GoobersRecoveryStatus | null;
 }
 
 function idleDaemon(state: GoobersDaemonStatus['state'], meta?: Partial<GoobersDaemonStatus>): GoobersDaemonStatus {
@@ -123,6 +143,10 @@ export async function probeLiveness(root: string): Promise<LivenessSnapshot> {
     };
   }
 
+  // §8.4 (M20) — captured only for the 503/recovering branch below; a
+  // successful identity check never needs it.
+  const readyzBody = parseJsonBody<ReadyzBody>(readyRes.body);
+
   // Identity confirmation (§7.4 step 3 / §9.1 correctness gate).
   let instanceRes;
   try {
@@ -151,6 +175,41 @@ export async function probeLiveness(root: string): Promise<LivenessSnapshot> {
       degraded: false,
       error: { code: 'auth-required', message: 'GET /api/v1/instance returned 401 — a credential is required and is not sourced or sent this phase (§10.1)' },
     };
+  }
+
+  if (instanceRes.status === 503) {
+    // M20 — /readyz already confirmed the daemon is alive and gave us a
+    // structured startup breakdown; a 503 whose body matches the known
+    // "recovering" shape is that same alive daemon, not a failure. Anything
+    // else (wrong error.code, or no corroborating /readyz startup info)
+    // falls through to the generic 503-is-unexpected branch below —
+    // requirement 4: a 503 that isn't recognizably "recovering" stays an error.
+    const body = parseJsonBody<{ error?: { code?: string; message?: string } }>(instanceRes.body);
+    if (body?.error?.code === 'recovering' && readyzBody?.startup) {
+      const { phase, since } = readyzBody.startup;
+      const sinceMs = Date.parse(since);
+      const stalled = Number.isFinite(sinceMs) && Date.now() - sinceMs > RECOVERY_STALL_MS;
+      if (!stalled) {
+        return {
+          daemon: idleDaemon('starting', { address: addressDisplay }),
+          instance: null,
+          health: null,
+          degraded: false,
+          recovery: { phase, since, checks: readyzBody.checks ?? {} },
+          error: { code: 'recovering', message: body.error.message ?? 'daemon is completing crash recovery' },
+        };
+      }
+      return {
+        daemon: idleDaemon('unknown', { address: addressDisplay }),
+        instance: null,
+        health: null,
+        degraded: false,
+        error: {
+          code: 'recovery-stalled',
+          message: `daemon has been in startup phase "${phase}" for over ${Math.round(RECOVERY_STALL_MS / 60_000)} minutes without becoming ready`,
+        },
+      };
+    }
   }
 
   const instance = instanceRes.status === 200 ? parseJsonBody<Instance>(instanceRes.body) : null;
