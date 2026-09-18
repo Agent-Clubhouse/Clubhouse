@@ -25,9 +25,10 @@ import { parseAddressString } from './goobers-address';
 import { readInstanceIdentitySummary } from './goobers-instance-identity';
 import { startDaemon, stopDaemon, isLifecycleBusy, type StartResult, type StopResult } from './goobers-daemon';
 import { httpGetJson, parseJsonBody, destroyAllRequests } from './goobers-http';
+import { startEventStream, type EventStreamHandle, type StreamTerminalReason } from './goobers-event-stream';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
-import { API_VERSION, type RunList, type TelemetryErrorsPage, type WorkItemPage, type EventList } from '../../shared/goobers-api-types';
+import { API_VERSION, type RunList, type TelemetryErrorsPage, type WorkItemPage, type EventList, type ModelInvalidation } from '../../shared/goobers-api-types';
 import type { GoobersSettings } from '../../shared/types';
 import type { GoobersConnectionState, GoobersDaemonStatus, RunListQuery } from '../../shared/goobers-types';
 
@@ -54,6 +55,15 @@ export interface RootValidationResult {
 }
 
 const POLL_INTERVAL_MS = 5_000;
+/**
+ * Poll interval once the SSE invalidation feed is confirmed live (M26).
+ * Deliberately not "stop polling" — SSE is a push signal *in addition to*
+ * the poll, not a replacement for it (see `goobers-event-stream.ts`'s file
+ * comment on why). Matches the stream's own liveness-watchdog deadline: if
+ * the watchdog somehow fails to fire promptly, the panel still self-heals
+ * within this same bound rather than sitting on an arbitrarily longer one.
+ */
+const SSE_WIDENED_POLL_INTERVAL_MS = 30_000;
 
 const IDLE_DAEMON_STATUS: GoobersDaemonStatus = {
   state: 'unknown',
@@ -201,9 +211,17 @@ export class GoobersService {
   private reconcileCount = 0;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private pollIntervalMs = POLL_INTERVAL_MS;
   private addressWatcher: FSWatcher | null = null;
   private focusListenerRegistered = false;
   private teardownRegistered = false;
+  private eventStreamHandle: EventStreamHandle | null = null;
+  /** Set once the SSE stream hits a terminal condition (M26) — no further
+   *  connection attempts for this handle's lifecycle. Cleared by
+   *  `closeEventStream()`, called wherever the service already does a full
+   *  poll/watcher reset (a fresh `establishConnection()` pass, or an
+   *  instanceRoot change), giving each of those a fresh chance at SSE. */
+  private eventStreamTerminal: StreamTerminalReason | null = null;
   /** True from a successful `daemon-stop` until liveness actually clears.
    *  `goobers down` exiting 0 does not mean stopped — the drain is
    *  unbounded, so we keep reporting `stopping`/`draining: true` even while
@@ -223,6 +241,18 @@ export class GoobersService {
 
   get isWatchingAddressFileForTests(): boolean {
     return this.addressWatcher !== null;
+  }
+
+  get isEventStreamOpenForTests(): boolean {
+    return this.eventStreamHandle !== null;
+  }
+
+  get eventStreamTerminalForTests(): StreamTerminalReason | null {
+    return this.eventStreamTerminal;
+  }
+
+  get pollIntervalMsForTests(): number {
+    return this.pollIntervalMs;
   }
 
   constructor(settings?: ManagedSettings<GoobersSettings>) {
@@ -280,6 +310,7 @@ export class GoobersService {
     if (this.subscriberCount === 0) {
       this.stopPolling();
       this.closeAddressWatcher();
+      this.closeEventStream();
     }
   }
 
@@ -328,6 +359,7 @@ export class GoobersService {
   teardown(): void {
     this.stopPolling();
     this.closeAddressWatcher();
+    this.closeEventStream();
     destroyAllRequests();
   }
 
@@ -375,7 +407,21 @@ export class GoobersService {
     if (!this.canPollNow()) return;
     this.pollTimer = setInterval(() => {
       void this.refreshConnectionOnce(settings).then(() => this.afterPollTick(settings));
-    }, POLL_INTERVAL_MS);
+    }, this.pollIntervalMs);
+  }
+
+  /**
+   * Widen/narrow the active poll cadence (M26) — `setInterval`'s period is
+   * fixed once created, so changing it means recreating the timer. A no-op
+   * if the interval isn't actually changing or nothing is currently
+   * polling (the new value still takes effect the next time polling starts).
+   */
+  private setPollInterval(ms: number, settings: GoobersSettings): void {
+    if (this.pollIntervalMs === ms) return;
+    this.pollIntervalMs = ms;
+    if (!this.pollTimer) return;
+    this.stopPolling();
+    this.startPolling(settings);
   }
 
   private stopPolling(): void {
@@ -388,13 +434,16 @@ export class GoobersService {
   private afterPollTick(settings: GoobersSettings): void {
     if (!this.canPollNow()) {
       this.stopPolling();
+      this.closeEventStream();
       return;
     }
     if (this.state.lastError?.code === 'auth-required') {
       // §8.4/§10.1 — a 401 showed up mid-poll (e.g. auth got enabled on the
       // daemon between ticks). Stop retrying in a loop and hold; broadcast
-      // once so the renderer switches to the auth-required screen.
+      // once so the renderer switches to the auth-required screen. SSE would
+      // fail the identical way (M26) — stop it too rather than let it spin.
       this.stopPolling();
+      this.closeEventStream();
       broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
       return;
     }
@@ -408,6 +457,7 @@ export class GoobersService {
       // here would silently stop observation. Only a true absence should
       // hand off to the watcher.
       this.stopPolling();
+      this.closeEventStream(); // M26 — nothing to stream from once not-running
       this.watchAddressFile(settings.instanceRoot);
     }
     broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
@@ -444,6 +494,69 @@ export class GoobersService {
       this.addressWatcher.close();
       this.addressWatcher = null;
     }
+  }
+
+  /** Closes the SSE handle if one is open and clears the terminal flag, so
+   *  whoever calls this (always alongside a full `stopPolling()` +
+   *  `closeAddressWatcher()` reset) gets a fresh chance at SSE on the next
+   *  successful connection. */
+  private closeEventStream(): void {
+    this.eventStreamHandle?.close();
+    this.eventStreamHandle = null;
+    this.eventStreamTerminal = null;
+  }
+
+  /**
+   * Starts the SSE invalidation feed (M26) once the daemon is confirmed
+   * `running` — never earlier. `RouteEvents` is not `RecoverySafe`
+   * (`apicontract/contract.go:483`), so attempting it against a still-
+   * recovering daemon is a guaranteed wasted round-trip; M21 already has us
+   * polling correctly through `starting`/`unknown`/`recovering`, so there is
+   * nothing to gain by racing the daemon's own readiness.
+   *
+   * Idempotent — safe to call on every successful poll tick, which is
+   * exactly how it's invoked (from `refreshConnectionOnce`'s running-success
+   * branch): does nothing if a stream is already open or this connection
+   * lifecycle already hit a terminal condition.
+   */
+  private maybeStartEventStream(settings: GoobersSettings): void {
+    if (!this.isSupportedPlatform) return;
+    if (this.eventStreamHandle) return;
+    if (this.eventStreamTerminal) return;
+    if (!this.canPollNow()) return;
+    if (this.state.daemon.state !== 'running' || !this.state.daemon.address) return;
+    const address = parseAddressString(this.state.daemon.address);
+    if (!address) return;
+
+    this.eventStreamHandle = startEventStream(address.host, address.port, {
+      onConnected: () => {
+        this.setPollInterval(SSE_WIDENED_POLL_INTERVAL_MS, settings);
+      },
+      onInvalidation: (invalidation: ModelInvalidation) => {
+        if (invalidation.models.includes('instance')) {
+          void this.refreshConnectionOnce(settings);
+        }
+        broadcastToAllWindows(IPC.GOOBERS.DATA_INVALIDATED, {
+          models: invalidation.models,
+          runIds: invalidation.runIds,
+        });
+      },
+      onRefetchRequired: () => {
+        // 409 epoch_changed/feed_truncated/stale_cursor — the server's own
+        // instruction is "refetch current read endpoints." We don't know
+        // exactly what changed, so refetch broadly rather than guess.
+        void this.refreshConnectionOnce(settings);
+        broadcastToAllWindows(IPC.GOOBERS.DATA_INVALIDATED, { models: ['instance', 'run'] });
+      },
+      onDisconnected: () => {
+        this.setPollInterval(POLL_INTERVAL_MS, settings);
+      },
+      onTerminal: (reason) => {
+        this.eventStreamTerminal = reason;
+        this.eventStreamHandle = null;
+        this.setPollInterval(POLL_INTERVAL_MS, settings);
+      },
+    });
   }
 
   private async onAddressFileChanged(): Promise<void> {
@@ -543,6 +656,7 @@ export class GoobersService {
       recovery: null,
       lastUpdatedAt: now,
     };
+    this.maybeStartEventStream(settings);
   }
 
   /** Spec §7.1 startup sequence, run whenever the configured root/binary are
@@ -553,6 +667,7 @@ export class GoobersService {
   ): Promise<void> {
     this.stopPolling();
     this.closeAddressWatcher();
+    this.closeEventStream();
 
     if (!settings.autoConnect) {
       this.state = { ...this.state, connection: 'idle', stream: 'unavailable', lastError: fallbackError ?? this.state.lastError };
@@ -602,6 +717,7 @@ export class GoobersService {
       if (!settings.instanceRoot) {
         this.stopPolling();
         this.closeAddressWatcher();
+        this.closeEventStream();
         this.state = { ...makeIdleState(), configured: false };
         this.resolvedBinaryPath = null;
         return;
@@ -617,6 +733,7 @@ export class GoobersService {
       if (!rootResult.ok) {
         this.stopPolling();
         this.closeAddressWatcher();
+        this.closeEventStream();
         this.state = {
           ...makeIdleState(),
           configured: true,
@@ -665,6 +782,7 @@ export class GoobersService {
       // the new root's identity (§9.1).
       this.stopPolling();
       this.closeAddressWatcher();
+      this.closeEventStream();
       this.draining = false;
       this.state = { ...makeIdleState(), configured: !!next.instanceRoot };
       this.resolvedBinaryPath = null;
@@ -696,6 +814,7 @@ export class GoobersService {
       } else {
         this.stopPolling();
         this.closeAddressWatcher();
+        this.closeEventStream();
         this.state = { ...this.state, connection: 'idle', stream: 'unavailable' };
       }
     }
@@ -732,6 +851,7 @@ export class GoobersService {
     if (!this.isSupportedPlatform) return this.unsupportedPlatform();
     this.stopPolling();
     this.closeAddressWatcher();
+    this.closeEventStream();
     destroyAllRequests();
     this.state = { ...this.state, connection: 'idle', stream: 'unavailable' };
   }
