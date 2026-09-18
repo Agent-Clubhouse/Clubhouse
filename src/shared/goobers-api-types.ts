@@ -670,3 +670,24 @@ export interface WorkItemSummary {
   workflow?: string;
   runStatus?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Live update feed (GET /api/v1/events) — M26.
+// Vendored from upstream portal/src/api/types.ts:115-136. The wire payload
+// itself is `Invalidation{cursor, models[], runIds[], workflows[]}`
+// (goobers/internal/apicontract/wiretypes.go:4-9) — this is the client-side
+// shape after the SSE envelope (`id`/`event`/`data`) is unwrapped. It tells a
+// client WHAT to refetch, not a human-readable log. See goobers-event-stream.ts.
+// ---------------------------------------------------------------------------
+
+export interface WorkflowUpdateReference {
+  gaggle: string;
+  name: string;
+}
+
+export interface ModelInvalidation {
+  cursor: string;
+  models: UpdateModel[];
+  runIds?: string[];
+  workflows?: WorkflowUpdateReference[];
+}

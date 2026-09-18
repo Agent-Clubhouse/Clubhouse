@@ -38,6 +38,20 @@ vi.mock('./goobers-http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./goobers-http')>();
   return { ...actual, httpGetJson: vi.fn(actual.httpGetJson) };
 });
+// Fully mocked, never wrapping the real implementation: `maybeStartEventStream`
+// runs on every successful 'running' tick, and dozens of pre-existing tests
+// here use the real-looking address '127.0.0.1:8080' — the exact port the
+// real (non-test) instance's daemon happens to bind on this machine. The
+// real `startEventStream` would make a genuine network connection attempt
+// to whatever is actually listening there. Every test gets an inert handle
+// by default (`beforeEach` below); the M26 describe block overrides the
+// mock's implementation per-test to drive specific callbacks.
+const { mockStartEventStream } = vi.hoisted(() => ({
+  mockStartEventStream: vi.fn(() => ({ close: vi.fn() })),
+}));
+vi.mock('./goobers-event-stream', () => ({
+  startEventStream: mockStartEventStream,
+}));
 
 import { getShellEnvironment } from '../util/shell';
 import {
@@ -49,6 +63,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { probeLiveness } from './goobers-liveness';
 import { startDaemon, stopDaemon } from './goobers-daemon';
 import { httpGetJson } from './goobers-http';
+import type { EventStreamCallbacks, EventStreamHandle } from './goobers-event-stream';
 import type { GoobersSettings } from '../../shared/types';
 import type { ManagedSettings } from './managed-settings';
 import type { LivenessSnapshot } from './goobers-liveness';
@@ -137,6 +152,9 @@ beforeEach(() => {
   Object.defineProperty(process, 'platform', { value: 'darwin' });
   mockGetAllWindows.mockReset().mockReturnValue([]);
   mockAppOn.mockReset();
+  // Inert by default — returns a handle whose close() is a no-op and never
+  // invokes any callback. The M26 describe block overrides this per-test.
+  mockStartEventStream.mockReset().mockImplementation(() => ({ close: vi.fn() }));
 });
 
 afterEach(() => {
@@ -1612,5 +1630,271 @@ describe('GoobersService — 503 recovering (M20)', () => {
     const stopResult = await service.daemonStop();
     expect(stopDaemon).toHaveBeenCalledTimes(1);
     expect(stopResult.ok).toBe(true);
+  });
+});
+
+describe('GoobersService — SSE invalidation feed integration (M26)', () => {
+  function runningSnapshot(): LivenessSnapshot {
+    return {
+      daemon: { state: 'running', address: '127.0.0.1:8080', pid: 7027, version: 'v1', startedAt: 'x', lastTickAgeMillis: 1000, draining: false },
+      instance: { instanceRoot: tmpRoot } as unknown as LivenessSnapshot['instance'],
+      health: { ready: true, healthy: true } as unknown as LivenessSnapshot['health'],
+      degraded: false,
+    };
+  }
+
+  function startingSnapshot(): LivenessSnapshot {
+    return {
+      daemon: { state: 'starting', address: '127.0.0.1:8080', pid: null, version: null, startedAt: null, lastTickAgeMillis: null, draining: false },
+      instance: null,
+      health: null,
+      degraded: false,
+    };
+  }
+
+  function writeConfiguredRoot(): void {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+  }
+
+  /** Captures the callbacks the service passed to `startEventStream` on its
+   *  most recent call, so a test can drive them directly rather than faking
+   *  real socket/timer behavior (that protocol-level behavior is already
+   *  covered, honestly, by goobers-event-stream.test.ts's real-server tests
+   *  — this file only needs to prove the service reacts to each callback
+   *  correctly). */
+  function captureCallbacks(): { get: () => EventStreamCallbacks; handle: EventStreamHandle } {
+    let captured: EventStreamCallbacks | undefined;
+    const handle: EventStreamHandle = { close: vi.fn() };
+    mockStartEventStream.mockImplementation((..._args: unknown[]) => {
+      captured = _args[2] as EventStreamCallbacks;
+      return handle;
+    });
+    return {
+      get: () => {
+        if (!captured) throw new Error('startEventStream was not called yet');
+        return captured;
+      },
+      handle,
+    };
+  }
+
+  it('starts the SSE stream against the daemon address once running, and does not start a second one on the next tick', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+
+    expect(mockStartEventStream).toHaveBeenCalledTimes(1);
+    expect(mockStartEventStream).toHaveBeenCalledWith('127.0.0.1', 8080, expect.anything());
+    expect(service.isEventStreamOpenForTests).toBe(true);
+
+    // A second successful running tick must not open a second stream.
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    const svc = service as unknown as { refreshConnectionOnce: (s: GoobersSettings) => Promise<void> };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    expect(mockStartEventStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not attempt SSE while the daemon is starting/unknown — only once running (RouteEvents is not RecoverySafe)', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(startingSnapshot());
+    service.subscribe();
+    await flush();
+
+    expect(mockStartEventStream).not.toHaveBeenCalled();
+  });
+
+  it('onConnected widens the poll interval; onDisconnected narrows it back immediately', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.pollIntervalMsForTests).toBe(5_000);
+
+    cb.get().onConnected();
+    expect(service.pollIntervalMsForTests).toBe(30_000);
+
+    cb.get().onDisconnected();
+    expect(service.pollIntervalMsForTests).toBe(5_000);
+    // Disconnected is not terminal — the stream module keeps retrying on its
+    // own; the service must not have torn down its handle or gone terminal.
+    expect(service.isEventStreamOpenForTests).toBe(true);
+    expect(service.eventStreamTerminalForTests).toBeNull();
+  });
+
+  it('onTerminal closes the stream, narrows the poll, and prevents a further attempt on the next tick', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    cb.get().onConnected();
+    expect(service.pollIntervalMsForTests).toBe(30_000);
+
+    cb.get().onTerminal('schema-changed');
+
+    expect(service.isEventStreamOpenForTests).toBe(false);
+    expect(service.eventStreamTerminalForTests).toBe('schema-changed');
+    expect(service.pollIntervalMsForTests).toBe(5_000);
+
+    // A subsequent running tick must not retry SSE for this connection lifecycle.
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    const svc = service as unknown as { refreshConnectionOnce: (s: GoobersSettings) => Promise<void> };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    expect(mockStartEventStream).toHaveBeenCalledTimes(1); // still just the original call
+  });
+
+  it.each(['auth-required', 'no-read-model', 'schema-changed'] as const)(
+    'onTerminal(%s) all behave the same way at the service level: stop, narrow, never retry',
+    async (reason) => {
+      mockGetAllWindows.mockReturnValue([visibleWindow()]);
+      writeConfiguredRoot();
+      const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+      const service = new GoobersService(settings);
+      const cb = captureCallbacks();
+
+      vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+      service.subscribe();
+      await flush();
+      cb.get().onTerminal(reason);
+
+      expect(service.eventStreamTerminalForTests).toBe(reason);
+      expect(service.isEventStreamOpenForTests).toBe(false);
+    },
+  );
+
+  it('a fresh establishConnection (instanceRoot change) clears a prior terminal state, giving SSE another chance', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    cb.get().onTerminal('no-read-model');
+    expect(service.eventStreamTerminalForTests).toBe('no-read-model');
+
+    const otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goobers-service-m26-other-'));
+    fs.writeFileSync(path.join(otherRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(otherRoot, '.instance-id'), 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n');
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    const next = defaultSettings({ instanceRoot: otherRoot });
+    settings.set(next);
+    (service as unknown as { onSettingsChanged: (s: GoobersSettings) => void }).onSettingsChanged(next);
+    await flush();
+
+    expect(service.eventStreamTerminalForTests).toBeNull();
+    expect(mockStartEventStream).toHaveBeenCalledTimes(2); // original + fresh attempt on the new root
+    fs.rmSync(otherRoot, { recursive: true, force: true });
+  });
+
+  it('onInvalidation refetches state when "instance" is among the invalidated models, and broadcasts the exact payload', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    const callCountBefore = vi.mocked(probeLiveness).mock.calls.length;
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    cb.get().onInvalidation({ cursor: 'c1', models: ['instance'], runIds: ['run-1'] });
+    await flush();
+
+    expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountBefore + 1);
+  });
+
+  it('onInvalidation does NOT refetch state when "instance" is absent from the models list', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    const callCountBefore = vi.mocked(probeLiveness).mock.calls.length;
+
+    cb.get().onInvalidation({ cursor: 'c1', models: ['run'], runIds: ['run-1'] });
+    await flush();
+
+    expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountBefore);
+  });
+
+  it('onRefetchRequired (epoch_changed/feed_truncated/stale_cursor) refetches broadly', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    const callCountBefore = vi.mocked(probeLiveness).mock.calls.length;
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    cb.get().onRefetchRequired();
+    await flush();
+
+    expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountBefore + 1);
+  });
+
+  it('closes the stream on release() and on teardown()', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.isEventStreamOpenForTests).toBe(true);
+
+    service.release();
+    expect(cb.handle.close).toHaveBeenCalledTimes(1);
+    expect(service.isEventStreamOpenForTests).toBe(false);
+  });
+
+  it('does not attempt SSE when the daemon becomes running but no window is visible (canPollNow gate)', async () => {
+    mockGetAllWindows.mockReturnValue([]); // no visible window
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+
+    expect(mockStartEventStream).not.toHaveBeenCalled();
   });
 });
