@@ -29,6 +29,15 @@ vi.mock('./goobers-daemon', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./goobers-daemon')>();
   return { ...actual, startDaemon: vi.fn(actual.startDaemon), stopDaemon: vi.fn(actual.stopDaemon) };
 });
+// Only httpGetJson is mocked here — parseJsonBody/destroyAllRequests stay
+// real. M25's three passthroughs (telemetryErrors/workItems/getRunEvents)
+// need per-status-code control (401/503/unparseable/timeout) that a real
+// fs-backed probeLiveness can't give them the way it does for the
+// daemon-not-running case the pre-existing listRuns test covers.
+vi.mock('./goobers-http', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./goobers-http')>();
+  return { ...actual, httpGetJson: vi.fn(actual.httpGetJson) };
+});
 
 import { getShellEnvironment } from '../util/shell';
 import {
@@ -39,6 +48,7 @@ import {
 import { IPC } from '../../shared/ipc-channels';
 import { probeLiveness } from './goobers-liveness';
 import { startDaemon, stopDaemon } from './goobers-daemon';
+import { httpGetJson } from './goobers-http';
 import type { GoobersSettings } from '../../shared/types';
 import type { ManagedSettings } from './managed-settings';
 import type { LivenessSnapshot } from './goobers-liveness';
@@ -1208,6 +1218,151 @@ describe('GoobersService — listRuns', () => {
 
     const result = await service.listRuns({ phase: 'running' });
     expect(result).toEqual({ error: { code: 'daemon-not-running', message: expect.any(String) } });
+  });
+});
+
+describe('GoobersService — M25 read-only surfaces (telemetryErrors / workItems / getRunEvents)', () => {
+  function runningSnapshotFor(root: string): LivenessSnapshot {
+    return {
+      daemon: { state: 'running', address: '127.0.0.1:8080', pid: 7027, version: 'v1', startedAt: 'x', lastTickAgeMillis: 1000, draining: false },
+      instance: { instanceRoot: root } as unknown as LivenessSnapshot['instance'],
+      health: { ready: true, healthy: true } as unknown as LivenessSnapshot['health'],
+      degraded: false,
+    };
+  }
+
+  async function connectedService(): Promise<GoobersService> {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshotFor(tmpRoot));
+    service.subscribe();
+    await flush();
+    return service;
+  }
+
+  // Real payloads captured against a `/tmp` scratch instance (no repo
+  // connected) on a distinct port (8091) — never the real instance, which
+  // stays read-only via the panel's own polling per the M25 brief. Item
+  // shapes below are copied from these captures, not guessed from the Go
+  // source (see the comment on TelemetryErrorsPage/WorkItemPage in
+  // goobers-api-types.ts for the full trap writeup).
+  const REAL_TELEMETRY_ERRORS_BODY = JSON.stringify({
+    items: [
+      {
+        runId: '', workflow: '', stage: '', attempt: 0,
+        code: 'merged_pr_cost_sweep_failed', errorClass: 'unknown',
+        message: 'your-org/your-repo: materialize credentials: ...',
+        occurredAt: '2026-09-18T05:43:28.140445Z',
+      },
+    ],
+  });
+  const REAL_WORK_ITEMS_BODY = JSON.stringify({ items: [], hasMore: false });
+  const REAL_RUN_NOT_FOUND_BODY = JSON.stringify({ error: { code: 'not_found', message: 'requested run data was not found' } });
+
+  const routes: Array<{
+    name: 'telemetryErrors' | 'workItems' | 'getRunEvents';
+    path: string;
+    errorCode: string;
+    successBody: string;
+    call: (service: GoobersService) => Promise<unknown>;
+  }> = [
+    {
+      name: 'telemetryErrors',
+      path: '/api/v1/telemetry/errors',
+      errorCode: 'telemetry-errors-fetch-failed',
+      successBody: REAL_TELEMETRY_ERRORS_BODY,
+      call: (service) => service.telemetryErrors(),
+    },
+    {
+      name: 'workItems',
+      path: '/api/v1/work-items',
+      errorCode: 'work-items-fetch-failed',
+      successBody: REAL_WORK_ITEMS_BODY,
+      call: (service) => service.workItems(),
+    },
+    {
+      name: 'getRunEvents',
+      path: '/api/v1/runs/some-run/events',
+      errorCode: 'run-events-fetch-failed',
+      successBody: JSON.stringify({ runId: 'some-run', events: [] }),
+      call: (service) => service.getRunEvents('some-run'),
+    },
+  ];
+
+  for (const route of routes) {
+    describe(route.name, () => {
+      it(`refuses to fetch when the daemon is not running (never calls httpGetJson)`, async () => {
+        fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+        fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+        const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+        const service = new GoobersService(settings);
+        service.subscribe();
+        await flush();
+
+        const result = await route.call(service);
+        expect(result).toEqual({ error: { code: 'daemon-not-running', message: expect.any(String) } });
+        expect(httpGetJson).not.toHaveBeenCalled();
+      });
+
+      it('returns the typed body on a real-shaped 200 response', async () => {
+        const service = await connectedService();
+        vi.mocked(httpGetJson).mockResolvedValueOnce({ status: 200, body: route.successBody });
+
+        const result = await route.call(service);
+        expect(result).toEqual(JSON.parse(route.successBody));
+      });
+
+      it('maps a 401 to a typed error envelope rather than throwing', async () => {
+        const service = await connectedService();
+        vi.mocked(httpGetJson).mockResolvedValueOnce({ status: 401, body: '' });
+
+        const result = await route.call(service);
+        expect(result).toEqual({ error: { code: route.errorCode, message: expect.stringContaining('401') } });
+      });
+
+      it('maps a 503 to a typed error envelope', async () => {
+        const service = await connectedService();
+        vi.mocked(httpGetJson).mockResolvedValueOnce({ status: 503, body: '' });
+
+        const result = await route.call(service);
+        expect(result).toEqual({ error: { code: route.errorCode, message: expect.stringContaining('503') } });
+      });
+
+      it('maps an unparseable 200 body to a typed error envelope instead of throwing', async () => {
+        const service = await connectedService();
+        vi.mocked(httpGetJson).mockResolvedValueOnce({ status: 200, body: 'not json{{{' });
+
+        const result = await route.call(service);
+        expect(result).toEqual({ error: { code: route.errorCode, message: expect.stringContaining('unparseable') } });
+      });
+
+      it('maps a network/timeout failure to a typed error envelope', async () => {
+        const service = await connectedService();
+        vi.mocked(httpGetJson).mockRejectedValueOnce(new Error('ETIMEDOUT'));
+
+        const result = await route.call(service);
+        expect(result).toEqual({ error: { code: route.errorCode, message: 'ETIMEDOUT' } });
+      });
+    });
+  }
+
+  it('getRunEvents matches the real 404 shape for a nonexistent run (does not special-case it — surfaces the daemon error)', async () => {
+    const service = await connectedService();
+    vi.mocked(httpGetJson).mockResolvedValueOnce({ status: 404, body: REAL_RUN_NOT_FOUND_BODY });
+
+    const result = await service.getRunEvents('nonexistent-run-id');
+    expect(result).toEqual({ error: { code: 'run-events-fetch-failed', message: expect.stringContaining('404') } });
+  });
+
+  it('getRunEvents ignores cursor/limit at the IPC layer — the daemon route takes none (documented finding, not a bug)', async () => {
+    const service = await connectedService();
+    vi.mocked(httpGetJson).mockResolvedValueOnce({ status: 200, body: JSON.stringify({ runId: 'r1', events: [] }) });
+
+    await service.getRunEvents('r1');
+    expect(httpGetJson).toHaveBeenCalledWith('127.0.0.1', 8080, '/api/v1/runs/r1/events', expect.any(Number));
   });
 });
 

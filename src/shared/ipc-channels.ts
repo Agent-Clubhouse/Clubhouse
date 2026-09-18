@@ -528,6 +528,8 @@ export const IPC = {
     DAEMON_START: 'goobers:daemon-start',
     DAEMON_STOP: 'goobers:daemon-stop',
     OPEN_RUN_DIR: 'goobers:open-run-dir',
+    TELEMETRY_ERRORS: 'goobers:telemetry-errors',
+    WORK_ITEMS: 'goobers:work-items',
     /** Main → renderer broadcast: connection/daemon/health transitions. */
     STATE_CHANGED: 'goobers:state-changed',
     /** Main → renderer broadcast: targeted cache invalidation. */
