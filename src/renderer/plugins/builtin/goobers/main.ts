@@ -57,6 +57,37 @@ export function formatAgeMillis(ms: number | undefined | null): string {
   return formatDurationMillis(ms);
 }
 
+/**
+ * Transcribed from goobers cmd/goobers/dashboard.go:130-146 (own literals,
+ * no dependency on the goobers repo). The daemon's phase vocabulary grows
+ * without telling us, so an unmapped phase must still render sanely — see
+ * `describeStartupPhase`'s fallback.
+ */
+const GOOBERS_STARTUP_PHASE_DESCRIPTIONS: Record<string, string> = {
+  'api-bind': 'Opening the local API so startup progress can be observed.',
+  'worktree-reap-crash-orphan': 'Recovering worktrees left by an interrupted run before scheduling resumes.',
+  'telemetry-retention-prune': 'Pruning expired telemetry according to the instance retention policy.',
+  'orphan-run-prune': 'Cleaning incomplete run directories left by an interrupted startup.',
+  'webhook-listener-start': 'Starting the configured webhook listener.',
+  'waiting-for-daemon-api': 'Waiting for the daemon API to begin listening.',
+};
+
+const UNKNOWN_STARTUP_PHASE_DESCRIPTION = 'Goobers is completing a required startup operation.';
+
+export function describeStartupPhase(phase: string): string {
+  return GOOBERS_STARTUP_PHASE_DESCRIPTIONS[phase] ?? UNKNOWN_STARTUP_PHASE_DESCRIPTION;
+}
+
+export function deslugPhase(phase: string): string {
+  return phase.replace(/-/g, ' ');
+}
+
+export function formatElapsedSince(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return 'unknown';
+  return formatDurationMillis(Math.max(0, Date.now() - then));
+}
+
 const STATUS_PILL: Record<GoobersPanelStateKind, { label: string; color: string; icon: string }> = {
   'not-configured': { label: 'Not configured', color: 'text-ctp-subtext0', icon: '○' },
   'invalid-root': { label: 'Invalid root', color: 'text-ctp-red', icon: '⚠' },
@@ -549,8 +580,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         className: 'flex flex-col items-center justify-center h-full w-full gap-2 text-ctp-subtext0 text-xs px-6',
         'data-testid': 'goobers-state-recovering',
       },
-        React.createElement('span', null, 'Recovering — the daemon is alive and completing crash recovery.'),
-        recovery && React.createElement('span', { className: 'text-ctp-overlay0' }, `Phase: ${recovery.phase} (since ${recovery.since})`),
+        React.createElement('span', null, 'Goobers is starting — completing required startup work before it accepts requests.'),
+        recovery && React.createElement('span', { className: 'text-ctp-overlay0' }, describeStartupPhase(recovery.phase)),
+        recovery && React.createElement('span', { className: 'text-ctp-overlay0' },
+          `${deslugPhase(recovery.phase)} (${formatElapsedSince(recovery.since)} elapsed)`),
         checkEntries.length > 0 && React.createElement('ul', { className: 'text-ctp-overlay0 list-none space-y-0.5' },
           checkEntries.map(([name, done]) => React.createElement('li', { key: name }, `${done ? '✓' : '…'} ${name}`)),
         ),
