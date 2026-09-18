@@ -389,6 +389,17 @@ describe('startEventStream — transient failures (503, connection refused, mid-
 
 describe('startEventStream — close()', () => {
   it('stops all further activity once closed, even past the backoff window', async () => {
+    // Deliberately generous backoff here, unlike the rest of this file's
+    // FAST_TIMING: this test's assertion depends on close() winning a race
+    // against the client's own reconnect pipeline (503 response -> parse ->
+    // scheduleReconnect -> timer fires -> connect()) — with FAST_TIMING's
+    // 10-40ms window, that whole round trip can complete inside the gap
+    // between the server observing the first request and the test's own
+    // close() call actually executing, especially under a loaded/slow CI
+    // runner (observed flaky on Windows CI). A ~250ms floor makes that race
+    // essentially unwinnable for the reconnect side while keeping the test
+    // itself well under a second.
+    const timing = { livenessDeadlineMs: 60, initialBackoffMs: 250, maxBackoffMs: 250 };
     let requestCount = 0;
     const { port, server } = await listen((req, res) => {
       requestCount += 1;
@@ -398,13 +409,13 @@ describe('startEventStream — close()', () => {
     activeServer = server;
 
     const cb = collectCallbacks();
-    const handle = startEventStream('127.0.0.1', port, cb, FAST_TIMING);
+    const handle = startEventStream('127.0.0.1', port, cb, timing);
 
     await waitUntil(() => requestCount >= 1);
     handle.close();
     const countAtClose = requestCount;
 
-    await new Promise((resolve) => setTimeout(resolve, FAST_TIMING.maxBackoffMs * 3));
+    await new Promise((resolve) => setTimeout(resolve, timing.maxBackoffMs * 3));
     expect(requestCount).toBe(countAtClose);
   });
 });
