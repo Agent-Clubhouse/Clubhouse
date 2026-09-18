@@ -389,17 +389,20 @@ describe('startEventStream — transient failures (503, connection refused, mid-
 
 describe('startEventStream — close()', () => {
   it('stops all further activity once closed, even past the backoff window', async () => {
-    // Deliberately generous backoff here, unlike the rest of this file's
-    // FAST_TIMING: this test's assertion depends on close() winning a race
-    // against the client's own reconnect pipeline (503 response -> parse ->
-    // scheduleReconnect -> timer fires -> connect()) — with FAST_TIMING's
-    // 10-40ms window, that whole round trip can complete inside the gap
-    // between the server observing the first request and the test's own
-    // close() call actually executing, especially under a loaded/slow CI
-    // runner (observed flaky on Windows CI). A ~250ms floor makes that race
-    // essentially unwinnable for the reconnect side while keeping the test
-    // itself well under a second.
-    const timing = { livenessDeadlineMs: 60, initialBackoffMs: 250, maxBackoffMs: 250 };
+    // The real guarantee close() makes is narrower than "the request count
+    // never changes after this call returns": req.destroy() stops the
+    // client from processing a response or scheduling another reconnect,
+    // but it cannot un-send bytes that already reached the server over the
+    // loopback socket — a request dispatched in the ~5-10ms window between
+    // the test's waitUntil() poll and its own close() call can still land
+    // server-side after close() has already run, client-side, correctly.
+    // (chirpy-mole reproduced this 2/20 locally and named the mechanism
+    // precisely: it's a TCP-delivery fact, not a bug in close().) So the
+    // assertion below checks the guarantee that's actually true: at most
+    // one more request may land right around close(), and — the part that
+    // actually matters — nothing NEW starts once things settle, i.e. no
+    // fresh reconnect cycle begins after close() has fully taken effect.
+    const timing = { livenessDeadlineMs: 60, initialBackoffMs: 10, maxBackoffMs: 40 };
     let requestCount = 0;
     const { port, server } = await listen((req, res) => {
       requestCount += 1;
@@ -413,9 +416,16 @@ describe('startEventStream — close()', () => {
 
     await waitUntil(() => requestCount >= 1);
     handle.close();
-    const countAtClose = requestCount;
 
-    await new Promise((resolve) => setTimeout(resolve, timing.maxBackoffMs * 3));
-    expect(requestCount).toBe(countAtClose);
+    // Let anything already in flight at the moment of close() land, then
+    // capture that as the settled baseline.
+    await new Promise((resolve) => setTimeout(resolve, timing.maxBackoffMs));
+    const settledCount = requestCount;
+    expect(settledCount).toBeLessThanOrEqual(2); // the original request, plus at most one already in flight
+
+    // Past several more backoff windows, nothing further must arrive — this
+    // is the property that actually matters: no new reconnect cycle starts.
+    await new Promise((resolve) => setTimeout(resolve, timing.maxBackoffMs * 5));
+    expect(requestCount).toBe(settledCount);
   });
 });
