@@ -3,7 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/
 import { useGoobersStore, initGoobersListener } from '../../../stores/goobersStore';
 import { useGoobersSettingsStore } from '../../../stores/goobersSettingsStore';
 import { deriveGoobersPanelState, type GoobersPanelState, type GoobersPanelStateKind } from './panelState';
-import type { RunSummary } from '../../../../shared/goobers-api-types';
+import type { RunSummary, Instance, Health, InstanceStatus } from '../../../../shared/goobers-api-types';
 import type { GoobersSettings } from '../../../../shared/types';
 
 // ── Activate / Deactivate ──────────────────────────────────────────────
@@ -86,6 +86,23 @@ export function formatElapsedSince(iso: string): string {
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return 'unknown';
   return formatDurationMillis(Math.max(0, Date.now() - then));
+}
+
+export function formatBytes(bytes: number): string {
+  const gib = bytes / 1024 ** 3;
+  if (gib >= 1) return `${gib.toFixed(1)}GB`;
+  const mib = bytes / 1024 ** 2;
+  return `${mib.toFixed(0)}MB`;
+}
+
+/** M24: the daemon's own summary judgement — degraded/starting still needs the same idle framing. */
+export function describeIdleStatus(status: InstanceStatus | undefined): string {
+  switch (status) {
+    case 'degraded': return 'Daemon degraded — nothing active';
+    case 'starting': return 'Daemon starting — nothing active yet';
+    case 'ready':
+    default: return 'Daemon running — nothing active';
+  }
 }
 
 const STATUS_PILL: Record<GoobersPanelStateKind, { label: string; color: string; icon: string }> = {
@@ -297,23 +314,67 @@ function RunRow({ run }: { run: RunSummary }) {
   );
 }
 
+/**
+ * M24: the panel fetched `instance.warnings[]`, `.status`, `.maintenance`,
+ * `.counts`, `.storageHealth`, and `health.freshness` every poll cycle and
+ * discarded all of it behind a flat "nothing active" — the owner's actual
+ * question ("what is my daemon doing, and why is it doing nothing?") went
+ * unanswered. Each field below is independently optional; a daemon that
+ * omits one must still render the others cleanly.
+ */
+function DaemonIdleDetail({ instance, health }: { instance: Instance | null; health: Health | null }) {
+  const warnings = instance?.warnings ?? [];
+  const maintenance = instance?.maintenance;
+  const storageHealth = instance?.storageHealth;
+  const counts = instance?.counts;
+  const freshness = health?.freshness;
+
+  return React.createElement('div', {
+    className: 'flex flex-col items-center justify-center flex-1 gap-1.5 text-ctp-subtext0 text-xs text-center px-6 overflow-y-auto',
+    'data-testid': 'goobers-runs-empty',
+  },
+    React.createElement('span', null, describeIdleStatus(instance?.status)),
+    warnings.length > 0 && React.createElement('ul', {
+      className: 'text-ctp-yellow list-none space-y-0.5',
+      'data-testid': 'goobers-instance-warnings',
+    }, warnings.map((w) => React.createElement('li', { key: w.code }, `${w.code}: ${w.message}`))),
+    storageHealth && React.createElement('span', {
+      className: storageHealth.tier === 'healthy' ? 'text-ctp-overlay0' : 'text-ctp-red',
+      'data-testid': 'goobers-storage-health',
+    }, `Storage ${deslugPhase(storageHealth.tier)}: ${formatBytes(storageHealth.freeBytes)} free of ${formatBytes(storageHealth.totalBytes)} (critical floor ${formatBytes(storageHealth.criticalFloorBytes)})`),
+    maintenance && React.createElement('div', {
+      className: 'flex flex-col items-center gap-0.5 text-ctp-overlay0',
+      'data-testid': 'goobers-maintenance',
+    },
+      React.createElement('span', null,
+        `Maintenance: ${maintenance.kind} — ${maintenance.state}${maintenance.currentPhase ? ` (${deslugPhase(maintenance.currentPhase)})` : ''}`),
+      maintenance.errorSummary ? React.createElement('span', { className: 'text-ctp-red' }, maintenance.errorSummary) : null,
+    ),
+    freshness && React.createElement('span', { 'data-testid': 'goobers-scheduler-freshness' },
+      `Scheduler tick ${formatAgeMillis(freshness.lastTickAgeMillis)} ago`),
+    counts && React.createElement('span', { 'data-testid': 'goobers-inventory-counts' },
+      `${counts.gaggles} gaggle${counts.gaggles === 1 ? '' : 's'} · ${counts.goobers} goober${counts.goobers === 1 ? '' : 's'} · ${counts.workflows} workflow${counts.workflows === 1 ? '' : 's'}`),
+  );
+}
+
 function ActiveRunsView({
-  runs, hasMore, totalShown, activeRuns, maxConcurrentRuns,
+  runs, hasMore, totalShown, instance, health,
 }: {
   runs: RunSummary[];
   hasMore: boolean;
   totalShown: number;
-  activeRuns: number;
-  maxConcurrentRuns: number;
+  instance: Instance | null;
+  health: Health | null;
 }) {
+  const activeRuns = instance?.concurrency.activeRuns ?? 0;
+  const maxConcurrentRuns = instance?.concurrency.maxConcurrentRuns ?? 0;
   return React.createElement('div', { className: 'flex flex-col h-full w-full', 'data-testid': 'goobers-active-runs' },
     React.createElement('div', { className: 'flex items-center justify-between px-3 py-1.5 text-[11px] text-ctp-subtext0 border-b border-ctp-overlay0/30' },
       React.createElement('span', null, `${activeRuns} / ${maxConcurrentRuns} slots`),
       hasMore ? React.createElement('span', null, `showing first ${totalShown} of many running`) : null,
     ),
     runs.length === 0
-      ? React.createElement('div', { className: 'flex items-center justify-center flex-1 text-ctp-subtext0 text-xs', 'data-testid': 'goobers-runs-empty' },
-          'Daemon running — nothing active')
+      ? React.createElement(DaemonIdleDetail, { instance, health })
       : React.createElement('div', { className: 'flex-1 overflow-y-auto' },
           runs.map((r) => React.createElement(RunRow, { key: r.id, run: r })),
         ),
@@ -675,8 +736,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
           runs,
           hasMore: runsHasMore,
           totalShown: runs.length,
-          activeRuns: storeState?.instance?.concurrency.activeRuns ?? 0,
-          maxConcurrentRuns: storeState?.instance?.concurrency.maxConcurrentRuns ?? 0,
+          instance: storeState?.instance ?? null,
+          health: storeState?.health ?? null,
         }),
       );
       break;

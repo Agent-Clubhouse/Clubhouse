@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { MainPanel, describeStartupPhase, deslugPhase, formatElapsedSince } from './main';
+import { MainPanel, describeStartupPhase, deslugPhase, formatElapsedSince, formatBytes, describeIdleStatus } from './main';
 import { createMockAPI } from '../../testing';
 import { useGoobersStore } from '../../../stores/goobersStore';
 import { useGoobersSettingsStore } from '../../../stores/goobersSettingsStore';
@@ -345,7 +345,10 @@ describe('Goobers MainPanel', () => {
   });
 
   describe('ready state and the active-run list', () => {
-    function readyState(instanceOverrides: Partial<NonNullable<GoobersConnectionState['instance']>> = {}) {
+    function readyState(
+      instanceOverrides: Partial<NonNullable<GoobersConnectionState['instance']>> = {},
+      connStateOverrides: Partial<GoobersConnectionState> = {},
+    ) {
       return baseConnState({
         connection: 'connected',
         stream: 'live',
@@ -358,6 +361,7 @@ describe('Goobers MainPanel', () => {
           warnings: [], fleetEnrolled: false,
           ...instanceOverrides,
         },
+        ...connStateOverrides,
       });
     }
 
@@ -367,6 +371,140 @@ describe('Goobers MainPanel', () => {
       render(<MainPanel api={api} />);
       await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
       expect(screen.getByText('Daemon running — nothing active')).toBeInTheDocument();
+    });
+
+    // M24: nothing beyond the base sentence renders when every optional
+    // field (warnings, maintenance, storageHealth, counts, freshness/health)
+    // is absent — a daemon that omits them must still get a clean panel.
+    it('renders a clean idle panel with no warnings/maintenance/storage/freshness sections when every optional field is absent (M24)', async () => {
+      setConnState(readyState({}, { health: null }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+      expect(screen.getByText('Daemon running — nothing active')).toBeInTheDocument();
+      expect(screen.queryByTestId('goobers-instance-warnings')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('goobers-maintenance')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('goobers-storage-health')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('goobers-scheduler-freshness')).not.toBeInTheDocument();
+      // counts IS present on the base fixture's instance, since it's non-optional on the wire.
+      expect(screen.getByTestId('goobers-inventory-counts')).toBeInTheDocument();
+    });
+
+    it('says the daemon is degraded, not just "running", when instance.status is degraded (M24)', async () => {
+      setConnState(readyState({ status: 'degraded' }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+      expect(screen.getByText('Daemon degraded — nothing active')).toBeInTheDocument();
+    });
+
+    it('renders warnings[] with code and message, one per entry (M24)', async () => {
+      setConnState(readyState({
+        warnings: [
+          { code: 'VER001', message: 'workflow version mismatch' },
+          { code: 'MODEL002', message: 'model reference unresolved' },
+        ],
+      }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-instance-warnings')).toBeInTheDocument());
+      expect(screen.getByText(/VER001: workflow version mismatch/)).toBeInTheDocument();
+      expect(screen.getByText(/MODEL002: model reference unresolved/)).toBeInTheDocument();
+    });
+
+    it('renders maintenance with its current phase de-slugged and its error summary (M24)', async () => {
+      setConnState(readyState({
+        maintenance: {
+          kind: 'retention-sweep',
+          state: 'running',
+          trigger: 'startup',
+          currentPhase: 'projection-retention',
+          candidates: 4,
+          removed: 0,
+          failures: 1,
+          errorSummary: 'one candidate failed to remove',
+        },
+      }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-maintenance')).toBeInTheDocument());
+      expect(screen.getByText(/retention-sweep — running/)).toBeInTheDocument();
+      expect(screen.getByText(/projection retention/)).toBeInTheDocument();
+      expect(screen.getByText('one candidate failed to remove')).toBeInTheDocument();
+    });
+
+    it('renders maintenance without currentPhase or errorSummary gracefully (M24)', async () => {
+      setConnState(readyState({
+        maintenance: {
+          kind: 'retention-sweep', state: 'completed', trigger: 'startup',
+          candidates: 0, removed: 0, failures: 0,
+        },
+      }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-maintenance')).toBeInTheDocument());
+      expect(screen.getByText('Maintenance: retention-sweep — completed')).toBeInTheDocument();
+    });
+
+    // M24: verified live against a /tmp scratch daemon — storageHealth is a
+    // real field our vendored Instance type didn't model until this mission.
+    it('renders storageHealth, flagging any non-healthy tier — this is the actual answer to "why is nothing active" on the real instance (M24)', async () => {
+      setConnState(readyState({
+        storageHealth: {
+          tier: 'admission-stopped',
+          path: '.',
+          freeBytes: 66_823_286_784,
+          totalBytes: 494_384_795_648,
+          warningFloorBytes: 137_438_953_472,
+          warningFloorPercent: 10,
+          criticalFloorBytes: 68_719_476_736,
+          criticalFloorPercent: 5,
+          measuredAt: '2026-09-18T01:31:29.560701-07:00',
+        },
+      }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-storage-health')).toBeInTheDocument());
+      expect(screen.getByText(/admission stopped/)).toBeInTheDocument();
+      expect(screen.getByText(/62\.2GB free of 460\.4GB/)).toBeInTheDocument();
+      expect(screen.getByText(/critical floor 64\.0GB/)).toBeInTheDocument();
+    });
+
+    it('renders scheduler freshness as a relative age, not a raw timestamp (M24)', async () => {
+      setConnState(readyState({}, {
+        health: {
+          apiVersion: 'v1', schemaVersion: 'v1', ready: true, healthy: true,
+          instance: { name: 'goobers-local', environment: 'dev' },
+          freshness: {
+            observedAt: '2026-09-18T00:05:00.000Z',
+            definitionsLoadedAt: '2026-09-18T00:00:00.000Z',
+            journalUpdatedAt: '2026-09-18T00:00:00.000Z',
+            lastSchedulerTickAt: '2026-09-18T00:00:00.000Z',
+            lastTickAgeMillis: 300_000,
+          },
+        },
+      }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-scheduler-freshness')).toBeInTheDocument());
+      expect(screen.getByText('Scheduler tick 5m ago')).toBeInTheDocument();
+      expect(screen.queryByText(/2026-09-18T00:00:00\.000Z/)).not.toBeInTheDocument();
+    });
+
+    it('renders inventory counts (gaggles/goobers/workflows) in the idle panel (M24)', async () => {
+      setConnState(readyState({ counts: { gaggles: 3, goobers: 1, workflows: 12, activeRuns: 0 } }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-inventory-counts')).toBeInTheDocument());
+      expect(screen.getByText('3 gaggles · 1 goober · 12 workflows')).toBeInTheDocument();
+    });
+
+    it('renders a single-count singular correctly (M24)', async () => {
+      setConnState(readyState({ counts: { gaggles: 1, goobers: 1, workflows: 1, activeRuns: 0 } }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-inventory-counts')).toBeInTheDocument());
+      expect(screen.getByText('1 gaggle · 1 goober · 1 workflow')).toBeInTheDocument();
     });
 
     it('renders a single active run with blockers and limitations rendered differently', async () => {
@@ -495,6 +633,38 @@ describe('startup phase copy helpers', () => {
 
     it('returns "unknown" for an unparseable since string', () => {
       expect(formatElapsedSince('not-a-date')).toBe('unknown');
+    });
+  });
+
+  describe('formatBytes', () => {
+    it('formats gigabyte-scale values with one decimal', () => {
+      expect(formatBytes(66_823_286_784)).toBe('62.2GB');
+    });
+
+    it('formats sub-gigabyte values in whole megabytes', () => {
+      expect(formatBytes(5 * 1024 * 1024)).toBe('5MB');
+    });
+
+    it('formats exactly zero bytes', () => {
+      expect(formatBytes(0)).toBe('0MB');
+    });
+  });
+
+  describe('describeIdleStatus', () => {
+    it('describes a degraded instance', () => {
+      expect(describeIdleStatus('degraded')).toBe('Daemon degraded — nothing active');
+    });
+
+    it('describes a starting instance', () => {
+      expect(describeIdleStatus('starting')).toBe('Daemon starting — nothing active yet');
+    });
+
+    it('describes a ready instance', () => {
+      expect(describeIdleStatus('ready')).toBe('Daemon running — nothing active');
+    });
+
+    it('falls back to the running framing for an undefined status', () => {
+      expect(describeIdleStatus(undefined)).toBe('Daemon running — nothing active');
     });
   });
 });
