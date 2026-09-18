@@ -17,6 +17,9 @@ const { goobersServiceMock } = vi.hoisted(() => ({
     daemonStatus: vi.fn(async () => ({ state: 'unknown' })),
     daemonStart: vi.fn(async () => ({ ok: true })),
     daemonStop: vi.fn(async () => ({ ok: true })),
+    getRunEvents: vi.fn(async () => ({ runId: 'run-1', events: [] })),
+    telemetryErrors: vi.fn(async () => ({ items: [] })),
+    workItems: vi.fn(async () => ({ items: [], hasMore: false })),
   },
 }));
 
@@ -140,6 +143,10 @@ describe('goobers-handlers', () => {
       expect(() => getHandler(IPC.GOOBERS.LIST_WORKFLOWS)(fakeEvent, { gaggle })).toThrow();
     });
 
+    it.each(pathInjectionCases)('rejects runId=%j on goobers:get-run-events', (runId) => {
+      expect(() => getHandler(IPC.GOOBERS.GET_RUN_EVENTS)(fakeEvent, { runId })).toThrow();
+    });
+
     it('rejects a path-injecting stage alongside a valid runId', () => {
       expect(() => getHandler(IPC.GOOBERS.GET_STAGE_ATTEMPTS)(fakeEvent, { runId: 'run-1', stage: '../../etc' }))
         .toThrow();
@@ -183,6 +190,51 @@ describe('goobers-handlers', () => {
     it('list-gaggles', async () => {
       const result = await getHandler(IPC.GOOBERS.LIST_GAGGLES)(fakeEvent);
       expect(result).toEqual({ error: { code: 'not-implemented', message: expect.any(String) } });
+    });
+  });
+
+  describe('goobers:get-run-events (M25)', () => {
+    it('validates runId/cursor/limit shape and delegates only runId to the service', async () => {
+      const result = await getHandler(IPC.GOOBERS.GET_RUN_EVENTS)(fakeEvent, { runId: 'run-1', cursor: 'c1', limit: 50 });
+      // cursor/limit are validated (see path-injection/shape tests above and
+      // in validation.test.ts) but deliberately not forwarded — the daemon's
+      // own route takes no pagination params, see goobers-service.ts.
+      expect(goobersServiceMock.getRunEvents).toHaveBeenCalledWith('run-1');
+      expect(result).toEqual({ runId: 'run-1', events: [] });
+    });
+
+    it('rejects a non-integer limit', () => {
+      expect(() => getHandler(IPC.GOOBERS.GET_RUN_EVENTS)(fakeEvent, { runId: 'run-1', limit: 1.5 })).toThrow();
+    });
+  });
+
+  describe('goobers:telemetry-errors (M25)', () => {
+    it('delegates to the service with no args', async () => {
+      const result = await getHandler(IPC.GOOBERS.TELEMETRY_ERRORS)(fakeEvent);
+      expect(goobersServiceMock.telemetryErrors).toHaveBeenCalled();
+      expect(result).toEqual({ items: [] });
+    });
+
+    it('gates on platform before calling the service', async () => {
+      goobersServiceMock.isSupportedPlatform = false;
+      const result = await getHandler(IPC.GOOBERS.TELEMETRY_ERRORS)(fakeEvent);
+      expect(result).toEqual({ error: { code: 'unsupported-platform', message: expect.any(String) } });
+      expect(goobersServiceMock.telemetryErrors).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('goobers:work-items (M25)', () => {
+    it('delegates to the service with no args', async () => {
+      const result = await getHandler(IPC.GOOBERS.WORK_ITEMS)(fakeEvent);
+      expect(goobersServiceMock.workItems).toHaveBeenCalled();
+      expect(result).toEqual({ items: [], hasMore: false });
+    });
+
+    it('gates on platform before calling the service', async () => {
+      goobersServiceMock.isSupportedPlatform = false;
+      const result = await getHandler(IPC.GOOBERS.WORK_ITEMS)(fakeEvent);
+      expect(result).toEqual({ error: { code: 'unsupported-platform', message: expect.any(String) } });
+      expect(goobersServiceMock.workItems).not.toHaveBeenCalled();
     });
   });
 

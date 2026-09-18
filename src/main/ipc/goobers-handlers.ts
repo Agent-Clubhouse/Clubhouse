@@ -100,7 +100,9 @@ export function registerGoobersHandlers(): void {
         numberArg({ optional: true, integer: true, min: 0 })(v.limit, `${argName}.limit`);
       },
     }),
-    () => goobersService.notImplemented(),
+    // `cursor`/`limit` are validated but not forwarded — see the comment on
+    // GoobersService.getRunEvents() for why the daemon doesn't take them.
+    async (_event, args) => goobersService.getRunEvents(args.runId),
   ));
 
   ipcMain.handle(IPC.GOOBERS.GET_STAGE_ATTEMPTS, gatedHandler(
@@ -138,4 +140,12 @@ export function registerGoobersHandlers(): void {
     // Mutating — POST /runs/{run}/reveal lands with M3.
     () => goobersService.notImplemented(),
   ));
+
+  ipcMain.handle(IPC.GOOBERS.TELEMETRY_ERRORS, platformGated(async () => {
+    return goobersService.telemetryErrors();
+  }));
+
+  ipcMain.handle(IPC.GOOBERS.WORK_ITEMS, platformGated(async () => {
+    return goobersService.workItems();
+  }));
 }

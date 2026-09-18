@@ -610,3 +610,63 @@ export interface StageAttempt {
   /** Requested/selected model (e.g. "auto"), when indexed. */
   model?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Telemetry errors (GET /api/v1/telemetry/errors) — M25.
+// Vendored from upstream portal/src/api/types.ts:1336-1350. Verified against
+// a real response from a scratch instance (`/tmp` root, no repo connected):
+// the two items observed — `merged_pr_cost_sweep_failed` and
+// `storage_health_critical` — matched every field name and the field order
+// below exactly. `nextCursor` was absent on that response (only 2 items);
+// left optional rather than assumed present.
+// ---------------------------------------------------------------------------
+
+export interface TelemetryErrorsPage {
+  items: TelemetryError[];
+  nextCursor?: string;
+}
+
+export interface TelemetryError {
+  runId: string;
+  workflow: string;
+  stage: string;
+  attempt: number;
+  code: string;
+  errorClass: string;
+  message: string;
+  occurredAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Work items (GET /api/v1/work-items) — M25.
+// Vendored from upstream portal/src/api/types.ts:1391-1417. The wrapper shape
+// (`{items, hasMore}`) was verified against a real response — empty on both
+// the scratch instance and (per the owner) the real one, since neither has a
+// repo with tracked PRs/issues. `WorkItemSummary`'s field-level shape is
+// NOT independently verified against a live payload for that reason — it is
+// copied from upstream types.ts, which itself already matched the daemon's
+// Go wire DTO (`internal/readservice/workitems.go`) field-for-field at the
+// time of vendoring. Re-check against a real item the first time one exists.
+// ---------------------------------------------------------------------------
+
+export type WorkItemKind = 'pr' | 'issue';
+
+export interface WorkItemPage {
+  items: WorkItemSummary[];
+  hasMore: boolean;
+}
+
+export interface WorkItemSummary {
+  provider: string;
+  repository?: string;
+  kind: WorkItemKind;
+  externalId: string;
+  url?: string;
+  actionCount: number;
+  lastOperation: string;
+  lastActionAt: string;
+  lastRunId: string;
+  gaggle?: string;
+  workflow?: string;
+  runStatus?: string;
+}

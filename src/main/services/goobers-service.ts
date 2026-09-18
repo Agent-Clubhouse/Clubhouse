@@ -27,7 +27,7 @@ import { startDaemon, stopDaemon, isLifecycleBusy, type StartResult, type StopRe
 import { httpGetJson, parseJsonBody, destroyAllRequests } from './goobers-http';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
-import { API_VERSION, type RunList } from '../../shared/goobers-api-types';
+import { API_VERSION, type RunList, type TelemetryErrorsPage, type WorkItemPage, type EventList } from '../../shared/goobers-api-types';
 import type { GoobersSettings } from '../../shared/types';
 import type { GoobersConnectionState, GoobersDaemonStatus, RunListQuery } from '../../shared/goobers-types';
 
@@ -769,6 +769,100 @@ export class GoobersService {
       return body;
     } catch (err) {
       return { error: { code: 'runs-fetch-failed', message: err instanceof Error ? err.message : String(err) } };
+    }
+  }
+
+  /** Shared preflight for the read-only passthroughs below — same
+   *  daemon-running/address-parse checks `listRuns` inlines, factored out
+   *  since M25 adds three more call sites for it. */
+  private resolveRunningDaemonAddress(): { host: string; port: number } | GoobersErrorEnvelope {
+    if (this.state.daemon.state !== 'running' || !this.state.daemon.address) {
+      return { error: { code: 'daemon-not-running', message: 'Goobers daemon is not running' } };
+    }
+    const parsed = parseAddressString(this.state.daemon.address);
+    if (!parsed) {
+      return { error: { code: 'invalid-address', message: 'could not parse the daemon address' } };
+    }
+    return parsed;
+  }
+
+  /**
+   * `goobers:telemetry-errors` (M25) — passthrough to
+   * `GET /api/v1/telemetry/errors`. No query params yet (the upstream
+   * `TelemetryErrorsOptions` filters are not wired up here — nothing in the
+   * panel needs them until M26's UI); add them when a consumer does.
+   */
+  async telemetryErrors(): Promise<TelemetryErrorsPage | GoobersErrorEnvelope> {
+    if (!this.isSupportedPlatform) return this.unsupportedPlatform();
+    const address = this.resolveRunningDaemonAddress();
+    if ('error' in address) return address;
+
+    try {
+      const res = await httpGetJson(address.host, address.port, '/api/v1/telemetry/errors', RUNS_FETCH_TIMEOUT_MS);
+      if (res.status !== 200) {
+        return { error: { code: 'telemetry-errors-fetch-failed', message: `GET /api/v1/telemetry/errors returned ${res.status}` } };
+      }
+      const body = parseJsonBody<TelemetryErrorsPage>(res.body);
+      if (!body) {
+        return { error: { code: 'telemetry-errors-fetch-failed', message: 'GET /api/v1/telemetry/errors returned an unparseable body' } };
+      }
+      return body;
+    } catch (err) {
+      return { error: { code: 'telemetry-errors-fetch-failed', message: err instanceof Error ? err.message : String(err) } };
+    }
+  }
+
+  /**
+   * `goobers:work-items` (M25) — passthrough to `GET /api/v1/work-items`.
+   * No query params yet, same reasoning as `telemetryErrors()`.
+   */
+  async workItems(): Promise<WorkItemPage | GoobersErrorEnvelope> {
+    if (!this.isSupportedPlatform) return this.unsupportedPlatform();
+    const address = this.resolveRunningDaemonAddress();
+    if ('error' in address) return address;
+
+    try {
+      const res = await httpGetJson(address.host, address.port, '/api/v1/work-items', RUNS_FETCH_TIMEOUT_MS);
+      if (res.status !== 200) {
+        return { error: { code: 'work-items-fetch-failed', message: `GET /api/v1/work-items returned ${res.status}` } };
+      }
+      const body = parseJsonBody<WorkItemPage>(res.body);
+      if (!body) {
+        return { error: { code: 'work-items-fetch-failed', message: 'GET /api/v1/work-items returned an unparseable body' } };
+      }
+      return body;
+    } catch (err) {
+      return { error: { code: 'work-items-fetch-failed', message: err instanceof Error ? err.message : String(err) } };
+    }
+  }
+
+  /**
+   * `goobers:get-run-events` (M25) — passthrough to
+   * `GET /api/v1/runs/{run}/events`. `cursor`/`limit` are accepted by the
+   * existing IPC signature but deliberately not forwarded: the daemon's own
+   * handler (`internal/httpapi/router.go`, `RouteRunEvents`) calls
+   * `reader.RunEvents(ctx, run)` with no pagination params at all — the
+   * upstream client (`portal/src/api/types.ts`'s `listRunEvents`) doesn't
+   * pass them either. Our IPC surface is ahead of what the daemon supports
+   * here; flagged in the PR rather than silently dropped.
+   */
+  async getRunEvents(runId: string): Promise<EventList | GoobersErrorEnvelope> {
+    if (!this.isSupportedPlatform) return this.unsupportedPlatform();
+    const address = this.resolveRunningDaemonAddress();
+    if ('error' in address) return address;
+
+    try {
+      const res = await httpGetJson(address.host, address.port, `/api/v1/runs/${encodeURIComponent(runId)}/events`, RUNS_FETCH_TIMEOUT_MS);
+      if (res.status !== 200) {
+        return { error: { code: 'run-events-fetch-failed', message: `GET /api/v1/runs/${runId}/events returned ${res.status}` } };
+      }
+      const body = parseJsonBody<EventList>(res.body);
+      if (!body) {
+        return { error: { code: 'run-events-fetch-failed', message: 'GET /api/v1/runs/{run}/events returned an unparseable body' } };
+      }
+      return body;
+    } catch (err) {
+      return { error: { code: 'run-events-fetch-failed', message: err instanceof Error ? err.message : String(err) } };
     }
   }
 

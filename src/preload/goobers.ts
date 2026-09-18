@@ -34,6 +34,10 @@ export const goobers = {
       ipcRenderer.invoke(IPC.GOOBERS.DAEMON_STOP),
     openRunDir: (runId: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GOOBERS.OPEN_RUN_DIR, { runId }),
+    telemetryErrors: (): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GOOBERS.TELEMETRY_ERRORS),
+    workItems: (): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GOOBERS.WORK_ITEMS),
     onStateChanged: (callback: (state: GoobersConnectionState) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: GoobersConnectionState) => callback(state);
       ipcRenderer.on(IPC.GOOBERS.STATE_CHANGED, listener);
