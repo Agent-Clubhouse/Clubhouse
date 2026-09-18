@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MainPanel } from './main';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { MainPanel, describeStartupPhase, deslugPhase, formatElapsedSince } from './main';
 import { createMockAPI } from '../../testing';
 import { useGoobersStore } from '../../../stores/goobersStore';
 import { useGoobersSettingsStore } from '../../../stores/goobersSettingsStore';
@@ -217,8 +217,46 @@ describe('Goobers MainPanel', () => {
     render(<MainPanel api={api} />);
     expect(screen.getByTestId('goobers-state-recovering')).toBeInTheDocument();
     expect(screen.queryByTestId('goobers-state-unknown-error')).not.toBeInTheDocument();
-    expect(screen.getByText(/worktree-reap-crash-orphan/)).toBeInTheDocument();
     expect(screen.getByText(/apiListening/)).toBeInTheDocument();
+  });
+
+  // M23: the panel used to hardcode "the daemon is alive and completing
+  // crash recovery" — asserting a crash that never happened (an ordinary
+  // startup routes through this same state). The copy must not claim a
+  // crash, the phase must be de-slugged with a description, and `since`
+  // must render as elapsed time, not a raw ISO timestamp.
+  it('does not assert a crash, de-slugs the phase, describes it, and shows elapsed time not a raw ISO string (M23)', () => {
+    setConnState(baseConnState({
+      daemon: { ...baseConnState().daemon, state: 'starting' },
+      lastError: { code: 'recovering', message: 'daemon is completing crash recovery' },
+      recovery: {
+        phase: 'worktree-reap-crash-orphan',
+        since: '2026-09-16T22:58:49.213Z',
+        checks: { apiListening: true, resumeComplete: false },
+      },
+    }));
+    render(<MainPanel api={api} />);
+    expect(screen.queryByText(/crash recovery/)).not.toBeInTheDocument();
+    expect(screen.getByText('worktree reap crash orphan', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/Recovering worktrees left by an interrupted run/)).toBeInTheDocument();
+    expect(screen.queryByText(/2026-09-16T22:58:49.213Z/)).not.toBeInTheDocument();
+    expect(screen.getByText(/elapsed/)).toBeInTheDocument();
+  });
+
+  it('renders an unmapped startup phase gracefully instead of a raw slug (M23)', () => {
+    setConnState(baseConnState({
+      daemon: { ...baseConnState().daemon, state: 'starting' },
+      lastError: { code: 'recovering', message: 'daemon is completing crash recovery' },
+      recovery: {
+        phase: 'some-future-upstream-phase',
+        since: '2026-09-16T22:58:49.213Z',
+        checks: {},
+      },
+    }));
+    render(<MainPanel api={api} />);
+    expect(screen.getByTestId('goobers-state-recovering')).toBeInTheDocument();
+    expect(screen.getByText('Goobers is completing a required startup operation.')).toBeInTheDocument();
+    expect(screen.getByText('some future upstream phase', { exact: false })).toBeInTheDocument();
   });
 
   it('renders start-failed with the buffered error, never a bare message', () => {
@@ -384,5 +422,79 @@ describe('Goobers MainPanel', () => {
     const btn = await screen.findByTestId('goobers-refresh');
     btn.click();
     expect(loadStateSpy).toHaveBeenCalled();
+  });
+});
+
+// M23: unit coverage for the startup-phase copy helpers, independent of
+// rendering, so the unknown-phase fallback and elapsed-time boundaries are
+// each exercised directly rather than only incidentally through one fixture.
+describe('startup phase copy helpers', () => {
+  describe('describeStartupPhase', () => {
+    it('describes a known upstream phase', () => {
+      expect(describeStartupPhase('worktree-reap-crash-orphan')).toBe(
+        'Recovering worktrees left by an interrupted run before scheduling resumes.',
+      );
+    });
+
+    it('falls back to a generic description for an unmapped phase', () => {
+      expect(describeStartupPhase('some-brand-new-phase')).toBe(
+        'Goobers is completing a required startup operation.',
+      );
+    });
+
+    it('falls back for an empty phase string', () => {
+      expect(describeStartupPhase('')).toBe('Goobers is completing a required startup operation.');
+    });
+  });
+
+  describe('deslugPhase', () => {
+    it('replaces every hyphen with a space', () => {
+      expect(deslugPhase('worktree-reap-crash-orphan')).toBe('worktree reap crash orphan');
+    });
+
+    it('leaves a phase with no hyphens unchanged', () => {
+      expect(deslugPhase('starting')).toBe('starting');
+    });
+  });
+
+  describe('formatElapsedSince', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-17T00:00:00.000Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('formats a moment just now as 0s', () => {
+      expect(formatElapsedSince('2026-09-17T00:00:00.000Z')).toBe('0s');
+    });
+
+    it('formats a few seconds ago in seconds', () => {
+      expect(formatElapsedSince('2026-09-16T23:59:45.000Z')).toBe('15s');
+    });
+
+    it('parses a Go-shaped microsecond timestamp with a UTC offset instead of returning "unknown"', () => {
+      // 2026-09-16T16:58:00-07:00 is 2026-09-16T23:58:00Z, ~2 minutes before
+      // the fake system time set above.
+      expect(formatElapsedSince('2026-09-16T16:58:00.194644-07:00')).toBe('1m');
+    });
+
+    it('formats minutes elapsed', () => {
+      expect(formatElapsedSince('2026-09-16T23:55:00.000Z')).toBe('5m');
+    });
+
+    it('formats hours elapsed', () => {
+      expect(formatElapsedSince('2026-09-16T21:30:00.000Z')).toBe('2h 30m');
+    });
+
+    it('never goes negative for a since timestamp in the future (clock skew)', () => {
+      expect(formatElapsedSince('2026-09-17T00:05:00.000Z')).toBe('0s');
+    });
+
+    it('returns "unknown" for an unparseable since string', () => {
+      expect(formatElapsedSince('not-a-date')).toBe('unknown');
+    });
   });
 });
