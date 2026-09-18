@@ -9,7 +9,6 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { realpath } from 'fs/promises';
 import { resolveLivenessAddress } from './goobers-address';
 import { httpGetJson, parseJsonBody } from './goobers-http';
 import type { Health, Instance } from '../../shared/goobers-api-types';
@@ -59,9 +58,23 @@ async function readUpLockMetadata(root: string): Promise<UpLockMetadata> {
   }
 }
 
-async function realpathSafe(p: string): Promise<string | null> {
+/**
+ * M22 — the daemon's `instanceRoot` field in `/api/v1/instance` is a raw argv
+ * echo (verified live: `goobers up .` reports `"."`; `goobers up /abs/path`
+ * reports that exact string, not even symlink-resolved) and was never a
+ * valid identity signal, relative or absolute. `.instance-id` is the durable
+ * identity (§4.2) and `goobers-service.ts`'s `validateInstanceRoot` already
+ * reads and trusts it locally, with no network involved — this mirrors that
+ * exact read (same regex, same "intentionally dotted, never the sibling
+ * undotted `instance-id`" rule) rather than threading its result in from the
+ * service layer, so `probeLiveness` stays self-contained given only `root`,
+ * matching every other per-tick read in this function (e.g. `up.lock` above).
+ */
+async function readLocalInstanceId(root: string): Promise<string | null> {
   try {
-    return await realpath(p);
+    const raw = await fs.promises.readFile(path.join(root, '.instance-id'), 'utf-8');
+    const id = raw.trim();
+    return /^[0-9a-f]{32}$/.test(id) ? id : null;
   } catch {
     return null;
   }
@@ -223,8 +236,30 @@ export async function probeLiveness(root: string): Promise<LivenessSnapshot> {
     };
   }
 
-  const [realConfiguredRoot, realReportedRoot] = await Promise.all([realpathSafe(root), realpathSafe(instance.instanceRoot)]);
-  if (!realConfiguredRoot || !realReportedRoot || realConfiguredRoot !== realReportedRoot) {
+  const localInstanceId = await readLocalInstanceId(root);
+  const reportedInstanceId = instance.rootIdentity?.id;
+
+  if (!localInstanceId || !reportedInstanceId) {
+    // Distinct from a genuine mismatch (§9.1) — we simply can't confirm
+    // identity either way. Never treated as a pass: still refuses to render
+    // `instance`/`health`, same as a real mismatch, just with an honest
+    // message instead of the false "another process is listening" claim
+    // this used to assert unconditionally (M22's secondary defect).
+    return {
+      daemon: idleDaemon('unknown', { address: addressDisplay }),
+      instance: null,
+      health: null,
+      degraded: false,
+      error: {
+        code: 'identity-unverifiable',
+        message: !localInstanceId
+          ? `could not read a valid .instance-id from ${root} to confirm this is the configured instance`
+          : `the daemon at ${addressDisplay} did not report a rootIdentity.id to confirm against — cannot verify this is the configured instance`,
+      },
+    };
+  }
+
+  if (localInstanceId !== reportedInstanceId) {
     return {
       daemon: idleDaemon('unknown', { address: addressDisplay }),
       instance: null,
@@ -232,7 +267,7 @@ export async function probeLiveness(root: string): Promise<LivenessSnapshot> {
       degraded: false,
       error: {
         code: 'identity-mismatch',
-        message: `another process is listening on ${addressDisplay} — its instanceRoot ("${instance.instanceRoot}") does not match the configured root`,
+        message: `another instance is listening on ${addressDisplay} — its identity ("${reportedInstanceId}") does not match the configured root's ("${localInstanceId}")`,
       },
     };
   }

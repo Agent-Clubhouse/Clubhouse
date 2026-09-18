@@ -20,10 +20,18 @@ import { probeLiveness } from './goobers-liveness';
 let tmpRoot: string;
 let otherRoot: string;
 
+/** The configured root's real identity (M22) — written to `.instance-id` by
+ *  default in `beforeEach` since every "our own daemon" fixture below now
+ *  needs it to pass the identity check at all. */
+const LOCAL_INSTANCE_ID = 'eaf74575d8de50fa5471027ba7fd15cb';
+/** A different, equally well-formed 32-hex id — a genuinely foreign daemon. */
+const FOREIGN_INSTANCE_ID = 'deadbeefdeadbeefdeadbeefdeadbeef';
+
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goobers-liveness-test-'));
   otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goobers-liveness-other-'));
   fs.mkdirSync(path.join(tmpRoot, 'scheduler'), { recursive: true });
+  fs.writeFileSync(path.join(tmpRoot, '.instance-id'), `${LOCAL_INSTANCE_ID}\n`);
   vi.mocked(httpGetJson).mockReset();
 });
 
@@ -34,6 +42,19 @@ afterEach(() => {
 
 function writeAddressFile(host = '127.0.0.1', port = 8080): void {
   fs.writeFileSync(path.join(tmpRoot, 'scheduler', 'api.address'), `${host}:${port}`);
+}
+
+/** An `/api/v1/instance` 200 body for *our own* daemon — deliberately reports
+ *  `instanceRoot: "."` (M22: an argv echo, not identity) and the id matching
+ *  `.instance-id` above. */
+function ownInstanceBody(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    apiVersion: 'v1',
+    schemaVersion: 'v1',
+    instanceRoot: '.',
+    rootIdentity: { id: LOCAL_INSTANCE_ID },
+    ...overrides,
+  });
 }
 
 function writeUpLock(overrides: Record<string, unknown> = {}): void {
@@ -80,11 +101,11 @@ describe('probeLiveness', () => {
     expect(result.daemon.state).toBe('starting');
   });
 
-  it('rejects an identity mismatch — a second process on the same port is never rendered as ours', async () => {
+  it('rejects a genuine identity mismatch (foreign daemon, different absolute root and id) — never rendered as ours', async () => {
     writeAddressFile();
     vi.mocked(httpGetJson)
       .mockResolvedValueOnce({ status: 200, body: '' }) // /readyz
-      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', instanceRoot: otherRoot }) }); // /api/v1/instance
+      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', instanceRoot: otherRoot, rootIdentity: { id: FOREIGN_INSTANCE_ID } }) }); // /api/v1/instance
 
     const result = await probeLiveness(tmpRoot);
     expect(result.daemon.state).toBe('unknown');
@@ -92,12 +113,94 @@ describe('probeLiveness', () => {
     expect(result.instance).toBeNull();
   });
 
+  it('M22: rejects a foreign daemon even when it reports instanceRoot "." like ours does — identity must not be decided by the path string', async () => {
+    writeAddressFile();
+    vi.mocked(httpGetJson)
+      .mockResolvedValueOnce({ status: 200, body: '' }) // /readyz
+      // Same relative-path echo as our own daemon would produce, but a
+      // genuinely different rootIdentity.id — this is the non-negotiable
+      // acceptance criterion: a foreign daemon squatting the port and
+      // reporting "." must still be refused.
+      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', instanceRoot: '.', rootIdentity: { id: FOREIGN_INSTANCE_ID } }) });
+
+    const result = await probeLiveness(tmpRoot);
+    expect(result.daemon.state).toBe('unknown');
+    expect(result.error?.code).toBe('identity-mismatch');
+    expect(result.instance).toBeNull();
+  });
+
+  it('M22: renders real state when the daemon reports instanceRoot "." for OUR OWN instance — the reported bug', async () => {
+    writeAddressFile();
+    writeUpLock();
+    vi.mocked(httpGetJson)
+      .mockResolvedValueOnce({ status: 200, body: '' }) // /readyz
+      .mockResolvedValueOnce({ status: 200, body: ownInstanceBody() }) // /api/v1/instance — instanceRoot: "."
+      .mockResolvedValueOnce({
+        status: 200,
+        body: JSON.stringify({
+          apiVersion: 'v1',
+          schemaVersion: 'v1',
+          ready: true,
+          healthy: true,
+          instance: { name: 'goobers-local', environment: 'dev' },
+          freshness: { observedAt: 'x', definitionsLoadedAt: 'x', journalUpdatedAt: 'x', lastSchedulerTickAt: 'x', lastTickAgeMillis: 1000 },
+        }),
+      }); // /api/v1/health
+
+    const result = await probeLiveness(tmpRoot);
+    expect(result.daemon.state).toBe('running');
+    expect(result.error).toBeUndefined();
+    expect(result.instance?.instanceRoot).toBe('.');
+  });
+
+  it('identity-unverifiable when the configured root has no valid .instance-id — never a silent pass', async () => {
+    fs.rmSync(path.join(tmpRoot, '.instance-id'));
+    writeAddressFile();
+    vi.mocked(httpGetJson)
+      .mockResolvedValueOnce({ status: 200, body: '' }) // /readyz
+      .mockResolvedValueOnce({ status: 200, body: ownInstanceBody() }); // /api/v1/instance
+
+    const result = await probeLiveness(tmpRoot);
+    expect(result.daemon.state).toBe('unknown');
+    expect(result.error?.code).toBe('identity-unverifiable');
+    expect(result.error?.message).not.toContain('another process is listening'); // the old, false claim
+    expect(result.instance).toBeNull();
+  });
+
+  it('identity-unverifiable (not a pass) when the daemon omits rootIdentity — older-daemon version skew', async () => {
+    writeAddressFile();
+    vi.mocked(httpGetJson)
+      .mockResolvedValueOnce({ status: 200, body: '' }) // /readyz
+      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', instanceRoot: '.' }) }); // no rootIdentity at all
+
+    const result = await probeLiveness(tmpRoot);
+    expect(result.daemon.state).toBe('unknown');
+    expect(result.error?.code).toBe('identity-unverifiable');
+    expect(result.instance).toBeNull();
+  });
+
+  it('reads the dotted .instance-id, never the sibling undotted instance-id file', async () => {
+    // Mirrors the reference instance (spec §4.2): a different, wrong value in
+    // the undotted sibling file must never be what gets compared.
+    fs.writeFileSync(path.join(tmpRoot, 'instance-id'), 'e86a94384664f7981488722ac46d2432\n');
+    writeAddressFile();
+    writeUpLock();
+    vi.mocked(httpGetJson)
+      .mockResolvedValueOnce({ status: 200, body: '' })
+      .mockResolvedValueOnce({ status: 200, body: ownInstanceBody() }) // reports the DOTTED file's id
+      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', ready: true, healthy: true, instance: { name: 'x', environment: 'dev' }, freshness: {} }) });
+
+    const result = await probeLiveness(tmpRoot);
+    expect(result.daemon.state).toBe('running'); // would be identity-mismatch if the undotted file were read instead
+    expect(result.error).toBeUndefined();
+  });
+
   it('reports running with confirmed identity, and pid/version/startedAt are display-only from up.lock', async () => {
     writeAddressFile();
     writeUpLock();
     vi.mocked(httpGetJson)
       .mockResolvedValueOnce({ status: 200, body: '' }) // /readyz
-      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', instanceRoot: tmpRoot }) }) // /api/v1/instance
+      .mockResolvedValueOnce({ status: 200, body: ownInstanceBody() }) // /api/v1/instance
       .mockResolvedValueOnce({
         status: 200,
         body: JSON.stringify({
@@ -115,7 +218,7 @@ describe('probeLiveness', () => {
     expect(result.daemon.pid).toBe(7027); // display only
     expect(result.daemon.version).toBe('portal-v0.1.0-21-ga1b2ae99');
     expect(result.degraded).toBe(false);
-    expect(result.instance?.instanceRoot).toBe(tmpRoot);
+    expect(result.instance?.instanceRoot).toBe('.');
   });
 
   it('flags degraded when lastTickAgeMillis exceeds livenessTimeoutMillis', async () => {
@@ -123,7 +226,7 @@ describe('probeLiveness', () => {
     writeUpLock({ livenessTimeoutMillis: 1000 });
     vi.mocked(httpGetJson)
       .mockResolvedValueOnce({ status: 200, body: '' })
-      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', instanceRoot: tmpRoot }) })
+      .mockResolvedValueOnce({ status: 200, body: ownInstanceBody() })
       .mockResolvedValueOnce({
         status: 200,
         body: JSON.stringify({
@@ -172,13 +275,13 @@ describe('probeLiveness', () => {
     writeUpLock();
     vi.mocked(httpGetJson)
       .mockResolvedValueOnce({ status: 200, body: '' }) // /readyz
-      .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', instanceRoot: tmpRoot }) }) // /api/v1/instance
+      .mockResolvedValueOnce({ status: 200, body: ownInstanceBody() }) // /api/v1/instance
       .mockResolvedValueOnce({ status: 401, body: '' }); // /api/v1/health
 
     const result = await probeLiveness(tmpRoot);
     expect(result.daemon.state).toBe('running');
     expect(result.error?.code).toBe('auth-required');
-    expect(result.instance?.instanceRoot).toBe(tmpRoot);
+    expect(result.instance?.instanceRoot).toBe('.');
     expect(result.health).toBeNull();
   });
 
@@ -240,7 +343,7 @@ describe('probeLiveness', () => {
       writeUpLock();
       vi.mocked(httpGetJson)
         .mockResolvedValueOnce({ status: 200, body: readyzBody({ ready: true }) })
-        .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ apiVersion: 'v1', schemaVersion: 'v1', instanceRoot: tmpRoot }) })
+        .mockResolvedValueOnce({ status: 200, body: ownInstanceBody() })
         .mockResolvedValueOnce({
           status: 200,
           body: JSON.stringify({
