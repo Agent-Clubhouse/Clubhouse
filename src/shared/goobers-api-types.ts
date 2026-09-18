@@ -217,6 +217,25 @@ export interface MaintenanceStatus {
   errorSummary?: string;
 }
 
+/**
+ * M24 — not in the original vendored subset (spec §5.2 predates this field).
+ * Confirmed live against a `goobers up --demo` scratch daemon's
+ * `GET /api/v1/instance` response (v0.4.0); `tier` is left as an open string
+ * rather than a narrowed union since its full value set was not confirmed
+ * against upstream source, only observed as `"admission-stopped"` live.
+ */
+export interface StorageHealth {
+  tier: string;
+  path: string;
+  freeBytes: number;
+  totalBytes: number;
+  warningFloorBytes: number;
+  warningFloorPercent: number;
+  criticalFloorBytes: number;
+  criticalFloorPercent: number;
+  measuredAt: string;
+}
+
 export interface Instance extends ContractVersion {
   name: string;
   version?: string;
@@ -236,6 +255,8 @@ export interface Instance extends ContractVersion {
   counts: InventoryCounts;
   warnings: ValidationWarning[];
   maintenance?: MaintenanceStatus;
+  /** M24 — see `StorageHealth`'s doc comment; absent on daemon versions that predate it. */
+  storageHealth?: StorageHealth;
   fleetEnrolled: boolean;
 }
 
