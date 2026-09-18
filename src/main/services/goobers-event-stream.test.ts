@@ -388,21 +388,50 @@ describe('startEventStream — transient failures (503, connection refused, mid-
 });
 
 describe('startEventStream — close()', () => {
-  it('stops all further activity once closed, even past the backoff window', async () => {
-    // The real guarantee close() makes is narrower than "the request count
-    // never changes after this call returns": req.destroy() stops the
-    // client from processing a response or scheduling another reconnect,
-    // but it cannot un-send bytes that already reached the server over the
-    // loopback socket — a request dispatched in the ~5-10ms window between
-    // the test's waitUntil() poll and its own close() call can still land
-    // server-side after close() has already run, client-side, correctly.
-    // (chirpy-mole reproduced this 2/20 locally and named the mechanism
-    // precisely: it's a TCP-delivery fact, not a bug in close().) So the
-    // assertion below checks the guarantee that's actually true: at most
-    // one more request may land right around close(), and — the part that
-    // actually matters — nothing NEW starts once things settle, i.e. no
-    // fresh reconnect cycle begins after close() has fully taken effect.
-    const timing = { livenessDeadlineMs: 60, initialBackoffMs: 10, maxBackoffMs: 40 };
+  // Both tests below eliminate the timing race the original version of this
+  // suite had (flagged by chirpy-mole: a mutation that broke close() — dropped
+  // `if (closed) return` from connect() AND the reconnectTimer clear in
+  // close() — still passed 13/16 runs, because a genuinely-broken close()
+  // produces exactly ONE extra request, landing inside whatever "settle
+  // window" tolerance the assertion allowed, indistinguishable by count alone
+  // from a legitimate TCP-delivery race). Rather than bounding an ambiguous
+  // count with a timing window, each test below is constructed so no second
+  // request is *possible* under a correct close() — any second request is
+  // unambiguously a bug, with zero tolerance.
+
+  it('destroys the in-flight request when closed before any response arrives', async () => {
+    // The server never responds, so no reconnect can possibly have been
+    // scheduled yet when close() runs — this isolates currentRequest.destroy().
+    let requestCount = 0;
+    const { port, server } = await listen((req, res) => {
+      requestCount += 1;
+      sseHeaders(res);
+      // Never write a frame, never end — response stays pending forever.
+    });
+    activeServer = server;
+
+    const cb = collectCallbacks();
+    const handle = startEventStream('127.0.0.1', port, cb, FAST_TIMING);
+
+    await waitUntil(() => requestCount >= 1);
+    handle.close();
+
+    // Past several liveness/backoff windows, nothing else must ever arrive —
+    // no ambiguity: at the moment of close() there was no response yet, so
+    // no reconnect could have been scheduled through any legitimate path.
+    await new Promise((resolve) => setTimeout(resolve, FAST_TIMING.maxBackoffMs * 5));
+    expect(requestCount).toBe(1);
+  });
+
+  it('cancels a pending reconnect timer when closed before it fires', async () => {
+    // Deliberately asymmetric timing: detection (onDisconnected) is fast,
+    // the reconnect backoff is slow, so close() always lands well inside the
+    // window before the scheduled reconnect could fire — no race. This
+    // directly targets the reconnectTimer-clear path in close(): under the
+    // mutation chirpy-mole applied (timer left armed, connect()'s closed
+    // guard removed), the still-armed timer would fire during the wait below
+    // and produce a second, unambiguous request.
+    const timing = { livenessDeadlineMs: 60, initialBackoffMs: 500, maxBackoffMs: 500 };
     let requestCount = 0;
     const { port, server } = await listen((req, res) => {
       requestCount += 1;
@@ -414,18 +443,18 @@ describe('startEventStream — close()', () => {
     const cb = collectCallbacks();
     const handle = startEventStream('127.0.0.1', port, cb, timing);
 
-    await waitUntil(() => requestCount >= 1);
+    // onDisconnected fires once the 503 response is fully processed client
+    // side — by then, a correct implementation has already armed
+    // reconnectTimer for a 0-500ms-out reconnect. Closing immediately after
+    // this, well under the 500ms floor, leaves no room for a legitimate
+    // reconnect to have fired first.
+    await waitUntil(() => cb.disconnected >= 1);
+    expect(requestCount).toBe(1);
     handle.close();
 
-    // Let anything already in flight at the moment of close() land, then
-    // capture that as the settled baseline.
-    await new Promise((resolve) => setTimeout(resolve, timing.maxBackoffMs));
-    const settledCount = requestCount;
-    expect(settledCount).toBeLessThanOrEqual(2); // the original request, plus at most one already in flight
-
-    // Past several more backoff windows, nothing further must arrive — this
-    // is the property that actually matters: no new reconnect cycle starts.
-    await new Promise((resolve) => setTimeout(resolve, timing.maxBackoffMs * 5));
-    expect(requestCount).toBe(settledCount);
+    // Past the full backoff window several times over, the cancelled timer
+    // must never fire.
+    await new Promise((resolve) => setTimeout(resolve, timing.maxBackoffMs * 3));
+    expect(requestCount).toBe(1);
   });
 });
