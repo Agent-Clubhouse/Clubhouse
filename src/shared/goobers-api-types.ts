@@ -22,7 +22,6 @@ export type AttemptClass = 'initial' | 'policy' | 'infra' | 'human';
 export type StageAttemptStatus = 'running' | 'success' | 'failure' | 'blocked' | 'no-work' | '';
 export type MaintenanceState = 'none' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type UpdateModel = 'instance' | 'run' | 'workflow';
-export type ValidationWarningCode = 'VER001' | 'VER002' | 'VER003' | 'MODEL002';
 export type OutcomeFilter = 'finished' | 'terminal' | 'success' | 'failure' | 'other';
 export type StagePopulationFilter =
   | 'active'
@@ -197,9 +196,18 @@ export interface InventoryCounts {
   activeRuns: number;
 }
 
+/**
+ * M27 — `code` is a plain string, not a hand-written union: the wire emits
+ * ~93 codes across REF/DVL/CFG/CAP/RNR families, the field is display-only,
+ * and any future exhaustive union must be generated from the backend.
+ * `severity`/`scope` are transcribed from the Go struct and unverified
+ * against a live daemon — same convention as `storageHealth?` at `:258`.
+ */
 export interface ValidationWarning {
-  code: ValidationWarningCode;
-  message: string;
+  code: string;
+  explanation: string;
+  severity?: string;
+  scope?: string;
 }
 
 export interface MaintenanceStatus {

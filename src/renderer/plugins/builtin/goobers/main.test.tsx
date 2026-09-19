@@ -398,11 +398,15 @@ describe('Goobers MainPanel', () => {
       expect(screen.getByText('Daemon degraded — nothing active')).toBeInTheDocument();
     });
 
-    it('renders warnings[] with code and message, one per entry (M24)', async () => {
+    // M27: the daemon's CodedWarning serializes the text under `explanation`,
+    // not `message` — a mock that fed `message` here pinned the wrong wire
+    // contract and let `REF012: undefined` ship to the panel. Assert both
+    // the real field renders and that no entry ever falls back to `undefined`.
+    it('renders warnings[] with code and explanation, one per entry (M27)', async () => {
       setConnState(readyState({
         warnings: [
-          { code: 'VER001', message: 'workflow version mismatch' },
-          { code: 'MODEL002', message: 'model reference unresolved' },
+          { code: 'VER001', explanation: 'workflow version mismatch' },
+          { code: 'MODEL002', explanation: 'model reference unresolved' },
         ],
       }));
       mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
@@ -410,6 +414,10 @@ describe('Goobers MainPanel', () => {
       await waitFor(() => expect(screen.getByTestId('goobers-instance-warnings')).toBeInTheDocument());
       expect(screen.getByText(/VER001: workflow version mismatch/)).toBeInTheDocument();
       expect(screen.getByText(/MODEL002: model reference unresolved/)).toBeInTheDocument();
+      const warningsList = screen.getByTestId('goobers-instance-warnings');
+      for (const item of warningsList.querySelectorAll('li')) {
+        expect(item.textContent).not.toMatch(/undefined/);
+      }
     });
 
     it('renders maintenance with its current phase de-slugged and its error summary (M24)', async () => {
