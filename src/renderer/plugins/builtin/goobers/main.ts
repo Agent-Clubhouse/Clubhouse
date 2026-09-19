@@ -337,7 +337,7 @@ function DaemonIdleDetail({ instance, health }: { instance: Instance | null; hea
     warnings.length > 0 && React.createElement('ul', {
       className: 'text-ctp-yellow list-none space-y-0.5',
       'data-testid': 'goobers-instance-warnings',
-    }, warnings.map((w) => React.createElement('li', { key: w.code }, `${w.code}: ${w.message}`))),
+    }, warnings.map((w) => React.createElement('li', { key: w.code }, `${w.code}: ${w.explanation}`))),
     storageHealth && React.createElement('span', {
       className: storageHealth.tier === 'healthy' ? 'text-ctp-overlay0' : 'text-ctp-red',
       'data-testid': 'goobers-storage-health',
