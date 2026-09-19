@@ -3,7 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/
 import { useGoobersStore, initGoobersListener } from '../../../stores/goobersStore';
 import { useGoobersSettingsStore } from '../../../stores/goobersSettingsStore';
 import { deriveGoobersPanelState, type GoobersPanelState, type GoobersPanelStateKind } from './panelState';
-import type { RunSummary, Instance, Health, InstanceStatus } from '../../../../shared/goobers-api-types';
+import type { RunSummary, Instance, Health, InstanceStatus, UpdateModel } from '../../../../shared/goobers-api-types';
 import type { GoobersSettings } from '../../../../shared/types';
 
 // ── Activate / Deactivate ──────────────────────────────────────────────
@@ -35,6 +35,10 @@ export function deactivate(): void {
 
 function isRunList(v: unknown): v is { runs: RunSummary[]; nextCursor?: string } {
   return typeof v === 'object' && v !== null && Array.isArray((v as { runs?: unknown }).runs);
+}
+
+function isDataInvalidatedPayload(v: unknown): v is { models: UpdateModel[] } {
+  return typeof v === 'object' && v !== null && Array.isArray((v as { models?: unknown }).models);
 }
 
 /** Truncate hostile content (workflow/gaggle names, issue titles, error text — all from user repos). */
@@ -511,6 +515,15 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (isDataView) {
       fetchRuns();
     }
+  }, [isDataView, fetchRuns]);
+
+  useEffect(() => {
+    if (!isDataView) return;
+    return window.clubhouse.goobers.onDataInvalidated((payload) => {
+      if (isDataInvalidatedPayload(payload) && payload.models.includes('run')) {
+        fetchRuns();
+      }
+    });
   }, [isDataView, fetchRuns]);
 
   const handleRefresh = useCallback(() => {
