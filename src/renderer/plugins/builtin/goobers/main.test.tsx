@@ -85,7 +85,7 @@ function makeRun(overrides: Partial<RunSummary> = {}): RunSummary {
   };
 }
 
-function mockWindowClubhouse(overrides: { listRuns?: unknown; pickDirectory?: unknown } = {}) {
+function mockWindowClubhouse(overrides: { listRuns?: unknown; pickDirectory?: unknown; onDataInvalidated?: unknown } = {}) {
   const w = globalThis.window as unknown as { clubhouse?: Record<string, unknown> };
   w.clubhouse = {
     ...w.clubhouse,
@@ -93,6 +93,7 @@ function mockWindowClubhouse(overrides: { listRuns?: unknown; pickDirectory?: un
       listRuns: overrides.listRuns ?? vi.fn(async () => ({ runs: [], nextCursor: undefined })),
       daemonStart: vi.fn(async () => ({ ok: true })),
       daemonStop: vi.fn(async () => ({ ok: true })),
+      onDataInvalidated: overrides.onDataInvalidated ?? vi.fn(() => vi.fn()),
     },
     project: {
       pickDirectory: overrides.pickDirectory ?? vi.fn(async () => null),
@@ -553,6 +554,48 @@ describe('Goobers MainPanel', () => {
       mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [run] })) });
       render(<MainPanel api={api} />);
       await waitFor(() => expect(screen.getAllByTestId('goobers-run-row')).toHaveLength(1));
+    });
+
+    // M28: the panel's run list/slot count previously only ever updated on
+    // mount or the manual [refresh] button, even though goobers-service.ts
+    // has broadcast DATA_INVALIDATED with models:['run'] since M26. These
+    // cover the consumer side: subscribe only in the data view, unsubscribe
+    // on unmount (the panel mounts/unmounts on tab switches), and refetch
+    // only when the invalidation actually names 'run'.
+    it('unsubscribes from onDataInvalidated on unmount', async () => {
+      setConnState(readyState());
+      const unsubscribe = vi.fn();
+      const onDataInvalidated = vi.fn(() => unsubscribe);
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })), onDataInvalidated });
+      const { unmount } = render(<MainPanel api={api} />);
+      await waitFor(() => expect(onDataInvalidated).toHaveBeenCalled());
+      unmount();
+      expect(unsubscribe).toHaveBeenCalled();
+    });
+
+    it('refetches runs when a DATA_INVALIDATED broadcast names the "run" model', async () => {
+      setConnState(readyState());
+      const listRuns = vi.fn(async () => ({ runs: [] }));
+      let invalidate: ((payload: unknown) => void) | undefined;
+      const onDataInvalidated = vi.fn((cb: (payload: unknown) => void) => { invalidate = cb; return vi.fn(); });
+      mockWindowClubhouse({ listRuns, onDataInvalidated });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(listRuns).toHaveBeenCalledTimes(1));
+      invalidate?.({ models: ['run'] });
+      await waitFor(() => expect(listRuns).toHaveBeenCalledTimes(2));
+    });
+
+    it('does not refetch runs when a DATA_INVALIDATED broadcast only names the "instance" model', async () => {
+      setConnState(readyState());
+      const listRuns = vi.fn(async () => ({ runs: [] }));
+      let invalidate: ((payload: unknown) => void) | undefined;
+      const onDataInvalidated = vi.fn((cb: (payload: unknown) => void) => { invalidate = cb; return vi.fn(); });
+      mockWindowClubhouse({ listRuns, onDataInvalidated });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(listRuns).toHaveBeenCalledTimes(1));
+      invalidate?.({ models: ['instance'] });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(listRuns).toHaveBeenCalledTimes(1);
     });
   });
 
