@@ -786,6 +786,86 @@ describe('GoobersService — polling suspend/resume (§7.7)', () => {
   });
 });
 
+// M29 (#1881, second finding): the only automatic resume trigger for
+// polling/SSE stopped by a visibility loss was an Electron
+// 'browser-window-focus' event. `subscribe()`'s old `subscriberCount === 1`
+// resume guard only ever fired once in production, because `release()` is
+// never called from the renderer (only tests call it) — so every GET_STATE
+// call after the very first left `subscriberCount` at 2+ forever, and the
+// guard never matched again. These prove the fix: `subscribe()` now always
+// attempts a resume, so a panel remount or manual [refresh] (both call
+// GET_STATE) resumes a stalled poll even with no focus event.
+describe('GoobersService — polling floor resumes on subscribe(), not just focus (M29)', () => {
+  function runningSnapshot(): LivenessSnapshot {
+    return {
+      daemon: { state: 'running', address: '127.0.0.1:8080', pid: 7027, version: 'v1', startedAt: 'x', lastTickAgeMillis: 1000, draining: false },
+      instance: { instanceRoot: tmpRoot } as unknown as LivenessSnapshot['instance'],
+      health: { ready: true, healthy: true } as unknown as LivenessSnapshot['health'],
+      degraded: false,
+    };
+  }
+
+  function writeConfiguredRoot(): void {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+  }
+
+  it('resumes a stalled poll on the next subscribe() after visibility is lost, with no browser-window-focus event', async () => {
+    // Fake timers from the start — `pollTimer` is a `setInterval` created by
+    // `subscribe()` below, and `vi.useFakeTimers()` only fakes timers
+    // created after it takes effect. Enabling it later would leave the
+    // already-running real interval untouched by `advanceTimersByTimeAsync`.
+    vi.useFakeTimers();
+    try {
+      mockGetAllWindows.mockReturnValue([visibleWindow()]);
+      writeConfiguredRoot();
+      const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+      const service = new GoobersService(settings);
+
+      vi.mocked(probeLiveness).mockResolvedValue(runningSnapshot());
+      service.subscribe();
+      await vi.advanceTimersByTimeAsync(20);
+      // A second GET_STATE call (e.g. a panel remount) — subscriberCount
+      // never returns to 0 in production, so this mirrors real usage rather
+      // than testing an idealized single-subscriber lifecycle.
+      service.subscribe();
+      await vi.advanceTimersByTimeAsync(20);
+      expect(service.isPollingForTests).toBe(true);
+
+      mockGetAllWindows.mockReturnValue([]); // window minimized/hidden
+      await vi.advanceTimersByTimeAsync(5_000); // let the next poll tick observe canPollNow() === false
+      expect(service.isPollingForTests).toBe(false);
+      expect(service.isEventStreamOpenForTests).toBe(false);
+
+      // Window visible again, but nothing fired 'browser-window-focus' —
+      // only a subsequent subscribe()/GET_STATE call observes the change.
+      mockGetAllWindows.mockReturnValue([visibleWindow()]);
+      service.subscribe();
+      await vi.advanceTimersByTimeAsync(20);
+
+      expect(service.isPollingForTests).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('subscribe()-triggered resume is still a no-op while no window is visible (gate respected)', async () => {
+    mockGetAllWindows.mockReturnValue([]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+
+    vi.mocked(probeLiveness).mockResolvedValue(runningSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.isPollingForTests).toBe(false);
+
+    service.subscribe(); // still no visible window
+    await flush();
+    expect(service.isPollingForTests).toBe(false);
+  });
+});
+
 describe('GoobersService — address-watch race, M21', () => {
   // The bug: `fs.watch()` only fires on a *future* change to `api.address`.
   // If the daemon already wrote that file before Clubhouse ever starts
@@ -1811,7 +1891,13 @@ describe('GoobersService — SSE invalidation feed integration (M26)', () => {
     fs.rmSync(otherRoot, { recursive: true, force: true });
   });
 
-  it('onInvalidation refetches state when "instance" is among the invalidated models, and broadcasts the exact payload', async () => {
+  // M29 (#1881): the daemon's feed only ever carries 'instance' in the
+  // opening snapshot — every steady-state invalidate is ['run','workflow'].
+  // A run transition changes instance.concurrency/counts by definition, so
+  // every invalidation is now treated as instance-affecting, debounced by
+  // 2s (INSTANCE_REFRESH_DEBOUNCE_MS) so a burst of run invalidations
+  // coalesces into one refreshConnectionOnce().
+  it('onInvalidation refetches the instance snapshot for a run-only invalidation, after the debounce window (M29)', async () => {
     mockGetAllWindows.mockReturnValue([visibleWindow()]);
     writeConfiguredRoot();
     const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
@@ -1823,14 +1909,23 @@ describe('GoobersService — SSE invalidation feed integration (M26)', () => {
     await flush();
     const callCountBefore = vi.mocked(probeLiveness).mock.calls.length;
 
-    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
-    cb.get().onInvalidation({ cursor: 'c1', models: ['instance'], runIds: ['run-1'] });
-    await flush();
+    vi.useFakeTimers();
+    try {
+      vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+      cb.get().onInvalidation({ cursor: 'c1', models: ['run'], runIds: ['run-1'] });
+      expect(service.isInstanceRefreshScheduledForTests).toBe(true);
+      // Not yet — still inside the debounce window.
+      expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountBefore);
 
-    expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountBefore + 1);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountBefore + 1);
+      expect(service.isInstanceRefreshScheduledForTests).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it('onInvalidation does NOT refetch state when "instance" is absent from the models list', async () => {
+  it('coalesces a burst of invalidations into a single refresh within the debounce window (M29)', async () => {
     mockGetAllWindows.mockReturnValue([visibleWindow()]);
     writeConfiguredRoot();
     const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
@@ -1842,10 +1937,46 @@ describe('GoobersService — SSE invalidation feed integration (M26)', () => {
     await flush();
     const callCountBefore = vi.mocked(probeLiveness).mock.calls.length;
 
-    cb.get().onInvalidation({ cursor: 'c1', models: ['run'], runIds: ['run-1'] });
-    await flush();
+    vi.useFakeTimers();
+    try {
+      vi.mocked(probeLiveness).mockResolvedValue(runningSnapshot());
+      cb.get().onInvalidation({ cursor: 'c1', models: ['run'], runIds: ['run-1'] });
+      cb.get().onInvalidation({ cursor: 'c2', models: ['run'], runIds: ['run-2'] });
+      cb.get().onInvalidation({ cursor: 'c3', models: ['workflow'] });
 
-    expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountBefore);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountBefore + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops a scheduled instance refresh if the panel becomes unpollable before the debounce fires (§7.7/§7.9 gate)', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    const callCountBefore = vi.mocked(probeLiveness).mock.calls.length;
+
+    vi.useFakeTimers();
+    try {
+      cb.get().onInvalidation({ cursor: 'c1', models: ['run'], runIds: ['run-1'] });
+      expect(service.isInstanceRefreshScheduledForTests).toBe(true);
+
+      // Window minimized/hidden before the debounce fires — canPollNow() is
+      // re-checked when the timer actually runs, not just when scheduled.
+      mockGetAllWindows.mockReturnValue([]);
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountBefore);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('onRefetchRequired (epoch_changed/feed_truncated/stale_cursor) refetches broadly', async () => {
