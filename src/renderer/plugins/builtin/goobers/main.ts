@@ -9,7 +9,7 @@ import {
   type GoobersFreshness,
   type GoobersConfigWarnings,
 } from './panelState';
-import type { RunSummary, Instance, Health, InstanceStatus, UpdateModel } from '../../../../shared/goobers-api-types';
+import type { RunSummary, Instance, Health, InstanceStatus, UpdateModel, ValidationWarning } from '../../../../shared/goobers-api-types';
 import type { GoobersSettings } from '../../../../shared/types';
 import { GOOBERS_POLL_FALLBACK_INTERVAL_MS } from '../../../../shared/goobers-types';
 
@@ -106,16 +106,16 @@ export function formatBytes(bytes: number): string {
   return `${mib.toFixed(0)}MB`;
 }
 
-/** M24: the daemon's own summary judgement — degraded/starting still needs the same idle framing. */
+/**
+ * M34 (#1891): the idle headline is deliberately quiet. `degraded` no longer
+ * gets its own string — once every idle status renders the same line, the
+ * config-lint-as-fault conflation from #1883 is structurally impossible rather
+ * than merely tested against. `starting` stays distinct because "no runs yet"
+ * and "no runs" answer different questions.
+ */
 export function describeIdleStatus(status: InstanceStatus | undefined): string {
-  switch (status) {
-    // Config lint, not a fault — see §8.4. The warning count is rendered
-    // separately in the header; this line is only about there being no runs.
-    case 'degraded': return 'Daemon running — nothing active';
-    case 'starting': return 'Daemon starting — nothing active yet';
-    case 'ready':
-    default: return 'Daemon running — nothing active';
-  }
+  if (status === 'starting') return 'Daemon starting — no active runs yet';
+  return 'No active runs';
 }
 
 const STATUS_PILL: Record<GoobersPanelStateKind, { label: string; color: string; icon: string }> = {
@@ -345,19 +345,60 @@ function RunRow({ run }: { run: RunSummary }) {
 }
 
 /**
+ * One entry list, rendered for both severities. M30 (#1879) established the
+ * `${code}:${scope}:${index}` key and the scope locator line — three REF012
+ * entries were otherwise byte-identical and collided as React keys. Both are
+ * preserved verbatim here; this only moves them somewhere callable twice.
+ */
+function WarningList({ entries, testId, id }: { entries: ValidationWarning[]; testId: string; id?: string }) {
+  return React.createElement('ul', {
+    className: 'list-none space-y-1',
+    'data-testid': testId,
+    id,
+  }, entries.map((w, i) => React.createElement('li', {
+    key: `${w.code}:${w.scope ?? ''}:${i}`,
+    className: 'flex flex-col items-center',
+  },
+    React.createElement('span', { className: w.severity === 'error' ? 'text-ctp-red' : 'text-ctp-yellow' }, `${w.code}: ${w.explanation}`),
+    w.scope && React.createElement('span', {
+      className: 'text-[10px] text-ctp-overlay0 font-mono truncate max-w-full',
+      title: w.scope,
+    }, truncate(w.scope, 70)),
+  )));
+}
+
+const WARNINGS_LIST_DOM_ID = 'goobers-config-warnings-list';
+
+/**
  * M24: the panel fetched `instance.warnings[]`, `.status`, `.maintenance`,
  * `.counts`, `.storageHealth`, and `health.freshness` every poll cycle and
  * discarded all of it behind a flat "nothing active" — the owner's actual
  * question ("what is my daemon doing, and why is it doing nothing?") went
  * unanswered. Each field below is independently optional; a daemon that
  * omits one must still render the others cleanly.
+ *
+ * M34 (#1891): surfacing all of it at once inverted the problem — 17 config-lint
+ * entries buried the operational footer M24 added. Warnings now sit behind a
+ * collapsed disclosure so the footer is what the idle state actually shows.
  */
 function DaemonIdleDetail({ instance, health }: { instance: Instance | null; health: Health | null }) {
-  const warnings = instance?.warnings ?? [];
+  const entries = instance?.warnings ?? [];
   const maintenance = instance?.maintenance;
   const storageHealth = instance?.storageHealth;
   const counts = instance?.counts;
   const freshness = health?.freshness;
+
+  // M34 decision 2: errors are never hidden behind the disclosure. Anything
+  // not explicitly 'error' is a warning — the same split this list has always
+  // used to colour entries, so an absent or unrecognised severity keeps its
+  // current treatment rather than landing in a new third bucket.
+  const errors = entries.filter((w) => w.severity === 'error');
+  const warnings = entries.filter((w) => w.severity !== 'error');
+
+  // M34 decision 3: in-memory only. Survives the poll tick and
+  // DATA_INVALIDATED re-renders because this component stays mounted while
+  // the run list is empty; resetting on unmount is acceptable and intended.
+  const [warningsExpanded, setWarningsExpanded] = useState(false);
 
   return React.createElement('div', {
     // M33 (#1890): `overflow-y-auto` was inert without `min-h-0` — a flex
@@ -373,19 +414,22 @@ function DaemonIdleDetail({ instance, health }: { instance: Instance | null; hea
     'data-testid': 'goobers-runs-empty',
   },
     React.createElement('span', null, describeIdleStatus(instance?.status)),
-    warnings.length > 0 && React.createElement('ul', {
-      className: 'list-none space-y-1',
-      'data-testid': 'goobers-instance-warnings',
-    }, warnings.map((w, i) => React.createElement('li', {
-      key: `${w.code}:${w.scope ?? ''}:${i}`,
-      className: 'flex flex-col items-center',
+    errors.length > 0 && React.createElement(WarningList, { entries: errors, testId: 'goobers-instance-errors' }),
+    warnings.length > 0 && React.createElement('button', {
+      onClick: () => setWarningsExpanded((open) => !open),
+      className: 'flex items-center gap-1 text-[11px] text-ctp-subtext0 hover:text-ctp-text cursor-pointer',
+      'data-testid': 'goobers-warnings-disclosure',
+      'aria-expanded': warningsExpanded,
+      'aria-controls': WARNINGS_LIST_DOM_ID,
     },
-      React.createElement('span', { className: w.severity === 'error' ? 'text-ctp-red' : 'text-ctp-yellow' }, `${w.code}: ${w.explanation}`),
-      w.scope && React.createElement('span', {
-        className: 'text-[10px] text-ctp-overlay0 font-mono truncate max-w-full',
-        title: w.scope,
-      }, truncate(w.scope, 70)),
-    ))),
+      `${warnings.length} config warning${warnings.length === 1 ? '' : 's'}`,
+      React.createElement('span', { 'aria-hidden': 'true' }, warningsExpanded ? '▾' : '▸'),
+    ),
+    warnings.length > 0 && warningsExpanded && React.createElement(WarningList, {
+      entries: warnings,
+      testId: 'goobers-instance-warnings',
+      id: WARNINGS_LIST_DOM_ID,
+    }),
     storageHealth && React.createElement('span', {
       className: storageHealth.tier === 'healthy' ? 'text-ctp-overlay0' : 'text-ctp-red',
       'data-testid': 'goobers-storage-health',
