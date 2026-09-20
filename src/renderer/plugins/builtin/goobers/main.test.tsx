@@ -517,6 +517,35 @@ describe('Goobers MainPanel', () => {
       }
     });
 
+    // M30 (#1879): three REF012 warnings with identical code+explanation were
+    // rendering byte-identically on a live 17-warning instance — `scope` is
+    // the only field that tells them apart, and it wasn't rendered at all.
+    // Also covers the duplicate-React-key defect from the same line: keying
+    // solely on `w.code` collides across these three siblings.
+    it('renders scope so that warnings sharing a code are distinguishable, with unique React keys (M30 #1879)', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      setConnState(readyState({
+        warnings: [
+          { code: 'REF012', explanation: 'connectionRef does not select credentials at runtime', scope: 'gaggles/clubhouse/gaggle.yaml Gaggle/clubhouse' },
+          { code: 'REF012', explanation: 'connectionRef does not select credentials at runtime', scope: 'gaggles/game-sim-gaggle/gaggle.yaml Gaggle/game-sim-gaggle' },
+          { code: 'REF012', explanation: 'connectionRef does not select credentials at runtime', scope: 'gaggles/goobers-repo/gaggle.yaml Gaggle/goobers-repo' },
+        ],
+      }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-instance-warnings')).toBeInTheDocument());
+      expect(screen.getByText(/Gaggle\/clubhouse/)).toBeInTheDocument();
+      expect(screen.getByText(/Gaggle\/game-sim-gaggle/)).toBeInTheDocument();
+      expect(screen.getByText(/Gaggle\/goobers-repo/)).toBeInTheDocument();
+      const items = screen.getByTestId('goobers-instance-warnings').querySelectorAll('li');
+      expect(items).toHaveLength(3);
+      const rendered = Array.from(items).map((li) => li.textContent);
+      expect(new Set(rendered).size).toBe(3);
+      const keyWarnings = consoleError.mock.calls.filter((call) => String(call[0]).includes('unique "key" prop'));
+      expect(keyWarnings).toHaveLength(0);
+      consoleError.mockRestore();
+    });
+
     it('renders maintenance with its current phase de-slugged and its error summary (M24)', async () => {
       setConnState(readyState({
         maintenance: {
@@ -629,6 +658,48 @@ describe('Goobers MainPanel', () => {
       expect(screen.getByTestId('goobers-run-limitations')).toBeInTheDocument();
       expect(screen.getByText(/waiting on review/)).toBeInTheDocument();
       expect(screen.getByText(/diagnostics incomplete/)).toBeInTheDocument();
+    });
+
+    // M30 (#1882): the row used to read as four unlabeled bare strings —
+    // workflow, an unlabeled gaggle tag, an unlabeled "current stage" that
+    // looked like a subtitle, and an ambiguous "1s" (total run duration,
+    // easily misread as "this run just started"). Assert every field is
+    // labeled, that the elapsed time is qualified, and that a run id is
+    // present for CLI correlation.
+    it('labels every active-run field — gaggle, step, elapsed time (qualified), and run id (M30 #1882)', async () => {
+      setConnState(readyState({ concurrency: { activeRuns: 1, maxConcurrentRuns: 3 } }));
+      const run = makeRun({
+        id: '194450f95334b54ac833b95502ab3930',
+        workflow: 'clubhouse-merge-review',
+        gaggle: 'clubhouse',
+        currentStage: 'reconcile-post-merge',
+        durationMillis: 300_000,
+        activeStages: [{ name: 'reconcile-post-merge', kind: 'stage', startedAt: new Date(Date.now() - 1_000).toISOString() }],
+      });
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [run] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getAllByTestId('goobers-run-row')).toHaveLength(1));
+      expect(screen.getByText('gaggle: clubhouse')).toBeInTheDocument();
+      expect(screen.getByText('step: reconcile-post-merge')).toBeInTheDocument();
+      // In-step elapsed (~1s, from activeStages[].startedAt), not the 5m total.
+      expect(screen.getByText(/^\ds in step$/)).toBeInTheDocument();
+      expect(screen.queryByText(/5m total/)).not.toBeInTheDocument();
+      const runId = screen.getByTestId('goobers-run-id');
+      expect(runId).toHaveTextContent('run 194450f9');
+      expect(runId).toHaveAttribute('title', '194450f95334b54ac833b95502ab3930');
+    });
+
+    // No activeStages entry matches currentStage (older wire version, or the
+    // stage just isn't tracked) — must fall back to total run duration and
+    // say so explicitly, not silently reuse the in-step label.
+    it('falls back to labeled total run duration when no activeStages entry matches the current stage (M30 #1882)', async () => {
+      setConnState(readyState({ concurrency: { activeRuns: 1, maxConcurrentRuns: 3 } }));
+      const run = makeRun({ currentStage: 'reconcile-post-merge', durationMillis: 300_000, activeStages: undefined });
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [run] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getAllByTestId('goobers-run-row')).toHaveLength(1));
+      expect(screen.getByText('5m total')).toBeInTheDocument();
+      expect(screen.queryByText(/in step/)).not.toBeInTheDocument();
     });
 
     it('scrolls and shows the truncation message with many runs above maxParallelRuns and tracks the live ratio', async () => {

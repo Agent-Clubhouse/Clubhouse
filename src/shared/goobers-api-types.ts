@@ -200,8 +200,10 @@ export interface InventoryCounts {
  * M27 — `code` is a plain string, not a hand-written union: the wire emits
  * ~93 codes across REF/DVL/CFG/CAP/RNR families, the field is display-only,
  * and any future exhaustive union must be generated from the backend.
- * `severity`/`scope` are transcribed from the Go struct and unverified
- * against a live daemon — same convention as `storageHealth?` at `:258`.
+ * `severity`/`scope` were transcribed from the Go struct as optional at M27;
+ * M30 confirmed both present and populated on all 17 warnings from a live
+ * v0.4.0-line daemon (`portal-v0.1.0-259-gdb073b2a`) — left optional anyway,
+ * since a daemon that omits either must still render.
  */
 export interface ValidationWarning {
   code: string;
