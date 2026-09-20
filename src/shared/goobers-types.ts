@@ -41,6 +41,14 @@ export interface GoobersRecoveryStatus {
   checks: Record<string, boolean>;
 }
 
+/**
+ * Fallback poll cadence when no SSE stream is live — `goobers-service.ts`'s
+ * single source of truth for `POLL_INTERVAL_MS`, re-exported here so the
+ * renderer's fallback banner text can't drift from the real value again
+ * (#1888: it previously hardcoded a literal "60s", 12x the actual 5s).
+ */
+export const GOOBERS_POLL_FALLBACK_INTERVAL_MS = 5_000;
+
 /** Spec §6.4 — copied verbatim. */
 export interface GoobersDaemonStatus {
   state: 'running' | 'not-running' | 'starting' | 'stopping' | 'unknown';

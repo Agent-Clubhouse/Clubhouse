@@ -5,7 +5,7 @@ import { MainPanel, describeStartupPhase, deslugPhase, formatElapsedSince, forma
 import { createMockAPI } from '../../testing';
 import { useGoobersStore } from '../../../stores/goobersStore';
 import { useGoobersSettingsStore } from '../../../stores/goobersSettingsStore';
-import type { GoobersConnectionState } from '../../../../shared/goobers-types';
+import { GOOBERS_POLL_FALLBACK_INTERVAL_MS, type GoobersConnectionState } from '../../../../shared/goobers-types';
 import type { RunSummary } from '../../../../shared/goobers-api-types';
 
 function baseConnState(overrides: Partial<GoobersConnectionState> = {}): GoobersConnectionState {
@@ -338,10 +338,15 @@ describe('Goobers MainPanel', () => {
     expect(screen.getByTestId('goobers-reconnecting-banner')).toBeInTheDocument();
   });
 
-  it('renders the polling-fallback banner', async () => {
+  // M32 (#1888): this banner previously hardcoded a literal "60s" — 12x the
+  // real POLL_INTERVAL_MS fallback cadence (5s). Assert against the actual
+  // shared constant so the text can't silently drift from it again.
+  it('renders the polling-fallback banner with the real fallback interval, not a hardcoded literal', async () => {
     setConnState(baseConnState({ connection: 'connected', stream: 'polling' }));
     render(<MainPanel api={api} />);
-    expect(screen.getByTestId('goobers-polling-banner')).toBeInTheDocument();
+    const banner = screen.getByTestId('goobers-polling-banner');
+    expect(banner).toBeInTheDocument();
+    expect(banner.textContent).toBe(`Live updates unavailable — refreshing every ${GOOBERS_POLL_FALLBACK_INTERVAL_MS / 1000}s`);
   });
 
   it('renders the no-read-model banner', async () => {
