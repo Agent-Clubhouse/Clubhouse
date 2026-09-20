@@ -65,6 +65,18 @@ const POLL_INTERVAL_MS = 5_000;
  */
 const SSE_WIDENED_POLL_INTERVAL_MS = 30_000;
 
+/**
+ * Coalescing window for SSE-triggered instance refreshes (M29). The daemon's
+ * feed only ever carries `models: ['instance', ...]` in the opening
+ * `snapshot` event — every steady-state `invalidate` is `['run','workflow']`
+ * (see #1881) — but a run transition changes `instance.concurrency`/`counts`
+ * by definition, so any invalidation is treated as instance-affecting rather
+ * than trusting a tag the feed never repeats. Debounced so a burst of run
+ * invalidations (several transitions within the same tick) triggers one
+ * `refreshConnectionOnce()`, not one per event.
+ */
+const INSTANCE_REFRESH_DEBOUNCE_MS = 2_000;
+
 const IDLE_DAEMON_STATUS: GoobersDaemonStatus = {
   state: 'unknown',
   address: null,
@@ -222,6 +234,10 @@ export class GoobersService {
    *  poll/watcher reset (a fresh `establishConnection()` pass, or an
    *  instanceRoot change), giving each of those a fresh chance at SSE. */
   private eventStreamTerminal: StreamTerminalReason | null = null;
+  /** M29 — debounce handle for `scheduleInstanceRefresh()`. Cleared by
+   *  `closeEventStream()` so a pending refresh never fires after teardown,
+   *  release, or a visibility-loss stop. */
+  private instanceRefreshDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   /** True from a successful `daemon-stop` until liveness actually clears.
    *  `goobers down` exiting 0 does not mean stopped — the drain is
    *  unbounded, so we keep reporting `stopping`/`draining: true` even while
@@ -253,6 +269,10 @@ export class GoobersService {
 
   get pollIntervalMsForTests(): number {
     return this.pollIntervalMs;
+  }
+
+  get isInstanceRefreshScheduledForTests(): boolean {
+    return this.instanceRefreshDebounceTimer !== null;
   }
 
   constructor(settings?: ManagedSettings<GoobersSettings>) {
@@ -289,13 +309,34 @@ export class GoobersService {
    * this independently; the underlying work only happens once.
    */
   subscribe(): void {
+    this.subscribeInternal(true);
+  }
+
+  /**
+   * `attemptResume` is false only from `connect()`, which always follows
+   * this immediately with its own authoritative `reconcile()` — letting
+   * `resumeIfNeeded()` also fire there would race two `probeLiveness()`
+   * calls against each other for no benefit.
+   */
+  private subscribeInternal(attemptResume: boolean): void {
     this.subscriberCount += 1;
     if (!this.activated && this.isSupportedPlatform) {
       this.activated = true;
       void this.activate();
-    } else if (this.activated && this.subscriberCount === 1) {
-      // Resumed from zero subscribers (panel reopened) — refetch immediately
-      // rather than waiting out a tick (§7.7).
+    } else if (this.activated && attemptResume) {
+      // M29: always attempt a resume, not just on the 0→1 edge. `release()`
+      // is only ever called by tests — the renderer has no matching call for
+      // `GET_STATE`'s `subscribe()` (every mount and every manual [refresh]
+      // click calls it), so `subscriberCount` never returns to 0 in
+      // production and the old `=== 1` guard fired exactly once, ever. After
+      // that, the only way polling/SSE could resume once `canPollNow()` went
+      // false (window minimized/hidden) was an Electron
+      // `browser-window-focus` event, which isn't guaranteed on every
+      // return-to-visible transition. `GET_STATE` is the one point we know a
+      // window is actually asking for current data, so treat it as a resume
+      // opportunity every time — `resumeIfNeeded()` is already a safe no-op
+      // when nothing needs to happen (already polling, autoConnect off, or
+      // still not pollable).
       this.resumeIfNeeded();
     }
   }
@@ -504,6 +545,27 @@ export class GoobersService {
     this.eventStreamHandle?.close();
     this.eventStreamHandle = null;
     this.eventStreamTerminal = null;
+    if (this.instanceRefreshDebounceTimer) {
+      clearTimeout(this.instanceRefreshDebounceTimer);
+      this.instanceRefreshDebounceTimer = null;
+    }
+  }
+
+  /**
+   * Debounced instance refresh (M29), fired from `onInvalidation` for every
+   * invalidation regardless of `models` — see `INSTANCE_REFRESH_DEBOUNCE_MS`.
+   * Re-checks `canPollNow()` when the timer actually fires, not just when it
+   * was scheduled, so a visibility/subscriber change during the debounce
+   * window is still respected (§7.7/§7.9 — no I/O for an unsubscribed or
+   * hidden panel).
+   */
+  private scheduleInstanceRefresh(settings: GoobersSettings): void {
+    if (this.instanceRefreshDebounceTimer) return; // already scheduled
+    this.instanceRefreshDebounceTimer = setTimeout(() => {
+      this.instanceRefreshDebounceTimer = null;
+      if (!this.canPollNow()) return;
+      void this.refreshConnectionOnce(settings);
+    }, INSTANCE_REFRESH_DEBOUNCE_MS);
   }
 
   /**
@@ -533,9 +595,14 @@ export class GoobersService {
         this.setPollInterval(SSE_WIDENED_POLL_INTERVAL_MS, settings);
       },
       onInvalidation: (invalidation: ModelInvalidation) => {
-        if (invalidation.models.includes('instance')) {
-          void this.refreshConnectionOnce(settings);
-        }
+        // M29 (#1881): the daemon's feed only ever carries 'instance' in the
+        // opening snapshot event — every steady-state invalidate is
+        // ['run','workflow'], so `models.includes('instance')` was dead here
+        // after connect. A run transition changes
+        // instance.concurrency/counts by definition, so treat every
+        // invalidation as instance-affecting rather than trusting a model
+        // tag the feed never repeats.
+        this.scheduleInstanceRefresh(settings);
         broadcastToAllWindows(IPC.GOOBERS.DATA_INVALIDATED, {
           models: invalidation.models,
           runIds: invalidation.runIds,
@@ -839,7 +906,7 @@ export class GoobersService {
    *  connection sequence against the currently configured root. */
   async connect(): Promise<GoobersConnectionState | GoobersErrorEnvelope> {
     if (!this.isSupportedPlatform) return this.unsupportedPlatform();
-    this.subscribe();
+    this.subscribeInternal(false); // reconcile() below is the authoritative refresh
     this.lastKnownSettings = this.settings.getSettings();
     await this.reconcile(this.lastKnownSettings);
     return this.state;
