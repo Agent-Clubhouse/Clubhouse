@@ -11,6 +11,7 @@ import {
 } from './panelState';
 import type { RunSummary, Instance, Health, InstanceStatus, UpdateModel } from '../../../../shared/goobers-api-types';
 import type { GoobersSettings } from '../../../../shared/types';
+import { GOOBERS_POLL_FALLBACK_INTERVAL_MS } from '../../../../shared/goobers-types';
 
 // ── Activate / Deactivate ──────────────────────────────────────────────
 
@@ -807,7 +808,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         kind === 'polling-fallback' ? React.createElement('div', {
           className: 'px-3 py-1 text-[11px] text-ctp-yellow',
           'data-testid': 'goobers-polling-banner',
-        }, 'Live updates unavailable — refreshing every 60s') : null,
+        }, `Live updates unavailable — refreshing every ${GOOBERS_POLL_FALLBACK_INTERVAL_MS / 1000}s`) : null,
         kind === 'no-read-model' ? React.createElement('div', {
           className: 'px-3 py-1 text-[11px] text-ctp-yellow',
           'data-testid': 'goobers-no-read-model-banner',

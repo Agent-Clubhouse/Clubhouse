@@ -30,6 +30,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import { API_VERSION, type RunList, type TelemetryErrorsPage, type WorkItemPage, type EventList, type ModelInvalidation } from '../../shared/goobers-api-types';
 import type { GoobersSettings } from '../../shared/types';
+import { GOOBERS_POLL_FALLBACK_INTERVAL_MS } from '../../shared/goobers-types';
 import type { GoobersConnectionState, GoobersDaemonStatus, RunListQuery } from '../../shared/goobers-types';
 
 const RUNS_FETCH_TIMEOUT_MS = 10_000;
@@ -54,7 +55,7 @@ export interface RootValidationResult {
   error?: { code: string; message: string };
 }
 
-const POLL_INTERVAL_MS = 5_000;
+const POLL_INTERVAL_MS = GOOBERS_POLL_FALLBACK_INTERVAL_MS;
 /**
  * Poll interval once the SSE invalidation feed is confirmed live (M26).
  * Deliberately not "stop polling" — SSE is a push signal *in addition to*
@@ -234,6 +235,22 @@ export class GoobersService {
    *  poll/watcher reset (a fresh `establishConnection()` pass, or an
    *  instanceRoot change), giving each of those a fresh chance at SSE. */
   private eventStreamTerminal: StreamTerminalReason | null = null;
+  /** M32 (#1888) — true only between a confirmed `onConnected` and the next
+   *  `onDisconnected`/`onTerminal`/`closeEventStream()`. `eventStreamHandle
+   *  !== null` alone can't distinguish 'live' from 'reconnecting': the
+   *  event-stream module keeps the same handle across its own internal
+   *  backoff/retry cycle and only nulls it out on a terminal condition (see
+   *  `goobers-event-stream.ts`'s `handleDisconnect`) — so a handle can be
+   *  non-null while the stream is actually down and retrying. */
+  private eventStreamConnected = false;
+  /** M32 — guards the poll interval's tick callback so a slow
+   *  `refreshConnectionOnce()` (RUNS_FETCH_TIMEOUT_MS is 10s, double the
+   *  default 5s poll interval) can't stack a second overlapping probe on
+   *  the next tick. Scoped to the poll timer only — the other call sites
+   *  (`resumeIfNeeded`, `onAddressFileChanged`, the SSE callbacks) are each
+   *  one-shot, not a repeating timer, so they don't have the same runaway
+   *  failure mode. */
+  private pollInFlight = false;
   /** M29 — debounce handle for `scheduleInstanceRefresh()`. Cleared by
    *  `closeEventStream()` so a pending refresh never fires after teardown,
    *  release, or a visibility-loss stop. */
@@ -273,6 +290,14 @@ export class GoobersService {
 
   get isInstanceRefreshScheduledForTests(): boolean {
     return this.instanceRefreshDebounceTimer !== null;
+  }
+
+  get streamForTests(): GoobersConnectionState['stream'] {
+    return this.state.stream;
+  }
+
+  get pollInFlightForTests(): boolean {
+    return this.pollInFlight;
   }
 
   constructor(settings?: ManagedSettings<GoobersSettings>) {
@@ -447,7 +472,14 @@ export class GoobersService {
     if (this.pollTimer) return;
     if (!this.canPollNow()) return;
     this.pollTimer = setInterval(() => {
-      void this.refreshConnectionOnce(settings).then(() => this.afterPollTick(settings));
+      // M32 (#1888): a slow refreshConnectionOnce() (RUNS_FETCH_TIMEOUT_MS
+      // is 10s, double the default 5s interval) must not let the next tick
+      // stack a second overlapping probe on top of it.
+      if (this.pollInFlight) return;
+      this.pollInFlight = true;
+      void this.refreshConnectionOnce(settings)
+        .then(() => this.afterPollTick(settings))
+        .finally(() => { this.pollInFlight = false; });
     }, this.pollIntervalMs);
   }
 
@@ -545,10 +577,42 @@ export class GoobersService {
     this.eventStreamHandle?.close();
     this.eventStreamHandle = null;
     this.eventStreamTerminal = null;
+    this.eventStreamConnected = false;
     if (this.instanceRefreshDebounceTimer) {
       clearTimeout(this.instanceRefreshDebounceTimer);
       this.instanceRefreshDebounceTimer = null;
     }
+  }
+
+  /**
+   * M32 (#1888) — the actual current stream status, derived from the SSE
+   * module's own state rather than trusted to whatever a caller hardcodes.
+   * `'live'` only once a frame has actually arrived on this connection
+   * attempt (`onConnected`); a non-null handle with no confirmed connection
+   * is `'reconnecting'` (the module is retrying through backoff, see
+   * `eventStreamConnected`'s doc comment); no handle at all is `'polling'`.
+   * Never returns `'unavailable'` — that's a property of `connection`, not
+   * of the stream, and every call site here is already inside a branch
+   * where the daemon is confirmed reachable.
+   */
+  private currentStreamStatus(): 'live' | 'reconnecting' | 'polling' {
+    if (this.eventStreamConnected) return 'live';
+    if (this.eventStreamHandle) return 'reconnecting';
+    return 'polling';
+  }
+
+  /**
+   * Pushes a `stream` transition immediately rather than waiting for the
+   * next poll tick to notice it — the SSE callbacks (`onConnected`/
+   * `onDisconnected`/`onTerminal`) are themselves the live signal, and the
+   * whole point of #1888 is that the panel should reflect them as they
+   * happen, not up to one poll interval later. A no-op if nothing changed,
+   * so callers can call it unconditionally.
+   */
+  private updateStreamStatus(status: GoobersConnectionState['stream']): void {
+    if (this.state.stream === status) return;
+    this.state = { ...this.state, stream: status, lastUpdatedAt: new Date().toISOString() };
+    broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
   }
 
   /**
@@ -592,6 +656,8 @@ export class GoobersService {
 
     this.eventStreamHandle = startEventStream(address.host, address.port, {
       onConnected: () => {
+        this.eventStreamConnected = true;
+        this.updateStreamStatus('live');
         this.setPollInterval(SSE_WIDENED_POLL_INTERVAL_MS, settings);
       },
       onInvalidation: (invalidation: ModelInvalidation) => {
@@ -616,11 +682,22 @@ export class GoobersService {
         broadcastToAllWindows(IPC.GOOBERS.DATA_INVALIDATED, { models: ['instance', 'run'] });
       },
       onDisconnected: () => {
+        // A transient drop — the module keeps retrying through backoff on
+        // this same handle, so this is 'reconnecting', not a fallback to
+        // plain polling (#1888).
+        this.eventStreamConnected = false;
+        this.updateStreamStatus('reconnecting');
         this.setPollInterval(POLL_INTERVAL_MS, settings);
       },
       onTerminal: (reason) => {
         this.eventStreamTerminal = reason;
         this.eventStreamHandle = null;
+        this.eventStreamConnected = false;
+        // Terminal — no further reconnect attempts this lifecycle, so this
+        // genuinely is a fallback to plain polling (or 'unavailable' if a
+        // broader connection-level state change follows on the next tick;
+        // refreshConnectionOnce's own branches take precedence then).
+        this.updateStreamStatus('polling');
         this.setPollInterval(POLL_INTERVAL_MS, settings);
       },
     });
@@ -666,7 +743,11 @@ export class GoobersService {
         this.state = {
           ...this.state,
           connection: 'connected',
-          stream: 'polling',
+          // M32 (#1888): derive from the SSE module's own state rather than
+          // hardcoding — a stream opened before the drain began can still
+          // be live for a moment; onDisconnected/onTerminal update this
+          // directly the instant the daemon actually drops it.
+          stream: this.currentStreamStatus(),
           daemon: { ...snapshot.daemon, state: 'stopping', draining: true },
           lastError: null,
           recovery: null,
@@ -714,7 +795,16 @@ export class GoobersService {
     this.state = {
       ...this.state,
       connection: snapshot.degraded ? 'degraded' : 'connected',
-      stream: 'polling',
+      // M32 (#1888): this used to hardcode 'polling' unconditionally, which
+      // stomped a correct 'live'/'reconnecting' set by the SSE callbacks on
+      // every single successful poll tick — the trap the issue calls out by
+      // name. `currentStreamStatus()` is read fresh here, and
+      // `maybeStartEventStream()` below runs after this assignment, so a
+      // stream that hasn't started yet on this tick correctly reads
+      // 'polling' now and 'live'/'reconnecting' from the next tick once
+      // `onConnected`/`onDisconnected` has actually fired (which also
+      // pushes the update immediately, not just on the next tick).
+      stream: this.currentStreamStatus(),
       daemon: snapshot.daemon,
       instance: snapshot.instance,
       health: snapshot.health,

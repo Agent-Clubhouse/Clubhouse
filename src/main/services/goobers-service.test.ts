@@ -65,6 +65,7 @@ import { startDaemon, stopDaemon } from './goobers-daemon';
 import { httpGetJson } from './goobers-http';
 import type { EventStreamCallbacks, EventStreamHandle } from './goobers-event-stream';
 import type { GoobersSettings } from '../../shared/types';
+import type { GoobersConnectionState } from '../../shared/goobers-types';
 import type { ManagedSettings } from './managed-settings';
 import type { LivenessSnapshot } from './goobers-liveness';
 
@@ -2027,5 +2028,206 @@ describe('GoobersService — SSE invalidation feed integration (M26)', () => {
     await flush();
 
     expect(mockStartEventStream).not.toHaveBeenCalled();
+  });
+});
+
+// M32 (#1888): the panel permanently showed "Live updates unavailable —
+// refreshing every 60s" even with a healthy, connected SSE stream. Two
+// defects: `stream: 'live'`/`'reconnecting'` were never assigned anywhere in
+// production source (only test files constructed them), and even a correct
+// `onConnected` would have been stomped by `refreshConnectionOnce`'s
+// unconditional `stream: 'polling'` on the very next poll tick. These prove
+// the fix survives that trap, not just that `onConnected` looks right by
+// hand.
+describe('GoobersService — live stream state (M32, #1888)', () => {
+  function runningSnapshot(): LivenessSnapshot {
+    return {
+      daemon: { state: 'running', address: '127.0.0.1:8080', pid: 7027, version: 'v1', startedAt: 'x', lastTickAgeMillis: 1000, draining: false },
+      instance: { instanceRoot: tmpRoot } as unknown as LivenessSnapshot['instance'],
+      health: { ready: true, healthy: true } as unknown as LivenessSnapshot['health'],
+      degraded: false,
+    };
+  }
+
+  function writeConfiguredRoot(): void {
+    fs.writeFileSync(path.join(tmpRoot, 'instance.yaml'), 'kind: Instance\n');
+    fs.writeFileSync(path.join(tmpRoot, '.instance-id'), 'eaf74575d8de50fa5471027ba7fd15cb\n');
+  }
+
+  function captureCallbacks(): { get: () => EventStreamCallbacks; handle: EventStreamHandle } {
+    let captured: EventStreamCallbacks | undefined;
+    const handle: EventStreamHandle = { close: vi.fn() };
+    mockStartEventStream.mockImplementation((..._args: unknown[]) => {
+      captured = _args[2] as EventStreamCallbacks;
+      return handle;
+    });
+    return {
+      get: () => {
+        if (!captured) throw new Error('startEventStream was not called yet');
+        return captured;
+      },
+      handle,
+    };
+  }
+
+  it('producer/consumer coverage: the service can emit every stream value panelState branches on', async () => {
+    // Assembled from actual service behavior, not asserted by construction —
+    // a future stream value added to the union without a real producer for
+    // it fails this test rather than shipping a dead branch like this one
+    // did. This is the check the issue says should fail on `main` today;
+    // before this mission's fix, `observed` never gains 'live' or
+    // 'reconnecting' because nothing in production source ever assigns them.
+    const observed = new Set<GoobersConnectionState['stream']>();
+
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    // 'unavailable' — daemon not running yet, no stream possible.
+    vi.mocked(probeLiveness).mockResolvedValueOnce({
+      daemon: { state: 'not-running', address: null, pid: null, version: null, startedAt: null, lastTickAgeMillis: null, draining: false },
+      instance: null,
+      health: null,
+      degraded: false,
+    });
+    service.subscribe();
+    await flush();
+    observed.add(service.streamForTests);
+
+    // 'polling' — running, connected, stream not yet established this tick.
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    const svc = service as unknown as { refreshConnectionOnce: (s: GoobersSettings) => Promise<void> };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    observed.add(service.streamForTests);
+
+    // 'live' — the SSE module confirms its first frame arrived.
+    cb.get().onConnected();
+    observed.add(service.streamForTests);
+
+    // 'reconnecting' — a transient drop, module retries through backoff.
+    cb.get().onDisconnected();
+    observed.add(service.streamForTests);
+
+    const fullUnion: GoobersConnectionState['stream'][] = ['live', 'reconnecting', 'polling', 'unavailable'];
+    for (const value of fullUnion) {
+      expect(observed.has(value)).toBe(true);
+    }
+  });
+
+  it('stream survives a poll tick while the SSE stream is open (the regression that matters)', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.streamForTests).toBe('polling'); // stream not connected yet
+
+    cb.get().onConnected();
+    expect(service.streamForTests).toBe('live');
+
+    // Drive the same call the poll timer's tick makes — this is the trap
+    // named in the issue: fixing only `onConnected` "would survive at most
+    // one poll interval," because `refreshConnectionOnce` used to hardcode
+    // `stream: 'polling'` unconditionally on every successful tick.
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    const svc = service as unknown as { refreshConnectionOnce: (s: GoobersSettings) => Promise<void> };
+    await svc.refreshConnectionOnce(settings.getSettings());
+    expect(service.streamForTests).toBe('live');
+  });
+
+  it('a transient stream drop sets stream to reconnecting, not a fallback to polling', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+
+    cb.get().onConnected();
+    expect(service.streamForTests).toBe('live');
+
+    cb.get().onDisconnected();
+    expect(service.streamForTests).toBe('reconnecting');
+  });
+
+  it('a terminal stream condition falls back to polling, not reconnecting', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+
+    cb.get().onConnected();
+    expect(service.streamForTests).toBe('live');
+
+    cb.get().onTerminal('no-read-model');
+    expect(service.streamForTests).toBe('polling');
+  });
+
+  it('pushes the stream transition immediately on onConnected/onDisconnected, not only on the next poll tick', async () => {
+    const send = vi.fn();
+    mockGetAllWindows.mockReturnValue([{ ...visibleWindow(), webContents: { send } }]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    const cb = captureCallbacks();
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    send.mockClear();
+
+    cb.get().onConnected();
+    expect(send).toHaveBeenCalledWith(IPC.GOOBERS.STATE_CHANGED, expect.objectContaining({ stream: 'live' }));
+  });
+
+  it('does not stack overlapping polls when refreshConnectionOnce is slow (in-flight guard)', async () => {
+    mockGetAllWindows.mockReturnValue([visibleWindow()]);
+    writeConfiguredRoot();
+    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+    const service = new GoobersService(settings);
+    // Shrink the poll interval for this test only, before subscribe()
+    // creates the real setInterval — proves the guard without a
+    // multi-second real-time wait at the default 5s cadence. Set before
+    // `pollTimer` exists, so this only overrides the field `startPolling`
+    // reads from, per `setPollInterval`'s own no-op-if-not-polling guard.
+    (service as unknown as { setPollInterval: (ms: number, s: GoobersSettings) => void })
+      .setPollInterval(30, settings.getSettings());
+
+    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+    service.subscribe();
+    await flush();
+    expect(service.isPollingForTests).toBe(true);
+    const callCountAfterFirst = vi.mocked(probeLiveness).mock.calls.length;
+
+    let resolveSecond: (() => void) | undefined;
+    const pending = new Promise<LivenessSnapshot>((resolve) => {
+      resolveSecond = () => resolve(runningSnapshot());
+    });
+    vi.mocked(probeLiveness).mockReturnValueOnce(pending);
+
+    // Wait past several 30ms intervals while the probe is pending — the
+    // guard must prevent any of them from stacking a second overlapping
+    // call.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(service.pollInFlightForTests).toBe(true);
+    expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountAfterFirst + 1);
+
+    resolveSecond?.();
+    await flush();
+    expect(service.pollInFlightForTests).toBe(false);
   });
 });
