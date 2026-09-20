@@ -384,6 +384,34 @@ describe('Goobers MainPanel', () => {
       expect(screen.getByText('Daemon running — nothing active')).toBeInTheDocument();
     });
 
+    // M33 (#1890): `overflow-y-auto` was already present on `goobers-runs-empty`
+    // before this fix and did nothing — a flex item defaults to
+    // `min-height: auto` and refuses to shrink below its content height, so
+    // this box grew to fit every warning/footer row instead of overflowing,
+    // and the ancestor's `overflow-hidden` clipped the excess. An assertion
+    // that only checks for `overflow-y-auto` passes on that broken state
+    // (the class was already there); this asserts the structural fix
+    // instead — `min-h-0` present at every link the issue named — which is
+    // absent on unmodified `2900a8f7` and would fail there.
+    it('the idle detail scroll container can actually shrink (min-h-0 chain, not just overflow-y-auto)', async () => {
+      setConnState(readyState({
+        warnings: Array.from({ length: 17 }, (_, i) => ({ code: `VER00${i}`, explanation: `warning ${i}` })),
+      }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+
+      const idleDetail = screen.getByTestId('goobers-runs-empty');
+      expect(idleDetail.className).toContain('overflow-y-auto');
+      expect(idleDetail.className).toContain('min-h-0');
+      // justify-center splits overflow to both ends, making the leading
+      // (top) overflow unreachable once content exceeds the box.
+      expect(idleDetail.className).not.toContain('justify-center');
+
+      const activeRunsRoot = screen.getByTestId('goobers-active-runs');
+      expect(activeRunsRoot.className).toContain('min-h-0');
+    });
+
     /**
      * #1883, rendered end to end. The owner's live instance: healthy daemon,
      * current data, 17 config warnings. The header must read
@@ -718,6 +746,13 @@ describe('Goobers MainPanel', () => {
       expect(screen.getByText(/showing first 12 of many running/)).toBeInTheDocument();
       const container = screen.getByTestId('goobers-active-runs').querySelector('.overflow-y-auto');
       expect(container).not.toBeNull();
+      // M33 (#1890): the run list had the identical dead-scroll bug, not yet
+      // visible only because this instance's concurrency caps runs at a low
+      // number. `overflow-y-auto` alone was already present and inert; the
+      // structural fix is `min-h-0` on both this container and the
+      // ActiveRunsView root — absent on unmodified 2900a8f7.
+      expect(container?.className).toContain('min-h-0');
+      expect(screen.getByTestId('goobers-active-runs').className).toContain('min-h-0');
     });
 
     it('renders unknown RunEventType-adjacent fields gracefully — a run with no operator block does not crash', async () => {
