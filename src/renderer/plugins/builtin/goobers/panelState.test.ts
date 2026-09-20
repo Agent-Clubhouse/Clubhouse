@@ -1,6 +1,62 @@
 import { describe, it, expect } from 'vitest';
 import { deriveGoobersPanelState } from './panelState';
 import type { GoobersConnectionState } from '../../../../shared/goobers-types';
+import type { Instance, Health, ReadState, ValidationWarning } from '../../../../shared/goobers-api-types';
+
+function instanceWith(overrides: Partial<Instance> = {}): Instance {
+  return {
+    apiVersion: 'v1',
+    schemaVersion: 'v1',
+    name: 'goobers-local',
+    environment: 'dev',
+    instanceRoot: '/x',
+    ready: true,
+    status: 'ready',
+    concurrency: { activeRuns: 0, maxConcurrentRuns: 3 },
+    counts: { gaggles: 0, goobers: 0, workflows: 0, activeRuns: 0 },
+    warnings: [],
+    fleetEnrolled: false,
+    ...overrides,
+  };
+}
+
+function warnings(...codes: string[]): ValidationWarning[] {
+  return codes.map((code) => ({ code, explanation: `${code} explanation` }));
+}
+
+function healthWith(readState?: Partial<ReadState>): Health {
+  return {
+    apiVersion: 'v1',
+    schemaVersion: 'v1',
+    ready: true,
+    healthy: true,
+    instance: { name: 'goobers-local', environment: 'dev' },
+    freshness: {
+      observedAt: new Date().toISOString(),
+      definitionsLoadedAt: new Date().toISOString(),
+      journalUpdatedAt: null,
+      lastSchedulerTickAt: null,
+      lastTickAgeMillis: 500,
+    },
+    ...(readState
+      ? {
+          readState: {
+            epoch: 'e1',
+            appliedSeq: 1,
+            observedAt: new Date().toISOString(),
+            lagSeconds: 0.4,
+            pendingIntake: 0,
+            oldestPendingSourceAge: 0,
+            intakeWriteFailures: 0,
+            minChangeSeq: 0,
+            completeness: 'complete',
+            degraded: [],
+            ...readState,
+          },
+        }
+      : {}),
+  };
+}
 
 function baseState(overrides: Partial<GoobersConnectionState> = {}): GoobersConnectionState {
   return {
@@ -151,18 +207,21 @@ describe('deriveGoobersPanelState', () => {
     expect(deriveGoobersPanelState(state, true).kind).toBe('ready');
   });
 
-  it('degraded when connection is degraded', () => {
+  it('scheduler-stalled when connection is degraded (scheduler not ticking)', () => {
     const state = baseState({ connection: 'degraded', stream: 'live' });
-    expect(deriveGoobersPanelState(state, true).kind).toBe('degraded');
+    expect(deriveGoobersPanelState(state, true).kind).toBe('scheduler-stalled');
   });
 
-  it('degraded when instance.status is degraded even if connection is connected', () => {
+  // §8.4 — config lint is not a lifecycle state. This previously asserted
+  // `kind: 'degraded'`, which is the defect #1883 reports: a permanent
+  // property of most instances was driving an alarming state.
+  it('stays ready when instance.status is degraded — config lint is not a state', () => {
     const state = baseState({
       connection: 'connected',
       stream: 'live',
-      instance: { apiVersion: 'v1', schemaVersion: 'v1', name: 'x', environment: 'dev', instanceRoot: '/x', ready: true, status: 'degraded', concurrency: { activeRuns: 0, maxConcurrentRuns: 3 }, counts: { gaggles: 0, goobers: 0, workflows: 0, activeRuns: 0 }, warnings: [], fleetEnrolled: false },
+      instance: instanceWith({ status: 'degraded' }),
     });
-    expect(deriveGoobersPanelState(state, true).kind).toBe('degraded');
+    expect(deriveGoobersPanelState(state, true).kind).toBe('ready');
   });
 
   it('stream-reconnecting when stream is reconnecting', () => {
@@ -196,5 +255,200 @@ describe('deriveGoobersPanelState', () => {
     const state = baseState({ connection: 'idle', daemon: { ...baseState().daemon, state: 'unknown' } });
     const result = deriveGoobersPanelState(state, true);
     expect(result.kind).toBe('connecting');
+  });
+});
+
+/**
+ * #1883 — §8.4 previously OR-ed config lint, data freshness and scheduler
+ * liveness into one "Ready, degraded" state with one blanket "marked stale"
+ * treatment. These cover each signal alone, then all three together, which is
+ * the case the OR collapsed.
+ */
+describe('§8.4 — the three signals are independent', () => {
+  const ready = { connection: 'connected', stream: 'live', apiCompatible: true } as const;
+
+  describe('config lint — informational, never a state and never a staleness claim', () => {
+    it('reports the count without changing kind or freshness', () => {
+      const state = baseState({
+        ...ready,
+        instance: instanceWith({ status: 'degraded', warnings: warnings('VER003', 'VER003', 'CFG001') }),
+        health: healthWith({}),
+      });
+      const result = deriveGoobersPanelState(state, true);
+
+      expect(result.kind).toBe('ready');
+      expect(result.configWarnings.count).toBe(3);
+      expect(result.configWarnings.label).toBe('3 config warnings');
+      expect(result.freshness.kind).toBe('current');
+      expect(result.freshness.alert).toBe(false);
+    });
+
+    it('names the codes with multiplicity so the header is self-diagnosing', () => {
+      const state = baseState({
+        ...ready,
+        instance: instanceWith({ warnings: warnings('VER003', 'VER003', 'VER003', 'CFG001') }),
+      });
+      expect(deriveGoobersPanelState(state, true).configWarnings.detail).toBe('3x VER003, CFG001');
+    });
+
+    it('singularizes a single warning', () => {
+      const state = baseState({ ...ready, instance: instanceWith({ warnings: warnings('VER003') }) });
+      expect(deriveGoobersPanelState(state, true).configWarnings.label).toBe('1 config warning');
+    });
+
+    it('emits no label at all when there are none', () => {
+      const state = baseState({ ...ready, instance: instanceWith() });
+      const result = deriveGoobersPanelState(state, true);
+      expect(result.configWarnings.count).toBe(0);
+      expect(result.configWarnings.label).toBeNull();
+    });
+  });
+
+  describe('data freshness — its own indicator, mirroring portal PortalShell', () => {
+    it('is unknown and renders nothing when there is no read model', () => {
+      const state = baseState({ ...ready, health: healthWith() });
+      const result = deriveGoobersPanelState(state, true);
+      expect(result.freshness.kind).toBe('unknown');
+      expect(result.freshness.label).toBeNull();
+      expect(result.freshness.alert).toBe(false);
+    });
+
+    it('is current when the daemon reports no degradation', () => {
+      const state = baseState({ ...ready, health: healthWith({ degraded: [], lagSeconds: 0.4 }) });
+      const result = deriveGoobersPanelState(state, true);
+      expect(result.freshness.kind).toBe('current');
+      expect(result.freshness.label).toBe('Data current');
+    });
+
+    it('does not invent lagging from a large lagSeconds the daemon has not flagged', () => {
+      const state = baseState({ ...ready, health: healthWith({ degraded: [], lagSeconds: 1642.1 }) });
+      expect(deriveGoobersPanelState(state, true).freshness.kind).toBe('current');
+    });
+
+    it.each(['projection_lag', 'sweep_stale', 'no_sweep_completed'])(
+      'treats self-healing reason %s as lagging but NOT an alert',
+      (reason) => {
+        const state = baseState({ ...ready, health: healthWith({ degraded: [reason], lagSeconds: 90 }) });
+        const result = deriveGoobersPanelState(state, true);
+        expect(result.freshness.kind).toBe('lagging');
+        expect(result.freshness.label).toBe('Data stale by 90.0s');
+        expect(result.freshness.detail).toBe(reason);
+        expect(result.freshness.alert).toBe(false);
+      },
+    );
+
+    it.each(['project_failure', 'intake_write_failure'])(
+      'alerts on non-self-healing reason %s',
+      (reason) => {
+        const state = baseState({ ...ready, health: healthWith({ degraded: [reason], lagSeconds: 5 }) });
+        const result = deriveGoobersPanelState(state, true);
+        expect(result.freshness.kind).toBe('lagging');
+        expect(result.freshness.alert).toBe(true);
+        expect(result.freshness.detail).toBe(reason);
+      },
+    );
+
+    it('alerts on an unrecognized reason rather than assuming it is benign', () => {
+      const state = baseState({ ...ready, health: healthWith({ degraded: ['some_future_reason'] }) });
+      const result = deriveGoobersPanelState(state, true);
+      expect(result.freshness.alert).toBe(true);
+      expect(result.freshness.detail).toBe('some_future_reason');
+    });
+
+    it('reports partial completeness with the missing names', () => {
+      const state = baseState({
+        ...ready,
+        health: healthWith({
+          completeness: 'partial',
+          missing: [{ name: 'projected-runs', reason: 'sweep pending', expectedBy: '2026-09-20T03:00:00Z' }],
+        }),
+      });
+      const result = deriveGoobersPanelState(state, true);
+      expect(result.freshness.kind).toBe('partial');
+      expect(result.freshness.label).toBe('Partial — projected-runs');
+    });
+  });
+
+  describe('scheduler liveness — distinct from both', () => {
+    it('is its own kind, driven only by connection degraded', () => {
+      const state = baseState({ connection: 'degraded', stream: 'live', instance: instanceWith() });
+      expect(deriveGoobersPanelState(state, true).kind).toBe('scheduler-stalled');
+    });
+
+    it('does not claim data is stale — freshness stays independent', () => {
+      const state = baseState({
+        connection: 'degraded',
+        stream: 'live',
+        health: healthWith({ degraded: [], lagSeconds: 0.4 }),
+      });
+      const result = deriveGoobersPanelState(state, true);
+      expect(result.kind).toBe('scheduler-stalled');
+      expect(result.freshness.kind).toBe('current');
+      expect(result.freshness.alert).toBe(false);
+    });
+  });
+
+  describe('the combination the OR collapsed', () => {
+    it('surfaces all three independently when all three are true at once', () => {
+      const state = baseState({
+        connection: 'degraded',
+        stream: 'live',
+        instance: instanceWith({ status: 'degraded', warnings: warnings('VER003', 'CFG001') }),
+        health: healthWith({ degraded: ['project_failure'], lagSeconds: 120 }),
+      });
+      const result = deriveGoobersPanelState(state, true);
+
+      expect(result.kind).toBe('scheduler-stalled');
+      expect(result.configWarnings.count).toBe(2);
+      expect(result.freshness.kind).toBe('lagging');
+      expect(result.freshness.alert).toBe(true);
+      expect(result.freshness.detail).toBe('project_failure');
+    });
+
+    /**
+     * The exact scenario from #1883: healthy daemon, current data, 17 config
+     * warnings. This rendered "⚠ Degraded — data below may be stale" and cost
+     * the owner an evening hunting a fault that did not exist.
+     */
+    it('a healthy instance with 17 config warnings is ready with current data', () => {
+      const state = baseState({
+        ...ready,
+        instance: instanceWith({
+          status: 'degraded',
+          warnings: warnings(...Array.from({ length: 13 }, () => 'VER003'), 'CFG001', 'CFG002', 'REF012', 'DVL001'),
+        }),
+        health: healthWith({ degraded: [], lagSeconds: 32.5, completeness: 'complete' }),
+      });
+      const result = deriveGoobersPanelState(state, true);
+
+      expect(result.kind).toBe('ready');
+      expect(result.freshness.kind).toBe('current');
+      expect(result.freshness.alert).toBe(false);
+      expect(result.configWarnings.count).toBe(17);
+      expect(result.configWarnings.label).toBe('17 config warnings');
+      expect(result.configWarnings.detail).toBe('13x VER003, CFG001, CFG002, REF012, DVL001');
+    });
+  });
+
+  /**
+   * Second defect, found while fixing the first: the config-lint branch
+   * returned before the three `stream` checks, so on any instance carrying a
+   * config warning — a permanent condition for most — a genuine stream outage
+   * was invisible and rendered as the same generic "Degraded" pill.
+   */
+  describe('stream states stay reachable when config lint is non-empty', () => {
+    it.each([
+      ['reconnecting', 'stream-reconnecting'],
+      ['polling', 'polling-fallback'],
+      ['unavailable', 'no-read-model'],
+    ] as const)('stream %s still derives %s', (stream, expected) => {
+      const state = baseState({
+        connection: 'connected',
+        stream,
+        apiCompatible: true,
+        instance: instanceWith({ status: 'degraded', warnings: warnings('VER003') }),
+      });
+      expect(deriveGoobersPanelState(state, true).kind).toBe(expected);
+    });
   });
 });

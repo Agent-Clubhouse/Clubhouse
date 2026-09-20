@@ -320,10 +320,15 @@ describe('Goobers MainPanel', () => {
     expect(screen.getByTestId('goobers-state-unknown-error')).toBeInTheDocument();
   });
 
-  it('renders the active-runs view with a degraded banner when degraded', async () => {
+  it('renders the active-runs view with a scheduler-stalled banner naming the tick age', async () => {
     setConnState(baseConnState({ connection: 'degraded', stream: 'live' }));
     render(<MainPanel api={api} />);
-    expect(screen.getByTestId('goobers-degraded-banner')).toBeInTheDocument();
+    // §8.4 required "banner naming the specific degradation"; the old copy
+    // named none and claimed staleness the scheduler tick says nothing about.
+    const banner = screen.getByTestId('goobers-scheduler-stalled-banner');
+    expect(banner).toBeInTheDocument();
+    expect(banner.textContent).toContain('Scheduler has not ticked');
+    expect(banner.textContent).not.toContain('may be stale');
     await waitFor(() => expect(screen.getByTestId('goobers-active-runs')).toBeInTheDocument());
   });
 
@@ -374,6 +379,89 @@ describe('Goobers MainPanel', () => {
       expect(screen.getByText('Daemon running — nothing active')).toBeInTheDocument();
     });
 
+    /**
+     * #1883, rendered end to end. The owner's live instance: healthy daemon,
+     * current data, 17 config warnings. The header must read
+     * "Ready · Data current · 17 config warnings" with nothing alarming.
+     */
+    it('renders a healthy config-linted instance with no alarming banner (#1883)', async () => {
+      setConnState(readyState(
+        {
+          status: 'degraded',
+          warnings: [
+            ...Array.from({ length: 13 }, () => ({ code: 'VER003', explanation: 'workflow has no schedule trigger' })),
+            { code: 'CFG001', explanation: 'a' }, { code: 'CFG002', explanation: 'b' },
+            { code: 'REF012', explanation: 'c' }, { code: 'DVL001', explanation: 'd' },
+          ],
+        },
+        {
+          health: {
+            apiVersion: 'v1', schemaVersion: 'v1', ready: true, healthy: true,
+            instance: { name: 'goobers-local', environment: 'dev' },
+            freshness: {
+              observedAt: new Date().toISOString(), definitionsLoadedAt: new Date().toISOString(),
+              journalUpdatedAt: null, lastSchedulerTickAt: null, lastTickAgeMillis: 500,
+            },
+            readState: {
+              epoch: 'e1', appliedSeq: 1, observedAt: new Date().toISOString(), lagSeconds: 32.5,
+              pendingIntake: 0, oldestPendingSourceAge: 0, intakeWriteFailures: 0, minChangeSeq: 0,
+              completeness: 'complete', degraded: [],
+            },
+          },
+        },
+      ));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+
+      expect(screen.getByTestId('goobers-status-pill').textContent).toContain('Ready');
+      expect(screen.getByTestId('goobers-freshness').textContent).toContain('Data current');
+      expect(screen.getByTestId('goobers-config-warnings').textContent).toBe('17 config warnings');
+      expect(screen.getByTestId('goobers-config-warnings')).toHaveAttribute(
+        'title', '13x VER003, CFG001, CFG002, REF012, DVL001',
+      );
+
+      // The regression itself: nothing claims degradation or staleness.
+      expect(screen.queryByTestId('goobers-scheduler-stalled-banner')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('goobers-freshness-banner')).not.toBeInTheDocument();
+      expect(screen.queryByText(/may be stale/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Degraded/)).not.toBeInTheDocument();
+    });
+
+    it('omits the freshness element entirely when there is no read model', async () => {
+      setConnState(readyState({}, { health: null }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+      // "Data current" here would be a claim nobody made.
+      expect(screen.queryByTestId('goobers-freshness')).not.toBeInTheDocument();
+    });
+
+    it('shows an alert banner naming the reason for a non-self-healing degradation', async () => {
+      setConnState(readyState({}, {
+        health: {
+          apiVersion: 'v1', schemaVersion: 'v1', ready: true, healthy: true,
+          instance: { name: 'goobers-local', environment: 'dev' },
+          freshness: {
+            observedAt: new Date().toISOString(), definitionsLoadedAt: new Date().toISOString(),
+            journalUpdatedAt: null, lastSchedulerTickAt: null, lastTickAgeMillis: 500,
+          },
+          readState: {
+            epoch: 'e1', appliedSeq: 1, observedAt: new Date().toISOString(), lagSeconds: 120,
+            pendingIntake: 0, oldestPendingSourceAge: 0, intakeWriteFailures: 3, minChangeSeq: 0,
+            completeness: 'complete', degraded: ['intake_write_failure'],
+          },
+        },
+      }));
+      mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+
+      const banner = screen.getByTestId('goobers-freshness-banner');
+      expect(banner.textContent).toContain('Data stale by 120.0s');
+      expect(banner.textContent).toContain('intake_write_failure');
+    });
+
     // M24: nothing beyond the base sentence renders when every optional
     // field (warnings, maintenance, storageHealth, counts, freshness/health)
     // is absent — a daemon that omits them must still get a clean panel.
@@ -391,12 +479,20 @@ describe('Goobers MainPanel', () => {
       expect(screen.getByTestId('goobers-inventory-counts')).toBeInTheDocument();
     });
 
-    it('says the daemon is degraded, not just "running", when instance.status is degraded (M24)', async () => {
+    /**
+     * Reverses an M24 assertion on purpose (#1883). M24 wanted the idle screen
+     * to answer "why is nothing running?", which was right — but it answered it
+     * by calling the daemon "degraded" off `instance.status`, which only means
+     * config lint. The answer is kept: the warnings list still renders directly
+     * below this line. Only the false fault label is gone.
+     */
+    it('does not call a config-linted daemon "degraded" on the idle screen (#1883)', async () => {
       setConnState(readyState({ status: 'degraded' }));
       mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
       render(<MainPanel api={api} />);
       await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
-      expect(screen.getByText('Daemon degraded — nothing active')).toBeInTheDocument();
+      expect(screen.getByText('Daemon running — nothing active')).toBeInTheDocument();
+      expect(screen.queryByText('Daemon degraded — nothing active')).not.toBeInTheDocument();
     });
 
     // M27: the daemon's CodedWarning serializes the text under `explanation`,
@@ -773,8 +869,8 @@ describe('startup phase copy helpers', () => {
   });
 
   describe('describeIdleStatus', () => {
-    it('describes a degraded instance', () => {
-      expect(describeIdleStatus('degraded')).toBe('Daemon degraded — nothing active');
+    it('does not report a fault for a config-linted instance (#1883)', () => {
+      expect(describeIdleStatus('degraded')).toBe('Daemon running — nothing active');
     });
 
     it('describes a starting instance', () => {
