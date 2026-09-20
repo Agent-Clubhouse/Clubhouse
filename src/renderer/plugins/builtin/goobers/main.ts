@@ -296,6 +296,22 @@ function BlockersAndLimitations({ blockers, limitations }: { blockers: string[];
   );
 }
 
+/**
+ * M30 (#1882) — `run.durationMillis` is the run's TOTAL elapsed time, not
+ * time-in-current-step; rendering it next to `currentStage` unlabeled read
+ * as "this run is Ns old", which is misleading for a run that's been going
+ * for a while but just entered a new stage. Prefer the matching
+ * `activeStages[]` entry's own `startedAt` when one exists (that's the
+ * in-step clock); fall back to total run duration, explicitly labeled, when
+ * it doesn't (e.g. no `activeStages` on this wire version).
+ */
+function currentStepElapsedLabel(run: RunSummary): string {
+  const activeStage = run.activeStages?.find((s) => s.name === run.currentStage);
+  return activeStage
+    ? `${formatElapsedSince(activeStage.startedAt)} in step`
+    : `${formatDurationMillis(run.durationMillis)} total`;
+}
+
 function RunRow({ run }: { run: RunSummary }) {
   const op = run.operator;
   return React.createElement('div', {
@@ -304,15 +320,16 @@ function RunRow({ run }: { run: RunSummary }) {
   },
     React.createElement('div', { className: 'flex items-center justify-between gap-2 text-xs' },
       React.createElement('span', { className: 'font-medium text-ctp-text truncate', title: run.workflow }, truncate(run.workflow, 40)),
-      React.createElement('span', { className: 'text-ctp-subtext0 shrink-0' }, truncate(run.gaggle, 24)),
+      React.createElement('span', { className: 'text-ctp-subtext0 shrink-0' }, `gaggle: ${truncate(run.gaggle, 24)}`),
     ),
     React.createElement('div', { className: 'flex items-center gap-2 text-[11px] text-ctp-subtext0' },
-      run.currentStage ? React.createElement('span', null, truncate(run.currentStage, 30)) : null,
+      run.currentStage ? React.createElement('span', null, `step: ${truncate(run.currentStage, 30)}`) : null,
       op?.issue ? React.createElement('span', null, `#${op.issue.number}`) : null,
       op?.pullRequest ? React.createElement('span', null, 'has PR') : null,
-      React.createElement('span', null, formatDurationMillis(run.durationMillis)),
+      React.createElement('span', null, currentStepElapsedLabel(run)),
       op?.heartbeatAgeMillis != null ? React.createElement('span', null, `heartbeat ${formatAgeMillis(op.heartbeatAgeMillis)} ago`) : null,
       run.stale ? React.createElement('span', { className: 'text-ctp-red' }, 'no heartbeat') : null,
+      React.createElement('span', { className: 'shrink-0', title: run.id, 'data-testid': 'goobers-run-id' }, `run ${run.id.slice(0, 8)}`),
     ),
     op ? React.createElement(BlockersAndLimitations, { blockers: op.potentialBlockers, limitations: op.diagnosticsLimitations }) : null,
   );
@@ -339,9 +356,18 @@ function DaemonIdleDetail({ instance, health }: { instance: Instance | null; hea
   },
     React.createElement('span', null, describeIdleStatus(instance?.status)),
     warnings.length > 0 && React.createElement('ul', {
-      className: 'text-ctp-yellow list-none space-y-0.5',
+      className: 'list-none space-y-1',
       'data-testid': 'goobers-instance-warnings',
-    }, warnings.map((w) => React.createElement('li', { key: w.code }, `${w.code}: ${w.explanation}`))),
+    }, warnings.map((w, i) => React.createElement('li', {
+      key: `${w.code}:${w.scope ?? ''}:${i}`,
+      className: 'flex flex-col items-center',
+    },
+      React.createElement('span', { className: w.severity === 'error' ? 'text-ctp-red' : 'text-ctp-yellow' }, `${w.code}: ${w.explanation}`),
+      w.scope && React.createElement('span', {
+        className: 'text-[10px] text-ctp-overlay0 font-mono truncate max-w-full',
+        title: w.scope,
+      }, truncate(w.scope, 70)),
+    ))),
     storageHealth && React.createElement('span', {
       className: storageHealth.tier === 'healthy' ? 'text-ctp-overlay0' : 'text-ctp-red',
       'data-testid': 'goobers-storage-health',
