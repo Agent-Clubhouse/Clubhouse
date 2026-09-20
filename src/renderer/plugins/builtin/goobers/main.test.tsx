@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MainPanel, describeStartupPhase, deslugPhase, formatElapsedSince, formatBytes, describeIdleStatus } from './main';
 import { createMockAPI } from '../../testing';
@@ -381,7 +382,7 @@ describe('Goobers MainPanel', () => {
       mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
       render(<MainPanel api={api} />);
       await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
-      expect(screen.getByText('Daemon running — nothing active')).toBeInTheDocument();
+      expect(screen.getByText('No active runs')).toBeInTheDocument();
     });
 
     /**
@@ -475,7 +476,7 @@ describe('Goobers MainPanel', () => {
       mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
       render(<MainPanel api={api} />);
       await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
-      expect(screen.getByText('Daemon running — nothing active')).toBeInTheDocument();
+      expect(screen.getByText('No active runs')).toBeInTheDocument();
       expect(screen.queryByTestId('goobers-instance-warnings')).not.toBeInTheDocument();
       expect(screen.queryByTestId('goobers-maintenance')).not.toBeInTheDocument();
       expect(screen.queryByTestId('goobers-storage-health')).not.toBeInTheDocument();
@@ -488,16 +489,204 @@ describe('Goobers MainPanel', () => {
      * Reverses an M24 assertion on purpose (#1883). M24 wanted the idle screen
      * to answer "why is nothing running?", which was right — but it answered it
      * by calling the daemon "degraded" off `instance.status`, which only means
-     * config lint. The answer is kept: the warnings list still renders directly
-     * below this line. Only the false fault label is gone.
+     * config lint. The answer is kept: the warnings are still one click away in
+     * the disclosure below (M34). Only the false fault label is gone.
      */
     it('does not call a config-linted daemon "degraded" on the idle screen (#1883)', async () => {
       setConnState(readyState({ status: 'degraded' }));
       mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
       render(<MainPanel api={api} />);
       await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
-      expect(screen.getByText('Daemon running — nothing active')).toBeInTheDocument();
-      expect(screen.queryByText('Daemon degraded — nothing active')).not.toBeInTheDocument();
+      expect(screen.getByText('No active runs')).toBeInTheDocument();
+      expect(screen.queryByText(/[Dd]egraded/)).not.toBeInTheDocument();
+    });
+
+    /**
+     * M34 (#1891, also closes #1887). The idle panel's most prominent state was
+     * permanently occupied by its least actionable content: 17 config-lint
+     * entries, two lines each since #1879 added scope locators, pushing the
+     * operational footer off screen. Per #1883 that state is permanent for most
+     * instances, so this was the default view every single time.
+     */
+    describe('config warnings disclosure', () => {
+      const SEVENTEEN = [
+        ...Array.from({ length: 13 }, (_, i) => ({
+          code: 'VER003',
+          explanation: 'workflow has no schedule trigger',
+          scope: `gaggles/g${i}/workflow.yaml`,
+          severity: 'warning',
+        })),
+        { code: 'CFG001', explanation: 'a', severity: 'warning' },
+        { code: 'CFG002', explanation: 'b', severity: 'warning' },
+        { code: 'REF012', explanation: 'c', severity: 'warning' },
+        { code: 'DVL001', explanation: 'd', severity: 'warning' },
+      ];
+
+      it('collapses warnings by default and keeps the operational footer reachable', async () => {
+        setConnState(readyState({
+          status: 'degraded',
+          warnings: SEVENTEEN,
+          storageHealth: {
+            tier: 'healthy', path: '/x', freeBytes: 50 * 1024 ** 3, totalBytes: 100 * 1024 ** 3,
+            warningFloorBytes: 1, warningFloorPercent: 1, criticalFloorBytes: 1, criticalFloorPercent: 1,
+            measuredAt: new Date().toISOString(),
+          },
+        }));
+        mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+        render(<MainPanel api={api} />);
+        await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+
+        expect(screen.getByText('No active runs')).toBeInTheDocument();
+        expect(screen.queryByTestId('goobers-instance-warnings')).not.toBeInTheDocument();
+        expect(screen.queryByText(/workflow has no schedule trigger/)).not.toBeInTheDocument();
+
+        // Collapsed means UNMOUNTED, not hidden. M27's and M30's inherited
+        // assertions now click to expand before asserting content, so they
+        // would pass for the wrong reason if the list were merely CSS-hidden.
+        // No list items exist in the idle body at all while collapsed.
+        expect(screen.getByTestId('goobers-runs-empty').querySelectorAll('li')).toHaveLength(0);
+
+        // The footer is the content the wall of text was burying.
+        expect(screen.getByTestId('goobers-storage-health')).toBeInTheDocument();
+        expect(screen.getByTestId('goobers-inventory-counts')).toBeInTheDocument();
+      });
+
+      it('labels the disclosure with an accurate count without expanding', async () => {
+        setConnState(readyState({ status: 'degraded', warnings: SEVENTEEN }));
+        mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+        render(<MainPanel api={api} />);
+        const disclosure = await screen.findByTestId('goobers-warnings-disclosure');
+        expect(disclosure.textContent).toContain('17 config warnings');
+        expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      });
+
+      it('singularizes a lone warning', async () => {
+        setConnState(readyState({ warnings: [{ code: 'CFG001', explanation: 'only one' }] }));
+        mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+        render(<MainPanel api={api} />);
+        const disclosure = await screen.findByTestId('goobers-warnings-disclosure');
+        expect(disclosure.textContent).toContain('1 config warning');
+        expect(disclosure.textContent).not.toContain('1 config warnings');
+      });
+
+      it('renders no disclosure at all when there are no warnings', async () => {
+        setConnState(readyState({ warnings: [] }));
+        mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+        render(<MainPanel api={api} />);
+        await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+        expect(screen.queryByTestId('goobers-warnings-disclosure')).not.toBeInTheDocument();
+      });
+
+      it('expands to reveal every entry, and collapses back', async () => {
+        setConnState(readyState({ status: 'degraded', warnings: SEVENTEEN }));
+        mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+        render(<MainPanel api={api} />);
+        const disclosure = await screen.findByTestId('goobers-warnings-disclosure');
+
+        await userEvent.click(disclosure);
+        const list = screen.getByTestId('goobers-instance-warnings');
+        expect(list.querySelectorAll('li')).toHaveLength(17);
+        expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+        expect(disclosure).toHaveAttribute('aria-controls', list.id);
+
+        await userEvent.click(disclosure);
+        expect(screen.queryByTestId('goobers-instance-warnings')).not.toBeInTheDocument();
+        expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      });
+
+      /**
+       * The acceptance criterion that matters: the panel polls and broadcasts
+       * DATA_INVALIDATED constantly, and a disclosure that collapsed under the
+       * user mid-read would be worse than the wall of text it replaced.
+       */
+      it('stays expanded across a DATA_INVALIDATED-driven re-render', async () => {
+        setConnState(readyState({ status: 'degraded', warnings: SEVENTEEN }));
+        const listRuns = vi.fn(async () => ({ runs: [] }));
+        let invalidate: ((payload: unknown) => void) | undefined;
+        const onDataInvalidated = vi.fn((cb: (payload: unknown) => void) => { invalidate = cb; return vi.fn(); });
+        mockWindowClubhouse({ listRuns, onDataInvalidated });
+        render(<MainPanel api={api} />);
+
+        await userEvent.click(await screen.findByTestId('goobers-warnings-disclosure'));
+        expect(screen.getByTestId('goobers-instance-warnings')).toBeInTheDocument();
+
+        await waitFor(() => expect(listRuns).toHaveBeenCalledTimes(1));
+        invalidate?.({ models: ['run'] });
+        await waitFor(() => expect(listRuns).toHaveBeenCalledTimes(2));
+
+        expect(screen.getByTestId('goobers-instance-warnings')).toBeInTheDocument();
+        expect(screen.getByTestId('goobers-warnings-disclosure')).toHaveAttribute('aria-expanded', 'true');
+      });
+
+      /**
+       * M34 decision 2. Every entry on the live instance is `"warning"`, so
+       * this path cannot be seen by running the app — it only exists if it is
+       * tested. An error-severity entry must never be hidden behind a control
+       * the user has to know to click.
+       */
+      it('renders error-severity entries outside the disclosure, always visible', async () => {
+        setConnState(readyState({
+          status: 'degraded',
+          warnings: [
+            { code: 'CFG900', explanation: 'instance config failed to load', severity: 'error', scope: 'instance.yaml' },
+            ...SEVENTEEN,
+          ],
+        }));
+        mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+        render(<MainPanel api={api} />);
+        await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+
+        // Visible without any interaction.
+        const errors = screen.getByTestId('goobers-instance-errors');
+        expect(errors.querySelectorAll('li')).toHaveLength(1);
+        expect(screen.getByText(/CFG900: instance config failed to load/)).toBeInTheDocument();
+        expect(screen.queryByTestId('goobers-instance-warnings')).not.toBeInTheDocument();
+
+        // The disclosure counts warnings only, so the error is not double-counted.
+        expect(screen.getByTestId('goobers-warnings-disclosure').textContent).toContain('17 config warnings');
+      });
+
+      /**
+       * Consequence of combining M34 decisions 1 and 2, recorded deliberately:
+       * the header counts every lint entry (18) while the disclosure counts
+       * warnings only (17), with the remaining error rendered separately. The
+       * two differ by design, not by accident.
+       */
+      it('header counts all entries while the disclosure counts warnings only', async () => {
+        setConnState(readyState({
+          status: 'degraded',
+          warnings: [
+            { code: 'CFG900', explanation: 'instance config failed to load', severity: 'error' },
+            ...SEVENTEEN,
+          ],
+        }));
+        mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+        render(<MainPanel api={api} />);
+        await waitFor(() => expect(screen.getByTestId('goobers-runs-empty')).toBeInTheDocument());
+
+        // Deliberate, not a bug: header counts all lint entries, disclosure
+        // counts warnings only, and the error renders between them so the
+        // arithmetic is visible. Decided on #goobers-m34-warnings-disclosure
+        // (fuzzy-bobcat, 2026-09-20). Do not "fix" this mismatch without
+        // reading that thread.
+        expect(screen.getByTestId('goobers-config-warnings').textContent).toBe('18 config warnings');
+        expect(screen.getByTestId('goobers-warnings-disclosure').textContent).toContain('17 config warnings');
+      });
+
+      it('treats an entry with absent or unrecognised severity as a warning, not an error', async () => {
+        setConnState(readyState({
+          status: 'degraded',
+          warnings: [
+            { code: 'CFG001', explanation: 'no severity field at all' },
+            { code: 'CFG002', explanation: 'severity we have never seen', severity: 'notice' },
+          ],
+        }));
+        mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
+        render(<MainPanel api={api} />);
+        const disclosure = await screen.findByTestId('goobers-warnings-disclosure');
+        expect(disclosure.textContent).toContain('2 config warnings');
+        expect(screen.queryByTestId('goobers-instance-errors')).not.toBeInTheDocument();
+      });
     });
 
     // M27: the daemon's CodedWarning serializes the text under `explanation`,
@@ -513,6 +702,10 @@ describe('Goobers MainPanel', () => {
       }));
       mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
       render(<MainPanel api={api} />);
+      // M34: the list is behind a collapsed disclosure now; expand to assert
+      // its contents. What this test is about — the wire field is `explanation`,
+      // not `message` — is unchanged.
+      await userEvent.click(await screen.findByTestId('goobers-warnings-disclosure'));
       await waitFor(() => expect(screen.getByTestId('goobers-instance-warnings')).toBeInTheDocument());
       expect(screen.getByText(/VER001: workflow version mismatch/)).toBeInTheDocument();
       expect(screen.getByText(/MODEL002: model reference unresolved/)).toBeInTheDocument();
@@ -538,6 +731,9 @@ describe('Goobers MainPanel', () => {
       }));
       mockWindowClubhouse({ listRuns: vi.fn(async () => ({ runs: [] })) });
       render(<MainPanel api={api} />);
+      // M34: expand the disclosure — the scope locators and unique-key
+      // guarantee this test exists for must survive the move into it.
+      await userEvent.click(await screen.findByTestId('goobers-warnings-disclosure'));
       await waitFor(() => expect(screen.getByTestId('goobers-instance-warnings')).toBeInTheDocument());
       expect(screen.getByText(/Gaggle\/clubhouse/)).toBeInTheDocument();
       expect(screen.getByText(/Gaggle\/game-sim-gaggle/)).toBeInTheDocument();
@@ -874,20 +1070,27 @@ describe('startup phase copy helpers', () => {
   });
 
   describe('describeIdleStatus', () => {
+    // M34 (#1891): the headline is now quiet and status-independent, except
+    // for `starting`. #1883's guarantee — config lint never reads as a fault —
+    // holds by construction here rather than by special-case.
     it('does not report a fault for a config-linted instance (#1883)', () => {
-      expect(describeIdleStatus('degraded')).toBe('Daemon running — nothing active');
+      expect(describeIdleStatus('degraded')).toBe('No active runs');
     });
 
     it('describes a starting instance', () => {
-      expect(describeIdleStatus('starting')).toBe('Daemon starting — nothing active yet');
+      expect(describeIdleStatus('starting')).toBe('Daemon starting — no active runs yet');
     });
 
     it('describes a ready instance', () => {
-      expect(describeIdleStatus('ready')).toBe('Daemon running — nothing active');
+      expect(describeIdleStatus('ready')).toBe('No active runs');
     });
 
-    it('falls back to the running framing for an undefined status', () => {
-      expect(describeIdleStatus(undefined)).toBe('Daemon running — nothing active');
+    it('falls back to the quiet headline for an undefined status', () => {
+      expect(describeIdleStatus(undefined)).toBe('No active runs');
+    });
+
+    it('renders identically for ready and degraded, so config lint cannot colour the headline', () => {
+      expect(describeIdleStatus('degraded')).toBe(describeIdleStatus('ready'));
     });
   });
 });
