@@ -759,9 +759,14 @@ Phase 2. The full target state, once history lands, is full-window master–deta
 └───────────────────┴──────────────────────────────────────────────────────┘
 ```
 
-**Header** — instance name, environment badge, status pill, freshness, daemon control, gear
-to settings. Status pill states: `Ready` / `Starting` / `Degraded` / `Daemon not running` /
-`Not configured` / `Incompatible`.
+**Header** — instance name, environment badge, status pill, freshness, config-warning count,
+daemon control, gear to settings. Status pill states: `Ready` / `Starting` /
+`Scheduler stalled` / `Daemon not running` / `Not configured` / `Incompatible`.
+
+> The status pill, the freshness indicator and the config-warning count are **three
+> independent elements** and must stay that way — see §8.4's descriptors table. A healthy
+> instance with config warnings reads `Ready · Data current · 17 config warnings`. The pill
+> never absorbs the other two; that collapse is #1883.
 
 **Left column** — instance counts, `warnings[]`, maintenance state when not `none`, and the
 gaggle list with per-gaggle `activeRunCount`.
@@ -833,8 +838,8 @@ api.badges.set({
 | **Daemon not running** | §7.4 step 1/2 | **First-class screen**, not an error. Instance identity + config summary from disk, "Daemon is not running", `[Start daemon]` when `manageDaemon`, otherwise §8.6. History is unavailable — say so plainly and link to §13-Q2 |
 | **Start failed** | §7.5 start timeout or early child exit | Show the buffered stderr and the daemon log path — never a bare "failed to start" |
 | **Starting** | `/readyz` 503 | Spinner + `readyz` check breakdown (`configLoaded`, `stateOpen`, `resumeComplete`, `sweepsStarted`) |
-| **Ready, live** | SSE connected | Normal |
-| **Ready, degraded** | `status: 'degraded'`, or `readState.degraded`, or stale tick | Banner naming the specific degradation; keep rendering data, marked stale |
+| **Ready, live** | SSE connected, scheduler ticking | Normal |
+| **Scheduler not ticking** | `connection === 'degraded'`, i.e. `lastTickAgeMillis > livenessTimeoutMillis` | Banner naming the tick age. Keep rendering data and **do not mark it stale** — a stalled scheduler says nothing about whether already-projected data is current |
 | **Stream reconnecting** | 1–2 stream failures | Subtle "reconnecting" indicator; data stays |
 | **Polling fallback** | ≥3 failures | "Live updates unavailable — refreshing every 60s" |
 | **No read model** | SSE unavailable, `readState` absent | Explain reduced fidelity; there is deliberately **no silent poll fallback** upstream |
@@ -842,15 +847,46 @@ api.badges.set({
 | **Port owned by someone else** | `instanceRoot` mismatch (§7.4 step 3) | Explicit error — do **not** render another instance's data |
 | **Incompatible API** | §9.4 | Banner, read-only or disabled |
 
+#### Header descriptors — not states
+
+Config lint and data freshness are **not** rows in the table above. They are independent
+properties that can be true alongside *any* state, so they are separate fields on the panel
+state rather than competing `kind` values. An instance can be reconnecting, carrying config
+warnings, and serving current data all at once; the header says all three.
+
+| Descriptor | Source | Treatment |
+|---|---|---|
+| **Config warnings** | `instance.warnings[]` (summarised by `instance.status === 'degraded'`) | Informational count in the header — `17 config warnings`, with the codes in a tooltip. **Never an alert and never a staleness claim.** Most instances carry warnings permanently; 13 `VER003` "workflow has no schedule trigger" on the reference instance are intentional, for manual-only workflows |
+| **Data freshness** | `health.readState` | Its own indicator, a four-state union mirroring upstream portal's `PortalShell.tsx`: `current` → "Data current"; `lagging` → "Data stale by Ns"; `partial` → "Partial — <missing>"; `unknown` → **renders nothing**, because claiming "current" with no read model would be a claim nobody made. Alert styling only for reasons that are not self-healing — `projection_lag`, `sweep_stale` and `no_sweep_completed` are documented self-healing and explicitly *not* "the sweep is broken"; an unrecognised reason alerts, and the reason string is always shown verbatim |
+
+> **`degraded` means three unrelated things on the wire. This is a trap.**
+> `instance.status === 'degraded'` is **config lint**. `connection === 'degraded'` is the
+> **scheduler not ticking** (derived in `goobers-liveness.ts` from `lastTickAgeMillis`).
+> `readState.degraded[]` is **data trustworthiness**. They share a word and nothing else.
+> An earlier revision of this table OR-ed all three into one "Ready, degraded" row with one
+> blanket "marked stale" treatment, which was correct for one of them and wrong for the other
+> two — and since config lint is a permanent property of most instances, the result was a
+> healthy daemon permanently reporting "⚠ Degraded — data below may be stale" (#1883).
+
 **Rules that apply across every row:**
 
+- **A state row may not OR together signals from different sources.** If two conditions come
+  from different subsystems, they are either different rows or different fields — never one
+  row with an `or` in its trigger. Signals that can be simultaneously true are descriptors,
+  not states. This is the general form of the #1883 defect, and it is enforced structurally:
+  descriptors live in their own fields, so there is nothing to OR them into.
+- **A state row must name its specific cause.** "Banner naming the specific degradation" was
+  already required here and shipped naming nothing. A banner that says only "degraded" sends
+  the reader to the logs; one that says "17 config warnings" or "scheduler has not ticked in
+  4m" is self-diagnosing.
 - **Every error state carries a retry.** The header's `[refresh]` is a Phase 1 deliverable,
   not part of the Phase 2 sketch: it force-refetches the four MVP endpoints and re-runs the
   liveness probe, independent of the 5s tick. Error screens get their own "Try again".
-- **Theme tokens only.** Status pills, phase icons, warning chips and the degraded banner
-  use the semantic `--ctp-*` slots — no hardcoded hex, no color-only status encoding (pair
-  every color with an icon or label). This panel is heavy on colored status and would
-  otherwise be the next thing to break under a light theme; treat it as a review gate.
+- **Theme tokens only.** Status pills, phase icons, warning chips, the freshness indicator
+  and the state banners use the semantic `--ctp-*` slots — no hardcoded hex, no color-only
+  status encoding (pair every color with an icon or label). This panel is heavy on colored
+  status and would otherwise be the next thing to break under a light theme; treat it as a
+  review gate.
 - **Truncate hostile content.** Workflow names, gaggle names, issue titles and error
   messages all come from user repos. Clamp with ellipsis and a `title` tooltip; never let
   one long string blow out the layout.

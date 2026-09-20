@@ -2,7 +2,13 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
 import { useGoobersStore, initGoobersListener } from '../../../stores/goobersStore';
 import { useGoobersSettingsStore } from '../../../stores/goobersSettingsStore';
-import { deriveGoobersPanelState, type GoobersPanelState, type GoobersPanelStateKind } from './panelState';
+import {
+  deriveGoobersPanelState,
+  type GoobersPanelState,
+  type GoobersPanelStateKind,
+  type GoobersFreshness,
+  type GoobersConfigWarnings,
+} from './panelState';
 import type { RunSummary, Instance, Health, InstanceStatus, UpdateModel } from '../../../../shared/goobers-api-types';
 import type { GoobersSettings } from '../../../../shared/types';
 
@@ -102,7 +108,9 @@ export function formatBytes(bytes: number): string {
 /** M24: the daemon's own summary judgement — degraded/starting still needs the same idle framing. */
 export function describeIdleStatus(status: InstanceStatus | undefined): string {
   switch (status) {
-    case 'degraded': return 'Daemon degraded — nothing active';
+    // Config lint, not a fault — see §8.4. The warning count is rendered
+    // separately in the header; this line is only about there being no runs.
+    case 'degraded': return 'Daemon running — nothing active';
     case 'starting': return 'Daemon starting — nothing active yet';
     case 'ready':
     default: return 'Daemon running — nothing active';
@@ -128,7 +136,7 @@ const STATUS_PILL: Record<GoobersPanelStateKind, { label: string; color: string;
   'stream-reconnecting': { label: 'Reconnecting', color: 'text-ctp-yellow', icon: '◐' },
   'polling-fallback': { label: 'Polling', color: 'text-ctp-yellow', icon: '◐' },
   'no-read-model': { label: 'Degraded', color: 'text-ctp-yellow', icon: '⚠' },
-  degraded: { label: 'Degraded', color: 'text-ctp-yellow', icon: '⚠' },
+  'scheduler-stalled': { label: 'Scheduler stalled', color: 'text-ctp-yellow', icon: '⚠' },
   ready: { label: 'Ready', color: 'text-ctp-green', icon: '●' },
   connecting: { label: 'Connecting', color: 'text-ctp-yellow', icon: '◐' },
   'unknown-error': { label: 'Error', color: 'text-ctp-red', icon: '⚠' },
@@ -388,11 +396,13 @@ function ActiveRunsView({
 // ── Header ──────────────────────────────────────────────────────────────
 
 function Header({
-  kind, state, manageDaemon, onRefresh, onStart, onStop, onOpenSettings,
+  kind, state, manageDaemon, freshness, configWarnings, onRefresh, onStart, onStop, onOpenSettings,
 }: {
   kind: GoobersPanelStateKind;
   state: ReturnType<typeof useGoobersStore.getState>['state'];
   manageDaemon: boolean;
+  freshness: GoobersFreshness;
+  configWarnings: GoobersConfigWarnings;
   onRefresh: () => void;
   onStart: () => void;
   onStop: () => void;
@@ -411,10 +421,31 @@ function Header({
       React.createElement('span', { className: 'text-sm font-medium text-ctp-text truncate', title: name }, truncate(name, 30)),
       env ? React.createElement('span', { className: 'text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0' }, env) : null,
       React.createElement(StatusPill, { kind }),
+      // §8.4 — freshness is its own indicator, never folded into the pill.
+      // 'unknown' renders nothing: claiming "current" with no read model
+      // would be a claim nobody made.
+      freshness.label ? React.createElement('span', {
+        className: `text-[10px] ${freshness.alert ? 'text-ctp-red' : 'text-ctp-subtext0'}`,
+        'data-testid': 'goobers-freshness',
+        'data-freshness': freshness.kind,
+        title: freshness.detail ?? undefined,
+      },
+        freshness.alert ? '⚠ ' : '',
+        freshness.label,
+      ) : null,
       readState ? React.createElement('span', {
         className: 'text-[10px] text-ctp-subtext0',
-        'data-testid': 'goobers-freshness',
-      }, `lag ${readState.lagSeconds.toFixed(1)}s${readState.completeness === 'partial' ? ' · partial' : ''}`) : null,
+        'data-testid': 'goobers-lag',
+      }, `lag ${readState.lagSeconds.toFixed(1)}s`) : null,
+      // §8.4 — config lint is informational. Never an alert, never a staleness
+      // claim. Not a link: the warnings[] list only renders in the empty state,
+      // so in MVP there is often nothing on screen to link to. The tooltip
+      // carries the codes instead.
+      configWarnings.label ? React.createElement('span', {
+        className: 'text-[10px] text-ctp-subtext0',
+        'data-testid': 'goobers-config-warnings',
+        title: configWarnings.detail ?? undefined,
+      }, configWarnings.label) : null,
     ),
     React.createElement('div', { className: 'flex items-center gap-2 shrink-0' },
       manageDaemon
@@ -508,7 +539,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, []);
 
   const isDataView = panelState
-    ? ['ready', 'degraded', 'stream-reconnecting', 'polling-fallback', 'no-read-model'].includes(panelState.kind)
+    ? ['ready', 'scheduler-stalled', 'stream-reconnecting', 'polling-fallback', 'no-read-model'].includes(panelState.kind)
     : false;
 
   useEffect(() => {
@@ -722,17 +753,27 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         'data-testid': 'goobers-state-connecting-active',
       }, 'Connecting…');
       break;
-    case 'degraded':
+    case 'scheduler-stalled':
     case 'stream-reconnecting':
     case 'polling-fallback':
     case 'no-read-model':
     case 'ready':
     default:
       body = React.createElement(React.Fragment, null,
-        kind === 'degraded' ? React.createElement('div', {
+        // §8.4 required "banner naming the specific degradation" and the old
+        // blanket copy named none. Scheduler liveness only — it says nothing
+        // about whether already-projected data is stale, so it no longer
+        // claims that.
+        kind === 'scheduler-stalled' ? React.createElement('div', {
           className: 'px-3 py-1 text-[11px] text-ctp-yellow bg-ctp-yellow/10 border-b border-ctp-yellow/20',
-          'data-testid': 'goobers-degraded-banner',
-        }, '⚠ Instance is degraded — data below may be stale') : null,
+          'data-testid': 'goobers-scheduler-stalled-banner',
+        }, `⚠ Scheduler has not ticked in ${formatAgeMillis(storeState?.daemon.lastTickAgeMillis ?? null)} — new runs may not be starting`) : null,
+        // Data trust is independent of every kind above, so this banner is
+        // driven by the freshness descriptor rather than by `kind`.
+        panelState.freshness.alert ? React.createElement('div', {
+          className: 'px-3 py-1 text-[11px] text-ctp-red bg-ctp-red/10 border-b border-ctp-red/20',
+          'data-testid': 'goobers-freshness-banner',
+        }, `⚠ ${panelState.freshness.label}${panelState.freshness.detail ? ` — ${panelState.freshness.detail}` : ''}`) : null,
         kind === 'stream-reconnecting' ? React.createElement('div', {
           className: 'px-3 py-1 text-[11px] text-ctp-yellow',
           'data-testid': 'goobers-reconnecting-banner',
@@ -759,6 +800,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   return React.createElement('div', { className: 'flex flex-col h-full w-full' },
     React.createElement(Header, {
       kind, state: storeState, manageDaemon,
+      freshness: panelState.freshness, configWarnings: panelState.configWarnings,
       onRefresh: handleRefresh, onStart: handleStart, onStop: handleStop, onOpenSettings: handleOpenSettings,
     }),
     React.createElement('div', { className: 'flex-1 min-h-0 overflow-hidden' }, body),
