@@ -360,7 +360,16 @@ function DaemonIdleDetail({ instance, health }: { instance: Instance | null; hea
   const freshness = health?.freshness;
 
   return React.createElement('div', {
-    className: 'flex flex-col items-center justify-center flex-1 gap-1.5 text-ctp-subtext0 text-xs text-center px-6 overflow-y-auto',
+    // M33 (#1890): `overflow-y-auto` was inert without `min-h-0` — a flex
+    // item defaults to `min-height: auto` and refuses to shrink below its
+    // content height, so this box grew to fit every warning/footer row
+    // instead of overflowing. `justify-center` is dropped too: centering a
+    // scroll container splits overflow to both ends and makes the leading
+    // (top) overflow unreachable once content exceeds the box — that would
+    // have traded a lost bottom for a lost top. The "nothing active"
+    // headline no longer gets vertical centering as a result; that's
+    // accepted per the mission brief (a design call, not this fix's job).
+    className: 'flex flex-col items-center flex-1 min-h-0 gap-1.5 text-ctp-subtext0 text-xs text-center px-6 overflow-y-auto',
     'data-testid': 'goobers-runs-empty',
   },
     React.createElement('span', null, describeIdleStatus(instance?.status)),
@@ -407,14 +416,14 @@ function ActiveRunsView({
 }) {
   const activeRuns = instance?.concurrency.activeRuns ?? 0;
   const maxConcurrentRuns = instance?.concurrency.maxConcurrentRuns ?? 0;
-  return React.createElement('div', { className: 'flex flex-col h-full w-full', 'data-testid': 'goobers-active-runs' },
+  return React.createElement('div', { className: 'flex flex-col h-full w-full min-h-0', 'data-testid': 'goobers-active-runs' },
     React.createElement('div', { className: 'flex items-center justify-between px-3 py-1.5 text-[11px] text-ctp-subtext0 border-b border-ctp-overlay0/30' },
       React.createElement('span', null, `${activeRuns} / ${maxConcurrentRuns} slots`),
       hasMore ? React.createElement('span', null, `showing first ${totalShown} of many running`) : null,
     ),
     runs.length === 0
       ? React.createElement(DaemonIdleDetail, { instance, health })
-      : React.createElement('div', { className: 'flex-1 overflow-y-auto' },
+      : React.createElement('div', { className: 'flex-1 min-h-0 overflow-y-auto' },
           runs.map((r) => React.createElement(RunRow, { key: r.id, run: r })),
         ),
   );
