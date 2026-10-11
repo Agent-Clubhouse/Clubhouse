@@ -12,7 +12,7 @@ import { Badge } from '../components/Badge';
 import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { getAgentColorHex } from '../../shared/name-generator';
-import { sanitizeSvg } from '../utils/sanitize-svg';
+import { SanitizedSvg } from '../components/SanitizedSvg';
 import { showConfirmDialog } from '../plugins/PluginDialog';
 import { ProjectActivityIndicator } from '../components/ProjectActivityIndicator';
 import { ProjectViewMenu } from '../components/ProjectViewMenu';
@@ -111,13 +111,13 @@ const ProjectIcon = React.memo(function ProjectIcon({ project, isSelected, activ
     projectBadgeSettings ? s.getProjectBadge(project.id) : null
   ));
 
-  const activityText = describeProjectActivity(activity);
+  const activityDescId = `rail-activity-desc-${project.id}`;
 
   return (
     <button
       onClick={onClick}
-      title={`${label} — ${activityText}`}
-      aria-label={`${label} — ${activityText}`}
+      title={label}
+      aria-describedby={activity ? activityDescId : undefined}
       data-testid={`project-${project.id}`}
       data-active={isSelected}
       data-running={!!activity}
@@ -163,6 +163,7 @@ const ProjectIcon = React.memo(function ProjectIcon({ project, isSelected, activ
         )}
         <ProjectActivityIndicator summary={activity} />
       </div>
+      {activity && <span id={activityDescId} hidden>{describeProjectActivity(activity)}</span>}
       <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>
         {label}
       </span>
@@ -206,7 +207,7 @@ function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
           `}
         >
           {customIcon ? (
-            <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(customIcon) }} />
+            <SanitizedSvg svg={customIcon} />
           ) : (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />

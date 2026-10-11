@@ -1034,15 +1034,19 @@ describe('ProjectRail activity indicator and view modes', () => {
   it('shows a green dot only on projects with a running agent', () => {
     render(<ProjectRail />);
     const beta = screen.getByTestId('project-p2');
-    expect(beta.querySelector('[data-testid="project-activity-indicator"]')).toHaveAttribute('data-level', 'running');
-    expect(screen.getByTestId('project-p1').querySelector('[data-testid="project-activity-indicator"]')).toBeNull();
-    expect(beta).toHaveAttribute('aria-label', 'Beta — 1 running agent');
+    expect(beta.querySelector('[data-testid="rail-activity-indicator"]')).toHaveAttribute('data-level', 'running');
+    expect(screen.getByTestId('project-p1').querySelector('[data-testid="rail-activity-indicator"]')).toBeNull();
+    // Name stays the bare project name (tooltip + E2E selectors rely on it);
+    // activity is the accessible description.
+    expect(beta).toHaveAttribute('title', 'Beta');
+    expect(beta).toHaveAccessibleDescription('1 running agent');
+    expect(screen.getByTestId('project-p1')).not.toHaveAttribute('aria-describedby');
   });
 
   it('does not show a dot for sleeping agents', () => {
     useAgentStore.setState({ agents: { a1: { ...runningAgent('a1', 'p2'), status: 'sleeping' } } });
     render(<ProjectRail />);
-    expect(screen.queryByTestId('project-activity-indicator')).toBeNull();
+    expect(screen.queryByTestId('rail-activity-indicator')).toBeNull();
   });
 
   it('pulses while working and turns amber when an agent needs permission', () => {
@@ -1051,8 +1055,8 @@ describe('ProjectRail activity indicator and view modes', () => {
       agentDetailedStatus: { a1: detail('working'), a2: detail('working'), a3: detail('needs_permission') },
     });
     render(<ProjectRail />);
-    const working = screen.getByTestId('project-p2').querySelector('[data-testid="project-activity-indicator"]')!;
-    const permission = screen.getByTestId('project-p3').querySelector('[data-testid="project-activity-indicator"]')!;
+    const working = screen.getByTestId('project-p2').querySelector('[data-testid="rail-activity-indicator"]')!;
+    const permission = screen.getByTestId('project-p3').querySelector('[data-testid="rail-activity-indicator"]')!;
     expect(working).toHaveAttribute('data-level', 'working');
     expect(working.innerHTML).toContain('motion-safe:animate-pulse');
     expect(permission).toHaveAttribute('data-level', 'needs_permission');
@@ -1084,7 +1088,7 @@ describe('ProjectRail activity indicator and view modes', () => {
     useAgentStore.setState({ agents: {} });
     render(<ProjectRail />);
     expect(renderedProjectIds()).toEqual([]);
-    fireEvent.click(screen.getByTestId('project-rail-empty-active'));
+    fireEvent.click(screen.getByTestId('rail-empty-active'));
     expect(useUIStore.getState().projectRailMode).toBe('all');
     expect(renderedProjectIds()).toEqual(['p1', 'p2', 'p3']);
   });
@@ -1110,20 +1114,20 @@ describe('ProjectRail activity indicator and view modes', () => {
 
   it('view menu switches modes and persists the choice', () => {
     render(<ProjectRail />);
-    fireEvent.click(screen.getByTestId('project-view-button'));
-    expect(screen.getByTestId('project-view-all')).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(screen.getByTestId('project-view-active-first'));
+    fireEvent.click(screen.getByTestId('rail-view-button'));
+    expect(screen.getByTestId('rail-view-all')).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByTestId('rail-view-active-first'));
     expect(useUIStore.getState().projectRailMode).toBe('active-first');
-    expect(screen.queryByTestId('project-view-menu')).toBeNull();
+    expect(screen.queryByTestId('rail-view-menu')).toBeNull();
     expect(renderedProjectIds()).toEqual(['p2', 'p1', 'p3']);
   });
 
   it('view menu closes on Escape and returns focus to its button', () => {
     render(<ProjectRail />);
-    const button = screen.getByTestId('project-view-button');
+    const button = screen.getByTestId('rail-view-button');
     fireEvent.click(button);
-    fireEvent.keyDown(screen.getByTestId('project-view-menu'), { key: 'Escape' });
-    expect(screen.queryByTestId('project-view-menu')).toBeNull();
+    fireEvent.keyDown(screen.getByTestId('rail-view-menu'), { key: 'Escape' });
+    expect(screen.queryByTestId('rail-view-menu')).toBeNull();
     expect(document.activeElement).toBe(button);
   });
 
@@ -1150,14 +1154,14 @@ describe('ProjectRail activity indicator and view modes', () => {
       useAnnexClientStore.setState({ satellites: [makeSatellite({ id: 'sat-1', state: 'connected' })] });
       render(<ProjectRail />);
       expect(renderedProjectIds()).toEqual([nsP2]);
-      expect(screen.getByTestId(`project-${nsP2}`).querySelector('[data-testid="project-activity-indicator"]')).not.toBeNull();
+      expect(screen.getByTestId(`project-${nsP2}`).querySelector('[data-testid="rail-activity-indicator"]')).not.toBeNull();
     });
 
     it('shows all cached projects without dots when the satellite is disconnected', () => {
       useAnnexClientStore.setState({ satellites: [makeSatellite({ id: 'sat-1', state: 'disconnected' })] });
       render(<ProjectRail />);
       expect(renderedProjectIds()).toEqual([nsP1, nsP2]);
-      expect(screen.queryByTestId('project-activity-indicator')).toBeNull();
+      expect(screen.queryByTestId('rail-activity-indicator')).toBeNull();
     });
   });
 });

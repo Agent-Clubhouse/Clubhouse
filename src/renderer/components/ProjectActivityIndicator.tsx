@@ -22,7 +22,7 @@ export function ProjectActivityIndicator({ summary }: { summary: ProjectActivity
   return (
     <span
       aria-hidden="true"
-      data-testid="project-activity-indicator"
+      data-testid="rail-activity-indicator"
       data-level={level}
       className="absolute -bottom-[5px] -left-[5px] z-10 w-3 h-3 flex items-center justify-center pointer-events-none"
     >

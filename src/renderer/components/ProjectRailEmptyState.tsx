@@ -11,7 +11,7 @@ export function ProjectRailEmptyState({ expanded, onShowAll }: {
     <button
       onClick={onShowAll}
       title="No active projects — show all projects"
-      data-testid="project-rail-empty-active"
+      data-testid="rail-empty-active"
       className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
         expanded ? 'hover:bg-surface-0' : ''
       }`}

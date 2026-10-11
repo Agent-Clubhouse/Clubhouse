@@ -175,14 +175,14 @@ export function SatelliteProjectList({ satellite, projects, hasProjects, activit
         const letter = label.charAt(0).toUpperCase();
         const isActive = activeProjectId === p.id;
         const summary = activity.get(p.id);
-        const activityText = describeProjectActivity(summary);
+        const activityDescId = `rail-activity-desc-${p.id}`;
 
         return (
           <button
             key={p.id}
             onClick={() => onSelectProject(p.id)}
-            title={`${label} — ${activityText}`}
-            aria-label={`${label} — ${activityText}`}
+            title={label}
+            aria-describedby={summary ? activityDescId : undefined}
             data-testid={`project-${p.id}`}
             data-active={isActive}
             data-running={!!summary}
@@ -219,6 +219,7 @@ export function SatelliteProjectList({ satellite, projects, hasProjects, activit
               </div>
               <ProjectActivityIndicator summary={summary} />
             </div>
+            {summary && <span id={activityDescId} hidden>{describeProjectActivity(summary)}</span>}
             <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>
               {label}
             </span>

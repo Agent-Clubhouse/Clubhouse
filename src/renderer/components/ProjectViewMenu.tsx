@@ -113,7 +113,7 @@ export function ProjectViewMenu({ mode, onChange, expanded }: {
         aria-label={`Project view: ${label}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        data-testid="project-view-button"
+        data-testid="rail-view-button"
         data-mode={mode}
         className={`w-full h-7 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
           expanded ? 'hover:bg-surface-0' : ''
@@ -142,7 +142,7 @@ export function ProjectViewMenu({ mode, onChange, expanded }: {
           onKeyDown={handleMenuKeyDown}
           className="fixed z-dropdown w-[200px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle"
           style={position}
-          data-testid="project-view-menu"
+          data-testid="rail-view-menu"
         >
           {PROJECT_RAIL_MODES.map((m, i) => {
             const checked = m === mode;
@@ -153,7 +153,7 @@ export function ProjectViewMenu({ mode, onChange, expanded }: {
                 role="menuitemradio"
                 aria-checked={checked}
                 onClick={() => { onChange(m); close(true); }}
-                data-testid={`project-view-${m}`}
+                data-testid={`rail-view-${m}`}
                 className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer outline-none hover:bg-surface-1 focus-visible:bg-surface-1 ${
                   checked ? 'text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'
                 }`}

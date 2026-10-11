@@ -7,7 +7,7 @@ import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { Badge } from '../components/Badge';
 import { getAgentColorHex } from '../../shared/name-generator';
-import { sanitizeSvg } from '../utils/sanitize-svg';
+import { SanitizedSvg } from '../components/SanitizedSvg';
 
 const EMPTY_STRING_ARRAY: string[] = [];
 
@@ -228,7 +228,7 @@ export function ExplorerRail() {
             id: `plugin:${p.id}`,
             label: contributes.tab.label,
             icon: contributes.tab.icon
-              ? <span className={isAvailable ? '' : 'opacity-60'} dangerouslySetInnerHTML={{ __html: sanitizeSvg(contributes.tab.icon) }} />
+              ? <SanitizedSvg className={isAvailable ? '' : 'opacity-60'} svg={contributes.tab.icon} />
               : <span className={isAvailable ? '' : 'opacity-60'}>{PLUGIN_FALLBACK_ICON}</span>,
             disabled: isMissing,
             disabledReason: p.status === 'missing'
@@ -256,7 +256,7 @@ export function ExplorerRail() {
         id: `plugin:${entry.manifest.id}`,
         label: entry.manifest.contributes!.tab!.label,
         icon: entry.manifest.contributes!.tab!.icon
-          ? <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(entry.manifest.contributes!.tab!.icon) }} />
+          ? <SanitizedSvg svg={entry.manifest.contributes!.tab!.icon} />
           : PLUGIN_FALLBACK_ICON,
       }));
   }, [pluginTabKey]);

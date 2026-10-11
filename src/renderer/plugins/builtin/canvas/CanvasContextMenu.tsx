@@ -8,7 +8,7 @@ import {
 import { usePluginStore } from '../../plugin-store';
 import { MenuPortal } from './MenuPortal';
 import { useDismissibleLayer } from './useDismissibleLayer';
-import { sanitizeSvg } from '../../../utils/sanitize-svg';
+import { SanitizedSvg } from '../../../components/SanitizedSvg';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 
 /** A menu item can either be a built-in view type or a qualified plugin widget type string. */
@@ -88,7 +88,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
             onClick={(e) => { e.stopPropagation(); handleBuiltinSelect(type); }}
             data-testid={`canvas-context-menu-${type}`}
           >
-            <span className="w-4 text-center text-ctp-overlay0" dangerouslySetInnerHTML={{ __html: sanitizeSvg(icon) }} />
+            <SanitizedSvg className="w-4 text-center text-ctp-overlay0" svg={icon} />
             {label}
           </button>
         ))}
@@ -106,7 +106,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
               >
                 <span className="w-4 text-center text-ctp-overlay0">
                   {widget.declaration.icon
-                    ? <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(widget.declaration.icon) }} />
+                    ? <SanitizedSvg svg={widget.declaration.icon} />
                     : '+'}
                 </span>
                 Add {widget.declaration.label}
