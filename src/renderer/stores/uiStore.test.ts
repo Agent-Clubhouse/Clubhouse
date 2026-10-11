@@ -33,6 +33,7 @@ describe('uiStore', () => {
       settingsSubPage: 'orchestrators',
       settingsContext: 'app',
       showHome: true,
+      projectRailMode: 'all',
       projectExplorerTab: {},
     });
     for (const key of Object.keys(storage)) delete storage[key];
@@ -335,6 +336,41 @@ describe('uiStore', () => {
       getState().setActiveHost('sat-1');
 
       expect(getState().activeHostId).toBe('sat-1');
+    });
+  });
+
+  describe('projectRailMode', () => {
+    it('persists the mode alongside showHome', () => {
+      getState().setProjectRailMode('active-only');
+      expect(getState().projectRailMode).toBe('active-only');
+      expect(JSON.parse(storage['clubhouse_view_prefs'])).toEqual({ showHome: true, projectRailMode: 'active-only' });
+    });
+
+    it('setShowHome does not erase the saved rail mode', () => {
+      getState().setProjectRailMode('active-first');
+      getState().setShowHome(false);
+      expect(JSON.parse(storage['clubhouse_view_prefs'])).toEqual({ showHome: false, projectRailMode: 'active-first' });
+    });
+
+    it('loads a saved mode on startup', async () => {
+      storage['clubhouse_view_prefs'] = JSON.stringify({ showHome: false, projectRailMode: 'active-first' });
+      vi.resetModules();
+      const { useUIStore: fresh } = await import('./uiStore');
+      expect(fresh.getState().projectRailMode).toBe('active-first');
+      expect(fresh.getState().showHome).toBe(false);
+    });
+
+    it('falls back to all for a missing or invalid saved mode', async () => {
+      storage['clubhouse_view_prefs'] = JSON.stringify({ showHome: true, projectRailMode: 'bogus' });
+      vi.resetModules();
+      const { useUIStore: fresh } = await import('./uiStore');
+      expect(fresh.getState().projectRailMode).toBe('all');
+
+      storage['clubhouse_view_prefs'] = JSON.stringify({ showHome: false });
+      vi.resetModules();
+      const { useUIStore: fresh2 } = await import('./uiStore');
+      expect(fresh2.getState().projectRailMode).toBe('all');
+      expect(fresh2.getState().showHome).toBe(false);
     });
   });
 
