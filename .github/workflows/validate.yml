@@ -1,232 +1,51 @@
+# DIAG ONLY: do not merge. Repro matrix for #fix-release-msg-win.
+# Runs the full unit suite on Windows at v0.41.0 and at #1900's head,
+# repeated, then times bash spawns AFTER the suite (so the suite sees the
+# same cold bash state that real CI does).
 name: Validate
 
 on:
   pull_request:
-    branches: [main, dev/*]
-
-concurrency:
-  group: validate-${{ github.ref }}
-  cancel-in-progress: true
+    branches: [main]
 
 jobs:
-  dependency-preflight:
-    name: Dependency resolution preflight
-    if: ${{ github.actor == 'dependabot[bot]' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - name: Check the install graph resolves for Dependabot updates
-        run: node scripts/dependabot-preflight.mjs
-
-  lint:
-    needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
-    name: ESLint (errors only)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      # This repo currently has a large warning backlog; the gate is intentionally
-      # set to fail on ESLint errors only, not on warnings. This job is expected
-      # to be added to the repo's required status checks when #1599 lands so it is
-      # enforced on protected branches instead of remaining advisory.
-      - run: npm run lint
-
-  typecheck:
-    needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
-    name: Typecheck (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  repro:
+    name: repro (${{ matrix.ref }} #${{ matrix.rep }})
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        ref: [v0.41.0, 85e1af2c0]
+        rep: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.ref == '85e1af2c0' && 'refs/pull/1900/head' || matrix.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+      - name: Environment (no bash execution)
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          where.exe bash
+          (Get-Command bash -All).Source
+          $env:PATH -split ';'
+          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,AMRunningMode,AntivirusSignatureLastUpdated | Format-List
       - run: npm ci
-      - run: npx tsc --noEmit
-      # Baseline: 20 marker-bearing test files tracked by #1594.
-      - run: npm run check:test-coverage-ratchet
-
-  unit-and-component:
-    needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
-    name: Unit + Component Tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm test -- --reporter=junit --outputFile=test-results.xml
+      - run: npm test -- --reporter=junit --reporter=default --outputFile.junit=test-results.xml
+      - name: Extract test time
+        if: always()
+        shell: pwsh
+        run: |
+          Select-String -Path test-results.xml -Pattern 'shell-special[^"]*" time="[^"]*"' | ForEach-Object { $_.Matches.Value }
+      - name: Bash spawn timing after suite
+        if: always()
+        run: |
+          node -e "const {execFileSync}=require('child_process');for(let i=0;i<10;i++){const t=process.hrtime.bigint();execFileSync('bash',['-c','true'],{env:process.env});console.log('spawn',i,Number(process.hrtime.bigint()-t)/1e6,'ms')}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: test-results-${{ matrix.os }}
+          name: diag-${{ matrix.ref }}-${{ matrix.rep }}
           path: test-results.xml
-
-  e2e:
-    needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
-    name: E2E Tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Pin Windows to windows-2022 (VS2022). windows-latest rolled to the
-        # windows-2025 image (VS2026), which @electron/node-gyp can't detect,
-        # breaking the node-pty rebuild during `electron-forge package`.
-        # Track this pin in #1652 and revisit when the upstream fix lands or
-        # GitHub announces windows-2022 deprecation, whichever comes first.
-        os: [macos-latest, windows-2022, ubuntu-latest]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - name: Exclude workspace from Windows Defender
-        if: runner.os == 'Windows'
-        # Best-effort perf optimization: the runner's Defender service
-        # intermittently rejects this with 0x800106ba. Don't fail the job.
-        continue-on-error: true
-        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-        shell: pwsh
-      - run: npm ci
-      # E2E only needs webpack output, not distributable installers.
-      # Packaging is validated separately by the release workflow.
-      - name: Build app
-        run: npx electron-forge package
-      - name: Run E2E tests (excluding Annex dual-instance)
-        if: runner.os != 'Linux'
-        run: npx playwright test --config=playwright.config.ts
-        env:
-          PLAYWRIGHT_IGNORE_ANNEX: '1'
-      - name: Run E2E tests (Linux — requires virtual display)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test --config=playwright.config.ts
-        env:
-          PLAYWRIGHT_IGNORE_ANNEX: '1'
-          # chrome-sandbox is not SUID root on GitHub runners
-          ELECTRON_DISABLE_SANDBOX: '1'
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: playwright-traces-${{ matrix.os }}
-          path: test-results/
-
-  e2e-annex:
-    needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
-    name: Annex E2E Tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Pin Windows to windows-2022 (VS2022). windows-latest rolled to the
-        # windows-2025 image (VS2026), which @electron/node-gyp can't detect,
-        # breaking the node-pty rebuild during `electron-forge package`.
-        # Track this pin in #1652 and revisit when the upstream fix lands or
-        # GitHub announces windows-2022 deprecation, whichever comes first.
-        os: [macos-latest, windows-2022, ubuntu-latest]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - name: Exclude workspace from Windows Defender
-        if: runner.os == 'Windows'
-        # Best-effort perf optimization: the runner's Defender service
-        # intermittently rejects this with 0x800106ba. Don't fail the job.
-        continue-on-error: true
-        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-        shell: pwsh
-      - run: npm ci
-      - name: Build app
-        run: npx electron-forge package
-      - name: Run Annex E2E tests
-        if: runner.os != 'Linux'
-        run: npx playwright test e2e/annex-v2/
-      - name: Run Annex E2E tests (Linux — requires virtual display)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test e2e/annex-v2/
-        env:
-          # chrome-sandbox is not SUID root on GitHub runners
-          ELECTRON_DISABLE_SANDBOX: '1'
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: annex-traces-${{ matrix.os }}
-          path: test-results/
-
-  make-linux:
-    needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
-    name: Linux Package Smoke Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg fakeroot rpm
-      - name: Build .deb and .rpm packages
-        run: npx electron-forge make
-      - name: Verify packages were produced
-        run: |
-          DEB_COUNT=$(find out/make -name "*.deb" -type f | wc -l)
-          RPM_COUNT=$(find out/make -name "*.rpm" -type f | wc -l)
-          echo "Found ${DEB_COUNT} .deb and ${RPM_COUNT} .rpm packages"
-          if [ "$DEB_COUNT" -eq 0 ] && [ "$RPM_COUNT" -eq 0 ]; then
-            echo "::error::No Linux packages were produced"
-            exit 1
-          fi
-
-  api-surface:
-    needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
-    name: API Surface Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      # Frozen v0.4 snapshot compile check
-      - run: npx tsc --noEmit
-      # This is the plugin-API compatibility gate, independent of the broader test suite.
-      - run: npx vitest run --project renderer plugin-api-version-contracts
-      # Annotate PR if plugin-types.ts was modified
-      - name: Check plugin-types changes
-        if: github.event_name == 'pull_request'
-        run: |
-          if git diff --name-only ${{ github.event.pull_request.base.sha }}..HEAD | grep -q 'plugin-types.ts'; then
-            echo "::warning file=src/shared/plugin-types.ts::plugin-types.ts was modified — verify API backward compatibility"
-          fi
