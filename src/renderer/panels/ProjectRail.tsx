@@ -12,8 +12,13 @@ import { Badge } from '../components/Badge';
 import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { getAgentColorHex } from '../../shared/name-generator';
-import { sanitizeSvg } from '../utils/sanitize-svg';
+import { SanitizedSvg } from '../components/SanitizedSvg';
 import { showConfirmDialog } from '../plugins/PluginDialog';
+import { ProjectActivityIndicator } from '../components/ProjectActivityIndicator';
+import { ProjectViewMenu } from '../components/ProjectViewMenu';
+import { ProjectRailEmptyState } from '../components/ProjectRailEmptyState';
+import { useLocalProjectActivity, useProjectRailView, useRemoteProjectActivity } from '../hooks/useProjectRailView';
+import { describeProjectActivity, type ProjectActivitySummary } from '../utils/projectActivity';
 
 function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
   position: { x: number; y: number };
@@ -82,9 +87,12 @@ function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
 }
 
 
-const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick, expanded }: {
+const ProjectIcon = React.memo(function ProjectIcon({ project, isSelected, activity, onClick, expanded }: {
   project: Project;
-  isActive: boolean;
+  /** The project currently open in the main view (navigation selection). */
+  isSelected: boolean;
+  /** Running-agent summary; undefined when the project has no running agents. */
+  activity: ProjectActivitySummary | undefined;
   onClick: () => void;
   expanded: boolean;
 }) {
@@ -103,12 +111,16 @@ const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick
     projectBadgeSettings ? s.getProjectBadge(project.id) : null
   ));
 
+  const activityDescId = `rail-activity-desc-${project.id}`;
+
   return (
     <button
       onClick={onClick}
       title={label}
+      aria-describedby={activity ? activityDescId : undefined}
       data-testid={`project-${project.id}`}
-      data-active={isActive}
+      data-active={isSelected}
+      data-running={!!activity}
       className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
         expanded ? 'hover:bg-surface-0' : ''
       }`}
@@ -118,14 +130,14 @@ const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick
           className={`
             w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden text-sm font-bold
             transition-colors duration-100
-            ${isActive
+            ${isSelected
               ? 'text-white shadow-lg'
               : expanded
                 ? 'bg-surface-1 text-ctp-subtext0'
                 : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
             }
           `}
-          style={isActive ? {
+          style={isSelected ? {
             backgroundColor: (hasImage || hasEmoji) ? undefined : hex,
             ...(hasEmoji && { backgroundColor: `${hex}20` }),
             boxShadow: `0 10px 15px -3px ${hex}30, 0 4px 6px -4px ${hex}30`,
@@ -138,18 +150,20 @@ const ProjectIcon = React.memo(function ProjectIcon({ project, isActive, onClick
               src={iconDataUrl}
               alt={label}
               draggable={false}
-              className={`w-full h-full object-cover ${isActive ? 'ring-2 ring-white/30 rounded-lg' : ''}`}
+              className={`w-full h-full object-cover ${isSelected ? 'ring-2 ring-white/30 rounded-lg' : ''}`}
             />
           ) : (
             letter
           )}
         </div>
         {projectBadge && (
-          <span className="absolute -top-1 -right-1 z-10">
+          <span className="absolute -top-1 -right-1 z-10 flex">
             <Badge type={projectBadge.type} value={projectBadge.value} />
           </span>
         )}
+        <ProjectActivityIndicator summary={activity} />
       </div>
+      {activity && <span id={activityDescId} hidden>{describeProjectActivity(activity)}</span>}
       <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>
         {label}
       </span>
@@ -193,7 +207,7 @@ function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
           `}
         >
           {customIcon ? (
-            <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(customIcon) }} />
+            <SanitizedSvg svg={customIcon} />
           ) : (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
@@ -201,7 +215,7 @@ function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
           )}
         </div>
         {pluginBadge && !dimmed && (
-          <span className="absolute -top-1 -right-1 z-10">
+          <span className="absolute -top-1 -right-1 z-10 flex">
             <Badge type={pluginBadge.type} value={pluginBadge.value} />
           </span>
         )}
@@ -236,6 +250,8 @@ function AnnexGatedPluginRailButton({ entry, pluginMatches, isActive, onClick, e
   );
 }
 
+const EMPTY_ACTIVITY = new Map<string, ProjectActivitySummary>();
+
 export function ProjectRail() {
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -253,6 +269,8 @@ export function ProjectRail() {
   const showHome = useUIStore((s) => s.showHome);
   const activeHostId = useUIStore((s) => s.activeHostId);
   const setActiveHost = useUIStore((s) => s.setActiveHost);
+  const projectRailMode = useUIStore((s) => s.projectRailMode);
+  const setProjectRailMode = useUIStore((s) => s.setProjectRailMode);
 
   const plugins = usePluginStore((s) => s.plugins);
   const appEnabled = usePluginStore((s) => s.appEnabled);
@@ -288,6 +306,45 @@ export function ProjectRail() {
   const activeSatellitePluginMatches = activeSatellite
     ? pluginMatchState[activeSatellite.id] || []
     : [];
+
+  // ── Activity view (green dot + All / Active first / Active only) ─────────
+  // While the pointer or focus is in the project list, hold the current
+  // order so an icon never moves out from under the cursor.
+  const [pointerInList, setPointerInList] = useState(false);
+  const [focusInList, setFocusInList] = useState(false);
+  const listFrozen = pointerInList || focusInList;
+  const listInteractionProps = {
+    onPointerEnter: () => setPointerInList(true),
+    onPointerLeave: () => setPointerInList(false),
+    onFocus: () => setFocusInList(true),
+    onBlur: (e: React.FocusEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusInList(false);
+    },
+  };
+  const selectedProjectId = !inSettings && !inHelp && !isAppPlugin ? activeProjectId : null;
+
+  const localActivity = useLocalProjectActivity();
+  const { displayed: displayedProjects } = useProjectRailView({
+    projects,
+    summaries: localActivity,
+    mode: projectRailMode,
+    selectedId: selectedProjectId,
+    frozen: listFrozen,
+  });
+
+  // A disconnected satellite's agent data is stale or gone — show its cached
+  // projects in manual order with no dots rather than filtering on unknowns.
+  const remoteActivityKnown = activeSatellite?.state === 'connected';
+  const remoteActivityAll = useRemoteProjectActivity();
+  const remoteActivity = remoteActivityKnown ? remoteActivityAll : EMPTY_ACTIVITY;
+  const { displayed: displayedSatelliteProjects } = useProjectRailView({
+    projects: activeSatelliteProjects,
+    summaries: remoteActivity,
+    mode: remoteActivityKnown ? projectRailMode : 'all',
+    selectedId: selectedProjectId,
+    frozen: listFrozen,
+  });
+  const canReorder = projectRailMode === 'all';
 
   // If the active host satellite no longer exists (unpaired/disconnected), reset to local
   useEffect(() => {
@@ -374,7 +431,7 @@ export function ProjectRail() {
     const observer = new ResizeObserver(check);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [projects.length]);
+  }, [displayedProjects.length, displayedSatelliteProjects.length]);
 
   // Sync rail width to a CSS variable so the grid column in App.tsx can match
   const collapsedWidth = isScrollable ? 76 : 70;
@@ -399,14 +456,20 @@ export function ProjectRail() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragNodeRef = useRef<HTMLDivElement | null>(null);
 
+  // Drag reorder is only offered in the 'all' view, where rendered indices are
+  // canonical indices. Sorted/filtered views must never persist an order.
   const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    if (!canReorder) {
+      e.preventDefault();
+      return;
+    }
     setDragIndex(index);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(index));
     if (e.currentTarget instanceof HTMLElement) {
       e.currentTarget.style.opacity = '0.5';
     }
-  }, []);
+  }, [canReorder]);
 
   const handleDragEnd = useCallback((e: React.DragEvent) => {
     if (e.currentTarget instanceof HTMLElement) {
@@ -417,14 +480,15 @@ export function ProjectRail() {
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    if (!canReorder) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOverIndex(index);
-  }, []);
+  }, [canReorder]);
 
   const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
-    if (dragIndex === null || dragIndex === dropIndex) {
+    if (!canReorder || dragIndex === null || dragIndex === dropIndex) {
       setDragIndex(null);
       setDragOverIndex(null);
       return;
@@ -437,7 +501,7 @@ export function ProjectRail() {
 
     setDragIndex(null);
     setDragOverIndex(null);
-  }, [dragIndex, projects, reorderProjects]);
+  }, [canReorder, dragIndex, projects, reorderProjects]);
 
   const handlePinClick = useCallback(() => {
     toggleRailPin();
@@ -580,12 +644,23 @@ export function ProjectRail() {
               <div className="border-t border-surface-2 my-1 flex-shrink-0" />
             )}
 
-            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1">
-              {projects.map((p, i) => (
+            {projects.length > 0 && (
+              <ProjectViewMenu mode={projectRailMode} onChange={setProjectRailMode} expanded={expanded} />
+            )}
+
+            <div
+              ref={scrollContainerRef}
+              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1 pl-2 -ml-2"
+              {...listInteractionProps}
+            >
+              {projects.length > 0 && displayedProjects.length === 0 && (
+                <ProjectRailEmptyState expanded={expanded} onShowAll={() => setProjectRailMode('all')} />
+              )}
+              {displayedProjects.map((p, i) => (
                 <div
                   key={p.id}
                   ref={dragIndex === i ? dragNodeRef : undefined}
-                  draggable
+                  draggable={canReorder}
                   onDragStart={(e) => handleDragStart(e, i)}
                   onDragEnd={handleDragEnd}
                   onDragOver={(e) => handleDragOver(e, i)}
@@ -601,7 +676,8 @@ export function ProjectRail() {
                   )}
                   <ProjectIcon
                     project={p}
-                    isActive={!inSettings && !inHelp && !isAppPlugin && p.id === activeProjectId}
+                    isSelected={p.id === selectedProjectId}
+                    activity={localActivity.get(p.id)}
                     onClick={() => exitSettingsAndNavigate(() => setActiveProject(p.id))}
                     expanded={expanded}
                   />
@@ -712,11 +788,24 @@ export function ProjectRail() {
               <div className="border-t border-surface-2 my-1 flex-shrink-0" />
             )}
 
+            {activeSatelliteProjects.length > 0 && (
+              <ProjectViewMenu mode={projectRailMode} onChange={setProjectRailMode} expanded={expanded} />
+            )}
+
             {/* Remote projects for active satellite */}
-            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1">
+            <div
+              ref={scrollContainerRef}
+              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1 pl-2 -ml-2"
+              {...listInteractionProps}
+            >
+              {activeSatelliteProjects.length > 0 && displayedSatelliteProjects.length === 0 && (
+                <ProjectRailEmptyState expanded={expanded} onShowAll={() => setProjectRailMode('all')} />
+              )}
               <SatelliteProjectList
                 satellite={activeSatellite}
-                projects={activeSatelliteProjects}
+                projects={displayedSatelliteProjects}
+                hasProjects={activeSatelliteProjects.length > 0}
+                activity={remoteActivity}
                 activeProjectId={activeProjectId}
                 expanded={expanded}
                 onSelectProject={(id) => exitSettingsAndNavigate(() => setActiveProject(id))}

@@ -1,13 +1,18 @@
 import { create } from 'zustand';
 import { ExplorerTab, SettingsSubPage } from '../../shared/types';
 import { rendererLog } from '../plugins/renderer-logger';
+import { isProjectRailMode, type ProjectRailMode } from '../utils/projectActivity';
 
 const VIEW_PREFS_KEY = 'clubhouse_view_prefs';
 const ACTIVE_HOST_KEY = 'clubhouse_active_host';
 
 interface ViewPrefs {
   showHome: boolean;
+  /** How the rail lists projects: manual order, active first, or active only. */
+  projectRailMode: ProjectRailMode;
 }
+
+const DEFAULT_VIEW_PREFS: ViewPrefs = { showHome: true, projectRailMode: 'all' };
 
 /**
  * Which canvas store a blueprint import should target. Set by the caller that
@@ -23,13 +28,21 @@ export type BlueprintGalleryScope =
 function loadViewPrefs(): ViewPrefs {
   try {
     const raw = localStorage.getItem(VIEW_PREFS_KEY);
-    if (raw) return { showHome: true, ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<ViewPrefs>;
+      return {
+        showHome: typeof parsed.showHome === 'boolean' ? parsed.showHome : DEFAULT_VIEW_PREFS.showHome,
+        projectRailMode: isProjectRailMode(parsed.projectRailMode)
+          ? parsed.projectRailMode
+          : DEFAULT_VIEW_PREFS.projectRailMode,
+      };
+    }
   } catch (err) {
     rendererLog('store:ui', 'warn', 'Corrupt view preferences in localStorage — reset to defaults', {
       meta: { key: VIEW_PREFS_KEY, error: err instanceof Error ? err.message : String(err) },
     });
   }
-  return { showHome: true };
+  return { ...DEFAULT_VIEW_PREFS };
 }
 
 function saveViewPrefs(prefs: ViewPrefs): void {
@@ -48,6 +61,7 @@ interface UIState {
   settingsSubPage: SettingsSubPage;
   settingsContext: 'app' | string;
   showHome: boolean;
+  projectRailMode: ProjectRailMode;
   pluginSettingsId: string | null;
   helpSectionId: string;
   helpTopicId: string | null;
@@ -68,6 +82,7 @@ interface UIState {
   setHelpTopic: (id: string | null) => void;
   setHelpSearchQuery: (query: string) => void;
   setShowHome: (show: boolean) => void;
+  setProjectRailMode: (mode: ProjectRailMode) => void;
   openAbout: () => void;
   openPluginSettings: (pluginId: string) => void;
   closePluginSettings: () => void;
@@ -98,6 +113,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   settingsSubPage: 'orchestrators',
   settingsContext: 'app',
   showHome: initialPrefs.showHome,
+  projectRailMode: initialPrefs.projectRailMode,
   pluginSettingsId: null,
   helpSectionId: 'general',
   helpTopicId: null,
@@ -174,9 +190,14 @@ export const useUIStore = create<UIState>((set, get) => ({
   setHelpSection: (id) => set({ helpSectionId: id, helpTopicId: null }),
   setHelpTopic: (id) => set({ helpTopicId: id }),
   setHelpSearchQuery: (query) => set({ helpSearchQuery: query }),
+  // Each setter persists the full prefs object so one doesn't erase the other.
   setShowHome: (show) => {
     set({ showHome: show });
-    saveViewPrefs({ showHome: show });
+    saveViewPrefs({ showHome: show, projectRailMode: get().projectRailMode });
+  },
+  setProjectRailMode: (mode) => {
+    set({ projectRailMode: mode });
+    saveViewPrefs({ showHome: get().showHome, projectRailMode: mode });
   },
   openAbout: () => {
     const { explorerTab } = get();

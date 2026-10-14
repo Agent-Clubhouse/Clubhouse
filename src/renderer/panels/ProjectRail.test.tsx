@@ -9,10 +9,11 @@ import { usePanelStore } from '../stores/panelStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
+import { useAgentStore } from '../stores/agentStore';
 import { ProjectRail } from './ProjectRail';
 import { showConfirmDialog } from '../plugins/PluginDialog';
 import * as nameGenerator from '../../shared/name-generator';
-import type { Project } from '../../shared/types';
+import type { Agent, AgentDetailedStatus, Project } from '../../shared/types';
 
 vi.mock('../plugins/PluginDialog', () => ({
   showConfirmDialog: vi.fn(() => ({ promise: Promise.resolve(true), cleanup: vi.fn() })),
@@ -133,6 +134,18 @@ describe('ProjectRail badge clipping', () => {
     const scrollContainer = container.querySelector('.overflow-y-auto');
     expect(scrollContainer).toBeInTheDocument();
     expect(scrollContainer!.className).toContain('pt-1');
+  });
+
+  it('scroll container extends into the left padding so the bottom-left activity dot is not clipped', () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+    });
+
+    const { container } = render(<ProjectRail />);
+    const scrollContainer = container.querySelector('.overflow-y-auto');
+    // pl-2 + -ml-2: icons stay put, but the overflow clip box gains 8px on the left
+    expect(scrollContainer!.className).toContain('pl-2');
+    expect(scrollContainer!.className).toContain('-ml-2');
   });
 
   it('renders badge dot on project icon when badges are enabled', () => {
@@ -979,5 +992,176 @@ describe('ProjectRail exitSettingsAndNavigate', () => {
     expect(useUIStore.getState().explorerTab).toBe('agents');
     expect(useUIStore.getState().previousExplorerTab).toBeNull();
     expect(useProjectStore.getState().activeProjectId).toBe('p1');
+  });
+});
+
+describe('ProjectRail activity indicator and view modes', () => {
+  function runningAgent(id: string, projectId: string): Agent {
+    return { id, projectId, name: id, kind: 'durable', status: 'running', color: 'emerald' };
+  }
+  function detail(state: AgentDetailedStatus['state']): AgentDetailedStatus {
+    return { state, message: '', timestamp: 0 };
+  }
+  function renderedProjectIds(): string[] {
+    return screen.queryAllByTestId(/^project-(?!view|activity|rail)/).map((el) => el.getAttribute('data-testid')!.replace('project-', ''));
+  }
+
+  const reorderProjects = vi.fn(() => Promise.resolve());
+
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(_cb: () => void) {}
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    resetStores();
+    reorderProjects.mockClear();
+    useUIStore.setState({ projectRailMode: 'all' });
+    useProjectStore.setState({
+      projects: [
+        makeProject({ id: 'p1', name: 'Alpha' }),
+        makeProject({ id: 'p2', name: 'Beta' }),
+        makeProject({ id: 'p3', name: 'Gamma' }),
+      ],
+      reorderProjects,
+    });
+    useAgentStore.setState({
+      agents: { a1: runningAgent('a1', 'p2') },
+      agentDetailedStatus: {},
+    });
+  });
+
+  it('shows a green dot only on projects with a running agent', () => {
+    render(<ProjectRail />);
+    const beta = screen.getByTestId('project-p2');
+    expect(beta.querySelector('[data-testid="rail-activity-indicator"]')).toHaveAttribute('data-level', 'running');
+    expect(screen.getByTestId('project-p1').querySelector('[data-testid="rail-activity-indicator"]')).toBeNull();
+    // Name stays the bare project name (tooltip + E2E selectors rely on it);
+    // activity is the accessible description.
+    expect(beta).toHaveAttribute('title', 'Beta');
+    expect(beta).toHaveAccessibleDescription('1 running agent');
+    expect(screen.getByTestId('project-p1')).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('does not show a dot for sleeping agents', () => {
+    useAgentStore.setState({ agents: { a1: { ...runningAgent('a1', 'p2'), status: 'sleeping' } } });
+    render(<ProjectRail />);
+    expect(screen.queryByTestId('rail-activity-indicator')).toBeNull();
+  });
+
+  it('pulses while working and turns amber when an agent needs permission', () => {
+    useAgentStore.setState({
+      agents: { a1: runningAgent('a1', 'p2'), a2: runningAgent('a2', 'p3'), a3: runningAgent('a3', 'p3') },
+      agentDetailedStatus: { a1: detail('working'), a2: detail('working'), a3: detail('needs_permission') },
+    });
+    render(<ProjectRail />);
+    const working = screen.getByTestId('project-p2').querySelector('[data-testid="rail-activity-indicator"]')!;
+    const permission = screen.getByTestId('project-p3').querySelector('[data-testid="rail-activity-indicator"]')!;
+    expect(working).toHaveAttribute('data-level', 'working');
+    expect(working.innerHTML).toContain('motion-safe:animate-pulse');
+    expect(permission).toHaveAttribute('data-level', 'needs_permission');
+    expect(permission.textContent).toBe('!');
+  });
+
+  it('all: keeps manual order', () => {
+    render(<ProjectRail />);
+    expect(renderedProjectIds()).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  it('active-first: moves active projects to the top without persisting a reorder', () => {
+    useUIStore.setState({ projectRailMode: 'active-first' });
+    render(<ProjectRail />);
+    expect(renderedProjectIds()).toEqual(['p2', 'p1', 'p3']);
+    expect(reorderProjects).not.toHaveBeenCalled();
+    expect(useProjectStore.getState().projects.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  it('active-only: hides inactive projects but keeps the selected one', () => {
+    useUIStore.setState({ projectRailMode: 'active-only' });
+    useProjectStore.setState({ activeProjectId: 'p3' });
+    render(<ProjectRail />);
+    expect(renderedProjectIds()).toEqual(['p2', 'p3']);
+  });
+
+  it('active-only with nothing running shows an empty state that restores all', () => {
+    useUIStore.setState({ projectRailMode: 'active-only' });
+    useAgentStore.setState({ agents: {} });
+    render(<ProjectRail />);
+    expect(renderedProjectIds()).toEqual([]);
+    fireEvent.click(screen.getByTestId('rail-empty-active'));
+    expect(useUIStore.getState().projectRailMode).toBe('all');
+    expect(renderedProjectIds()).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  it('drag reorder works in all but is disabled in sorted/filtered views', () => {
+    const { unmount } = render(<ProjectRail />);
+    let rows = screen.getAllByTestId(/^project-p/).map((el) => el.parentElement!);
+    expect(rows[0]).toHaveAttribute('draggable', 'true');
+    fireEvent.dragStart(rows[0], { dataTransfer: { setData: vi.fn(), effectAllowed: '' } });
+    fireEvent.drop(rows[2], { dataTransfer: {} });
+    expect(reorderProjects).toHaveBeenCalledWith(['p2', 'p3', 'p1']);
+    unmount();
+
+    reorderProjects.mockClear();
+    useUIStore.setState({ projectRailMode: 'active-first' });
+    render(<ProjectRail />);
+    rows = screen.getAllByTestId(/^project-p/).map((el) => el.parentElement!);
+    expect(rows[0]).toHaveAttribute('draggable', 'false');
+    fireEvent.dragStart(rows[0], { dataTransfer: { setData: vi.fn(), effectAllowed: '' } });
+    fireEvent.drop(rows[2], { dataTransfer: {} });
+    expect(reorderProjects).not.toHaveBeenCalled();
+  });
+
+  it('view menu switches modes and persists the choice', () => {
+    render(<ProjectRail />);
+    fireEvent.click(screen.getByTestId('rail-view-button'));
+    expect(screen.getByTestId('rail-view-all')).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByTestId('rail-view-active-first'));
+    expect(useUIStore.getState().projectRailMode).toBe('active-first');
+    expect(screen.queryByTestId('rail-view-menu')).toBeNull();
+    expect(renderedProjectIds()).toEqual(['p2', 'p1', 'p3']);
+  });
+
+  it('view menu closes on Escape and returns focus to its button', () => {
+    render(<ProjectRail />);
+    const button = screen.getByTestId('rail-view-button');
+    fireEvent.click(button);
+    fireEvent.keyDown(screen.getByTestId('rail-view-menu'), { key: 'Escape' });
+    expect(screen.queryByTestId('rail-view-menu')).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+
+  describe('satellite projects', () => {
+    const nsP1 = 'remote||sat-1||p1';
+    const nsP2 = 'remote||sat-1||p2';
+
+    beforeEach(() => {
+      useAgentStore.setState({ agents: {} });
+      useUIStore.setState({ activeHostId: 'sat-1', projectRailMode: 'active-only' });
+      useRemoteProjectStore.setState({
+        satelliteProjects: {
+          'ab:cd:ef': [
+            { ...makeProject({ id: nsP1, name: 'Remote One' }), remote: true, satelliteId: 'sat-1', satelliteName: 'Office Mac' },
+            { ...makeProject({ id: nsP2, name: 'Remote Two' }), remote: true, satelliteId: 'sat-1', satelliteName: 'Office Mac' },
+          ],
+        },
+        remoteAgents: { 'remote||sat-1||a1': runningAgent('remote||sat-1||a1', nsP2) },
+        remoteAgentDetailedStatus: {},
+      });
+    });
+
+    it('shows dots and applies the view mode for a connected satellite', () => {
+      useAnnexClientStore.setState({ satellites: [makeSatellite({ id: 'sat-1', state: 'connected' })] });
+      render(<ProjectRail />);
+      expect(renderedProjectIds()).toEqual([nsP2]);
+      expect(screen.getByTestId(`project-${nsP2}`).querySelector('[data-testid="rail-activity-indicator"]')).not.toBeNull();
+    });
+
+    it('shows all cached projects without dots when the satellite is disconnected', () => {
+      useAnnexClientStore.setState({ satellites: [makeSatellite({ id: 'sat-1', state: 'disconnected' })] });
+      render(<ProjectRail />);
+      expect(renderedProjectIds()).toEqual([nsP1, nsP2]);
+      expect(screen.queryByTestId('rail-activity-indicator')).toBeNull();
+    });
   });
 });

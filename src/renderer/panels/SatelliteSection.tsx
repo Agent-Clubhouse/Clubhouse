@@ -10,6 +10,8 @@ import { getAgentColorHex } from '../../shared/name-generator';
 import type { SatelliteConnection } from '../stores/annexClientStore';
 import { useRemoteProjectStore, type RemoteProject } from '../stores/remoteProjectStore';
 import { EmptyState } from '../components/EmptyState';
+import { ProjectActivityIndicator } from '../components/ProjectActivityIndicator';
+import { describeProjectActivity, type ProjectActivitySummary } from '../utils/projectActivity';
 
 
 // ---------------------------------------------------------------------------
@@ -144,9 +146,14 @@ export function SatelliteHostRow({ satellite, expanded, isActive, onClick }: {
 // SatelliteProjectList — remote projects for an active satellite host
 // ---------------------------------------------------------------------------
 
-export function SatelliteProjectList({ satellite, projects, activeProjectId, expanded, onSelectProject }: {
+export function SatelliteProjectList({ satellite, projects, hasProjects, activity, activeProjectId, expanded, onSelectProject }: {
   satellite: SatelliteConnection;
+  /** Projects to render, already arranged for the rail's view mode. */
   projects: RemoteProject[];
+  /** Whether the host has any projects at all (the arranged list may be filtered empty). */
+  hasProjects: boolean;
+  /** Running-agent summaries keyed by namespaced project id; empty when activity is unknown. */
+  activity: Map<string, ProjectActivitySummary>;
   activeProjectId: string | null;
   expanded: boolean;
   onSelectProject: (projectId: string) => void;
@@ -154,7 +161,7 @@ export function SatelliteProjectList({ satellite, projects, activeProjectId, exp
   const remoteProjectIcons = useRemoteProjectStore((s) => s.remoteProjectIcons);
   const colorHex = getAgentColorHex(satellite.color);
 
-  if (projects.length === 0) {
+  if (!hasProjects) {
     return expanded ? (
       <div className="pl-4 py-2"><EmptyState title="No projects" compact /></div>
     ) : null;
@@ -167,14 +174,18 @@ export function SatelliteProjectList({ satellite, projects, activeProjectId, exp
         const label = p.displayName || p.name;
         const letter = label.charAt(0).toUpperCase();
         const isActive = activeProjectId === p.id;
+        const summary = activity.get(p.id);
+        const activityDescId = `rail-activity-desc-${p.id}`;
 
         return (
           <button
             key={p.id}
             onClick={() => onSelectProject(p.id)}
             title={label}
+            aria-describedby={summary ? activityDescId : undefined}
             data-testid={`project-${p.id}`}
             data-active={isActive}
+            data-running={!!summary}
             className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
               expanded ? 'hover:bg-surface-0' : ''
             }`}
@@ -206,7 +217,9 @@ export function SatelliteProjectList({ satellite, projects, activeProjectId, exp
                   letter
                 )}
               </div>
+              <ProjectActivityIndicator summary={summary} />
             </div>
+            {summary && <span id={activityDescId} hidden>{describeProjectActivity(summary)}</span>}
             <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>
               {label}
             </span>
