@@ -63,7 +63,7 @@ The data-classification ideas from that design are carried forward: the never-co
 - Microsoft Entra ID (AAD) ingestion auth. Resources with `DisableLocalAuth=true` reject connection-string ingestion; see §10 for the follow-up.
 - Instrumenting the Annex iOS app. It is not Clubhouse code; see §7.
 - Remote configuration or a server-side kill switch. Nothing phones home.
-- OTLP over gRPC or protobuf, and plain-HTTP OTLP endpoints.
+- OTLP over gRPC or protobuf, and plain-HTTP OTLP endpoints other than a collector on this computer (loopback).
 - Build-time and CI failures such as code signing (#1836, #1838, #1846) and visual or theme regressions. Telemetry cannot see these; CI and E2E are the right tools (§12.3).
 
 ### Principles
@@ -877,7 +877,11 @@ Telemetry export                                ← new
   - After saving, **the renderer only ever receives a masked form** (the last 4 characters of the IKey plus the ingestion host). The full string never crosses back into the renderer.
   - The connection string is not truly secret: it is an ingestion-only credential and cannot read data. It is still treated as one, because it lets anyone write into the user's resource and bill them.
 - **OTLP endpoint and headers handling:**
-  - **HTTPS is required.** The endpoint must parse as an `https:` URL; anything else is rejected with an explanation. Plain HTTP, including loopback collectors, is out of scope for v1.
+  - **HTTPS is required, except for a collector on this computer** (decision 2026-10-16).
+    - Plain `http:` is accepted only when the host is literally `localhost`, `127.0.0.1` or `[::1]`, on any port. The UI suggests `http://localhost:4318`, the OTLP/HTTP default. Every other `http:` URL is rejected with an explanation.
+    - `localhost` is resolved with a pinned `lookup` that only returns `127.0.0.1` or `::1`. A hosts-file entry therefore cannot redirect plaintext traffic off the machine. Hostnames that merely resolve to loopback are treated as remote and need HTTPS.
+    - The exporter refuses ports that Clubhouse's own loopback servers are using: the hook server, the MCP bridge and Annex. That avoids feedback loops and accidental POSTs into them.
+    - The confirm step says "Telemetry will be sent to a collector on this computer (localhost:4318)". The egress test (§6.7) covers the loopback case too.
   - Signal paths follow the OTLP/HTTP spec: `/v1/traces`, `/v1/metrics` and `/v1/logs` are appended to the base URL. Encoding is JSON only.
   - Header names are validated as HTTP tokens. A short list of reserved names (`content-type`, `content-length`, `host`) is refused. Header **values** are stored with `safeStorage` beside the connection string, under the same Linux `basic_text` warning, and are masked in the renderer after save. Only names and the last 4 characters of each value are shown.
   - **Destination confirmation.** On first save, and whenever the host changes, a confirm step names the host in plain text: "Telemetry will be sent to otlp.example.com. Clubhouse can't see or control what this service does with it." Nothing is sent until the user confirms.
@@ -949,6 +953,15 @@ Community plugins can send their own telemetry to the user's destination, under 
   - a toggle.
 - **Every toggle defaults to off**, even after the permission is granted. The same toggle appears on the plugin's detail settings page. Grants are stored as `pluginGrants` in the `TELEMETRY` settings (§6.8).
 - Revoking a grant takes effect immediately, and that plugin's queued items are dropped.
+
+**Today's official registry** (`Clubhouse-Workshop/registry/registry.json`, updated 2026-04-25, fetched 2026-10-16). It lists 16 plugins, all `official: true`, all by Clubhouse Workshop:
+
+| Kind | Plugins | Could use `api.telemetry`? |
+|---|---|---|
+| Code plugins (9) | `bug-report`, `automations`, `github-issues`, `kanboss`, `ado-work-items`, `wiki`, `pomodoro`, `daily-admin`, `lounge` | Yes, once they declare the `telemetry` permission and a schema |
+| Theme packs (7) | `fall-themes`, `neon-themes`, `ocean-themes`, `spring-themes`, `summer-themes`, `winter-themes`, `tech-modern` | No: they declare no permissions and run no code |
+
+The preview registry holds 8 of the same IDs (`pomodoro` and the 7 theme packs). Nothing in either registry is marked unofficial. Every plugin that qualifies for a raw `c.plugin.ref` (§4.10) is therefore currently a maintainer-authored Workshop plugin. That is what makes "default on for official plugins" a real option (§10.1, still open).
 - The preview dialog labels plugin items with their source plugin.
 
 ### 6.10 The Clubhouse Workbook (decision 2026-10-16: planned deliverable)
@@ -1089,12 +1102,12 @@ Sizes: **S** ≈ ≤ 400 LOC, **M** ≈ 400–1,000, **L** ≈ 1,000–1,800, co
 | 4 | Where does OTLP go? | **In the main Settings UI** as a Destination choice. App Insights stays the preselected, one-field default. OTLP is HTTP/JSON only, HTTPS only, with headers in `safeStorage` and a destination confirmation. It moves from Phase 7 to Phase 1. | §6.3, §6.8, §9 |
 | 5 | Ship an Azure Monitor Workbook? | **Yes, a planned deliverable.** A gallery template, a Deploy to Azure ARM wrapper and optional alert rules. It grows tab by tab with Phases 3–6 and is finished in Phase 7. | §6.10, §9 |
 | 6 | How should Settings be laid out? | **App Insights first and simple:** a panel with the toggle, connection string and test event, nothing else. **Other destinations** (generic OTLP: endpoint, headers, protocol) sit in their own panel on the same page. One destination is active at a time. | §6.8 |
+| 8 | Local OTLP collector? | **Allowed.** Plain HTTP to `localhost`, `127.0.0.1` or `[::1]` only, with pinned resolution and Clubhouse's own ports refused. Everything else needs HTTPS. | §6.8 |
 | 7 | Coverage goal and history window | **Broad coverage of critical paths**, weighted by regressions from **March 2026 onward**. That window covers the churn peak. Each hot spot is marked as a current or superseded code path. | §4.15, §12 |
 
 **Still open:**
 
-1. Should a loopback `http://localhost` OTLP collector be allowed later, for local debugging? It is excluded in v1 by the HTTPS-only rule.
-2. Should plugin telemetry grants default to on for plugins from the official registry? The default stays off for all plugins until decided.
+1. Should plugin telemetry grants default to on for plugins from the official registry? The default stays off for all plugins until decided.
 
 ---
 
