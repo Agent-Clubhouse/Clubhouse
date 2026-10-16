@@ -2195,39 +2195,60 @@ describe('GoobersService — live stream state (M32, #1888)', () => {
   });
 
   it('does not stack overlapping polls when refreshConnectionOnce is slow (in-flight guard)', async () => {
-    mockGetAllWindows.mockReturnValue([visibleWindow()]);
-    writeConfiguredRoot();
-    const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
-    const service = new GoobersService(settings);
-    // Shrink the poll interval for this test only, before subscribe()
-    // creates the real setInterval — proves the guard without a
-    // multi-second real-time wait at the default 5s cadence. Set before
-    // `pollTimer` exists, so this only overrides the field `startPolling`
-    // reads from, per `setPollInterval`'s own no-op-if-not-polling guard.
-    (service as unknown as { setPollInterval: (ms: number, s: GoobersSettings) => void })
-      .setPollInterval(30, settings.getSettings());
+    // Fake only setInterval/clearInterval, before subscribe() creates the
+    // poll timer, so ticks fire exclusively when this test advances them.
+    // With a real interval, a tick could land during the final flush() and
+    // start a fresh poll — `probeLiveness`'s default implementation is the
+    // real probe — leaving pollInFlight true (#1888 flake). setTimeout stays
+    // real so flush() still waits out the real fs.promises chain.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const priorProbeImpl = vi.mocked(probeLiveness).getMockImplementation();
+    try {
+      mockGetAllWindows.mockReturnValue([visibleWindow()]);
+      writeConfiguredRoot();
+      const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot }));
+      const service = new GoobersService(settings);
+      const intervalMs = 30;
+      (service as unknown as { setPollInterval: (ms: number, s: GoobersSettings) => void })
+        .setPollInterval(intervalMs, settings.getSettings());
 
-    vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
-    service.subscribe();
-    await flush();
-    expect(service.isPollingForTests).toBe(true);
-    const callCountAfterFirst = vi.mocked(probeLiveness).mock.calls.length;
+      vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
+      service.subscribe();
+      await flush();
+      expect(service.isPollingForTests).toBe(true);
+      expect(service.pollInFlightForTests).toBe(false);
 
-    let resolveSecond: (() => void) | undefined;
-    const pending = new Promise<LivenessSnapshot>((resolve) => {
-      resolveSecond = () => resolve(runningSnapshot());
-    });
-    vi.mocked(probeLiveness).mockReturnValueOnce(pending);
+      // Scope the slow probe to this test's instance root so a stray call
+      // from another test's service can't consume it.
+      const probesForRoot = (): number =>
+        vi.mocked(probeLiveness).mock.calls.filter(([root]) => root === tmpRoot).length;
+      const callCountAfterFirst = probesForRoot();
+      let resolveSlow: (() => void) | undefined;
+      const slow = new Promise<LivenessSnapshot>((resolve) => {
+        resolveSlow = () => resolve(runningSnapshot());
+      });
+      vi.mocked(probeLiveness).mockImplementation((root) =>
+        root === tmpRoot ? slow : Promise.resolve(runningSnapshot()));
 
-    // Wait past several 30ms intervals while the probe is pending — the
-    // guard must prevent any of them from stacking a second overlapping
-    // call.
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(service.pollInFlightForTests).toBe(true);
-    expect(vi.mocked(probeLiveness).mock.calls.length).toBe(callCountAfterFirst + 1);
+      // First tick starts the slow poll; several more ticks elapse while it
+      // is pending — the guard must keep every one of them from stacking a
+      // second overlapping probe.
+      vi.advanceTimersByTime(intervalMs);
+      expect(service.pollInFlightForTests).toBe(true);
+      vi.advanceTimersByTime(intervalMs * 5);
+      await flush();
+      expect(service.pollInFlightForTests).toBe(true);
+      expect(probesForRoot()).toBe(callCountAfterFirst + 1);
 
-    resolveSecond?.();
-    await flush();
-    expect(service.pollInFlightForTests).toBe(false);
+      // No interval ticks can fire now, so once the slow probe settles the
+      // flag must clear and stay clear.
+      resolveSlow?.();
+      await flush();
+      expect(service.pollInFlightForTests).toBe(false);
+      expect(probesForRoot()).toBe(callCountAfterFirst + 1);
+    } finally {
+      vi.useRealTimers();
+      vi.mocked(probeLiveness).mockImplementation(priorProbeImpl!);
+    }
   });
 });
