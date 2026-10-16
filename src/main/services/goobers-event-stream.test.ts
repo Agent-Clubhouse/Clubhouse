@@ -97,6 +97,23 @@ describe('startEventStream — connection and invalidation frames', () => {
     expect(requestCount).toBe(1);
   });
 
+  it('reassembles multi-byte UTF-8 characters split across SSE chunks', async () => {
+    const frame = Buffer.from(`event: invalidate\ndata: ${JSON.stringify({ cursor: 'c-€', models: ['run'] })}\n\n`);
+    const splitAt = frame.indexOf(Buffer.from('€')) + 1;
+    const { port, server } = await listen((req, res) => {
+      sseHeaders(res);
+      res.write(frame.subarray(0, splitAt));
+      setTimeout(() => res.write(frame.subarray(splitAt)), 20);
+    });
+    activeServer = server;
+
+    const cb = collectCallbacks();
+    activeHandle = startEventStream('127.0.0.1', port, cb, { ...FAST_TIMING, livenessDeadlineMs: 500 });
+
+    await waitUntil(() => cb.invalidations.length === 1);
+    expect(cb.invalidations[0]).toEqual({ cursor: 'c-€', models: ['run'] });
+  });
+
   it('treats a heartbeat-only connection as connected without invoking onInvalidation', async () => {
     const { port, server } = await listen((req, res) => {
       sseHeaders(res);

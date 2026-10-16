@@ -501,6 +501,24 @@ describe('annex-client', () => {
       });
     });
 
+    it('decodes multi-byte UTF-8 characters split across response chunks', async () => {
+      const bytes = Buffer.from(JSON.stringify({ error: 'PIN ungültig — €' }));
+      const splitAt = bytes.indexOf(Buffer.from('€')) + 1;
+      vi.mocked(http.request).mockImplementation((_opts: any, cb: any) => {
+        const handlers: Record<string, (...args: any[]) => void> = {};
+        const res = { statusCode: 403, on: vi.fn((event: string, h: any) => { handlers[event] = h; }) };
+        cb(res);
+        handlers.data(bytes.subarray(0, splitAt));
+        handlers.data(bytes.subarray(splitAt));
+        handlers.end();
+        return { on: vi.fn(), setTimeout: vi.fn(), write: vi.fn(), end: vi.fn() } as any;
+      });
+
+      const result = await annexClient.pairWithService('XX:YY:ZZ:11', '000000');
+
+      expect(result).toEqual({ success: false, error: 'PIN ungültig — €' });
+    });
+
     it('returns error on HTTP failure', async () => {
       mockHttpPostPairFailure(403, { error: 'Invalid PIN' });
 

@@ -22,9 +22,11 @@ const activeRequests = new Set<http.ClientRequest>();
 export function httpGetJson(host: string, port: number, urlPath: string, timeoutMs: number): Promise<HttpResult> {
   return new Promise((resolve, reject) => {
     const req = http.get({ host, port, path: urlPath, headers: { Accept: 'application/json' } }, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode || 0, body }));
+      // Collect raw bytes and decode once — per-chunk string coercion corrupts
+      // multi-byte UTF-8 characters split across chunk boundaries.
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer | string) => { chunks.push(typeof c === 'string' ? Buffer.from(c) : c); });
+      res.on('end', () => resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString('utf8') }));
     });
 
     activeRequests.add(req);
