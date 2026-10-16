@@ -141,4 +141,32 @@ describe('before-quit handler', () => {
     expect(events).toEqual(['kill', 'configs', 'group-projects', 'bulletins', 'agent-queues', 'apply-update', 'quit']);
     expect(appQuit).toHaveBeenCalledOnce();
   });
+
+  it('awaits the telemetry flush before quitting and reports its failure', async () => {
+    const events: string[] = [];
+    const onCleanupError = vi.fn();
+
+    await new Promise<void>((resolve) => {
+      const handleBeforeQuit = createBeforeQuitHandler({
+        killAll: async () => {},
+        flushAllAgentConfigs: async () => {},
+        flushTelemetry: async () => {
+          await new Promise((r) => setTimeout(r, 5));
+          events.push('telemetry');
+          throw new Error('exporter down');
+        },
+        applyUpdateOnQuit: async () => {},
+        appQuit: () => {
+          events.push('quit');
+          resolve();
+        },
+        onCleanupError,
+      });
+
+      handleBeforeQuit({ preventDefault: vi.fn() });
+    });
+
+    expect(events).toEqual(['telemetry', 'quit']);
+    expect(onCleanupError).toHaveBeenCalledWith('flush telemetry', expect.any(Error));
+  });
 });

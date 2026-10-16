@@ -30,6 +30,7 @@ import * as ptyManager from '../services/pty-manager';
 import * as agentSystem from '../services/agent-system';
 import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
 import { consumePendingProtocolAction } from '../services/protocol-service';
+import { flushBeforeExit } from '../telemetry/facade';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
 const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
@@ -420,6 +421,7 @@ export function registerAppHandlers(): void {
   // --- App Restart ---
   ipcMain.handle(IPC.APP.RESTART, async () => {
     await flushAgentConfigsBeforeExit();
+    await flushBeforeExit();
     app.relaunch();
     app.exit(0);
   });

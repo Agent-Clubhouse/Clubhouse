@@ -33,6 +33,7 @@ import { getCommunityPluginsDir } from './services/plugin-discovery';
 import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import * as projectStore from './services/project-store';
+import { initTelemetry, recordAppSession, flushBeforeExit } from './telemetry';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -55,6 +56,11 @@ if (process.env.CLUBHOUSE_USER_DATA) {
   // projects, agent state, or group-project state with another app process.
   app.setPath('home', process.env.CLUBHOUSE_USER_DATA);
 }
+
+// Opt-in telemetry export (experimental.telemetry). Reads its settings after
+// the userData override above; when enabled, the SDK chunk loads in the
+// background and never blocks `ready`. When disabled, nothing is imported.
+initTelemetry();
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
@@ -227,6 +233,7 @@ app.on('ready', () => {
 
   // Safe mode: check --safe-mode flag or startup marker crash counter.
   safeMode.handleSafeModeStartup();
+  recordAppSession();
 
   // Generate a per-run CSP nonce before creating any windows.
   // The nonce is injected into index.html and the CSP header so that inline
@@ -364,6 +371,7 @@ app.on('before-quit', createBeforeQuitHandler({
   flushAllGroupProjects: () => groupProjectRegistry.flush(),
   flushAllBulletinBoards,
   flushAllAgentQueues,
+  flushTelemetry: () => flushBeforeExit(),
   applyUpdateOnQuit,
   appQuit: () => app.quit(),
   onCleanupError: (operation, error) => {

@@ -21,7 +21,18 @@ const sharedTestConfig = {
   restoreMocks: true,
 };
 
+// Resolve the Azure exporter to its CommonJS build, as webpack does for the
+// main bundle. destinations/azure.ts reaches the exporter's internal
+// ConfigurationManager by file path; both must share one module instance.
+const azureExporterAlias = {
+  '@azure/monitor-opentelemetry-exporter': path.resolve(
+    __dirname,
+    'node_modules/@azure/monitor-opentelemetry-exporter/dist/commonjs/index.js',
+  ),
+};
+
 const aliases = {
+  ...azureExporterAlias,
   electron: path.resolve(__dirname, 'src/__mocks__/electron.ts'),
   'monaco-editor': path.resolve(__dirname, 'src/__mocks__/monaco-editor.ts'),
   ws: path.resolve(__dirname, 'src/__mocks__/ws.ts'),
