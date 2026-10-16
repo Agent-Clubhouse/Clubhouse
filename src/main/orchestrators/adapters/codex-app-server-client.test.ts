@@ -7,7 +7,23 @@ vi.mock('child_process', () => ({
 }));
 
 import { spawn } from 'child_process';
-import { CodexAppServerClient } from './codex-app-server-client';
+import {
+  CodexAppServerClient,
+  CODEX_RPC_INTERNAL_ERROR,
+  CODEX_RPC_METHOD_NOT_FOUND,
+  textInput,
+  type CodexAppServerClientOpts,
+} from './codex-app-server-client';
+import { RpcError } from './acp-client';
+import {
+  commandApprovalDecisions,
+  CODEX_APP_SERVER_SCHEMA_VERSION,
+  FILE_CHANGE_APPROVAL_DECISIONS,
+  isKnownNotificationMethod,
+  isKnownServerRequestMethod,
+  type ServerNotification,
+} from './codex-protocol';
+import * as fx from './codex-protocol/__fixtures__/app-server-session';
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -38,652 +54,635 @@ function createMockProcess() {
   return proc;
 }
 
+type MockProcess = ReturnType<typeof createMockProcess>;
+
 /** Helper: emit stdout data (triggers synchronous feed) */
-function emitData(
-  proc: ReturnType<typeof createMockProcess>,
-  data: string,
-): void {
+function emitData(proc: MockProcess, data: string): void {
   proc.stdout.emit('data', data);
 }
 
-/** Auto-respond to the init handshake request */
-function autoRespondInit(proc: ReturnType<typeof createMockProcess>): void {
-  // The first request sent will be `initialize` with id 1
-  // Auto-respond with a success result
-  emitData(proc, JSON.stringify({ id: 1, result: { platformInfo: {} } }) + '\n');
+function emitMessage(proc: MockProcess, msg: unknown): void {
+  emitData(proc, JSON.stringify(msg) + '\n');
+}
+
+/** Auto-respond to the init handshake request (always id 1). */
+function autoRespondInit(proc: MockProcess): void {
+  emitMessage(proc, { id: 1, result: fx.initializeResult });
+}
+
+/** Every message the client has written to stdin, parsed. */
+function sentMessages(proc: MockProcess): Record<string, unknown>[] {
+  return proc.stdin.write.mock.calls.map(([chunk]) => JSON.parse(String(chunk)));
+}
+
+function lastSent(proc: MockProcess): Record<string, unknown> {
+  const all = sentMessages(proc);
+  return all[all.length - 1];
 }
 
 describe('CodexAppServerClient', () => {
-  let mockProc: ReturnType<typeof createMockProcess>;
+  let mockProc: MockProcess;
 
   beforeEach(() => {
     mockProc = createMockProcess();
     mockSpawn.mockReturnValue(mockProc as unknown as ReturnType<typeof spawn>);
   });
 
-  it('spawns process with correct options', async () => {
-    const client = new CodexAppServerClient({
-      binary: '/usr/bin/codex',
-      args: ['app-server', '--listen', 'stdio://'],
-      cwd: '/tmp/project',
-      env: { PATH: '/usr/bin' },
-    });
-
-    // Auto-respond to init handshake
+  /** Start a client with the handshake answered from the fixture. */
+  async function startClient(opts: Partial<CodexAppServerClientOpts> = {}) {
+    const client = new CodexAppServerClient({ binary: 'codex', args: ['app-server'], ...opts });
     setTimeout(() => autoRespondInit(mockProc), 0);
     await client.start();
-
-    expect(mockSpawn).toHaveBeenCalledWith(
-      '/usr/bin/codex',
-      ['app-server', '--listen', 'stdio://'],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: '/tmp/project',
-        env: { PATH: '/usr/bin' },
-      },
-    );
-  });
-
-  it('performs initialization handshake on start', async () => {
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-    });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    // First write should be the initialize request
-    const initCall = mockProc.stdin.write.mock.calls[0];
-    const initMsg = JSON.parse((initCall[0] as string).replace('\n', ''));
-    expect(initMsg).toMatchObject({
-      id: 1,
-      method: 'initialize',
-      params: {
-        clientInfo: { name: 'clubhouse', title: 'Clubhouse', version: '1.0.0' },
-        capabilities: {},
-      },
-    });
-    // Should NOT include jsonrpc field
-    expect(initMsg).not.toHaveProperty('jsonrpc');
-
-    // Second write should be the initialized notification
-    const initNotify = mockProc.stdin.write.mock.calls[1];
-    const notifyMsg = JSON.parse((initNotify[0] as string).replace('\n', ''));
-    expect(notifyMsg).toEqual({ method: 'initialized' });
-    expect(notifyMsg).not.toHaveProperty('jsonrpc');
-    expect(notifyMsg).not.toHaveProperty('id');
-  });
-
-  it('uses custom clientInfo when provided', async () => {
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      clientInfo: { name: 'my-app', title: 'My App', version: '2.0.0' },
-    });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    const initMsg = JSON.parse((mockProc.stdin.write.mock.calls[0][0] as string).replace('\n', ''));
-    expect(initMsg.params.clientInfo).toEqual({
-      name: 'my-app',
-      title: 'My App',
-      version: '2.0.0',
-    });
-  });
-
-  it('sends requests without jsonrpc field', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
     mockProc.stdin.write.mockClear();
+    return client;
+  }
 
-    const promise = client.request('thread/start', { model: 'gpt-5' });
+  // ── Transport ────────────────────────────────────────────────────────────
 
-    const sent = JSON.parse(
-      (mockProc.stdin.write.mock.calls[0][0] as string).replace('\n', ''),
-    );
-    expect(sent).toMatchObject({
-      id: 2, // id 1 was used by initialize
-      method: 'thread/start',
-      params: { model: 'gpt-5' },
-    });
-    expect(sent).not.toHaveProperty('jsonrpc');
+  describe('transport', () => {
+    it('spawns process with correct options', async () => {
+      const client = new CodexAppServerClient({
+        binary: 'codex-bin',
+        args: ['app-server', '--listen', 'stdio://'],
+        cwd: 'project',
+        env: { PATH: 'bin' },
+      });
 
-    // Respond
-    emitData(mockProc, JSON.stringify({ id: 2, result: { thread: { id: 't1' } } }) + '\n');
-    const result = await promise;
-    expect(result).toEqual({ thread: { id: 't1' } });
-  });
+      setTimeout(() => autoRespondInit(mockProc), 0);
+      await client.start();
 
-  it('sends notifications without id or jsonrpc', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    mockProc.stdin.write.mockClear();
-
-    client.notify('some/event', { data: 'test' });
-
-    const sent = JSON.parse(
-      (mockProc.stdin.write.mock.calls[0][0] as string).replace('\n', ''),
-    );
-    expect(sent).toEqual({ method: 'some/event', params: { data: 'test' } });
-    expect(sent).not.toHaveProperty('jsonrpc');
-    expect(sent).not.toHaveProperty('id');
-  });
-
-  it('sends notification without params when none provided', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    mockProc.stdin.write.mockClear();
-
-    client.notify('ping');
-
-    const sent = JSON.parse(
-      (mockProc.stdin.write.mock.calls[0][0] as string).replace('\n', ''),
-    );
-    expect(sent).toEqual({ method: 'ping' });
-  });
-
-  it('rejects request on JSON-RPC error response', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    const promise = client.request('bad/method', {});
-
-    emitData(
-      mockProc,
-      JSON.stringify({ id: 2, error: { code: -32600, message: 'Invalid request' } }) + '\n',
-    );
-
-    await expect(promise).rejects.toThrow('RPC error -32600: Invalid request');
-  });
-
-  it('forwards notifications to callback', async () => {
-    const onNotification = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      onNotification,
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'codex-bin',
+        ['app-server', '--listen', 'stdio://'],
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd: 'project',
+          env: { PATH: 'bin' },
+        },
+      );
     });
 
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
+    it('sends requests without jsonrpc field', async () => {
+      const client = await startClient();
 
-    emitData(
-      mockProc,
-      JSON.stringify({
-        method: 'item/agentMessage/delta',
-        params: { delta: { text: 'hello' } },
-      }) + '\n',
-    );
+      const promise = client.threadStart({ model: 'gpt-5' });
 
-    expect(onNotification).toHaveBeenCalledWith('item/agentMessage/delta', {
-      delta: { text: 'hello' },
+      const sent = lastSent(mockProc);
+      expect(sent).toEqual({ id: 2, method: 'thread/start', params: { model: 'gpt-5' } });
+      expect(sent).not.toHaveProperty('jsonrpc');
+
+      emitMessage(mockProc, { id: 2, result: fx.threadStartResult });
+      expect(await promise).toEqual(fx.threadStartResult);
+    });
+
+    it('sends notifications without id or jsonrpc', async () => {
+      const client = await startClient();
+
+      client.notify('some/event', { data: 'test' });
+      expect(lastSent(mockProc)).toEqual({ method: 'some/event', params: { data: 'test' } });
+
+      client.notify('ping');
+      expect(lastSent(mockProc)).toEqual({ method: 'ping' });
+    });
+
+    it('rejects with RpcError on JSON-RPC error response', async () => {
+      const client = await startClient();
+
+      const promise = client.requestRaw('bad/method', {});
+      emitMessage(mockProc, { id: 2, error: { code: -32600, message: 'Invalid request', data: { x: 1 } } });
+
+      await expect(promise).rejects.toThrow('RPC error -32600: Invalid request');
+      await promise.catch((err) => {
+        expect(err).toBeInstanceOf(RpcError);
+        expect(err).toMatchObject({ code: -32600, data: { x: 1 } });
+      });
+    });
+
+    it('handles chunked NDJSON across multiple data events', async () => {
+      const onCodexNotification = vi.fn();
+      await startClient({ onCodexNotification });
+
+      const full = JSON.stringify(fx.completedTurnNotifications[1]) + '\n';
+      emitData(mockProc, full.slice(0, 20));
+      emitData(mockProc, full.slice(20));
+
+      expect(onCodexNotification).toHaveBeenCalledWith(fx.completedTurnNotifications[1]);
+    });
+
+    it('handles multiple messages in a single chunk', async () => {
+      const onCodexNotification = vi.fn();
+      await startClient({ onCodexNotification });
+
+      emitData(mockProc, fx.completedTurnNotifications.slice(0, 3).map((n) => JSON.stringify(n) + '\n').join(''));
+
+      expect(onCodexNotification).toHaveBeenCalledTimes(3);
+    });
+
+    it('increments request IDs (starting at 2 after init)', async () => {
+      const client = await startClient();
+
+      const p1 = client.requestRaw('method1', {});
+      const p2 = client.requestRaw('method2', {});
+      emitData(mockProc, JSON.stringify({ id: 2, result: 'r1' }) + '\n' + JSON.stringify({ id: 3, result: 'r2' }) + '\n');
+
+      expect(await p1).toBe('r1');
+      expect(await p2).toBe('r2');
+    });
+
+    it('rejects all pending requests on process exit and calls onExit', async () => {
+      const onExit = vi.fn();
+      const client = await startClient({ onExit });
+
+      const promise = client.threadList();
+      mockProc.emit('exit', 1, null);
+
+      await expect(promise).rejects.toThrow('Process exited');
+      expect(onExit).toHaveBeenCalledWith(1, null);
+    });
+
+    it('kill() terminates once and reports not alive', async () => {
+      const client = await startClient();
+      expect(client.alive).toBe(true);
+
+      client.kill();
+      client.kill();
+
+      expect(mockProc.kill).toHaveBeenCalledTimes(1);
+      expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
+      expect(client.alive).toBe(false);
+    });
+
+    it('skips and logs malformed JSON lines', async () => {
+      const onLog = vi.fn();
+      const onCodexNotification = vi.fn();
+      await startClient({ onLog, onCodexNotification });
+
+      emitData(mockProc, 'garbage data\n');
+      emitMessage(mockProc, fx.completedTurnNotifications[1]);
+
+      expect(onLog).toHaveBeenCalledWith('warn', 'Malformed JSON line from Codex stdout', expect.objectContaining({ line: 'garbage data' }));
+      expect(onCodexNotification).toHaveBeenCalledTimes(1);
+    });
+
+    it('captures stderr and logs process exit with pending count', async () => {
+      const onLog = vi.fn();
+      const client = await startClient({ onLog });
+
+      mockProc.stderr.emit('data', 'fatal error\n');
+      const pending = client.threadList();
+      mockProc.emit('exit', 1, null);
+      await expect(pending).rejects.toThrow('Process exited');
+
+      expect(client.getStderr()).toBe('fatal error\n');
+      expect(onLog).toHaveBeenCalledWith('error', 'Codex app-server process exited', expect.objectContaining({ code: 1, pendingRequests: 1, stderr: 'fatal error' }));
+    });
+
+    it('rejects a request after the configured timeout', async () => {
+      const onLog = vi.fn();
+      const client = await startClient({ onLog, rpcTimeoutMs: 100 });
+      vi.useFakeTimers();
+      try {
+        const promise = client.threadList();
+        vi.advanceTimersByTime(200);
+
+        await expect(promise).rejects.toThrow("RPC request 'thread/list' timed out after 100ms");
+        expect(onLog).toHaveBeenCalledWith('error', 'RPC timeout → thread/list', expect.objectContaining({ timeoutMs: 100 }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('clears the timeout when the response arrives first', async () => {
+      const client = await startClient({ rpcTimeoutMs: 5000 });
+      vi.useFakeTimers();
+      try {
+        const promise = client.threadList();
+        emitMessage(mockProc, { id: 2, result: fx.threadListResult });
+        expect(await promise).toEqual(fx.threadListResult);
+        vi.advanceTimersByTime(10_000);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('honours a per-request timeout of null (no timeout)', async () => {
+      const client = await startClient({ rpcTimeoutMs: 100 });
+      vi.useFakeTimers();
+      try {
+        const promise = client.requestRaw('review/start', {}, { timeoutMs: null });
+        vi.advanceTimersByTime(60_000);
+        emitMessage(mockProc, { id: 2, result: { ok: true } });
+        expect(await promise).toEqual({ ok: true });
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
-  it('forwards server-initiated requests to callback', async () => {
-    const onServerRequest = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      onServerRequest,
-    });
+  // ── Handshake ────────────────────────────────────────────────────────────
 
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
+  describe('initialize handshake', () => {
+    it('sends initialize with v2 capabilities, then initialized', async () => {
+      const client = new CodexAppServerClient({ binary: 'codex', args: [] });
+      setTimeout(() => autoRespondInit(mockProc), 0);
+      const result = await client.start();
 
-    emitData(
-      mockProc,
-      JSON.stringify({
-        id: 'srv-1',
-        method: 'item/commandExecution/requestApproval',
-        params: { itemId: 'item-1', command: 'rm -rf /' },
-      }) + '\n',
-    );
-
-    expect(onServerRequest).toHaveBeenCalledWith(
-      'srv-1',
-      'item/commandExecution/requestApproval',
-      { itemId: 'item-1', command: 'rm -rf /' },
-    );
-  });
-
-  it('sends response back to server for approval', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    mockProc.stdin.write.mockClear();
-
-    client.respond('srv-1', { decision: 'accept' });
-
-    const sent = JSON.parse(
-      (mockProc.stdin.write.mock.calls[0][0] as string).replace('\n', ''),
-    );
-    expect(sent).toEqual({ id: 'srv-1', result: { decision: 'accept' } });
-    expect(sent).not.toHaveProperty('jsonrpc');
-  });
-
-  it('handles chunked NDJSON across multiple data events', async () => {
-    const onNotification = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      onNotification,
-    });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    // Send partial JSON across two chunks
-    emitData(mockProc, '{"method":"item/agent');
-    expect(onNotification).not.toHaveBeenCalled();
-
-    emitData(mockProc, 'Message/delta","params":{"delta":{"text":"hi"}}}\n');
-    expect(onNotification).toHaveBeenCalledWith('item/agentMessage/delta', {
-      delta: { text: 'hi' },
-    });
-  });
-
-  it('handles multiple messages in a single chunk', async () => {
-    const onNotification = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      onNotification,
-    });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    emitData(
-      mockProc,
-      '{"method":"a","params":{}}\n{"method":"b","params":{}}\n',
-    );
-
-    expect(onNotification).toHaveBeenCalledTimes(2);
-    expect(onNotification).toHaveBeenCalledWith('a', {});
-    expect(onNotification).toHaveBeenCalledWith('b', {});
-  });
-
-  it('rejects all pending requests on process exit', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    const p1 = client.request('method1', {});
-    const p2 = client.request('method2', {});
-
-    mockProc.emit('exit', 1, null);
-
-    await expect(p1).rejects.toThrow('Process exited');
-    await expect(p2).rejects.toThrow('Process exited');
-  });
-
-  it('calls onExit when process exits', async () => {
-    const onExit = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      onExit,
-    });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    mockProc.emit('exit', 0, null);
-    expect(onExit).toHaveBeenCalledWith(0, null);
-  });
-
-  it('kills the process', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    client.kill();
-    expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
-  });
-
-  it('kill() is idempotent', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    client.kill();
-    client.kill();
-    expect(mockProc.kill).toHaveBeenCalledTimes(1);
-  });
-
-  it('skips malformed JSON lines', async () => {
-    const onNotification = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      onNotification,
-    });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    emitData(
-      mockProc,
-      'not json\n{"method":"ok","params":{}}\n',
-    );
-
-    expect(onNotification).toHaveBeenCalledTimes(1);
-    expect(onNotification).toHaveBeenCalledWith('ok', {});
-  });
-
-  it('reports alive status correctly', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    expect(client.alive).toBe(true);
-
-    client.kill();
-    expect(client.alive).toBe(false);
-  });
-
-  it('increments request IDs (starting at 2 after init)', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    const p1 = client.request('method1', {});
-    const p2 = client.request('method2', {});
-
-    // Respond to both (IDs 2 and 3 since init used 1)
-    emitData(
-      mockProc,
-      JSON.stringify({ id: 2, result: 'r1' }) +
-        '\n' +
-        JSON.stringify({ id: 3, result: 'r2' }) +
-        '\n',
-    );
-
-    expect(await p1).toBe('r1');
-    expect(await p2).toBe('r2');
-  });
-
-  it('rejects start() if init handshake fails', async () => {
-    const client = new CodexAppServerClient({ binary: 'codex', args: [] });
-
-    // Respond to init with an error
-    setTimeout(() => {
-      emitData(mockProc, JSON.stringify({
+      const [init, initialized] = sentMessages(mockProc);
+      expect(init).toEqual({
         id: 1,
-        error: { code: -32603, message: 'Internal error' },
-      }) + '\n');
-    }, 0);
-
-    await expect(client.start()).rejects.toThrow('RPC error -32603: Internal error');
-  });
-
-  // ── onLog callback tests ──────────────────────────────────────────────────
-
-  it('calls onLog for spawn', async () => {
-    const onLog = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: '/usr/bin/codex',
-      args: ['app-server'],
-      onLog,
+        method: 'initialize',
+        params: {
+          clientInfo: { name: 'clubhouse', title: 'Clubhouse', version: '1.0.0' },
+          capabilities: { experimentalApi: false, requestAttestation: false },
+        },
+      });
+      expect(initialized).toEqual({ method: 'initialized' });
+      expect(result).toEqual(fx.initializeResult);
+      expect(client.serverInfo).toEqual(fx.initializeResult);
     });
 
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
+    it('passes clientInfo, experimentalApi and notification opt-outs through', async () => {
+      const client = new CodexAppServerClient({
+        binary: 'codex',
+        args: [],
+        clientInfo: { name: 'my-app', title: null, version: '2.0.0' },
+        experimentalApi: true,
+        optOutNotificationMethods: ['thread/started'],
+      });
+      setTimeout(() => autoRespondInit(mockProc), 0);
+      await client.start();
 
-    expect(onLog).toHaveBeenCalledWith(
-      'info',
-      'Spawning Codex app-server process',
-      expect.objectContaining({
-        binary: '/usr/bin/codex',
-        args: ['app-server'],
-      }),
-    );
-  });
-
-  it('calls onLog for RPC requests', async () => {
-    const onLog = vi.fn();
-    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    client.request('thread/start', { model: 'gpt-5' });
-
-    expect(onLog).toHaveBeenCalledWith(
-      'info',
-      'RPC request → thread/start',
-      expect.objectContaining({
-        method: 'thread/start',
-      }),
-    );
-  });
-
-  it('calls onLog for RPC errors', async () => {
-    const onLog = vi.fn();
-    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    const promise = client.request('bad/method', {});
-
-    emitData(
-      mockProc,
-      JSON.stringify({ id: 2, error: { code: -32601, message: 'Method not found' } }) + '\n',
-    );
-
-    await expect(promise).rejects.toThrow();
-
-    expect(onLog).toHaveBeenCalledWith(
-      'error',
-      'RPC error ← id=2',
-      expect.objectContaining({
-        code: -32601,
-        message: 'Method not found',
-      }),
-    );
-  });
-
-  // ── stderr capture tests ──────────────────────────────────────────────────
-
-  it('captures stderr and makes it accessible via getStderr', async () => {
-    const onLog = vi.fn();
-    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    mockProc.stderr.emit('data', 'Warning: something\n');
-
-    expect(client.getStderr()).toBe('Warning: something\n');
-    expect(onLog).toHaveBeenCalledWith(
-      'warn',
-      'Codex app-server stderr',
-      expect.objectContaining({ text: 'Warning: something' }),
-    );
-  });
-
-  it('logs process exit with stderr and pending count', async () => {
-    const onLog = vi.fn();
-    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    mockProc.stderr.emit('data', 'fatal error\n');
-    const pendingRequest = client.request('thread/start', {});
-
-    mockProc.emit('exit', 1, null);
-
-    // Consume the rejection to avoid unhandled promise rejection
-    await expect(pendingRequest).rejects.toThrow('Process exited');
-
-    expect(onLog).toHaveBeenCalledWith(
-      'error',
-      'Codex app-server process exited',
-      expect.objectContaining({
-        code: 1,
-        pendingRequests: 1,
-        stderr: 'fatal error',
-      }),
-    );
-  });
-
-  it('logs malformed JSON lines', async () => {
-    const onLog = vi.fn();
-    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    emitData(mockProc, 'garbage data\n');
-
-    expect(onLog).toHaveBeenCalledWith(
-      'warn',
-      'Malformed JSON line from Codex stdout',
-      expect.objectContaining({ line: 'garbage data' }),
-    );
-  });
-
-  it('logs init handshake completion', async () => {
-    const onLog = vi.fn();
-    const client = new CodexAppServerClient({ binary: 'codex', args: [], onLog });
-
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    expect(onLog).toHaveBeenCalledWith('info', 'Codex init handshake complete', undefined);
-  });
-
-  // ── Dispatch fix: no spurious warnings ──────────────────────────────────
-
-  it('does not log warning for valid notifications', async () => {
-    const onLog = vi.fn();
-    const onNotification = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      onLog,
-      onNotification,
+      expect(sentMessages(mockProc)[0].params).toEqual({
+        clientInfo: { name: 'my-app', title: null, version: '2.0.0' },
+        capabilities: { experimentalApi: true, requestAttestation: false, optOutNotificationMethods: ['thread/started'] },
+      });
     });
 
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-    onLog.mockClear();
+    it('rejects start() if the handshake fails', async () => {
+      const client = new CodexAppServerClient({ binary: 'codex', args: [] });
+      setTimeout(() => emitMessage(mockProc, { id: 1, error: { code: -32603, message: 'Internal error' } }), 0);
 
-    // Send a valid notification (has method, no id)
-    emitData(
-      mockProc,
-      JSON.stringify({ method: 'item/agentMessage/delta', params: { delta: { text: 'hi' } } }) + '\n',
-    );
-
-    // Should NOT have logged the spurious "neither id nor method" warning
-    const warningCalls = onLog.mock.calls.filter(
-      ([, msg]) => typeof msg === 'string' && msg.includes('neither id nor method'),
-    );
-    expect(warningCalls).toHaveLength(0);
-    expect(onNotification).toHaveBeenCalledTimes(1);
-  });
-
-  it('logs info for messages with neither id nor method', async () => {
-    const onLog = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      onLog,
+      await expect(client.start()).rejects.toThrow('RPC error -32603: Internal error');
+      expect(client.serverInfo).toBeNull();
     });
 
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-    onLog.mockClear();
+    it('logs spawn and handshake completion', async () => {
+      const onLog = vi.fn();
+      await startClient({ onLog });
 
-    // Send a message with neither id nor method
-    emitData(mockProc, JSON.stringify({ data: 'orphan' }) + '\n');
-
-    expect(onLog).toHaveBeenCalledWith(
-      'info',
-      'Codex message with neither id nor method (ignored)',
-      expect.objectContaining({ keys: ['data'] }),
-    );
-  });
-
-  // ── RPC timeout tests ────────────────────────────────────────────────────
-
-  it('rejects request after timeout', async () => {
-    const onLog = vi.fn();
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      onLog,
-      rpcTimeoutMs: 100,
+      expect(onLog).toHaveBeenCalledWith('info', 'Spawning Codex app-server process', expect.objectContaining({ binary: 'codex' }));
+      expect(onLog).toHaveBeenCalledWith('info', 'Codex init handshake complete', { userAgent: fx.initializeResult.userAgent, platformOs: 'macos' });
     });
 
-    // Start with real timers so init handshake completes
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
-
-    // Now switch to fake timers for the timeout test
-    vi.useFakeTimers();
-
-    const promise = client.request('thread/start', { model: 'gpt-5' });
-
-    // Advance past the timeout
-    vi.advanceTimersByTime(200);
-
-    await expect(promise).rejects.toThrow("RPC request 'thread/start' timed out after 100ms");
-    expect(onLog).toHaveBeenCalledWith(
-      'error',
-      'RPC timeout → thread/start',
-      expect.objectContaining({ timeoutMs: 100 }),
-    );
-
-    vi.useRealTimers();
+    it('records the schema version the bindings were generated from', () => {
+      expect(CODEX_APP_SERVER_SCHEMA_VERSION).toMatch(/^\d+\.\d+\.\d+/);
+    });
   });
 
-  it('clears timeout when response arrives before deadline', async () => {
-    const client = new CodexAppServerClient({
-      binary: 'codex',
-      args: [],
-      rpcTimeoutMs: 5000,
+  // ── Threads and turns ────────────────────────────────────────────────────
+
+  describe('thread and turn requests', () => {
+    it.each([
+      ['threadStart', 'thread/start', { cwd: 'workspace', approvalPolicy: 'on-request', sandbox: 'workspace-write' }, fx.threadStartResult],
+      ['threadResume', 'thread/resume', { threadId: fx.THREAD_ID, excludeTurns: true }, fx.threadResumeResult],
+      ['threadList', 'thread/list', { limit: 20, cwd: 'workspace' }, fx.threadListResult],
+      ['threadRead', 'thread/read', { threadId: fx.THREAD_ID }, { thread: fx.thread }],
+      ['turnStart', 'turn/start', { threadId: fx.THREAD_ID, input: [textInput('hi')] }, fx.turnStartResult],
+    ] as const)('%s sends %s and resolves its result', async (fn, method, params, result) => {
+      const client = await startClient();
+
+      const promise = (client[fn] as (p: unknown) => Promise<unknown>)(params);
+      expect(lastSent(mockProc)).toEqual({ id: 2, method, params });
+
+      emitMessage(mockProc, { id: 2, result });
+      expect(await promise).toEqual(result);
     });
 
-    setTimeout(() => autoRespondInit(mockProc), 0);
-    await client.start();
+    it('threadList defaults to empty params', async () => {
+      const client = await startClient();
+      void client.threadList();
+      expect(lastSent(mockProc)).toEqual({ id: 2, method: 'thread/list', params: {} });
+    });
 
-    vi.useFakeTimers();
+    it('textInput builds a v2 text UserInput', () => {
+      expect(textInput('hello')).toEqual({ type: 'text', text: 'hello', text_elements: [] });
+    });
 
-    const promise = client.request('thread/start', {});
+    it('tracks the active turn from turn/started and turn/completed', async () => {
+      const client = await startClient();
+      expect(client.getActiveTurnId(fx.THREAD_ID)).toBeUndefined();
 
-    // Respond before timeout
-    emitData(mockProc, JSON.stringify({ id: 2, result: { thread: { id: 't1' } } }) + '\n');
+      emitMessage(mockProc, fx.completedTurnNotifications[1]); // turn/started
+      expect(client.getActiveTurnId(fx.THREAD_ID)).toBe(fx.TURN_ID);
 
-    const result = await promise;
-    expect(result).toEqual({ thread: { id: 't1' } });
+      emitMessage(mockProc, fx.completedTurnNotifications.find((n) => n.method === 'turn/completed'));
+      expect(client.getActiveTurnId(fx.THREAD_ID)).toBeUndefined();
+    });
 
-    // Advance past original deadline — should NOT reject
-    vi.advanceTimersByTime(10000);
+    it('a late turn/completed for an older turn keeps the newer active turn', async () => {
+      const client = await startClient();
 
-    vi.useRealTimers();
+      emitMessage(mockProc, fx.secondTurnStarted);
+      emitMessage(mockProc, fx.interruptedTurnCompleted); // completes TURN_ID, not the second
+
+      expect(client.getActiveTurnId(fx.THREAD_ID)).toBe(fx.SECOND_TURN_ID);
+    });
+
+    it('turnSteer defaults expectedTurnId to the active turn', async () => {
+      const client = await startClient();
+      emitMessage(mockProc, fx.completedTurnNotifications[1]);
+
+      const promise = client.turnSteer(fx.THREAD_ID, [textInput('also check lint')]);
+      expect(lastSent(mockProc)).toEqual({
+        id: 2,
+        method: 'turn/steer',
+        params: { threadId: fx.THREAD_ID, input: [textInput('also check lint')], expectedTurnId: fx.TURN_ID },
+      });
+      emitMessage(mockProc, { id: 2, result: fx.turnSteerResult });
+      expect(await promise).toEqual(fx.turnSteerResult);
+    });
+
+    it('turnSteer surfaces the server rejecting a stale expectedTurnId', async () => {
+      const client = await startClient();
+
+      const promise = client.turnSteer(fx.THREAD_ID, [textInput('x')], 'stale-turn');
+      emitMessage(mockProc, { id: 2, error: { code: -32600, message: 'expected turn mismatch' } });
+
+      await expect(promise).rejects.toMatchObject({ code: -32600 });
+    });
+
+    it('turnSteer and turnInterrupt reject without sending when no turn is active', async () => {
+      const client = await startClient();
+
+      await expect(client.turnSteer(fx.THREAD_ID, [textInput('x')])).rejects.toThrow('No active Codex turn to steer');
+      await expect(client.turnInterrupt(fx.THREAD_ID)).rejects.toThrow('No active Codex turn to interrupt');
+      expect(mockProc.stdin.write).not.toHaveBeenCalled();
+    });
+
+    it('turnInterrupt targets the active turn', async () => {
+      const client = await startClient();
+      emitMessage(mockProc, fx.completedTurnNotifications[1]);
+
+      const promise = client.turnInterrupt(fx.THREAD_ID);
+      expect(lastSent(mockProc)).toEqual({ id: 2, method: 'turn/interrupt', params: { threadId: fx.THREAD_ID, turnId: fx.TURN_ID } });
+      emitMessage(mockProc, { id: 2, result: {} });
+      expect(await promise).toEqual({});
+    });
+
+    it('readRateLimits returns the snapshot', async () => {
+      const client = await startClient();
+
+      const promise = client.readRateLimits();
+      expect(lastSent(mockProc)).toEqual({ id: 2, method: 'account/rateLimits/read' });
+      emitMessage(mockProc, { id: 2, result: fx.rateLimitsResult });
+
+      expect(await promise).toEqual(fx.rateLimitsResult.rateLimits);
+    });
+
+    it('forgets active turns when the process exits', async () => {
+      const client = await startClient();
+      emitMessage(mockProc, fx.completedTurnNotifications[1]);
+
+      mockProc.emit('exit', 0, null);
+
+      expect(client.getActiveTurnId(fx.THREAD_ID)).toBeUndefined();
+    });
+  });
+
+  // ── Notifications ────────────────────────────────────────────────────────
+
+  describe('notifications', () => {
+    it('delivers a full turn stream in order, all recognised', async () => {
+      const onCodexNotification = vi.fn();
+      const onUnrecognizedMessage = vi.fn();
+      const onLog = vi.fn();
+      await startClient({ onCodexNotification, onUnrecognizedMessage, onLog });
+
+      for (const n of fx.completedTurnNotifications) emitMessage(mockProc, n);
+
+      expect(onCodexNotification.mock.calls.map(([n]) => n)).toEqual(fx.completedTurnNotifications);
+      expect(onUnrecognizedMessage).not.toHaveBeenCalled();
+      expect(onLog.mock.calls.filter(([level]) => level !== 'info')).toEqual([]);
+    });
+
+    it('covers deltas, item lifecycle, plan, usage, rate limits, errors and completion', () => {
+      const methods = new Set(fx.completedTurnNotifications.map((n) => n.method));
+      for (const method of [
+        'turn/started',
+        'item/started',
+        'item/completed',
+        'item/agentMessage/delta',
+        'item/reasoning/summaryTextDelta',
+        'item/commandExecution/outputDelta',
+        'item/fileChange/patchUpdated',
+        'turn/diff/updated',
+        'turn/plan/updated',
+        'thread/tokenUsage/updated',
+        'account/rateLimits/updated',
+        'error',
+        'turn/completed',
+      ] as const) {
+        expect(methods.has(method)).toBe(true);
+        expect(isKnownNotificationMethod(method)).toBe(true);
+      }
+    });
+
+    it.each([
+      ['completed', fx.completedTurnNotifications.find((n) => n.method === 'turn/completed')],
+      ['interrupted', fx.interruptedTurnCompleted],
+      ['failed', fx.failedTurnCompleted],
+    ])('passes a %s turn/completed through with its status and error', async (status, notification) => {
+      const onCodexNotification = vi.fn();
+      await startClient({ onCodexNotification });
+
+      emitMessage(mockProc, notification);
+
+      const delivered = onCodexNotification.mock.calls[0][0] as Extract<ServerNotification, { method: 'turn/completed' }>;
+      expect(delivered.params.turn.status).toBe(status);
+      if (status === 'failed') {
+        expect(delivered.params.turn.error).toMatchObject({ codexErrorInfo: 'usageLimitExceeded' });
+      } else {
+        expect(delivered.params.turn.error).toBeNull();
+      }
+    });
+
+    it('surfaces an unknown notification without crashing or dropping later messages', async () => {
+      const onCodexNotification = vi.fn();
+      const onUnrecognizedMessage = vi.fn();
+      const onLog = vi.fn();
+      await startClient({ onCodexNotification, onUnrecognizedMessage, onLog });
+
+      emitMessage(mockProc, { method: 'thread/somethingNew', params: { threadId: fx.THREAD_ID } });
+      emitMessage(mockProc, fx.completedTurnNotifications[1]);
+
+      expect(onUnrecognizedMessage).toHaveBeenCalledWith({ kind: 'notification', method: 'thread/somethingNew', params: { threadId: fx.THREAD_ID } });
+      expect(onLog).toHaveBeenCalledWith('warn', 'Unrecognized Codex notification', { method: 'thread/somethingNew' });
+      expect(onCodexNotification).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces a message with neither id nor method', async () => {
+      const onUnrecognizedMessage = vi.fn();
+      const onLog = vi.fn();
+      await startClient({ onUnrecognizedMessage, onLog });
+
+      emitMessage(mockProc, { data: 'orphan' });
+
+      expect(onUnrecognizedMessage).toHaveBeenCalledWith({ kind: 'other', message: { data: 'orphan' } });
+      expect(onLog).toHaveBeenCalledWith('warn', 'Codex message with neither id nor method', { keys: ['data'] });
+    });
+
+    it('a throwing notification handler is logged and does not stop the stream', async () => {
+      const onLog = vi.fn();
+      const onCodexNotification = vi.fn().mockImplementationOnce(() => { throw new Error('boom'); });
+      await startClient({ onLog, onCodexNotification });
+
+      emitMessage(mockProc, fx.completedTurnNotifications[0]);
+      emitMessage(mockProc, fx.completedTurnNotifications[1]);
+
+      expect(onCodexNotification).toHaveBeenCalledTimes(2);
+      expect(onLog).toHaveBeenCalledWith('error', 'Codex onCodexNotification handler threw', { error: 'boom' });
+    });
+
+    it('logs a response for an unknown request id', async () => {
+      const onLog = vi.fn();
+      await startClient({ onLog });
+
+      emitMessage(mockProc, { id: 99, result: {} });
+
+      expect(onLog).toHaveBeenCalledWith('warn', 'RPC response for unknown request', { id: 99 });
+    });
+  });
+
+  // ── Server requests (approvals) ──────────────────────────────────────────
+
+  describe('server requests', () => {
+    it('delivers a command approval request typed, and tracks it as open', async () => {
+      const onCodexServerRequest = vi.fn();
+      const client = await startClient({ onCodexServerRequest });
+
+      emitMessage(mockProc, fx.commandApprovalRequest);
+
+      expect(onCodexServerRequest).toHaveBeenCalledWith(fx.commandApprovalRequest);
+      expect(client.getOpenServerRequests().get(0)).toBe('item/commandExecution/requestApproval');
+      expect(mockProc.stdin.write).not.toHaveBeenCalled();
+    });
+
+    it('lists every command decision the request allows', () => {
+      expect(commandApprovalDecisions(fx.commandApprovalRequest.params)).toEqual([
+        'accept',
+        'acceptForSession',
+        { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['npm', 'install'] } },
+        { applyNetworkPolicyAmendment: { network_policy_amendment: { host: 'registry.npmjs.org', action: 'allow' } } },
+        'decline',
+        'cancel',
+      ]);
+    });
+
+    it('omits amendment decisions when nothing was proposed', () => {
+      const params = { ...fx.commandApprovalRequest.params, proposedExecpolicyAmendment: null, proposedNetworkPolicyAmendments: null };
+      expect(commandApprovalDecisions(params)).toEqual(['accept', 'acceptForSession', 'decline', 'cancel']);
+    });
+
+    it.each(commandApprovalDecisions(fx.commandApprovalRequest.params).map((d) => [JSON.stringify(d), d]))(
+      'answers a command approval with %s',
+      async (_label, decision) => {
+        const client = await startClient({ onCodexServerRequest: vi.fn() });
+        emitMessage(mockProc, fx.commandApprovalRequest);
+
+        client.respondToCommandApproval(fx.commandApprovalRequest.id, decision);
+
+        expect(lastSent(mockProc)).toEqual({ id: 0, result: { decision } });
+        expect(client.getOpenServerRequests().size).toBe(0);
+      },
+    );
+
+    it.each(FILE_CHANGE_APPROVAL_DECISIONS.map((d) => [d]))('answers a file-change approval with %s', async (decision) => {
+      const onCodexServerRequest = vi.fn();
+      const client = await startClient({ onCodexServerRequest });
+      emitMessage(mockProc, fx.fileChangeApprovalRequest);
+      expect(onCodexServerRequest).toHaveBeenCalledWith(fx.fileChangeApprovalRequest);
+
+      client.respondToFileChangeApproval(fx.fileChangeApprovalRequest.id, decision);
+
+      expect(lastSent(mockProc)).toEqual({ id: 1, result: { decision } });
+    });
+
+    it('drops a request Codex resolved itself (serverRequest/resolved)', async () => {
+      const client = await startClient({ onCodexServerRequest: vi.fn() });
+      emitMessage(mockProc, fx.fileChangeApprovalRequest);
+
+      emitMessage(mockProc, fx.serverRequestResolved);
+
+      expect(client.getOpenServerRequests().size).toBe(0);
+    });
+
+    it('answers with method-not-found when nothing handles server requests', async () => {
+      const client = await startClient();
+
+      emitMessage(mockProc, fx.commandApprovalRequest);
+
+      expect(lastSent(mockProc)).toEqual({
+        id: 0,
+        error: { code: CODEX_RPC_METHOD_NOT_FOUND, message: "No handler for 'item/commandExecution/requestApproval'" },
+      });
+      expect(client.getOpenServerRequests().size).toBe(0);
+    });
+
+    it('answers with an internal error when the handler throws', async () => {
+      const onLog = vi.fn();
+      await startClient({ onLog, onCodexServerRequest: () => { throw new Error('ui gone'); } });
+
+      emitMessage(mockProc, fx.commandApprovalRequest);
+
+      expect(lastSent(mockProc)).toEqual({
+        id: 0,
+        error: { code: CODEX_RPC_INTERNAL_ERROR, message: "Clubhouse failed to handle 'item/commandExecution/requestApproval'" },
+      });
+      expect(onLog).toHaveBeenCalledWith('error', 'Codex onCodexServerRequest handler threw', { error: 'ui gone' });
+    });
+
+    it('does not double-answer when the handler answered before throwing', async () => {
+      const client: CodexAppServerClient = await startClient({
+        onCodexServerRequest: (req) => {
+          client.respondToCommandApproval(req.id, 'decline');
+          throw new Error('after answering');
+        },
+      });
+
+      emitMessage(mockProc, fx.commandApprovalRequest);
+
+      expect(sentMessages(mockProc)).toEqual([{ id: 0, result: { decision: 'decline' } }]);
+    });
+
+    it('answers an unknown server request with method-not-found and surfaces it', async () => {
+      const onCodexServerRequest = vi.fn();
+      const onUnrecognizedMessage = vi.fn();
+      await startClient({ onCodexServerRequest, onUnrecognizedMessage });
+
+      emitMessage(mockProc, { id: 'srv-9', method: 'item/somethingNew/requestApproval', params: { a: 1 } });
+
+      expect(onCodexServerRequest).not.toHaveBeenCalled();
+      expect(lastSent(mockProc)).toEqual({
+        id: 'srv-9',
+        error: { code: CODEX_RPC_METHOD_NOT_FOUND, message: "Clubhouse does not support 'item/somethingNew/requestApproval'" },
+      });
+      expect(onUnrecognizedMessage).toHaveBeenCalledWith({ kind: 'request', id: 'srv-9', method: 'item/somethingNew/requestApproval', params: { a: 1 } });
+    });
+
+    it('knows every server request method in the pinned schema', () => {
+      expect(isKnownServerRequestMethod('item/commandExecution/requestApproval')).toBe(true);
+      expect(isKnownServerRequestMethod('item/fileChange/requestApproval')).toBe(true);
+      expect(isKnownServerRequestMethod('nope')).toBe(false);
+    });
+
+    it('warns when answering a request that is not open', async () => {
+      const onLog = vi.fn();
+      const client = await startClient({ onLog });
+
+      client.respond('srv-1', { decision: 'accept' });
+
+      expect(lastSent(mockProc)).toEqual({ id: 'srv-1', result: { decision: 'accept' } });
+      expect(onLog).toHaveBeenCalledWith('warn', 'Answering a Codex server request that is not open', { id: 'srv-1' });
+    });
   });
 });

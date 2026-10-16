@@ -1,0 +1,2 @@
+# Vendored `codex app-server generate-ts` output (scripts/generate-codex-app-server-types.mjs).
+src/main/orchestrators/adapters/codex-protocol/generated/** linguist-generated=true eol=lf
