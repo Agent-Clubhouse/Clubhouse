@@ -680,9 +680,11 @@ describe('auto-update-service', () => {
         '/tmp/download.zip',
         '/tmp/script.sh',
       );
-      expect(script).toContain("'/Applications/My App.app'");
-      expect(script).toContain("'/tmp/New App.app'");
-      expect(script).not.toContain('"');
+      expect(script).toContain("APP='/Applications/My App.app'");
+      expect(script).toContain("NEW_APP='/tmp/New App.app'");
+      // Raw paths appear only in their single-quoted assignments; commands use "$VAR"
+      expect(script.split('My App.app').length - 1).toBe(1);
+      expect(script.split('New App.app').length - 1).toBe(1);
     });
 
     it('prevents injection via malicious path with backticks', () => {
@@ -812,7 +814,7 @@ describe('auto-update-service', () => {
       // unzip is called with positional args (all paths are shell-escaped)
       expect(script).toContain('unzip');
       expect(script).not.toContain('eval');
-      // The only $() allowed is the safe APP_PATH=$(find ...) variable assignment
+      // The only $() allowed is the safe NEW_APP=$(find ...) variable assignment
       // with a shell-escaped path; it should NOT include raw user-controlled data.
       const subshells = script.match(/\$\([^)]+\)/g) ?? [];
       for (const s of subshells) {
