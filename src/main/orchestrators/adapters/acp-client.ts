@@ -1,4 +1,5 @@
 import { NdjsonRpcBase, DEFAULT_RPC_TIMEOUT_MS, type BaseRpcOpts, type RpcRequestOptions } from './ndjson-rpc-base';
+import type { InitializeRequest, InitializeResponse } from './acp-schema';
 
 /** Rich RPC error that preserves error code and optional data from the JSON-RPC response. */
 export class RpcError extends Error {
@@ -49,6 +50,11 @@ export type JsonRpcMessage =
 
 export interface AcpClientOpts extends BaseRpcOpts {
   clientInfo?: { name: string; version: string };
+  /**
+   * Full `initialize` params.  When omitted the client advertises protocol v1
+   * and no client-side methods (no fs/*, no terminal/*).
+   */
+  initialize?: InitializeRequest;
 }
 
 /**
@@ -63,8 +69,11 @@ export class AcpClient extends NdjsonRpcBase<AcpClientOpts> {
   protected readonly exitLabel = 'ACP process';
   protected readonly malformedLabel = 'ACP';
 
-  /** Spawn the child process, begin parsing stdout, and complete the ACP init handshake. */
-  async start(): Promise<void> {
+  /**
+   * Spawn the child process, begin parsing stdout, and complete the ACP init
+   * handshake.  Resolves with the agent's `initialize` response.
+   */
+  async start(): Promise<InitializeResponse> {
     this.log('info', 'Spawning ACP process', {
       binary: this.opts.binary,
       args: this.opts.args,
@@ -76,9 +85,8 @@ export class AcpClient extends NdjsonRpcBase<AcpClientOpts> {
     // Perform ACP initialization handshake
     this.log('info', 'Starting ACP init handshake');
     // ACP v1 has no `initialized` notification — the initialize response
-    // completes the handshake.  Clubhouse serves none of the client-side
-    // methods (fs/*, terminal/*), so it advertises none.
-    await this.request('initialize', {
+    // completes the handshake.
+    const result = await this.request('initialize', this.opts.initialize ?? {
       protocolVersion: 1,
       clientInfo: this.opts.clientInfo ?? { name: 'clubhouse', version: '1.0.0' },
       clientCapabilities: {
@@ -87,6 +95,7 @@ export class AcpClient extends NdjsonRpcBase<AcpClientOpts> {
       },
     });
     this.log('info', 'ACP init handshake complete');
+    return (result ?? { protocolVersion: 0 }) as InitializeResponse;
   }
 
   /**
@@ -137,9 +146,9 @@ export class AcpClient extends NdjsonRpcBase<AcpClientOpts> {
    * Send a JSON-RPC error back to the server.  Every agent-initiated request
    * must be answered, or the agent blocks its turn waiting on it.
    */
-  respondWithError(id: number | string, code: number, message: string): void {
+  respondWithError(id: number | string, code: number, message: string, data?: unknown): void {
     this.log('warn', `RPC error response → id=${id}`, { code, message });
-    const msg: JsonRpcResponse = { jsonrpc: '2.0', id, error: { code, message } };
+    const msg: JsonRpcResponse = { jsonrpc: '2.0', id, error: { code, message, ...(data !== undefined && { data }) } };
     this.send(msg as unknown as Record<string, unknown>);
   }
 
