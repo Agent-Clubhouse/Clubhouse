@@ -25,6 +25,11 @@ vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
 
+vi.mock('../services/file-watch-service', () => ({
+  startWatch: vi.fn(),
+  stopWatch: vi.fn(),
+}));
+
 vi.mock('../services/path-sandbox', () => ({
   assertAllowedPath: vi.fn(),
 }));
@@ -47,6 +52,7 @@ import * as fileService from '../services/file-service';
 import { appLog } from '../services/log-service';
 import { assertAllowedPath } from '../services/path-sandbox';
 import { editorSettings } from './settings-handlers';
+import { startWatch, stopWatch } from '../services/file-watch-service';
 
 describe('file-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -115,6 +121,15 @@ describe('file-handlers', () => {
     await handler({ sender }, '/project', {});
 
     expect(sender.off).toHaveBeenCalledWith('destroyed', expect.any(Function));
+  });
+
+  it('WATCH_START / WATCH_STOP scope the watch to the calling webContents', async () => {
+    const sender = { id: 42 };
+    await handlers.get(IPC.FILE.WATCH_START)!({ sender }, 'plugin:files:1', '/project/**/*.ts');
+    expect(startWatch).toHaveBeenCalledWith('plugin:files:1', '/project/**/*.ts', sender);
+
+    await handlers.get(IPC.FILE.WATCH_STOP)!({ sender }, 'plugin:files:1');
+    expect(stopWatch).toHaveBeenCalledWith('plugin:files:1', 42);
   });
 
   it('READ delegates to fileService.readFile', async () => {

@@ -1,4 +1,5 @@
 import { spawn as cpSpawn, ChildProcess } from 'child_process';
+import { StringDecoder } from 'string_decoder';
 import type { StructuredAdapter, StructuredSessionOpts } from '../types';
 import type { StructuredEvent } from '../../../shared/structured-events';
 import { AsyncQueue } from './async-queue';
@@ -126,16 +127,27 @@ export class StreamJsonAdapter implements StructuredAdapter {
       }
     });
 
+    // Decode incrementally so a multi-byte UTF-8 character split across two
+    // chunks is reassembled instead of becoming U+FFFD replacement chars.
+    const stdoutDecoder = new StringDecoder('utf8');
     proc.stdout?.on('data', (chunk: Buffer) => {
-      parser.feed(chunk.toString());
+      parser.feed(stdoutDecoder.write(chunk));
+    });
+    proc.stdout?.on('end', () => {
+      const tail = stdoutDecoder.end();
+      if (tail) parser.feed(tail);
     });
 
     // Accumulate stderr for logging; only emit as error on non-zero exit.
     // CLI tools write diagnostic info (progress, warnings) to stderr which
     // is not an error condition and should not flood the UI.
     let stderrBuffer = '';
+    const stderrDecoder = new StringDecoder('utf8');
     proc.stderr?.on('data', (chunk: Buffer) => {
-      stderrBuffer += chunk.toString();
+      stderrBuffer += stderrDecoder.write(chunk);
+    });
+    proc.stderr?.on('end', () => {
+      stderrBuffer += stderrDecoder.end();
     });
 
     let exited = false;

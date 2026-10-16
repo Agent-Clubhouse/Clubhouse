@@ -17,7 +17,7 @@ vi.mock('../../shared/ipc-channels', () => ({
   },
 }));
 
-import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount, extractBaseDir, _activeWatches, MAX_PENDING_EVENTS } from './file-watch-service';
+import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount, extractBaseDir, _activeWatches, _watchKey, MAX_PENDING_EVENTS } from './file-watch-service';
 import type { BrowserWindow } from 'electron';
 
 /**
@@ -88,44 +88,74 @@ describe('file-watch-service', () => {
       const sender = makeSender();
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
       expect(getActiveWatchCount()).toBe(1);
-      stopWatch('w1');
+      stopWatch('w1', sender.id);
       expect(getActiveWatchCount()).toBe(0);
     });
 
-    it('replaces existing watch with same ID', () => {
-      const sender1 = makeSender(1);
-      const sender2 = makeSender(2);
-      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender1 as any);
+    it('replaces existing watch with same ID from the same sender', () => {
+      const sender = makeSender(1);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      const first = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
+      const closeSpy = vi.spyOn(first.watcher, 'close');
       expect(getActiveWatchCount()).toBe(1);
       // Re-registering same watchId replaces the old one without error
       expect(() =>
-        startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender2 as any),
+        startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any),
       ).not.toThrow();
+      expect(closeSpy).toHaveBeenCalled();
       expect(getActiveWatchCount()).toBe(1);
-      stopWatch('w1');
+      stopWatch('w1', sender.id);
+    });
+
+    it('keeps same watch ID from different senders independent', () => {
+      const sender1 = makeSender(1);
+      const sender2 = makeSender(2);
+      startWatch('plugin:files:1', path.join(tmpDir, '**', '*.ts'), sender1 as any);
+      startWatch('plugin:files:1', path.join(tmpDir, '**', '*.ts'), sender2 as any);
+      expect(getActiveWatchCount()).toBe(2);
+
+      const entry1 = _activeWatches.get(_watchKey(sender1.id, 'plugin:files:1'))!;
+      const entry2 = _activeWatches.get(_watchKey(sender2.id, 'plugin:files:1'))!;
+      expect(entry1.sender).toBe(sender1);
+      expect(entry2.sender).toBe(sender2);
     });
   });
 
   describe('stopWatch', () => {
     it('is a no-op for unknown watchId', () => {
-      expect(() => stopWatch('nonexistent')).not.toThrow();
+      expect(() => stopWatch('nonexistent', 1)).not.toThrow();
+    });
+
+    it('does not stop another sender\'s watch with the same ID', () => {
+      const sender1 = makeSender(1);
+      const sender2 = makeSender(2);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender1 as any);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender2 as any);
+      const closeSpy1 = vi.spyOn(_activeWatches.get(_watchKey(sender1.id, 'w1'))!.watcher, 'close');
+
+      stopWatch('w1', sender2.id);
+
+      expect(closeSpy1).not.toHaveBeenCalled();
+      expect(_activeWatches.has(_watchKey(sender1.id, 'w1'))).toBe(true);
+      expect(_activeWatches.has(_watchKey(sender2.id, 'w1'))).toBe(false);
+      expect(sender1._listenerCount('destroyed')).toBe(1);
     });
 
     it('stops an active watch and clears pending debounce timer', () => {
       const sender = makeSender();
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
       expect(getActiveWatchCount()).toBe(1);
-      stopWatch('w1');
+      stopWatch('w1', sender.id);
       expect(getActiveWatchCount()).toBe(0);
       // Second stop is a no-op
-      expect(() => stopWatch('w1')).not.toThrow();
+      expect(() => stopWatch('w1', sender.id)).not.toThrow();
     });
 
     it('removes the destroyed listener from the sender', () => {
       const sender = makeSender();
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
       expect(sender._listenerCount('destroyed')).toBe(1);
-      stopWatch('w1');
+      stopWatch('w1', sender.id);
       expect(sender._listenerCount('destroyed')).toBe(0);
     });
   });
@@ -154,7 +184,7 @@ describe('file-watch-service', () => {
 
       // w10 should be gone, w20 should remain
       expect(getActiveWatchCount()).toBe(1);
-      stopWatch('w20');
+      stopWatch('w20', sender2.id);
       expect(getActiveWatchCount()).toBe(0);
     });
 
@@ -168,7 +198,7 @@ describe('file-watch-service', () => {
 
       // w99 should still be active
       expect(getActiveWatchCount()).toBe(1);
-      stopWatch('w99');
+      stopWatch('w99', sender.id);
     });
   });
 
@@ -196,7 +226,7 @@ describe('file-watch-service', () => {
 
       // w2 should still be alive
       expect(getActiveWatchCount()).toBe(1);
-      stopWatch('w2');
+      stopWatch('w2', sender2.id);
       expect(getActiveWatchCount()).toBe(0);
     });
 
@@ -210,20 +240,19 @@ describe('file-watch-service', () => {
       expect(sender._listenerCount('destroyed')).toBe(1);
     });
 
-    it('old sender destroyed does not stop new watch after replacement', () => {
+    it('destroying one sender does not stop another sender\'s watch with the same ID', () => {
       const senderA = makeSender(1);
       const senderB = makeSender(2);
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), senderA as any);
-
-      // Replace with different sender
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), senderB as any);
-      expect(getActiveWatchCount()).toBe(1);
+      expect(getActiveWatchCount()).toBe(2);
 
-      // Destroy old sender — should NOT affect the new watch
+      // Destroy sender A — should NOT affect sender B's watch
       senderA._emit('destroyed');
       expect(getActiveWatchCount()).toBe(1);
+      expect(_activeWatches.has(_watchKey(senderB.id, 'w1'))).toBe(true);
 
-      stopWatch('w1');
+      stopWatch('w1', senderB.id);
     });
   });
 
@@ -256,7 +285,7 @@ describe('file-watch-service', () => {
       const sender = makeSender();
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const entry = _activeWatches.get('w1')!;
+      const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       // Simulate multiple events for the same path
       entry.pendingEvents.set('/tmp/file.ts', 'created');
       entry.pendingEvents.set('/tmp/file.ts', 'modified');
@@ -271,7 +300,7 @@ describe('file-watch-service', () => {
       const sender = makeSender();
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const entry = _activeWatches.get('w1')!;
+      const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       entry.pendingEvents.set('/tmp/a.ts', 'created');
       entry.pendingEvents.set('/tmp/b.ts', 'modified');
       entry.pendingEvents.set('/tmp/a.ts', 'deleted');
@@ -287,7 +316,7 @@ describe('file-watch-service', () => {
       const sender = makeSender();
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const entry = _activeWatches.get('w1')!;
+      const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       expect(entry.pendingEvents).toBeInstanceOf(Map);
     });
 
@@ -295,7 +324,7 @@ describe('file-watch-service', () => {
       const sender = makeSender();
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const entry = _activeWatches.get('w1')!;
+      const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       // Simulate 5000 events but only 10 unique paths
       for (let i = 0; i < 5000; i++) {
         entry.pendingEvents.set(`/tmp/file-${i % 10}.ts`, 'modified');
@@ -322,7 +351,7 @@ describe('file-watch-service', () => {
       cleanupWatchesForWindow(makeWindow(100));
 
       expect(getActiveWatchCount()).toBe(1);
-      stopWatch('wB');
+      stopWatch('wB', senderB.id);
     });
   });
 
@@ -353,7 +382,7 @@ describe('file-watch-service', () => {
         }
       }
 
-      stopWatch('ar1');
+      stopWatch('ar1', sender.id);
     });
 
     it('classifies rename of a deleted file as deleted', async () => {
@@ -388,7 +417,7 @@ describe('file-watch-service', () => {
         }
       }
 
-      stopWatch('ar2');
+      stopWatch('ar2', sender.id);
     });
 
     it('does not push events if watch was stopped during async check', async () => {
@@ -404,7 +433,7 @@ describe('file-watch-service', () => {
       fs.writeFileSync(path.join(tmpDir, 'src', 'ephemeral.ts'), 'export {};');
 
       // Stop the watch immediately — in-flight async callbacks should bail
-      stopWatch('ar3');
+      stopWatch('ar3', sender.id);
 
       // Wait for any in-flight async access checks to resolve
       await new Promise((r) => setTimeout(r, 500));
@@ -446,7 +475,7 @@ describe('file-watch-service', () => {
         expect(allEvents.some((e: { path: string }) => e.path.endsWith('.js'))).toBe(false);
       }
 
-      stopWatch('gf1');
+      stopWatch('gf1', sender.id);
     });
 
     it('should forward events for nested files matching the glob', async () => {
@@ -472,7 +501,7 @@ describe('file-watch-service', () => {
         expect(allEvents.some((e: { path: string }) => e.path.includes('App.ts'))).toBe(true);
       }
 
-      stopWatch('gf2');
+      stopWatch('gf2', sender.id);
     });
 
     it('should not forward events for files outside the glob scope', async () => {
@@ -499,7 +528,7 @@ describe('file-watch-service', () => {
         expect(allEvents.some((e: { path: string }) => e.path.endsWith('.md'))).toBe(false);
       }
 
-      stopWatch('gf3');
+      stopWatch('gf3', sender.id);
     });
   });
 });
@@ -523,7 +552,7 @@ describe('file-watch lifecycle and cleanup', () => {
       const sender = makeSender(10);
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const entry = _activeWatches.get('w1')!;
+      const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       const closeSpy = vi.spyOn(entry.watcher, 'close');
 
       cleanupWatchesForWindow(makeWindow(10));
@@ -546,7 +575,7 @@ describe('file-watch lifecycle and cleanup', () => {
       const sender = makeSender(10);
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const entry = _activeWatches.get('w1')!;
+      const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       // Simulate a pending debounce by setting a timer
       entry.pendingEvents.set('/tmp/test.ts', 'modified');
       entry.debounceTimer = setTimeout(() => {}, 10000);
@@ -566,9 +595,9 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
       startWatch('w3', path.join(tmpDir, '**', '*.json'), sender as any);
 
-      const closeSpy1 = vi.spyOn(_activeWatches.get('w1')!.watcher, 'close');
-      const closeSpy2 = vi.spyOn(_activeWatches.get('w2')!.watcher, 'close');
-      const closeSpy3 = vi.spyOn(_activeWatches.get('w3')!.watcher, 'close');
+      const closeSpy1 = vi.spyOn(_activeWatches.get(_watchKey(sender.id, 'w1'))!.watcher, 'close');
+      const closeSpy2 = vi.spyOn(_activeWatches.get(_watchKey(sender.id, 'w2'))!.watcher, 'close');
+      const closeSpy3 = vi.spyOn(_activeWatches.get(_watchKey(sender.id, 'w3'))!.watcher, 'close');
 
       cleanupWatchesForWindow(makeWindow(10));
 
@@ -585,7 +614,7 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w10', path.join(tmpDir, '**', '*.ts'), sender10 as any);
       startWatch('w20', path.join(tmpDir, '**', '*.ts'), sender20 as any);
 
-      const closeSpy20 = vi.spyOn(_activeWatches.get('w20')!.watcher, 'close');
+      const closeSpy20 = vi.spyOn(_activeWatches.get(_watchKey(sender20.id, 'w20'))!.watcher, 'close');
 
       cleanupWatchesForWindow(makeWindow(10));
 
@@ -600,7 +629,7 @@ describe('file-watch lifecycle and cleanup', () => {
       const sender = makeSender(5);
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const closeSpy = vi.spyOn(_activeWatches.get('w1')!.watcher, 'close');
+      const closeSpy = vi.spyOn(_activeWatches.get(_watchKey(sender.id, 'w1'))!.watcher, 'close');
 
       sender._emit('destroyed');
 
@@ -612,7 +641,7 @@ describe('file-watch lifecycle and cleanup', () => {
       const sender = makeSender(5);
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const entry = _activeWatches.get('w1')!;
+      const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       entry.pendingEvents.set('/tmp/new.ts', 'created');
       entry.debounceTimer = setTimeout(() => {}, 10000);
 
@@ -643,7 +672,7 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('wA', path.join(tmpDir, '**', '*.ts'), senderA as any);
       startWatch('wB', path.join(tmpDir, '**', '*.ts'), senderB as any);
 
-      const closeSpyB = vi.spyOn(_activeWatches.get('wB')!.watcher, 'close');
+      const closeSpyB = vi.spyOn(_activeWatches.get(_watchKey(senderB.id, 'wB'))!.watcher, 'close');
 
       senderA._emit('destroyed');
 
@@ -657,7 +686,7 @@ describe('file-watch lifecycle and cleanup', () => {
       sender.isDestroyed.mockReturnValue(false);
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const entry = _activeWatches.get('w1')!;
+      const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       // Simulate pending events waiting to be flushed
       entry.pendingEvents.set('/tmp/a.ts', 'created');
       entry.pendingEvents.set('/tmp/b.ts', 'modified');
@@ -666,7 +695,7 @@ describe('file-watch lifecycle and cleanup', () => {
       sender._emit('destroyed');
 
       // Entry should be fully cleaned up
-      expect(_activeWatches.has('w1')).toBe(false);
+      expect(_activeWatches.has(_watchKey(sender.id, 'w1'))).toBe(false);
       expect(getActiveWatchCount()).toBe(0);
 
       // Running timers should not throw or send events
@@ -681,8 +710,8 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
       startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
 
-      const closeSpy1 = vi.spyOn(_activeWatches.get('w1')!.watcher, 'close');
-      const closeSpy2 = vi.spyOn(_activeWatches.get('w2')!.watcher, 'close');
+      const closeSpy1 = vi.spyOn(_activeWatches.get(_watchKey(sender.id, 'w1'))!.watcher, 'close');
+      const closeSpy2 = vi.spyOn(_activeWatches.get(_watchKey(sender.id, 'w2'))!.watcher, 'close');
 
       stopAllWatches();
 
@@ -712,8 +741,8 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
 
       // Simulate pending debounce timers
-      const entry1 = _activeWatches.get('w1')!;
-      const entry2 = _activeWatches.get('w2')!;
+      const entry1 = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
+      const entry2 = _activeWatches.get(_watchKey(sender.id, 'w2'))!;
       entry1.debounceTimer = setTimeout(() => {}, 10000);
       entry2.debounceTimer = setTimeout(() => {}, 10000);
       entry1.pendingEvents.set('/tmp/a.ts', 'modified');
@@ -765,12 +794,12 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
 
       // Save real close so we can release the native handle after the test
-      const entry1 = _activeWatches.get('w1')!;
+      const entry1 = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       const realClose1 = entry1.watcher.close.bind(entry1.watcher);
       vi.spyOn(entry1.watcher, 'close').mockImplementation(() => {
         throw new Error('already closed');
       });
-      const closeSpy2 = vi.spyOn(_activeWatches.get('w2')!.watcher, 'close');
+      const closeSpy2 = vi.spyOn(_activeWatches.get(_watchKey(sender.id, 'w2'))!.watcher, 'close');
 
       expect(() => stopAllWatches()).not.toThrow();
 
@@ -785,7 +814,7 @@ describe('file-watch lifecycle and cleanup', () => {
       const sender = makeSender(10);
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
-      const entry = _activeWatches.get('w1')!;
+      const entry = _activeWatches.get(_watchKey(sender.id, 'w1'))!;
       const realClose = entry.watcher.close.bind(entry.watcher);
       vi.spyOn(entry.watcher, 'close').mockImplementation(() => {
         throw new Error('already closed');
@@ -793,7 +822,7 @@ describe('file-watch lifecycle and cleanup', () => {
 
       expect(() => cleanupWatchesForWindow(makeWindow(10))).not.toThrow();
 
-      expect(_activeWatches.has('w1')).toBe(false);
+      expect(_activeWatches.has(_watchKey(sender.id, 'w1'))).toBe(false);
       expect(getActiveWatchCount()).toBe(0);
 
       // Close the leaked native handle to avoid keeping the process alive on Windows

@@ -63,6 +63,27 @@ function makeRequest(port: number, method: string, path: string, body?: unknown,
   });
 }
 
+/** POST a body in two separate socket writes, split at the given byte offset. */
+function postSplitBody(port: number, path: string, data: Buffer, splitAt: number, nonce: string): Promise<{ statusCode: number; body: any }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': data.length, 'X-Clubhouse-Nonce': nonce },
+    }, (res) => {
+      let responseBody = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { responseBody += chunk; });
+      res.on('end', () => resolve({ statusCode: res.statusCode || 0, body: JSON.parse(responseBody) }));
+    });
+    req.on('error', reject);
+    req.write(data.subarray(0, splitAt));
+    setTimeout(() => req.end(data.subarray(splitAt)), 20);
+  });
+}
+
 describe('BridgeServer', () => {
   let port: number;
 
@@ -95,6 +116,15 @@ describe('BridgeServer', () => {
     expect(body.result.protocolVersion).toBe('2024-11-05');
     expect(body.result.capabilities.tools.listChanged).toBe(true);
     expect(body.result.serverInfo.name).toBe('clubhouse');
+  });
+
+  it('decodes multi-byte UTF-8 characters split across request chunks', async () => {
+    const data = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 'req-€-🎉', method: 'initialize', params: {} }));
+    const splitAt = data.indexOf(Buffer.from('€')) + 1;
+    const { statusCode, body } = await postSplitBody(port, '/mcp/agent-1', data, splitAt, 'test-nonce');
+
+    expect(statusCode).toBe(200);
+    expect(body.id).toBe('req-€-🎉');
   });
 
   it('handles tools/list with empty bindings', async () => {

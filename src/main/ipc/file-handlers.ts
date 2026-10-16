@@ -158,8 +158,8 @@ export function registerFileHandlers(): void {
     startWatch(watchId, glob, event.sender);
   }));
 
-  ipcMain.handle(IPC.FILE.WATCH_STOP, withValidatedArgs([stringArg()], (_event, watchId: string) => {
-    stopWatch(watchId);
+  ipcMain.handle(IPC.FILE.WATCH_STOP, withValidatedArgs([stringArg()], (event, watchId: string) => {
+    stopWatch(watchId, event.sender.id);
   }));
 
   ipcMain.handle(IPC.FILE.SEARCH, withValidatedArgs([

@@ -121,6 +121,25 @@ function getFromServer(port: number, path: string): Promise<number> {
   });
 }
 
+/** POST a body in two separate socket writes, split at the given byte offset. */
+function postSplitBody(port: number, urlPath: string, data: Buffer, splitAt: number, extraHeaders?: Record<string, string>): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: urlPath,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': data.length, ...extraHeaders },
+    }, (res) => {
+      res.resume();
+      resolve(res.statusCode || 0);
+    });
+    req.on('error', reject);
+    req.write(data.subarray(0, splitAt));
+    setTimeout(() => req.end(data.subarray(splitAt)), 20);
+  });
+}
+
 describe('hook-server', () => {
   let port: number;
 
@@ -211,6 +230,20 @@ describe('hook-server', () => {
           toolVerb: 'Running command',
           timestamp: expect.any(Number),
         })
+      );
+    });
+
+    it('decodes multi-byte UTF-8 characters split across request chunks', async () => {
+      const parseHookEvent = vi.fn(() => mockNormalized);
+      mockResolveOrchestrator.mockResolvedValue({ parseHookEvent, toolVerb: vi.fn() });
+
+      const data = Buffer.from(JSON.stringify({ hook_event_name: 'PreToolUse', tool_input: { command: 'echo €🎉' } }));
+      const splitAt = data.indexOf(Buffer.from('🎉')) + 2;
+      await postSplitBody(port, '/hook/agent-1', data, splitAt, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(parseHookEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ tool_input: { command: 'echo €🎉' } }),
       );
     });
 

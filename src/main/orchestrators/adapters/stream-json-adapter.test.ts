@@ -514,6 +514,44 @@ describe('StreamJsonAdapter', () => {
     });
   });
 
+  // ── UTF-8 chunk boundaries ────────────────────────────────────────────────
+
+  it('reassembles multi-byte UTF-8 characters split across stdout chunks', async () => {
+    const adapter = new StreamJsonAdapter({ binary: 'claude' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    const bytes = Buffer.from(JSON.stringify({
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'text_delta', text: 'cost €5 🎉' },
+    }) + '\n');
+    // Split inside the 3-byte '€' and inside the 4-byte emoji
+    const euroAt = bytes.indexOf(Buffer.from('€')) + 1;
+    const emojiAt = bytes.indexOf(Buffer.from('🎉')) + 2;
+    mockProc.stdout.emit('data', bytes.subarray(0, euroAt));
+    mockProc.stdout.emit('data', bytes.subarray(euroAt, emojiAt));
+    mockProc.stdout.emit('data', bytes.subarray(emojiAt));
+    mockProc.emit('close', 0);
+
+    const events = await collectEvents(stream, 1);
+    expect(events[0].type).toBe('text_delta');
+    expect(events[0].data).toEqual({ text: 'cost €5 🎉' });
+  });
+
+  it('reassembles multi-byte UTF-8 characters split across stderr chunks', async () => {
+    const adapter = new StreamJsonAdapter({ binary: 'claude' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    const bytes = Buffer.from('Fehler: ungültig €');
+    const splitAt = bytes.indexOf(Buffer.from('€')) + 1;
+    mockProc.stderr.emit('data', bytes.subarray(0, splitAt));
+    mockProc.stderr.emit('data', bytes.subarray(splitAt));
+    mockProc.emit('close', 1);
+
+    const events = await collectEvents(stream, 1);
+    expect(events[0].data).toEqual({ code: 'stderr', message: 'Fehler: ungültig €' });
+  });
+
   it('handles process error event', async () => {
     const adapter = new StreamJsonAdapter({ binary: 'claude' });
     const stream = adapter.start(defaultSessionOpts);

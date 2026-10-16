@@ -34,7 +34,10 @@ export function waitReady(): Promise<number> {
 
 function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<string | null> {
   return new Promise((resolve) => {
-    let body = '';
+    // Collect raw Buffers and decode once at the end — `body += chunk` would
+    // decode each chunk separately and corrupt multi-byte UTF-8 characters
+    // split across chunk boundaries.
+    const chunks: Buffer[] = [];
     let bodySize = 0;
     let limitExceeded = false;
     req.on('data', (chunk: Buffer) => {
@@ -48,10 +51,10 @@ function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<
         resolve(null);
         return;
       }
-      body += chunk;
+      chunks.push(chunk);
     });
     req.on('end', () => {
-      if (!limitExceeded) resolve(body);
+      if (!limitExceeded) resolve(Buffer.concat(chunks).toString('utf8'));
     });
   });
 }
