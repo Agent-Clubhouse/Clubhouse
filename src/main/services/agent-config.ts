@@ -95,6 +95,8 @@ interface CacheEntry {
   revision: number;
   flushTimer: ReturnType<typeof setTimeout> | null;
   pendingFlush: Promise<void> | null;
+  /** Filesystem identity of the project directory (see projectIdentity). */
+  identity?: string;
 }
 
 function buildAgentsById(agents: DurableAgentConfig[]): Map<string, DurableAgentConfig> {
@@ -109,6 +111,128 @@ async function readAgentsEntry(projectPath: string): Promise<{ agents: DurableAg
 
 const configCache = new Map<string, CacheEntry>();
 const configWatchers = new Map<string, FSWatcher>();
+
+// ---------------------------------------------------------------------------
+// Cross-project durable ID ownership
+// ---------------------------------------------------------------------------
+//
+// Durable agent IDs must be unique across every project loaded in this app
+// run: the renderer agent store and main-process services (pty-manager,
+// structured/headless sessions, ...) are keyed by agent ID alone. Two project
+// directories can still hold the same ID — most commonly a `.clubhouse/`
+// folder copied from one project into another. Without intervention the
+// agent shows up under whichever project loaded last and both projects share
+// one live session slot.
+//
+// The first project to load an ID owns it; a later project loading the same
+// ID gets a freshly generated ID persisted through the normal revision-safe
+// flush. Ownership is tracked by directory identity (not the path string), so
+// the same project reached via a different spelling, a symlink or a re-added
+// store entry never collides with itself. Claims outlive cache entries
+// because the agents.json watcher clears the cache after every write.
+
+/** agent ID → identity of the project directory that owns it. */
+const agentIdOwners = new Map<string, string>();
+
+/**
+ * Stable identity for a project directory: device + inode when available,
+ * otherwise the resolved path.
+ */
+async function projectIdentity(projectPath: string): Promise<string> {
+  try {
+    const stats = await fsp.stat(projectPath);
+    if (stats && stats.ino) return `ino:${stats.dev}:${stats.ino}`;
+  } catch {
+    // Fall through — directory may not exist yet (or stat is unavailable).
+  }
+  return `path:${path.resolve(projectPath)}`;
+}
+
+function generateDurableId(): string {
+  return `durable_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Record `identity` as the owner of exactly the given agent IDs. */
+function syncAgentIdClaims(identity: string, agents: DurableAgentConfig[]): void {
+  const ids = new Set(agents.map((a) => a.id));
+  for (const [id, owner] of agentIdOwners) {
+    if (owner === identity && !ids.has(id)) agentIdOwners.delete(id);
+  }
+  for (const id of ids) {
+    if (!agentIdOwners.has(id)) agentIdOwners.set(id, identity);
+  }
+}
+
+/** Give an agent copied under a new ID its own icon file, best-effort. */
+async function copyAgentIconForNewId(icon: string, newId: string): Promise<string | undefined> {
+  try {
+    const iconsDir = await getAgentIconsDir();
+    const newIcon = `${newId}${path.extname(icon) || '.png'}`;
+    await fsp.copyFile(path.join(iconsDir, icon), path.join(iconsDir, newIcon));
+    return newIcon;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Regenerate IDs in `agents` that another project already owns. Synchronous
+ * so the ownership check and the claim on the new IDs cannot interleave with
+ * another project's load. Returns a new array (unchanged agents keep their
+ * object identity) plus the reassignments, or null when nothing collided.
+ */
+function reassignForeignAgentIds(
+  projectPath: string,
+  identity: string,
+  agents: DurableAgentConfig[],
+): { agents: DurableAgentConfig[]; reassigned: Array<{ agent: DurableAgentConfig; oldId: string }> } | null {
+  const isForeign = (id: string) => {
+    const owner = agentIdOwners.get(id);
+    return owner !== undefined && owner !== identity;
+  };
+  if (!agents.some((a) => isForeign(a.id))) return null;
+
+  const taken = new Set(agents.map((a) => a.id));
+  const reassigned: Array<{ agent: DurableAgentConfig; oldId: string }> = [];
+  const result = agents.map((agent) => {
+    if (!isForeign(agent.id)) return agent;
+    let newId = generateDurableId();
+    while (taken.has(newId) || agentIdOwners.has(newId)) newId = generateDurableId();
+    taken.add(newId);
+    agentIdOwners.set(newId, identity);
+    const copy: DurableAgentConfig = { ...agent, id: newId };
+    reassigned.push({ agent: copy, oldId: agent.id });
+    return copy;
+  });
+
+  appLog('core:agent-config', 'warn', `Reassigned ${reassigned.length} durable agent ID(s) already used by another project`, {
+    meta: {
+      projectPath,
+      reassigned: reassigned.map(({ agent, oldId }) => ({
+        oldId, newId: agent.id, name: agent.name, ownerIdentity: agentIdOwners.get(oldId),
+      })),
+    },
+  });
+  return { agents: result, reassigned };
+}
+
+/**
+ * Give reassigned agents their own icon files so deleting or replacing the
+ * original agent's icon cannot strip the copy's. Mutates the agents in place;
+ * returns whether any icon field changed.
+ */
+async function copyIconsForReassignedAgents(reassigned: Array<{ agent: DurableAgentConfig }>): Promise<boolean> {
+  let changed = false;
+  for (const { agent } of reassigned) {
+    if (!agent.icon) continue;
+    const newIcon = await copyAgentIconForNewId(agent.icon, agent.id);
+    if (newIcon) {
+      agent.icon = newIcon;
+      changed = true;
+    }
+  }
+  return changed;
+}
 
 /** How long to wait before flushing dirty cache entries to disk (ms) */
 const FLUSH_DELAY_MS = 100;
@@ -563,22 +687,45 @@ function scheduleFlush(projectPath: string, entry: CacheEntry): void {
 async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
   let entry = configCache.get(projectPath);
   if (!entry) {
-    const agents = await readAgentsFromDisk(projectPath);
+    const identity = await projectIdentity(projectPath);
+    const diskAgents = await readAgentsFromDisk(projectPath);
+    // A concurrent read may have populated the cache while we were awaiting.
+    const existing = configCache.get(projectPath);
+    if (existing) return existing.agents;
+
+    const reassignment = reassignForeignAgentIds(projectPath, identity, diskAgents);
+    const agents = reassignment?.agents ?? diskAgents;
     entry = {
       agents,
-      baselineAgents: cloneAgents(agents),
-      diskSnapshot: JSON.stringify(agents),
+      // Baseline and snapshot describe what is on disk, so a reassignment is a
+      // pending local change that the flush persists (and merges, if needed).
+      baselineAgents: cloneAgents(diskAgents),
+      diskSnapshot: JSON.stringify(diskAgents),
       agentsById: buildAgentsById(agents),
       dirty: false,
       revision: 0,
       flushTimer: null,
       pendingFlush: null,
+      identity,
     };
     configCache.set(projectPath, entry);
+    syncAgentIdClaims(identity, agents);
     ensureConfigWatcher(projectPath);
     appLog('core:agent-config', 'info', `Cache initialized with ${agents.length} agent(s)`, {
       meta: { projectPath, agentIds: agents.map((a) => a.id) },
     });
+    if (reassignment) {
+      // Mark dirty before awaiting so the agents.json watcher cannot drop the
+      // reassignment from the cache before it is persisted.
+      entry.revision++;
+      entry.dirty = true;
+      scheduleFlush(projectPath, entry);
+      if (await copyIconsForReassignedAgents(reassignment.reassigned)) {
+        entry.revision++;
+        entry.dirty = true;
+        scheduleFlush(projectPath, entry);
+      }
+    }
   }
   return entry.agents;
 }
@@ -614,6 +761,7 @@ async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): P
     entry.agents = agents;
     entry.agentsById = buildAgentsById(agents);
   }
+  if (entry.identity) syncAgentIdClaims(entry.identity, agents);
   entry.revision++;
   entry.dirty = true;
   scheduleFlush(projectPath, entry);
@@ -659,6 +807,7 @@ export function clearAgentConfigCache(projectPath?: string): void {
     configWatchers.delete(projectPath);
   } else {
     configCache.clear();
+    agentIdOwners.clear();
     for (const [watchedProjectPath, watcher] of configWatchers) {
       watcher.close();
       configWatchers.delete(watchedProjectPath);
@@ -721,14 +870,18 @@ export async function restoreFromBackup(projectPath: string): Promise<{ restored
     return { restoredCount: 0, agents: currentAgents };
   }
 
-  const merged = [...currentAgents, ...missing];
+  // A backup can predate an ID reassignment (or hold another project's ID).
+  const entryIdentity = configCache.get(projectPath)?.identity ?? await projectIdentity(projectPath);
+  const reassignment = reassignForeignAgentIds(projectPath, entryIdentity, missing);
+  if (reassignment) await copyIconsForReassignedAgents(reassignment.reassigned);
+  const merged = [...currentAgents, ...(reassignment?.agents ?? missing)];
   await writeAgents(projectPath, merged);
   // Flush immediately — don't risk losing the restore
   const entry = configCache.get(projectPath);
   if (entry) await flushEntry(projectPath, entry);
 
   appLog('core:agent-config', 'info', `Restored ${missing.length} agent(s) from backup`, {
-    meta: { projectPath, restoredIds: missing.map((a) => a.id) },
+    meta: { projectPath, restoredIds: merged.slice(currentAgents.length).map((a) => a.id) },
   });
 
   return { restoredCount: missing.length, agents: merged };
@@ -929,7 +1082,8 @@ export async function createDurable(
   await ensureDir(clubhouseDir(projectPath));
   await ensureGitignore(projectPath);
 
-  const id = `durable_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  let id = generateDurableId();
+  while (agentIdOwners.has(id)) id = generateDurableId();
 
   let branch: string | undefined;
   let worktreePath: string | undefined;
