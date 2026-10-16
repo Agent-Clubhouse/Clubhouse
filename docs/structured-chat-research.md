@@ -485,7 +485,35 @@ Sizes are in engineer-weeks. Everything ships behind `structuredMode`, renamed "
 | 2. Claude via stream-json | Replace `StreamJsonAdapter`: stdin stays open; `initialize`, `can_use_tool`, 6 modes, priority steer/queue, `set_model`, Task todos, `task_*` subagents, `rate_limit_event`, resume. Plan card via `ExitPlanMode`. Auth pre-flight and `/login` hand-off. SDK driver behind a setting, gated on approval or API-key mode. | M · 3 wk |
 | 3. Copilot + generic ACP | `session/load` resume, modes and config options, diffs, usage, commands, model-list dedupe, `--no-auto-update`. Capability downgrades in the UI. | S · 1–2 wk |
 | 4. Depth | Git checkpoints and Changes panel, agent map, live model and mode menus, attachments, auth pre-flight, Annex v2 forwarding. | M · 3 wk |
-| 5. Hardening + rollout | Schema-diff CI, a structured leg in the nightly real-CLI E2E, runtime version warnings. Copilot SDK driver. Default-on per provider after 2 green weeks. | S–M · 2 wk |
+| 5. Hardening + rollout | Schema-diff CI, a structured leg in the nightly real-CLI E2E, runtime version warnings. Telemetry parity checklist (§8.1) passes. Copilot SDK driver. Default-on per provider after 2 green weeks. | S–M · 2 wk |
+
+### 8.1 Telemetry parity checklist
+
+This follows the sequencing in §9.1 of `docs/telemetry-otel-spec.md` ([#1914](https://github.com/Agent-Clubhouse/Clubhouse/pull/1914), decided 2026-10-16). Telemetry won't instrument today's structured adapters (StreamJson, ACP, Codex app-server), because they're being replaced. Instead it subscribes once to the new Clubhouse event model:
+
+| Chat event model | Telemetry signal |
+|---|---|
+| Turn started / ended | `c.agent.turn` |
+| Tool call started / updated / ended | `c.agent.tool_call` |
+| Permission request and decision | `c.agent.permission` |
+| Usage | Token metrics |
+| Error | Errors |
+
+The driver boundary and capability record provide:
+
+- `c.structured.adapter`
+- the protocol-drift signal `c.structured.protocol.unknown`, for unknown message, item or notification types
+- `c.agent.turn.stalled`
+- a new `c.agent.runtime` value for the chat runtime (the PTY and headless values stay)
+
+**Chat doesn't ship, behind its flag or by default, until all four pass:**
+
+- [ ] Every span, metric and event the replaced adapters emit has a named equivalent in the new code, or is explicitly retired in the telemetry attribute registry with a reason.
+- [ ] Every Workbook panel that charted the old signal still has data. The KQL-vs-registry test checks names; a manual import into a scratch App Insights resource confirms the panels render.
+- [ ] New drivers add their `c.agent.runtime`, `c.structured.adapter` and `c.ui.action_failed` values to `src/shared/telemetry/attributes.ts` in the same PR, with telemetry review via CODEOWNERS.
+- [ ] P0 regression signals keep their level (Errors or Standard) and their alert rules.
+
+Phase 0 should emit these from the start. The event envelope v2 (session, turn and sequence ids) is what makes the turn and tool spans possible.
 
 ## 9. Sources
 
