@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
+import * as os from 'os';
+import * as path from 'path';
 import type { StructuredEvent } from '../../../shared/structured-events';
 import type { StructuredSessionOpts } from '../types';
 
@@ -13,6 +15,7 @@ vi.mock('child_process', () => ({
 vi.mock('../../util/shell', () => ({
   getShellEnvironment: vi.fn().mockReturnValue({ PATH: '/usr/bin', HOME: '/home/test' }),
   cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
+  winQuoteArg: (arg: string) => '"' + arg.replace(/%/g, '%%').replace(/"/g, '""') + '"',
 }));
 
 // Mock log service
@@ -155,9 +158,15 @@ describe('StreamJsonAdapter', () => {
     expect(args).toContain('Bash');
   });
 
-  it('wraps spawn via shell when commandPrefix is set', () => {
+  it('wraps spawn via shell when commandPrefix is set (POSIX)', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
     const adapter = new StreamJsonAdapter({ binary: '/usr/bin/claude' });
-    adapter.start({ ...defaultSessionOpts, commandPrefix: '. ./init.sh' });
+    try {
+      adapter.start({ ...defaultSessionOpts, commandPrefix: '. ./init.sh' });
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
 
     const [binary, args] = mockSpawn.mock.calls[0];
     expect(binary).toBe('sh');
@@ -167,6 +176,24 @@ describe('StreamJsonAdapter', () => {
     expect(args[3]).toBe('/usr/bin/claude');
     expect(args).toContain('-p');
     expect(args).toContain('Fix the bug');
+  });
+
+  it('routes a Windows .cmd shim through cmd.exe', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const binary = path.join(os.tmpdir(), 'npm', 'claude.cmd');
+    const adapter = new StreamJsonAdapter({ binary });
+    try {
+      adapter.start(defaultSessionOpts);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+
+    const [spawned, args, opts] = mockSpawn.mock.calls[0];
+    expect(spawned).toBe('cmd.exe');
+    expect(args.slice(0, 3)).toEqual(['/d', '/s', '/c']);
+    expect(args[3]).toContain(`"${binary}"`);
+    expect(opts).toMatchObject({ windowsVerbatimArguments: true });
   });
 
   it('spawns directly when commandPrefix is undefined', () => {

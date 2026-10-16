@@ -5,7 +5,7 @@ import { AsyncQueue } from './async-queue';
 import { JsonlParser, StreamJsonEvent } from '../../services/jsonl-parser';
 import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
 import { appLog } from '../../services/log-service';
-import { validateCommandPrefix } from '../../services/command-prefix-validation';
+import { resolveStructuredSpawn } from './structured-spawn';
 
 export interface StreamJsonAdapterOpts {
   binary: string;
@@ -96,19 +96,18 @@ export class StreamJsonAdapter implements StructuredAdapter {
       args.push(...sessionOpts.extraArgs);
     }
 
-    const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
-    const spawnArgs = sessionOpts.commandPrefix
-      ? ['-c', `${validateCommandPrefix(sessionOpts.commandPrefix)} && exec "$@"`, '_', this.opts.binary, ...args]
-      : args;
+    // Command prefix → shell wrapper; Windows .cmd/.bat shims → cmd.exe
+    const spawn = resolveStructuredSpawn(this.opts.binary, args, sessionOpts.commandPrefix);
 
     appLog('core:structured', 'info', 'StreamJsonAdapter spawning', {
-      meta: { binary: spawnBinary, cwd: sessionOpts.cwd, model: sessionOpts.model },
+      meta: { binary: spawn.binary, cwd: sessionOpts.cwd, model: sessionOpts.model },
     });
 
-    const proc = cpSpawn(spawnBinary, spawnArgs, {
+    const proc = cpSpawn(spawn.binary, spawn.args, {
       cwd: sessionOpts.cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      ...(spawn.windowsVerbatimArguments && { windowsVerbatimArguments: true }),
     });
     this.proc = proc;
 

@@ -136,20 +136,17 @@ describe('AcpClient', () => {
       params: {
         protocolVersion: 1,
         clientInfo: { name: 'test-client', version: '2.0.0' },
-        capabilities: {},
+        // ACP v1 InitializeRequest: `clientCapabilities`, not `capabilities`
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+          terminal: false,
+        },
       },
     });
 
-    // Second write should be the initialized notification
-    const secondWrite = JSON.parse(
-      (mockProc.stdin.write.mock.calls[1][0] as string).replace('\n', ''),
-    );
-    expect(secondWrite).toMatchObject({
-      jsonrpc: '2.0',
-      method: 'initialized',
-    });
-    // Notifications should not have an id
-    expect(secondWrite.id).toBeUndefined();
+    // ACP v1 defines no `initialized` notification — the response completes
+    // the handshake, so nothing else is written.
+    expect(mockProc.stdin.write).toHaveBeenCalledTimes(1);
   });
 
   it('uses default clientInfo when not provided', async () => {
@@ -713,5 +710,52 @@ describe('AcpClient', () => {
     await expect(promise).rejects.toThrow('timed out after 30000ms');
 
     vi.useRealTimers();
+  });
+
+  it('never times out a request sent with timeoutMs: null', async () => {
+    vi.useFakeTimers();
+    autoHandshake(mockProc);
+    const client = new AcpClient({ binary: 'copilot', args: [], rpcTimeoutMs: 500 });
+    await client.start();
+
+    let settled = false;
+    const promise = client.request('session/prompt', {}, { timeoutMs: null });
+    promise.finally(() => { settled = true; });
+
+    // A prompt turn can run for many minutes
+    vi.advanceTimersByTime(60 * 60 * 1000);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    emitData(
+      mockProc,
+      JSON.stringify({ jsonrpc: '2.0', id: 2, result: { stopReason: 'end_turn' } }) + '\n',
+    );
+    await expect(promise).resolves.toEqual({ stopReason: 'end_turn' });
+
+    vi.useRealTimers();
+  });
+
+  it('respondWithError sends a JSON-RPC error response', async () => {
+    autoHandshake(mockProc);
+    const client = new AcpClient({ binary: 'copilot', args: [] });
+    await client.start();
+
+    client.respondWithError(9, -32601, 'not supported');
+
+    const last = JSON.parse(
+      (mockProc.stdin.write.mock.calls.at(-1)![0] as string).replace('\n', ''),
+    );
+    expect(last).toEqual({ jsonrpc: '2.0', id: 9, error: { code: -32601, message: 'not supported' } });
+  });
+
+  it('spawns with windowsVerbatimArguments when asked to', async () => {
+    autoHandshake(mockProc);
+    const client = new AcpClient({ binary: 'cmd.exe', args: ['/d', '/s', '/c', '"x"'], windowsVerbatimArguments: true });
+    await client.start();
+
+    expect(mockSpawn).toHaveBeenCalledWith('cmd.exe', ['/d', '/s', '/c', '"x"'], expect.objectContaining({
+      windowsVerbatimArguments: true,
+    }));
   });
 });
