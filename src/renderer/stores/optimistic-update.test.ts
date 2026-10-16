@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { optimisticUpdate } from './optimistic-update';
+import { beginLoad, optimisticUpdate } from './optimistic-update';
 
 interface TestState {
   count: number;
@@ -235,5 +235,42 @@ describe('optimisticUpdate', () => {
 
     // Concurrent write wins — original update should not be rolled back
     expect(get().count).toBe(42);
+  });
+});
+
+describe('beginLoad', () => {
+  it('returns the full loaded payload when nothing raced it', () => {
+    const { get } = createMockStore({ count: 0, name: 'a', items: [] });
+    const apply = beginLoad(get);
+    expect(apply({ count: 5, name: 'b' })).toEqual({ count: 5, name: 'b' });
+  });
+
+  it('returns null for a load superseded by a newer load', () => {
+    const { get } = createMockStore({ count: 0, name: 'a', items: [] });
+    const older = beginLoad(get);
+    const newer = beginLoad(get);
+    expect(newer({ count: 2 })).toEqual({ count: 2 });
+    expect(older({ count: 1 })).toBeNull();
+  });
+
+  it('omits keys written by an optimistic update issued after the load began', async () => {
+    const { set, get } = createMockStore({ count: 0, name: 'a', items: [] });
+    const apply = beginLoad(get);
+    await optimisticUpdate(set, get, { count: 9 }, async () => {});
+    expect(apply({ count: 1, name: 'loaded' })).toEqual({ name: 'loaded' });
+  });
+
+  it('keeps keys written by optimistic updates that completed before the load began', async () => {
+    const { set, get } = createMockStore({ count: 0, name: 'a', items: [] });
+    await optimisticUpdate(set, get, { count: 9 }, async () => {});
+    const apply = beginLoad(get);
+    expect(apply({ count: 9, name: 'loaded' })).toEqual({ count: 9, name: 'loaded' });
+  });
+
+  it('applies keys whose racing optimistic update failed and rolled back', async () => {
+    const { set, get } = createMockStore({ count: 0, name: 'a', items: [] });
+    const apply = beginLoad(get);
+    await optimisticUpdate(set, get, { count: 9 }, async () => { throw new Error('fail'); });
+    expect(apply({ count: 3 })).toEqual({ count: 3 });
   });
 });
