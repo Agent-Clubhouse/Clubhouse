@@ -664,8 +664,9 @@ This adapts §9.1 of `docs/telemetry-otel-spec.md` ([#1914](https://github.com/A
 
 The driver boundary and capability record provide:
 
-- `c.structured.adapter`
-- the protocol-drift signal `c.structured.protocol.unknown`, for unknown message, item or notification types
+- `c.chat.driver`: `claude_agent_sdk`, `claude_stream_json`, `codex_app_server` or `copilot_acp`
+- the protocol-drift signal `c.chat.protocol.unknown`, for unknown message, item or notification types
+- `c.chat.rpc` and `c.chat.start` (names per the telemetry spec in #1935)
 - `c.agent.turn.stalled`
 - a new `c.agent.runtime` value for the chat runtime (the PTY and headless values stay)
 
@@ -673,7 +674,7 @@ The driver boundary and capability record provide:
 
 - [ ] Every span, metric and event the replaced adapters emit has a named equivalent in the new code, or is explicitly retired in the telemetry attribute registry with a reason.
 - [ ] Every Workbook panel that charted the old signal still has data. The KQL-vs-registry test checks names; a manual import into a scratch App Insights resource confirms the panels render.
-- [ ] New drivers add their `c.agent.runtime`, `c.structured.adapter` and `c.ui.action_failed` values to `src/shared/telemetry/attributes.ts` in the same PR, with telemetry review via CODEOWNERS.
+- [ ] New drivers add their `c.agent.runtime`, `c.chat.driver` and `c.ui.action_failed` values to `src/shared/telemetry/attributes.ts` in the same PR, with telemetry review via CODEOWNERS.
 - [ ] P0 regression signals keep their level (Errors or Standard) and their alert rules.
 
 Phase 0 should emit the underlying events from the start. The event envelope (session, turn and sequence ids) is what makes the turn and tool spans possible.
