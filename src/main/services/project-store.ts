@@ -167,30 +167,64 @@ async function restorePreservedIcon(project: Project): Promise<string | null> {
   return null;
 }
 
-function migrate(raw: unknown): ProjectStoreV1 {
-  // No file or unparseable → empty v1
-  if (raw == null) {
-    return { version: CURRENT_VERSION, projects: [] };
-  }
+/** Thrown when a parsed registry does not have a shape we can safely accept. */
+class InvalidStoreError extends Error {}
 
-  // v0: bare array (pre-versioning)
+function isValidProject(entry: unknown): entry is Project {
+  if (entry == null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  const p = entry as Record<string, unknown>;
+  return typeof p.id === 'string' && p.id !== ''
+    && typeof p.name === 'string'
+    && typeof p.path === 'string' && p.path !== '';
+}
+
+interface MigrateResult {
+  store: ProjectStoreV1;
+  /** Number of malformed entries dropped from the projects array. */
+  dropped: number;
+}
+
+/**
+ * Validate and normalise a parsed projects.json payload. Throws
+ * InvalidStoreError for shapes we don't understand (e.g. `{}`, `null`, a
+ * non-array `projects`) so the caller treats them like a corrupt file —
+ * quarantine and fall back to the backup — rather than as a legitimate empty
+ * registry. Malformed individual entries are dropped; valid ones are kept.
+ */
+function migrate(raw: unknown): MigrateResult {
+  let entries: unknown[];
+
   if (Array.isArray(raw)) {
-    return { version: CURRENT_VERSION, projects: raw as Project[] };
+    // v0: bare array (pre-versioning)
+    entries = raw;
+  } else if (raw != null && typeof raw === 'object' && Array.isArray((raw as Record<string, unknown>).projects)) {
+    // v1, or a future version we don't fully understand — preserve its projects array
+    entries = (raw as Record<string, unknown>).projects as unknown[];
+  } else {
+    throw new InvalidStoreError('Unrecognised project store shape');
   }
 
-  const obj = raw as Record<string, unknown>;
-
-  // Already at current version
-  if (obj.version === CURRENT_VERSION) {
-    return obj as unknown as ProjectStoreV1;
+  const projects = entries.filter(isValidProject);
+  const dropped = entries.length - projects.length;
+  if (dropped > 0 && projects.length === 0) {
+    // Every entry is malformed — don't let that become a "successful" empty registry.
+    throw new InvalidStoreError(`All ${dropped} project entries are malformed`);
   }
+  return { store: { version: CURRENT_VERSION, projects }, dropped };
+}
 
-  // Future versions we don't understand — preserve projects array if present
-  if (Array.isArray(obj.projects)) {
-    return { version: CURRENT_VERSION, projects: obj.projects as Project[] };
+/**
+ * Whether the on-disk projects.json is fully valid and therefore safe to
+ * rotate into projects.json.bak. An invalid or partially-malformed primary
+ * must never replace a (possibly healthy) backup.
+ */
+async function isRotatableStore(storePath: string): Promise<boolean> {
+  try {
+    const { dropped } = migrate(JSON.parse(await fsp.readFile(storePath, 'utf-8')));
+    return dropped === 0;
+  } catch {
+    return false;
   }
-
-  return { version: CURRENT_VERSION, projects: [] };
 }
 
 async function readStore(): Promise<ProjectStoreV1> {
@@ -207,7 +241,13 @@ async function readStore(): Promise<ProjectStoreV1> {
   if (await pathExists(storePath)) {
     try {
       const raw = JSON.parse(await fsp.readFile(storePath, 'utf-8'));
-      store = migrate(raw);
+      const { store: loaded, dropped } = migrate(raw);
+      store = loaded;
+      if (dropped > 0) {
+        appLog('core:project-store', 'warn', `Dropped ${dropped} malformed project entr${dropped === 1 ? 'y' : 'ies'} from projects.json`, {
+          meta: { storePath, dropped },
+        });
+      }
       appLog('core:project-store', 'info', `Loaded ${store.projects.length} project(s) from disk`, {
         meta: { storePath, projects: store.projects.map((p) => ({ id: p.id, name: p.name })) },
       });
@@ -219,7 +259,7 @@ async function readStore(): Promise<ProjectStoreV1> {
         await writeStore(store);
       }
     } catch (err) {
-      appLog('core:project-store', 'error', 'Failed to parse projects.json — quarantining and attempting recovery from backup', {
+      appLog('core:project-store', 'error', 'Failed to parse or validate projects.json — quarantining and attempting recovery from backup', {
         meta: { storePath, error: err instanceof Error ? err.message : String(err) },
       });
       // Quarantine the corrupt file so it is not silently overwritten by the next write
@@ -241,7 +281,7 @@ async function readStore(): Promise<ProjectStoreV1> {
   if (!store && await pathExists(backupPath)) {
     try {
       const raw = JSON.parse(await fsp.readFile(backupPath, 'utf-8'));
-      store = migrate(raw);
+      store = migrate(raw).store;
       if (store.projects.length > 0) {
         appLog('core:project-store', 'warn', `Recovered ${store.projects.length} project(s) from backup`, {
           meta: {
@@ -275,8 +315,9 @@ async function writeStore(store: ProjectStoreV1): Promise<void> {
 
   // Back up existing projects.json before overwriting — the backup preserves
   // the last known-good state so that a crash mid-write or corrupt write
-  // can be auto-recovered on the next read.
-  if (await pathExists(storePath)) {
+  // can be auto-recovered on the next read. Only a fully valid primary is
+  // rotated, so invalid data can never clobber a healthy backup.
+  if (await pathExists(storePath) && await isRotatableStore(storePath)) {
     try {
       await fsp.copyFile(storePath, backupPath);
     } catch {

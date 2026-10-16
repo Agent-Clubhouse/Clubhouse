@@ -15,6 +15,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
+  mkdtemp: vi.fn(async (prefix: string) => `${prefix}staging`),
   writeFile: vi.fn(async () => undefined),
   readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
   readdir: vi.fn(async () => []),

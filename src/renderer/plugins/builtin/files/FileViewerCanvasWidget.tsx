@@ -48,7 +48,9 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
 
   useEffect(() => { loadEditorSettings(); }, [loadEditorSettings]);
 
-  const [fileContent, setFileContent] = useState<string | null>(null);
+  // Loaded content is tagged with the file it was read from, so a late response
+  // for a previously selected file can never be shown, edited or saved as another.
+  const [loadedFile, setLoadedFile] = useState<{ key: string; content: string; error?: boolean } | null>(null);
   const [showHidden, setShowHidden] = useState(() => api.settings.get<boolean>('showHiddenFiles') ?? true);
   const [readOnly, setReadOnly] = useState(true);
   const [previewMode, setPreviewMode] = useState<'preview' | 'source'>('preview');
@@ -88,22 +90,27 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
     return () => sub.dispose();
   }, [api]);
 
+  const fileKey = filePath && projectId
+    ? `${projectId}\u0000${remote.isRemote ? 'remote' : rootPath}\u0000${filePath}`
+    : null;
+  const currentFile = loadedFile && loadedFile.key === fileKey ? loadedFile : null;
+  const fileContent = currentFile && !currentFile.error ? currentFile.content : null;
+
   useEffect(() => {
-    if (!filePath || !projectId || (!activeProject && !remote.isRemote)) {
-      setFileContent(null);
+    if (!filePath || !fileKey || (!activeProject && !remote.isRemote)) {
+      setLoadedFile(null);
       return;
     }
-    setFileContent(null);
-    if (remote.isRemote && remote.satelliteId && remote.originalProjectId) {
-      api.annex.fileRead(remote.satelliteId, remote.originalProjectId, filePath)
-        .then(setFileContent)
-        .catch(() => setFileContent('Error reading file'));
-    } else {
-      readProjectFile(api, isAppMode, rootPath, filePath)
-        .then(setFileContent)
-        .catch(() => setFileContent('Error reading file'));
-    }
-  }, [api, filePath, projectId, activeProject, isAppMode, rootPath, remote]);
+    setLoadedFile(null);
+    let cancelled = false;
+    const read = remote.isRemote && remote.satelliteId && remote.originalProjectId
+      ? api.annex.fileRead(remote.satelliteId, remote.originalProjectId, filePath)
+      : readProjectFile(api, isAppMode, rootPath, filePath);
+    read
+      .then((content) => { if (!cancelled) setLoadedFile({ key: fileKey, content }); })
+      .catch(() => { if (!cancelled) setLoadedFile({ key: fileKey, content: 'Error reading file', error: true }); });
+    return () => { cancelled = true; };
+  }, [api, filePath, fileKey, activeProject, isAppMode, rootPath, remote]);
 
   // Create remote file loader for CanvasFileTree
   const remoteFileLoader = useMemo(() => {
@@ -123,7 +130,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
 
   const handleSelectProject = useCallback((pid: string) => {
     onUpdateMetadata({ projectId: pid, filePath: null, rootPath: null });
-    setFileContent(null);
+    setLoadedFile(null);
   }, [onUpdateMetadata]);
 
   const handleSelectFile = useCallback((fp: string) => {
@@ -135,23 +142,29 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   }, [onUpdateMetadata, projectId]);
 
   const handleSave = useCallback(async (content: string) => {
-    if (!filePath || !activeProject || remote.isRemote) return;
-    if (isAppMode) {
-      await window.clubhouse.file.write(`${rootPath}/${filePath}`, content);
-    } else {
-      await api.project.writeFile(filePath, content);
+    // Only save over the file whose content is actually loaded
+    if (!filePath || !fileKey || !activeProject || remote.isRemote || !currentFile || currentFile.error) return;
+    try {
+      if (isAppMode) {
+        await window.clubhouse.file.write(`${rootPath}/${filePath}`, content);
+      } else {
+        await api.project.writeFile(filePath, content);
+      }
+    } catch (err) {
+      api.ui.showError(`Failed to save: ${err}`);
+      return;
     }
-    setFileContent(content);
-  }, [api, isAppMode, rootPath, activeProject, filePath, remote.isRemote]);
+    setLoadedFile((prev) => (prev && prev.key === fileKey ? { key: fileKey, content } : prev));
+  }, [api, isAppMode, rootPath, activeProject, filePath, fileKey, currentFile, remote.isRemote]);
 
   const handleBackToProjects = useCallback(() => {
     onUpdateMetadata({ projectId: null, filePath: null, rootPath: null });
-    setFileContent(null);
+    setLoadedFile(null);
   }, [onUpdateMetadata]);
 
   const handleSelectWorktree = useCallback((wtPath: string) => {
     onUpdateMetadata({ rootPath: wtPath, filePath: null });
-    setFileContent(null);
+    setLoadedFile(null);
   }, [onUpdateMetadata]);
 
   const fullFilePath = rootPath && filePath
@@ -330,6 +343,10 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
               readOnly={remote.isRemote || readOnly}
               onSave={handleSave}
             />
+          ) : filePath && currentFile?.error ? (
+            <div className="flex-1 flex items-center justify-center text-ctp-error text-xs">
+              {currentFile.content}
+            </div>
           ) : filePath && fileContent === null ? (
             <div className="flex-1 flex items-center justify-center text-ctp-subtext0 text-xs">
               Loading&hellip;

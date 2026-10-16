@@ -8,7 +8,7 @@ import type { StructuredEvent } from '../../../../shared/structured-events';
  *
  * These tests verify that processEvent only clones data structures
  * that are actually mutated by each event type, rather than eagerly
- * copying feedItems + both Maps on every event.
+ * copying feedItems on every event.
  */
 
 function makeState(overrides: Partial<ViewState> = {}): ViewState {
@@ -22,12 +22,10 @@ function ts(): number {
 describe('processEvent – lazy copy optimization', () => {
   // ── Reference stability: events that don't touch feedItems ──────────
 
-  describe('plan_update does not copy feedItems or maps', () => {
-    it('preserves feedItems, toolIndexMap, and commandIndexMap references', () => {
-      const feedItems = [{ kind: 'text' as const, text: 'hi', isStreaming: false }];
-      const toolIndexMap = new Map([['t1', 0]]);
-      const commandIndexMap = new Map([['c1', 0]]);
-      const prev = makeState({ feedItems, toolIndexMap, commandIndexMap });
+  describe('plan_update does not copy feedItems', () => {
+    it('preserves the feedItems reference', () => {
+      const feedItems = [{ kind: 'text' as const, text: 'hi', isStreaming: false, key: 0 }];
+      const prev = makeState({ feedItems });
 
       const next = processEvent(prev, {
         type: 'plan_update',
@@ -36,18 +34,14 @@ describe('processEvent – lazy copy optimization', () => {
       } as StructuredEvent);
 
       expect(next.feedItems).toBe(feedItems);
-      expect(next.toolIndexMap).toBe(toolIndexMap);
-      expect(next.commandIndexMap).toBe(commandIndexMap);
       expect(next.plan).toEqual({ steps: [{ description: 'step 1', status: 'pending' }] });
     });
   });
 
-  describe('usage does not copy feedItems or maps', () => {
-    it('preserves feedItems, toolIndexMap, and commandIndexMap references', () => {
-      const feedItems = [{ kind: 'text' as const, text: 'hi', isStreaming: false }];
-      const toolIndexMap = new Map([['t1', 0]]);
-      const commandIndexMap = new Map([['c1', 0]]);
-      const prev = makeState({ feedItems, toolIndexMap, commandIndexMap });
+  describe('usage does not copy feedItems', () => {
+    it('preserves the feedItems reference', () => {
+      const feedItems = [{ kind: 'text' as const, text: 'hi', isStreaming: false, key: 0 }];
+      const prev = makeState({ feedItems });
 
       const next = processEvent(prev, {
         type: 'usage',
@@ -56,57 +50,32 @@ describe('processEvent – lazy copy optimization', () => {
       } as StructuredEvent);
 
       expect(next.feedItems).toBe(feedItems);
-      expect(next.toolIndexMap).toBe(toolIndexMap);
-      expect(next.commandIndexMap).toBe(commandIndexMap);
     });
   });
 
-  // ── Reference stability: events that only touch feedItems ───────────
+  // ── Feed-only events clone the feed and assign stable keys ─────────
 
-  describe('text_delta does not copy maps', () => {
-    it('preserves toolIndexMap and commandIndexMap references', () => {
-      const toolIndexMap = new Map([['t1', 0]]);
-      const commandIndexMap = new Map([['c1', 1]]);
-      const prev = makeState({ toolIndexMap, commandIndexMap });
-
-      const next = processEvent(prev, {
-        type: 'text_delta',
-        timestamp: ts(),
-        data: { text: 'hello' },
+  describe('appending events assign increasing stable keys', () => {
+    it('gives each new feed item the next key', () => {
+      let state = makeState();
+      state = processEvent(state, { type: 'text_delta', timestamp: ts(), data: { text: 'hi' } } as StructuredEvent);
+      state = processEvent(state, {
+        type: 'tool_start', timestamp: ts(),
+        data: { id: 't1', name: 'Read', displayVerb: 'Reading', input: {} },
       } as StructuredEvent);
+      state = processEvent(state, { type: 'error', timestamp: ts(), data: { code: 'E', message: 'x' } } as StructuredEvent);
 
-      expect(next.toolIndexMap).toBe(toolIndexMap);
-      expect(next.commandIndexMap).toBe(commandIndexMap);
-      expect(next.feedItems).not.toBe(prev.feedItems); // feed IS cloned
-      expect(next.feedItems).toHaveLength(1);
+      expect(state.feedItems.map((i) => i.key)).toEqual([0, 1, 2]);
+      expect(state.nextKey).toBe(3);
     });
   });
 
-  describe('text_done does not copy maps', () => {
-    it('preserves map references', () => {
-      const toolIndexMap = new Map<string, number>();
-      const commandIndexMap = new Map<string, number>();
-      const prev = makeState({ toolIndexMap, commandIndexMap });
-
-      const next = processEvent(prev, {
-        type: 'text_done',
-        timestamp: ts(),
-        data: { text: 'done' },
-      } as StructuredEvent);
-
-      expect(next.toolIndexMap).toBe(toolIndexMap);
-      expect(next.commandIndexMap).toBe(commandIndexMap);
-    });
-  });
-
-  describe('tool_output does not copy maps', () => {
-    it('preserves toolIndexMap and commandIndexMap when updating existing tool', () => {
-      const toolIndexMap = new Map([['t1', 0]]);
-      const commandIndexMap = new Map<string, number>();
+  describe('tool_output updates the tool in place', () => {
+    it('clones the feed and keeps the item key', () => {
       const feedItems = [
-        { kind: 'tool' as const, tool: { id: 't1', name: 'Read', displayVerb: 'Reading', input: {} }, output: '', status: 'running' as const },
+        { kind: 'tool' as const, tool: { id: 't1', name: 'Read', displayVerb: 'Reading', input: {} }, output: '', status: 'running' as const, key: 7 },
       ];
-      const prev = makeState({ feedItems, toolIndexMap, commandIndexMap });
+      const prev = makeState({ feedItems, nextKey: 8 });
 
       const next = processEvent(prev, {
         type: 'tool_output',
@@ -114,113 +83,18 @@ describe('processEvent – lazy copy optimization', () => {
         data: { id: 't1', output: 'file contents', isPartial: false },
       } as StructuredEvent);
 
-      expect(next.toolIndexMap).toBe(toolIndexMap);
-      expect(next.commandIndexMap).toBe(commandIndexMap);
       expect(next.feedItems).not.toBe(feedItems); // feed IS cloned
+      expect(next.feedItems[0]).toMatchObject({ output: 'file contents', key: 7 });
+      expect(next.nextKey).toBe(8);
     });
   });
 
-  describe('tool_end does not copy maps', () => {
-    it('preserves map references', () => {
-      const toolIndexMap = new Map([['t1', 0]]);
-      const commandIndexMap = new Map<string, number>();
+  describe('command_output (existing command) updates in place', () => {
+    it('replaces the command item and keeps its key', () => {
       const feedItems = [
-        { kind: 'tool' as const, tool: { id: 't1', name: 'Read', displayVerb: 'Reading', input: {} }, output: 'data', status: 'running' as const },
+        { kind: 'command' as const, command: { id: 'cmd1', command: 'npm test', status: 'running', output: 'line 1' }, key: 3 },
       ];
-      const prev = makeState({ feedItems, toolIndexMap, commandIndexMap });
-
-      const next = processEvent(prev, {
-        type: 'tool_end',
-        timestamp: ts(),
-        data: { id: 't1', name: 'Read', result: 'ok', durationMs: 50, status: 'success' },
-      } as StructuredEvent);
-
-      expect(next.toolIndexMap).toBe(toolIndexMap);
-      expect(next.commandIndexMap).toBe(commandIndexMap);
-      expect(next.feedItems).not.toBe(feedItems);
-    });
-  });
-
-  describe('error does not copy maps', () => {
-    it('preserves map references', () => {
-      const toolIndexMap = new Map<string, number>();
-      const commandIndexMap = new Map<string, number>();
-      const prev = makeState({ toolIndexMap, commandIndexMap });
-
-      const next = processEvent(prev, {
-        type: 'error',
-        timestamp: ts(),
-        data: { code: 'ERR', message: 'oops' },
-      } as StructuredEvent);
-
-      expect(next.toolIndexMap).toBe(toolIndexMap);
-      expect(next.commandIndexMap).toBe(commandIndexMap);
-    });
-  });
-
-  describe('thinking does not copy maps', () => {
-    it('preserves map references', () => {
-      const toolIndexMap = new Map<string, number>();
-      const commandIndexMap = new Map<string, number>();
-      const prev = makeState({ toolIndexMap, commandIndexMap });
-
-      const next = processEvent(prev, {
-        type: 'thinking',
-        timestamp: ts(),
-        data: { text: 'hmm', isPartial: false },
-      } as StructuredEvent);
-
-      expect(next.toolIndexMap).toBe(toolIndexMap);
-      expect(next.commandIndexMap).toBe(commandIndexMap);
-    });
-  });
-
-  // ── Events that DO need to copy specific maps ──────────────────────
-
-  describe('tool_start copies only toolIndexMap', () => {
-    it('clones toolIndexMap but preserves commandIndexMap', () => {
-      const toolIndexMap = new Map<string, number>();
-      const commandIndexMap = new Map<string, number>();
-      const prev = makeState({ toolIndexMap, commandIndexMap });
-
-      const next = processEvent(prev, {
-        type: 'tool_start',
-        timestamp: ts(),
-        data: { id: 't1', name: 'Read', displayVerb: 'Reading', input: {} },
-      } as StructuredEvent);
-
-      expect(next.toolIndexMap).not.toBe(toolIndexMap); // cloned
-      expect(next.commandIndexMap).toBe(commandIndexMap); // preserved
-      expect(next.toolIndexMap.get('t1')).toBe(0);
-    });
-  });
-
-  describe('command_output (new command) copies only commandIndexMap', () => {
-    it('clones commandIndexMap but preserves toolIndexMap', () => {
-      const toolIndexMap = new Map<string, number>();
-      const commandIndexMap = new Map<string, number>();
-      const prev = makeState({ toolIndexMap, commandIndexMap });
-
-      const next = processEvent(prev, {
-        type: 'command_output',
-        timestamp: ts(),
-        data: { id: 'cmd1', command: 'npm test', status: 'running', output: 'ok' },
-      } as StructuredEvent);
-
-      expect(next.commandIndexMap).not.toBe(commandIndexMap); // cloned
-      expect(next.toolIndexMap).toBe(toolIndexMap); // preserved
-      expect(next.commandIndexMap.get('cmd1')).toBe(0);
-    });
-  });
-
-  describe('command_output (existing command) preserves both maps', () => {
-    it('does not clone commandIndexMap for in-place update', () => {
-      const commandIndexMap = new Map([['cmd1', 0]]);
-      const toolIndexMap = new Map<string, number>();
-      const feedItems = [
-        { kind: 'command' as const, command: { id: 'cmd1', command: 'npm test', status: 'running', output: 'line 1' } },
-      ];
-      const prev = makeState({ feedItems, toolIndexMap, commandIndexMap });
+      const prev = makeState({ feedItems, nextKey: 4 });
 
       const next = processEvent(prev, {
         type: 'command_output',
@@ -228,8 +102,9 @@ describe('processEvent – lazy copy optimization', () => {
         data: { id: 'cmd1', command: 'npm test', status: 'completed', output: 'line 1\nline 2', exitCode: 0 },
       } as StructuredEvent);
 
-      expect(next.commandIndexMap).toBe(commandIndexMap); // preserved
-      expect(next.toolIndexMap).toBe(toolIndexMap); // preserved
+      expect(next.feedItems).toHaveLength(1);
+      expect(next.feedItems[0]).toMatchObject({ key: 3, command: { status: 'completed' } });
+      expect(next.nextKey).toBe(4);
     });
   });
 
@@ -238,8 +113,7 @@ describe('processEvent – lazy copy optimization', () => {
   describe('tool_output for unknown tool returns prev', () => {
     it('returns same state reference when tool ID is not found', () => {
       const prev = makeState({
-        feedItems: [{ kind: 'text' as const, text: 'hi', isStreaming: false }],
-        toolIndexMap: new Map(),
+        feedItems: [{ kind: 'text' as const, text: 'hi', isStreaming: false, key: 0 }],
       });
 
       const next = processEvent(prev, {
@@ -255,8 +129,7 @@ describe('processEvent – lazy copy optimization', () => {
   describe('tool_end for unknown tool returns prev', () => {
     it('returns same state reference when tool ID is not found', () => {
       const prev = makeState({
-        feedItems: [{ kind: 'text' as const, text: 'hi', isStreaming: false }],
-        toolIndexMap: new Map(),
+        feedItems: [{ kind: 'text' as const, text: 'hi', isStreaming: false, key: 0 }],
       });
 
       const next = processEvent(prev, {
@@ -271,7 +144,7 @@ describe('processEvent – lazy copy optimization', () => {
 
   describe('end without summary does not copy feedItems', () => {
     it('preserves feedItems reference when no summary', () => {
-      const feedItems = [{ kind: 'text' as const, text: 'hi', isStreaming: false }];
+      const feedItems = [{ kind: 'text' as const, text: 'hi', isStreaming: false, key: 0 }];
       const prev = makeState({ feedItems });
 
       const next = processEvent(prev, {
@@ -301,7 +174,7 @@ describe('processEvent – lazy copy optimization', () => {
       } as StructuredEvent);
 
       expect(state.feedItems).toHaveLength(1);
-      expect(state.feedItems[0]).toEqual({ kind: 'text', text: 'abc', isStreaming: true });
+      expect(state.feedItems[0]).toEqual({ kind: 'text', text: 'abc', isStreaming: true, key: 0 });
     });
   });
 
@@ -344,6 +217,58 @@ describe('processEvent – lazy copy optimization', () => {
       if (first.kind === 'error') {
         expect(first.error.message).toBe('error-10');
       }
+    });
+  });
+
+  // ── ID-based association survives trimming (audit finding 10b) ─────
+
+  describe('tool events after the feed is trimmed', () => {
+    function toolStart(id: string): StructuredEvent {
+      return { type: 'tool_start', timestamp: ts(), data: { id, name: 'Read', displayVerb: id, input: {} } } as StructuredEvent;
+    }
+    function toolEnd(id: string): StructuredEvent {
+      return {
+        type: 'tool_end', timestamp: ts(),
+        data: { id, name: 'Read', result: 'ok', durationMs: 1, status: 'success' },
+      } as StructuredEvent;
+    }
+
+    function trimmedState(): ViewState {
+      let state = makeState();
+      state = processEvent(state, toolStart('A'));
+      state = processEvent(state, toolStart('B'));
+      // Push just enough to trim exactly one item (A) off the front.
+      for (let i = 0; i < MAX_EVENTS - 1; i++) {
+        state = processEvent(state, {
+          type: 'error', timestamp: ts(), data: { code: 'E', message: `e-${i}` },
+        } as StructuredEvent);
+      }
+      expect(state.feedItems).toHaveLength(MAX_EVENTS);
+      expect(state.feedItems[0]).toMatchObject({ kind: 'tool', tool: { id: 'B' } });
+      return state;
+    }
+
+    it('does not attach a trimmed tool\'s completion to a different card', () => {
+      const state = trimmedState();
+      const next = processEvent(state, toolEnd('A'));
+      expect(next).toBe(state);
+      expect(next.feedItems[0]).toMatchObject({ tool: { id: 'B' }, status: 'running' });
+    });
+
+    it('still delivers output and completion to a surviving tool', () => {
+      let state = trimmedState();
+      state = processEvent(state, {
+        type: 'tool_output', timestamp: ts(), data: { id: 'B', output: 'b-out', isPartial: false },
+      } as StructuredEvent);
+      state = processEvent(state, toolEnd('B'));
+      expect(state.feedItems[0]).toMatchObject({ tool: { id: 'B' }, output: 'b-out', status: 'completed' });
+    });
+
+    it('keeps keys unique and stable across the trim', () => {
+      const state = trimmedState();
+      const keys = state.feedItems.map((i) => i.key);
+      expect(new Set(keys).size).toBe(keys.length);
+      expect(state.feedItems[0].key).toBe(1); // B's original key
     });
   });
 });

@@ -41,6 +41,7 @@ export interface AgentBackupInfo {
   backupAgentCount: number;
   currentCount: number;
   missingNames: string[];
+  projectId: string;
   projectPath: string;
 }
 
@@ -57,7 +58,7 @@ export interface AgentCrudSlice {
   ) => Promise<void>;
   reorderAgents: (projectPath: string, orderedIds: string[]) => Promise<void>;
   loadDurableAgents: (projectId: string, projectPath: string) => Promise<void>;
-  restoreFromBackup: (projectPath: string) => Promise<number>;
+  restoreFromBackup: (projectId: string, projectPath: string) => Promise<number>;
   dismissRecovery: () => void;
 }
 

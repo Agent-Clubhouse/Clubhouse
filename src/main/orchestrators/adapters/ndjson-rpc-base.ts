@@ -3,6 +3,15 @@ import { spawn, type ChildProcess } from 'child_process';
 /** Default RPC request timeout (ms). Prevents indefinite hangs on init failures. */
 export const DEFAULT_RPC_TIMEOUT_MS = 30_000;
 
+export interface RpcRequestOptions {
+  /**
+   * Per-request timeout override in milliseconds.  `null` disables the
+   * timeout — for requests whose reply legitimately takes minutes, such as an
+   * ACP `session/prompt`, which only answers when the whole turn has ended.
+   */
+  timeoutMs?: number | null;
+}
+
 export interface BaseRpcOpts {
   binary: string;
   args: string[];
@@ -10,6 +19,8 @@ export interface BaseRpcOpts {
   env?: Record<string, string>;
   /** RPC request timeout in milliseconds (default: 30000) */
   rpcTimeoutMs?: number;
+  /** Spawn with windowsVerbatimArguments (args are pre-quoted for cmd.exe). */
+  windowsVerbatimArguments?: boolean;
   /** Called for notifications (method, no id) */
   onNotification?: (method: string, params: unknown) => void;
   /** Called for server-initiated requests (method + id) */
@@ -88,6 +99,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.opts.cwd,
       env: this.opts.env,
+      ...(this.opts.windowsVerbatimArguments && { windowsVerbatimArguments: true }),
     });
 
     this.proc.stdout?.setEncoding('utf8');
@@ -200,7 +212,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
     this.pending.clear();
   }
 
-  abstract request(method: string, params?: unknown): Promise<unknown>;
+  abstract request(method: string, params?: unknown, options?: RpcRequestOptions): Promise<unknown>;
   abstract notify(method: string, params?: unknown): void;
   abstract respond(id: number | string, result: unknown): void;
   abstract start(): Promise<void>;

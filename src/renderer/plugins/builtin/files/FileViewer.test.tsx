@@ -5,11 +5,11 @@ import { fileState } from './state';
 import { createMockAPI } from '../../testing';
 
 // Track the last onSave callback passed to MonacoEditor so tests can trigger saves
-let lastOnSave: ((content: string) => void) | null = null;
+let lastOnSave: ((content: string) => unknown) | null = null;
 
 // Mock MonacoEditor and MarkdownPreview to avoid themes/require issues in jsdom
 vi.mock('./MonacoEditor', () => ({
-  MonacoEditor: ({ value: _value, language, onSave }: { value: string; language: string; onSave?: (content: string) => void; onCursorChange?: (line: number, column: number) => void }) => {
+  MonacoEditor: ({ value: _value, language, onSave }: { value: string; language: string; onSave?: (content: string) => unknown; onCursorChange?: (line: number, column: number) => void }) => {
     lastOnSave = onSave || null;
     return React.createElement('div', { 'data-testid': 'monaco-editor' }, `Monaco: ${language}`);
   },
@@ -138,6 +138,55 @@ describe('FileViewer', () => {
     });
 
     expect(api.files.writeFile).toHaveBeenCalledWith('hello.ts', 'console.log("updated")');
+  });
+
+  it('save resolves false and surfaces the error when the write fails', async () => {
+    const api = createViewerAPI();
+    (api.files.writeFile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('EACCES'));
+    render(<FileViewer api={api} />);
+    selectFile('hello.ts');
+    await waitFor(() => expect(lastOnSave).not.toBeNull());
+
+    let result: unknown;
+    await act(async () => { result = await lastOnSave!('draft'); });
+
+    expect(result).toBe(false);
+    expect(api.ui.showError).toHaveBeenCalledWith(expect.stringContaining('EACCES'));
+  });
+
+  describe('unsaved-changes dialog', () => {
+    async function openDirtyTab(api: ReturnType<typeof createViewerAPI>) {
+      render(<FileViewer api={api} />);
+      selectFile('hello.ts');
+      await waitFor(() => expect(screen.getByTestId('monaco-editor')).toBeInTheDocument());
+      const tab = fileState.getTabByPath('hello.ts')!;
+      act(() => fileState.setTabDirty(tab.id, true));
+      fireEvent.click(screen.getByTitle('Close tab'));
+      await waitFor(() => expect(screen.getByText('Unsaved Changes')).toBeInTheDocument());
+      return tab;
+    }
+
+    it('keeps the tab open and dirty when Save fails', async () => {
+      const api = createViewerAPI();
+      (api.files.writeFile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('disk full'));
+      const tab = await openDirtyTab(api);
+
+      await act(async () => { fireEvent.click(screen.getByText('Save')); });
+
+      expect(api.ui.showError).toHaveBeenCalledWith(expect.stringContaining('disk full'));
+      expect(fileState.getTab(tab.id)).toBeDefined();
+      expect(fileState.getTab(tab.id)!.isDirty).toBe(true);
+    });
+
+    it('closes the tab after a successful Save', async () => {
+      const api = createViewerAPI();
+      const tab = await openDirtyTab(api);
+
+      await act(async () => { fireEvent.click(screen.getByText('Save')); });
+
+      expect(api.files.writeFile).toHaveBeenCalledWith('hello.ts', 'console.log("updated")');
+      expect(fileState.getTab(tab.id)).toBeUndefined();
+    });
   });
 
   it('shows "Open in Finder" button that calls api.files.showInFolder()', async () => {

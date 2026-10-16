@@ -31,6 +31,10 @@ export interface CanvasState {
    *  effect must not fire until this is set, otherwise a debounced save can
    *  overwrite persisted wires with the initial empty array. */
   wiresLoaded: boolean;
+  /** Set when loadCanvas could not read the persisted canvas (storage
+   *  unreadable even after retries). The canvas stays unloaded and every save
+   *  is refused, so an empty placeholder is never written over the real data. */
+  loadError: string | null;
 
   // Lifecycle
   loadCanvas: (storage: ScopedStorage) => Promise<void>;
@@ -130,11 +134,57 @@ const STORAGE_KEY_INSTANCES = 'canvas-instances';
 // crash mid-write, which otherwise loads as an empty canvas and gets
 // overwritten on the next autosave — silently destroying all cards.
 const STORAGE_KEY_INSTANCES_BACKUP = 'canvas-instances-backup';
+// When hydration has to drop malformed records, the raw on-disk value is
+// copied to `canvas-instances-recovery-<epoch ms>` before the first save
+// replaces the primary and backup with the cleaned data.
+const STORAGE_KEY_INSTANCES_RECOVERY_PREFIX = 'canvas-instances-recovery-';
 const STORAGE_KEY_ACTIVE = 'canvas-active-id';
 const STORAGE_KEY_WIRES = 'canvas-wires';
 const STORAGE_KEY_ZONE_WIRES = 'canvas-zone-wires';
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+// Backoff between storage read attempts during hydration. A transiently
+// unavailable storage directory (observed lasting ~18ms) must not be mistaken
+// for "no data"; a short retry rides it out.
+const LOAD_RETRY_DELAYS_MS = [25, 100, 400];
+
+async function readWithRetry(storage: ScopedStorage, key: string): Promise<unknown> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await storage.read(key);
+    } catch (err) {
+      if (attempt >= LOAD_RETRY_DELAYS_MS.length) throw err;
+      await new Promise((resolve) => setTimeout(resolve, LOAD_RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Outcome of reading one persisted copy (primary or backup) of the instances. */
+type InstancesCopy =
+  | { status: 'missing' }
+  | { status: 'unreadable'; error: unknown }
+  | { status: 'invalid'; raw: unknown }
+  | { status: 'ok' | 'degraded'; raw: unknown; canvases: CanvasInstance[]; issues: string[] };
+
+async function readInstancesCopy(storage: ScopedStorage, key: string): Promise<InstancesCopy> {
+  let raw: unknown;
+  try {
+    raw = await readWithRetry(storage, key);
+  } catch (error) {
+    return { status: 'unreadable', error };
+  }
+  if (raw === null || raw === undefined) return { status: 'missing' };
+  // A saved canvas is always a non-empty array (>=1 instance).
+  if (!Array.isArray(raw) || raw.length === 0) return { status: 'invalid', raw };
+  const issues: string[] = [];
+  const canvases = raw.map((s) => normalizeCanvasInstance(s, { source: 'disk', issues }));
+  return { status: issues.length > 0 ? 'degraded' : 'ok', raw, canvases, issues };
+}
 
 const REMOVED_TYPES = new Set(['browser', 'file', 'legacy-file', 'terminal', 'legacy-terminal', 'git-diff', 'legacy-git-diff']);
 
@@ -189,14 +239,25 @@ function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): P
 
 function normalizeCanvasInstance(
   raw: unknown,
-  options: { source: 'disk' | 'remote'; existing?: CanvasInstance },
+  /** `issues` collects a note for every record dropped or reset while
+   *  normalizing, so disk hydration can tell clean data from degraded data. */
+  options: { source: 'disk' | 'remote'; existing?: CanvasInstance; issues?: string[] },
 ): CanvasInstance {
   const s = raw as Partial<CanvasInstanceData> | null;
   try {
     if (!s || typeof s !== 'object') throw new Error('Canvas instance is not an object');
 
+    if (!Array.isArray(s.views)) options.issues?.push(`canvas ${s.id}: views is not an array`);
     const restoredViews = (Array.isArray(s.views) ? s.views : [])
-      .filter((v: any) => !REMOVED_TYPES.has(v.type))
+      .filter((v: any, index: number) => {
+        // Drop just the malformed record (e.g. a null view) rather than
+        // letting it throw and reset the whole canvas to empty.
+        if (!v || typeof v !== 'object') {
+          options.issues?.push(`canvas ${s.id}: dropped malformed view at index ${index}`);
+          return false;
+        }
+        return !REMOVED_TYPES.has(v.type);
+      })
       .map((v: any) => ({
         ...v,
         metadata: v.metadata ?? {},
@@ -228,6 +289,7 @@ function normalizeCanvasInstance(
       layoutCenterId: options.existing?.layoutCenterId ?? s.layoutCenterId ?? null,
     };
   } catch (err) {
+    options.issues?.push(`canvas ${s?.id}: ${errorMessage(err)}`);
     rendererLog('canvas', 'error', `Skipped malformed canvas instance on ${options.source}`, {
       meta: { id: s?.id, error: err instanceof Error ? err.message : String(err) },
     });
@@ -253,6 +315,23 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
   const initialCanvas = createCanvasInstance();
   let _wiresLoading = false;
 
+  // Persistence gates, set by loadCanvas/loadWires. Autosave fires shortly
+  // after hydration regardless of user edits, and each save rewrites the
+  // primary AND the backup — so if hydration produced the wrong state, every
+  // recovery copy is lost. Saves are only allowed once hydration has shown
+  // the in-memory state is safe to persist:
+  //  - 'blocked':        not hydrated from local storage, or hydration failed.
+  //  - 'verify-empty':   nothing was found; re-check storage before the first
+  //                      write in case the "missing" data was only transiently
+  //                      unavailable.
+  //  - 'snapshot-first': malformed records were dropped; copy the raw data to
+  //                      a recovery key before the first write replaces it.
+  //  - 'ok':             clean hydration.
+  let _canvasPersist: 'blocked' | 'verify-empty' | 'snapshot-first' | 'ok' = 'blocked';
+  let _recoverySnapshot: unknown;
+  let _zoneWiresPersistBlocked = false;
+  let _wiresPersistBlocked = false;
+
   return create<CanvasState>((set, get) => ({
     canvases: [initialCanvas],
     activeCanvasId: initialCanvas.id,
@@ -269,6 +348,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     layoutCenterId: null,
     loaded: false,
     wiresLoaded: false,
+    loadError: null,
 
     activeCanvas: () => {
       const state = get();
@@ -278,63 +358,138 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     // ── Lifecycle ──────────────────────────────────────────────────
 
     loadCanvas: async (storage) => {
+      _canvasPersist = 'blocked';
+      _recoverySnapshot = undefined;
       try {
         // Restore zone wire definitions alongside the canvas. They expand into
         // bindings at runtime (no MCP state of their own), so they belong with
         // the canvas data rather than the MCP wire restore.
         let loadedZoneWires: ZoneWireDefinition[] = [];
+        _zoneWiresPersistBlocked = false;
         try {
-          const savedZoneWires = await storage.read(STORAGE_KEY_ZONE_WIRES) as ZoneWireDefinition[] | null;
+          const savedZoneWires = await readWithRetry(storage, STORAGE_KEY_ZONE_WIRES) as ZoneWireDefinition[] | null;
           if (savedZoneWires && Array.isArray(savedZoneWires)) {
             loadedZoneWires = savedZoneWires.filter(
               (w) => w && w.id && w.sourceZoneId && w.targetId && w.targetType,
             );
           }
-        } catch {
-          // ignore zone wire restore failure
+        } catch (err) {
+          // Unreadable — don't let saveCanvas persist the empty list over it.
+          _zoneWiresPersistBlocked = true;
+          rendererLog('canvas', 'error', 'Zone wires unreadable — zone wire saves disabled for this session', {
+            meta: { error: errorMessage(err) },
+          });
         }
 
-        let savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as CanvasInstanceData[] | null;
-        // A torn/corrupt primary reads back as null (parse failure → undefined)
-        // or a non-array. Rather than fall through to a fresh empty canvas —
-        // which the next autosave would then persist over the good data — try
-        // the last-good backup first. A valid empty canvas is always a
-        // non-empty array (≥1 instance), so this only triggers on real loss.
-        if (!Array.isArray(savedInstances) || savedInstances.length === 0) {
-          const backup = await storage.read(STORAGE_KEY_INSTANCES_BACKUP) as CanvasInstanceData[] | null;
-          if (Array.isArray(backup) && backup.length > 0) {
+        // Prefer a clean copy. The backup is written before the primary, so it
+        // is always a complete old-or-new copy and is safe to fall back to when
+        // the primary is torn, missing, unreadable or has malformed records.
+        const primary = await readInstancesCopy(storage, STORAGE_KEY_INSTANCES);
+        let chosen: InstancesCopy = primary;
+        if (primary.status !== 'ok') {
+          const backup = await readInstancesCopy(storage, STORAGE_KEY_INSTANCES_BACKUP);
+          if (backup.status === 'ok') {
             rendererLog('canvas', 'warn', 'Primary canvas data missing/corrupt — recovered from backup', {
-              meta: { backupCanvases: backup.length },
+              meta: { primary: primary.status, backupCanvases: backup.canvases.length },
             });
-            savedInstances = backup;
+            chosen = backup;
+          } else if (primary.status === 'unreadable' || backup.status === 'unreadable') {
+            // Data may exist but can't be read. Hydrating anything here would
+            // let autosave overwrite it, so stay unloaded with saves blocked.
+            const error = primary.status === 'unreadable'
+              ? primary.error
+              : (backup as Extract<InstancesCopy, { status: 'unreadable' }>).error;
+            rendererLog('canvas', 'error', 'Canvas data unreadable — not loading, saves blocked', {
+              meta: { primary: primary.status, backup: backup.status, error: errorMessage(error) },
+            });
+            set({ loaded: false, loadError: `Canvas data could not be read: ${errorMessage(error)}` });
+            return;
+          } else if (primary.status !== 'degraded' && (backup.status === 'degraded' || primary.status === 'missing')) {
+            // Salvage whichever copy still has valid records.
+            chosen = backup;
           }
         }
-        if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
-          const canvases = savedInstances.map((s) => normalizeCanvasInstance(s, { source: 'disk' }));
-          const savedActive = await storage.read(STORAGE_KEY_ACTIVE) as string | null;
-          const activeCanvasId = (savedActive && canvases.find((c) => c.id === savedActive))
-            ? savedActive
-            : canvases[0].id;
 
-          set({ canvases, activeCanvasId, zoneWireDefinitions: loadedZoneWires, loaded: true, ...syncDerivedState(canvases, activeCanvasId) });
-          return;
+        let canvases: CanvasInstance[];
+        if (chosen.status === 'ok') {
+          canvases = chosen.canvases;
+          _canvasPersist = 'ok';
+        } else if (chosen.status === 'missing') {
+          canvases = [createCanvasInstance()];
+          _canvasPersist = 'verify-empty';
+        } else if (chosen.status === 'unreadable') {
+          throw chosen.error; // unreachable — handled above
+        } else {
+          // Degraded or invalid: keep every record that survived, and preserve
+          // the raw data before the first save rewrites primary and backup.
+          canvases = chosen.status === 'degraded' ? chosen.canvases : [createCanvasInstance()];
+          _recoverySnapshot = chosen.raw;
+          _canvasPersist = 'snapshot-first';
+          rendererLog('canvas', 'warn', 'Canvas data had malformed records — loaded what was valid', {
+            meta: { issues: chosen.status === 'degraded' ? chosen.issues : ['instances is not a non-empty array'] },
+          });
         }
 
-        // Fresh start
-        const canvas = createCanvasInstance();
-        set({ canvases: [canvas], activeCanvasId: canvas.id, zoneWireDefinitions: loadedZoneWires, loaded: true, ...syncDerivedState([canvas], canvas.id) });
+        // The active-canvas id is cosmetic; failing to read it must not fail
+        // (or empty) the whole load.
+        let savedActive: string | null = null;
+        try {
+          savedActive = await readWithRetry(storage, STORAGE_KEY_ACTIVE) as string | null;
+        } catch (err) {
+          rendererLog('canvas', 'warn', 'Active canvas id unreadable — defaulting to first canvas', {
+            meta: { error: errorMessage(err) },
+          });
+        }
+        const activeCanvasId = (savedActive && canvases.find((c) => c.id === savedActive))
+          ? savedActive
+          : canvases[0].id;
+
+        set({ canvases, activeCanvasId, zoneWireDefinitions: loadedZoneWires, loaded: true, loadError: null, ...syncDerivedState(canvases, activeCanvasId) });
       } catch (err) {
-        // Loading failed after data was already read — log loudly rather than
-        // silently discarding the user's canvas.
-        rendererLog('canvas', 'error', 'loadCanvas failed — substituting empty canvas', {
-          meta: { error: err instanceof Error ? err.message : String(err) },
+        // Unexpected failure — never substitute an empty canvas, which the
+        // next autosave would persist over the user's data.
+        _canvasPersist = 'blocked';
+        rendererLog('canvas', 'error', 'loadCanvas failed — not loading, saves blocked', {
+          meta: { error: errorMessage(err) },
         });
-        const canvas = createCanvasInstance();
-        set({ canvases: [canvas], activeCanvasId: canvas.id, loaded: true, ...syncDerivedState([canvas], canvas.id) });
+        set({ loaded: false, loadError: `Canvas failed to load: ${errorMessage(err)}` });
       }
     },
 
     saveCanvas: async (storage) => {
+      if (_canvasPersist === 'blocked') {
+        rendererLog('canvas', 'warn', 'saveCanvas skipped — canvas was not hydrated from storage');
+        return;
+      }
+      if (_canvasPersist === 'verify-empty') {
+        // Hydration found nothing. Confirm that's still true before the first
+        // write — a transiently unavailable directory reads back as missing.
+        let primary: unknown;
+        let backup: unknown;
+        try {
+          primary = await storage.read(STORAGE_KEY_INSTANCES);
+          backup = await storage.read(STORAGE_KEY_INSTANCES_BACKUP);
+        } catch (err) {
+          rendererLog('canvas', 'warn', 'saveCanvas deferred — could not confirm storage is empty', {
+            meta: { error: errorMessage(err) },
+          });
+          return;
+        }
+        const hasData = (v: unknown) => v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0);
+        if (hasData(primary) || hasData(backup)) {
+          rendererLog('canvas', 'error', 'Canvas data appeared after an empty load — reloading instead of overwriting it');
+          await get().loadCanvas(storage);
+          return;
+        }
+        _canvasPersist = 'ok';
+      }
+      if (_canvasPersist === 'snapshot-first') {
+        // If this write fails we stay in 'snapshot-first' and retry next save.
+        await storage.write(`${STORAGE_KEY_INSTANCES_RECOVERY_PREFIX}${Date.now()}`, _recoverySnapshot);
+        _recoverySnapshot = undefined;
+        _canvasPersist = 'ok';
+      }
+
       const { canvases, activeCanvasId } = get();
       const data: CanvasInstanceData[] = canvases.map((c) => ({
         id: c.id,
@@ -359,6 +514,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
       // Persist zone wire definitions — the canvas-owned source of truth for
       // zone-level wires. They survive reload and feed the annex snapshot.
+      if (_zoneWiresPersistBlocked) return;
       const zoneData = get().zoneWireDefinitions.map((w) => ({
         id: w.id,
         sourceZoneId: w.sourceZoneId,
@@ -372,7 +528,20 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       if (_wiresLoading) return;
       _wiresLoading = true;
       try {
-        const saved = await storage.read(STORAGE_KEY_WIRES) as McpBindingEntry[] | null;
+        let saved: McpBindingEntry[] | null;
+        try {
+          saved = await readWithRetry(storage, STORAGE_KEY_WIRES) as McpBindingEntry[] | null;
+        } catch (err) {
+          // Unreadable — mark loaded so canvas autosave isn't held up, but
+          // block saveWires so the empty list never overwrites the real wires.
+          _wiresPersistBlocked = true;
+          rendererLog('canvas', 'error', 'Canvas wires unreadable — wire saves disabled for this session', {
+            meta: { error: errorMessage(err) },
+          });
+          set({ wiresLoaded: true });
+          return;
+        }
+        _wiresPersistBlocked = false;
         if (!saved || !Array.isArray(saved) || saved.length === 0) {
           set({ wiresLoaded: true });
           return;
@@ -437,9 +606,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           }
         }
         set({ wireDefinitions: restoredDefinitions, wiresLoaded: true });
-      } catch {
-        // Storage read failed — skip wire restore, but mark as loaded so
-        // auto-save is not permanently blocked.
+      } catch (err) {
+        // Restore failed part-way — keep whatever was persisted rather than
+        // overwriting it with a partial list, but don't hold up canvas autosave.
+        _wiresPersistBlocked = true;
+        rendererLog('canvas', 'error', 'Canvas wire restore failed — wire saves disabled for this session', {
+          meta: { error: errorMessage(err) },
+        });
         set({ wiresLoaded: true });
       } finally {
         _wiresLoading = false;
@@ -447,6 +620,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     },
 
     saveWires: async (storage) => {
+      if (_wiresPersistBlocked) {
+        rendererLog('canvas', 'warn', 'saveWires skipped — persisted wires could not be read');
+        return;
+      }
       // Persist wire definitions — the canvas-owned source of truth.
       // Unlike MCP bindings, wire definitions are not cleared when agents sleep.
       const data = get().wireDefinitions.map((b) => ({
@@ -560,6 +737,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       // Ensure existing canvases are loaded from disk first
       if (!get().loaded) {
         await get().loadCanvas(storage);
+        // Inserting into an unhydrated placeholder and saving it would
+        // overwrite the canvases we failed to read.
+        if (!get().loaded) throw new Error(get().loadError ?? 'Canvas data could not be loaded');
       }
       // Insert the new canvas
       const canvases = [...get().canvases, canvas];

@@ -156,6 +156,68 @@ describe('settings-store-factory', () => {
     });
   });
 
+  describe('request sequencing', () => {
+    function deferred<T>() {
+      let resolve!: (v: T) => void;
+      let reject!: (e: unknown) => void;
+      const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+      return { promise, resolve, reject };
+    }
+
+    it('a failed save does not roll back a newer save to a different key', async () => {
+      const first = deferred<void>();
+      mockSave.mockReturnValueOnce(first.promise).mockResolvedValueOnce(undefined);
+
+      const p1 = useStore.getState().saveSettings({ enabled: true });
+      await useStore.getState().saveSettings({ count: 7 });
+      first.reject(new Error('save failed'));
+      await p1;
+
+      expect(useStore.getState().enabled).toBe(false);
+      expect(useStore.getState().count).toBe(7);
+    });
+
+    it('a failed save does not roll back a newer save to the same key', async () => {
+      const first = deferred<void>();
+      mockSave.mockReturnValueOnce(first.promise).mockResolvedValueOnce(undefined);
+
+      const p1 = useStore.getState().saveSettings({ count: 1 });
+      await useStore.getState().saveSettings({ count: 2 });
+      first.reject(new Error('save failed'));
+      await p1;
+
+      expect(useStore.getState().count).toBe(2);
+    });
+
+    it('an older load response arriving after a newer one is ignored', async () => {
+      const older = deferred<TestSettings>();
+      mockGet.mockReturnValueOnce(older.promise).mockResolvedValueOnce({ enabled: true, count: 2 });
+
+      const p1 = useStore.getState().loadSettings();
+      await useStore.getState().loadSettings();
+      older.resolve({ enabled: false, count: 1 });
+      await p1;
+
+      expect(useStore.getState().enabled).toBe(true);
+      expect(useStore.getState().count).toBe(2);
+    });
+
+    it('a load response does not clobber a save made while it was in flight', async () => {
+      const load = deferred<TestSettings>();
+      mockGet.mockReturnValueOnce(load.promise);
+
+      const p1 = useStore.getState().loadSettings();
+      await useStore.getState().saveSettings({ count: 9 });
+      load.resolve({ enabled: true, count: 1 });
+      await p1;
+
+      expect(useStore.getState().count).toBe(9);
+      // Keys not touched by the save still take the loaded value
+      expect(useStore.getState().enabled).toBe(true);
+      expect(useStore.getState().loaded).toBe(true);
+    });
+  });
+
   describe('multiple stores', () => {
     it('different definitions produce independent stores', () => {
       interface OtherSettings { name: string }

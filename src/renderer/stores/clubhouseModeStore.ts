@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { SourceControlProvider } from '../../shared/types';
-import { optimisticUpdate } from './optimistic-update';
+import { beginLoad, optimisticUpdate } from './optimistic-update';
 
 interface ClubhouseModeState {
   enabled: boolean;
@@ -20,13 +20,15 @@ export const useClubhouseModeStore = create<ClubhouseModeState>((set, get) => ({
   sourceControlProvider: 'github',
 
   loadSettings: async () => {
+    const applyLoaded = beginLoad(get);
     try {
       const settings = await window.clubhouse.app.getClubhouseModeSettings();
-      set({
+      const safe = applyLoaded({
         enabled: settings?.enabled ?? false,
         projectOverrides: settings?.projectOverrides ?? {},
         sourceControlProvider: settings?.sourceControlProvider ?? 'github',
       });
+      if (safe) set(safe);
     } catch {
       // Keep default
     }

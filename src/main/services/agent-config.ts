@@ -91,6 +91,8 @@ interface CacheEntry {
   diskSnapshot: string;
   agentsById: Map<string, DurableAgentConfig>;
   dirty: boolean;
+  /** Bumped on every mutation so a flush can tell whether it covered the latest state. */
+  revision: number;
   flushTimer: ReturnType<typeof setTimeout> | null;
   pendingFlush: Promise<void> | null;
 }
@@ -190,6 +192,36 @@ function deduplicateAgents(agents: DurableAgentConfig[]): { agents: DurableAgent
   return { agents: result, removed };
 }
 
+/** A persisted record is usable only if it is an object with a non-empty string ID. */
+function isAgentRecord(value: unknown): value is DurableAgentConfig {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    && typeof (value as { id?: unknown }).id === 'string' && (value as { id: string }).id.length > 0;
+}
+
+function isMissingFileError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+/**
+ * Read a config file, returning null only when it does not exist. Any other
+ * read failure (EACCES, EBUSY, EMFILE, ...) is transient from our point of view
+ * and is rethrown so it never turns into a cached — and later persisted — empty
+ * agent list while the file on disk is still intact.
+ */
+async function readConfigFileIfPresent(filePath: string): Promise<string | null> {
+  if (!(await pathExists(filePath))) return null;
+  try {
+    return await fsp.readFile(filePath, 'utf-8');
+  } catch (err) {
+    if (isMissingFileError(err)) return null;
+    appLog('core:agent-config', 'error', 'Failed to read agent config file', {
+      meta: { filePath, error: err instanceof Error ? err.message : String(err) },
+    });
+    throw err;
+  }
+}
+
 async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConfig[]> {
   const configPath = agentsConfigPath(projectPath);
   const backupPath = agentsBackupPath(projectPath);
@@ -201,20 +233,37 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
   let agents: DurableAgentConfig[] | null = null;
   let source: 'main' | 'backup' | 'empty' = 'empty';
 
+  let droppedInvalid = false;
+
   // Try to read main config
-  if (await pathExists(configPath)) {
+  const mainRaw = await readConfigFileIfPresent(configPath);
+  if (mainRaw !== null) {
     try {
-      const raw = await fsp.readFile(configPath, 'utf-8');
-      const parsed: DurableAgentConfig[] = JSON.parse(raw);
+      const parsed: unknown = JSON.parse(mainRaw);
       if (Array.isArray(parsed)) {
-        agents = parsed;
-        source = 'main';
-        appLog('core:agent-config', 'info', `Loaded ${agents.length} agent(s) from disk`, {
-          meta: {
-            configPath,
-            agents: agents.map((a) => ({ id: a.id, name: a.name, hasWorktree: !!a.worktreePath })),
-          },
-        });
+        const valid = parsed.filter(isAgentRecord);
+        if (valid.length > 0 || parsed.length === 0) {
+          agents = valid;
+          source = 'main';
+          droppedInvalid = valid.length !== parsed.length;
+          if (droppedInvalid) {
+            appLog('core:agent-config', 'warn', `Dropped ${parsed.length - valid.length} invalid record(s) from agents.json`, {
+              meta: { configPath },
+            });
+          }
+          appLog('core:agent-config', 'info', `Loaded ${agents.length} agent(s) from disk`, {
+            meta: {
+              configPath,
+              agents: agents.map((a) => ({ id: a.id, name: a.name, hasWorktree: !!a.worktreePath })),
+            },
+          });
+        } else {
+          // Non-empty but every record is invalid (e.g. `[null]`) — this is
+          // corruption, not an intentionally empty list. Fall back to backup.
+          appLog('core:agent-config', 'error', 'agents.json has no valid agent records — attempting recovery from backup', {
+            meta: { configPath },
+          });
+        }
       }
     } catch (err) {
       appLog('core:agent-config', 'error', 'Failed to parse agents.json — attempting recovery from backup', {
@@ -224,28 +273,31 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
   }
 
   // Main file missing or corrupt — fall back to backup
-  if (!agents && await pathExists(backupPath)) {
-    try {
-      const raw = await fsp.readFile(backupPath, 'utf-8');
-      const parsed: DurableAgentConfig[] = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        agents = parsed;
-        source = 'backup';
-        appLog('core:agent-config', 'warn', `Recovered ${agents.length} agent(s) from backup`, {
-          meta: {
-            backupPath,
-            agents: agents.map((a) => ({ id: a.id, name: a.name })),
-          },
+  if (!agents) {
+    const backupRaw = await readConfigFileIfPresent(backupPath);
+    if (backupRaw !== null) {
+      try {
+        const parsed: unknown = JSON.parse(backupRaw);
+        const valid = Array.isArray(parsed) ? parsed.filter(isAgentRecord) : [];
+        if (valid.length > 0) {
+          agents = valid;
+          source = 'backup';
+          appLog('core:agent-config', 'warn', `Recovered ${agents.length} agent(s) from backup`, {
+            meta: {
+              backupPath,
+              agents: agents.map((a) => ({ id: a.id, name: a.name })),
+            },
+          });
+          // Restore the main file from the backup without clobbering the backup
+          // itself. The backup is the last known-good snapshot and must survive
+          // the recovery path to preserve future recovery options.
+          await writeAgentsToDiskSkippingBackup(projectPath, agents);
+        }
+      } catch (backupErr) {
+        appLog('core:agent-config', 'error', 'Backup agents.json.bak is also corrupt', {
+          meta: { backupPath, error: backupErr instanceof Error ? backupErr.message : String(backupErr) },
         });
-        // Restore the main file from the backup without clobbering the backup
-        // itself. The backup is the last known-good snapshot and must survive
-        // the recovery path to preserve future recovery options.
-        await writeAgentsToDiskSkippingBackup(projectPath, agents);
       }
-    } catch (backupErr) {
-      appLog('core:agent-config', 'error', 'Backup agents.json.bak is also corrupt', {
-        meta: { backupPath, error: backupErr instanceof Error ? backupErr.message : String(backupErr) },
-      });
     }
   }
 
@@ -270,9 +322,13 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
         removedAgents: removed.map((a) => ({ id: a.id, name: a.name })),
       },
     });
-    // Persist the deduplicated list without clobbering a valid backup when the
-    // current file had to be recovered from backup first.
-    if (source === 'backup') {
+  }
+  if (removed.length > 0 || droppedInvalid) {
+    // Persist the cleaned list without clobbering a valid backup when the
+    // current file had to be recovered from backup first, or when the current
+    // file held invalid records (copying it into the backup would replace the
+    // last known-good snapshot with a damaged one).
+    if (source === 'backup' || droppedInvalid) {
       await writeAgentsToDiskSkippingBackup(projectPath, deduped);
     } else {
       await writeAgentsToDisk(projectPath, deduped);
@@ -410,25 +466,43 @@ function ensureConfigWatcher(projectPath: string): void {
   }
 }
 
+/**
+ * Persistence barrier: resolves only once disk reflects the latest in-memory
+ * state. A mutation that lands while a write is in flight keeps the entry dirty,
+ * so the loop writes again instead of returning after the older write.
+ */
 async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void> {
   if (entry.flushTimer) {
     clearTimeout(entry.flushTimer);
     entry.flushTimer = null;
   }
-  if (entry.pendingFlush) {
-    await entry.pendingFlush;
+  while (entry.pendingFlush || entry.dirty) {
+    if (entry.pendingFlush) {
+      await entry.pendingFlush;
+      continue;
+    }
+    await startFlush(projectPath, entry);
   }
-  if (!entry.dirty) {
-    return;
-  }
+}
+
+function startFlush(projectPath: string, entry: CacheEntry): Promise<void> {
+  // Immutable write snapshot. Callers mutate entry.agents in place (e.g.
+  // createDurable pushes onto it), so the write must not observe — and then
+  // falsely acknowledge — changes made after this point.
+  const revision = entry.revision;
+  const snapshot = cloneAgents(entry.agents);
+  const baseline = entry.baselineAgents;
 
   const flushPromise = (async () => {
-    let agentsToWrite = entry.agents;
-    if (await pathExists(agentsConfigPath(projectPath))) {
-      const currentRaw = await fsp.readFile(agentsConfigPath(projectPath), 'utf-8');
+    let agentsToWrite = snapshot;
+    let externalAgents: DurableAgentConfig[] | null = null;
+    const currentRaw = await readConfigFileIfPresent(agentsConfigPath(projectPath));
+    if (currentRaw !== null) {
       let currentAgents: DurableAgentConfig[];
       try {
-        currentAgents = JSON.parse(currentRaw) as DurableAgentConfig[];
+        const parsed: unknown = JSON.parse(currentRaw);
+        if (!Array.isArray(parsed)) throw new Error('not an array');
+        currentAgents = parsed.filter(isAgentRecord);
       } catch {
         throw new Error('Cannot flush agents.json because it was externally changed to invalid JSON');
       }
@@ -437,15 +511,25 @@ async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void>
         appLog('core:agent-config', 'warn', 'Detected external agents.json change; merging instead of overwriting it', {
           meta: { projectPath },
         });
-        agentsToWrite = mergeExternalAgents(entry.baselineAgents, entry.agents, currentAgents);
+        externalAgents = currentAgents;
+        agentsToWrite = mergeExternalAgents(baseline, snapshot, currentAgents);
       }
     }
     await writeAgentsToDisk(projectPath, agentsToWrite);
-    entry.agents = agentsToWrite;
-    entry.agentsById = buildAgentsById(agentsToWrite);
     entry.baselineAgents = cloneAgents(agentsToWrite);
     entry.diskSnapshot = JSON.stringify(agentsToWrite);
-    entry.dirty = false;
+    if (entry.revision === revision) {
+      if (externalAgents) {
+        entry.agents = agentsToWrite;
+        entry.agentsById = buildAgentsById(agentsToWrite);
+      }
+      entry.dirty = false;
+    } else if (externalAgents) {
+      // A newer mutation landed mid-write. Fold the external edits we just
+      // merged into it and stay dirty so the barrier writes the newer state.
+      entry.agents = mergeExternalAgents(baseline, entry.agents, externalAgents);
+      entry.agentsById = buildAgentsById(entry.agents);
+    }
   })()
     .catch((err) => {
       appLog('core:agent-config', 'error', 'Failed to write agents.json', {
@@ -460,7 +544,7 @@ async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void>
     });
 
   entry.pendingFlush = flushPromise;
-  await flushPromise;
+  return flushPromise;
 }
 
 function scheduleFlush(projectPath: string, entry: CacheEntry): void {
@@ -486,6 +570,7 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
       diskSnapshot: JSON.stringify(agents),
       agentsById: buildAgentsById(agents),
       dirty: false,
+      revision: 0,
       flushTimer: null,
       pendingFlush: null,
     };
@@ -507,6 +592,7 @@ async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): P
       diskSnapshot: JSON.stringify(agents),
       agentsById: buildAgentsById(agents),
       dirty: true,
+      revision: 0,
       flushTimer: null,
       pendingFlush: null,
     };
@@ -528,6 +614,7 @@ async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): P
     entry.agents = agents;
     entry.agentsById = buildAgentsById(agents);
   }
+  entry.revision++;
   entry.dirty = true;
   scheduleFlush(projectPath, entry);
 }
@@ -540,7 +627,11 @@ export async function flushAgentConfig(projectPath: string): Promise<void> {
   }
 }
 
-/** Flush all pending writes across all project paths */
+/**
+ * Flush all pending writes across all project paths. Drains until stable: a
+ * project mutated (or first cached) while earlier flushes were in flight is
+ * flushed too, so callers about to exit never lose an acknowledged change.
+ */
 export async function flushAllAgentConfigs(): Promise<void> {
   const dirtyEntries = [...configCache.entries()].filter(([, e]) => e.dirty);
   if (dirtyEntries.length > 0) {
@@ -548,7 +639,9 @@ export async function flushAllAgentConfigs(): Promise<void> {
       meta: { projects: dirtyEntries.map(([p, e]) => ({ path: p, agentCount: e.agents.length })) },
     });
   }
-  await Promise.all([...configCache.entries()].map(([projectPath, entry]) => flushEntry(projectPath, entry)));
+  do {
+    await Promise.all([...configCache.entries()].map(([projectPath, entry]) => flushEntry(projectPath, entry)));
+  } while ([...configCache.values()].some((entry) => entry.dirty || entry.pendingFlush));
 }
 
 /** Clear the in-memory cache (cancels pending timers without flushing). Useful for tests. */
@@ -587,8 +680,9 @@ export async function getBackupInfo(projectPath: string): Promise<{ backupAgents
 
   try {
     const raw = await fsp.readFile(backupPath, 'utf-8');
-    const backupAgents: DurableAgentConfig[] = JSON.parse(raw);
-    if (!Array.isArray(backupAgents) || backupAgents.length === 0) return null;
+    const parsed: unknown = JSON.parse(raw);
+    const backupAgents = Array.isArray(parsed) ? parsed.filter(isAgentRecord) : [];
+    if (backupAgents.length === 0) return null;
 
     const currentAgents = await readAgents(projectPath);
     // Recovery is available if the backup has more agents
@@ -612,8 +706,9 @@ export async function restoreFromBackup(projectPath: string): Promise<{ restored
   }
 
   const raw = await fsp.readFile(backupPath, 'utf-8');
-  const backupAgents: DurableAgentConfig[] = JSON.parse(raw);
-  if (!Array.isArray(backupAgents) || backupAgents.length === 0) {
+  const parsed: unknown = JSON.parse(raw);
+  const backupAgents = Array.isArray(parsed) ? parsed.filter(isAgentRecord) : [];
+  if (backupAgents.length === 0) {
     return { restoredCount: 0, agents: await readAgents(projectPath) };
   }
 

@@ -24,10 +24,14 @@ interface StructuredSession {
 
 const sessions = new Map<string, StructuredSession>();
 
-const LOGS_DIR = path.join(app.getPath('userData'), 'agent-logs');
+// Resolved lazily: index.ts may redirect userData (CLUBHOUSE_USER_DATA) after
+// this module is imported, and transcripts must follow the isolated profile.
+function getLogsDir(): string {
+  return path.join(app.getPath('userData'), 'agent-logs');
+}
 
 async function ensureLogsDir(): Promise<void> {
-  await fsp.mkdir(LOGS_DIR, { recursive: true });
+  await fsp.mkdir(getLogsDir(), { recursive: true });
 }
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -51,7 +55,7 @@ export async function startStructuredSession(
   }
 
   await ensureLogsDir();
-  const transcriptPath = path.join(LOGS_DIR, `${agentId}-structured.jsonl`);
+  const transcriptPath = path.join(getLogsDir(), `${agentId}-structured.jsonl`);
   const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });
   const abortController = new AbortController();
 

@@ -156,6 +156,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const selectedViewIds = store((s) => s.selectedViewIds);
   const loaded = store((s) => s.loaded);
   const wiresLoaded = store((s) => s.wiresLoaded);
+  const loadError = store((s) => s.loadError);
   const wireDefinitions = store((s) => s.wireDefinitions);
   const zoneWireDefinitions = store((s) => s.zoneWireDefinitions);
   const minimapAutoHide = store((s) => s.minimapAutoHide);
@@ -609,6 +610,22 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, remoteForward]);
 
   if (!loaded) {
+    // A failed load must not fall through to an empty, autosaving canvas —
+    // the saved canvas is left untouched until it can be read.
+    if (loadError) {
+      return React.createElement('div', {
+        className: 'flex flex-col items-center justify-center gap-2 h-full text-ctp-subtext0 text-xs',
+        'data-testid': 'canvas-load-error',
+      },
+      React.createElement('span', null, `${loadError}. Your saved canvas has not been modified.`),
+      React.createElement('button', {
+        className: 'px-2 py-1 rounded bg-surface-1 hover:bg-surface-2 text-ctp-text',
+        onClick: async () => {
+          await store.getState().loadCanvas(storage);
+          await store.getState().loadWires(storage);
+        },
+      }, 'Retry'));
+    }
     return React.createElement('div', {
       className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs',
     }, 'Loading canvas...');
