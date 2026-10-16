@@ -33,6 +33,7 @@ import {
   incrementAttempt,
   handleSafeModeDialog,
   handleSafeModeStartup,
+  isSafeModeActive,
 } from './safe-mode';
 
 const MARKER_PATH = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', '.startup-marker');
@@ -181,7 +182,7 @@ describe('safe-mode', () => {
       );
     });
 
-    it('shows dialog and returns false when user chooses to try again normally', () => {
+    it('shows dialog, returns false and clears the marker when user chooses to try again normally', () => {
       const marker = { timestamp: 1000, attempt: 2, lastEnabledPlugins: ['plugin-a'] };
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(marker));
       vi.mocked(dialog.showMessageBoxSync).mockReturnValue(1);
@@ -190,7 +191,19 @@ describe('safe-mode', () => {
 
       expect(result).toBe(false);
       expect(dialog.showMessageBoxSync).toHaveBeenCalled();
-      expect(fs.unlinkSync).not.toHaveBeenCalled();
+      // A stale marker would otherwise survive into this launch (#1575).
+      expect(fs.unlinkSync).toHaveBeenCalledWith(MARKER_PATH);
+    });
+
+    it('treats a dismissed dialog (cancelId) as try again normally', () => {
+      const marker = { timestamp: 1000, attempt: 4, lastEnabledPlugins: ['plugin-a'] };
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(marker));
+      const cancelId = 1;
+      vi.mocked(dialog.showMessageBoxSync).mockReturnValue(cancelId);
+
+      expect(handleSafeModeDialog()).toBe(false);
+      expect(vi.mocked(dialog.showMessageBoxSync).mock.calls[0][0].cancelId).toBe(cancelId);
+      expect(fs.unlinkSync).toHaveBeenCalledWith(MARKER_PATH);
     });
 
     it('logs crash loop detection with marker details', () => {
@@ -232,14 +245,20 @@ describe('safe-mode', () => {
       expect(dialogCall.detail).toContain('unknown');
     });
 
-    it('clears marker only when user chooses safe mode (not on "try again")', () => {
+    it('clears the marker after the dialog returns, on both choices', () => {
       const marker = { timestamp: 1000, attempt: 2, lastEnabledPlugins: ['plugin-a'] };
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(marker));
-      vi.mocked(dialog.showMessageBoxSync).mockReturnValue(1);
+      for (const response of [0, 1]) {
+        vi.clearAllMocks();
+        vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(marker));
+        vi.mocked(dialog.showMessageBoxSync).mockReturnValue(response);
 
-      handleSafeModeDialog();
+        handleSafeModeDialog();
 
-      expect(fs.unlinkSync).not.toHaveBeenCalled();
+        expect(fs.unlinkSync).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(dialog.showMessageBoxSync).mock.invocationCallOrder[0])
+          .toBeLessThan(vi.mocked(fs.unlinkSync).mock.invocationCallOrder[0]);
+      }
     });
   });
 
@@ -255,6 +274,60 @@ describe('safe-mode', () => {
       expect(handleSafeModeStartup()).toBe(false);
       expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
       expect(fs.unlinkSync).not.toHaveBeenCalled();
+      expect(isSafeModeActive()).toBe(false);
+      expect(process.env.CLUBHOUSE_SAFE_MODE).toBeUndefined();
+    });
+
+    it('does not prompt when attempt is 1', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ timestamp: 1000, attempt: 1, lastEnabledPlugins: [] }),
+      );
+      expect(handleSafeModeStartup()).toBe(false);
+      expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
+      expect(fs.unlinkSync).not.toHaveBeenCalled();
+      expect(isSafeModeActive()).toBe(false);
+    });
+
+    it('stays out of safe mode and clears the marker when the user tries again normally', () => {
+      const marker = { timestamp: 1000, attempt: 2, lastEnabledPlugins: ['plugin-a'] };
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(marker));
+      vi.mocked(dialog.showMessageBoxSync).mockReturnValue(1);
+
+      const result = handleSafeModeStartup();
+
+      expect(result).toBe(false);
+      expect(isSafeModeActive()).toBe(false);
+      expect(process.env.CLUBHOUSE_SAFE_MODE).toBeUndefined();
+      expect(fs.unlinkSync).toHaveBeenCalledWith(MARKER_PATH);
+    });
+
+    it('reads --safe-mode from process.argv by default', () => {
+      process.argv = [...originalArgv, '--safe-mode'];
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+
+      expect(handleSafeModeStartup()).toBe(true);
+      expect(isSafeModeActive()).toBe(true);
+    });
+
+    it('skips the dialog for --safe-mode even when a crash-loop marker exists', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ timestamp: 1000, attempt: 3, lastEnabledPlugins: ['plugin-a'] }),
+      );
+
+      expect(handleSafeModeStartup(true)).toBe(true);
+      expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
+      expect(fs.unlinkSync).toHaveBeenCalledWith(MARKER_PATH);
+      expect(isSafeModeActive()).toBe(true);
+      expect(process.env.CLUBHOUSE_SAFE_MODE).toBe('1');
+    });
+
+    it('resets the active flag on a later normal decision', () => {
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      handleSafeModeStartup(true);
+      expect(isSafeModeActive()).toBe(true);
+
+      handleSafeModeStartup(false);
+      expect(isSafeModeActive()).toBe(false);
     });
 
     it('activates safe mode when the CLI force flag is set', () => {
@@ -266,6 +339,7 @@ describe('safe-mode', () => {
       expect(result).toBe(true);
       expect(fs.unlinkSync).toHaveBeenCalledWith(MARKER_PATH);
       expect(process.env.CLUBHOUSE_SAFE_MODE).toBe('1');
+      expect(isSafeModeActive()).toBe(true);
       expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
     });
 
@@ -280,6 +354,8 @@ describe('safe-mode', () => {
       expect(dialog.showMessageBoxSync).toHaveBeenCalled();
       expect(fs.unlinkSync).toHaveBeenCalledWith(MARKER_PATH);
       expect(process.env.CLUBHOUSE_SAFE_MODE).toBe('1');
+      // The renderer reads this flag; the marker is gone so it can't rely on it.
+      expect(isSafeModeActive()).toBe(true);
     });
   });
 

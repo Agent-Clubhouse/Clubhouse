@@ -161,6 +161,10 @@ export function registerPluginHandlers(): void {
     safeMode.clearMarker();
   });
 
+  ipcMain.handle(IPC.PLUGIN.SAFE_MODE_ACTIVE, () => {
+    return safeMode.isSafeModeActive();
+  });
+
   // ── Misc ─────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.PLUGIN.MKDIR, withValidatedArgs([stringArg(), stringArg(), stringArg(), stringArg({ optional: true })], async (_event, pluginId: string, scope: string, relativePath: string, projectPath?: string) => {
     await pluginStorage.mkdirPlugin(pluginId, scope as 'project' | 'global', relativePath, projectPath);

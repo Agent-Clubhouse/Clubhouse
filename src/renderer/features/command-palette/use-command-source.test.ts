@@ -474,26 +474,16 @@ describe('useCommandSource', () => {
     expect(item.category).toBe('Actions');
   });
 
-  // ── Assistant gating: nav:assistant hidden unless experimental.assistant is on ──
+  // ── The Assistant was removed: no palette entry, even with a stale flag ──
 
-  it('hides nav:assistant when experimental.assistant flag is off (default)', async () => {
+  it('never lists nav:assistant, even with a stale experimental.assistant flag', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({ assistant: true });
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     expect(findItem(result.current, 'nav:assistant')).toBeUndefined();
   });
 
-  it('shows nav:assistant when experimental.assistant flag is on', async () => {
-    mockGetExperimentalSettings.mockResolvedValueOnce({ assistant: true });
-    const { result } = renderHook(() => useCommandSource());
-    await waitFor(() => {
-      expect(findItem(result.current, 'nav:assistant')).toBeDefined();
-    });
-    const item = findItem(result.current, 'nav:assistant');
-    expect(item.label).toBe('Open Assistant');
-    expect(item.category).toBe('Navigation');
-  });
-
-  it('still shows nav:help regardless of assistant flag', async () => {
+  it('shows nav:help', async () => {
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     expect(findItem(result.current, 'nav:help')).toBeDefined();

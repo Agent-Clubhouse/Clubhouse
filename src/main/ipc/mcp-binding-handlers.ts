@@ -10,11 +10,7 @@ import type { BindingTargetKind } from '../services/clubhouse-mcp';
 import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
 import { registerBrowserTools, registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
-import { registerAgentQueueTools } from '../services/clubhouse-mcp/tools/agent-queue-tools';
-import { registerAssistantTools } from '../services/clubhouse-mcp/tools/assistant-tools';
 import { registerNotifyTools } from '../services/clubhouse-mcp/tools/notify-tools';
-import { registerCanvasCommandHandler } from '../services/clubhouse-mcp/canvas-command';
-import { registerCommandPaletteHandler } from '../services/clubhouse-mcp/command-palette-bridge';
 import { agentRegistry } from '../services/agent-registry';
 import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
@@ -23,7 +19,7 @@ import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation'
 
 /** Valid values for BindingTargetKind. */
 const VALID_TARGET_KINDS = new Set<BindingTargetKind>([
-  'browser', 'agent', 'terminal', 'group-project', 'agent-queue', 'plugin', 'assistant',
+  'browser', 'agent', 'terminal', 'group-project', 'plugin',
 ]);
 
 /** Validate that a targetKind string is a known BindingTargetKind. */
@@ -63,11 +59,7 @@ export function registerMcpBindingHandlers(): void {
   registerAgentTools();
   registerBrowserTools();
   registerGroupProjectTools();
-  registerAgentQueueTools();
-  registerAssistantTools();
   registerNotifyTools();
-  registerCanvasCommandHandler();
-  registerCommandPaletteHandler();
 
   appLog('core:mcp', 'info', 'MCP binding handlers registered');
 
@@ -86,8 +78,8 @@ export function registerMcpBindingHandlers(): void {
       assertCallerIsAppWindow(event);
       // Allow binding for sleeping (unregistered) durable agents — the binding
       // will be stored and used when the agent wakes up and connects to the MCP
-      // bridge. This is essential for canvas wire creation: the assistant creates
-      // agents + wires before agents are started.
+      // bridge. This is essential for canvas wire creation: wires can be
+      // created (e.g. from a blueprint) before agents are started.
       if (!agentRegistry.get(agentId as string)) {
         appLog('core:mcp', 'debug', 'Creating binding for sleeping agent', { meta: { agentId } });
       }

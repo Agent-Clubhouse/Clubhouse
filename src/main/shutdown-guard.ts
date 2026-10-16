@@ -7,7 +7,6 @@ interface BeforeQuitHandlerOptions {
   flushAllAgentConfigs: () => Promise<void>;
   flushAllGroupProjects?: () => Promise<void>;
   flushAllBulletinBoards?: () => Promise<void>;
-  flushAllAgentQueues?: () => Promise<void>;
   /** Bounded by its own timeout (telemetry flushBeforeExit). */
   flushTelemetry?: () => Promise<void>;
   applyUpdateOnQuit: () => Promise<void>;
@@ -28,7 +27,6 @@ export function createBeforeQuitHandler({
   flushAllAgentConfigs,
   flushAllGroupProjects,
   flushAllBulletinBoards,
-  flushAllAgentQueues,
   flushTelemetry,
   applyUpdateOnQuit,
   appQuit,
@@ -48,7 +46,6 @@ export function createBeforeQuitHandler({
       flushAllAgentConfigs().catch((error) => onCleanupError('flush agent configs', error)),
       flushAllGroupProjects?.().catch((error) => onCleanupError('flush group projects', error)) ?? Promise.resolve(),
       flushAllBulletinBoards?.().catch((error) => onCleanupError('flush bulletin boards', error)) ?? Promise.resolve(),
-      flushAllAgentQueues?.().catch((error) => onCleanupError('flush agent queues', error)) ?? Promise.resolve(),
       flushTelemetry?.().catch((error) => onCleanupError('flush telemetry', error)) ?? Promise.resolve(),
       applyUpdateOnQuit().catch((error) => onCleanupError('apply update on quit', error)),
     ];

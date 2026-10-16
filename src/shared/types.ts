@@ -1151,7 +1151,7 @@ export interface CanvasStateSnapshot {
     id: string;
     sourceZoneId: string;
     targetId: string;
-    targetType: 'zone' | 'agent' | 'group-project' | 'agent-queue' | 'browser';
+    targetType: 'zone' | 'agent' | 'group-project' | 'browser';
   }>;
 }
 

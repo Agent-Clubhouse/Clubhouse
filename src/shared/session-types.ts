@@ -1,6 +1,6 @@
 /**
  * Normalized session event format that all providers emit.
- * Used by the Sessions plugin to display session timelines.
+ * Returned by the agents API's session transcript readers.
  */
 export interface SessionEvent {
   id: string;

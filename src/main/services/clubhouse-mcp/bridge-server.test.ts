@@ -410,42 +410,6 @@ describe('BridgeServer', () => {
       });
     });
 
-    it('broadcasts activity for agent-queue tool calls', async () => {
-      const handler = vi.fn().mockResolvedValue({
-        content: [{ type: 'text', text: 'ok' }],
-      });
-      registerToolTemplate('agent-queue', 'enqueue', {
-        description: 'Enqueue',
-        inputSchema: { type: 'object' },
-      }, handler);
-
-      bindingManager.bind('agent-1', {
-        targetId: 'queue-1', targetKind: 'agent-queue', label: 'Q1',
-        targetName: 'myqueue',
-      });
-
-      const toolName = buildToolName(
-        { agentId: 'agent-1', targetId: 'queue-1', targetKind: 'agent-queue', label: 'Q1', targetName: 'myqueue' },
-        'enqueue',
-      );
-
-      await makeRequest(port, 'POST', '/mcp/agent-1', {
-        jsonrpc: '2.0', id: 32, method: 'tools/call',
-        params: { name: toolName, arguments: {} },
-      }, 'test-nonce');
-
-      const activityCall = mockBroadcast.mock.calls.find(
-        (c: unknown[]) => c[0] === IPC.MCP_BINDING.TOOL_ACTIVITY,
-      );
-      expect(activityCall).toBeDefined();
-      expect(activityCall![1]).toMatchObject({
-        sourceAgentId: 'agent-1',
-        targetId: 'queue-1',
-        direction: 'forward',
-        toolSuffix: 'enqueue',
-      });
-    });
-
     it('broadcasts reverse direction for read_output tool calls', async () => {
       const handler = vi.fn().mockResolvedValue({
         content: [{ type: 'text', text: 'data' }],

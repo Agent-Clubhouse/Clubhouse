@@ -170,7 +170,7 @@ export function BlueprintGallery() {
             if (sourceView && targetView && sourceView.type === 'agent') {
               const agentView = sourceView as any;
               if (agentView.agentId) {
-                const targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue' =
+                const targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' =
                   targetView.type === 'agent' ? 'agent' : 'browser';
                 store.getState().addWireDefinition({
                   agentId: agentView.agentId,

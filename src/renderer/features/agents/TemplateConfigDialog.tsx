@@ -5,7 +5,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
-import type { PersonaTemplate } from '../assistant/content/personas';
+import type { PersonaTemplate } from '../personas';
 import type { McpCatalogEntry } from '../../../shared/types';
 
 interface Props {

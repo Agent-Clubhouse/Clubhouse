@@ -354,7 +354,7 @@ vi.mock('../services/gitignore-manager', () => ({
 }));
 
 vi.mock('../services/safe-mode', () => ({
-  isSafeModeEnabled: vi.fn(() => false),
+  isSafeModeActive: vi.fn(() => false),
 }));
 
 // ── Service mocks (annex-handlers deps) ────────────────────────────────
