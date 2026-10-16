@@ -486,7 +486,7 @@ The embedded terminal stays first-class. Chat is never the only way to run an ag
 
 - **Per-provider setting, with a per-agent override.** If a Codex release breaks app-server, Codex alone flips to Terminal.
 - **Same session in either view.** The chat captures the native session id, and the terminal resumes it with `claude --resume`, `codex resume` or `copilot --resume`. The Chat / Terminal switch hands the session over instead of starting a new one.
-- **Automatic fallback.** If the installed CLI version is outside the tested range, the reported capabilities don't match, or the handshake fails, the agent opens in the next mode down. The fallback order is SDK, then stream-json, then terminal for Claude, and chat, then terminal for the others. A one-line notice says why.
+- **Automatic fallback, on real failures only.** If the handshake fails, a required capability is missing, the CLI is below the minimum version, or the version is on the known-bad list, the agent opens in the next mode down. A CLI newer than the tested range keeps chat and shows a quiet "untested version" note, because these CLIs release daily. The fallback order is SDK, then stream-json, then terminal for Claude, and chat, then terminal for the others. A one-line notice says why.
 - **Remote kill switch.** A small denylist of known-bad CLI versions, shipped with the update metadata, can force a lower mode without an app release.
 
 ### 7.2 The agent runtime seam
@@ -547,7 +547,7 @@ Sizes are in engineer-weeks. Phases 0–4 ship behind a new experimental **Chat*
 
 ### Before we begin
 
-These were settled with the maintainer on 2026-10-16, along with the spikes to run before step 1.
+These were settled with the maintainer on 2026-10-16, along with the spikes to run before step 1. Rollout step 1 (remove structured mode) is [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937).
 
 **Decisions**
 
@@ -572,6 +572,19 @@ These were settled with the maintainer on 2026-10-16, along with the spikes to r
    - The iOS app hasn't shipped and has no users, so there's no compatibility to keep.
    - Chat forwards normalized events and uses the shared permission queue, which is likely simpler for Annex than piping a terminal.
    - Some breakage while it settles is acceptable.
+
+6. **Version policy: fall back only on a real failure. Decided.** The rule is the same as the automatic fallback in §7.1: newer than tested gives a note, not a fallback.
+7. **First chat open on an existing terminal session: start fresh. Decided.** This only happens once per agent, when it moves from terminal to chat. The chat continues the CLI session, so the model keeps its context, and the transcript starts with a "Continued from terminal session" marker. Importing the native history isn't planned.
+8. **Switching Chat ⇄ Terminal: switch freely when idle. Decided.** During a turn, the switch asks "Interrupt and switch?" first, so two processes never drive one session.
+9. **Defaults accepted:**
+   - **"Always allow"** writes to the CLI's own config, the same place the TUI writes it: Claude `localSettings`, Codex exec-policy rules.
+   - **Cost:** subscription users see plan meters and tokens. Dollars appear only in API-key mode.
+   - **Plugins:** in v1 they get the runtime-aware `AgentView` only, with no chat-event API.
+   - **Naming:** new code uses `chat`, not `structured`.
+10. **Clubhouse's hooks stay off for chat agents. Decided. This is also a fidelity gain.**
+    - Status and permissions come from the protocol instead. That avoids double-reported status, and stops Clubhouse's permission hook from racing the chat approval.
+    - The user's own hooks still run.
+    - Protocol events are richer than hooks: tool inputs, live output, diffs and turn boundaries arrive as they happen. Terminal agents only get the coarse hook set, and Codex and Copilot terminal agents get almost nothing beyond activity and exit.
 
 **Spikes (about 1–2 days each)**
 
