@@ -557,7 +557,7 @@ These were settled with the maintainer on 2026-10-16, along with the spikes to r
    - The transcript survives the CLI's own cleanup, gives Annex and `read_output` one format, and feeds telemetry later.
 2. **Which agents get chat: durable agents. Decided.**
    - Quick agents stay fire-and-forget (headless) with no interactive chat. Missions and the Assistant keep their current modes.
-   - *Future milestone:* make a running quick agent's progress visible as a read-only live stream of its messages, tool calls and reasoning. The headless manager already parses stream-json, so the same renderer could show it. This is tracked, not planned.
+   - *Future milestone:* make a running quick agent's progress visible as a read-only live stream of its messages, tool calls and reasoning. The headless manager already parses stream-json, so the same renderer could show it. This is tracked in [#1932](https://github.com/Agent-Clubhouse/Clubhouse/issues/1932), not planned.
 3. **Process model: one CLI process per chat session. Decided.**
    - The process stays alive between turns and sleeps after about 30 idle minutes. The next message resumes it by session id.
    - Codex's shared app-server daemon could later serve every Codex agent from one process. Per-agent processes keep cwd, env and MCP isolated.
