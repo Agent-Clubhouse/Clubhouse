@@ -29,7 +29,8 @@ This document looks at replacing the embedded TUIs of Claude Code, OpenAI Codex 
   2. Ship Chat as an experimental feature in beta builds, with a per-provider choice once it's enabled.
   3. Promote Chat to stable, make it the default, and remove the experimental scaffolding.
   4. Introduce the new default with a light first-launch tip that links to Settings.
-- **Size:** about 14–18 engineer-weeks across six phases.
+- **Size:** about 16–20 engineer-weeks across six phases. Phase 0 grew because it now includes the agent runtime seam (§7.2).
+- **Independent of the chrome refresh and telemetry (§7.3):** chat lives in the agent pane and reuses existing status and settings. Telemetry subscribes to chat's events whenever it lands.
 
 ## 2. Clubhouse today ("structured mode")
 
@@ -410,7 +411,11 @@ The Claude column covers both modes. The Agent SDK (default) and raw `-p` stream
 7. **Packaging and licensing (low).**
    - Proprietary CLIs, and bundled binaries of 250 MB or more.
    - Require the user's own installs, as today. The Claude SDK is governed by Anthropic's Commercial Terms; Clubhouse uses it as a client library and doesn't ship its bundled binaries.
-8. **Security (low).**
+8. **PTY-assuming features break silently for chat agents (high).**
+   - Shoulder taps, group PM nudges, `/clear` and `/compact`, `read_output`, status badges, notifications, resume-on-update, popouts and canvas all assume a PTY today.
+   - Structured mode got some of these with ad-hoc branches and missed the rest: no list status, and group PM writes to a PTY that doesn't exist.
+   - Mitigate with the `AgentRuntime` seam (§7.2), plus a test per call site that runs it against both runtimes.
+9. **Security (low).**
    - Never answer a permission without a user action or an explicit mode, and log every decision.
    - Delete `agent:start-structured` along with structured mode (§8.0).
 
@@ -484,6 +489,44 @@ The embedded terminal stays first-class. Chat is never the only way to run an ag
 - **Automatic fallback.** If the installed CLI version is outside the tested range, the reported capabilities don't match, or the handshake fails, the agent opens in the next mode down. The fallback order is SDK, then stream-json, then terminal for Claude, and chat, then terminal for the others. A one-line notice says why.
 - **Remote kill switch.** A small denylist of known-bad CLI versions, shipped with the update metadata, can force a lower mode without an app release.
 
+### 7.2 The agent runtime seam
+
+Many Clubhouse features assume an agent is a PTY. They write keystrokes into it, read its buffer, or get status from Claude hooks. The chat runtime has to serve every one of them, or the feature quietly breaks for chat agents. Today's structured mode handles some of these with ad-hoc `if structured` branches and misses the rest.
+
+The fix is a main-process **`AgentRuntime` interface** with two implementations, `pty` and `chat`. Every call site goes through the interface instead of `pty-manager`. This is the biggest piece of pre-work, and it lands in phase 0.
+
+| Feature (today, PTY) | Where | Runtime method chat needs |
+|---|---|---|
+| Typing, paste, file drop | `AgentTerminal.tsx:247,484,550`, `useFileDrop.ts:44` | `sendMessage(text, attachments)` |
+| MCP `send_message` / `send_file`, shoulder taps, group-project inject | `agent-tools.ts:45-155,270-310,553-570`, `group-project-shoulder-tap.ts`, `group-project-handlers.ts:243-268` | `sendMessage` with steer or queue priority. Chat doesn't need the timed bracketed-paste-then-Enter workaround. |
+| Group PM polling nudges | `group-project-lifecycle.ts:34-38` (`injectPtyMessage`, no runtime check) and callers | `sendMessage` |
+| MCP `clear_agent` / `compact_agent`, group PM `/clear` `/compact` | `agent-tools.ts:612,649`, `group-project-tools.ts:955,1018` (no runtime check) | `clearContext()` (new session or thread) and `compact()` (Claude `/compact` prompt, Codex `thread/compact/start`, Copilot `/compact` prompt) |
+| Update-restart interrupt (`\x03`) and graceful `/exit` | `app-handlers.ts:479`, `pty-manager.ts:498-570` | `interrupt()` and `stop()` |
+| MCP `read_output` | `agent-tools.ts:395-410` | `readTranscript(tail)` over the normalized transcript |
+| Status: working, needs permission, idle, error | Claude hooks → `hook-server.ts` → `agentStatusSlice.ts:97-193`, plus notifications, sounds and plugin `agent:hook` events (`app-event-bridge.ts:362-390`) | Chat events emit the same status transitions and the same hook-shaped events to the renderer. Today's structured mode sends these to Annex only, so structured agents get no list status, badges or notifications. |
+| Activity indicator | `AgentList.tsx:174` (`pty.onData`) | `onActivity` from chat events |
+| Permission prompts | `hook-server.ts:156-236` → `annex-permission-queue.ts` → `DurablePermissionPrompt` and the iOS app | Chat permission requests join the **same queue**, so desktop and iOS approve them the same way. The composer dock is the desktop UI for that queue. |
+| Resume after update | `restart-session-service.ts:30` (skips non-PTY) | Resume by captured native session id |
+| Quick-agent completion | PTY exit plus `/tmp` summary file, stop hook auto-kill (`app-event-bridge.ts:167-276,392-407`) | Turn end plus final message as the summary |
+| Popout, canvas and plugin views | `PopoutAgentView.tsx:69`, `AgentCanvasView.tsx:313`, plugin `widgets.AgentTerminal` | A runtime-aware `AgentView` that renders chat or terminal. Plugins keep `AgentTerminal` and gain `AgentView`. |
+| Annex buffer replay, iOS keystrokes, iOS image paste | `annex-server.ts:1312,2209,281` | Transcript replay endpoint, `sendMessage`, image attachments |
+| Spawn: nonce, Clubhouse MCP, env, launch wrapper | `agent-system.ts:345-479` (skipped today by structured, TODO at `:208`) | Same spawn preparation for both runtimes. Copy the Assistant's structured path (`assistant-handlers.ts:503-540`). |
+
+Free Agent Mode maps onto the permission ladder: `auto` → Auto, `skip-all` → Full access.
+
+### 7.3 Independent of the chrome refresh and telemetry
+
+Chat should land on its own schedule, in either the current chrome or the refreshed one, with or without telemetry.
+
+- **Chrome:** chat is an agent-pane component. Its header, approval dock, composer, Changes panel and agent map all live inside the pane. Nothing goes in the title bar or sidebar.
+  - It talks to the rest of the app through existing state: `agentStatusSlice` status, the permission queue, and notifications. Today's agent list shows "needs permission" for a chat agent the same way it does for a terminal agent, and the refresh's "Needs you" section reads the same state.
+  - The per-provider runtime setting lives in the existing `OrchestratorSettingsView` row. The unused `OrchestratorSettings.defaultExecutionMode` field can back it. The Experimental entry uses the existing `preview-eligible` beta gating.
+  - The mockups show the refreshed sidebar only as context. The pane works the same next to today's 566px of chrome.
+- **Telemetry:** chat publishes its normalized events on a main-process bus that it owns, and nothing in chat imports telemetry.
+  - When the telemetry pipeline lands, it subscribes to that bus. Whichever lands second does the mapping in §8.1. If chat lands first, the drivers already emit the drift and stall signals as log lines and events, ready to map.
+  - Graduation (rollout step 3) uses telemetry when it exists. When it doesn't, the bar is the nightly real-CLI runs, error counts from the existing logs, and beta feedback.
+  - This differs from #1914 §9.1, which says neither ships until the parity checklist passes. The telemetry spec needs the matching edit: parity is required when both exist, and the checklist is owned by whichever lands second.
+
 ### UI
 
 See the artifact's mockups for the details.
@@ -501,6 +544,26 @@ See the artifact's mockups for the details.
 ## 8. Phased plan
 
 Sizes are in engineer-weeks. Phases 0–4 ship behind a new experimental **Chat** setting in beta builds. Phase 5 promotes it to stable and makes it the default. The old `structuredMode` flag isn't reused (§8.0).
+
+### Before we begin
+
+These are the open decisions and short spikes that should be settled before step 1. Defaults are proposed.
+
+**Decisions**
+
+1. **Source of truth for history:** Clubhouse's append-only transcript of normalized events renders the chat. The CLI's native session id is used only to resume the model's context. The transcript survives the CLI's own cleanup, gives Annex and `read_output` one format, and feeds telemetry later. *Proposed: yes.*
+2. **Which agents get chat:** durable agents first, then quick agents in interactive mode. Headless quick agents, missions run headless, and the Assistant keep their current modes; the Assistant can adopt chat later. *Proposed: durable in phase 1, quick in phase 4.*
+3. **Process model:** one CLI process per chat session, kept alive between turns and put to sleep after an idle timeout (for example 30 minutes). The next message resumes it by session id. Codex's shared app-server daemon could later serve all Codex agents from one process, but per-agent processes keep cwd, env and MCP isolated. *Proposed: per agent, with a 30-minute idle sleep.*
+4. **CI credentials and budget:** today's nightly real-CLI workflow has no provider credentials and only tests spawning. Real chat round trips need an Anthropic key, an OpenAI key and a Copilot token as repository secrets. That costs cents per night on the cheapest models. *Needs a yes and an owner for the accounts.*
+5. **Annex scope for experimental:** forward normalized events and use the shared permission queue from phase 0, so iOS can approve chat prompts immediately. Rendering chat on iOS is the iOS app's work, coordinated with its owner. *Proposed: forwarding and approvals in experimental; iOS chat rendering doesn't gate stable.*
+
+**Spikes (about 1–2 days each)**
+
+- **Packaging:** load `@anthropic-ai/claude-agent-sdk` (ESM) in the webpack main bundle of a packaged build on macOS, Windows and Linux in CI. Exclude its optional per-platform CLI binaries, and drive the user's `claude` through `pathToClaudeCodeExecutable`. This is the same risk class as the OTel packaging spike in #1914.
+- **Fixtures:** commit the probe captures from this research as the first fixtures: Claude `run1` and `run2`, Codex `exec` events and app-server handshakes, the Copilot ACP handshake and one prompt. Build the recorder script.
+- **Fake CLIs for CI E2E:** a small replayer that speaks each protocol over stdio from fixtures. Playwright chat E2E then runs in CI with no paid calls. Local E2E stays off, as today.
+- **Codex types:** generate `codex app-server generate-ts` output for the pinned version into the repo, with a CI job that regenerates it and fails on any diff.
+- **Long streams:** there's no list-virtualization library today. Pick one, such as `@tanstack/react-virtual`, or measure that a windowed render isn't needed below about 500 blocks. Markdown (`marked` + `dompurify` via `safe-markdown.ts`) and highlighting (`highlight.js`) already exist.
 
 ### 8.0 Rollout: four steps from structured mode to Chat by default
 
@@ -523,7 +586,7 @@ Sizes are in engineer-weeks. Phases 0–4 ship behind a new experimental **Chat*
   - **Old logs:** leave `agent-logs/*-structured.jsonl` in place. They're no longer written and are harmless.
   - **Notice:** if the migration changed anything, show a one-time notice: "Structured mode was removed. N agents now open in the terminal."
 - **Annex:** check whether the Annex iOS client consumes the forwarded structured events. If it does, version the Annex message, then remove the forwarding.
-- **Telemetry:** retire `core:structured*` and `usage/structured-session` in the attribute registry, with "replaced by Chat" as the reason (checklist item 1 in §8.1).
+- **Telemetry:** if the telemetry attribute registry exists by then, retire `core:structured*` and `usage/structured-session` there, with "replaced by Chat" as the reason. If it doesn't, there's nothing to do.
 - **Tests:** delete the structured unit tests and the IPC-stubbed structured E2E specs. Add unit tests for the migration.
 
 **Step 2 — Ship Chat as an experimental feature in beta builds** (phases 0–4).
@@ -535,9 +598,9 @@ Sizes are in engineer-weeks. Phases 0–4 ship behind a new experimental **Chat*
 **Step 3 — Promote to stable and make it the default** (phase 5).
 
 - **"Good" means:**
-  - the telemetry parity checklist (§8.1) passes;
   - each provider has two green weeks of nightly real-CLI chat runs;
-  - beta crash-free and turn-error rates are at least as good as the terminal path.
+  - beta crash and turn-error rates are at least as good as the terminal path. These come from telemetry if it has landed, otherwise from logs and beta feedback;
+  - if telemetry has landed, the parity checklist (§8.1) passes.
 - **Remove the experimental scaffolding:** delete the `chat` experimental flag and every check of it. Per-provider runtime mode becomes a regular setting under Agents, defaulting to Chat.
 - **Respect explicit choices:** a provider or agent the user explicitly set to Terminal stays on Terminal. Only providers still on the default switch. A provider can be promoted later than the others if its numbers aren't there yet.
 
@@ -550,16 +613,16 @@ Sizes are in engineer-weeks. Phases 0–4 ship behind a new experimental **Chat*
 
 | Phase | Scope | Size |
 |---|---|---|
-| 0. Foundations | Step 1 of §8.0 lands first: remove structured mode and migrate users to the terminal. Then add the experimental **Chat** setting (beta builds), and per-provider runtime modes (Chat / Terminal, §7.1) with a per-agent override. New session lifecycle: a turn ending doesn't end the session, and Stop means interrupt. Envelope v2 with session, turn and sequence ids, an append-only transcript and a renderer `chatStore`. MCP, hooks, env and wrapper parity with terminal agents. Fixture record/replay harness. Send the vendor questions. | S · 2–3 wk |
+| 0. Foundations | Settle the decisions and spikes in "Before we begin". Step 1 of §8.0 lands first: remove structured mode and migrate users to the terminal. Build the `AgentRuntime` seam (§7.2) and move every PTY-assuming call site onto it, including status, the permission queue and Annex forwarding. Then add the experimental **Chat** setting (beta builds), and per-provider runtime modes (Chat / Terminal, §7.1) with a per-agent override. New session lifecycle: a turn ending doesn't end the session, and Stop means interrupt. Envelope v2 with session, turn and sequence ids, an append-only transcript and a renderer `chatStore`. Fixture record/replay harness and fake-CLI E2E. Send the vendor questions. | M · 4–5 wk |
 | 1. Codex + chat core | Codex driver on generated v2 types: threads, resume, steer, interrupt, full approvals, diffs, usage, rate limits, approval and sandbox ladder. ChatView core: stream, tool groups, cards, approval dock, steer/queue composer, footer, Chat / Terminal switch. | M · 3–4 wk |
 | 2. Claude (SDK + stream) | Replace `StreamJsonAdapter` with the Claude driver. The SDK transport is the default; it uses the user's `claude` and excludes the bundled binaries. It covers `canUseTool` with suggestions, 6 modes, priority steer/queue, `setModel`, Task todos, `task_*` subagents, `rate_limit_event`, and resume/list. Then add the stream-json transport on the same normalizer, with cross-replayed fixtures. Plan card via `ExitPlanMode`. Auth pre-flight and `/login` hand-off. | M · 4 wk |
 | 3. Copilot + generic ACP | `session/load` resume, modes and config options, diffs, usage, commands, model-list dedupe, `--no-auto-update`. Capability downgrades in the UI. | S · 1–2 wk |
-| 4. Depth | Git checkpoints and Changes panel, agent map, live model and mode menus, attachments, auth pre-flight, Annex v2 forwarding. | M · 3 wk |
-| 5. Stable + default | Rollout steps 3–4: remove the experimental flag and gating, make runtime mode a regular per-provider setting defaulting to Chat, and ship the first-launch tip. Schema-diff CI, a structured leg in the nightly real-CLI E2E, runtime version warnings, automatic mode fallback and the known-bad-version denylist. Telemetry parity checklist (§8.1) passes. Copilot SDK driver. | S–M · 2 wk |
+| 4. Depth | Git checkpoints and Changes panel, agent map, live model and mode menus, attachments, auth pre-flight, chat for quick agents, popout and canvas `AgentView`. | M · 3 wk |
+| 5. Stable + default | Rollout steps 3–4: remove the experimental flag and gating, make runtime mode a regular per-provider setting defaulting to Chat, and ship the first-launch tip. Schema-diff CI, a structured leg in the nightly real-CLI E2E, runtime version warnings, automatic mode fallback and the known-bad-version denylist. Telemetry parity checklist (§8.1) passes if telemetry has landed. Copilot SDK driver. | S–M · 2 wk |
 
 ### 8.1 Telemetry parity checklist
 
-This follows the sequencing in §9.1 of `docs/telemetry-otel-spec.md` ([#1914](https://github.com/Agent-Clubhouse/Clubhouse/pull/1914), decided 2026-10-16). Telemetry won't instrument today's structured adapters (StreamJson, ACP, Codex app-server), because they're being replaced. Instead it subscribes once to the new Clubhouse event model:
+This adapts §9.1 of `docs/telemetry-otel-spec.md` ([#1914](https://github.com/Agent-Clubhouse/Clubhouse/pull/1914)) to keep chat independent (§7.3). Telemetry won't instrument today's structured adapters, because they're being removed. Instead it subscribes once to chat's event bus. Whichever of chat or telemetry lands second does this mapping:
 
 | Chat event model | Telemetry signal |
 |---|---|
@@ -576,14 +639,14 @@ The driver boundary and capability record provide:
 - `c.agent.turn.stalled`
 - a new `c.agent.runtime` value for the chat runtime (the PTY and headless values stay)
 
-**Chat doesn't ship, behind its flag or by default, until all four pass:**
+**Once both exist, Chat isn't promoted to stable and default (rollout step 3) until all four pass.** Experimental betas don't wait on telemetry.
 
 - [ ] Every span, metric and event the replaced adapters emit has a named equivalent in the new code, or is explicitly retired in the telemetry attribute registry with a reason.
 - [ ] Every Workbook panel that charted the old signal still has data. The KQL-vs-registry test checks names; a manual import into a scratch App Insights resource confirms the panels render.
 - [ ] New drivers add their `c.agent.runtime`, `c.structured.adapter` and `c.ui.action_failed` values to `src/shared/telemetry/attributes.ts` in the same PR, with telemetry review via CODEOWNERS.
 - [ ] P0 regression signals keep their level (Errors or Standard) and their alert rules.
 
-Phase 0 should emit these from the start. The event envelope v2 (session, turn and sequence ids) is what makes the turn and tool spans possible.
+Phase 0 should emit the underlying events from the start. The event envelope (session, turn and sequence ids) is what makes the turn and tool spans possible.
 
 ## 9. Sources
 
