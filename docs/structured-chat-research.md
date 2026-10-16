@@ -17,13 +17,19 @@ This document looks at replacing the embedded TUIs of Claude Code, OpenAI Codex 
   - It has never run against a real CLI in CI.
   - Its event model has no session, turn or sequence identity.
 - **Recommendation:** use native drivers per CLI behind one Clubhouse event model. Name the events after ACP's vocabulary, and attach a per-provider capability record.
-  - **Claude:** the user's own unmodified `claude` in `-p` stream-json mode, with the control protocol spoken directly. Move to the Agent SDK only with Anthropic's written approval.
+  - **Claude:** one driver with two modes. The Agent SDK is the default, pointed at the user's own installed `claude`. Raw `-p` stream-json, with the control protocol spoken directly, is the second mode.
   - **Codex:** `codex app-server` v2 over stdio, with types generated from the pinned version.
   - **Copilot:** finish the existing ACP driver, then move to the Copilot SDK. The ACP driver stays as the generic driver for other ACP agents.
 - **Subscription plans (hard constraint):**
   - Codex (ChatGPT Plus/Pro) and Copilot (Pro+/Max) are clearly allowed for a local open-source app.
-  - Claude Max works technically, but Anthropic's texts conflict. Get written confirmation before shipping chat to Pro/Max users.
-- **Size:** about 12–16 engineer-weeks across six phases.
+  - Claude Pro/Max/Team are allowed, per Anthropic's Help Center article of 2026-10-07: "You can still use the Claude Agent SDK, claude -p, and third-party apps with your subscription limits." The maintainer ruled this the governing text (§4).
+- **Terminal stays first-class:** each provider can be set to Chat or Terminal, with an automatic fall back to the terminal if a CLI update breaks the protocol or terms change (§7.1).
+- **Rollout in four steps (§8.0):**
+  1. Remove today's structured mode, migrating anyone using it back to the terminal.
+  2. Ship Chat as an experimental feature in beta builds, with a per-provider choice once it's enabled.
+  3. Promote Chat to stable, make it the default, and remove the experimental scaffolding.
+  4. Introduce the new default with a light first-launch tip that links to Settings.
+- **Size:** about 14–18 engineer-weeks across six phases.
 
 ## 2. Clubhouse today ("structured mode")
 
@@ -269,26 +275,29 @@ Requirement: chat must work for users on $100–200/month plans, not only API bi
 
 | Path | $20 tier | $100–200 tier | Team / Business / Ent. | Auth | Third-party use | Confidence |
 |---|---|---|---|---|---|---|
-| Claude `-p` stream-json, user's own binary | Pro, plan limits | Max 5x/20x, plan limits | Team and Enterprise seats | Inherits `/login` | Unmodified-binary exception; may bill to usage credits | Medium–low |
-| Claude Agent SDK / claude-agent-acp | Same pools | Same | Same | Inherits `/login` | "Unless previously approved" | Low |
+| Claude Agent SDK (default), user's own binary | Pro, plan limits | Max 5x/20x, plan limits | Team and Enterprise seats | Inherits `/login` | Yes, per the 2026-10-07 Help Center article | Decided |
+| Claude `-p` stream-json (second mode) | Same pools | Same | Same | Inherits `/login` | Yes, same article | Decided |
+| Claude via claude-agent-acp | Same pools | Same | Same | Inherits `/login` | Built on the SDK; not used | n/a |
 | Codex app-server / codex-acp | Plus | Pro | Business works; Sign in with ChatGPT eligibility not stated | `account/login/start`, or Sign in with ChatGPT | Yes for local open-source; never hosted or commercial | High |
 | Codex exec / TS SDK | Plus | Pro | Same | Inherits CLI login | No prohibition found | Medium–high |
 | Copilot `--acp` | Pro, Pro+ | Max ($100) | Unless an admin disables the CLI | Inherits login; run `copilot login` in a terminal | Yes ("Custom frontends"); preview terms | Medium–high |
 | Copilot SDK | Pro, Pro+ | Max ($100) | Org policy | Signed-in user, or a token from your own GitHub OAuth app | Yes ("Desktop applications…") | High |
 
-### Anthropic: texts conflict
+### Anthropic: allowed (maintainer decision, 2026-10-16)
 
-**For subscription use**
+The maintainer ruled that the Help Center article below governs. Clubhouse may drive Claude through the Agent SDK and `claude -p` on users' Pro, Max and Team subscriptions. The other texts are kept here for the record.
+
+**Governing text**
 
 - [Help Center, Agent SDK with your plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) (update dated 2026-10-07): "You can still use the Claude Agent SDK, claude -p, and third-party apps with your subscription limits."
 - [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) has an exception: it doesn't prevent "an end user from signing in to the unmodified Claude Code binary with their own Claude subscription".
 
-**Against**
+**Older or stricter wording, superseded for this project**
 
 - [Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview): "Unless previously approved, Anthropic does not allow third party developers to offer claude.ai login or rate limits for their products, including agents built on the Claude Agent SDK."
 - [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) also bars third-party developers to "route requests through Free, Pro, or Max plan credentials on behalf of their users".
 
-**Billing and an upcoming change**
+**Still to watch**
 
 - [Help Center, Log in](https://support.claude.com/en/articles/13189465-log-in-to-your-claude-account) (updated about 2026-10-15): the preferred route for third-party tools, "including open-source projects", is an API key. Anthropic "reserves the right to draw use of such third-party tools from usage credits rather than subscription limits."
 - [Headless docs](https://code.claude.com/docs/en/headless): `--bare` "will become the default for `-p` in a future release". Bare mode never reads the subscription OAuth.
@@ -329,20 +338,18 @@ Requirement: chat must work for users on $100–200/month plans, not only API bi
 
 - **Clubhouse never touches tokens.** It spawns the user's installed, unmodified CLI, which uses its own stored login. It never reads `~/.claude`, `~/.codex` or the keychain.
 - **Claude:**
-  - Default to raw `-p` stream-json.
-  - Never pass `--bare` in subscription mode.
+  - Default to the Agent SDK with `pathToClaudeCodeExecutable` set to the user's own `claude`. Exclude the SDK's bundled binaries from the Electron build.
+  - Raw `-p` stream-json is the second mode, using the same binary and login.
+  - Never pass `--bare` in subscription mode, and check whether the SDK sets it once `--bare` becomes the `-p` default.
   - Warn when `ANTHROPIC_API_KEY` would override the plan.
-  - Use the Agent SDK only with Anthropic's approval, or in an explicit API-key mode.
 - **Codex:** inherit the CLI login now and move to Sign in with ChatGPT later. Send a stable `clientInfo.name`.
 - **Copilot:** inherit the CLI login, hand off to a terminal running `copilot login`, and warn when `GH_TOKEN` overrides it.
 
 ### Vendor questions
 
-- **Anthropic:**
-  1. Does the unmodified-binary exception cover a free, open-source app that spawns the user's `claude -p`?
-  2. Is the SDK treated differently, and how does Clubhouse get approval?
-  3. Will this traffic bill to usage credits?
-  4. Will there be a way to keep subscription login once `--bare` is the default?
+- **Anthropic** (eligibility is settled; these are operational):
+  1. Will there be a way to keep subscription login once `--bare` is the default for `-p`, and does the SDK opt out?
+  2. Will Clubhouse traffic ever bill to usage credits instead of plan limits?
 - **OpenAI:**
   1. Can Business, Enterprise and Edu use Sign in with ChatGPT?
   2. Is there a sunset date for app-server login in open-source apps?
@@ -354,12 +361,12 @@ Requirement: chat must work for users on $100–200/month plans, not only API bi
 
 Legend: ✅ native and complete · ◐ partial, experimental or extension-only · ❌ missing · ❓ unverified or ambiguous.
 
-The Agent SDK uses the same wire as Claude `-p`, so its capabilities match the first column; only the terms differ.
+The Claude column covers both modes. The Agent SDK (default) and raw `-p` stream-json speak the same wire, so their capabilities match. The SDK adds typed helpers such as session listing and reading.
 
-| Capability | Claude `-p` stream-json | Claude via ACP | Codex app-server | Codex via ACP | Copilot SDK | Copilot `--acp` |
+| Capability | Claude Agent SDK / `-p` | Claude via ACP | Codex app-server | Codex via ACP | Copilot SDK | Copilot `--acp` |
 |---|---|---|---|---|---|---|
-| **Works on $100–200 plans** | ❓ texts conflict | ❓ "unless previously approved" | ✅ Pro, local OSS | ✅ | ✅ Pro+/Max | ✅ (preview) |
-| Multi-turn | ✅ stdin kept open | ✅ | ✅ threads | ✅ | ✅ | ✅ |
+| **Works on $100–200 plans** | ✅ Pro/Max/Team (2026-10-07 article) | ✅ (built on the SDK) | ✅ Pro, local OSS | ✅ | ✅ Pro+/Max | ✅ (preview) |
+| Multi-turn | ✅ streaming input | ✅ | ✅ threads | ✅ | ✅ | ✅ |
 | Resume / history | ✅ resume, fork, resume-at | ✅ list/load/resume/fork | ✅ resume, fork, read, paged, revert | ✅ | ✅ | ◐ load replays; no resume or fork |
 | Interrupt | ✅ control interrupt | ✅ cancel | ✅ `turn/interrupt` | ✅ | ✅ | ✅ `session/cancel` |
 | Steer mid-turn | ✅ `priority:'now'` | ◐ extension | ✅ `turn/steer` | ◐ extension | ✅ | ❌ |
@@ -376,7 +383,7 @@ The Agent SDK uses the same wire as Claude `-p`, so its capabilities match the f
 | Cost / usage | ✅ cost, usage, 5h/7d windows | ◐ | ✅ tokens + rate limits | ◐ | ✅ credits | ◐ context + tokens only |
 | Login flow | ◐ inherits; no API | ◐ | ✅ `account/login/*` | ✅ | ✅ OAuth tokens | ◐ terminal login |
 | Windows | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Stability | ◐ near-daily; no control-protocol spec | ◐ 0.x | ◐ "experimental"; weekly | ◐ lags app-server | ✅ GA semver | ◐ preview; daily |
+| Stability | ◐ SDK 0.x, near-daily; raw mode has no control-protocol spec | ◐ 0.x | ◐ "experimental"; weekly | ◐ lags app-server | ✅ GA semver | ◐ preview; daily |
 | License | ◐ CLI proprietary (SDK: Commercial Terms) | ✅ Apache-2.0 | ✅ Apache-2.0 | ✅ | ✅ MIT (CLI proprietary) | ◐ CLI proprietary |
 
 ## 6. Risks
@@ -386,7 +393,7 @@ The Agent SDK uses the same wire as Claude `-p`, so its capabilities match the f
    - In CI, regenerate `codex app-server generate-ts`, the SDK `.d.ts` and the ACP schema at pinned versions, and fail on any diff.
    - Add a structured leg to `scheduled-real-cli-e2e.yml` that runs tiny prompts on the cheapest models.
    - At runtime, read `system/init` capabilities, the Codex `userAgent` and ACP `agentCapabilities`, and warn outside the tested version range.
-2. **Subscription and terms (high).** See §4. Default Claude to raw `-p`, get written confirmation, track the `--bare` default change, and keep the terminal fallback.
+2. **Terms changing later (medium).** Anthropic's wording has shifted during 2026, and the `--bare` default change could drop subscription login. Every provider keeps a Terminal mode, and Claude has two chat modes, so a terms or packaging change is a default flip, not a rewrite (§7.1).
 3. **Feature lag vs the TUI (medium).**
    - Interactive slash commands and new features land in the TUI first, and Codex app-server has no slash commands at all.
    - Keep a Chat / Terminal switch on the same session (resume by id).
@@ -402,10 +409,10 @@ The Agent SDK uses the same wire as Claude `-p`, so its capabilities match the f
    - Coalesce deltas in main every 16–33 ms, keep the feed in a store, window the rendering, and cap stored command output.
 7. **Packaging and licensing (low).**
    - Proprietary CLIs, and bundled binaries of 250 MB or more.
-   - Require the user's own installs, as today. Confirm with Anthropic that depending on the Claude SDK is acceptable for an MIT app.
+   - Require the user's own installs, as today. The Claude SDK is governed by Anthropic's Commercial Terms; Clubhouse uses it as a client library and doesn't ship its bundled binaries.
 8. **Security (low).**
    - Never answer a permission without a user action or an explicit mode, and log every decision.
-   - Close `agent:start-structured`.
+   - Delete `agent:start-structured` along with structured mode (§8.0).
 
 ## 7. Recommendation
 
@@ -415,12 +422,13 @@ Three options were compared:
 2. A native protocol per CLI.
 3. The Agent SDK for Claude, native protocols for the others.
 
-**Choose option 2, with ACP as the vocabulary and the long-tail driver. Upgrade Claude to option 3 once Anthropic approves.** VS Code and T3 Code converged on the same shape.
+**Choose option 3: the Agent SDK for Claude, native protocols for Codex and Copilot, with ACP as the vocabulary and the long-tail driver.** Claude also keeps raw `-p` stream-json as a second mode behind the same driver. VS Code and T3 Code converged on the same shape.
 
 ```
 ClaudeDriver                CodexDriver                    AcpDriver → CopilotSdkDriver
-user's claude -p            codex app-server (stdio v2)    copilot --acp → @github/copilot-sdk
-stream-json + control       generated types, pinned        also Gemini CLI / other ACP agents
+├ SdkTransport (default)    codex app-server (stdio v2)    copilot --acp → @github/copilot-sdk
+└ StreamTransport (-p)      generated types, pinned        also Gemini CLI / other ACP agents
+  both run the user's claude
         \                          |                              /
          normalize in main · coalesce deltas · stamp sessionId / turnId / seq
                                    |
@@ -452,13 +460,29 @@ stream-json + control       generated types, pinned        also Gemini CLI / oth
 
 Claude and Codex would each sit behind a third-party adapter. Those adapters have open bugs in steering, rewind, subagents and cost, and features beyond v1 depend on adapter-private `_meta` extensions or on ACP v2.
 
-### Why raw stream-json for Claude, for now
+### Claude: one driver, two transports
 
-- **Same capabilities:** the SDK is a thin typed client over the same pipes, so every capability is reachable without it.
-- **Different terms:** the SDK is the surface Anthropic's text names ("unless previously approved"), while the unmodified binary is its stated exception.
-- **Cost:** the control protocol has no wire spec. Mitigate by pinning the tested range, recording fixtures and reading `system/init` capabilities.
-- **Permission prompts:** use `can_use_tool` via `--permission-prompt-tool stdio`. The documented MCP prompt tool, served from Clubhouse's existing MCP server, is the fallback.
-- **Upgrade path:** swapping to the SDK later is contained behind the same contract.
+The Agent SDK is a typed client over the same pipes `claude -p --input-format stream-json --output-format stream-json` uses. Its message types are the stream-json events, and its control methods (`interrupt`, `setPermissionMode`, `setModel`, `canUseTool`) are `control_request` frames. So Claude gets one driver with two transports:
+
+- **SdkTransport (default):** `query()` with streaming input, `canUseTool`, typed control methods, and session helpers such as `listSessions` and `getSessionMessages`. Set `pathToClaudeCodeExecutable` to the user's installed `claude`, and pass `permissionMode: 'default'` explicitly.
+- **StreamTransport (second mode):** spawns the user's `claude -p` with NDJSON in and out, and writes the `control_request` frames by hand: `initialize`, `interrupt`, `set_permission_mode`, `set_model`, and the `can_use_tool` replies via `--permission-prompt-tool stdio`. It's for when an SDK release breaks something, or if terms or packaging change. It costs about a week on top of the SDK transport.
+- **Shared:** the normalization into Clubhouse events, the capability record, session and resume handling, and the UI. A fixture recorded through one transport replays through the other, which is a cheap check that they agree.
+- **Version skew:** each SDK release is tested against a matching CLI version (SDK 0.3.N with CLI 2.1.N), but the user's `claude` will drift. Read `system/init` capabilities and warn when the CLI is outside the SDK's tested range.
+
+### 7.1 Runtime modes per provider
+
+The embedded terminal stays first-class. Chat is never the only way to run an agent.
+
+| Provider | Modes | Default |
+|---|---|---|
+| Claude Code | Chat (Agent SDK) · Chat (stream-json) · Terminal | Chat (Agent SDK) |
+| Codex | Chat (app-server) · Terminal | Chat (app-server) |
+| Copilot | Chat (ACP, later the Copilot SDK) · Terminal | Chat (ACP) |
+
+- **Per-provider setting, with a per-agent override.** If a Codex release breaks app-server, Codex alone flips to Terminal.
+- **Same session in either view.** The chat captures the native session id, and the terminal resumes it with `claude --resume`, `codex resume` or `copilot --resume`. The Chat / Terminal switch hands the session over instead of starting a new one.
+- **Automatic fallback.** If the installed CLI version is outside the tested range, the reported capabilities don't match, or the handshake fails, the agent opens in the next mode down. The fallback order is SDK, then stream-json, then terminal for Claude, and chat, then terminal for the others. A one-line notice says why.
+- **Remote kill switch.** A small denylist of known-bad CLI versions, shipped with the update metadata, can force a lower mode without an app release.
 
 ### UI
 
@@ -476,16 +500,62 @@ See the artifact's mockups for the details.
 
 ## 8. Phased plan
 
-Sizes are in engineer-weeks. Everything ships behind `structuredMode`, renamed "Chat view (beta)".
+Sizes are in engineer-weeks. Phases 0–4 ship behind a new experimental **Chat** setting in beta builds. Phase 5 promotes it to stable and makes it the default. The old `structuredMode` flag isn't reused (§8.0).
+
+### 8.0 Rollout: four steps from structured mode to Chat by default
+
+**Step 1 — Remove structured mode as it stands.** This is its own PR, ahead of any chat work, and about S (3–4 days).
+
+- **Delete:**
+  - `src/renderer/features/agents/structured/` (StructuredAgentView and its components) and the `MainContentView` routing to it.
+  - `structured-manager.ts`, the structured IPC channels and handlers (including `agent:start-structured`), and the preload methods.
+  - The three adapters (`stream-json-adapter.ts`, `codex-app-server-adapter.ts`/`-client.ts`, `acp-adapter.ts`/`acp-client.ts`) and `buildStructuredAdapter` on the providers.
+  - The `structuredMode` provider capability, the experimental flag, and the per-agent checkboxes (`AddAgentDialog`, `TemplateConfigDialog`, `AgentSettingsView`).
+  - The quick-agent `structured` spawn mode, and the Assistant's `structured` mode.
+- **Keep:** move `ndjson-rpc-base.ts` and `structured-spawn.ts` (with #1911's Windows `.cmd` fix) to where the new drivers will live. They're transport plumbing, not structured-mode UI.
+- **Safe migration to the terminal.** This is a one-time, idempotent startup migration with a version marker:
+  - **Durable agents:** drop `structuredMode` from each agent config. These agents start in the standard terminal (PTY) mode next time. Their session ids weren't captured, so there's nothing to resume.
+  - **Experimental settings:** drop the `structuredMode` key.
+  - **Assistant:** a saved mode of `structured` becomes `interactive`.
+  - **Personas, materialization, blueprints and templates:** stop writing `structuredMode` / `structured`, and ignore them on read. Old exports still import cleanly.
+  - **Plugin API:** `structuredMode` in `agents.createDurable` options is accepted and ignored, with a deprecation warning. Remove it at the next plugin API major, per `docs/sdk-versioning.md`.
+  - **Agents running in structured mode** at upgrade time are killed by the update, as today (resume-on-update excludes them). They come back as sleeping terminal agents.
+  - **Old logs:** leave `agent-logs/*-structured.jsonl` in place. They're no longer written and are harmless.
+  - **Notice:** if the migration changed anything, show a one-time notice: "Structured mode was removed. N agents now open in the terminal."
+- **Annex:** check whether the Annex iOS client consumes the forwarded structured events. If it does, version the Annex message, then remove the forwarding.
+- **Telemetry:** retire `core:structured*` and `usage/structured-session` in the attribute registry, with "replaced by Chat" as the reason (checklist item 1 in §8.1).
+- **Tests:** delete the structured unit tests and the IPC-stubbed structured E2E specs. Add unit tests for the migration.
+
+**Step 2 — Ship Chat as an experimental feature in beta builds** (phases 0–4).
+
+- Add a new Experimental settings entry, **Chat** (id `chat`), off by default and shown in beta (preview-channel) builds. Its description: "Talk to Claude Code, Codex and Copilot agents in a native chat view. The terminal stays available for every provider."
+- **When it's on:** a per-provider Chat / Terminal choice appears (§7.1), along with the per-agent override and the switch in the agent header.
+- **When it's off:** every agent runs in the terminal, and no chat code is loaded.
+
+**Step 3 — Promote to stable and make it the default** (phase 5).
+
+- **"Good" means:**
+  - the telemetry parity checklist (§8.1) passes;
+  - each provider has two green weeks of nightly real-CLI chat runs;
+  - beta crash-free and turn-error rates are at least as good as the terminal path.
+- **Remove the experimental scaffolding:** delete the `chat` experimental flag and every check of it. Per-provider runtime mode becomes a regular setting under Agents, defaulting to Chat.
+- **Respect explicit choices:** a provider or agent the user explicitly set to Terminal stays on Terminal. Only providers still on the default switch. A provider can be promoted later than the others if its numbers aren't there yet.
+
+**Step 4 — Introduce the new default with a light first-launch tip** (ships with step 3).
+
+- The first time an agent opens in Chat after the update, a small tip appears next to the Chat / Terminal switch: "Agents now open in Chat. Prefer the terminal? You can change it for each provider in Settings." It has two buttons, **Open settings** and **Got it**.
+- **Open settings** deep-links to the per-provider runtime setting.
+- The tip shows once, is remembered per user, and never blocks the agent. Users who had explicitly chosen Terminal never see it.
+- It's mocked in the artifact's "First launch" view.
 
 | Phase | Scope | Size |
 |---|---|---|
-| 0. Foundations | A turn ending no longer ends the session, and Stop means interrupt. Envelope v2 with session, turn and sequence ids, an append-only transcript and a renderer `chatStore`. MCP, hooks, env and wrapper parity with terminal agents. Close `agent:start-structured`. Fixture record/replay harness. Send the vendor questions. | S · 2 wk |
+| 0. Foundations | Step 1 of §8.0 lands first: remove structured mode and migrate users to the terminal. Then add the experimental **Chat** setting (beta builds), and per-provider runtime modes (Chat / Terminal, §7.1) with a per-agent override. New session lifecycle: a turn ending doesn't end the session, and Stop means interrupt. Envelope v2 with session, turn and sequence ids, an append-only transcript and a renderer `chatStore`. MCP, hooks, env and wrapper parity with terminal agents. Fixture record/replay harness. Send the vendor questions. | S · 2–3 wk |
 | 1. Codex + chat core | Codex driver on generated v2 types: threads, resume, steer, interrupt, full approvals, diffs, usage, rate limits, approval and sandbox ladder. ChatView core: stream, tool groups, cards, approval dock, steer/queue composer, footer, Chat / Terminal switch. | M · 3–4 wk |
-| 2. Claude via stream-json | Replace `StreamJsonAdapter`: stdin stays open; `initialize`, `can_use_tool`, 6 modes, priority steer/queue, `set_model`, Task todos, `task_*` subagents, `rate_limit_event`, resume. Plan card via `ExitPlanMode`. Auth pre-flight and `/login` hand-off. SDK driver behind a setting, gated on approval or API-key mode. | M · 3 wk |
+| 2. Claude (SDK + stream) | Replace `StreamJsonAdapter` with the Claude driver. The SDK transport is the default; it uses the user's `claude` and excludes the bundled binaries. It covers `canUseTool` with suggestions, 6 modes, priority steer/queue, `setModel`, Task todos, `task_*` subagents, `rate_limit_event`, and resume/list. Then add the stream-json transport on the same normalizer, with cross-replayed fixtures. Plan card via `ExitPlanMode`. Auth pre-flight and `/login` hand-off. | M · 4 wk |
 | 3. Copilot + generic ACP | `session/load` resume, modes and config options, diffs, usage, commands, model-list dedupe, `--no-auto-update`. Capability downgrades in the UI. | S · 1–2 wk |
 | 4. Depth | Git checkpoints and Changes panel, agent map, live model and mode menus, attachments, auth pre-flight, Annex v2 forwarding. | M · 3 wk |
-| 5. Hardening + rollout | Schema-diff CI, a structured leg in the nightly real-CLI E2E, runtime version warnings. Telemetry parity checklist (§8.1) passes. Copilot SDK driver. Default-on per provider after 2 green weeks. | S–M · 2 wk |
+| 5. Stable + default | Rollout steps 3–4: remove the experimental flag and gating, make runtime mode a regular per-provider setting defaulting to Chat, and ship the first-launch tip. Schema-diff CI, a structured leg in the nightly real-CLI E2E, runtime version warnings, automatic mode fallback and the known-bad-version denylist. Telemetry parity checklist (§8.1) passes. Copilot SDK driver. | S–M · 2 wk |
 
 ### 8.1 Telemetry parity checklist
 
