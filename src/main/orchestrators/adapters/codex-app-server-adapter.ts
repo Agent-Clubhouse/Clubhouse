@@ -4,7 +4,7 @@ import { AsyncQueue } from './async-queue';
 import { CodexAppServerClient } from './codex-app-server-client';
 import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
 import { appLog } from '../../services/log-service';
-import { validateCommandPrefix } from '../../services/command-prefix-validation';
+import { resolveStructuredSpawn } from './structured-spawn';
 
 /** JSON-RPC "Method not found" — the standard reply for a request we can't serve. */
 const JSONRPC_METHOD_NOT_FOUND = -32601;
@@ -30,6 +30,8 @@ export class CodexAppServerAdapter implements StructuredAdapter {
   /** Id of the turn currently in flight; `turn/interrupt` requires it. */
   private turnId: string | null = null;
   private turnEnded = false;
+  /** File paths of in-flight fileChange items — their approval requests omit them. */
+  private fileChangeItems = new Map<string, string[]>();
   private opts: CodexAppServerAdapterOpts;
 
   constructor(opts: CodexAppServerAdapterOpts) {
@@ -54,16 +56,13 @@ export class CodexAppServerAdapter implements StructuredAdapter {
       args.push(...sessionOpts.extraArgs);
     }
 
-    // When a command prefix is set, wrap via shell so the prefix runs first
-    const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
-    const spawnArgs = sessionOpts.commandPrefix
-      ? ['-c', `${validateCommandPrefix(sessionOpts.commandPrefix)} && exec "$@"`, '_', this.opts.binary, ...args]
-      : args;
+    // Command prefix → shell wrapper; Windows .cmd/.bat shims → cmd.exe
+    const spawn = resolveStructuredSpawn(this.opts.binary, args, sessionOpts.commandPrefix);
 
     appLog('core:structured', 'info', 'CodexAppServerAdapter starting session', {
       meta: {
-        binary: spawnBinary,
-        args: spawnArgs,
+        binary: spawn.binary,
+        args: spawn.args,
         cwd: sessionOpts.cwd,
         model: sessionOpts.model,
         hasMission: !!sessionOpts.mission,
@@ -74,8 +73,9 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     });
 
     this.client = new CodexAppServerClient({
-      binary: spawnBinary,
-      args: spawnArgs,
+      binary: spawn.binary,
+      args: spawn.args,
+      windowsVerbatimArguments: spawn.windowsVerbatimArguments,
       cwd: sessionOpts.cwd,
       env,
       onNotification: (method, params) => {
@@ -205,6 +205,7 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     this.threadId = null;
     this.turnId = null;
     this.pendingApprovals.clear();
+    this.fileChangeItems.clear();
   }
 
   // ── Thread lifecycle ────────────────────────────────────────────────────────
@@ -287,6 +288,10 @@ export class CodexAppServerAdapter implements StructuredAdapter {
   }
 
   // ── Event mapping ─────────────────────────────────────────────────────────
+  //
+  // Shapes follow the app-server v2 protocol of the CI-pinned Codex CLI
+  // (`codex app-server generate-ts`): camelCase item types and fields,
+  // string deltas, and the turn's status/error nested under `turn`.
 
   private mapNotification(
     method: string,
@@ -303,20 +308,16 @@ export class CodexAppServerAdapter implements StructuredAdapter {
         return null;
       }
 
-      case 'item/agentMessage/delta': {
-        const delta = (p.delta as Record<string, unknown>) ?? {};
-        return this.makeEvent('text_delta', {
-          text: String(delta.text ?? ''),
-        });
-      }
+      // { threadId, turnId, itemId, delta: string }
+      case 'item/agentMessage/delta':
+        return this.makeEvent('text_delta', { text: String(p.delta ?? '') });
 
-      case 'item/reasoning/summaryTextDelta': {
-        const delta = (p.delta as Record<string, unknown>) ?? {};
+      // { threadId, turnId, itemId, delta: string, summaryIndex }
+      case 'item/reasoning/summaryTextDelta':
         return this.makeEvent('thinking', {
-          text: String(delta.text ?? ''),
+          text: String(p.delta ?? ''),
           isPartial: true,
         });
-      }
 
       case 'item/started': {
         const item = (p.item as Record<string, unknown>) ?? {};
@@ -325,96 +326,77 @@ export class CodexAppServerAdapter implements StructuredAdapter {
 
       case 'item/completed': {
         const item = (p.item as Record<string, unknown>) ?? {};
-        return this.mapItemCompleted(item);
+        for (const event of this.mapItemCompleted(item)) this.queue?.push(event);
+        return null; // Already pushed events directly
       }
 
-      case 'item/commandExecution/outputDelta': {
-        const delta = (p.delta as Record<string, unknown>) ?? {};
+      // { threadId, turnId, itemId, delta: string }
+      case 'item/commandExecution/outputDelta':
         return this.makeEvent('command_output', {
           id: String(p.itemId ?? ''),
           command: '',
           status: 'running' as const,
-          output: String(delta.output ?? ''),
+          output: String(p.delta ?? ''),
           exitCode: undefined,
         });
-      }
 
-      case 'item/plan/delta': {
-        const delta = (p.delta as Record<string, unknown>) ?? {};
-        const items = (delta.items ?? p.items) as Array<Record<string, unknown>> | undefined;
-        if (!Array.isArray(items)) return null;
+      // { threadId, turnId, explanation, plan: [{ step, status }] }
+      case 'turn/plan/updated': {
+        const plan = Array.isArray(p.plan) ? p.plan as Array<Record<string, unknown>> : [];
         return this.makeEvent('plan_update', {
-          steps: items.map((s) => ({
-            description: String(s.text ?? s.description ?? ''),
-            status: s.completed ? 'completed' as const : 'pending' as const,
+          steps: plan.map((s) => ({
+            description: String(s.step ?? ''),
+            status: s.status === 'completed' ? 'completed' as const
+              : s.status === 'inProgress' ? 'in_progress' as const
+                : 'pending' as const,
           })),
         });
       }
 
-      case 'turn/diff/updated': {
-        const files = (p.files as Array<Record<string, unknown>>) ?? [];
-        if (files.length === 0) return null;
-        const f = files[files.length - 1];
-        return this.makeEvent('file_diff', {
-          path: String(f.path ?? ''),
-          changeType: this.mapFileChangeKind(String(f.kind ?? 'Update')),
-          diff: String(f.diff ?? f.patch ?? ''),
-        });
-      }
-
+      // { threadId, turnId, tokenUsage: { total, last, modelContextWindow } }
+      // The renderer sums usage events, so report the latest increment.
       case 'thread/tokenUsage/updated': {
-        const usage = (p.usage ?? p) as Record<string, unknown>;
+        const tokenUsage = (p.tokenUsage as Record<string, unknown>) ?? {};
+        const last = (tokenUsage.last as Record<string, unknown>) ?? {};
         return this.makeEvent('usage', {
-          inputTokens: Number(usage.input_tokens ?? usage.inputTokens ?? 0),
-          outputTokens: Number(usage.output_tokens ?? usage.outputTokens ?? 0),
-          cacheReadTokens: usage.cached_input_tokens != null
-            ? Number(usage.cached_input_tokens) : undefined,
-          cacheWriteTokens: undefined,
+          inputTokens: Number(last.inputTokens ?? 0),
+          outputTokens: Number(last.outputTokens ?? 0),
+          cacheReadTokens: last.cachedInputTokens != null ? Number(last.cachedInputTokens) : undefined,
+          cacheWriteTokens: last.cacheWriteInputTokens != null ? Number(last.cacheWriteInputTokens) : undefined,
           costUsd: undefined,
         });
       }
 
+      // { threadId, turn: { id, status, error, … } } — usage arrives
+      // separately via thread/tokenUsage/updated.
       case 'turn/completed': {
         this.turnEnded = true;
         this.turnId = null;
-        const usage = (p.usage as Record<string, unknown>) ?? {};
+        const turn = (p.turn as Record<string, unknown>) ?? {};
 
-        // Emit usage event
-        this.queue?.push(this.makeEvent('usage', {
-          inputTokens: Number(usage.input_tokens ?? usage.inputTokens ?? 0),
-          outputTokens: Number(usage.output_tokens ?? usage.outputTokens ?? 0),
-          cacheReadTokens: usage.cached_input_tokens != null
-            ? Number(usage.cached_input_tokens) : undefined,
-          cacheWriteTokens: undefined,
-          costUsd: undefined,
-        }));
-
-        // If failed, emit error before end
-        if (p.status === 'failed') {
-          const error = (p.error as Record<string, unknown>) ?? {};
+        if (turn.status === 'failed') {
+          const error = (turn.error as Record<string, unknown>) ?? {};
+          const message = String(error.message ?? 'Turn failed');
           this.queue?.push(this.makeEvent('error', {
-            code: String(error.type ?? 'turn_failed'),
-            message: String(error.message ?? 'Turn failed'),
+            code: this.codexErrorCode(error.codexErrorInfo),
+            message,
           }));
+          this.queue?.push(this.makeEvent('end', { reason: 'error', summary: message }));
+        } else if (turn.status === 'interrupted') {
+          this.queue?.push(this.makeEvent('end', { reason: 'cancelled', summary: 'Turn interrupted' }));
+        } else {
+          this.queue?.push(this.makeEvent('end', { reason: 'complete', summary: undefined }));
         }
-
-        // Emit end event and finish queue
-        this.queue?.push(this.makeEvent('end', {
-          reason: p.status === 'failed' ? 'error' : 'complete',
-          summary: p.status === 'failed'
-            ? String((p.error as Record<string, unknown>)?.message ?? 'Turn failed')
-            : undefined,
-        }));
         this.queue?.finish();
 
         return null; // Already pushed events directly
       }
 
       // Codex sends configWarning during init — informational, not actionable.
-      // Log at debug level and suppress from the UI event stream.
+      // Log it and suppress from the UI event stream.
       case 'configWarning': {
         appLog('core:structured:codex', 'info', 'Codex config warning', {
-          meta: { message: String(p.message ?? p.warning ?? ''), params: p },
+          meta: { message: String(p.summary ?? ''), details: p.details, path: p.path },
         });
         return null;
       }
@@ -428,41 +410,36 @@ export class CodexAppServerAdapter implements StructuredAdapter {
   }
 
   private mapItemStarted(item: Record<string, unknown>): StructuredEvent | null {
-    const type = String(item.type ?? '');
     const id = String(item.id ?? '');
 
-    switch (type) {
-      case 'command_execution':
-      case 'CommandExecution': {
-        const details = (item.details ?? item) as Record<string, unknown>;
+    switch (item.type) {
+      case 'commandExecution':
         return this.makeEvent('tool_start', {
           id,
           name: 'shell',
           displayVerb: this.resolveToolVerb('shell'),
-          input: { command: String(details.command ?? '') },
+          input: { command: String(item.command ?? '') },
         });
-      }
 
-      case 'file_change':
-      case 'FileChange': {
-        const details = (item.details ?? item) as Record<string, unknown>;
+      case 'fileChange': {
+        const paths = this.fileChangePaths(item);
+        // The approval request for this item carries no paths; remember them.
+        this.fileChangeItems.set(id, paths);
         return this.makeEvent('tool_start', {
           id,
           name: 'apply_patch',
           displayVerb: this.resolveToolVerb('apply_patch'),
-          input: { path: String(details.path ?? '') },
+          input: { path: paths.join(', ') },
         });
       }
 
-      case 'mcp_tool_call':
-      case 'McpToolCall': {
-        const details = (item.details ?? item) as Record<string, unknown>;
-        const toolName = String(details.tool ?? details.name ?? 'mcp_tool');
+      case 'mcpToolCall': {
+        const toolName = String(item.tool ?? 'mcp_tool');
         return this.makeEvent('tool_start', {
           id,
           name: toolName,
           displayVerb: this.resolveToolVerb(toolName),
-          input: (details.arguments as Record<string, unknown>) ?? {},
+          input: this.asRecord(item.arguments),
         });
       }
 
@@ -471,68 +448,63 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     }
   }
 
-  private mapItemCompleted(item: Record<string, unknown>): StructuredEvent | null {
-    const type = String(item.type ?? '');
+  private mapItemCompleted(item: Record<string, unknown>): StructuredEvent[] {
     const id = String(item.id ?? '');
 
-    switch (type) {
-      case 'agent_message':
-      case 'AgentMessage': {
-        return this.makeEvent('text_done', {
-          text: String(item.text ?? ''),
-        });
-      }
+    switch (item.type) {
+      case 'agentMessage':
+        return [this.makeEvent('text_done', { text: String(item.text ?? '') })];
 
-      case 'command_execution':
-      case 'CommandExecution': {
-        const details = (item.details ?? item) as Record<string, unknown>;
-        const exitCode = details.exit_code ?? details.exitCode;
-        return this.makeEvent('tool_end', {
+      // status: inProgress | completed | failed | declined
+      case 'commandExecution':
+        return [this.makeEvent('tool_end', {
           id,
           name: 'shell',
-          result: String(details.aggregated_output ?? details.output ?? ''),
-          durationMs: 0,
-          status: exitCode === 0 || details.status === 'Completed' ? 'success' : 'error',
-        });
-      }
+          result: String(item.aggregatedOutput ?? ''),
+          durationMs: Number(item.durationMs ?? 0),
+          status: item.status === 'completed' ? 'success' : 'error',
+        })];
 
-      case 'file_change':
-      case 'FileChange': {
-        return this.makeEvent('tool_end', {
+      // changes: [{ path, kind: { type: add | delete | update }, diff }]
+      case 'fileChange': {
+        this.fileChangeItems.delete(id);
+        const changes = Array.isArray(item.changes) ? item.changes as Array<Record<string, unknown>> : [];
+        const events: StructuredEvent[] = [];
+        if (item.status === 'completed') {
+          for (const change of changes) {
+            const kind = (change.kind as Record<string, unknown>) ?? {};
+            events.push(this.makeEvent('file_diff', {
+              path: String(change.path ?? ''),
+              changeType: this.mapFileChangeKind(String(kind.type ?? 'update')),
+              diff: String(change.diff ?? ''),
+            }));
+          }
+        }
+        events.push(this.makeEvent('tool_end', {
           id,
           name: 'apply_patch',
-          result: String((item.details as Record<string, unknown>)?.path ?? item.path ?? ''),
+          result: this.fileChangePaths(item).join(', '),
           durationMs: 0,
-          status: 'success',
-        });
+          status: item.status === 'completed' ? 'success' : 'error',
+        }));
+        return events;
       }
 
-      case 'mcp_tool_call':
-      case 'McpToolCall': {
-        const details = (item.details ?? item) as Record<string, unknown>;
-        const toolName = String(details.tool ?? details.name ?? 'mcp_tool');
-        return this.makeEvent('tool_end', {
+      // result: { content, structuredContent } | null, error: { message } | null
+      case 'mcpToolCall': {
+        const toolName = String(item.tool ?? 'mcp_tool');
+        const error = item.error as Record<string, unknown> | null | undefined;
+        return [this.makeEvent('tool_end', {
           id,
           name: toolName,
-          result: String(details.result ?? ''),
-          durationMs: 0,
-          status: details.error ? 'error' : 'success',
-        });
-      }
-
-      case 'todo_list':
-      case 'TodoList': {
-        const items = (item.items as Array<Record<string, unknown>>) ?? [];
-        return this.makeEvent('plan_update', {
-          steps: items.map((s) => ({
-            description: String(s.text ?? ''),
-            status: s.completed ? 'completed' as const : 'pending' as const,
-          })),
-        });
+          result: error ? String(error.message ?? '') : this.mcpResultText(item.result),
+          durationMs: Number(item.durationMs ?? 0),
+          status: error || item.status === 'failed' ? 'error' : 'success',
+        })];
       }
 
       default:
-        return null;
+        return [];
     }
   }
 
@@ -542,27 +514,38 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     params: unknown,
   ): StructuredEvent | null {
     const p = (params ?? {}) as Record<string, unknown>;
+    // Several approval callbacks can share one itemId (zsh-exec-bridge
+    // subcommands); `approvalId` tells them apart when present.
+    const approvalKey = typeof p.approvalId === 'string' && p.approvalId
+      ? p.approvalId
+      : p.itemId;
 
     switch (method) {
       case 'item/commandExecution/requestApproval': {
-        const requestId = String(p.itemId ?? `cmd-${rpcId}`);
+        const requestId = String(approvalKey ?? `cmd-${rpcId}`);
         this.pendingApprovals.set(requestId, rpcId);
+        const command = String(p.command ?? '');
         return this.makeEvent('permission_request', {
           id: requestId,
           toolName: 'shell',
-          toolInput: { command: String(p.command ?? '') },
-          description: `Run command: ${String(p.command ?? '')}`,
+          toolInput: { command },
+          description: `Run command: ${command}`,
         });
       }
 
+      // { threadId, turnId, itemId, reason?, grantRoot? } — the paths are on
+      // the fileChange item announced by item/started.
       case 'item/fileChange/requestApproval': {
-        const requestId = String(p.itemId ?? `file-${rpcId}`);
+        const requestId = String(approvalKey ?? `file-${rpcId}`);
         this.pendingApprovals.set(requestId, rpcId);
+        const path = (this.fileChangeItems.get(String(p.itemId ?? '')) ?? []).join(', ');
         return this.makeEvent('permission_request', {
           id: requestId,
           toolName: 'apply_patch',
-          toolInput: { path: String(p.path ?? '') },
-          description: `Modify file: ${String(p.path ?? '')}`,
+          toolInput: { path },
+          description: path
+            ? `Modify file: ${path}`
+            : String(p.reason ?? 'Modify files'),
         });
       }
 
@@ -577,10 +560,47 @@ export class CodexAppServerAdapter implements StructuredAdapter {
     }
   }
 
+  // ── Payload helpers ───────────────────────────────────────────────────────
+
+  private fileChangePaths(item: Record<string, unknown>): string[] {
+    const changes = Array.isArray(item.changes) ? item.changes as Array<Record<string, unknown>> : [];
+    return changes.map((c) => String(c.path ?? '')).filter(Boolean);
+  }
+
+  /** `CodexErrorInfo` is either a string or a single-key object variant. */
+  private codexErrorCode(info: unknown): string {
+    if (typeof info === 'string' && info) return info;
+    if (info && typeof info === 'object') {
+      const [key] = Object.keys(info);
+      if (key) return key;
+    }
+    return 'turn_failed';
+  }
+
+  /** Text blocks of an MCP CallToolResult, else its raw JSON. */
+  private mcpResultText(result: unknown): string {
+    if (!result || typeof result !== 'object') return '';
+    const content = (result as Record<string, unknown>).content;
+    if (Array.isArray(content)) {
+      const texts = content
+        .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object' && (c as Record<string, unknown>).type === 'text')
+        .map((c) => String(c.text ?? ''));
+      if (texts.length > 0) return texts.join('\n');
+    }
+    return JSON.stringify(result);
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+  }
+
+  /** PatchChangeKind.type: add | delete | update. */
   private mapFileChangeKind(kind: string): 'create' | 'modify' | 'delete' {
-    switch (kind.toLowerCase()) {
-      case 'add': case 'create': return 'create';
-      case 'delete': case 'remove': return 'delete';
+    switch (kind) {
+      case 'add': return 'create';
+      case 'delete': return 'delete';
       default: return 'modify';
     }
   }

@@ -1,4 +1,4 @@
-import { NdjsonRpcBase, DEFAULT_RPC_TIMEOUT_MS, type BaseRpcOpts } from './ndjson-rpc-base';
+import { NdjsonRpcBase, DEFAULT_RPC_TIMEOUT_MS, type BaseRpcOpts, type RpcRequestOptions } from './ndjson-rpc-base';
 
 /** Rich RPC error that preserves error code and optional data from the JSON-RPC response. */
 export class RpcError extends Error {
@@ -75,25 +75,35 @@ export class AcpClient extends NdjsonRpcBase<AcpClientOpts> {
 
     // Perform ACP initialization handshake
     this.log('info', 'Starting ACP init handshake');
+    // ACP v1 has no `initialized` notification — the initialize response
+    // completes the handshake.  Clubhouse serves none of the client-side
+    // methods (fs/*, terminal/*), so it advertises none.
     await this.request('initialize', {
       protocolVersion: 1,
       clientInfo: this.opts.clientInfo ?? { name: 'clubhouse', version: '1.0.0' },
-      capabilities: {},
+      clientCapabilities: {
+        fs: { readTextFile: false, writeTextFile: false },
+        terminal: false,
+      },
     });
-    this.notify('initialized');
     this.log('info', 'ACP init handshake complete');
   }
 
-  /** Send a JSON-RPC request and wait for the response. Rejects after the configured timeout. */
-  request(method: string, params?: unknown): Promise<unknown> {
+  /**
+   * Send a JSON-RPC request and wait for the response.  Rejects after the
+   * configured timeout unless `options.timeoutMs` is `null`.
+   */
+  request(method: string, params?: unknown, options?: RpcRequestOptions): Promise<unknown> {
     const id = this.nextId++;
     const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
-    const timeoutMs = this.opts.rpcTimeoutMs ?? DEFAULT_RPC_TIMEOUT_MS;
+    const timeoutMs = options?.timeoutMs === undefined
+      ? this.opts.rpcTimeoutMs ?? DEFAULT_RPC_TIMEOUT_MS
+      : options.timeoutMs;
 
     this.log('info', `RPC request → ${method}`, { id, method, params });
 
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = timeoutMs === null ? undefined : setTimeout(() => {
         if (this.pending.has(id)) {
           this.pending.delete(id);
           const err = new RpcError(-32000, `RPC request '${method}' timed out after ${timeoutMs}ms`);
@@ -120,6 +130,16 @@ export class AcpClient extends NdjsonRpcBase<AcpClientOpts> {
   /** Send a JSON-RPC response back to the server (e.g. for permission approvals). */
   respond(id: number | string, result: unknown): void {
     const msg: JsonRpcResponse = { jsonrpc: '2.0', id, result };
+    this.send(msg as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Send a JSON-RPC error back to the server.  Every agent-initiated request
+   * must be answered, or the agent blocks its turn waiting on it.
+   */
+  respondWithError(id: number | string, code: number, message: string): void {
+    this.log('warn', `RPC error response → id=${id}`, { code, message });
+    const msg: JsonRpcResponse = { jsonrpc: '2.0', id, error: { code, message } };
     this.send(msg as unknown as Record<string, unknown>);
   }
 
