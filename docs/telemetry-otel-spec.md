@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review (scoping/design only, no implementation). Revision 2 records the maintainer's decisions (§10.1) and adds regression-informed priorities (§12). Revision 4 (2026-10-16) follows code changes since: [#1930](https://github.com/Agent-Clubhouse/Clubhouse/pull/1930) removed the Assistant, Agent Queue and Sessions features, [#1915](https://github.com/Agent-Clubhouse/Clubhouse/pull/1915) removed the Hub plugin, and structured mode is being removed in favour of native chat ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)). Their coverage is dropped or moved to chat; §12 keeps them as history. |
+| **Status** | Draft for review (scoping/design only, no implementation). Revision 2 records the maintainer's decisions (§10.1) and adds regression-informed priorities (§12). Revision 4 (2026-10-16) follows code changes since: [#1930](https://github.com/Agent-Clubhouse/Clubhouse/pull/1930) removed the Assistant, Agent Queue and Sessions features, [#1915](https://github.com/Agent-Clubhouse/Clubhouse/pull/1915) removed the Hub plugin, and structured mode is removed in favour of native chat ([#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937)) ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)). Their coverage is dropped or moved to chat; §12 keeps them as history. |
 | **Date** | 2026-10-16 |
 | **Target** | Clubhouse 0.43+ (Electron 43, Node ≥ 22) |
 | **Supersedes** | [`docs/telemetry-design/`](telemetry-design/01-overview.md) (June 2026 log-subscriber plugin design) |
@@ -305,7 +305,7 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
   - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`other`)
   - `c.agent.runtime` (`pty`/`headless`/`chat`)
   - `c.agent.runtime.reason` (`requested`/`fallback_no_mission`/`fallback_not_capable`/`default`)
-  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`, later `copilot_sdk`), from chat's capability record. Claude chat defaults to the Agent SDK, with raw `-p` stream-json as a second mode.
+  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`, later `copilot_sdk`), from chat's capability record. Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
   - `c.agent.resume` (bool)
   - `c.model.family` (bucketed against `MODEL_OPTIONS`: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`)
   - `c.agent.uses_worktree`, `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool)
@@ -339,7 +339,7 @@ There is no CLI "ready" signal. The proxies below are recorded as **events** on 
 
 #### Chat turns (mapped from the chat event bus, §9.1)
 
-Structured mode (`structured-manager.ts` and its StreamJson, ACP and Codex adapters) is being removed and is **not** instrumented. Native chat ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)) publishes normalized events on a main-process bus it owns. Telemetry maps them as follows once both exist; whichever lands second owns this mapping.
+Structured mode (`structured-manager.ts` and its StreamJson, ACP and Codex adapters) is removed by [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937) and was never instrumented; it is not a hook point. Native chat ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)) publishes normalized events on a main-process bus it owns. Telemetry maps them as follows once both exist; whichever lands second owns this mapping.
 
 | Span | Boundaries | Attributes / errors | Level |
 |---|---|---|---|
@@ -360,7 +360,7 @@ Metrics: `c.agent.permission.wait` histogram (s; already computed as `elapsedMs`
 
 | Span | Boundaries | Attributes | Level |
 |---|---|---|---|
-| `c.agent.exit` (root, short) | `broadcastAgentExit` (`agent-exit-broadcast.ts:26`) (structured mode's bypass, F1, was fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928); chat exits must also go through it) | `c.agent.exit.class` (see below), `process.exit.code` (int), `c.agent.exit.signal` (`SIGTERM`/`SIGKILL`/none), `c.agent.run.duration_s`, `c.pty.output.bytes` | S |
+| `c.agent.exit` (root, short) | `broadcastAgentExit` (`agent-exit-broadcast.ts:26`) (the structured-mode bypass, F1, was fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928) and the code is removed by [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937); chat exits must also go through it) | `c.agent.exit.class` (see below), `process.exit.code` (int), `c.agent.exit.signal` (`SIGTERM`/`SIGKILL`/none), `c.agent.run.duration_s`, `c.pty.output.bytes` | S |
 | `c.agent.kill` | `killAgent` (`agent-system.ts:526`) → exit | `c.kill.trigger` (`user`/`quick_auto_stop`/`shutdown`/`replace`/`sweeper`), `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`, from `gracefulKill` `:498-548`) | S |
 
 `c.agent.exit.class` takes one of:
@@ -1068,7 +1068,7 @@ Sizes: **S** ≈ ≤ 400 LOC, **M** ≈ 400–1,000, **L** ≈ 1,000–1,800, co
 Two large changes are planned alongside telemetry:
 
 - the **chrome refresh**: project rail, explorer, agent list, title bar, panels and command palette (mockups in the refresh session's artifact);
-- **native chat** ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)): chat over the coding CLIs, with one Clubhouse event model, real session and turn IDs and multi-turn sessions. It replaces structured mode, which is being removed (branch `chore/remove-structured-mode`, which also drops the `core:structured*` log namespaces).
+- **native chat** ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)): chat over the coding CLIs, with one Clubhouse event model, real session and turn IDs and multi-turn sessions. It replaces structured mode, which [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937) removes along with the `core:structured*` log namespaces.
 
 Telemetry is split **by layer**. It does not wait for either change, and they do not wait for it.
 
@@ -1097,7 +1097,7 @@ These were roughly 15–20% of the planned telemetry work. That is an estimate f
 - **Chat owns its event bus.** Chat publishes its normalized events on a main-process bus that it owns: turn start and end, tool start and end, permission request and decision, usage, and errors. Chat imports nothing from telemetry.
 - **Telemetry subscribes when it lands.** It maps those events onto `c.agent.turn`, `c.agent.tool_call`, `c.agent.permission` and the token metrics (§4.4). It adds the driver-boundary signals under `c.chat.*`: `c.chat.driver` and `c.chat.protocol.unknown`, plus `c.agent.turn.stalled`. New code uses `chat`, not `structured`.
 - **Whichever lands second owns the mapping** code and its tests, and adds `chat` to `c.agent.runtime` in the registry.
-- **Structured mode is not instrumented.** It is being removed. PTY and headless values stay while those paths exist.
+- **Structured mode is not instrumented.** It is removed by [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937). PTY and headless values stay while those paths exist.
 
 **Ownership.**
 
@@ -1164,17 +1164,17 @@ No open questions remain.
 
 ---
 
-## 11. Findings discovered while scoping (not fixed here)
+## 11. Findings discovered while scoping
 
 These came out of the code survey and log analysis. They are independent of telemetry, but several would make telemetry data wrong or misleading if not fixed first. All are filed under the `telemetry-scoping-2026-10-16` label. F4 extends the existing [#1575](https://github.com/Agent-Clubhouse/Clubhouse/issues/1575) as a comment rather than a new issue. **Fix F1, F2 ([#1917](https://github.com/Agent-Clubhouse/Clubhouse/issues/1917), [#1918](https://github.com/Agent-Clubhouse/Clubhouse/issues/1918)) before Phase 4 ships, and F4/F5 ([#1575](https://github.com/Agent-Clubhouse/Clubhouse/issues/1575), [#1920](https://github.com/Agent-Clubhouse/Clubhouse/issues/1920)) before Phase 3's safe-mode and update data is trusted.**
 
 | # | Issue | Finding | Where | Telemetry impact |
 |---|---|---|---|---|
-| F1 | [#1917](https://github.com/Agent-Clubhouse/Clubhouse/issues/1917) | **Structured exits bypass `broadcastAgentExit`.** `onAgentExit` listeners (the queue runner) never see them, so structured queue tasks never complete. | `structured-manager.ts:125-126`, `agent-queue-runner.ts:252` | exit metrics would undercount structured runs |
-| F2 | [#1918](https://github.com/Agent-Clubhouse/Clubhouse/issues/1918) | **A headless exit by signal is reported as code 0** (`code ?? 0`, signal dropped). Killed headless queue tasks are marked "completed". | `headless-manager.ts:486,488` | exit class would be wrong |
+| F1 | [#1917](https://github.com/Agent-Clubhouse/Clubhouse/issues/1917) · **closed**: fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928); the code is removed by [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937) | **Structured exits bypass `broadcastAgentExit`.** `onAgentExit` listeners (the queue runner) never see them, so structured queue tasks never complete. | `structured-manager.ts:125-126`, `agent-queue-runner.ts:252` | exit metrics would undercount structured runs |
+| F2 | [#1918](https://github.com/Agent-Clubhouse/Clubhouse/issues/1918) · **closed**: fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928) | **A headless exit by signal is reported as code 0** (`code ?? 0`, signal dropped). Killed headless queue tasks are marked "completed". | `headless-manager.ts:486,488` | exit class would be wrong |
 | F3 | [#1919](https://github.com/Agent-Clubhouse/Clubhouse/issues/1919) | **Prompts and missions are written to local logs** through `args` and RPC params | `agent-system.ts:462`, `headless-manager.ts:540`, `acp-client.ts:103`, `codex-app-server-client.ts:60` | no export impact (never bridged), but a local privacy issue |
-| F4 | [#1575](https://github.com/Agent-Clubhouse/Clubhouse/issues/1575) (comment) | **Safe-mode logic appears inverted.** "Safe Mode" clears the marker so the renderer loads plugins; "Try Again Normally" keeps it, so the renderer enters safe mode. Also, `CLUBHOUSE_SAFE_MODE` is read in `initializeTrustedManifests` before it is set. | `safe-mode.ts:58-83`, `plugin-loader.ts:239`, `plugin-handlers.ts:30` | safe-mode events would be mislabeled |
-| F5 | [#1920](https://github.com/Agent-Clubhouse/Clubhouse/issues/1920) | **The update apply-attempt marker is never written on macOS/Windows relaunch**, because `app.exit(0)` runs before `recordSuccessfulApply`, so `update:apply-detect` cannot fire there | `auto-update-service.ts:826,852,945` | the update failure funnel would be blind on two OSes |
+| F4 | [#1575](https://github.com/Agent-Clubhouse/Clubhouse/issues/1575) · **closed**: fixed in [#1929](https://github.com/Agent-Clubhouse/Clubhouse/pull/1929) (comment) | **Safe-mode logic appears inverted.** "Safe Mode" clears the marker so the renderer loads plugins; "Try Again Normally" keeps it, so the renderer enters safe mode. Also, `CLUBHOUSE_SAFE_MODE` is read in `initializeTrustedManifests` before it is set. | `safe-mode.ts:58-83`, `plugin-loader.ts:239`, `plugin-handlers.ts:30` | safe-mode events would be mislabeled |
+| F5 | [#1920](https://github.com/Agent-Clubhouse/Clubhouse/issues/1920) · **closed**: fixed in [#1929](https://github.com/Agent-Clubhouse/Clubhouse/pull/1929) | **The update apply-attempt marker is never written on macOS/Windows relaunch**, because `app.exit(0)` runs before `recordSuccessfulApply`, so `update:apply-detect` cannot fire there | `auto-update-service.ts:826,852,945` | the update failure funnel would be blind on two OSes |
 | F6 | [#1921](https://github.com/Agent-Clubhouse/Clubhouse/issues/1921) | **Uncaught `send EADDRNOTAVAIL 224.0.0.251`** from the mDNS socket. It happens twice in 10 days of logs, at fatal level, and the process continues. | `bonjour-service` via `annex-server.ts:2777` / `annex-client.ts:706` | first real crash class telemetry would report |
 | F7 | [#1922](https://github.com/Agent-Clubhouse/Clubhouse/issues/1922) | **Canvas `saveCanvas`/`saveWires` are fire-and-forget.** Write failures become unhandled renderer rejections, and there is no renderer `unhandledrejection` handler. | `canvas/main.ts:253-254` | lost canvas writes are invisible today |
 | F8 | [#1923](https://github.com/Agent-Clubhouse/Clubhouse/issues/1923) | **Shutdown has no global timeout**, and the log flush at quit is not awaited. Several `app.exit` paths skip all flushing. | `shutdown-guard.ts:17-22`, `log-service.ts:168`, `app-handlers.ts:421`, `auto-update-service.ts:887,899,969` | telemetry would need `flushBeforeExit` anyway (Phase 1) |
