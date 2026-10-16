@@ -18,6 +18,7 @@
  */
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import type { SettingsDefinition } from '../../shared/settings-definitions';
+import { beginLoad, optimisticUpdate } from './optimistic-update';
 
 export interface SettingsStoreFactoryOptions<T extends object, U = Partial<T>> {
   /**
@@ -66,40 +67,32 @@ export function createSettingsStore<T extends object, U = Partial<T>>(
     loaded: false,
 
     loadSettings: async () => {
+      // Sequenced: a stale response (superseded by a newer load, or racing a
+      // newer save) must not overwrite newer state.
+      const applyLoaded = beginLoad(get);
+      let values: Record<string, unknown>;
       try {
         const settings = await window.clubhouse.settings.get(definition.key) as T | null;
-        const defaults = getDefaultState() as Record<string, unknown>;
-        if (settings) {
-          const merged = { ...defaults, ...(settings as Record<string, unknown>), loaded: true };
-          set(merged as unknown as Partial<SettingsStoreState<T, U>>);
-        } else {
-          set({ ...defaults, loaded: true } as unknown as Partial<SettingsStoreState<T, U>>);
-        }
+        values = { ...(getDefaultState() as Record<string, unknown>), ...(settings as Record<string, unknown> | null ?? {}) };
       } catch {
-        const defaults = getDefaultState() as Record<string, unknown>;
-        set({ ...defaults, loaded: true } as unknown as Partial<SettingsStoreState<T, U>>);
+        values = getDefaultState() as Record<string, unknown>;
       }
+      const safe = applyLoaded(values as Partial<SettingsStoreState<T, U>>);
+      if (safe) set({ ...safe, loaded: true });
     },
 
     saveSettings: async (updates: U) => {
       const next = normalizeUpdate(updates);
-      const defaults = getDefaultState() as Record<string, unknown>;
-      const prev: Record<string, unknown> = {};
-      for (const key of Object.keys(defaults)) {
-        prev[key] = (get() as Record<string, unknown>)[key];
-      }
+      const keys = Object.keys(getDefaultState());
 
-      set(next as Partial<SettingsStoreState<T, U>>);
-
-      try {
+      // optimisticUpdate only rolls back keys no newer save has claimed since.
+      await optimisticUpdate(set, get, next as Partial<SettingsStoreState<T, U>>, () => {
         const full: Record<string, unknown> = {};
-        for (const key of Object.keys(defaults)) {
+        for (const key of keys) {
           full[key] = (get() as Record<string, unknown>)[key];
         }
-        await window.clubhouse.settings.save(definition.key, full as Record<string, unknown>);
-      } catch {
-        set(prev as unknown as Partial<SettingsStoreState<T, U>>);
-      }
+        return window.clubhouse.settings.save(definition.key, full);
+      });
     },
   }));
 }

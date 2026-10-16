@@ -11,6 +11,7 @@ import type {
   CustomMarketplaceToggleRequest,
 } from '../../shared/marketplace-types';
 import type { MarketplaceSettings } from '../../shared/types';
+import { isValidPluginId } from '../../shared/manifest-validator';
 import { withValidatedArgs, objectArg } from './validation';
 
 export function registerMarketplaceHandlers(): void {
@@ -22,6 +23,7 @@ export function registerMarketplaceHandlers(): void {
     [objectArg<MarketplaceInstallRequest>({
       validate: (v, name) => {
         if (typeof v.pluginId !== 'string' || !v.pluginId) throw new Error(`${name}.pluginId must be a non-empty string`);
+        if (!isValidPluginId(v.pluginId)) throw new Error(`${name}.pluginId must match /^[a-z0-9-]+$/`);
         if (typeof v.version !== 'string' || !v.version) throw new Error(`${name}.version must be a non-empty string`);
         if (typeof v.assetUrl !== 'string' || !v.assetUrl) throw new Error(`${name}.assetUrl must be a non-empty string`);
         if (typeof v.sha256 !== 'string' || !v.sha256) throw new Error(`${name}.sha256 must be a non-empty string`);
@@ -40,6 +42,7 @@ export function registerMarketplaceHandlers(): void {
     [objectArg<PluginUpdateRequest>({
       validate: (v, name) => {
         if (typeof v.pluginId !== 'string' || !v.pluginId) throw new Error(`${name}.pluginId must be a non-empty string`);
+        if (!isValidPluginId(v.pluginId)) throw new Error(`${name}.pluginId must match /^[a-z0-9-]+$/`);
       },
     })],
     async (_event, req) => {

@@ -321,6 +321,26 @@ describe('canvas main', () => {
     });
   });
 
+  it('shows a load error (not an empty, autosaving canvas) when canvas storage is unreadable', async () => {
+    const read = vi.fn(async (key: string) => {
+      if (key.startsWith('canvas-instances')) {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      }
+      return undefined;
+    });
+    const write = vi.fn(async () => {});
+    const storage = { read, write, delete: vi.fn(async () => {}), list: vi.fn(async () => []) };
+    const api = createMockAPI({
+      context: { mode: 'project', projectId: 'proj-load-error', projectPath: '/tmp/proj-load-error' },
+      storage: { project: storage, projectLocal: storage, global: storage },
+    });
+    render(React.createElement(canvasModule.MainPanel, { api }));
+
+    expect(await screen.findByTestId('canvas-load-error', {}, { timeout: 3000 })).toBeTruthy();
+    expect(screen.getByText('Retry')).toBeTruthy();
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('per-project stores have isolated state', () => {
     const storeA = canvasModule.getProjectCanvasStore('canvas-proj-iso-a');
     const storeB = canvasModule.getProjectCanvasStore('canvas-proj-iso-b');

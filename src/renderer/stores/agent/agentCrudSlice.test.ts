@@ -116,3 +116,42 @@ describe('agentCrudSlice – loadDurableAgents', () => {
     expect(state().agents['durable-1']?.model).toBeUndefined();
   });
 });
+
+describe('agentCrudSlice – backup recovery', () => {
+  const RESTORED = { id: 'durable-2', name: 'Restored Agent', color: 'red' } as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (window as any).clubhouse.agent.getRunningStatuses = vi.fn().mockResolvedValue([]);
+  });
+
+  it('records the detecting project on pendingRecovery', async () => {
+    (window as any).clubhouse.agent.listDurable = vi.fn().mockResolvedValue([CONFIG]);
+    (window as any).clubhouse.agent.getBackupInfo = vi.fn().mockResolvedValue({
+      backupAgents: [CONFIG, RESTORED],
+      currentCount: 1,
+    });
+    const { state, slice } = createTestStore();
+
+    await slice.loadDurableAgents(PROJECT_ID, PROJECT_PATH);
+
+    expect(state().pendingRecovery).toMatchObject({ projectId: PROJECT_ID, projectPath: PROJECT_PATH });
+  });
+
+  it('assigns restored agents to the restoring project, not an arbitrary loaded one', async () => {
+    // Regression: restored agents previously took the projectId of whichever
+    // agent happened to be first in the store — usually another project.
+    (window as any).clubhouse.agent.restoreFromBackup = vi.fn().mockResolvedValue({ restoredCount: 1, agents: [] });
+    (window as any).clubhouse.agent.listDurable = vi.fn().mockResolvedValue([RESTORED]);
+    const { state, slice } = createTestStore({
+      agents: {
+        'other-agent': { id: 'other-agent', projectId: 'other-proj', name: 'Other', kind: 'durable', status: 'sleeping', color: 'green' },
+      } as any,
+    });
+
+    await slice.restoreFromBackup(PROJECT_ID, PROJECT_PATH);
+
+    expect(state().agents['durable-2']?.projectId).toBe(PROJECT_ID);
+    expect(state().agents['other-agent']?.projectId).toBe('other-proj');
+  });
+});

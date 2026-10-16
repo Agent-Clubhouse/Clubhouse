@@ -38,9 +38,11 @@ interface MockClientInstance {
   start: ReturnType<typeof vi.fn>;
   request: ReturnType<typeof vi.fn>;
   respond: ReturnType<typeof vi.fn>;
+  respondWithError: ReturnType<typeof vi.fn>;
   notify: ReturnType<typeof vi.fn>;
   kill: ReturnType<typeof vi.fn>;
   getStderr: ReturnType<typeof vi.fn>;
+  alive: boolean;
   onNotification: (method: string, params: unknown) => void;
   onServerRequest: (id: number | string, method: string, params: unknown) => void;
   onExit: (code: number | null, signal: string | null) => void;
@@ -59,26 +61,78 @@ async function collectEvents(
   return events;
 }
 
+async function collectAll(iterable: AsyncIterable<StructuredEvent>): Promise<StructuredEvent[]> {
+  const events: StructuredEvent[] = [];
+  for await (const event of iterable) events.push(event);
+  return events;
+}
+
+/** Let the async startup chain (start → session/new → session/prompt) run. */
+const settle = () => new Promise(r => setTimeout(r, 10));
+
+// ── Authentic ACP v1 fixtures (schema/v1/schema.json) ─────────────────────
+
+const SESSION_ID = 'test-session-id';
+
+function sessionUpdate(update: Record<string, unknown>) {
+  return { sessionId: SESSION_ID, update };
+}
+
+const PERMISSION_OPTIONS = [
+  { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+  { optionId: 'allow-always', name: 'Always allow', kind: 'allow_always' },
+  { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
+  { optionId: 'reject-always', name: 'Always reject', kind: 'reject_always' },
+];
+
+function permissionRequest(options = PERMISSION_OPTIONS) {
+  return {
+    sessionId: SESSION_ID,
+    toolCall: {
+      toolCallId: 'call_001',
+      title: 'Edit src/index.ts',
+      kind: 'edit',
+      status: 'pending',
+      rawInput: { path: 'src/index.ts' },
+    },
+    options,
+  };
+}
+
 describe('AcpAdapter', () => {
   let mockClient: MockClientInstance;
+  /** Settle the in-flight session/prompt — ACP replies only when the turn ends. */
+  let resolvePrompt: (result: unknown) => void;
+  let rejectPrompt: (err: Error) => void;
   const defaultSessionOpts: StructuredSessionOpts = {
     mission: 'Fix the bug',
     cwd: '/tmp/project',
   };
 
   beforeEach(() => {
+    vi.mocked(appLog).mockClear();
+    resolvePrompt = () => {};
+    rejectPrompt = () => {};
     mockClient = {
       start: vi.fn().mockResolvedValue(undefined),
       request: vi.fn().mockImplementation((method: string) => {
         if (method === 'session/new') {
-          return Promise.resolve({ sessionId: 'test-session-id' });
+          return Promise.resolve({ sessionId: SESSION_ID });
+        }
+        if (method === 'session/prompt') {
+          return new Promise((resolve, reject) => {
+            resolvePrompt = resolve;
+            rejectPrompt = reject;
+          });
         }
         return Promise.resolve(undefined);
       }),
       respond: vi.fn(),
+      respondWithError: vi.fn(),
       notify: vi.fn(),
       kill: vi.fn(),
       getStderr: vi.fn().mockReturnValue(''),
+      alive: true,
       onNotification: () => {},
       onServerRequest: () => {},
       onExit: () => {},
@@ -105,8 +159,7 @@ describe('AcpAdapter', () => {
     });
 
     const stream = adapter.start(defaultSessionOpts);
-    // Let the async startup chain complete
-    await new Promise(r => setTimeout(r, 10));
+    await settle();
     mockClient.onExit(0, null);
     await collectEvents(stream, 1);
 
@@ -126,7 +179,7 @@ describe('AcpAdapter', () => {
     });
 
     adapter.start(defaultSessionOpts);
-    await new Promise(r => setTimeout(r, 10));
+    await settle();
 
     const opts = MockAcpClient.mock.calls[0][0];
     expect(opts.env).not.toHaveProperty('CLAUDECODE');
@@ -134,51 +187,48 @@ describe('AcpAdapter', () => {
     expect(opts.env).toHaveProperty('CUSTOM', 'val');
   });
 
-  // ── ACP protocol flow tests ──────────────────────────────────────────────
-
-  it('calls session/new then session/prompt on start', async () => {
+  it('calls session/new then session/prompt on start, with no prompt timeout', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start({
+    adapter.start({
       ...defaultSessionOpts,
       systemPrompt: 'Be helpful',
     });
+    await settle();
 
-    // Let the async startup chain complete
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onExit(0, null);
-    await collectEvents(stream, 1);
-
-    // start() should have been called (init handshake)
     expect(mockClient.start).toHaveBeenCalled();
-
-    // session/new should be called with cwd and mcpServers
     expect(mockClient.request).toHaveBeenCalledWith('session/new', {
       cwd: '/tmp/project',
       mcpServers: [],
     });
-
-    // session/prompt should be called with sessionId and prompt parts
+    // A prompt replies only when the whole turn ends — it must not inherit
+    // the 30s handshake timeout.
     expect(mockClient.request).toHaveBeenCalledWith('session/prompt', {
-      sessionId: 'test-session-id',
+      sessionId: SESSION_ID,
       prompt: [
         { type: 'text', text: 'Be helpful' },
         { type: 'text', text: 'Fix the bug' },
       ],
-    });
+    }, { timeoutMs: null });
   });
 
   it('sends only mission in prompt when no systemPrompt', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onExit(0, null);
-    await collectEvents(stream, 1);
+    adapter.start(defaultSessionOpts);
+    await settle();
 
     expect(mockClient.request).toHaveBeenCalledWith('session/prompt', {
-      sessionId: 'test-session-id',
+      sessionId: SESSION_ID,
       prompt: [{ type: 'text', text: 'Fix the bug' }],
-    });
+    }, { timeoutMs: null });
+  });
+
+  it('keeps the startup handshake on the default timeout', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    adapter.start(defaultSessionOpts);
+    await settle();
+
+    const newCall = mockClient.request.mock.calls.find(([m]) => m === 'session/new')!;
+    expect(newCall).toHaveLength(2);
   });
 
   it('passes --model arg when model is specified', () => {
@@ -197,7 +247,6 @@ describe('AcpAdapter', () => {
     });
 
     const opts = MockAcpClient.mock.calls[0][0];
-    expect(opts.args).toContain('--allow-tool');
     expect(opts.args).toEqual(['--acp', '--allow-tool', 'shell', '--allow-tool', 'read']);
   });
 
@@ -233,23 +282,24 @@ describe('AcpAdapter', () => {
     const opts = MockAcpClient.mock.calls[0][0];
     expect(opts.args).toContain('--additional-mcp-config');
     expect(opts.args).toContain('{"mcpServers":{"clubhouse":{}}}');
-    // extraArgs should come after the base args
     const acpIdx = opts.args.indexOf('--acp');
     const mcpIdx = opts.args.indexOf('--additional-mcp-config');
     expect(mcpIdx).toBeGreaterThan(acpIdx);
   });
 
-  // ── Notification mapping tests ────────────────────────────────────────────
+  // ── session/update mapping (update.sessionUpdate discriminator) ───────────
 
   it('maps agent_message_chunk → text_delta', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
+    await settle();
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('agent_message_chunk', { text: 'Hello' });
-    mockClient.onExit(0, null);
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: 'Hello' },
+    }));
 
-    const events = await collectEvents(stream, 2);
+    const events = await collectEvents(stream, 1);
     expect(events[0].type).toBe('text_delta');
     expect(events[0].data).toEqual({ text: 'Hello' });
   });
@@ -257,299 +307,381 @@ describe('AcpAdapter', () => {
   it('maps agent_thought_chunk → thinking', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
+    await settle();
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('agent_thought_chunk', { text: 'Thinking...' });
-    mockClient.onExit(0, null);
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text: 'Thinking...' },
+    }));
 
-    const events = await collectEvents(stream, 2);
+    const events = await collectEvents(stream, 1);
     expect(events[0].type).toBe('thinking');
     expect(events[0].data).toEqual({ text: 'Thinking...', isPartial: true });
   });
 
-  it('maps tool_call → tool_start', async () => {
+  it('ignores non-text message chunks', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+    }));
+    mockClient.onExit(0, null);
+
+    const events = await collectEvents(stream, 1);
+    expect(events[0].type).toBe('end');
+  });
+
+  it('maps tool_call → tool_start and tool_call_update completed → tool_end', async () => {
     const adapter = new AcpAdapter({
       binary: 'copilot',
       args: [],
       toolVerbs: { shell: 'Running command' },
     });
     const stream = adapter.start(defaultSessionOpts);
+    await settle();
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('tool_call', {
-      id: 't1',
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call_001',
+      title: 'Run npm test',
       name: 'shell',
-      input: { command: 'ls' },
-    });
-    mockClient.onExit(0, null);
+      kind: 'execute',
+      status: 'pending',
+      rawInput: { command: 'npm test' },
+    }));
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_001',
+      status: 'in_progress',
+    }));
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_001',
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: 'All tests passed' } }],
+    }));
 
     const events = await collectEvents(stream, 2);
     expect(events[0].type).toBe('tool_start');
     expect(events[0].data).toEqual({
-      id: 't1',
+      id: 'call_001',
       name: 'shell',
       displayVerb: 'Running command',
-      input: { command: 'ls' },
+      input: { command: 'npm test' },
     });
-  });
-
-  it('maps tool_call with requires_approval → permission_request', async () => {
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('tool_call', {
-      id: 't2',
-      name: 'edit',
-      input: { path: '/etc/hosts' },
-      requires_approval: true,
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('permission_request');
-    expect((events[0].data as { id: string }).id).toBe('t2');
-    expect((events[0].data as { toolName: string }).toolName).toBe('edit');
-  });
-
-  it('maps tool_result → tool_end', async () => {
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('tool_result', {
-      id: 't1',
+    expect(events[1].type).toBe('tool_end');
+    expect(events[1].data).toEqual({
+      id: 'call_001',
       name: 'shell',
-      result: 'file.txt',
-      duration_ms: 150,
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('tool_end');
-    expect(events[0].data).toEqual({
-      id: 't1',
-      name: 'shell',
-      result: 'file.txt',
-      durationMs: 150,
+      result: 'All tests passed',
+      durationMs: 0,
       status: 'success',
     });
   });
 
-  it('maps tool_result with error → tool_end status error', async () => {
+  it('maps tool_call_update failed → tool_end status error, falling back to rawOutput', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
+    await settle();
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('tool_result', {
-      id: 't1',
-      name: 'shell',
-      result: 'Permission denied',
-      error: true,
-      duration_ms: 50,
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('tool_end');
-    expect((events[0].data as { status: string }).status).toBe('error');
-  });
-
-  it('maps file_change → file_diff', async () => {
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('file_change', {
-      path: 'src/index.ts',
-      change_type: 'modify',
-      diff: '+ new line',
-    });
-    mockClient.onExit(0, null);
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call_002',
+      title: 'Read config',
+      kind: 'read',
+    }));
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_002',
+      status: 'failed',
+      rawOutput: { error: 'ENOENT' },
+    }));
 
     const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('file_diff');
-    expect(events[0].data).toEqual({
-      path: 'src/index.ts',
-      changeType: 'modify',
-      diff: '+ new line',
-    });
-  });
-
-  it('maps command_execution → command_output', async () => {
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('command_execution', {
-      id: 'c1',
-      command: 'npm test',
-      status: 'completed',
-      output: 'All tests passed',
-      exit_code: 0,
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('command_output');
-    expect(events[0].data).toEqual({
-      id: 'c1',
-      command: 'npm test',
-      status: 'completed',
-      output: 'All tests passed',
-      exitCode: 0,
+    // No programmatic name → the ACP tool kind stands in
+    expect((events[0].data as { name: string }).name).toBe('read');
+    expect(events[1].data).toEqual({
+      id: 'call_002',
+      name: 'read',
+      result: '{"error":"ENOENT"}',
+      durationMs: 0,
+      status: 'error',
     });
   });
 
   it('maps plan → plan_update', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
+    await settle();
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('plan', {
-      steps: [
-        { description: 'Read files', status: 'completed' },
-        { description: 'Edit code', status: 'in_progress' },
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'plan',
+      entries: [
+        { content: 'Read the code', priority: 'high', status: 'completed' },
+        { content: 'Fix the bug', priority: 'high', status: 'in_progress' },
+        { content: 'Write tests', priority: 'medium', status: 'pending' },
       ],
-    });
-    mockClient.onExit(0, null);
+    }));
 
-    const events = await collectEvents(stream, 2);
+    const events = await collectEvents(stream, 1);
     expect(events[0].type).toBe('plan_update');
     expect(events[0].data).toEqual({
       steps: [
-        { description: 'Read files', status: 'completed' },
-        { description: 'Edit code', status: 'in_progress' },
+        { description: 'Read the code', status: 'completed' },
+        { description: 'Fix the bug', status: 'in_progress' },
+        { description: 'Write tests', status: 'pending' },
       ],
     });
   });
 
-  it('maps usage → usage', async () => {
+  it('ignores session updates Clubhouse does not render', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
+    await settle();
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('usage', {
-      input_tokens: 100,
-      output_tokens: 50,
-      cost_usd: 0.002,
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('usage');
-    expect(events[0].data).toEqual({
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: undefined,
-      cacheWriteTokens: undefined,
-      costUsd: 0.002,
-    });
-  });
-
-  it('maps error → error', async () => {
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('error', {
-      code: 'rate_limit',
-      message: 'Too many requests',
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('error');
-    expect(events[0].data).toEqual({
-      code: 'rate_limit',
-      message: 'Too many requests',
-      toolId: undefined,
-    });
-  });
-
-  it('silently ignores unknown notification methods', async () => {
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('unknown_method', { data: 'whatever' });
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'available_commands_update',
+      availableCommands: [],
+    }));
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'usage_update',
+      used: 1200,
+      size: 200000,
+    }));
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 1);
-    // Only the end event from onExit
     expect(events[0].type).toBe('end');
   });
 
-  // ── Server request (permission) mapping ───────────────────────────────────
+  it('logs unmapped notification methods at debug level', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    mockClient.onNotification('unknown_future_method', { foo: 'bar' });
+    mockClient.onExit(0, null);
+    await collectEvents(stream, 1);
+
+    expect(appLog).toHaveBeenCalledWith(
+      'core:structured:acp',
+      'debug',
+      'Unmapped ACP notification: unknown_future_method',
+      expect.objectContaining({
+        meta: expect.objectContaining({ method: 'unknown_future_method' }),
+      }),
+    );
+  });
+
+  // ── Turn completion via the session/prompt reply ──────────────────────────
+
+  it('completes the turn when session/prompt returns stopReason end_turn', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: 'Done.' },
+    }));
+    resolvePrompt({ stopReason: 'end_turn' });
+
+    // The stream finishes on its own — no process exit needed
+    const events = await collectAll(stream);
+    expect(events.map(e => e.type)).toEqual(['text_delta', 'end']);
+    expect(events[1].data).toEqual({ reason: 'complete', summary: undefined });
+  });
+
+  it('ends the turn as cancelled for stopReason cancelled', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    resolvePrompt({ stopReason: 'cancelled' });
+
+    const events = await collectAll(stream);
+    expect(events).toHaveLength(1);
+    expect(events[0].data).toEqual({ reason: 'cancelled', summary: 'Turn cancelled' });
+  });
+
+  it.each([
+    ['max_tokens'],
+    ['max_turn_requests'],
+    ['refusal'],
+  ])('fails the turn for stopReason %s', async (stopReason) => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    resolvePrompt({ stopReason });
+
+    const events = await collectAll(stream);
+    expect(events.map(e => e.type)).toEqual(['error', 'end']);
+    expect((events[0].data as { code: string }).code).toBe(stopReason);
+    expect((events[1].data as { reason: string }).reason).toBe('error');
+  });
+
+  it('fails the turn when session/prompt is rejected', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    rejectPrompt(new Error('RPC error -32603: Internal error'));
+
+    const events = await collectAll(stream);
+    expect(events.map(e => e.type)).toEqual(['error', 'end']);
+    expect(events[0].data).toEqual({
+      code: 'prompt_failed',
+      message: 'RPC error -32603: Internal error',
+    });
+    expect((events[1].data as { reason: string }).reason).toBe('error');
+  });
+
+  it('emits a single end when the process exits mid-turn', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    mockClient.onExit(1, null);
+    rejectPrompt(new Error('Process exited with code 1, signal null'));
+
+    const events = await collectAll(stream);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('end');
+    expect((events[0].data as { reason: string }).reason).toBe('error');
+  });
+
+  // ── session/request_permission ───────────────────────────────────────────
 
   it('maps session/request_permission → permission_request', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
+    await settle();
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onServerRequest('rpc-5', 'session/request_permission', {
-      id: 'perm-1',
-      tool: 'shell',
-      args: { command: 'rm -rf /' },
-      description: 'Run dangerous command',
-    });
-    mockClient.onExit(0, null);
+    mockClient.onServerRequest(7, 'session/request_permission', permissionRequest());
 
-    const events = await collectEvents(stream, 2);
+    const events = await collectEvents(stream, 1);
     expect(events[0].type).toBe('permission_request');
     expect(events[0].data).toEqual({
-      id: 'perm-1',
-      toolName: 'shell',
-      toolInput: { command: 'rm -rf /' },
-      description: 'Run dangerous command',
+      id: 'call_001',
+      toolName: 'edit',
+      toolInput: { path: 'src/index.ts' },
+      description: 'Edit src/index.ts',
     });
   });
 
-  // ── Permission response flow ──────────────────────────────────────────────
-
-  it('respondToPermission sends approval back via JSON-RPC', async () => {
+  it('approving selects the allow_once option', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     adapter.start(defaultSessionOpts);
-    await new Promise(r => setTimeout(r, 10));
+    await settle();
 
-    // Trigger a permission request
-    mockClient.onServerRequest('rpc-42', 'session/request_permission', {
-      id: 'perm-abc',
-      tool: 'edit',
-      args: {},
-      description: 'Edit file',
+    mockClient.onServerRequest(7, 'session/request_permission', permissionRequest());
+    await adapter.respondToPermission('call_001', true);
+
+    expect(mockClient.respond).toHaveBeenCalledWith(7, {
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
     });
+  });
 
-    await adapter.respondToPermission('perm-abc', true);
+  it('denying selects the reject_once option', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    adapter.start(defaultSessionOpts);
+    await settle();
 
-    expect(mockClient.respond).toHaveBeenCalledWith('rpc-42', { approved: true });
+    mockClient.onServerRequest(7, 'session/request_permission', permissionRequest());
+    await adapter.respondToPermission('call_001', false);
+
+    expect(mockClient.respond).toHaveBeenCalledWith(7, {
+      outcome: { outcome: 'selected', optionId: 'reject-once' },
+    });
+  });
+
+  it('falls back to the *_always option when no one-shot option is offered', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    adapter.start(defaultSessionOpts);
+    await settle();
+
+    mockClient.onServerRequest(8, 'session/request_permission', permissionRequest([
+      { optionId: 'yes-forever', name: 'Always allow', kind: 'allow_always' },
+      { optionId: 'no-forever', name: 'Never', kind: 'reject_always' },
+    ]));
+    await adapter.respondToPermission('call_001', false);
+
+    expect(mockClient.respond).toHaveBeenCalledWith(8, {
+      outcome: { outcome: 'selected', optionId: 'no-forever' },
+    });
+  });
+
+  it('answers cancelled when no option matches the decision', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    adapter.start(defaultSessionOpts);
+    await settle();
+
+    mockClient.onServerRequest(9, 'session/request_permission', permissionRequest([
+      { optionId: 'ok', name: 'Allow', kind: 'allow_once' },
+    ]));
+    await adapter.respondToPermission('call_001', false);
+
+    expect(mockClient.respond).toHaveBeenCalledWith(9, { outcome: { outcome: 'cancelled' } });
+  });
+
+  it('keeps concurrent permission requests for one tool call apart', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    mockClient.onServerRequest(10, 'session/request_permission', permissionRequest());
+    mockClient.onServerRequest(11, 'session/request_permission', permissionRequest());
+
+    const events = await collectEvents(stream, 2);
+    const ids = events.map(e => (e.data as { id: string }).id);
+    expect(ids).toEqual(['call_001', 'perm-11']);
+
+    await adapter.respondToPermission('perm-11', true);
+    expect(mockClient.respond).toHaveBeenCalledWith(11, {
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    });
   });
 
   it('respondToPermission throws for unknown request ID', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     adapter.start(defaultSessionOpts);
-    await new Promise(r => setTimeout(r, 10));
+    await settle();
 
     await expect(
       adapter.respondToPermission('nonexistent', false),
     ).rejects.toThrow('No pending approval');
   });
 
+  it('answers unhandled agent requests with a JSON-RPC error', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    mockClient.onServerRequest(12, 'fs/read_text_file', { sessionId: SESSION_ID, path: '/etc/hosts' });
+
+    expect(mockClient.respondWithError).toHaveBeenCalledWith(12, -32601, expect.stringContaining('fs/read_text_file'));
+    const events = await collectEvents(stream, 1);
+    expect((events[0].data as { code: string }).code).toBe('unhandled_server_request');
+  });
+
   // ── sendMessage ───────────────────────────────────────────────────────────
 
-  it('sendMessage sends session/prompt request with sessionId', async () => {
+  it('sendMessage sends session/prompt without waiting for the turn to end', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     adapter.start(defaultSessionOpts);
+    await settle();
 
-    // Wait for the async startup chain to complete (start → session/new → session/prompt)
-    await new Promise(r => setTimeout(r, 10));
-
+    // Resolves although the prompt reply (the end of the turn) is still pending
     await adapter.sendMessage('continue with step 2');
 
     expect(mockClient.request).toHaveBeenCalledWith('session/prompt', {
-      sessionId: 'test-session-id',
+      sessionId: SESSION_ID,
       prompt: [{ type: 'text', text: 'continue with step 2' }],
-    });
+    }, { timeoutMs: null });
   });
 
   it('sendMessage throws if adapter not started', async () => {
@@ -559,7 +691,6 @@ describe('AcpAdapter', () => {
   });
 
   it('sendMessage throws if no session', async () => {
-    // Override request to return no sessionId
     mockClient.request.mockImplementation((method: string) => {
       if (method === 'session/new') {
         return Promise.resolve({ sessionId: undefined });
@@ -569,22 +700,39 @@ describe('AcpAdapter', () => {
 
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     adapter.start(defaultSessionOpts);
-
-    // Wait for startup to fail
-    await new Promise(r => setTimeout(r, 10));
+    await settle();
 
     await expect(adapter.sendMessage('hello')).rejects.toThrow('No active session');
   });
 
   // ── cancel ────────────────────────────────────────────────────────────────
 
-  it('cancel kills process directly', async () => {
+  it('cancel sends session/cancel and answers pending permissions cancelled', async () => {
+    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
+    const stream = adapter.start(defaultSessionOpts);
+    await settle();
+
+    mockClient.onServerRequest(7, 'session/request_permission', permissionRequest());
+    await adapter.cancel();
+
+    expect(mockClient.respond).toHaveBeenCalledWith(7, { outcome: { outcome: 'cancelled' } });
+    expect(mockClient.notify).toHaveBeenCalledWith('session/cancel', { sessionId: SESSION_ID });
+    expect(mockClient.kill).not.toHaveBeenCalled();
+
+    // The agent confirms with stopReason cancelled, which ends the turn
+    resolvePrompt({ stopReason: 'cancelled' });
+    const events = await collectAll(stream);
+    expect(events.at(-1)!.data).toEqual({ reason: 'cancelled', summary: 'Turn cancelled' });
+  });
+
+  it('cancel kills the process when there is no session to cancel', async () => {
+    mockClient.start.mockReturnValue(new Promise(() => {}));
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     adapter.start(defaultSessionOpts);
-    await new Promise(r => setTimeout(r, 10));
 
     await adapter.cancel();
 
+    expect(mockClient.notify).not.toHaveBeenCalled();
     expect(mockClient.kill).toHaveBeenCalled();
   });
 
@@ -603,13 +751,7 @@ describe('AcpAdapter', () => {
     adapter.dispose();
 
     expect(mockClient.kill).toHaveBeenCalled();
-
-    // Stream should terminate
-    const events: StructuredEvent[] = [];
-    for await (const event of stream) {
-      events.push(event);
-    }
-    expect(events).toEqual([]);
+    expect(await collectAll(stream)).toEqual([]);
   });
 
   // ── Process exit ──────────────────────────────────────────────────────────
@@ -618,7 +760,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
-    await new Promise(r => setTimeout(r, 10));
+    await settle();
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 1);
@@ -630,7 +772,7 @@ describe('AcpAdapter', () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
 
-    await new Promise(r => setTimeout(r, 10));
+    await settle();
     mockClient.onExit(1, null);
 
     const events = await collectEvents(stream, 1);
@@ -644,19 +786,10 @@ describe('AcpAdapter', () => {
     mockClient.start.mockRejectedValue(new Error('Connection refused'));
 
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
+    const events = await collectAll(adapter.start(defaultSessionOpts));
 
-    // The catch handler now finishes the queue — no need for onExit
-    const events: StructuredEvent[] = [];
-    for await (const event of stream) {
-      events.push(event);
-    }
-
-    // Should have error + end events from the catch handler
-    expect(events.some(e => e.type === 'error')).toBe(true);
     const errorEvent = events.find(e => e.type === 'error')!;
     expect((errorEvent.data as { code: string }).code).toBe('session_start_failed');
-    expect(events.some(e => e.type === 'end')).toBe(true);
     const endEvent = events.find(e => e.type === 'end')!;
     expect((endEvent.data as { reason: string }).reason).toBe('error');
   });
@@ -671,15 +804,8 @@ describe('AcpAdapter', () => {
     });
 
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
+    const events = await collectAll(adapter.start(defaultSessionOpts));
 
-    // The catch handler now finishes the queue — no need for onExit
-    const events: StructuredEvent[] = [];
-    for await (const event of stream) {
-      events.push(event);
-    }
-
-    expect(events.some(e => e.type === 'error')).toBe(true);
     const errorEvent = events.find(e => e.type === 'error')!;
     expect((errorEvent.data as { code: string }).code).toBe('session_start_failed');
     expect(events.some(e => e.type === 'end')).toBe(true);
@@ -694,41 +820,38 @@ describe('AcpAdapter', () => {
       toolVerbs: { shell: 'Running command', edit: 'Editing file' },
     });
     const stream = adapter.start(defaultSessionOpts);
+    await settle();
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('tool_call', {
-      id: 't1',
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 't1',
+      title: 'Edit a file',
       name: 'edit',
-      input: {},
-    });
-    mockClient.onExit(0, null);
+    }));
 
-    const events = await collectEvents(stream, 2);
+    const events = await collectEvents(stream, 1);
     expect((events[0].data as { displayVerb: string }).displayVerb).toBe('Editing file');
   });
 
   it('falls back to "Using tool" for unknown tools', async () => {
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
     const stream = adapter.start(defaultSessionOpts);
+    await settle();
 
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('tool_call', {
-      id: 't1',
+    mockClient.onNotification('session/update', sessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 't1',
+      title: 'Custom',
       name: 'custom_tool',
-      input: {},
-    });
-    mockClient.onExit(0, null);
+    }));
 
-    const events = await collectEvents(stream, 2);
+    const events = await collectEvents(stream, 1);
     expect((events[0].data as { displayVerb: string }).displayVerb).toBe('Using tool');
   });
 
   // ── Diagnostic logging tests ──────────────────────────────────────────────
 
   it('logs session start parameters', () => {
-    const mockAppLog = vi.mocked(appLog);
-    mockAppLog.mockClear();
-
     const adapter = new AcpAdapter({
       binary: '/usr/bin/copilot',
       args: ['--acp'],
@@ -739,7 +862,7 @@ describe('AcpAdapter', () => {
       systemPrompt: 'Be helpful',
     });
 
-    expect(mockAppLog).toHaveBeenCalledWith(
+    expect(appLog).toHaveBeenCalledWith(
       'core:structured',
       'info',
       'AcpAdapter spawning',
@@ -754,58 +877,18 @@ describe('AcpAdapter', () => {
   });
 
   it('logs startup failure with error details', async () => {
-    const mockAppLog = vi.mocked(appLog);
-    mockAppLog.mockClear();
-
     const { RpcError } = await import('./acp-client');
-    const rpcErr = new RpcError(-32601, 'Method not found');
-
-    mockClient.start.mockRejectedValue(rpcErr);
+    mockClient.start.mockRejectedValue(new RpcError(-32601, 'Method not found'));
 
     const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
+    await collectAll(adapter.start(defaultSessionOpts));
 
-    // Queue finishes on its own now — no need for onExit
-    const events: StructuredEvent[] = [];
-    for await (const event of stream) {
-      events.push(event);
-    }
-
-    expect(events.some(e => e.type === 'error')).toBe(true);
-    const errorEvent = events.find(e => e.type === 'error')!;
-    expect((errorEvent.data as { code: string }).code).toBe('session_start_failed');
-
-    expect(mockAppLog).toHaveBeenCalledWith(
+    expect(appLog).toHaveBeenCalledWith(
       'core:structured',
       'error',
       'AcpAdapter startup failed',
       expect.objectContaining({
-        meta: expect.objectContaining({
-          rpcCode: -32601,
-        }),
-      }),
-    );
-  });
-
-  it('logs unmapped notification methods at debug level', async () => {
-    const mockAppLog = vi.mocked(appLog);
-    mockAppLog.mockClear();
-
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('unknown_future_method', { foo: 'bar' });
-    mockClient.onExit(0, null);
-
-    await collectEvents(stream, 1);
-
-    expect(mockAppLog).toHaveBeenCalledWith(
-      'core:structured:acp',
-      'debug',
-      'Unmapped ACP notification: unknown_future_method',
-      expect.objectContaining({
-        meta: expect.objectContaining({ method: 'unknown_future_method' }),
+        meta: expect.objectContaining({ rpcCode: -32601 }),
       }),
     );
   });
@@ -816,65 +899,5 @@ describe('AcpAdapter', () => {
 
     const opts = MockAcpClient.mock.calls[0][0];
     expect(opts.onLog).toBeDefined();
-  });
-
-  // ── session/update mapping tests ──────────────────────────────────────────
-
-  it('maps session/update with token data → usage event', async () => {
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('session/update', {
-      input_tokens: 500,
-      output_tokens: 200,
-      cost_usd: 0.01,
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('usage');
-    expect(events[0].data).toEqual({
-      inputTokens: 500,
-      outputTokens: 200,
-      cacheReadTokens: undefined,
-      cacheWriteTokens: undefined,
-      costUsd: 0.01,
-    });
-  });
-
-  it('maps session/update with camelCase token fields', async () => {
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('session/update', {
-      inputTokens: 100,
-      outputTokens: 50,
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('usage');
-    expect(events[0].data).toEqual({
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: undefined,
-      cacheWriteTokens: undefined,
-      costUsd: undefined,
-    });
-  });
-
-  it('ignores session/update with no token data', async () => {
-    const adapter = new AcpAdapter({ binary: 'copilot', args: [] });
-    const stream = adapter.start(defaultSessionOpts);
-
-    await new Promise(r => setTimeout(r, 10));
-    mockClient.onNotification('session/update', { status: 'streaming' });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 1);
-    // Only the end event, session/update was silently ignored
-    expect(events[0].type).toBe('end');
   });
 });

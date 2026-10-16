@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { optimisticUpdate } from './optimistic-update';
+import { beginLoad, optimisticUpdate } from './optimistic-update';
 import type { FreeAgentPermissionMode } from '../../shared/types';
 
 export type { FreeAgentPermissionMode };
@@ -19,12 +19,14 @@ export const useFreeAgentSettingsStore = create<FreeAgentSettingsState>((set, ge
   projectOverrides: {},
 
   loadSettings: async () => {
+    const applyLoaded = beginLoad(get);
     try {
       const settings = await window.clubhouse.app.getFreeAgentSettings();
-      set({
+      const safe = applyLoaded({
         defaultMode: settings?.defaultMode ?? 'skip-all',
         projectOverrides: settings?.projectOverrides ?? {},
       });
+      if (safe) set(safe);
     } catch {
       // Keep default
     }

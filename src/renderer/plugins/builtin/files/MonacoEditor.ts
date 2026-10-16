@@ -10,6 +10,8 @@ import type { ScrollState } from './state';
 interface CachedModel {
   model: any;           // monaco.editor.ITextModel
   savedContent: string; // Content at last save (for dirty detection)
+  /** Last `value` prop applied to the model; a remount with the same value keeps unsaved edits. */
+  syncedValue: string;
   language: string;
 }
 
@@ -44,7 +46,7 @@ export function getOrCreateModel(
     monaco.editor.setModelLanguage(model, language);
   }
 
-  const cached: CachedModel = { model, savedContent: content, language };
+  const cached: CachedModel = { model, savedContent: content, syncedValue: content, language };
   modelCache.set(filePath, cached);
   return cached;
 }
@@ -71,6 +73,15 @@ export function updateSavedContent(filePath: string, content: string): void {
   }
 }
 
+/** Commit a successful save as both the dirty baseline and the synced disk value. */
+function commitSavedContent(filePath: string, content: string): void {
+  const cached = modelCache.get(filePath);
+  if (cached) {
+    cached.savedContent = content;
+    cached.syncedValue = content;
+  }
+}
+
 export function getModelContent(filePath: string): string | null {
   const cached = modelCache.get(filePath);
   return cached ? cached.model.getValue() : null;
@@ -87,7 +98,11 @@ export function isModelDirty(filePath: string): boolean {
 interface MonacoEditorProps {
   value: string;
   language: string;
-  onSave: (content: string) => void;
+  /**
+   * Persist the content. Resolve `false` (or reject) when the write failed —
+   * the editor then keeps its dirty state so the draft is not lost.
+   */
+  onSave: (content: string) => boolean | void | Promise<boolean | void>;
   onDirtyChange: (dirty: boolean) => void;
   filePath: string;
   initialScrollState?: ScrollState | null;
@@ -110,8 +125,13 @@ export function MonacoEditor({
   const onScrollStateChangeRef = useRef(onScrollStateChange);
   const onCursorChangeRef = useRef(onCursorChange);
   const filePathRef = useRef(filePath);
+  // Latest props for the async editor creation — props can change while Monaco is loading
+  const latestPropsRef = useRef({ filePath, value, language, initialScrollState });
+  latestPropsRef.current = { filePath, value, language, initialScrollState };
   const wordWrapRef = useRef<'off' | 'on'>('off');
   const themeId = useThemeStore((s) => s.themeId);
+  const themeIdRef = useRef(themeId);
+  themeIdRef.current = themeId;
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const contentChangeDisposableRef = useRef<any>(null);
@@ -152,11 +172,13 @@ export function MonacoEditor({
       monacoRef.current = m;
       await ensureThemes(m);
 
-      const cached = getOrCreateModel(m, filePath, value, language);
+      const latest = latestPropsRef.current;
+      filePathRef.current = latest.filePath;
+      const cached = getOrCreateModel(m, latest.filePath, latest.value, latest.language);
 
       const editor = m.editor.create(containerRef.current, {
         model: cached.model,
-        theme: monacoThemeName(themeId),
+        theme: monacoThemeName(themeIdRef.current),
         fontSize: 13,
         fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
         bracketPairColorization: { enabled: true },
@@ -192,12 +214,21 @@ export function MonacoEditor({
 
       editorRef.current = editor;
 
-      // Cmd+S / Ctrl+S keybinding
+      // Cmd+S / Ctrl+S keybinding — the saved baseline only moves once the
+      // write succeeds, so a failed save leaves the tab dirty.
       editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => {
+        const path = filePathRef.current;
         const content = editor.getValue();
-        updateSavedContent(filePathRef.current, content);
-        onSaveRef.current(content);
-        onDirtyChangeRef.current(false);
+        Promise.resolve()
+          .then(() => onSaveRef.current(content))
+          .then((result) => {
+            if (result === false) return;
+            commitSavedContent(path, content);
+            if (filePathRef.current === path) checkDirty();
+          })
+          .catch((err) => {
+            console.error('[MonacoEditor] Save failed:', err);
+          });
       });
 
       // Cmd+F — Open find widget
@@ -256,14 +287,16 @@ export function MonacoEditor({
       });
 
       // Restore scroll state if provided
-      if (initialScrollState) {
-        editor.setScrollTop(initialScrollState.scrollTop);
-        editor.setScrollLeft(initialScrollState.scrollLeft);
+      const scrollState = latest.initialScrollState;
+      if (scrollState) {
+        editor.setScrollTop(scrollState.scrollTop);
+        editor.setScrollLeft(scrollState.scrollLeft);
         editor.setPosition({
-          lineNumber: initialScrollState.cursorLine,
-          column: initialScrollState.cursorColumn,
+          lineNumber: scrollState.cursorLine,
+          column: scrollState.cursorColumn,
         });
       }
+      checkDirty();
       setLoading(false);
     }).catch((err) => {
       if (disposed) return;
@@ -330,10 +363,14 @@ export function MonacoEditor({
     applyMonacoTheme(monacoRef.current, themeId);
   }, [themeId]);
 
-  // When value prop changes externally (e.g., file reloaded from disk), update model
+  // When value prop changes externally (e.g., file reloaded from disk), update model.
+  // A remount with the value the model was last synced to (e.g. switching back to
+  // a tab) must not clobber unsaved edits.
   useEffect(() => {
     const cached = modelCache.get(filePath);
-    if (cached && cached.model.getValue() !== value) {
+    if (!cached || cached.syncedValue === value) return;
+    cached.syncedValue = value;
+    if (cached.model.getValue() !== value) {
       cached.model.setValue(value);
       cached.savedContent = value;
       onDirtyChangeRef.current(false);

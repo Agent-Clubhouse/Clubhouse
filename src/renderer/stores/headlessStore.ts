@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { optimisticUpdate } from './optimistic-update';
+import { beginLoad, optimisticUpdate } from './optimistic-update';
 import type { SpawnMode } from '../../shared/types';
 
 export type { SpawnMode };
@@ -19,14 +19,16 @@ export const useHeadlessStore = create<HeadlessState>((set, get) => ({
   projectOverrides: {},
 
   loadSettings: async () => {
+    const applyLoaded = beginLoad(get);
     try {
       const settings = await window.clubhouse.app.getHeadlessSettings();
       const defaultMode: SpawnMode = settings?.defaultMode
         ?? (settings?.enabled !== false ? 'headless' : 'interactive');
-      set({
+      const safe = applyLoaded({
         defaultMode,
         projectOverrides: settings?.projectOverrides ?? {},
       });
+      if (safe) set(safe);
     } catch {
       // Keep default
     }

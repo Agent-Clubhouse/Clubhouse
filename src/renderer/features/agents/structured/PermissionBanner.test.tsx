@@ -74,4 +74,20 @@ describe('PermissionBanner', () => {
     fireEvent.click(screen.getByTestId('permission-deny'));
     expect(onRespond).toHaveBeenCalledTimes(1);
   });
+
+  it('accepts a response again when the request changes on the same instance', () => {
+    const onRespond = vi.fn();
+    const { rerender } = render(<PermissionBanner request={request} onRespond={onRespond} />);
+
+    fireEvent.click(screen.getByTestId('permission-approve'));
+    expect(onRespond).toHaveBeenCalledWith('perm-1', true);
+
+    act(() => { vi.advanceTimersByTime(30_000); });
+    rerender(<PermissionBanner request={{ ...request, id: 'perm-2' }} onRespond={onRespond} />);
+    expect(screen.getByText('120s')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('permission-deny'));
+    expect(onRespond).toHaveBeenCalledWith('perm-2', false);
+    expect(onRespond).toHaveBeenCalledTimes(2);
+  });
 });
