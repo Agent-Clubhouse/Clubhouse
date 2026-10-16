@@ -268,6 +268,39 @@ describe('agent exit with non-zero code', () => {
       errorMessage: 'Agent exited with code 1',
     }));
   });
+
+  it('marks task as failed when a headless agent is killed by SIGTERM (128 + 15)', async () => {
+    const queue = makeQueue();
+    const task = makeTask();
+
+    vi.mocked(agentQueueTaskStore.createTask).mockResolvedValue(task);
+    vi.mocked(agentQueueRegistry.get).mockResolvedValue(queue);
+    vi.mocked(agentQueueTaskStore.listTasks).mockResolvedValue([task]);
+    vi.mocked(agentQueueTaskStore.updateTask).mockResolvedValue(task);
+    vi.mocked(spawnAgent).mockResolvedValue(undefined);
+
+    initAgentQueueRunner();
+    await enqueueTask('q1', 'do something');
+    await flushPromises();
+
+    // Simulate the exit code headless-manager reports for a SIGTERM kill
+    vi.mocked(agentQueueTaskStore.getTask).mockResolvedValue(
+      makeTask({ status: 'running', agentId: 'quick_test_abc', startedAt: new Date().toISOString() }),
+    );
+    vi.mocked(readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    vi.mocked(readQuickSummary).mockResolvedValue(null);
+    vi.mocked(agentQueueTaskStore.updateTask).mockClear();
+    vi.mocked(agentQueueTaskStore.listTasks).mockResolvedValue([]);
+
+    capturedExitCb!('quick_test_abc', 143);
+    await flushPromises();
+
+    expect(agentQueueTaskStore.updateTask).toHaveBeenCalledWith('q1', 'task1', expect.objectContaining({
+      status: 'failed',
+      exitCode: 143,
+      errorMessage: 'Agent exited with code 143',
+    }));
+  });
 });
 
 describe('readQueueAgentOutput file I/O failure', () => {

@@ -47,6 +47,7 @@ import {
   isStructuredSession,
   activeSessionCount,
 } from './structured-manager';
+import { onAgentExit } from './agent-exit-broadcast';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -277,6 +278,24 @@ describe('structured-manager', () => {
       });
 
       expect(mockEmitPtyExit).toHaveBeenCalledWith('error-exit-agent', 1);
+    });
+
+    it('reports the session end to onAgentExit listeners', async () => {
+      const listener = vi.fn();
+      const unsubscribe = onAgentExit(listener);
+      try {
+        const adapter = createMockAdapter([
+          makeEvent('end', { reason: 'complete', summary: 'Finished' }),
+        ]);
+        await startStructuredSession('listener-agent', adapter, baseOpts);
+
+        await vi.waitFor(() => {
+          expect(listener).toHaveBeenCalledWith('listener-agent', 0);
+        });
+        expect(listener).toHaveBeenCalledTimes(1);
+      } finally {
+        unsubscribe();
+      }
     });
   });
 
