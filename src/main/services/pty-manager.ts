@@ -40,6 +40,13 @@ interface ManagedSession {
   outputSize: number;
   bufferCache: string;
   bufferCacheDirty: boolean;
+  /**
+   * Running count of UTF-16 code units ever appended to this session's
+   * output (never decremented by eviction).  Each PTY.DATA broadcast carries
+   * the value at the end of its chunk and buffer snapshots report the value
+   * they include, so a renderer can drop live data already in its snapshot.
+   */
+  outputSeq: number;
   pendingCommand?: string;
   eofTimer?: ReturnType<typeof setTimeout>;
   termTimer?: ReturnType<typeof setTimeout>;
@@ -162,6 +169,14 @@ export function stopStaleSweep(): void {
   staleSweeper.stop();
 }
 
+/**
+ * High-water mark of every session's `outputSeq`.  New sessions start here so
+ * sequence numbers for a given id never go backwards across respawns — a
+ * renderer holding a snapshot seq from the previous session must not drop
+ * the new session's output as "already seen".
+ */
+let outputSeqHighWater = 0;
+
 /** Compact threshold: reclaim array memory once the dead-head region grows large. */
 const COMPACT_THRESHOLD = 1000;
 
@@ -177,6 +192,7 @@ function createSession(process: pty.IPty, agentId: string, pendingCommand?: stri
     outputSize: 0,
     bufferCache: '',
     bufferCacheDirty: false,
+    outputSeq: outputSeqHighWater,
     pendingCommand,
   };
 }
@@ -184,6 +200,8 @@ function createSession(process: pty.IPty, agentId: string, pendingCommand?: stri
 function appendToBuffer(session: ManagedSession, data: string): void {
   session.outputChunks.push(data);
   session.outputSize += data.length;
+  session.outputSeq += data.length;
+  if (session.outputSeq > outputSeqHighWater) outputSeqHighWater = session.outputSeq;
   session.bufferCacheDirty = true;
   // Evict oldest chunks using a head pointer — O(1) per eviction step.
   while (session.outputSize > MAX_BUFFER_SIZE && session.outputHead < session.outputChunks.length - 1) {
@@ -209,6 +227,16 @@ function getSessionBuffer(session: ManagedSession): string {
 export function getBuffer(agentId: string): string {
   const session = sessions.get(agentId);
   return session ? getSessionBuffer(session) : '';
+}
+
+/**
+ * Get the raw buffer together with the output sequence number it includes.
+ * Live PTY.DATA events whose seq is <= `seq` are already in `data`.
+ */
+export function getBufferSnapshot(agentId: string): { data: string; seq: number } {
+  const session = sessions.get(agentId);
+  if (!session) return { data: '', seq: outputSeqHighWater };
+  return { data: getSessionBuffer(session), seq: session.outputSeq };
 }
 
 annexEventBus.onActiveChange((active) => {
@@ -334,7 +362,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
     if (annexEventBus.isActive()) {
       headlessTerminal.feedData(agentId, data);
     }
-    broadcastToAllWindows(IPC.PTY.DATA, agentId, data);
+    broadcastToAllWindows(IPC.PTY.DATA, agentId, data, current.outputSeq);
     annexEventBus.emitPtyData(agentId, data);
   });
 
@@ -400,7 +428,7 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
     if (annexEventBus.isActive()) {
       headlessTerminal.feedData(id, data);
     }
-    broadcastToAllWindows(IPC.PTY.DATA, id, data);
+    broadcastToAllWindows(IPC.PTY.DATA, id, data, current.outputSeq);
     annexEventBus.emitPtyData(id, data);
   });
 
@@ -431,6 +459,26 @@ export function write(agentId: string, data: string): void {
   }
 
   session.process.write(data);
+}
+
+/**
+ * Write raw bytes to the PTY.  `data` is a binary string (one char per byte,
+ * code points 0-255) as produced by xterm's `onBinary` — e.g. legacy X10
+ * mouse reports.  Converting via latin1 keeps each char as a single byte;
+ * the plain `write()` path would UTF-8 encode chars >= 0x80 into two bytes.
+ */
+export function writeBinary(agentId: string, data: string): void {
+  const session = sessions.get(agentId);
+  if (!session) return;
+
+  if (data.length > MAX_WRITE_LENGTH) {
+    appLog('core:pty', 'warn', 'Oversized PTY binary write rejected', {
+      meta: { agentId, length: data.length, limit: MAX_WRITE_LENGTH },
+    });
+    return;
+  }
+
+  session.process.write(Buffer.from(data, 'latin1'));
 }
 
 export function resize(agentId: string, cols: number, rows: number): void {

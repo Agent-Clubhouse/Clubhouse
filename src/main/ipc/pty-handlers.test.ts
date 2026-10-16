@@ -10,6 +10,8 @@ vi.mock('../services/pty-manager', () => ({
   resize: vi.fn(),
   gracefulKill: vi.fn(),
   getBuffer: vi.fn(async () => 'terminal output'),
+  getBufferSnapshot: vi.fn(() => ({ data: 'terminal output', seq: 15 })),
+  writeBinary: vi.fn(),
 }));
 
 import { ipcMain } from 'electron';
@@ -38,10 +40,12 @@ describe('pty-handlers', () => {
     expect(handleHandlers.has(IPC.PTY.SPAWN_SHELL)).toBe(true);
     expect(handleHandlers.has(IPC.PTY.KILL)).toBe(true);
     expect(handleHandlers.has(IPC.PTY.GET_BUFFER)).toBe(true);
+    expect(handleHandlers.has(IPC.PTY.GET_BUFFER_SNAPSHOT)).toBe(true);
   });
 
   it('registers on-based PTY handlers for fire-and-forget operations', () => {
     expect(onHandlers.has(IPC.PTY.WRITE)).toBe(true);
+    expect(onHandlers.has(IPC.PTY.WRITE_BINARY)).toBe(true);
     expect(onHandlers.has(IPC.PTY.RESIZE)).toBe(true);
   });
 
@@ -55,6 +59,19 @@ describe('pty-handlers', () => {
     const handler = onHandlers.get(IPC.PTY.WRITE)!;
     handler({}, 'agent-1', 'ls\n');
     expect(ptyManager.write).toHaveBeenCalledWith('agent-1', 'ls\n');
+  });
+
+  it('WRITE_BINARY delegates to ptyManager.writeBinary', () => {
+    const handler = onHandlers.get(IPC.PTY.WRITE_BINARY)!;
+    handler({}, 'agent-1', '\x1b[M !!');
+    expect(ptyManager.writeBinary).toHaveBeenCalledWith('agent-1', '\x1b[M !!');
+  });
+
+  it('GET_BUFFER_SNAPSHOT delegates to ptyManager.getBufferSnapshot', async () => {
+    const handler = handleHandlers.get(IPC.PTY.GET_BUFFER_SNAPSHOT)!;
+    const result = await handler({}, 'agent-1');
+    expect(ptyManager.getBufferSnapshot).toHaveBeenCalledWith('agent-1');
+    expect(result).toEqual({ data: 'terminal output', seq: 15 });
   });
 
   it('RESIZE delegates to ptyManager.resize', () => {

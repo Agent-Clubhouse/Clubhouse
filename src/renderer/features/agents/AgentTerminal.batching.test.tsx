@@ -34,6 +34,13 @@ vi.mock('@xterm/xterm', () => {
     focus = vi.fn();
     dispose = vi.fn();
     onData = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    onBinary = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    onScroll = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    scrollToBottom = vi.fn();
+    buffer = {
+      active: { viewportY: 0, baseY: 0 },
+      onBufferChange: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+    };
     options: Record<string, any> = {};
     cols = 80;
     rows = 24;
@@ -147,7 +154,7 @@ describe('AgentTerminal write batching', () => {
 
     window.clubhouse.pty.write = vi.fn();
     window.clubhouse.pty.resize = vi.fn();
-    window.clubhouse.pty.getBuffer = vi.fn().mockResolvedValue('');
+    window.clubhouse.pty.getBufferSnapshot = vi.fn().mockResolvedValue({ data: '', seq: 0 });
     window.clubhouse.pty.onData = vi.fn().mockImplementation((cb: any) => {
       mockOnDataCallback = cb;
       return mockRemoveDataListener;
@@ -197,7 +204,7 @@ describe('AgentTerminal write batching', () => {
 
   async function mountAndInit() {
     render(<AgentTerminal agentId="agent-1" />);
-    // Flush mount rAF → getBuffer().then() → bufferReplayed = true
+    // Flush mount rAF → getBufferSnapshot().then() → bufferReplayed = true
     await act(async () => { flushRAF(); });
     term().write.mockClear();
     rafQueue.length = 0;
@@ -340,12 +347,12 @@ describe('AgentTerminal write batching', () => {
 
     it('local: queues live data during buffer fetch, drains in order after replay', async () => {
       let resolveBuffer!: (s: string) => void;
-      window.clubhouse.pty.getBuffer = vi.fn().mockImplementation(
-        () => new Promise<string>((r) => { resolveBuffer = r; }),
+      window.clubhouse.pty.getBufferSnapshot = vi.fn().mockImplementation(
+        () => new Promise((r) => { resolveBuffer = (s: string) => r({ data: s, seq: 0 }); }),
       );
 
       render(<AgentTerminal agentId="agent-1" />);
-      // Fire mount rAF — this calls getBuffer() but the promise stays pending
+      // Fire mount rAF — this calls getBufferSnapshot() but the promise stays pending
       await act(async () => { flushRAF(); });
 
       // Live data arrives before replay completes — must be queued, not written
@@ -393,8 +400,8 @@ describe('AgentTerminal write batching', () => {
 
     it('resumes batched writes after replay completes', async () => {
       let resolveBuffer!: (s: string) => void;
-      window.clubhouse.pty.getBuffer = vi.fn().mockImplementation(
-        () => new Promise<string>((r) => { resolveBuffer = r; }),
+      window.clubhouse.pty.getBufferSnapshot = vi.fn().mockImplementation(
+        () => new Promise((r) => { resolveBuffer = (s: string) => r({ data: s, seq: 0 }); }),
       );
 
       render(<AgentTerminal agentId="agent-1" />);

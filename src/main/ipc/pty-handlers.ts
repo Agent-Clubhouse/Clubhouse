@@ -15,6 +15,10 @@ export function registerPtyHandlers(): void {
     ptyManager.write(agentId, data);
   }));
 
+  ipcMain.on(IPC.PTY.WRITE_BINARY, withValidatedArgs([stringArg(), stringArg({ minLength: 0, maxLength: PTY_WRITE_MAX_LENGTH })], (_event, agentId: string, data: string) => {
+    ptyManager.writeBinary(agentId, data);
+  }));
+
   ipcMain.on(IPC.PTY.RESIZE, withValidatedArgs([stringArg(), numberArg({ integer: true, min: 1 }), numberArg({ integer: true, min: 1 })], (_event, agentId: string, cols: number, rows: number) => {
     ptyManager.resize(agentId, cols, rows);
   }));
@@ -25,5 +29,9 @@ export function registerPtyHandlers(): void {
 
   ipcMain.handle(IPC.PTY.GET_BUFFER, withValidatedArgs([stringArg()], (_event, agentId: string) => {
     return ptyManager.getBuffer(agentId);
+  }));
+
+  ipcMain.handle(IPC.PTY.GET_BUFFER_SNAPSHOT, withValidatedArgs([stringArg()], (_event, agentId: string) => {
+    return ptyManager.getBufferSnapshot(agentId);
   }));
 }

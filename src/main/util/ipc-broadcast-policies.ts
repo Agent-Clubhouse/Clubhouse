@@ -20,7 +20,7 @@ const HOOK_EVENT_INTERVAL_MS = 50;
  */
 export function registerDefaultBroadcastPolicies(): void {
   // PTY data: batch by concatenating data strings per agent
-  // Call shape: broadcastToAllWindows(IPC.PTY.DATA, agentId, data)
+  // Call shape: broadcastToAllWindows(IPC.PTY.DATA, agentId, data, seq)
   setChannelPolicy(IPC.PTY.DATA, {
     intervalMs: PTY_DATA_INTERVAL_MS,
     merge: true,
@@ -28,6 +28,7 @@ export function registerDefaultBroadcastPolicies(): void {
     mergeFn: (existing, incoming) => [
       existing[0], // agentId (unchanged)
       (existing[1] as string) + (incoming[1] as string), // concatenate data
+      incoming[2], // seq at the end of the merged chunk (latest wins)
     ],
   });
 

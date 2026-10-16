@@ -10,6 +10,9 @@ interface Props {
 
 export function UtilityTerminal({ agentId, worktreePath }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Unpadded xterm host — FitAddon measures the xterm element's parent, so
+  // mounting into the padded container would clip the last row.
+  const xtermHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const terminalColors = useThemeStore((s) => s.theme.terminal);
@@ -25,7 +28,7 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
   const ptyId = `utility_${agentId}`;
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !xtermHostRef.current) return;
 
     const term = new Terminal({
       theme: effectiveTerminalColors,
@@ -40,7 +43,7 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(containerRef.current);
+    term.open(xtermHostRef.current);
 
     requestAnimationFrame(() => {
       fitAddon.fit();
@@ -57,6 +60,10 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
 
     const inputDisposable = term.onData((data) => {
       window.clubhouse.pty.write(ptyId, data);
+    });
+    // Legacy mouse reports arrive as a binary string — send byte-for-byte.
+    const binaryDisposable = term.onBinary((data) => {
+      window.clubhouse.pty.writeBinary(ptyId, data);
     });
 
     // Batch PTY data writes using rAF to avoid line-wrap glitches during
@@ -101,6 +108,7 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
     return () => {
       if (flushScheduled) cancelAnimationFrame(flushId);
       inputDisposable.dispose();
+      binaryDisposable.dispose();
       removeDataListener();
       resizeObserver.disconnect();
       term.dispose();
@@ -127,6 +135,8 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
       ref={containerRef}
       className="w-full h-full overflow-hidden"
       style={{ padding: '8px' }}
-    />
+    >
+      <div ref={xtermHostRef} className="w-full h-full" />
+    </div>
   );
 }

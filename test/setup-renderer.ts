@@ -33,9 +33,11 @@ vi.stubGlobal('clubhouse', {
   pty: {
     spawnShell: asyncNoop,
     write: noop,
+    writeBinary: noop,
     resize: noop,
     kill: asyncNoop,
     getBuffer: async () => '',
+    getBufferSnapshot: async () => ({ data: '', seq: 0 }),
     onData: () => vi.fn(),
     onExit: () => vi.fn(),
   },

@@ -9,7 +9,8 @@ import { useAnnexClientStore, satellitePtyDataBus } from '../../stores/annexClie
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { attachClipboardHandlers, type ClipboardImageData } from '../terminal/clipboard';
 import { useFileDrop } from '../terminal/useFileDrop';
-import { useTerminalFit } from '../terminal/useTerminalFit';
+import { useTerminalFit, isTerminalAtBottom, fitPreservingScroll } from '../terminal/useTerminalFit';
+import { unseenPtySuffix, isAsciiBinary } from '../terminal/pty-stream';
 import { ptyResize } from '../../services/project-proxy';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { Spinner } from '../../components/Spinner';
@@ -28,22 +29,11 @@ const SCROLL_LOG_NS = 'ui:terminal:scroll';
  */
 export const FOCUS_ACTIVE_TERMINAL_EVENT = 'clubhouse:focus-active-terminal';
 
-/** Pixels from bottom to be considered "at bottom". */
-const BOTTOM_THRESHOLD = 5;
-
 /**
- * Near-top threshold: if scrollTop is below this value while the user was
- * previously scrolled significantly further down, treat it as a suspicious
- * snap-to-top event.  This is wider than `=== 0` to catch sub-pixel / rounding
- * resets that xterm can produce.
+ * Minimum previous viewport line required before a jump to line 0 is logged
+ * as a suspicious snap-to-top.  Prevents noise when there is little content.
  */
-const NEAR_TOP_PX = 10;
-
-/**
- * Minimum previous scroll offset required before a jump-to-top is considered
- * unexpected.  Prevents false positives when the terminal has little content.
- */
-const JUMP_MIN_PX = 30;
+const JUMP_MIN_LINES = 3;
 
 /** Throttle interval (ms) for periodic scroll-state debug logging. */
 const SCROLL_LOG_THROTTLE_MS = 2000;
@@ -57,6 +47,10 @@ interface Props {
 
 export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // xterm mounts into this unpadded child of the padded container: FitAddon
+  // measures the xterm element's parent, so mounting directly into the padded
+  // container counted the padding as terminal space and clipped the last row.
+  const xtermHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const globalTerminalColors = useThemeStore((s) => s.theme.terminal);
@@ -112,25 +106,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     // can jump the viewport to the top.
     requestAnimationFrame(() => {
       if (fitAddonRef.current && terminalRef.current) {
-        const el = containerRef.current;
-        const viewport = el?.querySelector('.xterm-viewport') as HTMLElement | null;
-        const savedScroll = viewport
-          ? { scrollTop: viewport.scrollTop, atBottom: viewport.scrollTop >= viewport.scrollHeight - viewport.clientHeight - 5 }
-          : null;
-
-        fitAddonRef.current.fit();
-
-        if (viewport && savedScroll) {
-          const restore = () => {
-            if (savedScroll.atBottom) {
-              viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
-            } else {
-              viewport.scrollTop = savedScroll.scrollTop;
-            }
-          };
-          restore();
-          requestAnimationFrame(restore);
-        }
+        fitPreservingScroll(terminalRef.current, fitAddonRef.current, agentId);
 
         ptyResize(agentId, terminalRef.current.cols, terminalRef.current.rows);
         // fit() reflow can blur xterm's helper textarea; re-focus if this
@@ -144,7 +120,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   useEffect(() => { loadClipboard(); }, [loadClipboard]);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !xtermHostRef.current) return;
 
     const term = new Terminal({
       theme: effectiveTerminalColors,
@@ -160,7 +136,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(containerRef.current);
+    term.open(xtermHostRef.current);
 
     // Blur watchdog — the "can scroll but can't type" recovery path.
     //
@@ -205,16 +181,23 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       });
 
       if (!isRemote) {
-        // Replay buffered output so switching agents restores the terminal
-        window.clubhouse.pty.getBuffer(agentId).then((buf: string) => {
+        // Replay buffered output so switching agents restores the terminal.
+        // The snapshot reports the output seq it includes; live chunks queued
+        // (or still in flight) for that range are trimmed so data that landed
+        // in both the snapshot and the live stream is written only once.
+        window.clubhouse.pty.getBufferSnapshot(agentId).then(({ data: buf, seq }) => {
           if (terminalRef.current !== term) return;
           if (buf) {
             rendererLog(SCROLL_LOG_NS, 'debug', 'Buffer replay (local)', {
-              meta: { agentId, bufLen: buf.length },
+              meta: { agentId, bufLen: buf.length, seq },
             });
             term.write(buf);
           }
-          for (const data of pendingData) term.write(data);
+          appliedSeq = seq;
+          for (const chunk of pendingData) {
+            const fresh = takeUnseen(chunk.data, chunk.seq);
+            if (fresh) term.write(fresh);
+          }
           pendingData.length = 0;
           bufferReplayed = true;
           // Large writes (buf can approach the 2MB MAX_BUFFER_SIZE cap in
@@ -226,7 +209,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           rendererLog(SCROLL_LOG_NS, 'error', 'Buffer replay failed (local)', {
             meta: { agentId, error: err instanceof Error ? err.message : String(err) },
           });
-          for (const data of pendingData) term.write(data);
+          for (const chunk of pendingData) term.write(chunk.data);
           pendingData.length = 0;
           bufferReplayed = true;
         });
@@ -240,7 +223,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
             });
             term.write(buf);
           }
-          for (const data of pendingData) term.write(data);
+          for (const chunk of pendingData) term.write(chunk.data);
           pendingData.length = 0;
           bufferReplayed = true;
           if (focusedRef.current) term.focus();
@@ -248,7 +231,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           rendererLog(SCROLL_LOG_NS, 'error', 'Buffer replay failed (remote/annex)', {
             meta: { agentId, satelliteId: remoteParts.satelliteId, error: err instanceof Error ? err.message : String(err) },
           });
-          for (const data of pendingData) term.write(data);
+          for (const chunk of pendingData) term.write(chunk.data);
           pendingData.length = 0;
           bufferReplayed = true;
         });
@@ -267,10 +250,30 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       }
     });
 
+    // Legacy (X10/normal) mouse reports arrive via onBinary, not onData.  The
+    // string is binary (one char per byte), so the local path sends it over a
+    // byte-preserving channel.  The remote input channel is text (UTF-8), so
+    // only reports that are pure ASCII can be forwarded without corruption.
+    const binaryDisposable = term.onBinary((data) => {
+      if (!isRemote) {
+        window.clubhouse.pty.writeBinary(agentId, data);
+      } else if (remoteParts && isAsciiBinary(data)) {
+        sendPtyInputRef.current(remoteParts.satelliteId, remoteParts.agentId, data);
+      }
+    });
+
     // Gate live PTY data until after the buffer snapshot has been replayed;
     // queue data arriving during fetch to avoid silent data loss.
     let bufferReplayed = false;
-    const pendingData: string[] = [];
+    const pendingData: Array<{ data: string; seq?: number }> = [];
+    // Highest output seq written to the terminal (local PTY only).  -1 until
+    // the snapshot arrives, so a failed snapshot fetch drops nothing.
+    let appliedSeq = -1;
+    const takeUnseen = (data: string, seq: number | undefined): string => {
+      const fresh = unseenPtySuffix(data, seq, appliedSeq);
+      if (seq !== undefined && seq > appliedSeq) appliedSeq = seq;
+      return fresh;
+    };
     let dataWriteCount = 0;
     let lastDataLogTime = 0;
 
@@ -281,22 +284,16 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       if (now - lastDataLogTime < SCROLL_LOG_THROTTLE_MS) return;
       lastDataLogTime = now;
 
-      const el = containerRef.current;
-      const viewport = el?.querySelector('.xterm-viewport') as HTMLElement | null;
-      if (!viewport) return;
-      const { scrollTop, scrollHeight, clientHeight } = viewport;
-      const maxScroll = scrollHeight - clientHeight;
+      const { viewportY, baseY } = term.buffer.active;
       rendererLog(SCROLL_LOG_NS, 'debug', `PTY data write (${source})`, {
         meta: {
           agentId,
           dataLen,
           writeCount: dataWriteCount,
-          scrollTop,
-          scrollHeight,
-          clientHeight,
-          maxScroll,
-          scrollPct: maxScroll > 0 ? Math.round((scrollTop / maxScroll) * 100) : 100,
-          atBottom: scrollTop >= maxScroll - BOTTOM_THRESHOLD,
+          viewportY,
+          baseY,
+          scrollPct: baseY > 0 ? Math.round((viewportY / baseY) * 100) : 100,
+          atBottom: viewportY >= baseY,
         },
       });
     };
@@ -329,12 +326,15 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     if (!isRemote) {
       // Local PTY: receive from local pty manager
       removeDataListener = window.clubhouse.pty.onData(
-        (id: string, data: string) => {
+        (id: string, data: string, seq?: number) => {
           if (id !== agentId) return;
           if (bufferReplayed) {
-            enqueueWrite('local', data);
+            // Chunks merged in main before the snapshot was taken can still
+            // arrive after it — trim anything the snapshot already contained.
+            const fresh = takeUnseen(data, seq);
+            if (fresh) enqueueWrite('local', fresh);
           } else {
-            pendingData.push(data);
+            pendingData.push({ data, seq });
           }
         }
       );
@@ -363,7 +363,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           if (bufferReplayed) {
             enqueueWrite('annex', data);
           } else {
-            pendingData.push(data);
+            pendingData.push({ data });
           }
         }
       );
@@ -373,6 +373,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     return () => {
       if (flushScheduled) cancelAnimationFrame(flushId);
       inputDisposable.dispose();
+      binaryDisposable.dispose();
       removeDataListener();
       removeExitListener();
       helperTextarea?.removeEventListener('blur', onHelperBlur);
@@ -386,156 +387,60 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   // Pass ptyResize so remote agents route resize through the Annex client, not local IPC
   useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused, ptyResize);
 
-  // ── Scroll guardian + scroll-to-bottom tracking ─────────────────
-  // Monitors the xterm viewport scroll position to:
-  // 1. Detect unexpected resets to near-top (e.g. from xterm's async reflow
-  //    after fit()) and restore the previous position.
-  // 2. Track whether the user is scrolled up so we can show a "scroll to
-  //    bottom" button.
-  // 3. Emit comprehensive scroll-state logs for diagnosing snap-to-top bugs.
+  // ── Scroll-to-bottom tracking ───────────────────────────────────
+  // xterm 6 scrolls virtually: `.xterm-viewport` never scrolls (scrollTop
+  // stays 0), so scroll state is read from the buffer via the public API.
+  // Tracks whether the user is scrolled up so we can show a "scroll to
+  // bottom" button, and emits throttled scroll-state logs for diagnosing
+  // snap-to-top reports.
   const [isScrolledUp, setIsScrolledUp] = useState(false);
-  const lastKnownScrollRef = useRef<number>(0);
-  const scrollGuardRafRef = useRef<number>(0);
+  const lastKnownViewportYRef = useRef<number>(0);
   const lastScrollLogRef = useRef<number>(0);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const viewport = el.querySelector('.xterm-viewport') as HTMLElement | null;
-    if (!viewport) return;
+    const term = terminalRef.current;
+    if (!term) return;
 
     const logMeta = { agentId, isRemote };
 
     const onScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = viewport;
-      const atBottom = scrollTop >= scrollHeight - clientHeight - BOTTOM_THRESHOLD;
-      const lastKnown = lastKnownScrollRef.current;
-      const maxScroll = scrollHeight - clientHeight;
-      const scrollPct = maxScroll > 0 ? Math.round((scrollTop / maxScroll) * 100) : 100;
+      const { viewportY, baseY } = term.buffer.active;
+      const atBottom = isTerminalAtBottom(term);
+      const lastKnown = lastKnownViewportYRef.current;
+      const scrollPct = baseY > 0 ? Math.round((viewportY / baseY) * 100) : 100;
 
-      // ── Periodic scroll-state logging ──────────────────────────
       const now = Date.now();
       if (now - lastScrollLogRef.current > SCROLL_LOG_THROTTLE_MS) {
         lastScrollLogRef.current = now;
         rendererLog(SCROLL_LOG_NS, 'debug', 'Scroll state', {
-          meta: {
-            ...logMeta,
-            scrollTop,
-            scrollHeight,
-            clientHeight,
-            maxScroll,
-            scrollPct,
-            atBottom,
-            lastKnown,
-          },
+          meta: { ...logMeta, viewportY, baseY, scrollPct, atBottom, lastKnown },
         });
       }
 
-      // ── Near-top logging ───────────────────────────────────────
-      // Always log when we're near the top and have scrollable content,
-      // regardless of whether it looks like a snap.
-      if (scrollTop < NEAR_TOP_PX && maxScroll > NEAR_TOP_PX) {
-        rendererLog(SCROLL_LOG_NS, 'info', 'Viewport near top', {
-          meta: {
-            ...logMeta,
-            scrollTop,
-            scrollHeight,
-            clientHeight,
-            maxScroll,
-            scrollPct,
-            lastKnown,
-            delta: lastKnown - scrollTop,
-          },
+      if (viewportY === 0 && lastKnown >= JUMP_MIN_LINES && baseY > 0) {
+        rendererLog(SCROLL_LOG_NS, 'info', 'Viewport jumped to top', {
+          meta: { ...logMeta, viewportY, baseY, lastKnown },
         });
       }
 
-      // ── Snap-to-top detection ──────────────────────────────────
-      // Detect unexpected reset: scrollTop jumped near 0 while we were
-      // previously scrolled significantly further down.
-      if (
-        scrollTop < NEAR_TOP_PX &&
-        lastKnown > JUMP_MIN_PX &&
-        maxScroll > NEAR_TOP_PX
-      ) {
-        // Capture target at detection time — do NOT re-check scrollTop in
-        // the rAF callback.  xterm may have partially corrected by then,
-        // which previously caused the guard to skip the restore entirely.
-        const targetScroll = lastKnown;
-
-        rendererLog(SCROLL_LOG_NS, 'warn', 'Scroll snap-to-top detected — scheduling restore', {
-          meta: {
-            ...logMeta,
-            scrollTop,
-            lastKnown,
-            targetScroll,
-            scrollHeight,
-            clientHeight,
-            maxScroll,
-          },
-        });
-
-        cancelAnimationFrame(scrollGuardRafRef.current);
-        scrollGuardRafRef.current = requestAnimationFrame(() => {
-          const currentMax = viewport.scrollHeight - viewport.clientHeight;
-          const restoreTo = Math.min(targetScroll, currentMax);
-          viewport.scrollTop = restoreTo;
-          lastKnownScrollRef.current = restoreTo;
-
-          rendererLog(SCROLL_LOG_NS, 'info', 'Scroll restored after snap-to-top', {
-            meta: {
-              ...logMeta,
-              restoredTo: restoreTo,
-              currentScrollTop: viewport.scrollTop,
-              preRestoreScrollTop: viewport.scrollTop,
-              scrollHeight: viewport.scrollHeight,
-              clientHeight: viewport.clientHeight,
-              targetScroll,
-            },
-          });
-
-          // Second-pass restore: xterm may schedule its own rAF render
-          // that clobbers our first restore.  A deferred re-check catches
-          // that case.
-          requestAnimationFrame(() => {
-            if (viewport.scrollTop < NEAR_TOP_PX && currentMax > NEAR_TOP_PX) {
-              const secondRestore = Math.min(targetScroll, viewport.scrollHeight - viewport.clientHeight);
-              viewport.scrollTop = secondRestore;
-              lastKnownScrollRef.current = secondRestore;
-
-              rendererLog(SCROLL_LOG_NS, 'warn', 'Scroll re-clobbered after first restore — applied second restore', {
-                meta: {
-                  ...logMeta,
-                  secondRestore,
-                  scrollTop: viewport.scrollTop,
-                  scrollHeight: viewport.scrollHeight,
-                  clientHeight: viewport.clientHeight,
-                },
-              });
-            }
-          });
-        });
-        return; // don't update lastKnownScroll with the bogus near-0 value
-      }
-
-      lastKnownScrollRef.current = scrollTop;
-      setIsScrolledUp(!atBottom && scrollHeight > clientHeight);
+      lastKnownViewportYRef.current = viewportY;
+      setIsScrolledUp(!atBottom);
     };
 
-    viewport.addEventListener('scroll', onScroll, { passive: true });
+    const scrollDisposable = term.onScroll(onScroll);
+    // Switching to/from the alternate screen changes baseY without a scroll.
+    const bufferDisposable = term.buffer.onBufferChange(onScroll);
     return () => {
-      viewport.removeEventListener('scroll', onScroll);
-      cancelAnimationFrame(scrollGuardRafRef.current);
+      scrollDisposable.dispose();
+      bufferDisposable.dispose();
     };
   }, [agentId, isRemote]);
 
   const handleScrollToBottom = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const viewport = el.querySelector('.xterm-viewport') as HTMLElement | null;
-    if (!viewport) return;
-    viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
-    lastKnownScrollRef.current = viewport.scrollTop;
+    const term = terminalRef.current;
+    if (!term) return;
+    term.scrollToBottom();
+    lastKnownViewportYRef.current = term.buffer.active.viewportY;
     setIsScrolledUp(false);
   }, []);
 
@@ -660,7 +565,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         className="w-full h-full overflow-hidden"
         style={{ padding: '8px' }}
         onMouseDown={handleMouseDown}
-      />
+      >
+        <div ref={xtermHostRef} className="w-full h-full" />
+      </div>
       {/* Approve/deny for hook-driven permission requests. Remote agents are
           owned by their satellite host, which runs its own queue. */}
       {!isRemote && <DurablePermissionPrompt agentId={agentId} />}

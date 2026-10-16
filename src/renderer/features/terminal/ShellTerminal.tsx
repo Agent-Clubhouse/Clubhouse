@@ -6,6 +6,7 @@ import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { attachClipboardHandlers } from './clipboard';
 import { useTerminalFit } from './useTerminalFit';
+import { unseenPtySuffix, isAsciiBinary } from './pty-stream';
 
 /**
  * Abstraction over terminal I/O operations, allowing ShellTerminal to work
@@ -13,10 +14,29 @@ import { useTerminalFit } from './useTerminalFit';
  */
 export interface TerminalIO {
   write(sessionId: string, data: string): void;
+  /**
+   * Write a binary string (one char per byte, from xterm `onBinary`) without
+   * UTF-8 encoding it.  When absent, only pure-ASCII binary input is sent,
+   * via `write`.
+   */
+  writeBinary?(sessionId: string, data: string): void;
   resize(sessionId: string, cols: number, rows: number): void;
   getBuffer(sessionId: string): Promise<string>;
-  onData(callback: (id: string, data: string) => void): () => void;
+  /**
+   * Buffer plus the output seq it includes.  When provided, live `onData`
+   * chunks carrying a seq are trimmed against it so output that landed in both
+   * the snapshot and the live stream is written once.
+   */
+  getBufferSnapshot?(sessionId: string): Promise<{ data: string; seq: number }>;
+  onData(callback: (id: string, data: string, seq?: number) => void): () => void;
   onExit(callback: (id: string, exitCode: number) => void): () => void;
+}
+
+interface ReplayState {
+  replayed: boolean;
+  /** Highest output seq written to the terminal; -1 before the snapshot. */
+  appliedSeq: number;
+  pending: Array<{ data: string; seq?: number }>;
 }
 
 interface Props {
@@ -27,6 +47,10 @@ interface Props {
 
 export function ShellTerminal({ sessionId, focused, io }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // xterm mounts into this unpadded child of the padded container: FitAddon
+  // measures the xterm element's parent, so mounting directly into the padded
+  // container counted the padding as terminal space and clipped the last row.
+  const xtermHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
 
@@ -36,6 +60,11 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
   // causes a visible flash.  All IO call-sites read through the ref instead.
   const ptyRef = useRef<TerminalIO>(io ?? window.clubhouse.pty);
   ptyRef.current = io ?? window.clubhouse.pty;
+
+  // Snapshot/live stitching shared by the creation and IO effects: live data
+  // is queued until the buffer snapshot has been written, then trimmed
+  // against the snapshot's seq.
+  const replayRef = useRef<ReplayState>({ replayed: false, appliedSeq: -1, pending: [] });
 
   const terminalColors = useThemeStore((s) => s.theme.terminal);
   const hasGradientBg = useThemeStore((s) => s.experimentalGradients && !!s.theme.gradients?.background);
@@ -53,7 +82,7 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
 
   // ── Terminal creation — only depends on sessionId ────────────────
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !xtermHostRef.current) return;
 
     const term = new Terminal({
       theme: effectiveTerminalColors,
@@ -68,16 +97,36 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(containerRef.current);
+    term.open(xtermHostRef.current);
+
+    const replay: ReplayState = { replayed: false, appliedSeq: -1, pending: [] };
+    replayRef.current = replay;
+    const flushPending = () => {
+      for (const chunk of replay.pending) {
+        const fresh = unseenPtySuffix(chunk.data, chunk.seq, replay.appliedSeq);
+        if (chunk.seq !== undefined && chunk.seq > replay.appliedSeq) replay.appliedSeq = chunk.seq;
+        if (fresh) term.write(fresh);
+      }
+      replay.pending.length = 0;
+      replay.replayed = true;
+    };
 
     requestAnimationFrame(() => {
       fitAddon.fit();
       ptyRef.current.resize(sessionId, term.cols, term.rows);
       term.focus();
-      ptyRef.current.getBuffer(sessionId).then((buf: string) => {
-        if (buf && terminalRef.current === term) {
-          term.write(buf);
-        }
+      const pty = ptyRef.current;
+      const snapshot = pty.getBufferSnapshot
+        ? pty.getBufferSnapshot(sessionId)
+        : pty.getBuffer(sessionId).then((data) => ({ data, seq: -1 }));
+      snapshot.then(({ data: buf, seq }) => {
+        if (terminalRef.current !== term) return;
+        if (buf) term.write(buf);
+        replay.appliedSeq = seq;
+        flushPending();
+      }).catch(() => {
+        if (terminalRef.current !== term) return;
+        flushPending();
       });
     });
 
@@ -100,8 +149,20 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
       ptyRef.current.write(sessionId, data);
     });
 
+    // Legacy (X10/normal) mouse reports arrive via onBinary as a binary
+    // string; send them byte-for-byte rather than UTF-8 encoded.
+    const binaryDisposable = term.onBinary((data) => {
+      const pty = ptyRef.current;
+      if (pty.writeBinary) {
+        pty.writeBinary(sessionId, data);
+      } else if (isAsciiBinary(data)) {
+        pty.write(sessionId, data);
+      }
+    });
+
     return () => {
       inputDisposable.dispose();
+      binaryDisposable.dispose();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -124,8 +185,16 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
     let flushId = 0;
 
     const removeDataListener = pty.onData(
-      (id: string, data: string) => {
+      (id: string, incoming: string, seq?: number) => {
         if (id === sessionId) {
+          const replay = replayRef.current;
+          if (!replay.replayed) {
+            replay.pending.push({ data: incoming, seq });
+            return;
+          }
+          const data = unseenPtySuffix(incoming, seq, replay.appliedSeq);
+          if (seq !== undefined && seq > replay.appliedSeq) replay.appliedSeq = seq;
+          if (!data) return;
           pendingData += data;
           if (!flushScheduled) {
             flushScheduled = true;
@@ -213,7 +282,9 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
         className="w-full h-full overflow-hidden"
         style={{ padding: '8px' }}
         onMouseDown={handleMouseDown}
-      />
+      >
+        <div ref={xtermHostRef} className="w-full h-full" />
+      </div>
       {isDragOver && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none z-10">
           <span className="text-white/90 text-sm font-medium">Drop to insert path</span>

@@ -33,6 +33,13 @@ vi.mock('@xterm/xterm', () => {
     focus = vi.fn();
     dispose = vi.fn();
     onData = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    onBinary = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    onScroll = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    scrollToBottom = vi.fn();
+    buffer = {
+      active: { viewportY: 0, baseY: 0 },
+      onBufferChange: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+    };
     options: Record<string, any> = {};
     cols = 80;
     rows = 24;
@@ -139,7 +146,8 @@ describe('AgentTerminal', () => {
 
     window.clubhouse.pty.write = vi.fn();
     window.clubhouse.pty.resize = vi.fn();
-    window.clubhouse.pty.getBuffer = vi.fn().mockResolvedValue('');
+    window.clubhouse.pty.writeBinary = vi.fn();
+    window.clubhouse.pty.getBufferSnapshot = vi.fn().mockResolvedValue({ data: '', seq: 0 });
     window.clubhouse.pty.onData = vi.fn().mockImplementation((cb: any) => {
       mockOnDataCallback = cb;
       return mockRemoveDataListener;
@@ -190,7 +198,7 @@ describe('AgentTerminal', () => {
 
     it('requests buffer content on mount', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      expect(window.clubhouse.pty.getBuffer).toHaveBeenCalledWith('agent-1');
+      expect(window.clubhouse.pty.getBufferSnapshot).toHaveBeenCalledWith('agent-1');
     });
 
     it('loads clipboard settings on mount', () => {
@@ -229,10 +237,10 @@ describe('AgentTerminal', () => {
     });
 
     it('gates onData until buffer replay completes to prevent double-display', async () => {
-      // Simulate getBuffer returning data with a delay
+      // Simulate the snapshot fetch resolving with a delay
       let resolveBuffer: (val: string) => void;
-      (window.clubhouse.pty.getBuffer as any).mockReturnValue(
-        new Promise<string>((r) => { resolveBuffer = r; })
+      (window.clubhouse.pty.getBufferSnapshot as any).mockReturnValue(
+        new Promise((r) => { resolveBuffer = (data: string) => r({ data, seq: 0 }); })
       );
 
       render(<AgentTerminal agentId="agent-1" />);
@@ -254,8 +262,8 @@ describe('AgentTerminal', () => {
 
     it('queues multiple live data chunks during buffer fetch and replays in order', async () => {
       let resolveBuffer: (val: string) => void;
-      (window.clubhouse.pty.getBuffer as any).mockReturnValue(
-        new Promise<string>((r) => { resolveBuffer = r; })
+      (window.clubhouse.pty.getBufferSnapshot as any).mockReturnValue(
+        new Promise((r) => { resolveBuffer = (data: string) => r({ data, seq: 0 }); })
       );
 
       render(<AgentTerminal agentId="agent-1" />);
@@ -271,6 +279,79 @@ describe('AgentTerminal', () => {
       await act(async () => { resolveBuffer!('snapshot'); });
       const writeCalls = term().write.mock.calls.map((c: unknown[]) => c[0]);
       expect(writeCalls).toEqual(['snapshot', 'chunk1', 'chunk2', 'chunk3']);
+    });
+
+    it('drops live chunks already contained in the snapshot (seq <= snapshot seq)', async () => {
+      let resolveSnapshot!: (v: { data: string; seq: number }) => void;
+      (window.clubhouse.pty.getBufferSnapshot as any).mockReturnValue(
+        new Promise((r) => { resolveSnapshot = r; }),
+      );
+
+      render(<AgentTerminal agentId="agent-1" />);
+      term().write.mockClear();
+
+      // Output 'abc' (seq 0→3) and 'def' (3→6) arrive while the snapshot is
+      // in flight; the snapshot was taken after both and contains them.
+      act(() => { mockOnDataCallback!('agent-1', 'abc', 3); });
+      act(() => { mockOnDataCallback!('agent-1', 'def', 6); });
+
+      await act(async () => { resolveSnapshot({ data: 'abcdef', seq: 6 }); });
+      const writeCalls = term().write.mock.calls.map((c: unknown[]) => c[0]);
+      expect(writeCalls).toEqual(['abcdef']);
+    });
+
+    it('drops a live chunk that arrives after the snapshot but is already in it', async () => {
+      // Main batches PTY.DATA for ~16ms; the snapshot can be taken inside
+      // that window, so the merged chunk is delivered after the reply.
+      (window.clubhouse.pty.getBufferSnapshot as any).mockResolvedValue({ data: 'hello world', seq: 11 });
+      render(<AgentTerminal agentId="agent-1" />);
+      await act(async () => {});
+      term().write.mockClear();
+
+      act(() => { mockOnDataCallback!('agent-1', 'world', 11); });
+      expect(term().write).not.toHaveBeenCalled();
+
+      act(() => { mockOnDataCallback!('agent-1', '!', 12); });
+      expect(term().write).toHaveBeenCalledWith('!');
+    });
+
+    it('writes only the unseen suffix of a chunk straddling the snapshot boundary', async () => {
+      let resolveSnapshot!: (v: { data: string; seq: number }) => void;
+      (window.clubhouse.pty.getBufferSnapshot as any).mockReturnValue(
+        new Promise((r) => { resolveSnapshot = r; }),
+      );
+
+      render(<AgentTerminal agentId="agent-1" />);
+      term().write.mockClear();
+
+      // Merged chunk spans seq 4→10; the snapshot only includes up to 7.
+      act(() => { mockOnDataCallback!('agent-1', 'efghij', 10); });
+      await act(async () => { resolveSnapshot({ data: 'abcdefg', seq: 7 }); });
+
+      const writeCalls = term().write.mock.calls.map((c: unknown[]) => c[0]);
+      expect(writeCalls).toEqual(['abcdefg', 'hij']);
+    });
+
+    it('forwards xterm binary input (legacy mouse reports) via writeBinary', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().onBinary).toHaveBeenCalled();
+      const onBinaryCb = term().onBinary.mock.calls[0][0];
+      // X10 mouse report at col 200: coordinate byte 32+200 = 0xE8 (> 0x7F)
+      const report = '\x1b[M' + String.fromCharCode(32, 32 + 200, 32 + 5);
+      onBinaryCb(report);
+      expect(window.clubhouse.pty.writeBinary).toHaveBeenCalledWith('agent-1', report);
+      expect(window.clubhouse.pty.write).not.toHaveBeenCalled();
+    });
+
+    it('forwards ASCII-only binary input to remote agents and drops non-ASCII', () => {
+      render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      const onBinaryCb = term().onBinary.mock.calls[0][0];
+      onBinaryCb('\x1b[M !!');
+      expect(g.__annexMockState.sendPtyInput).toHaveBeenCalledWith('sat-1', 'agent-1', '\x1b[M !!');
+
+      g.__annexMockState.sendPtyInput.mockClear();
+      onBinaryCb('\x1b[M ' + String.fromCharCode(0xe8) + '!');
+      expect(g.__annexMockState.sendPtyInput).not.toHaveBeenCalled();
     });
 
     it('ignores PTY data for other agentIds', () => {
@@ -582,7 +663,7 @@ describe('AgentTerminal', () => {
     });
 
     it('re-focuses after buffer replay completes when focused', async () => {
-      (window.clubhouse.pty.getBuffer as any).mockResolvedValue('replayed output');
+      (window.clubhouse.pty.getBufferSnapshot as any).mockResolvedValue({ data: 'replayed output', seq: 15 });
       render(<AgentTerminal agentId="agent-1" focused={true} />);
       term().focus.mockClear();
 
@@ -650,123 +731,61 @@ describe('AgentTerminal', () => {
     });
   });
 
-  describe('scroll guardian and scroll-to-bottom button', () => {
-    function configureViewport(scrollTop: number, scrollHeight: number, clientHeight: number) {
-      const container = screen.getByTestId('agent-terminal');
-      const viewport = container.querySelector('.xterm-viewport') as HTMLDivElement;
-      expect(viewport).toBeTruthy();
-      Object.defineProperty(viewport, 'scrollHeight', { value: scrollHeight, configurable: true, writable: true });
-      Object.defineProperty(viewport, 'clientHeight', { value: clientHeight, configurable: true, writable: true });
-      viewport.scrollTop = scrollTop;
-      return viewport;
+  describe('scroll-to-bottom button', () => {
+    /** Set the mock buffer's scroll state and fire xterm's onScroll. */
+    function scrollTo(viewportY: number, baseY: number) {
+      term().buffer.active.viewportY = viewportY;
+      term().buffer.active.baseY = baseY;
+      const onScrollCb = term().onScroll.mock.calls[0][0];
+      act(() => { onScrollCb(viewportY); });
     }
+
+    it('subscribes to xterm onScroll rather than the DOM viewport', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().onScroll).toHaveBeenCalled();
+    });
 
     it('does not show scroll-to-bottom button when at bottom', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      // No viewport or at bottom — button should not show
+      scrollTo(100, 100);
       expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
     });
 
     it('shows scroll-to-bottom button when scrolled up', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = configureViewport(100, 2000, 200);
-
-      // Fire scroll event to trigger state update
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
-
+      scrollTo(40, 100);
       expect(screen.getByTestId('scroll-to-bottom')).toBeInTheDocument();
     });
 
     it('hides scroll-to-bottom button when user scrolls to bottom', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = configureViewport(100, 2000, 200);
-
-      // First, trigger scrolled-up state
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
+      scrollTo(40, 100);
       expect(screen.getByTestId('scroll-to-bottom')).toBeInTheDocument();
 
-      // Now scroll to bottom (scrollTop >= scrollHeight - clientHeight - 5)
-      viewport.scrollTop = 1800;
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
+      scrollTo(100, 100);
       expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
     });
 
-    it('clicking scroll-to-bottom scrolls viewport to bottom', () => {
+    it('clicking scroll-to-bottom calls term.scrollToBottom()', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = configureViewport(100, 2000, 200);
+      scrollTo(40, 100);
 
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
+      fireEvent.click(screen.getByTestId('scroll-to-bottom'));
 
-      const button = screen.getByTestId('scroll-to-bottom');
-      fireEvent.click(button);
-
-      // Should have set scrollTop to scrollHeight - clientHeight
-      expect(viewport.scrollTop).toBe(1800);
+      expect(term().scrollToBottom).toHaveBeenCalled();
+      expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
     });
 
-    it('scroll guardian detects unexpected reset to 0 and restores position', () => {
+    it('re-evaluates on buffer change (alternate screen has no scrollback)', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = configureViewport(500, 2000, 200);
+      scrollTo(40, 100);
+      expect(screen.getByTestId('scroll-to-bottom')).toBeInTheDocument();
 
-      // Establish a known scroll position
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
-
-      // Simulate unexpected reset to 0 (from xterm reflow)
-      viewport.scrollTop = 0;
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
-
-      // The scroll guardian should have restored to the previous position
-      // (runs in rAF which is synchronous in tests)
-      expect(viewport.scrollTop).toBe(500);
-    });
-
-    it('scroll guardian detects near-zero reset (not just exact 0)', () => {
-      render(<AgentTerminal agentId="agent-1" />);
-      const viewport = configureViewport(500, 2000, 200);
-
-      // Establish a known scroll position
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
-
-      // Simulate near-zero reset (e.g. from rounding during xterm reflow)
-      viewport.scrollTop = 5;
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
-
-      // Guard should still restore — NEAR_TOP_PX threshold is 10
-      expect(viewport.scrollTop).toBe(500);
-    });
-
-    it('scroll guardian does not fire when lastKnown is below jump threshold', () => {
-      render(<AgentTerminal agentId="agent-1" />);
-      const viewport = configureViewport(20, 2000, 200);
-
-      // Establish a low scroll position (below JUMP_MIN_PX of 30)
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
-
-      // Reset to 0 — should NOT trigger restore because 20 < JUMP_MIN_PX
-      viewport.scrollTop = 0;
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
-
-      expect(viewport.scrollTop).toBe(0);
+      term().buffer.active.viewportY = 0;
+      term().buffer.active.baseY = 0;
+      const onBufferChangeCb = term().buffer.onBufferChange.mock.calls[0][0];
+      act(() => { onBufferChangeCb(); });
+      expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
     });
 
     it('does not show scroll-to-bottom button during resume', () => {
@@ -782,16 +801,26 @@ describe('AgentTerminal', () => {
       });
 
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = configureViewport(100, 2000, 200);
-
-      act(() => {
-        viewport.dispatchEvent(new Event('scroll'));
-      });
+      scrollTo(40, 100);
 
       // Button hidden during resume even when scrolled up
       expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
       // But the resume overlay should be visible
       expect(screen.getByTestId('resume-overlay')).toBeInTheDocument();
+    });
+  });
+
+  describe('fit sizing', () => {
+    it('mounts xterm in an unpadded host inside the padded container', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const container = screen.getByTestId('agent-terminal');
+      const host = term().open.mock.calls[0][0] as HTMLElement;
+      // FitAddon measures the xterm element's parent; that parent must not
+      // carry the padding or the padding is counted as terminal rows.
+      expect(host).not.toBe(container);
+      expect(host.parentElement).toBe(container);
+      expect(host.style.padding).toBe('');
+      expect(container.style.padding).toBe('8px');
     });
   });
 

@@ -45,8 +45,8 @@ describe('registerDefaultBroadcastPolicies', () => {
     const win = createMockWindow();
     mockGetAllWindows.mockReturnValue([win]);
 
-    broadcastToAllWindows('pty:data', 'agent-1', 'hello ');
-    broadcastToAllWindows('pty:data', 'agent-1', 'world');
+    broadcastToAllWindows('pty:data', 'agent-1', 'hello ', 6);
+    broadcastToAllWindows('pty:data', 'agent-1', 'world', 11);
 
     // Not sent yet
     expect(win.webContents.send).not.toHaveBeenCalled();
@@ -54,7 +54,9 @@ describe('registerDefaultBroadcastPolicies', () => {
     vi.advanceTimersByTime(16);
 
     expect(win.webContents.send).toHaveBeenCalledTimes(1);
-    expect(win.webContents.send).toHaveBeenCalledWith('pty:data', 'agent-1', 'hello world');
+    // Merged chunk carries the seq at its end so the renderer can trim it
+    // against a buffer snapshot taken inside the batching window.
+    expect(win.webContents.send).toHaveBeenCalledWith('pty:data', 'agent-1', 'hello world', 11);
   });
 
   it('throttles agent:hook-event with merge (batches events into array)', () => {
