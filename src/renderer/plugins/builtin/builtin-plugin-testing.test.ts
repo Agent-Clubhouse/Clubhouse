@@ -93,7 +93,7 @@ describe('getBuiltinPlugins catch-all', () => {
   });
 
   it('only terminal, files, canvas, and group-project declare the annex permission', () => {
-    const plugins = getBuiltinPlugins({ sessions: true, review: true, canvas: true });
+    const plugins = getBuiltinPlugins({ review: true, canvas: true });
     const annexPlugins = plugins
       .filter((p) => p.manifest.permissions.includes('annex'))
       .map((p) => p.manifest.id)
@@ -101,26 +101,15 @@ describe('getBuiltinPlugins catch-all', () => {
     expect(annexPlugins).toEqual(['canvas', 'files', 'group-project', 'terminal']);
   });
 
-  it('does not include the sessions plugin without experimental flag', () => {
-    const plugins = getBuiltinPlugins();
+  it('never includes the removed sessions plugin, even with its old flag set', () => {
+    const plugins = getBuiltinPlugins({ sessions: true });
     const ids = plugins.map((p) => p.manifest.id);
     expect(ids).not.toContain('sessions');
   });
 
-  it('does not auto-enable the sessions plugin without experimental flag', () => {
-    const defaultIds = getDefaultEnabledIds();
-    expect(defaultIds.has('sessions')).toBe(false);
-  });
-
-  it('includes sessions plugin when experimental flag is set', () => {
-    const plugins = getBuiltinPlugins({ sessions: true });
-    const ids = plugins.map((p) => p.manifest.id);
-    expect(ids).toContain('sessions');
-  });
-
-  it('auto-enables sessions plugin when experimental flag is set', () => {
+  it('never auto-enables the removed sessions plugin', () => {
     const defaultIds = getDefaultEnabledIds({ sessions: true });
-    expect(defaultIds.has('sessions')).toBe(true);
+    expect(defaultIds.has('sessions')).toBe(false);
   });
 
   it('does not include the goobers plugin without experimental flag', () => {

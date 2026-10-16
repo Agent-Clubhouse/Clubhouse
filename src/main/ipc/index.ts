@@ -11,12 +11,10 @@ import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
 import { registerMcpBindingHandlers, maybeStartMcpBridge } from './mcp-binding-handlers';
 import { registerGroupProjectHandlers } from './group-project-handlers';
-import { registerAgentQueueHandlers } from './agent-queue-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
-import { registerAssistantHandlers } from './assistant-handlers';
 import { registerBlueprintHandlers } from './blueprint-handlers';
 import { registerGoobersHandlers } from './goobers-handlers';
 import * as hookServer from '../services/hook-server';
@@ -63,8 +61,6 @@ export function registerAllHandlers(): void {
   registerSettingsHandlers();
   registerMcpBindingHandlers();
   registerGroupProjectHandlers();
-  registerAgentQueueHandlers();
-  registerAssistantHandlers();
   registerBlueprintHandlers();
   registerGoobersHandlers();
 

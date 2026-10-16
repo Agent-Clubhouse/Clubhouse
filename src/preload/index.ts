@@ -17,12 +17,9 @@ import { profile } from './profile';
 import { annex } from './annex';
 import { annexClient } from './annexClient';
 import { window } from './window';
-import { agentQueue } from './agentQueue';
 import { groupProject } from './groupProject';
 import { mcpBinding } from './mcpBinding';
-import { assistant } from './assistant';
 import { canvas } from './canvas';
-import { commandPalette } from './commandPalette';
 import { hookServer } from './hookServer';
 import { goobers } from './goobers';
 
@@ -61,12 +58,9 @@ export const api = {
   ...annex,
   ...annexClient,
   ...window,
-  ...agentQueue,
   ...groupProject,
   ...mcpBinding,
-  ...assistant,
   ...canvas,
-  ...commandPalette,
   ...hookServer,
   ...goobers,
 };

@@ -11,8 +11,8 @@ export interface LaunchOptions {
   /**
    * Experimental flags to seed before the app starts. Pass these via
    * `experimental` rather than calling `saveExperimentalSettings` after
-   * mount — UI surfaces gated on these flags (e.g. the rail Assistant
-   * button) read them once on mount and won't react to a later IPC write.
+   * mount — UI surfaces gated on these flags read them once on mount and
+   * won't react to a later IPC write.
    *
    * When provided, a temp `userData` directory is created and seeded with
    * `experimental-settings.json`, then passed to electron via the

@@ -21,7 +21,6 @@ vi.mock('electron', () => ({
 
 import { ipcRenderer } from 'electron';
 import { api } from './index';
-import { agentQueue } from './agentQueue';
 import { groupProject } from './groupProject';
 import { annexClient } from './annexClient';
 import { pluginMcp } from './pluginMcp';
@@ -37,9 +36,7 @@ import { plugin } from './plugin';
 import { profile } from './profile';
 import { marketplace } from './marketplace';
 import { file } from './file';
-import { assistant } from './assistant';
 import { agentSettings } from './agentSettings';
-import { commandPalette } from './commandPalette';
 import { pty } from './pty';
 import { agent } from './agent';
 import { canvas } from './canvas';
@@ -73,12 +70,9 @@ describe('preload IPC bridge', () => {
       annex,
       annexClient,
       windowApi,
-      agentQueue,
       groupProject,
       mcpBinding,
-      assistant,
       canvas,
-      commandPalette,
       hookServer,
       goobers,
     ];

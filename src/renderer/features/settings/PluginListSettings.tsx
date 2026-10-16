@@ -799,7 +799,7 @@ export function PluginListSettings() {
   });
 
   // Split into builtin and external sections (local computation, safe from Zustand gotcha)
-  // Hide canvas sub-plugins (group-project, agent-queue) unless canvas is enabled;
+  // Hide canvas sub-plugins (group-project, sticky-note) unless canvas is enabled;
   // also hide plugins that require MCP when MCP is off
   const canvasEnabled = appEnabled.includes('canvas');
   const builtinPlugins = filteredPlugins.filter((e) => {

@@ -6,7 +6,6 @@ const CORE_LABELS: Record<string, string> = {
   agents: 'Agents',
   settings: 'Settings',
   help: 'Help',
-  assistant: 'Assistant',
 };
 
 /**
@@ -28,8 +27,7 @@ export function TitleBar() {
 
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
-  const isAssistant = explorerTab === 'assistant';
-  const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp && !isAssistant;
+  const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const tabLabel = (() => {

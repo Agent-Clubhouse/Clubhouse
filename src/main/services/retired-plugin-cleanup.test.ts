@@ -74,4 +74,35 @@ describe('cleanupRetiredPluginData', () => {
     expect(fs.existsSync(path.join(globalDir, 'hub'))).toBe(true);
     expect(fs.existsSync(path.join(kvDir, 'settings-app-hub.json'))).toBe(true);
   });
+
+  it('removes Sessions and Agent Queue plugin storage', async () => {
+    touch(path.join(globalDir, 'agent-queue', 'kv', 'x.json'));
+    touch(path.join(kvDir, 'settings-proj_1-sessions.json'));
+    touch(path.join(projectPath, '.clubhouse', 'plugin-data-local', 'sessions', 'kv', 'x.json'));
+
+    await run();
+
+    expect(fs.existsSync(path.join(globalDir, 'agent-queue'))).toBe(false);
+    expect(fs.existsSync(path.join(kvDir, 'settings-proj_1-sessions.json'))).toBe(false);
+    expect(fs.existsSync(path.join(projectPath, '.clubhouse', 'plugin-data-local', 'sessions'))).toBe(false);
+  });
+
+  it('removes retired feature dirs (Assistant workspace, Agent Queue state)', async () => {
+    const assistantDir = path.join(root, 'home', '.clubhouse', 'assistant');
+    const queuesDir = path.join(root, 'home', '.clubhouse', 'agent-queues');
+    const keepDir = path.join(root, 'home', '.clubhouse', 'blueprints');
+    touch(path.join(assistantDir, 'chat-history.json'));
+    touch(path.join(queuesDir, 'registry.json'));
+    touch(path.join(keepDir, 'bp.json'));
+
+    const removed = await cleanupRetiredPluginData({
+      globalPluginDataDir: globalDir,
+      communityPluginsDir: communityDir,
+      projects: [],
+      retiredFeatureDirs: [assistantDir, queuesDir],
+    });
+
+    expect(removed).toEqual([assistantDir, queuesDir]);
+    expect(fs.existsSync(keepDir)).toBe(true);
+  });
 });

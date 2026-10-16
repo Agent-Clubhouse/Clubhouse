@@ -19,7 +19,6 @@ import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast'
 import { flushAllAgentConfigs } from './services/agent-config';
 import { groupProjectRegistry } from './services/group-project-registry';
 import { flushAllBulletinBoards } from './services/group-project-bulletin';
-import { flushAllAgentQueues } from './services/agent-queue-registry';
 import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
@@ -314,12 +313,17 @@ app.on('ready', () => {
   // Start periodic plugin update checks
   startPeriodicPluginUpdateChecks();
 
-  // Delete data left behind by removed built-in plugins (e.g. the Hub).
+  // Delete data left behind by removed built-in features (Hub, Sessions,
+  // Agent Queue, Assistant).
   projectStore.list()
     .then((projects) => cleanupRetiredPluginData({
       globalPluginDataDir: getGlobalPluginDataDir(),
       communityPluginsDir: getCommunityPluginsDir(),
       projects,
+      retiredFeatureDirs: [
+        path.join(app.getPath('home'), '.clubhouse', 'assistant'),
+        path.join(app.getPath('home'), app.isPackaged ? '.clubhouse' : '.clubhouse-dev', 'agent-queues'),
+      ],
     }))
     .catch((err) => {
       appLog('core:plugins', 'warn', `Retired plugin cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -363,7 +367,6 @@ app.on('before-quit', createBeforeQuitHandler({
   flushAllAgentConfigs,
   flushAllGroupProjects: () => groupProjectRegistry.flush(),
   flushAllBulletinBoards,
-  flushAllAgentQueues,
   applyUpdateOnQuit,
   appQuit: () => app.quit(),
   onCleanupError: (operation, error) => {

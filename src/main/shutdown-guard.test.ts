@@ -122,9 +122,6 @@ describe('before-quit handler', () => {
         flushAllBulletinBoards: async () => {
           events.push('bulletins');
         },
-        flushAllAgentQueues: async () => {
-          events.push('agent-queues');
-        },
         applyUpdateOnQuit: async () => {
           events.push('apply-update');
         },
@@ -138,7 +135,7 @@ describe('before-quit handler', () => {
       handleBeforeQuit({ preventDefault: vi.fn() });
     });
 
-    expect(events).toEqual(['kill', 'configs', 'group-projects', 'bulletins', 'agent-queues', 'apply-update', 'quit']);
+    expect(events).toEqual(['kill', 'configs', 'group-projects', 'bulletins', 'apply-update', 'quit']);
     expect(appQuit).toHaveBeenCalledOnce();
   });
 });

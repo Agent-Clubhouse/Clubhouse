@@ -436,7 +436,7 @@ export function initAnnexClientListener(): () => void {
           }>;
           zoneWireDefinitions?: Array<{
             id: string; sourceZoneId: string; targetId: string;
-            targetType: 'zone' | 'agent' | 'group-project' | 'agent-queue' | 'browser';
+            targetType: 'zone' | 'agent' | 'group-project' | 'browser';
           }>;
         };
 
@@ -483,7 +483,7 @@ export function initAnnexClientListener(): () => void {
         // Re-namespace zone wires. Source is always a zone view id (view ids are
         // not namespaced). The target is namespaced only when it is an agent or
         // group-project id — those are namespaced in remoteAgents/view metadata;
-        // zone/browser targets are view ids and agent-queue ids stay verbatim.
+        // zone/browser targets are view ids and stay verbatim.
         const ns = (id: string) => id.startsWith('remote||') ? id : `remote||${satelliteId}||${id}`;
         const namespacedZoneWires = cs.zoneWireDefinitions?.map((w) => {
           const patched = { ...w };

@@ -19,7 +19,7 @@ import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../
 import { useToastStore } from '../../stores/toastStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
-import type { PersonaTemplate } from '../assistant/content/personas';
+import type { PersonaTemplate } from '../personas';
 import { EmptyState } from '../../components/EmptyState';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];

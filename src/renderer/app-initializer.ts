@@ -30,8 +30,6 @@ import { rendererLog } from './plugins/renderer-logger';
 import { useToastStore } from './stores/toastStore';
 import { processResumeQueue } from './services/resume-queue';
 import type { RestartSessionState } from '../shared/types';
-import { initCanvasCommandHandler } from './features/assistant/canvas-command-handler';
-import { initCommandPaletteHandler } from './features/command-palette/command-palette-handler';
 
 // ─── Settings Loading ───────────────────────────────────────────────────────
 
@@ -78,15 +76,6 @@ export async function initApp(): Promise<() => void> {
     );
   }
 
-  // 2b. Initialize canvas command handler for assistant MCP tools.
-  //     Must be after plugin system so canvas store is available.
-  const canvasCleanup = initCanvasCommandHandler();
-  if (canvasCleanup) cleanups.push(canvasCleanup);
-
-  // 2c. Initialize command palette handler for assistant MCP tools.
-  const cmdPaletteCleanup = initCommandPaletteHandler();
-  if (cmdPaletteCleanup) cleanups.push(cmdPaletteCleanup);
-
   // 3. Set up badge side effects AFTER settings are loaded, so subscriptions
   //    see the correct initial state.
   initBadgeSideEffects();
@@ -96,7 +85,7 @@ export async function initApp(): Promise<() => void> {
   cleanups.push(initAnnexListener());
   cleanups.push(initPluginUpdateListener());
 
-  // 4b. Re-apply theme when the main process changes it (e.g. via assistant update_settings)
+  // 4b. Re-apply theme when the main process changes it (e.g. from another window or remote client)
   cleanups.push(window.clubhouse.app.onThemeChanged(() => {
     useThemeStore.getState().loadTheme();
   }));

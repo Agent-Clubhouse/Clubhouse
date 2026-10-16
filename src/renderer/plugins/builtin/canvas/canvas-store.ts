@@ -830,12 +830,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
       // Remove orphaned zone wires referencing the removed view. The view may be
       // referenced by its view id (zone/browser source/target) or by a resolved
-      // id (agentId / groupProjectId / queueId) when it is a wire target.
+      // id (agentId / groupProjectId) when it is a wire target.
       const removedIds = new Set<string>([viewId, wireId]);
       const gpId = removedView?.metadata?.groupProjectId as string | undefined;
       if (gpId) removedIds.add(gpId);
-      const queueId = removedView?.metadata?.queueId as string | undefined;
-      if (queueId) removedIds.add(queueId);
       const zoneFiltered = get().zoneWireDefinitions.filter(
         (w) => !removedIds.has(w.sourceZoneId) && !removedIds.has(w.targetId),
       );

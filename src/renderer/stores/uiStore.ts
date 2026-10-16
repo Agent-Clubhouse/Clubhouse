@@ -65,7 +65,6 @@ interface UIState {
   toggleSettings: () => void;
   openProjectSettings: (projectId: string) => void;
   toggleHelp: () => void;
-  toggleAssistant: () => void;
   setHelpSection: (id: string) => void;
   setHelpTopic: (id: string | null) => void;
   setHelpSearchQuery: (query: string) => void;
@@ -167,14 +166,6 @@ export const useUIStore = create<UIState>((set, get) => ({
     const { explorerTab, previousExplorerTab } = get();
     if (explorerTab !== 'help') {
       set({ previousExplorerTab: explorerTab, explorerTab: 'help', helpSectionId: 'general', helpTopicId: null, helpSearchQuery: '' });
-    } else {
-      set({ explorerTab: previousExplorerTab || 'agents', previousExplorerTab: null });
-    }
-  },
-  toggleAssistant: () => {
-    const { explorerTab, previousExplorerTab } = get();
-    if (explorerTab !== 'assistant') {
-      set({ previousExplorerTab: explorerTab, explorerTab: 'assistant' });
     } else {
       set({ explorerTab: previousExplorerTab || 'agents', previousExplorerTab: null });
     }

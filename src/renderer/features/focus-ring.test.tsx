@@ -12,7 +12,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { HelpSearchInput } from './help/HelpSearchInput';
-import { AssistantInput } from './assistant/AssistantInput';
 import { ActionBar } from './agents/structured/ActionBar';
 import { CommandPaletteInput } from './command-palette/CommandPaletteInput';
 
@@ -64,19 +63,6 @@ describe('CommandPaletteInput — focus ring (VQ-FI-01)', () => {
     const input = screen.getByPlaceholderText('Type to search...');
     expect(input.className).toContain('focus-ring');
     assertNoAdHocFocusPattern(input);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────
-// AssistantInput
-// ─────────────────────────────────────────────────────────────────────────
-
-describe('AssistantInput — focus ring (VQ-FI-01)', () => {
-  it('textarea carries focus-ring-dim class (was: outline-none focus:border-ctp-accent/50)', () => {
-    render(<AssistantInput onSend={vi.fn()} status="idle" />);
-    const ta = screen.getByPlaceholderText('Ask anything…') as HTMLTextAreaElement;
-    expect(ta.className).toContain('focus-ring-dim');
-    assertNoAdHocFocusPattern(ta);
   });
 });
 

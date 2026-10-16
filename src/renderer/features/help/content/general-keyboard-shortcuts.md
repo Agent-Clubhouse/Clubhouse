@@ -33,7 +33,6 @@ Open `Cmd+K`, then type a prefix:
 | `Cmd+Shift+H` | Go to Home |
 | `Cmd+B` | Toggle Sidebar |
 | `Cmd+Shift+B` | Toggle Accessory Panel |
-| `Cmd+Shift+.` | Toggle Assistant |
 
 ## Agents & Projects
 
