@@ -2,9 +2,11 @@ export const IPC = {
   PTY: {
     SPAWN_SHELL: 'pty:spawn-shell',
     WRITE: 'pty:write',
+    WRITE_BINARY: 'pty:write-binary',
     RESIZE: 'pty:resize',
     KILL: 'pty:kill',
     GET_BUFFER: 'pty:get-buffer',
+    GET_BUFFER_SNAPSHOT: 'pty:get-buffer-snapshot',
     DATA: 'pty:data',
     EXIT: 'pty:exit',
   },

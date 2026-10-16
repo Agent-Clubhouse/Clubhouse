@@ -19,6 +19,7 @@ vi.mock('electron', () => ({
   webUtils: { getPathForFile: vi.fn() },
 }));
 
+import { ipcRenderer } from 'electron';
 import { api } from './index';
 import { agentQueue } from './agentQueue';
 import { groupProject } from './groupProject';
@@ -115,6 +116,26 @@ describe('preload IPC bridge', () => {
 
       await expect(api.pty.getBuffer('agent-1')).resolves.toBe('buffer contents');
       expect(invoke).toHaveBeenCalledWith('pty:get-buffer', 'agent-1');
+    });
+
+    it('returns the seq-tagged buffer snapshot from its own channel', async () => {
+      invoke.mockResolvedValue({ data: 'buffer contents', seq: 15 });
+
+      await expect(api.pty.getBufferSnapshot('agent-1')).resolves.toEqual({ data: 'buffer contents', seq: 15 });
+      expect(invoke).toHaveBeenCalledWith('pty:get-buffer-snapshot', 'agent-1');
+    });
+
+    it('sends binary input on the byte-preserving channel', () => {
+      api.pty.writeBinary('agent-1', '\x1b[M !!');
+      expect(send).toHaveBeenCalledWith('pty:write-binary', 'agent-1', '\x1b[M !!');
+    });
+
+    it('passes the output seq through to onData listeners', () => {
+      const cb = vi.fn();
+      api.pty.onData(cb);
+      const listener = vi.mocked(ipcRenderer.on).mock.calls.find((c) => c[0] === 'pty:data')![1];
+      listener({} as never, 'agent-1', 'chunk', 42);
+      expect(cb).toHaveBeenCalledWith('agent-1', 'chunk', 42);
     });
   });
 

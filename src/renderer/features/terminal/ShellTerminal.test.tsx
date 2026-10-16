@@ -17,6 +17,13 @@ vi.mock('@xterm/xterm', () => {
     focus = vi.fn();
     dispose = vi.fn();
     onData = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    onBinary = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    onScroll = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    scrollToBottom = vi.fn();
+    buffer = {
+      active: { viewportY: 0, baseY: 0 },
+      onBufferChange: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+    };
     attachCustomKeyEventHandler = vi.fn();
     options: Record<string, any> = {};
     cols = 80;
@@ -74,7 +81,9 @@ describe('ShellTerminal', () => {
 
     window.clubhouse.pty.write = vi.fn();
     window.clubhouse.pty.resize = vi.fn();
+    window.clubhouse.pty.writeBinary = vi.fn();
     window.clubhouse.pty.getBuffer = vi.fn().mockResolvedValue('');
+    window.clubhouse.pty.getBufferSnapshot = vi.fn().mockResolvedValue({ data: '', seq: 0 });
     window.clubhouse.pty.onData = vi.fn().mockImplementation((cb: any) => {
       mockOnDataCallback = cb;
       return mockRemoveDataListener;
@@ -125,7 +134,7 @@ describe('ShellTerminal', () => {
 
     it('requests buffer content on mount', () => {
       render(<ShellTerminal sessionId="shell-1" />);
-      expect(window.clubhouse.pty.getBuffer).toHaveBeenCalledWith('shell-1');
+      expect(window.clubhouse.pty.getBufferSnapshot).toHaveBeenCalledWith('shell-1');
     });
 
     it('loads clipboard settings on mount', () => {
@@ -154,8 +163,10 @@ describe('ShellTerminal', () => {
       expect(window.clubhouse.pty.write).toHaveBeenCalledWith('shell-1', 'test input');
     });
 
-    it('writes PTY data to terminal for matching sessionId', () => {
+    it('writes PTY data to terminal for matching sessionId', async () => {
       render(<ShellTerminal sessionId="shell-1" />);
+      // Flush the snapshot promise so the live-data gate opens
+      await act(async () => {});
       expect(mockOnDataCallback).toBeDefined();
       act(() => { mockOnDataCallback!('shell-1', 'hello world'); });
       expect(term().write).toHaveBeenCalledWith('hello world');
@@ -410,7 +421,7 @@ describe('ShellTerminal', () => {
 
   describe('buffer replay', () => {
     it('writes buffered output on mount when buffer is non-empty', async () => {
-      (window.clubhouse.pty.getBuffer as ReturnType<typeof vi.fn>).mockResolvedValue('previous output');
+      (window.clubhouse.pty.getBufferSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue({ data: 'previous output', seq: 15 });
       render(<ShellTerminal sessionId="shell-1" />);
       // Wait for the async getBuffer promise to resolve
       await vi.waitFor(() => {
@@ -419,13 +430,101 @@ describe('ShellTerminal', () => {
     });
 
     it('does not write when buffer is empty', async () => {
-      (window.clubhouse.pty.getBuffer as ReturnType<typeof vi.fn>).mockResolvedValue('');
+      (window.clubhouse.pty.getBufferSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue({ data: '', seq: 0 });
       render(<ShellTerminal sessionId="shell-1" />);
       // Wait a tick for the promise
       await new Promise((r) => setTimeout(r, 0));
       // write should not have been called with empty string
       const writeCalls = term().write.mock.calls.filter((c: string[]) => c[0] === '');
       expect(writeCalls).toHaveLength(0);
+    });
+  });
+
+  describe('snapshot / live stitching', () => {
+    it('queues live data until the snapshot is written, then writes it after', async () => {
+      let resolveSnapshot!: (v: { data: string; seq: number }) => void;
+      (window.clubhouse.pty.getBufferSnapshot as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Promise((r) => { resolveSnapshot = r; }),
+      );
+      render(<ShellTerminal sessionId="shell-1" />);
+      term().write.mockClear();
+
+      act(() => { mockOnDataCallback!('shell-1', 'live', 9); });
+      expect(term().write).not.toHaveBeenCalled();
+
+      await act(async () => { resolveSnapshot({ data: 'snapshot', seq: 5 }); });
+      const writeCalls = term().write.mock.calls.map((c: unknown[]) => c[0]);
+      expect(writeCalls).toEqual(['snapshot', 'live']);
+    });
+
+    it('drops live data already contained in the snapshot', async () => {
+      let resolveSnapshot!: (v: { data: string; seq: number }) => void;
+      (window.clubhouse.pty.getBufferSnapshot as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Promise((r) => { resolveSnapshot = r; }),
+      );
+      render(<ShellTerminal sessionId="shell-1" />);
+      term().write.mockClear();
+
+      act(() => { mockOnDataCallback!('shell-1', 'prompt$ ', 8); });
+      await act(async () => { resolveSnapshot({ data: 'prompt$ ', seq: 8 }); });
+      // Delayed broadcast of a chunk the snapshot already had
+      act(() => { mockOnDataCallback!('shell-1', '$ ', 8); });
+
+      const writeCalls = term().write.mock.calls.map((c: unknown[]) => c[0]);
+      expect(writeCalls).toEqual(['prompt$ ']);
+    });
+
+    it('falls back to getBuffer for IO layers without getBufferSnapshot', async () => {
+      const io = {
+        write: vi.fn(),
+        resize: vi.fn(),
+        getBuffer: vi.fn().mockResolvedValue('remote buffer'),
+        onData: vi.fn().mockReturnValue(vi.fn()),
+        onExit: vi.fn().mockReturnValue(vi.fn()),
+      };
+      render(<ShellTerminal sessionId="shell-1" io={io} />);
+      await act(async () => {});
+      expect(io.getBuffer).toHaveBeenCalledWith('shell-1');
+      expect(term().write).toHaveBeenCalledWith('remote buffer');
+    });
+  });
+
+  describe('binary input', () => {
+    it('forwards onBinary output byte-for-byte via writeBinary', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      const onBinaryCb = term().onBinary.mock.calls[0][0];
+      const report = '\x1b[M' + String.fromCharCode(32, 32 + 200, 32 + 5);
+      onBinaryCb(report);
+      expect(window.clubhouse.pty.writeBinary).toHaveBeenCalledWith('shell-1', report);
+      expect(window.clubhouse.pty.write).not.toHaveBeenCalled();
+    });
+
+    it('falls back to write for ASCII-only binary when the IO has no writeBinary', () => {
+      const io = {
+        write: vi.fn(),
+        resize: vi.fn(),
+        getBuffer: vi.fn().mockResolvedValue(''),
+        onData: vi.fn().mockReturnValue(vi.fn()),
+        onExit: vi.fn().mockReturnValue(vi.fn()),
+      };
+      render(<ShellTerminal sessionId="shell-1" io={io} />);
+      const onBinaryCb = term().onBinary.mock.calls[0][0];
+      onBinaryCb('\x1b[M !!');
+      expect(io.write).toHaveBeenCalledWith('shell-1', '\x1b[M !!');
+      io.write.mockClear();
+      onBinaryCb('\x1b[M ' + String.fromCharCode(0xe8) + '!');
+      expect(io.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('fit sizing', () => {
+    it('mounts xterm in an unpadded host inside the padded container', () => {
+      const { getByTestId } = render(<ShellTerminal sessionId="shell-1" />);
+      const container = getByTestId('shell-terminal');
+      const host = term().open.mock.calls[0][0] as HTMLElement;
+      expect(host).not.toBe(container);
+      expect(host.parentElement).toBe(container);
+      expect(host.style.padding).toBe('');
     });
   });
 
@@ -454,10 +553,11 @@ describe('ShellTerminal', () => {
       });
     });
 
-    it('batches multiple data chunks into a single term.write call', () => {
+    it('batches multiple data chunks into a single term.write call', async () => {
       render(<ShellTerminal sessionId="shell-1" />);
-      // Flush mount rAF (fit/resize/focus/buffer)
+      // Flush mount rAF (fit/resize/focus/buffer) and the snapshot promise
       flushRAF();
+      await act(async () => {});
       term().write.mockClear();
 
       // Simulate 5 rapid data chunks arriving before next frame
@@ -480,9 +580,10 @@ describe('ShellTerminal', () => {
       expect(term().write).toHaveBeenCalledWith('chunk1chunk2chunk3chunk4chunk5');
     });
 
-    it('allows subsequent batches after a flush', () => {
+    it('allows subsequent batches after a flush', async () => {
       render(<ShellTerminal sessionId="shell-1" />);
       flushRAF();
+      await act(async () => {});
       term().write.mockClear();
 
       // First batch
@@ -504,9 +605,10 @@ describe('ShellTerminal', () => {
       expect(term().write).toHaveBeenCalledWith('cd');
     });
 
-    it('cancels pending flush on unmount', () => {
+    it('cancels pending flush on unmount', async () => {
       const { unmount } = render(<ShellTerminal sessionId="shell-1" />);
       flushRAF();
+      await act(async () => {});
       term().write.mockClear();
 
       // Queue data but don't flush

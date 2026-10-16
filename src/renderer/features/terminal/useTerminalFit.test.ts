@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useTerminalFit } from './useTerminalFit';
+import { useTerminalFit, isTerminalAtBottom } from './useTerminalFit';
 
 vi.mock('../../plugins/renderer-logger', () => ({
   rendererLog: vi.fn(),
@@ -30,7 +30,17 @@ describe('useTerminalFit', () => {
   const mockFocus = vi.fn();
   const mockResize = vi.fn();
 
-  const terminalRef = { current: { cols: 80, rows: 24, focus: mockFocus } as any };
+  const mockScrollToBottom = vi.fn();
+  const bufferState = { viewportY: 0, baseY: 0 };
+  const terminalRef = {
+    current: {
+      cols: 80,
+      rows: 24,
+      focus: mockFocus,
+      scrollToBottom: mockScrollToBottom,
+      buffer: { active: bufferState },
+    } as any,
+  };
   const fitAddonRef = { current: { fit: mockFit } as any };
   // Container with non-zero dimensions (clientWidth/clientHeight)
   let containerEl: HTMLDivElement;
@@ -43,8 +53,11 @@ describe('useTerminalFit', () => {
     Object.defineProperty(containerEl, 'clientHeight', { value: 320, configurable: true });
     containerRef = { current: containerEl };
 
-    mockFit.mockClear();
+    mockFit.mockReset();
     mockFocus.mockClear();
+    mockScrollToBottom.mockClear();
+    bufferState.viewportY = 0;
+    bufferState.baseY = 0;
     mockResize.mockClear();
     mockDisconnect.mockClear();
     visibilityListeners = [];
@@ -428,128 +441,72 @@ describe('useTerminalFit', () => {
   });
 
   describe('viewport scroll preservation', () => {
-    let viewportEl: HTMLDivElement;
+    // xterm 6 scrolls virtually — `.xterm-viewport` scrollTop is always 0 —
+    // so scroll state is read from term.buffer.active (viewportY vs baseY).
 
-    function addViewport(scrollTop: number, scrollHeight: number, clientHeight: number) {
-      viewportEl = document.createElement('div');
-      viewportEl.classList.add('xterm-viewport');
-      Object.defineProperty(viewportEl, 'scrollHeight', { value: scrollHeight, configurable: true });
-      Object.defineProperty(viewportEl, 'clientHeight', { value: clientHeight, configurable: true });
-      viewportEl.scrollTop = scrollTop;
-      containerEl.appendChild(viewportEl);
-    }
-
-    it('restores scrollTop when user is scrolled up from bottom', () => {
-      // scrollHeight=1000, clientHeight=200, scrollTop=300 → user is scrolled up
-      addViewport(300, 1000, 200);
+    it('re-pins to bottom when a reflow leaves a bottom-following view short', () => {
+      bufferState.viewportY = 100;
+      bufferState.baseY = 100;
       vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
 
-      // Simulate fit() resetting scrollTop to 0 (the bug)
-      mockFit.mockImplementation(() => {
-        viewportEl.scrollTop = 0;
-      });
-
-      mockFit.mockClear();
+      // Reflow to fewer columns wraps lines: baseY grows, viewport lags
+      mockFit.mockImplementation(() => { bufferState.baseY = 130; });
+      mockScrollToBottom.mockClear();
       resizeObserverCallbacks[0]();
 
-      expect(mockFit).toHaveBeenCalledTimes(1);
-      expect(viewportEl.scrollTop).toBe(300);
+      expect(mockFit).toHaveBeenCalled();
+      expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps viewport at bottom when user was already at bottom', () => {
-      // scrollHeight=1000, clientHeight=200, scrollTop=800 → at bottom
-      addViewport(800, 1000, 200);
+    it('leaves a scrolled-up viewport to xterm (no forced scroll)', () => {
+      bufferState.viewportY = 40;
+      bufferState.baseY = 100;
       vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
 
-      // Simulate fit() changing scrollHeight (reflow) and scrollTop
-      mockFit.mockImplementation(() => {
-        Object.defineProperty(viewportEl, 'scrollHeight', { value: 1200, configurable: true });
-        viewportEl.scrollTop = 500;
-      });
-
-      mockFit.mockClear();
+      mockFit.mockImplementation(() => { bufferState.baseY = 130; });
+      mockScrollToBottom.mockClear();
       resizeObserverCallbacks[0]();
 
-      expect(mockFit).toHaveBeenCalledTimes(1);
-      // Should scroll to the new bottom: 1200 - 200 = 1000
-      expect(viewportEl.scrollTop).toBe(1000);
+      expect(mockFit).toHaveBeenCalled();
+      expect(mockScrollToBottom).not.toHaveBeenCalled();
     });
 
-    it('preserves scroll position during pane focus fit', () => {
-      addViewport(400, 1000, 200);
-      mockFit.mockImplementation(() => {
-        viewportEl.scrollTop = 0;
-      });
+    it('re-pins to bottom during pane focus fit', () => {
+      bufferState.viewportY = 50;
+      bufferState.baseY = 50;
+      mockFit.mockImplementation(() => { bufferState.baseY = 60; });
 
       const { rerender } = renderHook(
         ({ focused }) => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, focused),
         { initialProps: { focused: false } },
       );
 
-      mockFit.mockClear();
+      mockScrollToBottom.mockClear();
       rerender({ focused: true });
 
-      expect(mockFit).toHaveBeenCalledTimes(1);
-      expect(viewportEl.scrollTop).toBe(400);
+      expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
     });
 
-    it('applies deferred scroll restoration to catch async xterm clobber', () => {
-      // The deferred rAF restore should fix cases where xterm's internal
-      // render overwrites our synchronous scrollTop restoration.
-      addViewport(500, 2000, 200);
-      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
-
-      let rAFCalls = 0;
-      const rAFCallbacks: Array<() => void> = [];
-      vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
-        rAFCalls++;
-        rAFCallbacks.push(cb);
-        // First rAF: run immediately (the fitAndResize wrapper)
-        // Nested rAFs from restoreViewportScroll: collect but don't run yet
-        if (rAFCalls === 1) cb();
-        return rAFCalls;
-      });
-
-      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
-
-      mockFit.mockImplementation(() => {
-        viewportEl.scrollTop = 0;
-      });
-
-      mockFit.mockClear();
-      rAFCalls = 0;
-      rAFCallbacks.length = 0;
-
-      resizeObserverCallbacks[0]();
-
-      // After the fit + synchronous restore, scroll should already be restored
-      expect(viewportEl.scrollTop).toBe(500);
-
-      // Simulate xterm's async render clobbering scrollTop
-      viewportEl.scrollTop = 0;
-
-      // Now run the deferred rAF callback
-      const deferredCb = rAFCallbacks.find((_, i) => i > 0);
-      if (deferredCb) deferredCb();
-
-      expect(viewportEl.scrollTop).toBe(500);
-
-      // Restore the default rAF stub
-      vi.stubGlobal('requestAnimationFrame', (cb: () => void) => { cb(); return 1; });
-    });
-
-    it('works gracefully when no .xterm-viewport element exists', () => {
-      // No viewport element — save/restore should be no-ops
+    it('does not scroll when fit keeps the viewport at the bottom', () => {
       vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
 
-      mockFit.mockClear();
+      mockScrollToBottom.mockClear();
       resizeObserverCallbacks[0]();
 
-      // Should still call fit without errors
-      expect(mockFit).toHaveBeenCalledTimes(1);
+      expect(mockFit).toHaveBeenCalled();
+      expect(mockScrollToBottom).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('isTerminalAtBottom', () => {
+    it('compares viewportY against baseY', () => {
+      const mk = (viewportY: number, baseY: number) => ({ buffer: { active: { viewportY, baseY } } }) as any;
+      expect(isTerminalAtBottom(mk(10, 10))).toBe(true);
+      expect(isTerminalAtBottom(mk(0, 0))).toBe(true);
+      expect(isTerminalAtBottom(mk(3, 10))).toBe(false);
     });
   });
 

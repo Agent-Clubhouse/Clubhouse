@@ -78,7 +78,7 @@ vi.mock('fs/promises', () => ({
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, getSerializedBuffer, getLastActivity, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
+import { getBuffer, getBufferSnapshot, getSerializedBuffer, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
@@ -1388,7 +1388,67 @@ describe('pty-manager', () => {
       const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
       onDataCb('hello');
 
-      expect(broadcastToAllWindows).toHaveBeenCalledWith('pty:data', 'shell_ipc', 'hello');
+      expect(broadcastToAllWindows).toHaveBeenCalledWith('pty:data', 'shell_ipc', 'hello', expect.any(Number));
+    });
+
+    it('tags each broadcast with the output seq at the end of the chunk', async () => {
+      await spawnShell('shell_seq', '/project');
+      vi.mocked(broadcastToAllWindows).mockClear();
+      const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+
+      const { seq: start } = getBufferSnapshot('shell_seq');
+      onDataCb('abc');
+      onDataCb('de');
+
+      const dataCalls = vi.mocked(broadcastToAllWindows).mock.calls.filter((c) => c[0] === 'pty:data');
+      expect(dataCalls).toEqual([
+        ['pty:data', 'shell_seq', 'abc', start + 3],
+        ['pty:data', 'shell_seq', 'de', start + 5],
+      ]);
+    });
+
+    it('getBufferSnapshot reports the seq of the last chunk it includes', async () => {
+      await spawnShell('shell_snap', '/project');
+      const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+      vi.mocked(broadcastToAllWindows).mockClear();
+
+      onDataCb('one');
+      onDataCb('two');
+      const snapshot = getBufferSnapshot('shell_snap');
+      const lastBroadcast = vi.mocked(broadcastToAllWindows).mock.calls.at(-1)!;
+
+      expect(snapshot.data).toBe('onetwo');
+      // A renderer drops any live chunk with seq <= snapshot.seq
+      expect(snapshot.seq).toBe(lastBroadcast[3]);
+    });
+
+    it('never reuses seq values across a respawn of the same id', async () => {
+      await spawnShell('shell_respawn', '/project');
+      let onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+      onDataCb('first session output');
+      const before = getBufferSnapshot('shell_respawn').seq;
+
+      await spawnShell('shell_respawn', '/project');
+      onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+      onDataCb('x');
+
+      expect(getBufferSnapshot('shell_respawn').seq).toBeGreaterThan(before);
+    });
+
+    it('writeBinary writes binary strings byte-for-byte (latin1, not UTF-8)', async () => {
+      await spawnShell('shell_bin', '/project');
+      // X10 mouse report with a coordinate byte above 0x7F
+      writeBinary('shell_bin', '\x1b[M ' + String.fromCharCode(0xe8) + '%');
+
+      const written = mockProcess.write.mock.calls.at(-1)![0];
+      expect(Buffer.isBuffer(written)).toBe(true);
+      expect([...written]).toEqual([0x1b, 0x5b, 0x4d, 0x20, 0xe8, 0x25]);
+    });
+
+    it('writeBinary is a no-op for unknown sessions', () => {
+      mockProcess.write.mockClear();
+      writeBinary('nonexistent_bin', 'abc');
+      expect(mockProcess.write).not.toHaveBeenCalled();
     });
 
     it('onExit cleans up session and broadcasts', async () => {

@@ -15,6 +15,7 @@ vi.mock('@xterm/xterm', () => {
     this.dispose = () => {};
     this.loadAddon = () => {};
     this.onData = () => ({ dispose: () => {} });
+    this.onBinary = () => ({ dispose: () => {} });
     this.cols = 80;
     this.rows = 24;
     this.options = {};
