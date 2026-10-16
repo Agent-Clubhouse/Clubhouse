@@ -71,7 +71,7 @@ vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
 
-vi.mock('../../renderer/features/assistant/content/personas', () => ({
+vi.mock('../../renderer/features/personas', () => ({
   getPersonaTemplate: vi.fn((id: string) => {
     if (id === 'qa') return { id: 'qa', name: 'Quality Assurance', description: 'QA agent', content: '# QA Agent\nReview code.' };
     return undefined;

@@ -242,6 +242,7 @@ vi.stubGlobal('clubhouse', {
     gitignoreRemove: asyncNoop,
     gitignoreCheck: async () => false,
     startupMarkerRead: async () => null,
+    isSafeModeActive: async () => false,
     startupMarkerWrite: asyncNoop,
     startupMarkerClear: asyncNoop,
     mkdir: asyncNoop,
@@ -421,17 +422,6 @@ vi.stubGlobal('clubhouse', {
     onDiscoveredChanged: () => noop,
     onSatelliteEvent: () => noop,
   },
-  agentQueue: {
-    list: async () => [],
-    create: asyncNoop,
-    get: asyncNoop,
-    update: asyncNoop,
-    delete: async () => false,
-    listTasks: async () => [],
-    getTask: asyncNoop,
-    onChanged: () => noop,
-    onTaskChanged: () => noop,
-  },
   groupProject: {
     list: async () => [],
     create: asyncNoop,
@@ -466,20 +456,7 @@ vi.stubGlobal('clubhouse', {
     onBindingsChanged: () => noop,
     onToolActivity: () => noop,
   },
-  assistant: {
-    spawn: asyncNoop,
-    bind: asyncNoop,
-    unbind: asyncNoop,
-    sendFollowup: asyncNoop,
-    sendStructuredFollowup: asyncNoop,
-    onResult: () => noop,
-    reset: asyncNoop,
-    saveHistory: asyncNoop,
-    loadHistory: asyncNoop,
-  },
   canvas: {
-    onCommand: () => noop,
-    sendCommandResult: noop,
     layoutElk: vi.fn(async () => ({ nodes: [], edges: [] })),
   },
   goobers: {
@@ -500,10 +477,6 @@ vi.stubGlobal('clubhouse', {
     openRunDir: async () => null,
     onStateChanged: () => noop,
     onDataInvalidated: () => noop,
-  },
-  commandPalette: {
-    onRequest: () => noop,
-    sendResult: noop,
   },
   hookServer: {
     onAgentsNeedRestart: () => noop,

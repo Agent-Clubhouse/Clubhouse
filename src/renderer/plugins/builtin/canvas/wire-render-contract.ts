@@ -27,7 +27,7 @@
  * Binding wire (`kind: 'binding'`):
  *   - source: agent view by `agentId`
  *   - target: view by `id` → agent view by `agentId` → plugin view by
- *     `metadata.groupProjectId` / `metadata.queueId`
+ *     `metadata.groupProjectId`
  *
  * Zone wire (`kind: 'zone'`): rendered as a **single** wire to the zone itself
  * (not one wire per contained agent). Under the hood the zone wire expands to
@@ -38,7 +38,6 @@
  *       'zone'          → zone view by `targetId`
  *       'agent'         → agent view by `agentId` (== targetId)
  *       'group-project' → plugin view by `metadata.groupProjectId`
- *       'agent-queue'   → plugin view by `metadata.queueId`
  *       'browser'       → view by `id`
  *
  * Any wire whose source or target cannot be resolved is silently dropped (it is
@@ -70,14 +69,12 @@ export interface ViewIndex {
   byId: Map<string, CanvasView>;
   byAgentId: Map<string, CanvasView>;
   byGroupProjectId: Map<string, CanvasView>;
-  byQueueId: Map<string, CanvasView>;
 }
 
 export function buildViewIndex(views: CanvasView[]): ViewIndex {
   const byId = new Map<string, CanvasView>();
   const byAgentId = new Map<string, CanvasView>();
   const byGroupProjectId = new Map<string, CanvasView>();
-  const byQueueId = new Map<string, CanvasView>();
   for (const v of views) {
     byId.set(v.id, v);
     if (v.type === 'agent' && (v as AgentCanvasView).agentId) {
@@ -86,11 +83,9 @@ export function buildViewIndex(views: CanvasView[]): ViewIndex {
     if (v.type === 'plugin') {
       const gpId = v.metadata?.groupProjectId;
       if (gpId) byGroupProjectId.set(gpId as string, v);
-      const qId = v.metadata?.queueId;
-      if (qId) byQueueId.set(qId as string, v);
     }
   }
-  return { byId, byAgentId, byGroupProjectId, byQueueId };
+  return { byId, byAgentId, byGroupProjectId };
 }
 
 /** Resolve a binding wire's source + target views, or null if unresolvable. */
@@ -107,9 +102,6 @@ export function resolveBindingWireViews(
   }
   if (!target && binding.targetKind === 'group-project') {
     target = index.byGroupProjectId.get(binding.targetId);
-  }
-  if (!target && binding.targetKind === 'agent-queue') {
-    target = index.byQueueId.get(binding.targetId);
   }
   if (!target) return null;
 
@@ -135,9 +127,6 @@ export function resolveZoneWireViews(
       break;
     case 'group-project':
       target = index.byGroupProjectId.get(wire.targetId) ?? index.byId.get(wire.targetId);
-      break;
-    case 'agent-queue':
-      target = index.byQueueId.get(wire.targetId) ?? index.byId.get(wire.targetId);
       break;
   }
   if (!target) return null;

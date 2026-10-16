@@ -156,7 +156,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
   }, [activeProjectForCreate, api.agents, handlePickAgent, onCreateAgentCard, view]);
 
   // Agent assigned but not yet available in the store (e.g. sleeping durable
-  // agent created by the assistant, or remote agent that hasn't synced yet).
+  // agent created by a blueprint import, or remote agent that hasn't synced yet).
   // Trigger loadDurableAgents so the store picks up the agent and subsequent
   // renders can show SleepingAgent or AgentTerminal properly.
   const [agentFetchTriggered, setAgentFetchTriggered] = useState(false);
@@ -169,7 +169,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
       if (project) {
         // Trigger the agent store to reload durables for this project.
         // This adds sleeping agents that may have been created since
-        // the last load (e.g. by the assistant via create_agent MCP tool).
+        // the last load (e.g. by a blueprint import).
         import('../../../stores/agentStore').then(({ useAgentStore }) => {
           useAgentStore.getState().loadDurableAgents(project.id, project.path);
         }).catch(() => { /* ignore — dynamic import failure */ });

@@ -6,7 +6,7 @@
 //
 // This enables:
 //   1. Saving/restoring board layouts as JSON
-//   2. "Cookbook" templates the assistant can import atomically
+//   2. "Cookbook" templates that can be imported atomically
 //   3. Sharing board configurations between projects/users
 
 import type {

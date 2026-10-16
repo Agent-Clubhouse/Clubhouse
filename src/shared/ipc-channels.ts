@@ -271,6 +271,7 @@ export const IPC = {
     STARTUP_MARKER_READ: 'plugin:startup-marker-read',
     STARTUP_MARKER_WRITE: 'plugin:startup-marker-write',
     STARTUP_MARKER_CLEAR: 'plugin:startup-marker-clear',
+    SAFE_MODE_ACTIVE: 'plugin:safe-mode-active',
     MKDIR: 'plugin:mkdir',
     UNINSTALL: 'plugin:uninstall',
     LOAD_MODULE_SOURCE: 'plugin:load-module-source',
@@ -434,39 +435,9 @@ export const IPC = {
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },
-  ASSISTANT: {
-    /** Spawn the assistant agent with explicit execution mode. */
-    SPAWN: 'assistant:spawn',
-    /** Create assistant MCP binding for the given agent ID. */
-    BIND: 'assistant:bind',
-    /** Remove assistant MCP binding. */
-    UNBIND: 'assistant:unbind',
-    /** Send a follow-up message to a conversational headless session. */
-    SEND_FOLLOWUP: 'assistant:send-followup',
-    /** Send a follow-up message to a structured session (spawns new --continue session). */
-    SEND_STRUCTURED_FOLLOWUP: 'assistant:send-structured-followup',
-    /** Main → renderer: headless agent completed (agentId, exitCode). */
-    RESULT: 'assistant:result',
-    /** Clean up all assistant resources (MCP binding, agent registry, config). */
-    RESET: 'assistant:reset',
-    /** Save chat history to disk. */
-    SAVE_HISTORY: 'assistant:save-history',
-    /** Load chat history from disk. */
-    LOAD_HISTORY: 'assistant:load-history',
-  },
   CANVAS_CMD: {
-    /** Main→renderer push: request a canvas operation. */
-    REQUEST: 'canvas-cmd:request',
-    /** Renderer→main: result of a canvas operation. */
-    RESULT: 'canvas-cmd:result',
     /** Renderer→main: run ELK layout algorithm (async). */
     ELK_LAYOUT: 'canvas-cmd:elk-layout',
-  },
-  CMD_PALETTE: {
-    /** Main→renderer push: request a command palette operation. */
-    REQUEST: 'cmd-palette:request',
-    /** Renderer→main: result of a command palette operation. */
-    RESULT: 'cmd-palette:result',
   },
   PLUGIN_MCP: {
     CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
@@ -496,17 +467,6 @@ export const IPC = {
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */
     AGENTS_NEED_RESTART: 'hook-server:agents-need-restart',
-  },
-  AGENT_QUEUE: {
-    CREATE: 'agent-queue:create',
-    GET: 'agent-queue:get',
-    LIST: 'agent-queue:list',
-    UPDATE: 'agent-queue:update',
-    DELETE: 'agent-queue:delete',
-    LIST_TASKS: 'agent-queue:list-tasks',
-    GET_TASK: 'agent-queue:get-task',
-    CHANGED: 'agent-queue:changed',
-    TASK_CHANGED: 'agent-queue:task-changed',
   },
   GOOBERS: {
     GET_STATE: 'goobers:get-state',

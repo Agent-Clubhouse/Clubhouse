@@ -37,6 +37,8 @@ export const plugin = {
     ipcRenderer.invoke(IPC.PLUGIN.STARTUP_MARKER_WRITE, enabledPlugins),
   startupMarkerClear: () =>
     ipcRenderer.invoke(IPC.PLUGIN.STARTUP_MARKER_CLEAR),
+  isSafeModeActive: (): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.PLUGIN.SAFE_MODE_ACTIVE),
   mkdir: (pluginId: string, scope: string, relativePath: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.PLUGIN.MKDIR, pluginId, scope, relativePath, projectPath),
   uninstall: (pluginId: string) =>

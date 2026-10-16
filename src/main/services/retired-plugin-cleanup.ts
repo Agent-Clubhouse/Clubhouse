@@ -7,7 +7,7 @@ import { appLog } from './log-service';
  * startup so old installs don't keep orphaned storage around. Keep in sync
  * with RETIRED_BUILTIN_PLUGIN_IDS in src/renderer/plugins/retired-plugins.ts.
  */
-export const RETIRED_BUILTIN_PLUGIN_IDS: readonly string[] = ['hub'];
+export const RETIRED_BUILTIN_PLUGIN_IDS: readonly string[] = ['hub', 'sessions', 'agent-queue'];
 
 export interface RetiredPluginCleanupOptions {
   /** `~/.clubhouse/plugin-data` */
@@ -16,6 +16,11 @@ export interface RetiredPluginCleanupOptions {
   communityPluginsDir: string;
   /** Every known project. */
   projects: readonly { id: string; path: string }[];
+  /**
+   * Directories owned by removed features that aren't plugins (e.g. the
+   * Assistant workspace, Agent Queue state). Deleted unconditionally.
+   */
+  retiredFeatureDirs?: readonly string[];
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -70,8 +75,18 @@ export async function cleanupRetiredPluginData(opts: RetiredPluginCleanupOptions
     }
   }
 
+  for (const dir of opts.retiredFeatureDirs ?? []) {
+    try {
+      await removeIfPresent(dir, removed);
+    } catch (err) {
+      appLog('core:plugins', 'warn', 'Failed to remove data for a retired feature', {
+        meta: { dir, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+
   if (removed.length > 0) {
-    appLog('core:plugins', 'info', 'Removed data left by retired built-in plugins', {
+    appLog('core:plugins', 'info', 'Removed data left by retired built-in features', {
       meta: { removed },
     });
   }

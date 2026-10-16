@@ -30,37 +30,17 @@ function resetStores() {
   });
 }
 
-describe('HelpView Ask Assistant button gating', () => {
+describe('HelpView', () => {
   beforeEach(() => {
     resetStores();
     vi.clearAllMocks();
-    // Restore a working default before each test — `restoreMocks: true` in
-    // vitest config will revert per-test vi.fn() overrides to a no-op that
-    // returns undefined, which would crash the component's .then() call.
-    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
-  });
-
-  it('hides "Ask Assistant" button when experimental.assistant is off', async () => {
-    render(<HelpView />);
-    await waitFor(() => {
-      expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
-    });
-    expect(screen.queryByTestId('ask-assistant-button')).not.toBeInTheDocument();
-  });
-
-  it('shows "Ask Assistant" button when experimental.assistant is on', async () => {
     window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ assistant: true });
-    render(<HelpView />);
-    await waitFor(() => {
-      expect(screen.getByTestId('ask-assistant-button')).toBeInTheDocument();
-    });
   });
 
-  it('hides "Ask Assistant" button when the flag fetch rejects', async () => {
-    window.clubhouse.app.getExperimentalSettings = vi.fn().mockRejectedValue(new Error('IPC down'));
+  it('never shows the removed "Ask Assistant" button, even with a stale flag', async () => {
     render(<HelpView />);
     await waitFor(() => {
-      expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
+      expect(screen.getByTestId('help-section-nav')).toBeInTheDocument();
     });
     expect(screen.queryByTestId('ask-assistant-button')).not.toBeInTheDocument();
   });

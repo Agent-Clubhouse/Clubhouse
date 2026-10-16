@@ -20,7 +20,7 @@ import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialo
 import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-template-registry';
 import { exportAgentAsTemplate } from '../blueprints/agent-template-export';
 import { serializeManifest } from '../blueprints/blueprint-export';
-import { PERSONA_TEMPLATES } from '../assistant/content/personas';
+import { PERSONA_TEMPLATES } from '../personas';
 
 type SettingsTab = 'main' | 'quick';
 

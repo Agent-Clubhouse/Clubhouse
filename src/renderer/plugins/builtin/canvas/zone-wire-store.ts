@@ -18,7 +18,7 @@ export interface ZoneWireDefinition {
   /** The target — could be a zone ID, agent ID, group-project ID, or browser view ID. */
   targetId: string;
   /** What the target is — determines how the wire expands. */
-  targetType: 'zone' | 'agent' | 'group-project' | 'agent-queue' | 'browser';
+  targetType: 'zone' | 'agent' | 'group-project' | 'browser';
 }
 
 export function generateZoneWireId(): string {

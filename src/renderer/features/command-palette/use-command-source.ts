@@ -64,15 +64,6 @@ export function useCommandSource(): CommandItem[] {
     }).catch(() => {});
   }, []);
 
-  // Hide assistant-related commands until the user opts in via experimental
-  // settings, so non-opted-in users don't discover the feature via the palette.
-  const [assistantEnabled, setAssistantEnabled] = useState(false);
-  useEffect(() => {
-    window.clubhouse.app.getExperimentalSettings().then((flags) => {
-      setAssistantEnabled(!!flags.assistant);
-    }).catch(() => {});
-  }, []);
-
   // Load canvases from non-active projects (reactive via store subscriptions)
   const [otherProjectCanvases, setOtherProjectCanvases] = useState<CrossProjectCanvas[]>([]);
 
@@ -327,15 +318,6 @@ export function useCommandSource(): CommandItem[] {
       shortcut: getShortcut(shortcuts, 'toggle-help'),
       execute: () => toggleHelp(),
     });
-    if (assistantEnabled) {
-      items.push({
-        id: 'nav:assistant',
-        label: 'Open Assistant',
-        category: 'Navigation',
-        shortcut: getShortcut(shortcuts, 'toggle-assistant'),
-        execute: () => useUIStore.getState().toggleAssistant(),
-      });
-    }
     items.push({
       id: 'nav:about',
       label: 'Open About',
@@ -344,7 +326,7 @@ export function useCommandSource(): CommandItem[] {
     });
 
     return items;
-  }, [activeProjectId, pluginsMap, projectEnabled, shortcuts, setExplorerTab, setActiveProject, toggleHelp, openAbout, assistantEnabled]);
+  }, [activeProjectId, pluginsMap, projectEnabled, shortcuts, setExplorerTab, setActiveProject, toggleHelp, openAbout]);
 
   const settingsItems = useMemo((): CommandItem[] =>
     SETTINGS_PAGES.map((sp) => {

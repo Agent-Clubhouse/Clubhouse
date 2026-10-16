@@ -366,36 +366,3 @@ describe('PID recording', () => {
     expect(sweepE2EProcesses(paths)).toEqual({ killed: 0, tempDirsRemoved: 0 });
   });
 });
-
-// ── Orchestrator stub gating ─────────────────────────────────────────────
-
-describe('useLiveOrchestrator', () => {
-  it('is false in CI, so CI always takes the stub path (unchanged)', async () => {
-    const { useLiveOrchestrator } = await import('../e2e/assistant/helpers');
-    process.env.CI = '1';
-    process.env.E2E_LIVE_ORCHESTRATOR = '1';
-    // Even with the opt-in set, CI never uses a live orchestrator: no binary.
-    expect(useLiveOrchestrator()).toBe(false);
-  });
-
-  it('is false locally by default, so a plain run matches CI', async () => {
-    const { useLiveOrchestrator } = await import('../e2e/assistant/helpers');
-    delete process.env.CI;
-    delete process.env.E2E_LIVE_ORCHESTRATOR;
-    expect(useLiveOrchestrator()).toBe(false);
-  });
-
-  it('is true locally only when explicitly opted in', async () => {
-    const { useLiveOrchestrator } = await import('../e2e/assistant/helpers');
-    delete process.env.CI;
-    process.env.E2E_LIVE_ORCHESTRATOR = '1';
-    expect(useLiveOrchestrator()).toBe(true);
-  });
-
-  it('ignores a non-"1" value, so a stray export cannot enable live calls', async () => {
-    const { useLiveOrchestrator } = await import('../e2e/assistant/helpers');
-    delete process.env.CI;
-    process.env.E2E_LIVE_ORCHESTRATOR = 'true';
-    expect(useLiveOrchestrator()).toBe(false);
-  });
-});

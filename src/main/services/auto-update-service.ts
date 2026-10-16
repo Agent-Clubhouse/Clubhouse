@@ -769,6 +769,12 @@ interface ApplyContext {
 
 interface ApplyOptions {
   relaunch: boolean;
+  /**
+   * Runs right before a relaunch path calls app.exit(). The handlers exit the
+   * process themselves, so anything the caller needs persisted (the apply
+   * attempt marker) has to happen here or it never runs.
+   */
+  beforeExit?: () => Promise<void>;
 }
 
 async function prepareApply(updateStatus: UpdateStatus, logScope: string): Promise<ApplyContext> {
@@ -797,7 +803,7 @@ async function recordSuccessfulApply(context: ApplyContext): Promise<void> {
   });
 }
 
-export async function applyMacUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
+export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeExit }: ApplyOptions): Promise<boolean> {
   const { downloadPath } = context;
   if (!downloadPath) return false;
   const appBundlePath = app.getPath('exe').replace(/\/Contents\/MacOS\/.*$/, '');
@@ -822,13 +828,14 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch }: ApplyO
   await waitForChildSpawn(child);
   child.unref();
   if (relaunch) {
+    await beforeExit?.();
     flushLogs();
     app.exit(0);
   }
   return true;
 }
 
-export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
+export async function applyWindowsUpdate(context: ApplyContext, { relaunch, beforeExit }: ApplyOptions): Promise<boolean> {
   const updateExe = getSquirrelUpdateExePath();
   if (!await pathExists(updateExe)) {
     throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
@@ -849,6 +856,7 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch }: Ap
     });
     await waitForChildSpawn(child);
     child.unref();
+    await beforeExit?.();
     app.exit(0);
     return true;
   }
@@ -873,7 +881,7 @@ function waitForChildSpawn(child: ReturnType<typeof spawn>): Promise<void> {
   });
 }
 
-export async function applyLinuxUpdate(context: ApplyContext, { relaunch }: ApplyOptions): Promise<boolean> {
+export async function applyLinuxUpdate(context: ApplyContext, { relaunch, beforeExit }: ApplyOptions): Promise<boolean> {
   const { downloadPath } = context;
   if (!downloadPath || !await pathExists(downloadPath)) return false;
 
@@ -883,6 +891,7 @@ export async function applyLinuxUpdate(context: ApplyContext, { relaunch }: Appl
       meta: { downloadPath },
     });
     if (relaunch) {
+      await beforeExit?.();
       app.relaunch();
       app.exit(0);
     }
@@ -895,6 +904,7 @@ export async function applyLinuxUpdate(context: ApplyContext, { relaunch }: Appl
     meta: { downloadPath },
   });
   if (relaunch) {
+    await beforeExit?.();
     app.relaunch();
     app.exit(0);
   }
@@ -939,10 +949,20 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
     artifactUrl: null,
   });
 
+  // The relaunch handlers exit the process themselves, so the attempt marker
+  // must be written from their beforeExit hook. The fallback covers a handler
+  // that returns without exiting.
+  let recorded = false;
+  const recordOnce = async (): Promise<void> => {
+    if (recorded) return;
+    recorded = true;
+    await recordSuccessfulApply(context);
+  };
+
   try {
-    const applied = await applyPlatformUpdate(context, { relaunch: true });
+    const applied = await applyPlatformUpdate(context, { relaunch: true, beforeExit: recordOnce });
     if (applied) {
-      await recordSuccessfulApply(context);
+      await recordOnce();
       return;
     }
   } catch (err) {

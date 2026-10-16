@@ -1,5 +1,7 @@
 # Telemetry Plugin — Overview & Backend
 
+> **Superseded (2026-10-16)** by [`docs/telemetry-otel-spec.md`](../telemetry-otel-spec.md): user-configured OpenTelemetry export to the user's own App Insights resource, with flow-based coverage instead of an `appLog` subscriber. Kept for history; the data-classification rules here were carried forward.
+
 ## Problem
 
 Clubhouse currently has zero telemetry. All logs are local-only with an explicit "never transmitted" message in the UI. This makes it impossible to understand error rates, feature adoption, or debug issues across deployments.

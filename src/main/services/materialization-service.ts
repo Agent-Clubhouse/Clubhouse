@@ -23,7 +23,7 @@ import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as gitExcludeManager from './git-exclude-manager';
 import { appLog } from './log-service';
 import { jsonMcpToToml } from './toml-utils';
-import { PERSONA_TEMPLATES, getPersonaTemplate } from '../../renderer/features/assistant/content/personas';
+import { PERSONA_TEMPLATES, getPersonaTemplate } from '../../renderer/features/personas';
 
 const EXCLUDE_TAG = 'clubhouse-mode';
 
@@ -510,7 +510,7 @@ export async function cleanupStaleJsonInTomlConfigs(
  * for both providers — Codex's rendered file is TOML, which can't be read back
  * without adding a parser dependency.
  *
- * `agent` is optional: quick and assistant agents have no durable config, and
+ * `agent` is optional: quick agents have no durable config, and
  * agent-scoped wildcards simply stay unresolved for them. Returns an empty map
  * on any read or parse failure — a malformed MCP config must never stop an
  * agent from launching.

@@ -20,7 +20,7 @@ export const mcpBinding = {
   onBindingsChanged: (callback: (bindings: Array<{
     agentId: string;
     targetId: string;
-    targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' | 'agent-queue';
+    targetKind: 'browser' | 'agent' | 'terminal' | 'group-project';
     label: string;
   }>) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, bindings: Parameters<typeof callback>[0]) => callback(bindings);

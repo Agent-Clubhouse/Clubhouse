@@ -43,6 +43,7 @@ vi.mock('../services/safe-mode', () => ({
   readMarker: vi.fn(async () => null),
   writeMarker: vi.fn(),
   clearMarker: vi.fn(),
+  isSafeModeActive: vi.fn(() => false),
 }));
 
 vi.mock('../services/plugin-manifest-registry', () => ({
@@ -82,6 +83,7 @@ describe('plugin-handlers', () => {
       IPC.PLUGIN.FILE_DELETE, IPC.PLUGIN.FILE_EXISTS, IPC.PLUGIN.FILE_LIST_DIR,
       IPC.PLUGIN.GITIGNORE_ADD, IPC.PLUGIN.GITIGNORE_REMOVE, IPC.PLUGIN.GITIGNORE_CHECK,
       IPC.PLUGIN.STARTUP_MARKER_READ, IPC.PLUGIN.STARTUP_MARKER_WRITE, IPC.PLUGIN.STARTUP_MARKER_CLEAR,
+      IPC.PLUGIN.SAFE_MODE_ACTIVE,
       IPC.PLUGIN.MKDIR, IPC.PLUGIN.UNINSTALL,
       IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK,
       IPC.PLUGIN.LIST_PROJECT_INJECTIONS,
@@ -203,6 +205,14 @@ describe('plugin-handlers', () => {
     const handler = handlers.get(IPC.PLUGIN.STARTUP_MARKER_CLEAR)!;
     await handler({});
     expect(safeMode.clearMarker).toHaveBeenCalled();
+  });
+
+  it('SAFE_MODE_ACTIVE returns the main-process safe-mode decision', async () => {
+    const handler = handlers.get(IPC.PLUGIN.SAFE_MODE_ACTIVE)!;
+    vi.mocked(safeMode.isSafeModeActive).mockReturnValue(true);
+    expect(await handler({})).toBe(true);
+    vi.mocked(safeMode.isSafeModeActive).mockReturnValue(false);
+    expect(await handler({})).toBe(false);
   });
 
   it('MKDIR delegates to pluginStorage.mkdirPlugin', async () => {

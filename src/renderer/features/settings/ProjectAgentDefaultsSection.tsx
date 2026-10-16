@@ -6,7 +6,7 @@ import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { usePluginStore } from '../../plugins/plugin-store';
-import { PERSONA_TEMPLATES } from '../assistant/content/personas';
+import { PERSONA_TEMPLATES } from '../personas';
 
 interface ProjectAgentDefaults {
   instructions?: string;

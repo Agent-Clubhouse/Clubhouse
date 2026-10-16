@@ -165,6 +165,11 @@ describe('uiStore', () => {
       expect(getState().explorerTab).toBe('agents');
     });
 
+    it('setExplorerTab redirects the removed Assistant tab to agents', () => {
+      getState().setExplorerTab('assistant');
+      expect(getState().explorerTab).toBe('agents');
+    });
+
     it('restoreProjectView lands on agents when the saved tab was the removed Hub', () => {
       useUIStore.setState({ explorerTab: 'settings', projectExplorerTab: { 'proj-1': 'plugin:hub' } });
       getState().restoreProjectView('proj-1');
