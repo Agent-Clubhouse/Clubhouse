@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review (scoping/design only, no implementation) |
+| **Status** | Draft for review (scoping/design only, no implementation). Revision 2 records the maintainer's decisions (§10.1) and adds regression-informed priorities (§12). |
 | **Date** | 2026-10-16 |
 | **Target** | Clubhouse 0.43+ (Electron 43, Node ≥ 22) |
 | **Supersedes** | [`docs/telemetry-design/`](telemetry-design/01-overview.md) (June 2026 log-subscriber plugin design) |
@@ -13,20 +13,24 @@ Clubhouse gets an **opt-in, user-configured telemetry export**. Telemetry is off
 
 A user creates their own Azure Application Insights resource and pastes its **connection string** into Settings → Logging → Telemetry export. Clubhouse then sends traces, metrics and sanitized error records to that resource. Nothing goes to the Clubhouse maintainers and no ingestion key ships in the binary. Ingestion with only an instrumentation key was retired in 2025, so the connection string is the only supported input.
 
+App Insights is the default and simplest destination: one field. For the minority who run another backend, the same Settings section offers **Other (OTLP)**: an HTTPS endpoint plus headers, sent as OTLP over HTTP/JSON (§6.8).
+
 How it works:
 
-- It is built on **OpenTelemetry (OTel)**, set up manually in the **main process only**. The renderer forwards to main over IPC. The exporter is `@azure/monitor-opentelemetry-exporter`, with OTLP as a later option.
+- It is built on **OpenTelemetry (OTel)**, set up manually in the **main process only**. The renderer forwards to main over IPC. The exporter is `@azure/monitor-opentelemetry-exporter` by default, or the OTLP/HTTP-JSON exporters when the user picks Other (OTLP). Both ship from Phase 1.
 - Coverage follows **user flows**, not existing log lines. Each important flow (startup, agent spawn → run → exit, permission round trip, project switch, plugin activation, update, Annex connect, …) gets a span tree, a small set of metrics and classified error records. The existing `appLog` stream is not mirrored. It bridges in only where a call site opts in (§6.6).
 - **Privacy is enforced in code, not by convention.** A typed attribute registry is an allowlist. A redaction processor drops anything outside it before export. Prompts, terminal output, file contents, paths, and repo, branch, project and agent names are never sent. Identifiers are HMAC-hashed with a per-install salt.
+- **Community plugins can send telemetry** through a permissioned `api.telemetry` namespace. It is held to the same allowlist and privacy rules, rate-limited, and switched on per plugin by the user (§6.9).
+- **Coverage is weighted by regression history.** Six months of fixes cluster into 13 hot spots: persistence and data loss, provider CLI drift, plugin loading, update and install, and others. Each is mapped to the signals that would have caught it, and those flows are marked P0 (§12).
 
-The estimate is **7 PR-sized phases**, about 4,000–5,500 lines of production code plus tests. Phases 1–3 alone give a useful product: errors, startup, update and session health. See §9.
+The estimate is **8 PR-sized phases**, about 5,000–6,500 lines of production code plus tests. Phases 1–3 alone give a useful product: errors, startup, update, persistence integrity and session health. See §9.
 
 How this differs from the June 2026 design in `docs/telemetry-design/`:
 
 | June 2026 design | This spec | Why |
 |---|---|---|
 | Built-in ingestion key, maintainers' resource | **User's own resource only**; no key ships | Decided by the maintainer: self-configured, no maintainer-run backend |
-| `applicationinsights` SDK `trackEvent` | **OTel API + SDK, Azure Monitor exporter** | Vendor-neutral; OTLP later costs one exporter swap |
+| `applicationinsights` SDK `trackEvent` | **OTel API + SDK, Azure Monitor exporter by default, OTLP as an alternative** | Vendor-neutral; OTLP is one exporter swap |
 | Subscribe to `appLog` and filter by namespace tier | **Flow-based instrumentation**; `appLog` bridge only for opt-in call sites | The logs are 99% two debug/info namespaces (§2.2) and carry sensitive meta (§2.3) |
 | In-memory ring only, drop when offline | Exporter's bounded disk retry plus a cap | Laptops go offline; user-owned data |
 | Built-in plugin gated by an experimental flag | Core service plus a Settings → Logging section | Needs main-process hooks at startup and in crash handlers, before plugins load |
@@ -58,6 +62,8 @@ The data-classification ideas from that design are carried forward: the never-co
 - Microsoft Entra ID (AAD) ingestion auth. Resources with `DisableLocalAuth=true` reject connection-string ingestion; see §10 for the follow-up.
 - Instrumenting the Annex iOS app. It is not Clubhouse code; see §7.
 - Remote configuration or a server-side kill switch. Nothing phones home.
+- OTLP over gRPC or protobuf, and plain-HTTP OTLP endpoints.
+- Build-time and CI failures such as code signing (#1836, #1838, #1846) and visual or theme regressions. Telemetry cannot see these; CI and E2E are the right tools (§12.3).
 
 ### Principles
 
@@ -151,7 +157,7 @@ These are fine on local disk (the user's own machine) but they confirm the decis
   - Counts use `{thing}` annotations.
 - **Error classification** uses the semconv attribute `error.type`, always with a **closed enum** per flow (listed in §4). Span status is `ERROR` only when the flow failed from the user's point of view. Expected outcomes such as user cancel or deny set `clubhouse.outcome`, not `ERROR`.
 - **Outcome:** every root span ends with `clubhouse.outcome ∈ {ok, error, cancelled, timeout, skipped}`, plus a flow-specific `*.result` enum where useful.
-- **Percentiles come from spans, not histograms.** The Azure exporter sends histogram metrics to `customMetrics` as count/sum/min/max, so they have no buckets and no percentiles. p50/p95 come from `requests`/`dependencies` `duration` via KQL `percentile()`. Histograms are still recorded for averages, cheap dashboards and OTLP backends later. Every latency that needs percentiles must therefore be a span, unsampled for its flow (§6.4).
+- **Percentiles come from spans, not histograms.** The Azure exporter sends histogram metrics to `customMetrics` as count/sum/min/max, so they have no buckets and no percentiles. p50/p95 come from `requests`/`dependencies` `duration` via KQL `percentile()`. Histograms are still recorded for averages and cheap dashboards; with the OTLP destination they keep their buckets, so backends that support it get real percentiles. Every latency that needs percentiles must therefore be a span, unsampled for its flow (§6.4).
 
 ### 3.3 Telemetry levels (user-selectable)
 
@@ -164,11 +170,18 @@ These are fine on local disk (the user's own machine) but they confirm the decis
 
 The level is the main volume and cost control. Every instrument and span in §4 is tagged with its minimum level.
 
+**Decision (2026-10-16): the separate Errors level stays.** Errors suits users who only want crash and failure reporting at minimal cost and minimal data. It costs nothing to implement: the `FlowSampler` already needs the tail decision for error-only traces.
+
+Two further rules apply across levels:
+
+- Regression-informed **P0 signals** (§12) are tagged level E or S, never D, so Standard always covers them.
+- Community plugin telemetry (§6.9) follows the same levels: plugin exceptions are sent at Errors and above, plugin events, spans and metrics at Standard and above.
+
 ---
 
 ## 4. Coverage map by flow
 
-Each subsection lists the **spans** (with boundaries in code), **metrics**, **errors** (the `error.type` enum) and **level**.
+Each subsection lists the **spans** (with boundaries in code), **metrics**, **errors** (the `error.type` enum) and **level**. Flows marked P0 in §12 (regression history) take precedence when phases are cut.
 
 - File references are to `src/` as of `f4451aaa`.
 - Attribute names refer to the registry in §5. `c.` is shorthand for `clubhouse.`.
@@ -512,6 +525,21 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.popout.opened` | `c.popout.type` |
 | `c.telemetry.*` | `enabled`, `level_changed`, `disabled` (sent as the last record before shutdown of the exporter), `test` |
 
+### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
+
+The first draft left these as gaps. The maintainer set the goal as broad coverage of critical paths, and the regression history (§12) shows main-thread starvation (#1528), canvas render cost (#1693, #1694) and silent stalls. All of the following are in Phase 3.
+
+| Instrument | Source | Attributes | Level |
+|---|---|---|---|
+| `c.process.eventloop.delay.p99`, `.max` (observable gauges, s) | `perf_hooks.monitorEventLoopDelay`, read and reset every 60 s. These are gauges because App Insights histograms have no percentiles (§3.2). | — | S |
+| `c.process.eventloop.blocked` (event) | the 60 s window's max exceeds 2 s | `c.blocked.flow`: the name of the root span active when the stall was sampled, from a 100 ms watchdog timer. That points at the culprit, e.g. `c.agent.spawn` during a `which` lookup. | E |
+| `c.process.memory` (observable gauge, By) | `app.getAppMetrics()` every 60 s: `workingSetSize`, `privateBytes` | `c.process.type` (`browser`/`renderer`/`gpu`/`utility`), `c.window.kind` | S |
+| `c.process.cpu` (observable gauge, %) | `app.getAppMetrics()` `percentCPUUsage` | `c.process.type` | S |
+| `c.renderer.long_frames` (counter) + `c.renderer.long_frame.duration` (histogram, s) | `PerformanceObserver` for `long-animation-frame` (Chromium LoAF), aggregated in the renderer facade and sent once a minute | `c.view` (the active main view: `agent`/`terminal`/`canvas`/`files`/`git`/`settings`/`plugin`/`other`) | S |
+| `c.telemetry.export.failures` (counter) | exporter result callbacks | `c.telemetry.signal` (`traces`/`metrics`/`logs`), `c.http.class` | E |
+| `c.telemetry.offline.items` (observable gauge) | offline queue size; exported once connectivity returns | — | E |
+| `c.shell.spawn` (span) | non-agent PTYs (`ShellTerminal`, utility terminals) | `error.type` (`pty_spawn_failed`, `cwd_invalid`, `spawn_helper_not_executable`) | S |
+
 ---
 
 ## 5. Attribute schema and privacy enforcement
@@ -552,11 +580,19 @@ export const ATTR = {
 | ID | Generation | Lifetime | Exported as |
 |---|---|---|---|
 | `service.instance.id` | `randomUUID()` per app run | one run | resource attribute; maps to App Insights `cloud_RoleInstance`. **Must be set explicitly**, otherwise the Azure exporter falls back to `os.hostname()`. |
-| `clubhouse.install.id` | `randomUUID()`, stored in `telemetry-settings.json` | until the user clicks **Reset telemetry ID** | resource attribute; maps to App Insights `user_Id` via `enduser.pseudo.id`. Lets the user count their own installs (several machines on one resource). |
+| `clubhouse.install.id` | `randomUUID()` (v4, from `crypto`), generated locally the first time telemetry is enabled, stored in `telemetry-settings.json` | until the user clicks **Reset telemetry ID**, or turns telemetry off and chooses **Delete local telemetry data** | resource attribute on every item; maps to App Insights `user_Id` via `enduser.pseudo.id`. **Sent by default** (decision 2026-10-16). Lets the user tell their own machines apart on one resource and follow one install across restarts and updates. |
 | Hash salt | 32 random bytes, stored with the install ID | rotated with **Reset telemetry ID** | never exported |
 | `*.id_hash` | `HMAC-SHA256(salt, rawId)` truncated to 16 hex characters | stable per install | span attributes only, **never metric dimensions** (cardinality) |
 
 Hashes are applied only to opaque internal IDs: agent ID, project ID (`proj_<ts>_<rand>`), run ID, canvas ID, request ID. They are **never applied to names or paths** (P3). Low-entropy inputs such as a project name would be guessable even with a salt, and a path hash still says "same repo".
+
+**Install ID privacy properties.** These are documented in the help topic and shown next to the Reset button:
+
+- **Random, not derived.** It does not come from any hardware, OS, account, MAC address, hostname or Annex identity. Two installs on one machine get different IDs; reinstalling with fresh user data gets a new one.
+- **Local until you export.** It is created only when telemetry is first enabled, is never sent anywhere except the destination you configured, and is never shared over Annex or with plugins. Plugins see only `c.plugin.ref`, never the install ID.
+- **Resettable.** Reset generates a new ID **and a new hash salt** at the same time. After a reset, nothing sent before can be linked to anything sent after: neither the install ID nor any `*.id_hash` value carries over.
+- **Linkable within the destination.** While unchanged, it links every session from this install inside your resource. That is its purpose. If you share a resource with a team, everyone can see per-install activity patterns: counts, versions and timings, never content.
+- **Removed with local data.** Turning telemetry off keeps the ID, so turning it back on continues the same series. **Delete local telemetry data** removes the ID, the salt and the offline queue.
 
 ### 5.3 Scrubber (last line of defense)
 
@@ -671,26 +707,32 @@ Never sent:
 - **Renderer readiness.** A new `app:renderer-ready` IPC is sent once after `initApp()`. It also benefits non-telemetry code: the startup survey found that no such signal exists today.
 - **Renderer errors** (§4.2) go through the same channel with sanitized stacks. The sanitization is redone in main.
 - **Disabled state.** While telemetry is off, the renderer facade drops calls before queueing. Main broadcasts the enabled/level state so this costs nothing.
-- **Plugins** get no telemetry API in v1. Plugin errors and activation are observed by the host (§4.10). A plugin telemetry API is a possible future addition, gated by a permission.
+- **Plugins** reach telemetry through their own `api.telemetry` namespace (§6.9). Calls go over the same `telemetry:emit` channel, tagged with the calling plugin's identity by the host, never by the plugin. The host also observes plugin errors and activation independently (§4.10).
 
 ### 6.3 Packages, versions and bundling
 
 | Package | Version (2026-10-16) | Notes |
 |---|---|---|
 | `@opentelemetry/api` | 1.9.x | stable |
-| `@opentelemetry/sdk-trace-base`, `sdk-metrics`, `resources`, `core` | 2.12.x (≥ 2.10 required by the exporter) | stable line |
+| `@opentelemetry/sdk-trace-base`, `sdk-metrics`, `resources`, `core` | **2.10.0, pinned exactly** | stable line. The OTLP exporters 0.221.x depend on **exactly** 2.10.0 (not a caret), and the Azure exporter accepts `^2.10.0`. So 2.10.0 is the only version that satisfies both without duplicate copies. Move to 2.12 only together with OTLP 0.223 or later. |
 | `@opentelemetry/sdk-logs`, `api-logs` | **0.221.x** | **must match the exporter's `^0.221.0` caret**. On 0.x a caret pins the minor, so 0.223 would install a second copy. Pin exact versions, and have Dependabot group all `@opentelemetry/*` packages together. |
-| `@opentelemetry/context-async-hooks` | 2.12.x | `AsyncLocalStorageContextManager` |
+| `@opentelemetry/context-async-hooks` | 2.10.0 | `AsyncLocalStorageContextManager` |
 | `@opentelemetry/semantic-conventions` | 1.43.x | import only `/incubating`-free stable constants, or copy the ~15 constants we use into `attributes.ts`. The package is 12 MB unpacked, so check that tree-shaking works under CJS webpack. |
 | `@azure/monitor-opentelemetry-exporter` | **1.0.0-beta.46** | **the `latest` dist-tag is stale (beta.32, which depends on OTel 0.200).** Install `@beta` or the exact version. It is still pre-1.0, so pin exactly. Requires Node ≥ 22; Electron 43 is fine. Sends JSON via `@azure/core-rest-pipeline`, with **no protobufjs**. |
-| `@opentelemetry/exporter-*-otlp-http` | 0.221.x | Phase 7 only. Use the JSON/HTTP variants and avoid `-proto` and `-grpc`, which pull in protobufjs and grpc and trip the asset relocator. |
+| `@opentelemetry/exporter-trace-otlp-http`, `exporter-metrics-otlp-http`, `exporter-logs-otlp-http` | **0.221.x** | **Phase 1** (decision 2026-10-16). In 0.221 these and `otlp-transformer` no longer depend on protobufjs. The `-http` variants send JSON. Avoid `-proto` and `-grpc`, which bring protobuf or grpc back and trip the asset relocator. |
+
+**Release-train rule.** Every OTel package moves as one set: `api` 1.9.x, stable SDKs 2.10.0 and experimental 0.221.x, aligned with the Azure exporter beta.46.
+
+- One Dependabot group covers `@opentelemetry/*` and `@azure/monitor-opentelemetry-exporter`, with an ignore rule for majors.
+- **OTel JS 3.0 / 0.300 is already at release candidate.** Adopt it only after the Azure exporter publishes a compatible beta. Track it alongside the other blocked majors.
 
 Bundling notes (`webpack.main.config.ts`):
 
 - The only external is `node-pty`. Every runtime dependency must bundle cleanly through `@vercel/webpack-asset-relocator-loader` (`webpack.rules.ts:11`).
 - **Phase 1 starts with a spike:** build a packaged app (in CI; local packaged launch crashes on code signing) and assert that the exporter loads and exports.
 - **The SDK goes in a separate chunk** via `await import('./telemetry/sdk')`. That code is never evaluated unless telemetry is enabled, so startup cost when disabled is zero. Chunked dynamic imports already work in main (`ipc/agent-handlers.ts:66`).
-- Expected size: about 0.6–1.2 MB minified across the OTel SDKs, the Azure exporter and `@azure/core-*`. That is about 1% of the roughly 97 MB `app.asar`. Add a CI check that fails if the telemetry chunk exceeds 2 MB.
+- Expected size: about 0.6–1.2 MB minified for the OTel SDKs, the Azure exporter and `@azure/core-*`, plus about 100–200 KB for the OTLP exporters. That is about 1% of the roughly 97 MB `app.asar`. Add a CI check that fails if the telemetry chunk exceeds 2 MB.
+- **Destination abstraction.** `src/main/telemetry/destinations/` holds `azure.ts` and `otlp.ts`. Each returns a span exporter, a metric exporter and a log exporter. Each destination is its own lazy chunk, so only the chosen one is loaded.
 
 ### 6.4 Sampling and volume
 
@@ -774,7 +816,7 @@ The user asked for no straight port, so the bridge is **opt-in per call site**:
   - deletion on disable.
 
   Offline data is post-redaction, so the disk copy contains nothing more sensitive than what would be sent.
-- **Exporter self-telemetry ("Statsbeat").** The Azure exporter can send its own SDK health metrics to a **Microsoft-owned** endpoint, separate from the user's resource. **It must be disabled.** Phase 1 verifies the exact mechanism (environment flag or option for the pinned version). Phase 1 also adds a CI test that runs the exporter against a mock HTTP server, intercepts all outbound requests, and asserts that **only the configured ingestion host is ever contacted.** This test is a release blocker.
+- **Exporter self-telemetry ("Statsbeat").** The Azure exporter can send its own SDK health metrics to a **Microsoft-owned** endpoint, separate from the user's resource. **It must be disabled.** Phase 1 verifies the exact mechanism (environment flag or option for the pinned version). Phase 1 also adds a CI test that runs **each destination** (Azure and OTLP) against a mock HTTP server, intercepts all outbound requests, and asserts that **only the configured host is ever contacted.** This test is a release blocker. The OTLP exporters have no Statsbeat equivalent; the test still covers them.
 - **Proxy.** `@azure/core-rest-pipeline` honors `HTTPS_PROXY`/`NO_PROXY`. Document this. Electron's system proxy is not used.
 
 ### 6.8 Settings UX (Settings → Logging)
@@ -787,34 +829,122 @@ Logging                                         ← existing section unchanged
   "Logs are stored on your local disk only and are never transmitted."   ← text stays true
 
 Telemetry export                                ← new
-  Send anonymized diagnostics to your own Azure Application Insights resource.
+  Send anonymized diagnostics to a destination you own.
   Nothing is sent to the Clubhouse maintainers. Off by default.        [Learn what's sent]
 
+  Destination         (•) Azure Application Insights  (recommended)
+                      ( ) Other (OTLP)
+
+  ── when Azure Application Insights ──
   Connection string   [ ••••••••••••••••••••••••••••••  ]  [Paste] [Clear]
                       ✓ InstrumentationKey …1a2b · Ingestion: westus2-1.in.applicationinsights.azure.com
+
+  ── when Other (OTLP) ──
+  Endpoint            [ https://otlp.example.com              ]   (/v1/traces, /v1/metrics, /v1/logs appended)
+  Headers             [ x-api-key ] [ •••••••• ]  [+ Add header]
+                      Sends OTLP over HTTP/JSON. HTTPS only.
+
   Level               ( ) Off  ( ) Errors only  (•) Standard  ( ) Detailed
-  [Send test event]   ✓ Accepted by ingestion (HTTP 200, 412 ms)
+  [Send test event]   ✓ Accepted by otlp.example.com (HTTP 200, 412 ms)
   [Preview data]      opens the last 200 items exactly as exported
+
+  Plugins             2 plugins can send telemetry · [Manage]          ← §6.9
 
   ▸ Advanced
       Trace sample rate  [1.0]
+      OTLP metric temporality  (•) Cumulative  ( ) Delta              (OTLP only)
       Reset telemetry ID (rotates install ID and hash salt)
       Offline queue: 0 items · [Clear]
+      Delete local telemetry data
 ```
 
+**Destination choice** (decision 2026-10-16: OTLP is in the main UI, not behind Advanced).
+
+- App Insights is preselected and needs one field, so the common path is unchanged for the 99.9% case.
+- Selecting **Other (OTLP)** reveals the endpoint and headers fields.
+- Switching destination flushes and shuts down the current exporter before starting the new one. Nothing buffered for one destination is ever sent to another; the offline queue is cleared on switch.
+
 - **Connection string handling:**
-  - It is parsed locally. `InstrumentationKey` must be a GUID and `IngestionEndpoint` must be an `https:` URL whose host ends in `.applicationinsights.azure.com` or a sovereign-cloud equivalent. The allowlist lives in code; users can override it for OTLP later.
+  - It is parsed locally. `InstrumentationKey` must be a GUID and `IngestionEndpoint` must be an `https:` URL whose host ends in `.applicationinsights.azure.com` or a sovereign-cloud equivalent. The allowlist lives in code. Any other host requires the Other (OTLP) destination.
   - Bare instrumentation keys are rejected with a message that IKey-only ingestion was retired in 2025.
   - It is stored with **`safeStorage.encryptString`** in `userData/telemetry-secret.bin`, mode 0600. This is the first use of `safeStorage` in the codebase.
   - On Linux, if `safeStorage.getSelectedStorageBackend()` returns `basic_text`, the UI warns that the string will be stored with weak protection, and asks the user to confirm.
   - After saving, **the renderer only ever receives a masked form** (the last 4 characters of the IKey plus the ingestion host). The full string never crosses back into the renderer.
   - The connection string is not truly secret: it is an ingestion-only credential and cannot read data. It is still treated as one, because it lets anyone write into the user's resource and bill them.
-- **Test event:** emits `c.telemetry.test` as a span and an event, calls `forceFlush()`, and reports the exporter's `ExportResult` plus the HTTP status and latency. Common failures get explicit text: 400 invalid IKey, 401/403 with local auth disabled (points to the Entra ID follow-up), DNS or proxy failure.
+- **OTLP endpoint and headers handling:**
+  - **HTTPS is required.** The endpoint must parse as an `https:` URL; anything else is rejected with an explanation. Plain HTTP, including loopback collectors, is out of scope for v1.
+  - Signal paths follow the OTLP/HTTP spec: `/v1/traces`, `/v1/metrics` and `/v1/logs` are appended to the base URL. Encoding is JSON only.
+  - Header names are validated as HTTP tokens. A short list of reserved names (`content-type`, `content-length`, `host`) is refused. Header **values** are stored with `safeStorage` beside the connection string, under the same Linux `basic_text` warning, and are masked in the renderer after save. Only names and the last 4 characters of each value are shown.
+  - **Destination confirmation.** On first save, and whenever the host changes, a confirm step names the host in plain text: "Telemetry will be sent to otlp.example.com. Clubhouse can't see or control what this service does with it." Nothing is sent until the user confirms.
+  - The Azure-specific allowlist of ingestion hosts does not apply to OTLP. The **egress test (§6.7) does**: the exporter may contact only the configured host.
+  - Metric temporality defaults to cumulative for OTLP, which most OTLP backends expect, with delta available. Azure always uses delta.
+  - No other OTLP options in v1: no gRPC, no protobuf, no custom TLS or CA settings, no compression toggle (gzip is always on).
+- **Test event:** emits `c.telemetry.test` as a span and an event, calls `forceFlush()`, and reports the exporter's `ExportResult` plus the HTTP status and latency. Common failures get explicit text:
+  - Azure: 400 invalid IKey; 401/403 when local auth is disabled (points to the Entra ID follow-up); DNS or proxy failure.
+  - OTLP: 401/403 (check headers), 404 (check the base path), 415 (the backend does not accept JSON), TLS failure.
 - **Preview:** a tee exporter keeps a ring buffer of the last 200 items **after redaction**, exactly as sent. A dialog shows them as JSON with the type (span/metric/log) and the destination table. The same buffer is filled even when the level is Off: in that case nothing is exported, but the user can see what *would* be sent. This uses a separate dry-run pipeline with no network.
 - **Learn what's sent:** a help topic `settings-telemetry` in `features/help/content/`, generated partly from the attribute registry so it cannot drift.
-- **Storage:** `TELEMETRY` is added to `settings-definitions.ts` via `createManagedSettings`, with `{ level, sampleRate, installId, consentVersion }`. The secret is kept separate, as above.
+- **Storage:** `TELEMETRY` is added to `settings-definitions.ts` via `createManagedSettings`, with `{ destination: 'azure' | 'otlp', otlpEndpoint, otlpHeaderNames, otlpTemporality, level, sampleRate, installId, consentVersion, pluginGrants: Record<pluginRef, boolean> }`. Secrets (the connection string and OTLP header values) are kept separately in `telemetry-secret.bin`, as above.
 - **Consent:** choosing a non-Off level for the first time shows a one-time confirmation listing the "never sent" categories. `consentVersion` is bumped if the schema widens materially, which forces re-confirmation.
 - **The local logging banner text stays true:** logs are still never transmitted. Bridged events (§6.6) are telemetry, not logs, and the telemetry section says so explicitly.
+
+### 6.9 Community plugin telemetry API (decision 2026-10-16)
+
+Community plugins can send their own telemetry to the user's destination, under the same privacy rules as the host. Built-in plugins don't use this API; the host instruments them directly.
+
+**Declaration.** A plugin needs:
+- the new `telemetry` permission (elevated tier, shown in the install and permission-approval dialog as "Can send usage data to your telemetry destination if you allow it in Settings");
+- a `telemetry` block in `manifest.json` that declares every name and attribute it will use:
+
+```json
+"telemetry": {
+  "events":  { "sync_completed": { "attributes": { "result": { "enum": ["ok", "conflict", "error"] }, "items": { "type": "int" } } } },
+  "spans":   { "sync": { "attributes": ["result"] } },
+  "metrics": { "sync_duration": { "kind": "histogram", "unit": "s", "attributes": ["result"] } }
+}
+```
+
+**API** (`api.telemetry`, plugin API ≥ 0.9; added to the API surface check):
+
+| Call | Notes |
+|---|---|
+| `enabled: boolean` | false unless the user granted this plugin **and** the level allows it. Lets plugins skip work. |
+| `event(name, attrs?)` | → `customEvents` |
+| `span(name, fn, attrs?)` | wraps `fn`; records duration, outcome and a sanitized exception |
+| `count(name, n?, attrs?)` / `record(name, value, attrs?)` | metrics, aggregated in-process |
+| `exception(err)` | sanitized type and plugin-relative frames only |
+
+**What the host enforces.** All of this happens in main, never trusting the plugin:
+
+- **Schema allowlist.**
+  - Names and attribute keys must appear in the manifest, and are validated at load and on hot reload.
+  - Attribute types are limited to `enum` (≤ 32 values, each `^[a-z0-9_.-]{1,32}$`), `int`, `bool` and host-defined size or duration buckets.
+  - **No free strings and no IDs or hashes**, so a plugin cannot send paths, names or identifiers.
+  - Anything undeclared is dropped and counted in `c.plugin.telemetry.rejected`.
+  - The validated schema extends the attribute registry at runtime. The redaction processors and scrubber run on plugin items exactly as on host items.
+- **Namespacing.**
+  - Exported names become `clubhouse.plugin.<name>` and attribute keys `plugin.<key>`. Reserved prefixes (`clubhouse.`, `error.`, `exception.`, `service.`, …) cannot be used.
+  - Every item carries `c.plugin.ref` and `c.plugin.origin`. The ref is the raw ID only for official-registry plugins; otherwise it is hashed (§4.10).
+  - Plugin spans are roots of their own traces. Plugins never see or set trace context, the install ID or any host attribute.
+- **Rate limits**, as per-plugin token buckets:
+  - events: 60/min, burst 120;
+  - spans: 30/min;
+  - exceptions: 10/min, deduped by fingerprint;
+  - metrics: at most 10 instruments and 50 attribute sets each;
+  - at most 5,000 records per plugin per session.
+  - Over-limit items are dropped and counted in `c.plugin.telemetry.throttled`. Sustained overflow (3 windows in a row) pauses that plugin's telemetry for the session, with a notice in the Plugins list.
+- **Levels.** Off: `enabled` is false and calls are no-ops. Errors: `exception` only. Standard and Detailed: everything.
+
+**User control.**
+
+- **Settings → Telemetry export → Plugins** lists every plugin holding the `telemetry` permission. Each row shows:
+  - its local name (resolved locally, never exported);
+  - its declared events, spans and metrics;
+  - its records in the last hour;
+  - a toggle.
+- **Every toggle defaults to off**, even after the permission is granted. The same toggle appears on the plugin's detail settings page. Grants are stored as `pluginGrants` in the `TELEMETRY` settings (§6.8).
+- Revoking a grant takes effect immediately, and that plugin's queued items are dropped.
+- The preview dialog labels plugin items with their source plugin.
 
 ---
 
@@ -862,15 +992,18 @@ Sizes: **S** ≈ ≤ 400 LOC, **M** ≈ 400–1,000, **L** ≈ 1,000–1,800, co
 
 | # | Phase / PR | Contents | Size | Depends on |
 |---|---|---|---|---|
-| 1 | **Foundation: SDK and pipeline** | <ul><li>Spike: bundle the OTel SDK and exporter in the main chunk; packaged-build smoke test in CI; size check.</li><li>`src/main/telemetry/`: facade, bootstrap, providers, resource, attribute registry, redaction processors, scrubber, HMAC IDs, `FlowSampler`, session caps, preview tee, offline dir, flush-on-quit and `flushBeforeExit()` at all `app.exit` sites.</li><li>Statsbeat off, with the **egress-allowlist CI test**.</li><li>Only instrumentation: `c.app.sessions`, `c.telemetry.test`.</li><li>Feature flag `experimental.telemetry` until Phase 3 lands.</li></ul> | **L** | — |
-| 2 | **Settings UX** | `TELEMETRY` managed settings; `safeStorage` secret store + Linux backend warning; connection-string parser and validator; Telemetry export section on the Logging page; test event; preview dialog; consent confirm; help topic; reset ID | **M** | 1 |
-| 3 | **Errors and app lifecycle** | Main `uncaught`/`unhandled` → exception records; `render-process-gone`, `child-process-gone`, `unresponsive`; renderer `error`/`unhandledrejection`; new `AppErrorBoundary`; renderer facade and `telemetry:emit` IPC; `app:renderer-ready`; `c.app.startup` span tree; shutdown span; unclean-exit detection; safe-mode events; auto-update spans; config snapshot. **First "useful" release.** | **L** | 1 (2 for user-facing) |
-| 4 | **Agents** | Create/spawn span trees across all three runtimes; run/first-output events; exit classification incl. the structured path; kill escalation; permissions (hook and structured); structured turns and token usage; hook-event and tool-call metrics with tool bucketing; MCP tool calls; queue; shoulder taps | **L** (could split 4a spawn/exit, 4b permissions/turns/MCP/queue) | 3 |
-| 5 | **Workspace** | Project switch (renderer root + traceparent into main), add/remove, store recovery; git user-op spans and poll histogram; worktree spans; file open/save, search, watch gauges; plugin system init, activate, render errors, protocol counters; canvas load/save; marketplace fetch/install/update/uninstall; settings and feature-usage events | **L** (could split 5a projects/git/files, 5b plugins/canvas/marketplace/features) | 3 |
-| 6 | **Annex, Goobers and Detailed level** | Annex server/client spans and metrics; `traceparent` over WS envelope and REST (dual-instance E2E spec); Goobers lifecycle, state transitions, poll metrics; Detailed-level additions: tool-call spans, IPC latency (patch `ipcMain.handle` once before `registerAllHandlers`, channel name from the static `ipc-channels.ts` constant set, dynamic `*:response:{id}` channels collapsed), Annex REST per route template | **M** | 4 |
-| 7 | **appLog bridge and extras** | `telemetry` field on `appLog`, severity mapping, trace IDs in local JSONL, initial opt-in sites. **Optional extras:** OTLP/HTTP-JSON exporter selector (Honeycomb, Grafana, a local collector); a shipped **Azure Workbook template** (`docs/telemetry/workbook.json`) with KQL for startup p95, agent spawn p95 by orchestrator, exit-class mix, top `error.type`, update funnel; release source maps for stack symbolication | **M** | 3 |
+| 1 | **Foundation: SDK, pipeline, both destinations** | <ul><li>Spike: bundle the OTel SDK, the Azure exporter **and the OTLP/HTTP-JSON exporters** in lazy main chunks; packaged-build smoke test in CI; size check.</li><li>`src/main/telemetry/`: facade, bootstrap, destination abstraction (`azure.ts`, `otlp.ts`), providers, resource, attribute registry, redaction processors, scrubber, HMAC IDs, `FlowSampler`, session caps, preview tee, offline dir, flush-on-quit and `flushBeforeExit()` at all `app.exit` sites.</li><li>Statsbeat off; **egress-allowlist CI test for both destinations**.</li><li>Only instrumentation: `c.app.sessions`, `c.telemetry.test`.</li><li>Feature flag `experimental.telemetry` until Phase 3 lands.</li></ul> | **L** | — |
+| 2 | **Settings UX** | `TELEMETRY` managed settings; `safeStorage` secret store (connection string and OTLP header values) with the Linux backend warning; **Destination choice** (App Insights default, Other (OTLP) in the main UI); connection-string and OTLP endpoint/header validation; destination confirmation step; level picker incl. Errors; test event; preview dialog; consent confirm; help topic incl. install-ID privacy; reset ID; delete local telemetry data | **M** | 1 |
+| 3 | **Errors, lifecycle, health, persistence integrity** | <ul><li>Crash and error handlers (main, renderer, `AppErrorBoundary`), renderer facade and `telemetry:emit`, `app:renderer-ready`.</li><li>Startup and shutdown span trees, unclean-exit detection, safe-mode events, config snapshot.</li><li>**Auto-update spans plus `c.update.apply.verified` and `c.install.kind`** (§12, H6).</li><li>**Process health, renderer long frames, pipeline health** (§4.15).</li><li>**Persistence integrity across all JSON stores** (§12, H1).</li></ul> **First "useful" release.** | **L** (could split 3a errors/lifecycle/update, 3b health/persistence) | 1 (2 for user-facing) |
+| 4 | **Agents** | Create/spawn span trees across all three runtimes; run and first-output events; exit classification incl. the structured path; kill escalation; permissions; structured turns and tokens; hook-event and tool-call metrics; MCP tool calls; queue; shoulder taps. **Plus the regression signals:** CLI version on spawn, structured protocol-unknown counter, turn-stall watchdog, silent-hooks run, session-listing span, inject-delivery span, hook teardown, ID-collision repair, status reconcile, `c.ui.action_failed` for agent flows (§12, H2, H3, H7) | **L** (split 4a spawn/exit/drift, 4b permissions/turns/MCP/queue) | 3 |
+| 5 | **Workspace** | Project switch, add/remove, store recovery; git user-op spans and poll histogram; worktree spans; files, search and watch gauges; plugin system, activation and module-load results; Monaco load span; editor save conflicts; canvas load/save; marketplace; bulletin post results; MCP tools-list; settings and feature-usage events (§12, H5, H8, H10, H11) | **L** (split 5a projects/git/files/editor, 5b plugins/canvas/marketplace/features) | 3 |
+| 6 | **Annex, Goobers and Detailed level** | Annex spans and metrics with address family and identity-regeneration events; `traceparent` over the WS envelope and REST (dual-instance E2E spec); Goobers lifecycle, data-age gauge and stream-mode events; Detailed-level tool-call, IPC latency and Annex route spans (§12, H9, H12) | **M** | 4 |
+| 7 | **appLog bridge, workbook, source maps** | `telemetry` field on `appLog`, severity mapping, trace IDs in local JSONL, initial opt-in sites. Optional: shipped **Azure Monitor Workbook** template (§10.1) with alert-ready KQL for the P0 flows in §12; release source maps for stack symbolication | **S–M** | 3 |
+| 8 | **Community plugin telemetry API** | `telemetry` permission, manifest schema and validation, `api.telemetry`, host-side namespacing, rate limiting and throttling, per-plugin grants UI (Settings and plugin detail page), preview labelling, plugin API docs and API surface check, fuzz tests for plugin-supplied schemas | **M** | 2, 5 (plugin loader instrumentation) |
 
-**Rough total:** 7–9 PRs, about 4,000–5,500 LOC including tests. Phases 4 and 5 can run in parallel after Phase 3: they touch disjoint files except the registry, where conflicts are append-only.
+**Rough total:** 8–11 PRs, about 5,000–6,500 LOC including tests. Phases 4 and 5 can run in parallel after Phase 3; they touch disjoint files except the registry, where conflicts are append-only. Phase 8 can start as soon as Phase 5b lands.
+
+**Why OTLP moved from Phase 7 to Phase 1.** It is an exporter swap behind the destination abstraction, adds about 150 KB, and needs no new instrumentation. Building both destinations in Phase 1 keeps the abstraction honest and lets the egress test cover both from the start.
 
 ---
 
@@ -891,14 +1024,27 @@ Sizes: **S** ≈ ≤ 400 LOC, **M** ≈ 400–1,000, **L** ≈ 1,000–1,800, co
 | Histograms give no percentiles in App Insights | Certain | Low | Percentile-critical latencies are spans (§3.2); histograms remain for averages and future OTLP |
 | A long-lived `c.agent.run` span is never exported if the app crashes | Certain | Low | Metrics recorded at edges; unclean-exit event; run duration recomputed at the next exit where possible |
 | Clock skew between renderer and main timestamps | Low | Low | Renderer sends `performance.timeOrigin`-relative times; main converts using an offset measured at IPC handshake |
+| OTLP widens where data goes: wrong or hostile endpoint, leaked header token | Medium | Medium | HTTPS only; explicit destination-confirmation step naming the host; header values in `safeStorage` and masked; egress test; switching destination clears queued data |
+| OTel JS 3.0 / 0.300 (already at RC) breaks the pinned 2.10.0 / 0.221.x train | High (within months) | Medium | Release-train rule (§6.3); hold majors until the Azure exporter supports 3.0; contract test catches payload changes |
+| Community plugin telemetry used to exfiltrate data or flood the user's bill | Medium | High | Enum/int/bool-only manifest schemas, no free strings or IDs, host-side namespacing, rate limits plus auto-pause, per-plugin grants default off, elevated permission shown at install |
+| Install ID makes one install's activity linkable inside a shared resource | Certain (by design) | Low | Random and local, resettable together with the hash salt, documented in the help topic and Settings; content is never sent |
 
-**Open questions for the maintainer:**
+### 10.1 Decisions (maintainer, 2026-10-16)
 
-1. Should the **Errors** level be offered alone, or is a three-way Off/Standard/Detailed simpler?
-2. Should `clubhouse.install.id` → `user_Id` be on by default, or should the default be a per-run ID only? The trade-off is multi-machine dashboards against minimal identifiers.
-3. Should community plugins be able to emit their own telemetry through a permissioned API in a later version, or should the host observe only?
-4. Should OTLP (Phase 7) be shown in the main UI or kept behind Advanced? It widens the "where does my data go" surface.
-5. Should a shared Azure Workbook be published (Phase 7) so every user gets the same dashboards?
+| # | Question | Decision | Where it lands |
+|---|---|---|---|
+| 1 | Separate **Errors** level? | **Yes.** Off / Errors / Standard / Detailed. | §3.3 |
+| 2 | Install ID sent by default? | **Yes.** A random, local, resettable `clubhouse.install.id`, rotated together with the hash salt, with its privacy properties documented. | §5.2, §6.8 |
+| 3 | Community plugin telemetry? | **Yes.** A permissioned `api.telemetry` with a scoped namespace, a declared schema, the same allowlist and redaction, rate limits and per-plugin grants that default to off. | §6.9, Phase 8 |
+| 4 | Where does OTLP go? | **In the main Settings UI** as a Destination choice. App Insights stays the preselected, one-field default. OTLP is HTTP/JSON only, HTTPS only, with headers in `safeStorage` and a destination confirmation. It moves from Phase 7 to Phase 1. | §6.3, §6.8, §9 |
+| 5 | Ship an Azure Monitor Workbook? | **Explained, still optional (Phase 7).** A Workbook is an interactive report saved inside the user's Azure resource: charts and tables driven by KQL queries over their App Insights data. Clubhouse would ship a JSON template the user imports once, for dashboards like startup p95, spawn failures by orchestrator and CLI version, update funnel and persistence recoveries. It needs no code in the app. | §9 Phase 7 |
+| 6 | Coverage goal | **Broad coverage of critical paths, weighted by where regressions actually happened.** | §4.15, §12 |
+
+**Still open:**
+
+1. Workbook: ship it in Phase 7, or leave dashboards to users?
+2. Should a loopback `http://localhost` OTLP collector be allowed later, for local debugging? It is excluded in v1 by the HTTPS-only rule.
+3. Should plugin telemetry grants default to on for plugins from the official registry? The default stays off for all plugins until decided.
 
 ---
 
@@ -921,6 +1067,64 @@ These came out of the code survey and log analysis. They are independent of tele
 | F11 | **`provider.checkAvailability` can block the main thread** for up to 5 s (`execFileSync` login shell `which`), and Codex runs `codex --version` on every spawn | `orchestrators/shared.ts:100`, `codex-cli-provider.ts:279` | `c.provider.check_availability` will show this; worth fixing independently |
 | F12 | `hook-server` logs every hook event at **info**, which is 56% of all log lines | `hook-server.ts:323` | none; suggests demoting it to debug |
 
+## 12. Regression-informed priorities
+
+The coverage map in §4 was built from the code. This section weights it by **where Clubhouse has actually regressed**, so the flows with a track record of breaking get the strongest signals first.
+
+### 12.1 Method
+
+Sources, all from 2026-04-16 to 2026-10-16:
+
+- **Fix commits.** 118 `fix`/`revert` commits on `main`, out of 327 non-merge commits. These include the 2026-10-16 audit fixes [#1902](https://github.com/Agent-Clubhouse/Clubhouse/issues/1902)–[#1913](https://github.com/Agent-Clubhouse/Clubhouse/issues/1913).
+- **Closed issues.** 151 issues closed in the window, about 124 of them labelled `bug` or with a severity. Most come from the 2026-09-03 repo review and the 2026-09-05 CLI parity audit.
+- **Open bugs.** 31.
+
+Each incident was assigned to the code path that failed. Two kinds of item were set aside because runtime telemetry cannot see them (§12.3):
+
+- about 15 visual, accessibility and theme fixes;
+- about 8 CI and release-pipeline fixes.
+
+Two judgements matter when reading the table:
+
+- **"Silent"** means the failure produced no user-visible error and no log at warn or above. These are the cases telemetry exists for, and they are weighted highest.
+- **P0 / P1 / P2** is the priority for instrumentation:
+  - **P0:** must ship in Phases 3–5 at level E or S, with an alert-ready query in the Phase 7 workbook.
+  - **P1:** ships in its normal phase.
+  - **P2:** best effort.
+
+### 12.2 Hot spots
+
+| # | Hot spot (code path) | Incidents | How it failed | Signals that would have caught it (existing → **new in rev 2**) | Priority |
+|---|---|---|---|---|---|
+| H1 | **Persistence and data integrity**: canvas KV, `agents.json`, `projects.json`, plugin KV, settings stores, group-project registry and bulletin | [#1561](https://github.com/Agent-Clubhouse/Clubhouse/issues/1561), [#1548](https://github.com/Agent-Clubhouse/Clubhouse/issues/1548) (reverted in [#1551](https://github.com/Agent-Clubhouse/Clubhouse/issues/1551)), [#1909](https://github.com/Agent-Clubhouse/Clubhouse/issues/1909), [#1907](https://github.com/Agent-Clubhouse/Clubhouse/issues/1907), [#1906](https://github.com/Agent-Clubhouse/Clubhouse/issues/1906), [#1630](https://github.com/Agent-Clubhouse/Clubhouse/issues/1630), [#1644](https://github.com/Agent-Clubhouse/Clubhouse/issues/1644), [#1629](https://github.com/Agent-Clubhouse/Clubhouse/issues/1629), [#1627](https://github.com/Agent-Clubhouse/Clubhouse/issues/1627), [#1628](https://github.com/Agent-Clubhouse/Clubhouse/issues/1628), [#1660](https://github.com/Agent-Clubhouse/Clubhouse/issues/1660), [#1631](https://github.com/Agent-Clubhouse/Clubhouse/issues/1631) (open), [#1645](https://github.com/Agent-Clubhouse/Clubhouse/issues/1645), [#1639](https://github.com/Agent-Clubhouse/Clubhouse/issues/1639), [#1462](https://github.com/Agent-Clubhouse/Clubhouse/issues/1462), [#1659](https://github.com/Agent-Clubhouse/Clubhouse/issues/1659), [#1661](https://github.com/Agent-Clubhouse/Clubhouse/issues/1661) | **Mostly silent data loss.** Examples: autosave over a failed hydration, a good `.bak` overwritten by auto-recovery, non-atomic writes, a flush racing mutations. | `c.canvas.load` result, `c.project.store.recovery` → **`c.persist.writes` {store, result: ok/failed/skipped_guard}, `c.persist.write.duration`, `c.persist.recovery` event {store, action: quarantined/restored_from_backup/backup_corrupt/reset_to_default/backup_overwritten}, `c.persist.guard_blocked` {store, reason: degraded_hydration/verify_empty/barrier}, `c.persist.flush_barrier.wait`** at the shared write points (`createSettingsStore`, `agent-config` flush, `project-store` `writeStore`, `plugin-storage` `writeKey`, group-project registry and bulletin flush, canvas KV) | **P0** |
+| H2 | **Provider CLI drift and structured protocols**: Codex, Copilot, ACP and stream-json | [#1716](https://github.com/Agent-Clubhouse/Clubhouse/issues/1716) (Codex could not launch), [#1714](https://github.com/Agent-Clubhouse/Clubhouse/issues/1714), [#1710](https://github.com/Agent-Clubhouse/Clubhouse/issues/1710), [#1720](https://github.com/Agent-Clubhouse/Clubhouse/issues/1720) (7 of 9 server requests dropped, turns hang), [#1729](https://github.com/Agent-Clubhouse/Clubhouse/issues/1729), [#1911](https://github.com/Agent-Clubhouse/Clubhouse/issues/1911) (wire formats), [#1717](https://github.com/Agent-Clubhouse/Clubhouse/issues/1717), [#1725](https://github.com/Agent-Clubhouse/Clubhouse/issues/1725), [#1726](https://github.com/Agent-Clubhouse/Clubhouse/issues/1726), [#1727](https://github.com/Agent-Clubhouse/Clubhouse/issues/1727), [#1733](https://github.com/Agent-Clubhouse/Clubhouse/issues/1733), [#1732](https://github.com/Agent-Clubhouse/Clubhouse/issues/1732), [#1426](https://github.com/Agent-Clubhouse/Clubhouse/issues/1426), [#1718](https://github.com/Agent-Clubhouse/Clubhouse/issues/1718) (open), [#1728](https://github.com/Agent-Clubhouse/Clubhouse/issues/1728) (open), [#1719](https://github.com/Agent-Clubhouse/Clubhouse/issues/1719) (open), [#1531](https://github.com/Agent-Clubhouse/Clubhouse/issues/1531) (open) | Upstream CLI releases changed flags, wire formats and storage paths. Failures showed as hangs, empty lists or immediate exits. | `c.agent.spawn` errors, `early_failure` exit class, `c.agent.turn` end reason → **`c.provider.cli_version` (major.minor, captured in `check_availability`) on spawn spans and the `c.agent.spawns` / `c.agent.exit` metrics, so a spike lines up with an upstream release; `c.structured.protocol.unknown` {adapter, kind: request/notification/field, method from an allowlist or `unknown`}; `c.agent.turn.stalled` (a watchdog fires when a turn has no event for 5 min); `c.agent.hooks.silent_run` (a run over 60 s with hooks configured but zero hook events); `c.provider.list_sessions` span {result-count and dirs-scanned buckets}; `c.pty.inject` span {kind: shoulder_tap/polling/mcp_wake/mission, result: submitted/unconfirmed/failed}** | **P0** |
+| H3 | **Hooks and permissions** | [#1427](https://github.com/Agent-Clubhouse/Clubhouse/issues/1427) (permission timeout race), [#1558](https://github.com/Agent-Clubhouse/Clubhouse/issues/1558), [#1518](https://github.com/Agent-Clubhouse/Clubhouse/issues/1518), [#1721](https://github.com/Agent-Clubhouse/Clubhouse/issues/1721), [#5](https://github.com/Agent-Clubhouse/Clubhouse/issues/5) | A permission was never surfaced or timed out unseen; hooks were left behind after a stop. | `c.agent.permission` result and wait, `c.agent.permission.stuck` → **`c.permission.prompt_shown` bool on the permission span; `c.hooks.teardown` span {orchestrator, result}** | **P0** |
+| H4 | **Terminal and PTY**: xterm rendering, input, replay | [#1910](https://github.com/Agent-Clubhouse/Clubhouse/issues/1910), [#1393](https://github.com/Agent-Clubhouse/Clubhouse/issues/1393) ("can scroll but can't type"), [#1413](https://github.com/Agent-Clubhouse/Clubhouse/issues/1413), [#1389](https://github.com/Agent-Clubhouse/Clubhouse/issues/1389), [#1528](https://github.com/Agent-Clubhouse/Clubhouse/issues/1528) (macOS PTY worker starvation), [#1490](https://github.com/Agent-Clubhouse/Clubhouse/issues/1490), [#1503](https://github.com/Agent-Clubhouse/Clubhouse/issues/1503), [#1390](https://github.com/Agent-Clubhouse/Clubhouse/issues/1390), [#936](https://github.com/Agent-Clubhouse/Clubhouse/issues/936), [#1634](https://github.com/Agent-Clubhouse/Clubhouse/issues/1634), [#310](https://github.com/Agent-Clubhouse/Clubhouse/issues/310) (open) | Output was duplicated or garbled, input was lost, focus wedged. The PTY was healthy but the UI was not. | `c.pty.spawn` errors, time to shell ready, event-loop delay (§4.15), long frames in the `terminal` view → **`c.pty.write.dropped` (oversized writes), `c.terminal.focus_recovered` (the [#1393](https://github.com/Agent-Clubhouse/Clubhouse/issues/1393) recovery path firing), `c.terminal.replay` event {bytes bucket, dedup_trimmed}** | **P1** |
+| H5 | **Plugin loading, activation and marketplace** | [#1499](https://github.com/Agent-Clubhouse/Clubhouse/issues/1499) → [#1520](https://github.com/Agent-Clubhouse/Clubhouse/issues/1520) → [#1522](https://github.com/Agent-Clubhouse/Clubhouse/issues/1522) → [#1527](https://github.com/Agent-Clubhouse/Clubhouse/issues/1527) (a four-PR regression chain), [#1554](https://github.com/Agent-Clubhouse/Clubhouse/issues/1554) (stuck activation), [#1832](https://github.com/Agent-Clubhouse/Clubhouse/issues/1832) (Monaco hang with a theme plugin), [#1903](https://github.com/Agent-Clubhouse/Clubhouse/issues/1903), [#1902](https://github.com/Agent-Clubhouse/Clubhouse/issues/1902) (failed install deleted existing plugins), [#1674](https://github.com/Agent-Clubhouse/Clubhouse/issues/1674), [#1654](https://github.com/Agent-Clubhouse/Clubhouse/issues/1654), [#1679](https://github.com/Agent-Clubhouse/Clubhouse/issues/1679) (open), [#1453](https://github.com/Agent-Clubhouse/Clubhouse/issues/1453) (open), [#1682](https://github.com/Agent-Clubhouse/Clubhouse/issues/1682) (open) | Plugins failed to import (multi-file, JS main, `./` paths), spun forever, or broke unrelated views. | `c.plugin.activate` errors, `c.plugin.protocol.requests`, `c.plugin.install` failure stage → **`c.plugin.module_load` result by `c.plugin.module_kind` (single_file/multi_file/js_main/ts_main); `c.plugin.activation.recovered`; `c.editor.monaco_load` span {result ok/timeout, `c.theme.kind`}; `c.plugin.install` result `rolled_back`; `c.plugin.command.duplicate_registration` counter** | **P0** |
+| H6 | **Auto-update and install** (runtime only) | [#1904](https://github.com/Agent-Clubhouse/Clubhouse/issues/1904) (macOS scripts, interrupted downloads), [#1591](https://github.com/Agent-Clubhouse/Clubhouse/issues/1591) (apply-on-quit fire-and-forget), [#1692](https://github.com/Agent-Clubhouse/Clubhouse/issues/1692) (apply marker cleared before spawn), [#1647](https://github.com/Agent-Clubhouse/Clubhouse/issues/1647) (rpm has no update path), [#1650](https://github.com/Agent-Clubhouse/Clubhouse/issues/1650), [#1698](https://github.com/Agent-Clubhouse/Clubhouse/issues/1698), [#1667](https://github.com/Agent-Clubhouse/Clubhouse/issues/1667), [#1590](https://github.com/Agent-Clubhouse/Clubhouse/issues/1590), [#1849](https://github.com/Agent-Clubhouse/Clubhouse/issues/1849) (open), [#1421](https://github.com/Agent-Clubhouse/Clubhouse/issues/1421) (open) | Updates silently did not apply, or applied on some install kinds only. | `c.update.*` spans → **`c.install.kind` resource attribute (`mac_zip`/`squirrel`/`deb`/`rpm`/`appimage`/`dev`); `c.update.download` result `resumed_after_interrupt`; `c.update.apply.verified` event at the next startup (the running version equals the version that was applied, else `apply_not_taken`). This catches silent failed applies on every OS, independent of the marker bug F5. Also: awaited `c.update.apply_on_quit` result.** | **P0** |
+| H7 | **Agent lifecycle, identity and config** | [#1913](https://github.com/Agent-Clubhouse/Clubhouse/issues/1913) (durable IDs colliding across projects), [#1519](https://github.com/Agent-Clubhouse/Clubhouse/issues/1519) (status not reconciled on reopen), [#1489](https://github.com/Agent-Clubhouse/Clubhouse/issues/1489), [#1459](https://github.com/Agent-Clubhouse/Clubhouse/issues/1459) (quick-agent timer race), [#1400](https://github.com/Agent-Clubhouse/Clubhouse/issues/1400), [#1562](https://github.com/Agent-Clubhouse/Clubhouse/issues/1562) (model setting reverts), [#1567](https://github.com/Agent-Clubhouse/Clubhouse/issues/1567) (New Agent silently fails with Free Agent Mode), [#1516](https://github.com/Agent-Clubhouse/Clubhouse/issues/1516) (group-project creation silently fails), [#1641](https://github.com/Agent-Clubhouse/Clubhouse/issues/1641), [#1640](https://github.com/Agent-Clubhouse/Clubhouse/issues/1640), [#1707](https://github.com/Agent-Clubhouse/Clubhouse/issues/1707), [#1646](https://github.com/Agent-Clubhouse/Clubhouse/issues/1646) (open), [#1706](https://github.com/Agent-Clubhouse/Clubhouse/issues/1706) (open) | **Often silent:** errors swallowed in the renderer, or state drifting from reality. | `c.agent.create` / `c.agent.spawn` → **`c.agent_config.id_collision_repaired` event; `c.agent.status_reconciled` counter {from, to}; `c.ui.action_failed` event {action from an enum: `agent_create`/`group_project_create`/`blueprint_import`/…, error.type} emitted from renderer catch sites that today only toast or swallow; `c.agent.name_collision` counter** | **P0** |
+| H8 | **Group projects, bulletin and MCP delivery** | [#1830](https://github.com/Agent-Clubhouse/Clubhouse/issues/1830) (open: messages discarded while reporting success), [#1643](https://github.com/Agent-Clubhouse/Clubhouse/issues/1643), [#1555](https://github.com/Agent-Clubhouse/Clubhouse/issues/1555), [#1557](https://github.com/Agent-Clubhouse/Clubhouse/issues/1557), [#1549](https://github.com/Agent-Clubhouse/Clubhouse/issues/1549), [#1385](https://github.com/Agent-Clubhouse/Clubhouse/issues/1385) (duplicate loop injection), [#1680](https://github.com/Agent-Clubhouse/Clubhouse/issues/1680), [#1544](https://github.com/Agent-Clubhouse/Clubhouse/issues/1544) (open: MCP tool list empty until canvas renders), [#1730](https://github.com/Agent-Clubhouse/Clubhouse/issues/1730), [#1722](https://github.com/Agent-Clubhouse/Clubhouse/issues/1722), [#1673](https://github.com/Agent-Clubhouse/Clubhouse/issues/1673), [#1455](https://github.com/Agent-Clubhouse/Clubhouse/issues/1455) | Messages lost silently, MCP servers not delivered to Codex/Copilot, tools missing. | `c.mcp.tool_call`, `c.group.shoulder_tap` → **`c.bulletin.post` result {ok, evicted_topic, evicted_message}; `c.group.membership_sync` attribute `duplicate_injection_prevented`; `c.mcp.tools_list` event {tool-count bucket, empty}; `c.mcp.inject` attributes `c.mcp.delivery` (`config_file`/`launch_flag`) and result by orchestrator** | **P1** (`c.bulletin.post` is P0 while [#1830](https://github.com/Agent-Clubhouse/Clubhouse/issues/1830) is open) |
+| H9 | **Annex** | [#1580](https://github.com/Agent-Clubhouse/Clubhouse/issues/1580) (IPv6 literals), [#1663](https://github.com/Agent-Clubhouse/Clubhouse/issues/1663) ("safe" permission granted full control), [#1632](https://github.com/Agent-Clubhouse/Clubhouse/issues/1632) (silent identity regeneration broke pairing), [#1613](https://github.com/Agent-Clubhouse/Clubhouse/issues/1613) (protocolVersion never checked), [#1609](https://github.com/Agent-Clubhouse/Clubhouse/issues/1609), [#1449](https://github.com/Agent-Clubhouse/Clubhouse/issues/1449), [#938](https://github.com/Agent-Clubhouse/Clubhouse/issues/938), [#1686](https://github.com/Agent-Clubhouse/Clubhouse/issues/1686), [#1685](https://github.com/Agent-Clubhouse/Clubhouse/issues/1685), [#1406](https://github.com/Agent-Clubhouse/Clubhouse/issues/1406) | Pairing broke silently after identity regeneration; some address families failed. | `c.annex.connect` errors (`cert_mismatch`, `protocol_incompatible`), `c.annex.pair` result → **`c.net.addr_family` (`ipv4`/`ipv6`) on discover and connect; `c.annex.identity.regenerated` (E-level event); `c.annex.control.denied` counter by permission scope** | **P1** |
+| H10 | **Canvas interaction, popouts and blueprints** | [#1458](https://github.com/Agent-Clubhouse/Clubhouse/issues/1458) / [#1475](https://github.com/Agent-Clubhouse/Clubhouse/issues/1475) (popout IPC channel), [#1563](https://github.com/Agent-Clubhouse/Clubhouse/issues/1563) / [#1566](https://github.com/Agent-Clubhouse/Clubhouse/issues/1566) (blueprint import into the wrong scope), [#1569](https://github.com/Agent-Clubhouse/Clubhouse/issues/1569), [#1538](https://github.com/Agent-Clubhouse/Clubhouse/issues/1538), [#1545](https://github.com/Agent-Clubhouse/Clubhouse/issues/1545), [#1543](https://github.com/Agent-Clubhouse/Clubhouse/issues/1543), [#1693](https://github.com/Agent-Clubhouse/Clubhouse/issues/1693), [#1694](https://github.com/Agent-Clubhouse/Clubhouse/issues/1694), [#1460](https://github.com/Agent-Clubhouse/Clubhouse/issues/1460) (open), [#1454](https://github.com/Agent-Clubhouse/Clubhouse/issues/1454) (open) | Mostly UI behaviour; some silent no-ops. | `c.window.relay.timeouts`, `c.canvas.command` result, long frames in the `canvas` view → **`c.canvas.scope` (`app`/`project`) on `c.canvas.command` and blueprint import; `c.ui.action_failed` for canvas actions** | **P2** |
+| H11 | **Editor and files** | [#1908](https://github.com/Agent-Clubhouse/Clubhouse/issues/1908) (drafts lost on failed saves or stale reads), [#1905](https://github.com/Agent-Clubhouse/Clubhouse/issues/1905) (file watches not scoped per window; UTF-8 split across chunks), [#1493](https://github.com/Agent-Clubhouse/Clubhouse/issues/1493), [#1697](https://github.com/Agent-Clubhouse/Clubhouse/issues/1697) (duplicate watchers), [#1451](https://github.com/Agent-Clubhouse/Clubhouse/issues/1451) | **Silent loss of edits**; resource leaks. | `c.file.save` errors, `c.file_watch.active` → **`c.file.save` result `stale_conflict` / `draft_preserved`; `c.file_watch.active` split by `c.window.kind`; `c.editor.monaco_load` (shared with H5)** | **P0** for save, P1 otherwise |
+| H12 | **Goobers panel** (experimental) | [#1888](https://github.com/Agent-Clubhouse/Clubhouse/issues/1888), [#1881](https://github.com/Agent-Clubhouse/Clubhouse/issues/1881), [#1880](https://github.com/Agent-Clubhouse/Clubhouse/issues/1880), [#1876](https://github.com/Agent-Clubhouse/Clubhouse/issues/1876), [#1890](https://github.com/Agent-Clubhouse/Clubhouse/issues/1890), [#1879](https://github.com/Agent-Clubhouse/Clubhouse/issues/1879), [#1874](https://github.com/Agent-Clubhouse/Clubhouse/issues/1874), [#1894](https://github.com/Agent-Clubhouse/Clubhouse/issues/1894) (a 2026-09-19/20 burst) | Stale data presented as live; the SSE stream never went live. | `c.goobers.sse.connect`, liveness transitions → **`c.goobers.data.age` (observable gauge, s since the last fresh payload per stream); `c.goobers.stream.mode` events (`live`/`polling`)** | **P2** |
+| H13 | **Electron upgrade fallout** | [#1586](https://github.com/Agent-Clubhouse/Clubhouse/issues/1586) (Electron 43: relocator renderer crash, node-pty `spawn-helper` permissions), [#1688](https://github.com/Agent-Clubhouse/Clubhouse/issues/1688), [#1681](https://github.com/Agent-Clubhouse/Clubhouse/issues/1681) (security fuses removed) | Crashes and spawn failures right after an upgrade. | `c.renderer.gone`, `c.pty.spawn` / `c.shell.spawn` errors, with `clubhouse.electron.version` on the resource → **`error.type=spawn_helper_not_executable`**. Fuse state is a build property: a CI check, not telemetry. | **P1** |
+
+### 12.3 Regressions telemetry cannot catch (left to CI and E2E)
+
+- **Release and signing pipeline:** [#1836](https://github.com/Agent-Clubhouse/Clubhouse/issues/1836), [#1838](https://github.com/Agent-Clubhouse/Clubhouse/issues/1838), [#1846](https://github.com/Agent-Clubhouse/Clubhouse/issues/1846) (Windows Squirrel signing), [#1895](https://github.com/Agent-Clubhouse/Clubhouse/issues/1895) (unsealed ad-hoc macOS bundle), [#1589](https://github.com/Agent-Clubhouse/Clubhouse/issues/1589), [#1670](https://github.com/Agent-Clubhouse/Clubhouse/issues/1670). These fail before a build reaches users.
+- **Visual, layout, theme and accessibility:** for example [#1480](https://github.com/Agent-Clubhouse/Clubhouse/issues/1480), [#1471](https://github.com/Agent-Clubhouse/Clubhouse/issues/1471) (open), [#1454](https://github.com/Agent-Clubhouse/Clubhouse/issues/1454) (open), the z-index and focus-ring sweeps ([#1433](https://github.com/Agent-Clubhouse/Clubhouse/issues/1433), [#1470](https://github.com/Agent-Clubhouse/Clubhouse/issues/1470), [#1477](https://github.com/Agent-Clubhouse/Clubhouse/issues/1477)), and theme token migrations. Telemetry sees that a view rendered, not how it looked.
+- **Test-suite flakes:** [#1894](https://github.com/Agent-Clubhouse/Clubhouse/issues/1894), [#1407](https://github.com/Agent-Clubhouse/Clubhouse/issues/1407), [#1469](https://github.com/Agent-Clubhouse/Clubhouse/issues/1469), [#1550](https://github.com/Agent-Clubhouse/Clubhouse/issues/1550).
+
+### 12.4 What changes in the plan
+
+- **P0 flows** are H1, H2, H3, H5, H6, H7, the H11 save path, and `c.bulletin.post` from H8.
+  - Their new signals are tagged E or S, never D.
+  - They are listed in Phases 3–5 (§9).
+  - Each gets an alert-ready query in the Phase 7 workbook. Examples: a persistence `recovery` or `guard_blocked` event, `apply_not_taken`, spawn `early_failure` grouped by `c.provider.cli_version`, and `c.agent.hooks.silent_run`.
+- **Cross-cutting rule from H1, H7 and H11.** Any `catch` that swallows an error or turns it into a toast **must** emit either `c.ui.action_failed` (renderer) or an exception record (main) once telemetry lands. A lint rule enforces it in `src/renderer/features/**` and `src/main/services/**`: a `catch` block must contain a `tel.` call or an `// telemetry-exempt: <reason>` comment. This rule is in Phase 3. It is the single change most likely to have caught [#1567](https://github.com/Agent-Clubhouse/Clubhouse/issues/1567), [#1516](https://github.com/Agent-Clubhouse/Clubhouse/issues/1516), [#1641](https://github.com/Agent-Clubhouse/Clubhouse/issues/1641) and [#1908](https://github.com/Agent-Clubhouse/Clubhouse/issues/1908) early.
+- **Version attributes for drift.** `c.provider.cli_version`, `clubhouse.electron.version` and `c.install.kind` make "it broke after X upgraded" a query rather than an investigation. Across H2, H6 and H13 that pattern accounts for about 30 incidents.
+
 ---
 
 ## Appendix A: Span and metric name index
@@ -940,6 +1144,10 @@ These came out of the code survey and log analysis. They are independent of tele
 | Goobers | `c.goobers.activate`ᴿ, `c.goobers.daemon.start`ᴿ, `c.goobers.daemon.stop`ᴿ, `c.goobers.sse.connect`ᴿ |
 | IPC | `c.ipc.<channel>` (D) |
 
+**Spans added in revision 2:** `c.shell.spawn`ᴿ, `c.provider.list_sessions`, `c.pty.inject`, `c.hooks.teardown`, `c.editor.monaco_load`, plugin spans `clubhouse.plugin.<name>`ᴿ.
+
+**Events added in revision 2:** `c.process.eventloop.blocked`, `c.persist.recovery`, `c.persist.guard_blocked`, `c.agent.turn.stalled`, `c.agent.hooks.silent_run`, `c.agent_config.id_collision_repaired`, `c.ui.action_failed`, `c.update.apply.verified`, `c.terminal.replay`, `c.mcp.tools_list`, `c.annex.identity.regenerated`, `c.goobers.stream.mode`, plugin events `clubhouse.plugin.<name>`.
+
 **Metrics:**
 
 | Area | Metrics |
@@ -953,7 +1161,10 @@ These came out of the code survey and log analysis. They are independent of tele
 | Plugins / canvas | `c.plugin.permission_violation`, `c.plugin.api_calls`, `c.plugin.protocol.requests`, `c.canvas.save.duration`, `c.canvas.saves`, `c.canvas.views` |
 | Annex | `c.annex.reconnects`, `c.annex.reconnect.delay`, `c.annex.disconnects`, `c.annex.heartbeat.rtt`, `c.annex.events`, `c.annex.events.bytes`, `c.annex.send_failures`, `c.annex.clients` |
 | Goobers | `c.goobers.polls`, `c.goobers.poll.skipped`, `c.goobers.poll.duration` |
-| Telemetry | `c.telemetry.dropped` |
+| Telemetry | `c.telemetry.dropped`, `c.telemetry.export.failures`, `c.telemetry.offline.items` |
+| Process health (rev 2) | `c.process.eventloop.delay.p99`, `c.process.eventloop.delay.max`, `c.process.memory`, `c.process.cpu`, `c.renderer.long_frames`, `c.renderer.long_frame.duration` |
+| Regression signals (rev 2) | `c.persist.writes`, `c.persist.write.duration`, `c.persist.flush_barrier.wait`, `c.structured.protocol.unknown`, `c.agent.status_reconciled`, `c.agent.name_collision`, `c.pty.write.dropped`, `c.terminal.focus_recovered`, `c.plugin.module_load`, `c.plugin.activation.recovered`, `c.plugin.command.duplicate_registration`, `c.bulletin.post`, `c.annex.control.denied`, `c.goobers.data.age` |
+| Plugin telemetry (rev 2) | `c.plugin.telemetry.rejected`, `c.plugin.telemetry.throttled`, plugin metrics `clubhouse.plugin.<name>` |
 
 ## Appendix B: App Insights table mapping
 
