@@ -43,12 +43,6 @@ vi.mock('./PopoutAgentView', () => ({
   ),
 }));
 
-vi.mock('./PopoutHubView', () => ({
-  PopoutHubView: ({ hubId }: { hubId?: string }) => (
-    <div data-testid="popout-hub-view">{hubId}</div>
-  ),
-}));
-
 describe('PopoutWindow', () => {
   let getAgentStateMock: ReturnType<typeof vi.fn>;
 
@@ -68,8 +62,8 @@ describe('PopoutWindow', () => {
     window.clubhouse.window.getAgentState = getAgentStateMock;
     window.clubhouse.window.onAgentStateChanged = vi.fn().mockReturnValue(noop);
     window.clubhouse.window.getPopoutParams = vi.fn().mockReturnValue({
-      type: 'hub',
-      hubId: 'hub-1',
+      type: 'agent',
+      agentId: 'a1',
       projectId: 'proj-1',
     });
   });
@@ -109,12 +103,12 @@ describe('PopoutWindow', () => {
     expect(window.clubhouse.pty.onExit).toHaveBeenCalled();
   });
 
-  it('renders hub view after state sync completes', async () => {
+  it('shows an unsupported message for the removed hub pop-out type', async () => {
+    window.clubhouse.window.getPopoutParams = vi.fn().mockReturnValue({ type: 'hub', projectId: 'proj-1' });
     render(<PopoutWindow />);
     await waitFor(() => {
-      expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
+      expect(screen.getByText('Unsupported pop-out type')).toBeInTheDocument();
     });
-    expect(screen.getByText('hub-1')).toBeInTheDocument();
   });
 
   it('renders agent view when type is agent', async () => {
@@ -142,7 +136,7 @@ describe('PopoutWindow', () => {
 
     render(<PopoutWindow />);
     await waitFor(() => {
-      expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
+      expect(screen.getByTestId('popout-agent-view')).toBeInTheDocument();
     });
   });
 
@@ -160,7 +154,7 @@ describe('PopoutWindow', () => {
 
     render(<PopoutWindow />);
     await waitFor(() => {
-      expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
+      expect(screen.getByTestId('popout-agent-view')).toBeInTheDocument();
     });
 
     mockSetState.mockClear();
@@ -191,7 +185,7 @@ describe('PopoutWindow', () => {
 
     render(<PopoutWindow />);
     await waitFor(() => {
-      expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
+      expect(screen.getByTestId('popout-agent-view')).toBeInTheDocument();
     });
 
     mockSetState.mockClear();
@@ -228,7 +222,7 @@ describe('PopoutWindow', () => {
 
     render(<PopoutWindow />);
     await waitFor(() => {
-      expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
+      expect(screen.getByTestId('popout-agent-view')).toBeInTheDocument();
     });
 
     // Simulate PTY data arriving for the sleeping agent
@@ -264,7 +258,7 @@ describe('PopoutWindow', () => {
 
     render(<PopoutWindow />);
     await waitFor(() => {
-      expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
+      expect(screen.getByTestId('popout-agent-view')).toBeInTheDocument();
     });
 
     mockSetState.mockClear();
@@ -299,7 +293,7 @@ describe('PopoutWindow', () => {
 
     render(<PopoutWindow />);
     await waitFor(() => {
-      expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
+      expect(screen.getByTestId('popout-agent-view')).toBeInTheDocument();
     });
 
     // First data event → transitions

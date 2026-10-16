@@ -352,7 +352,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
     if (!current || current.generation !== expectedGeneration) return;
     // Shell emitted data while a command is pending — it's ready for input.
     // Fire the command immediately so agents start without waiting for a
-    // terminal UI resize (which only happens when the hub pane is visible).
+    // terminal UI resize (which only happens when the terminal is visible).
     if (flushPendingCommand(current)) {
       return; // suppress shell startup output
     }

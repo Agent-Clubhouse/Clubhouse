@@ -82,10 +82,8 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
   // Memoize the API so downstream plugins receive a stable reference.
   // Without this, every parent re-render creates a new api object, which causes
   // plugin effects that depend on api-derived values (like storage) to re-fire.
-  // This was the root cause of the Hub losing pane assignments on sleeping-agent resume:
-  // spawnDurableAgent updated the agent store → MainContentView re-rendered →
-  // PluginContentView created a new api → Hub's loadHub effect re-ran with the new
-  // storage ref → reloaded the old pane tree from disk before the debounced save.
+  // (e.g. a storage-backed load effect re-running and reloading stale state from
+  // disk before a debounced save lands).
   const api = useMemo(
     () => ctx ? createPluginAPI(ctx, mode, entry?.manifest) : null,
     [ctx, mode],

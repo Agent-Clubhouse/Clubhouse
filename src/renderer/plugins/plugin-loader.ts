@@ -12,6 +12,7 @@ import { rendererLog } from './renderer-logger';
 import { dynamicImportModule } from './dynamic-import';
 import { buildPluginModuleUrl } from '../../shared/plugin-protocol-url';
 import { registerTheme, unregisterTheme } from '../themes';
+import { stripRetiredPluginIds } from './retired-plugins';
 
 const activeContexts = new Map<string, PluginContext>();
 
@@ -353,10 +354,24 @@ export async function initializePluginSystem(): Promise<void> {
         key: 'app-enabled',
       }) as string[] | undefined;
       if (Array.isArray(appConfig)) {
+        // Drop removed built-ins (e.g. the Hub) so they don't linger as dead IDs.
+        const { ids: persisted, changed } = stripRetiredPluginIds(
+          appConfig,
+          (id) => id in usePluginStore.getState().plugins,
+        );
         // Merge: persisted list + any auto-enabled builtins not already present
         const currentAppEnabled = usePluginStore.getState().appEnabled;
-        const merged = [...new Set([...appConfig, ...currentAppEnabled])];
+        const merged = [...new Set([...persisted, ...currentAppEnabled])];
         store.loadAppPluginConfig(merged);
+        if (changed) {
+          await window.clubhouse.plugin.storageWrite({
+            pluginId: '_system',
+            scope: 'global',
+            key: 'app-enabled',
+            value: usePluginStore.getState().appEnabled,
+          });
+          rendererLog('core:plugins', 'info', 'Removed retired built-in plugins from app-enabled list');
+        }
       }
     } catch {
       // No saved config — auto-enabled builtins remain

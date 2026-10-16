@@ -141,14 +141,14 @@ describe('uiStore', () => {
     });
 
     it('setExplorerTab saves plugin tabs to projectExplorerTab', () => {
-      getState().setExplorerTab('plugin:hub', 'proj-1');
-      expect(getState().projectExplorerTab['proj-1']).toBe('plugin:hub');
+      getState().setExplorerTab('plugin:files', 'proj-1');
+      expect(getState().projectExplorerTab['proj-1']).toBe('plugin:files');
     });
 
     it('restoreProjectView restores saved tab', () => {
-      useUIStore.setState({ projectExplorerTab: { 'proj-1': 'plugin:hub' } });
+      useUIStore.setState({ projectExplorerTab: { 'proj-1': 'plugin:files' } });
       getState().restoreProjectView('proj-1');
-      expect(getState().explorerTab).toBe('plugin:hub');
+      expect(getState().explorerTab).toBe('plugin:files');
     });
 
     it('restoreProjectView defaults to agents when no saved tab', () => {
@@ -157,11 +157,25 @@ describe('uiStore', () => {
       expect(getState().explorerTab).toBe('agents');
     });
 
+    it('setExplorerTab redirects the removed Hub tab to agents', () => {
+      getState().setExplorerTab('plugin:hub', 'proj-1');
+      expect(getState().explorerTab).toBe('agents');
+      expect(getState().projectExplorerTab['proj-1']).toBe('agents');
+      getState().setExplorerTab('plugin:app:hub');
+      expect(getState().explorerTab).toBe('agents');
+    });
+
+    it('restoreProjectView lands on agents when the saved tab was the removed Hub', () => {
+      useUIStore.setState({ explorerTab: 'settings', projectExplorerTab: { 'proj-1': 'plugin:hub' } });
+      getState().restoreProjectView('proj-1');
+      expect(getState().explorerTab).toBe('agents');
+    });
+
     it('different projects maintain independent tabs', () => {
       getState().setExplorerTab('agents', 'proj-1');
-      getState().setExplorerTab('plugin:hub', 'proj-2');
+      getState().setExplorerTab('plugin:files', 'proj-2');
       expect(getState().projectExplorerTab['proj-1']).toBe('agents');
-      expect(getState().projectExplorerTab['proj-2']).toBe('plugin:hub');
+      expect(getState().projectExplorerTab['proj-2']).toBe('plugin:files');
     });
   });
 
@@ -176,9 +190,9 @@ describe('uiStore', () => {
     });
 
     it('preserves previous tab when coming from a plugin tab', () => {
-      useUIStore.setState({ explorerTab: 'plugin:hub' });
+      useUIStore.setState({ explorerTab: 'plugin:files' });
       getState().openAbout();
-      expect(getState().previousExplorerTab).toBe('plugin:hub');
+      expect(getState().previousExplorerTab).toBe('plugin:files');
       expect(getState().settingsSubPage).toBe('about');
     });
   });

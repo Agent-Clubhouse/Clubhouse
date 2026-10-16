@@ -34,10 +34,6 @@ function useNavigateToProject() {
     toProject: (projectId: string) => {
       setActiveProject(projectId);
     },
-    toHub: (projectId: string) => {
-      setActiveProject(projectId);
-      setExplorerTab('plugin:hub', projectId);
-    },
     toSettings: (projectId: string) => {
       setActiveProject(projectId);
       setExplorerTab('settings');
@@ -348,18 +344,6 @@ function ProjectCard({ project }: { project: Project }) {
 
         {/* Action buttons */}
         <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-          <button
-            onClick={() => navigate.toHub(project.id)}
-            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"
-            title="Open Hub"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="7" height="7" rx="1" />
-              <rect x="14" y="3" width="7" height="7" rx="1" />
-              <rect x="3" y="14" width="7" height="7" rx="1" />
-              <rect x="14" y="14" width="7" height="7" rx="1" />
-            </svg>
-          </button>
           <button
             onClick={() => navigate.toSettings(project.id)}
             className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"

@@ -161,7 +161,7 @@ describe('window-handlers', () => {
 
   it('CLOSE_POPOUT closes a window', async () => {
     const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
-    const windowId = await createHandler({}, { type: 'hub' });
+    const windowId = await createHandler({}, { type: 'canvas' });
 
     const closeHandler = handlers.get(IPC.WINDOW.CLOSE_POPOUT)!;
     await closeHandler({}, windowId);
@@ -331,80 +331,6 @@ describe('window-handlers', () => {
     }
   });
 
-  // ── Hub state: caching ──────────────────────────────────────────────
-
-  it('GET_HUB_STATE serves from cache after HUB_STATE_CHANGED broadcast', async () => {
-    const mainWin = new (BrowserWindow as any)({});
-    const cachedHub = {
-      hubId: 'hub-1',
-      paneTree: { id: 'root', type: 'leaf' },
-      focusedPaneId: 'root',
-      zoomedPaneId: null,
-    };
-
-    // Simulate main renderer broadcasting hub state
-    const broadcastHandler = findOnHandler(IPC.WINDOW.HUB_STATE_CHANGED);
-    broadcastHandler!({}, cachedHub);
-
-    // Now GET_HUB_STATE should return cached state instantly
-    const handler = handlers.get(IPC.WINDOW.GET_HUB_STATE)!;
-    const result = await handler({}, 'hub-1', 'global');
-    expect(result).toEqual(cachedHub);
-
-    // Should NOT have sent REQUEST_HUB_STATE (served from cache)
-    expect(mainWin.webContents.send).not.toHaveBeenCalledWith(
-      IPC.WINDOW.REQUEST_HUB_STATE,
-      expect.any(String),
-      expect.any(String),
-      expect.any(String),
-    );
-  });
-
-  it('GET_HUB_STATE falls back to relay when cache misses', async () => {
-    const mainWin = new (BrowserWindow as any)({});
-    const handler = handlers.get(IPC.WINDOW.GET_HUB_STATE)!;
-
-    const statePromise = handler({}, 'hub-1', 'global');
-
-    // Should have sent a relay request
-    expect(mainWin.webContents.send).toHaveBeenCalledWith(
-      IPC.WINDOW.REQUEST_HUB_STATE,
-      expect.any(String),
-      'hub-1',
-      'global',
-      undefined,
-    );
-
-    // Respond to the relay
-    const requestId = mainWin.webContents.send.mock.calls[0][1];
-    const mockHub = {
-      hubId: 'hub-1',
-      paneTree: { id: 'root' },
-      focusedPaneId: 'root',
-      zoomedPaneId: null,
-    };
-    const responseHandler = findOnHandler(IPC.WINDOW.HUB_STATE_RESPONSE);
-    responseHandler!({}, requestId, mockHub);
-
-    const result = await statePromise;
-    expect(result).toEqual(mockHub);
-  });
-
-  it('GET_HUB_STATE times out after 1.5s (reduced from 5s)', async () => {
-    vi.useFakeTimers();
-    new (BrowserWindow as any)({});
-    const handler = handlers.get(IPC.WINDOW.GET_HUB_STATE)!;
-
-    const statePromise = handler({}, 'hub-1', 'global');
-
-    vi.advanceTimersByTime(1500);
-
-    const result = await statePromise;
-    expect(result).toBeNull();
-
-    vi.useRealTimers();
-  });
-
   it('LIST_POPOUTS cleans up destroyed windows', async () => {
     const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
     await createHandler({}, { type: 'agent', agentId: 'a1' });
@@ -461,37 +387,6 @@ describe('window-handlers', () => {
     expect(typeof removeListenerCalls[0][1]).toBe('function');
   });
 
-  // ── Hub state: broadcast forwarding ─────────────────────────────────
-
-  it('HUB_STATE_CHANGED is forwarded to all popout windows', async () => {
-    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
-    await createHandler({}, { type: 'hub', hubId: 'hub-1' });
-    await createHandler({}, { type: 'hub', hubId: 'hub-1' });
-
-    const popoutWindows = BrowserWindow.getAllWindows();
-
-    const hubState = {
-      hubId: 'hub-1',
-      paneTree: { id: 'root' },
-      focusedPaneId: 'root',
-      zoomedPaneId: null,
-    };
-
-    const broadcastHandler = findOnHandler(IPC.WINDOW.HUB_STATE_CHANGED);
-    broadcastHandler!({}, hubState);
-
-    for (const win of popoutWindows) {
-      expect((win as any).webContents.send).toHaveBeenCalledWith(
-        IPC.WINDOW.HUB_STATE_CHANGED,
-        hubState,
-      );
-    }
-  });
-
-  // ── Hub mutation forwarding ──────────────────────────────────────────
-
-  // --- Input validation ---
-
   it('rejects non-object params for CREATE_POPOUT', () => {
     const handler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
     expect(() => handler({}, 'not-object')).toThrow('must be an object');
@@ -499,7 +394,12 @@ describe('window-handlers', () => {
 
   it('rejects invalid type for CREATE_POPOUT', () => {
     const handler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
-    expect(() => handler({}, { type: 'invalid' })).toThrow("must be 'agent', 'hub', or 'canvas'");
+    expect(() => handler({}, { type: 'invalid' })).toThrow("must be 'agent' or 'canvas'");
+  });
+
+  it('rejects the removed hub popout type', () => {
+    const handler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    expect(() => handler({}, { type: 'hub', hubId: 'hub-1' })).toThrow("must be 'agent' or 'canvas'");
   });
 
   it('rejects non-number windowId for CLOSE_POPOUT', () => {
@@ -558,29 +458,6 @@ describe('window-handlers', () => {
       IPC.WINDOW.POPOUTS_CHANGED,
     );
   });
-
-  it('HUB_MUTATION is forwarded to the main window', async () => {
-    const mainWin = new (BrowserWindow as any)({});
-    // Create a popout so mainWin is distinguishable
-    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
-    await createHandler({}, { type: 'hub', hubId: 'hub-1' });
-
-    const mutationHandler = findOnHandler(IPC.WINDOW.HUB_MUTATION);
-    expect(mutationHandler).toBeDefined();
-
-    const mutation = { type: 'split', paneId: 'p1', direction: 'horizontal', position: 'after' };
-    mutationHandler!({}, 'hub-1', 'global', mutation);
-
-    expect(mainWin.webContents.send).toHaveBeenCalledWith(
-      IPC.WINDOW.REQUEST_HUB_MUTATION,
-      'hub-1',
-      'global',
-      mutation,
-      undefined, // projectId
-    );
-  });
-
-  // ── LB-IPC-001: listener cleanup via ipcMain.on + removeListener ────
 
   it('LB-IPC-001: relayAgentState calls removeListener on timeout (not once-wrapper)', async () => {
     vi.useFakeTimers();

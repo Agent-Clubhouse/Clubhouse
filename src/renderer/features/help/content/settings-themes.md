@@ -29,4 +29,3 @@ Each theme includes a complete terminal color scheme (16 ANSI colors, cursor, se
 | Setting | Description |
 |---------|-------------|
 | **Home Dashboard** | Toggle visibility of the Dashboard home screen |
-| **Cross-Project Hub** | Show/hide the global Hub icon in the Project Rail |

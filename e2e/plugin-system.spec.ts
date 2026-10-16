@@ -157,12 +157,13 @@ test.describe('Built-in Plugin Loading', () => {
 
     // If store access works, verify plugin registration
     if (pluginState) {
-      expect(pluginState.pluginIds).toContain('hub');
+      expect(pluginState.pluginIds).not.toContain('hub');
+      expect(pluginState.pluginIds).toContain('canvas');
       expect(pluginState.pluginIds).toContain('terminal');
       expect(pluginState.pluginIds).toContain('files');
 
       // All builtins should be registered as 'builtin' source
-      expect(pluginState.plugins['hub'].source).toBe('builtin');
+      expect(pluginState.plugins['canvas'].source).toBe('builtin');
       expect(pluginState.plugins['terminal'].source).toBe('builtin');
       expect(pluginState.plugins['files'].source).toBe('builtin');
 
@@ -288,7 +289,7 @@ test.describe('Plugin Settings', () => {
     await expect(builtinSection).toBeVisible({ timeout: 5_000 });
 
     // Each built-in plugin name should be visible
-    await expect(window.locator('text=Hub').first()).toBeVisible({ timeout: 3_000 });
+    await expect(window.locator('text=Canvas').first()).toBeVisible({ timeout: 3_000 });
     await expect(window.locator('text=Terminal').first()).toBeVisible({ timeout: 3_000 });
     await expect(window.locator('text=Files').first()).toBeVisible({ timeout: 3_000 });
   });
@@ -298,7 +299,7 @@ test.describe('Plugin Settings', () => {
     const badges = window.locator('text=Built-in');
     await expect(badges.first()).toBeVisible({ timeout: 5_000 });
     const count = await badges.count();
-    // At least 3 for hub, terminal, files
+    // At least 3 for canvas, terminal, files
     expect(count).toBeGreaterThanOrEqual(3);
   });
 
@@ -360,7 +361,7 @@ test.describe('Plugin Settings', () => {
     await expect(builtinSection).toBeVisible({ timeout: 5_000 });
 
     // Plugin names should still be visible
-    await expect(window.locator('text=Hub').first()).toBeVisible({ timeout: 3_000 });
+    await expect(window.locator('text=Canvas').first()).toBeVisible({ timeout: 3_000 });
     await expect(window.locator('text=Terminal').first()).toBeVisible({ timeout: 3_000 });
     await expect(window.locator('text=Files').first()).toBeVisible({ timeout: 3_000 });
   });

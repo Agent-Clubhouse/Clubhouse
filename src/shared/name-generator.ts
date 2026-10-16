@@ -24,7 +24,7 @@ const ANIMALS = [
   'pika', 'slug', 'snail', 'squid', 'stork', 'trout', 'boar', 'camel', 'egret', 'llama',
 ];
 
-// Hub names — evocative places / spaces
+// Canvas names — evocative places / spaces
 const HUB_ADJECTIVES = [
   'peaceful', 'busy', 'bustling', 'ancient', 'astral', 'quiet', 'hidden', 'sunlit', 'moonlit', 'starlit',
   'misty', 'golden', 'silver', 'crystal', 'mossy', 'coral', 'amber', 'cobalt', 'ivory', 'jade',
@@ -60,7 +60,7 @@ export function generateDurableName(): string {
   return `${pick(ADJECTIVES)}-${pick(ANIMALS)}`;
 }
 
-export function generateHubName(): string {
+export function generateCanvasName(): string {
   return `${pick(HUB_ADJECTIVES)}-${pick(HUB_PLACES)}`;
 }
 

@@ -489,8 +489,6 @@ describe('app-event-bridge.ts – listener registration', () => {
       'onOpenAbout',
       'onNotificationClicked',
       'onRequestAgentState',
-      'onRequestHubState',
-      'onHubMutation',
       'onRequestCanvasState',
       'onCanvasMutation',
       'onNavigateToAgent',
@@ -668,7 +666,6 @@ describe('app-event-bridge.ts – required imports', () => {
     'eventToBinding',
     'getCommandActions',
     'pluginHotkeyRegistry',
-    'applyHubMutation',
   ];
 
   for (const name of requiredImports) {

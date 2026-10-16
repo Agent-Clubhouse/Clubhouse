@@ -30,6 +30,8 @@ import { initProtocolHandler } from './services/protocol-service';
 import { resolvePluginModulePath, pluginModuleResponseHeaders } from './plugin-protocol';
 import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
 import { getCommunityPluginsDir } from './services/plugin-discovery';
+import { getGlobalPluginDataDir } from './services/plugin-storage';
+import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import * as projectStore from './services/project-store';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
@@ -311,6 +313,17 @@ app.on('ready', () => {
 
   // Start periodic plugin update checks
   startPeriodicPluginUpdateChecks();
+
+  // Delete data left behind by removed built-in plugins (e.g. the Hub).
+  projectStore.list()
+    .then((projects) => cleanupRetiredPluginData({
+      globalPluginDataDir: getGlobalPluginDataDir(),
+      communityPluginsDir: getCommunityPluginsDir(),
+      projects,
+    }))
+    .catch((err) => {
+      appLog('core:plugins', 'warn', `Retired plugin cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
 
   // Start stale session sweeps (safety net for leaked sessions)
   startPtyStaleSweep();

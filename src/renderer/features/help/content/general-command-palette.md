@@ -11,7 +11,7 @@ Type a prefix to filter results:
 | *(none)* | Everything | `auth` — finds agents, projects, commands matching "auth" |
 | `@` | Agents | `@feature` — jump to an agent named "feature-auth" |
 | `/` | Projects | `/my-app` — switch to a project |
-| `#` | Hubs | `#monitoring` — open a hub workspace |
+| `#` | Canvases | `#monitoring` — open a canvas |
 | `>` | Commands | `>theme` — navigate to settings, run actions |
 
 ## Navigation

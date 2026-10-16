@@ -11,9 +11,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas', 'cookbooks']);
   });
 
-  it('has 37 total topics', () => {
+  it('has 38 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(39);
+    expect(total).toBe(38);
   });
 
   it('each section has at least 1 topic', () => {
@@ -42,7 +42,7 @@ describe('help-content', () => {
 
   it('General section has 7 topics', () => {
     const general = HELP_SECTIONS.find((s) => s.id === 'general');
-    expect(general?.topics).toHaveLength(7);
+    expect(general?.topics).toHaveLength(6);
   });
 
   it('Agents & Orchestrators section has 6 topics', () => {
@@ -58,7 +58,7 @@ describe('help-content', () => {
   it('includes key new topics', () => {
     const allTopicIds = HELP_SECTIONS.flatMap((s) => s.topics.map((t) => t.id));
     expect(allTopicIds).toContain('command-palette');
-    expect(allTopicIds).toContain('hub');
+    expect(allTopicIds).not.toContain('hub');
     expect(allTopicIds).toContain('dashboard');
     expect(allTopicIds).toContain('agents-clubhouse-mode');
     expect(allTopicIds).toContain('settings-sound');

@@ -123,7 +123,7 @@ describe('getBuiltinProjectPluginIds', () => {
     expect(ids).toContain('canvas');
     expect(ids).toContain('group-project');
     expect(ids).toContain('agent-queue');
-    expect(ids).toContain('hub');
+    expect(ids).not.toContain('hub');
   });
 
   it('excludes app-scoped builtins', () => {

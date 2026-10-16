@@ -21,7 +21,7 @@ A highlighted section lists agents that require action (permission requests, err
 
 Each project displays:
 - Status pills showing agent counts by state (working, idle, errored, sleeping)
-- Quick-action buttons for Hub and Settings
+- Quick-action button for Settings
 - Durable agent list with current branch and status
 - Quick agent completion count
 

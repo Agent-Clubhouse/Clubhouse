@@ -10,9 +10,8 @@ declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
 export interface PopoutParams {
-  type: 'agent' | 'hub' | 'canvas';
+  type: 'agent' | 'canvas';
   agentId?: string;
-  hubId?: string;
   canvasId?: string;
   projectId?: string;
   title?: string;
@@ -27,13 +26,6 @@ interface AgentStateSnapshot {
   agents: Record<string, unknown>;
   agentDetailedStatus: Record<string, unknown>;
   agentIcons: Record<string, string>;
-}
-
-interface HubStateSnapshot {
-  hubId: string;
-  paneTree: unknown;
-  focusedPaneId: string;
-  zoomedPaneId: string | null;
 }
 
 interface CanvasStateSnapshot {
@@ -54,13 +46,10 @@ const popoutWindows = new Map<number, PopoutEntry>();
 
 // ── State caches ──────────────────────────────────────────────────────────
 // The main renderer broadcasts state changes which we cache here.
-// GET_AGENT_STATE / GET_HUB_STATE can serve from cache instantly instead
+// GET_AGENT_STATE / GET_CANVAS_STATE can serve from cache instantly instead
 // of performing a round-trip relay.
 
 let cachedAgentState: AgentStateSnapshot | null = null;
-
-/** Hub state keyed by hubId. */
-const cachedHubState = new Map<string, HubStateSnapshot>();
 
 /** Canvas state keyed by canvasId. */
 const cachedCanvasState = new Map<string, CanvasStateSnapshot>();
@@ -76,7 +65,6 @@ let relayInProgress = false;
 export function _resetForTesting(): void {
   popoutWindows.clear();
   cachedAgentState = null;
-  cachedHubState.clear();
   cachedCanvasState.clear();
   pendingAgentRelay = null;
   relayInProgress = false;
@@ -163,7 +151,7 @@ export function registerWindowHandlers(): void {
   ipcMain.handle(IPC.WINDOW.CREATE_POPOUT, withValidatedArgs(
     [objectArg<PopoutParams>({
       validate: (v, name) => {
-        if (v.type !== 'agent' && v.type !== 'hub' && v.type !== 'canvas') throw new Error(`${name}.type must be 'agent', 'hub', or 'canvas'`);
+        if (v.type !== 'agent' && v.type !== 'canvas') throw new Error(`${name}.type must be 'agent' or 'canvas'`);
       },
     })],
     (_event, params) => {
@@ -174,7 +162,6 @@ export function registerWindowHandlers(): void {
       `--popout-type=${params.type}`,
     ];
     if (params.agentId) additionalArguments.push(`--popout-agent-id=${params.agentId}`);
-    if (params.hubId) additionalArguments.push(`--popout-hub-id=${params.hubId}`);
     if (params.canvasId) additionalArguments.push(`--popout-canvas-id=${params.canvasId}`);
     if (params.projectId) additionalArguments.push(`--popout-project-id=${params.projectId}`);
 
@@ -183,7 +170,7 @@ export function registerWindowHandlers(): void {
       height: 600,
       minWidth: 400,
       minHeight: 300,
-      title: params.title || `Clubhouse — ${params.type === 'agent' ? 'Agent' : params.type === 'hub' ? 'Hub' : 'Canvas'}`,
+      title: params.title || `Clubhouse — ${params.type === 'agent' ? 'Agent' : 'Canvas'}`,
       show: false,
       ...(isWin
         ? {
@@ -304,54 +291,6 @@ export function registerWindowHandlers(): void {
     broadcastToPopouts(IPC.WINDOW.AGENT_STATE_CHANGED, state);
   });
 
-  // ── Hub state sync (leader/follower) ─────────────────────────────────
-  //
-  // Same pattern: cache from HUB_STATE_CHANGED broadcasts, serve from
-  // cache on GET_HUB_STATE, fall back to batched relay with 1.5s timeout.
-
-  ipcMain.handle(IPC.WINDOW.GET_HUB_STATE, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true })],
-    (_event, hubId, scope, projectId) => {
-    const cached = cachedHubState.get(hubId);
-    if (cached) return cached;
-
-    return new Promise((resolve) => {
-      const mainWindow = findMainWindow();
-      if (!mainWindow) {
-        resolve(null);
-        return;
-      }
-
-      const requestId = `hub_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
-      const channel = `${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}`;
-
-      const handler = (_e: any, state: any) => {
-        clearTimeout(timeout);
-        if (state && state.hubId) cachedHubState.set(state.hubId, state);
-        resolve(state);
-      };
-
-      const timeout = setTimeout(() => {
-        ipcMain.removeListener(channel, handler);
-        resolve(null);
-      }, RELAY_TIMEOUT_MS);
-
-      ipcMain.once(channel as any, handler);
-      mainWindow.webContents.send(IPC.WINDOW.REQUEST_HUB_STATE, requestId, hubId, scope, projectId);
-    });
-  }));
-
-  // Forward hub state relay responses from the main renderer
-  ipcMain.on(IPC.WINDOW.HUB_STATE_RESPONSE, (_event, requestId: string, state: any) => {
-    ipcMain.emit(`${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}`, _event, state);
-  });
-
-  // Main renderer broadcasts hub state changes → cache + forward to popouts
-  ipcMain.on(IPC.WINDOW.HUB_STATE_CHANGED, (_event, state: any) => {
-    if (state && state.hubId) cachedHubState.set(state.hubId, state);
-    broadcastToPopouts(IPC.WINDOW.HUB_STATE_CHANGED, state);
-  });
-
   // ── Plugin window title ─────────────────────────────────────────────
   ipcMain.handle(IPC.WINDOW.SET_TITLE, withValidatedArgs(
     [stringArg()],
@@ -362,17 +301,9 @@ export function registerWindowHandlers(): void {
     }
   }));
 
-  // Pop-out sends a hub mutation → forward to main renderer
-  ipcMain.on(IPC.WINDOW.HUB_MUTATION, (_event, hubId: string, scope: string, mutation: any, projectId?: string) => {
-    const mainWindow = findMainWindow();
-    if (mainWindow) {
-      mainWindow.webContents.send(IPC.WINDOW.REQUEST_HUB_MUTATION, hubId, scope, mutation, projectId);
-    }
-  });
-
   // ── Canvas state sync (leader/follower) ─────────────────────────────
   //
-  // Same pattern as hub: cache from CANVAS_STATE_CHANGED broadcasts,
+  // Same pattern as agent state: cache from CANVAS_STATE_CHANGED broadcasts,
   // serve from cache on GET_CANVAS_STATE, fall back to relay with timeout.
 
   ipcMain.handle(IPC.WINDOW.GET_CANVAS_STATE, withValidatedArgs(

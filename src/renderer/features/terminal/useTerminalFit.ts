@@ -133,7 +133,7 @@ export function useTerminalFit(
   }, [sessionId, onResize]);
 
   // Pane-level focus: re-fit, resize PTY, and focus the xterm instance.
-  // This fires when the user clicks a hub pane or switches to the agents tab,
+  // This fires when the user clicks a canvas card or switches to the agents tab,
   // ensuring the PTY dimensions snap to the now-active terminal's container.
   useEffect(() => {
     if (!focused) return;

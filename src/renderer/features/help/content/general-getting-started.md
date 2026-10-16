@@ -23,12 +23,10 @@ On first launch, a short onboarding flow appears based on your experience level.
 | **Durable Agent** | A persistent agent with its own Git worktree and branch. Survives restarts. Best for complex, multi-session work. |
 | **Quick Agent** | A one-shot agent that runs a single task and exits. Best for small fixes and quick questions. |
 | **Orchestrator** | The CLI backend powering agents (e.g., Claude Code, Copilot CLI). Handles AI communication. |
-| **Plugin** | An extension adding features like file browsing, Hub workspaces, or custom tools. |
-| **Hub** | A split-pane workspace for monitoring multiple agents side-by-side. |
+| **Plugin** | An extension adding features like file browsing, canvases, or custom tools. |
 
 ## Next Steps
 
 - **Dashboard** — Learn about the home screen overview
 - **Command Palette** — Master the `Cmd+K` launcher
-- **Hub & Workspaces** — Set up multi-agent monitoring
 - **Keyboard Shortcuts** — Speed up your workflow

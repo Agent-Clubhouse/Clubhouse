@@ -1,6 +1,4 @@
 import type { PluginManifest, PluginModule } from '../../../shared/plugin-types';
-import { manifest as hubManifest } from './hub/manifest';
-import * as hubModule from './hub/main';
 import { manifest as terminalManifest } from './terminal/manifest';
 import * as terminalModule from './terminal/main';
 import { manifest as filesManifest } from './files/manifest';
@@ -54,7 +52,6 @@ export const STABLE_CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
-    { manifest: hubManifest, module: hubModule },
     { manifest: terminalManifest, module: terminalModule },
     { manifest: filesManifest, module: filesModule },
     { manifest: browserManifest, module: browserModule },

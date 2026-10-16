@@ -299,13 +299,7 @@ export const IPC = {
     GET_AGENT_STATE: 'window:get-agent-state',
     REQUEST_AGENT_STATE: 'window:request-agent-state',
     AGENT_STATE_RESPONSE: 'window:agent-state-response',
-    GET_HUB_STATE: 'window:get-hub-state',
-    REQUEST_HUB_STATE: 'window:request-hub-state',
-    HUB_STATE_RESPONSE: 'window:hub-state-response',
     AGENT_STATE_CHANGED: 'window:agent-state-changed',
-    HUB_STATE_CHANGED: 'window:hub-state-changed',
-    HUB_MUTATION: 'window:hub-mutation',
-    REQUEST_HUB_MUTATION: 'window:request-hub-mutation',
     SET_TITLE: 'window:set-title',
     // Canvas state sync
     GET_CANVAS_STATE: 'window:get-canvas-state',

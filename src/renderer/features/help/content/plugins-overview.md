@@ -14,7 +14,6 @@ Plugins extend Clubhouse with custom views, commands, and integrations.
 
 | Plugin | Scope | Description |
 |--------|-------|-------------|
-| **Hub** | Dual | Split-pane agent monitoring workspace |
 | **Terminal** | Project | Interactive terminal scoped to the project root |
 | **Files** | Project | File browser with Monaco editor, markdown preview, and image display |
 

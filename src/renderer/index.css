@@ -279,7 +279,7 @@
   transform: translateX(16px);
 }
 
-/* Hub: pulsing status ring for working agents with rotating highlight */
+/* Pulsing status ring for working agents with rotating highlight */
 @keyframes pulse-ring {
   0%, 100% {
     opacity: 1;
@@ -322,7 +322,7 @@
   z-index: 10;
 }
 
-/* Hub: attention border for agents needing action */
+/* Attention border for agents needing action */
 @keyframes attention-pulse {
   0%, 100% {
     opacity: 0.9;

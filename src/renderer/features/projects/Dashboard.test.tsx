@@ -336,18 +336,9 @@ describe('Dashboard', () => {
       expect(setSettingsContext).toHaveBeenCalledWith('proj-1');
     });
 
-    it('hub button opens hub plugin tab (not invalid "hub" tab)', () => {
-      const setActiveProject = vi.fn();
-      const setExplorerTab = vi.fn();
-
-      useProjectStore.setState({ setActiveProject });
-      useUIStore.setState({ setExplorerTab });
-
+    it('does not render a Hub button', () => {
       render(<Dashboard />);
-      fireEvent.click(screen.getByTitle('Open Hub'));
-
-      expect(setActiveProject).toHaveBeenCalledWith('proj-1');
-      expect(setExplorerTab).toHaveBeenCalledWith('plugin:hub', 'proj-1');
+      expect(screen.queryByTitle('Open Hub')).toBeNull();
     });
   });
 
