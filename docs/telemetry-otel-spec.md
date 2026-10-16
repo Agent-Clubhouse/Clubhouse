@@ -1058,8 +1058,8 @@ Sizes: **S** ≈ ≤ 400 LOC, **M** ≈ 400–1,000, **L** ≈ 1,000–1,800, co
 | 1 | **Foundation: SDK, pipeline, both destinations** | <ul><li>Spike: bundle the OTel SDK, the Azure exporter **and the OTLP/HTTP-JSON exporters** in lazy main chunks; packaged-build smoke test in CI; size check.</li><li>`src/main/telemetry/`: facade, bootstrap, destination abstraction (`azure.ts`, `otlp.ts`), providers, resource, attribute registry, redaction processors, scrubber, HMAC IDs, `FlowSampler`, session caps, preview tee, offline dir, flush-on-quit and `flushBeforeExit()` at all `app.exit` sites.</li><li>Statsbeat off; **egress-allowlist CI test for both destinations**.</li><li>Only instrumentation: `c.app.sessions`, `c.telemetry.test`.</li><li>Feature flag `experimental.telemetry` until Phase 3 lands.</li></ul> | **L** | — |
 | 2 | **Settings UX** | `TELEMETRY` managed settings; `safeStorage` secret store (connection string and OTLP header values) with the Linux backend warning; **App Insights panel (toggle, connection string, test event) plus a separate Other destinations panel (OTLP endpoint, headers, protocol)**; one-active-destination switching; connection-string and OTLP endpoint/header validation; destination confirmation step; level picker incl. Errors; test event; preview dialog; consent confirm; help topic incl. install-ID privacy; reset ID; delete local telemetry data | **M** | 1 |
 | 3 | **Errors, lifecycle, health, persistence integrity** | <ul><li>**Workbook v1** (§6.10): Overview, Reliability, Startup and updates, and Data integrity tabs, plus the KQL-vs-registry test.</li><li>Crash and error handlers (main, renderer, `AppErrorBoundary`), renderer facade and `telemetry:emit`, `app:renderer-ready`.</li><li>Startup and shutdown span trees, unclean-exit detection, safe-mode events, config snapshot.</li><li>**Auto-update spans plus `c.update.apply.verified` and `c.install.kind`** (§12, H6).</li><li>**Process health, renderer long frames, pipeline health** (§4.15).</li><li>**Persistence integrity across all JSON stores** (§12, H1).</li></ul> **First "useful" release.** | **L** (could split 3a errors/lifecycle/update, 3b health/persistence) | 1 (2 for user-facing) |
-| 4 | **Agents** | Create/spawn span trees across all three runtimes; run and first-output events; exit classification incl. the structured path; kill escalation; permissions; structured turns and tokens; hook-event and tool-call metrics; MCP tool calls; queue; shoulder taps; **assistant spawn and turns mapped into the agent tree (H14)**; Workbook Agents and Permissions tabs. **Plus the regression signals:** CLI version on spawn, structured protocol-unknown counter, turn-stall watchdog, silent-hooks run, session-listing span, inject-delivery span, hook teardown, ID-collision repair, status reconcile, `c.ui.action_failed` for agent flows (§12, H2, H3, H7) | **L** (split 4a spawn/exit/drift, 4b permissions/turns/MCP/queue) | 3 |
-| 5 | **Workspace** | Project switch, add/remove, store recovery; git user-op spans and poll histogram; worktree spans; files, search and watch gauges; plugin system, activation and module-load results; Monaco load span; editor save conflicts; canvas load/save; marketplace; bulletin post results; MCP tools-list; settings and feature-usage events; Workbook Plugins and Workspace tabs (§12, H5, H8, H10, H11) | **L** (split 5a projects/git/files/editor, 5b plugins/canvas/marketplace/features) | 3 |
+| 4 | **Agents** (main-process half now; structured turns via the chat event model, §9.1) | Create/spawn span trees across all three runtimes; run and first-output events; exit classification incl. the structured path; kill escalation; permissions; structured turns and tokens; hook-event and tool-call metrics; MCP tool calls; queue; shoulder taps; **assistant spawn and turns mapped into the agent tree (H14)**; Workbook Agents and Permissions tabs. **Plus the regression signals:** CLI version on spawn, structured protocol-unknown counter, turn-stall watchdog, silent-hooks run, session-listing span, inject-delivery span, hook teardown, ID-collision repair, status reconcile, `c.ui.action_failed` for agent flows (§12, H2, H3, H7) | **L** (split 4a spawn/exit/drift, 4b permissions/turns/MCP/queue) | 3 |
+| 5 | **Workspace** (main-process half now; UI call sites owned by the refresh, §9.1) | Project switch, add/remove, store recovery; git user-op spans and poll histogram; worktree spans; files, search and watch gauges; plugin system, activation and module-load results; Monaco load span; editor save conflicts; canvas load/save; marketplace; bulletin post results; MCP tools-list; settings and feature-usage events; Workbook Plugins and Workspace tabs (§12, H5, H8, H10, H11) | **L** (split 5a projects/git/files/editor, 5b plugins/canvas/marketplace/features) | 3 |
 | 6 | **Annex, Goobers and Detailed level** | Annex spans and metrics with address family and identity-regeneration events; `traceparent` over the WS envelope and REST (dual-instance E2E spec); Goobers lifecycle, data-age gauge and stream-mode events; Detailed-level tool-call, IPC latency and Annex route spans; Workbook Annex and Goobers tab (§12, H9, H12). **H9 is P0 after the March pass, so the Annex connect, pair and reconnect spans may move into Phase 4 if Phase 6 slips.** | **M** | 4 |
 | 7 | **Workbook completion, appLog bridge, source maps** | **Workbook:** Deploy to Azure ARM wrapper and docs page, alert rules for every P0 signal (§12), import checklist. **appLog:** `telemetry` field, severity mapping, trace IDs in local JSONL, initial opt-in sites. **Optional:** release source maps for stack symbolication. | **M** | 3–6 |
 | 8 | **Community plugin telemetry API** | `telemetry` permission, manifest schema and validation, `api.telemetry`, host-side namespacing, rate limiting and throttling, per-plugin grants UI (Settings and plugin detail page), preview labelling, plugin API docs and API surface check, fuzz tests for plugin-supplied schemas | **M** | 2, 5 (plugin loader instrumentation) |
@@ -1067,6 +1067,57 @@ Sizes: **S** ≈ ≤ 400 LOC, **M** ≈ 400–1,000, **L** ≈ 1,000–1,800, co
 **Rough total:** 8–11 PRs, about 5,000–6,500 LOC including tests. Phases 4 and 5 can run in parallel after Phase 3; they touch disjoint files except the registry, where conflicts are append-only. Phase 8 can start as soon as Phase 5b lands.
 
 **Why OTLP moved from Phase 7 to Phase 1.** It is an exporter swap behind the destination abstraction, adds about 150 KB, and needs no new instrumentation. Building both destinations in Phase 1 keeps the abstraction honest and lets the egress test cover both from the start.
+
+### 9.1 Sequencing with the UI refresh and structured chat (decision 2026-10-16)
+
+Two large changes are planned alongside telemetry:
+
+- the **chrome refresh**: project rail, explorer, agent list, title bar, panels and command palette (mockups in the refresh session's artifact);
+- **structured chat** ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)): native chat over the coding CLIs. It rewrites the structured adapters behind one Clubhouse event model, with real session and turn IDs and multi-turn sessions.
+
+Telemetry is split **by layer**. It does not wait for either change, and they do not wait for it.
+
+**1. Land now, before both changes.** This work is UI-independent and will not be thrown away:
+
+- Phases 1–3 as written: pipeline, both destinations, the settings section, errors and lifecycle, update, process health, persistence integrity, and Workbook v1.
+- **Phase 4, main-process half.** Spawn, run, exit and kill classification, permissions, hooks, MCP, queue, shoulder taps, CLI-version drift signals, hook teardown, ID-collision repair and status reconcile. The PTY path stays in use while chat rolls out, and the hook and permission paths are shared.
+- **Phase 5, main-process half.** Git and worktrees, the file, search and watch services, plugin activation and module loading, Monaco load, canvas load and save, the marketplace, and project-store recovery.
+- **Renderer foundation.** The renderer facade, `telemetry:emit`, `AppErrorBoundary`, window `error` and `unhandledrejection` handlers, long-frame collection and the swallowed-catch lint rule. These wrap the root, so any layout keeps them.
+
+Landing this first gives a **baseline** before the refresh and chat ship: crash-free rate, startup p95, slow frames, persistence failures and spawn failures by orchestrator. The refresh can then be measured against it. History says this is when it matters: the March churn peak (§12.1) produced the most regressions, and canvas UI was the largest cluster.
+
+**2. Owned by the refresh.** The UI-coupled call sites are built as part of the refresh, not before it:
+
+- the `c.view` values for the new layout, which feed slow-frame tracking and render errors;
+- the project-switch span, which moves out of `App.tsx`;
+- file open and save spans in the new viewer;
+- command-palette and feature-usage events;
+- `c.ui.action_failed` actions for new UI catch sites. The lint rule already forces these.
+
+These were roughly 15–20% of the planned telemetry work. That is an estimate from the coverage map, not a measurement. Building them once, on the new UI, avoids doing them twice.
+
+**3. Owned by structured chat.** Do **not** instrument today's structured adapters (StreamJson, ACP, Codex app-server); they are being replaced. Instead:
+
+- Telemetry subscribes **once** to the new Clubhouse event model, mapping turn start and end, tool start and end, permission request and decision, usage and errors onto `c.agent.turn`, `c.agent.tool_call`, `c.agent.permission` and token metrics. This replaces the structured-turn items in Phase 4. It is less code and covers all three CLIs.
+- The chat project's capability record supplies `c.structured.adapter` and the protocol-drift signals (`c.structured.protocol.unknown`, `c.agent.turn.stalled`) at the driver boundary.
+- `c.agent.runtime` gains a value for the new chat runtime. PTY and headless values stay while those paths exist.
+
+**Ownership.**
+
+| Area | Owner |
+|---|---|
+| Pipeline, exporters, destinations, sampling, privacy enforcement | Telemetry |
+| Attribute registry (`src/shared/telemetry/attributes.ts`) | Telemetry, via CODEOWNERS review on every addition |
+| Workbook and alert rules | Telemetry |
+| Call sites in new UI views | Refresh |
+| Event-model mapping and driver-boundary signals | Structured chat, with telemetry reviewing the registry entries |
+
+**Parity checklist (required in both specs).** The refresh spec and the structured-chat spec must each include a telemetry parity checklist, and neither ships until it passes:
+
+1. Every span, metric and event the replaced UI or adapter emits has a named equivalent in the new code, or is explicitly retired in the registry with a reason.
+2. Every Workbook panel that charted the old signal still has data. The KQL-vs-registry test (§6.10) enforces names; a manual import against a scratch resource confirms the panels render.
+3. New views and drivers add their `c.view` / `c.agent.runtime` values and their `c.ui.action_failed` actions to the registry in the same PR.
+4. P0 signals from §12 keep their level (Errors or Standard) and their alert rules.
 
 ---
 
