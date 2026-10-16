@@ -299,24 +299,39 @@ export function FileViewer({ api }: { api: PluginAPI }) {
 
   // ── Save file ─────────────────────────────────────────────────────
 
-  const saveFile = useCallback(async (filePath: string) => {
-    const content = getModelContent(filePath);
-    if (content === null) return;
+  // Record mtime so the file watcher can distinguish our write from external changes.
+  // Best-effort: a failed stat after a successful write must not fail the save.
+  const recordSavedMtime = useCallback(async (filePath: string) => {
     try {
-      await api.files.writeFile(filePath, content);
-      // Record mtime so the file watcher can distinguish our write from external changes
       const stat = await api.files.stat(filePath);
       _savedMtimes.set(filePath, stat.modifiedAt);
-      updateSavedContent(filePath, content);
-      const tab = fileState.getTabByPath(filePath);
-      if (tab) {
-        fileState.setTabDirty(tab.id, false);
-      }
-      fileState.triggerRefresh();
-    } catch (err) {
-      api.ui.showError(`Failed to save: ${err}`);
+    } catch {
+      _savedMtimes.delete(filePath);
     }
   }, [api]);
+
+  /** Write the editor content to disk. Returns false (and surfaces the error) on failure. */
+  const saveFile = useCallback(async (filePath: string): Promise<boolean> => {
+    const content = getModelContent(filePath);
+    if (content === null) {
+      api.ui.showError('Failed to save: editor content is unavailable');
+      return false;
+    }
+    try {
+      await api.files.writeFile(filePath, content);
+    } catch (err) {
+      api.ui.showError(`Failed to save: ${err}`);
+      return false;
+    }
+    await recordSavedMtime(filePath);
+    updateSavedContent(filePath, content);
+    const tab = fileState.getTabByPath(filePath);
+    if (tab) {
+      fileState.setTabDirty(tab.id, false);
+    }
+    fileState.triggerRefresh();
+    return true;
+  }, [api, recordSavedMtime]);
 
   // ── Dirty change handler ──────────────────────────────────────────
 
@@ -327,25 +342,26 @@ export function FileViewer({ api }: { api: PluginAPI }) {
 
   // ── Save from Monaco (Cmd+S) ─────────────────────────────────────
 
-  const handleSave = useCallback(async (newContent: string) => {
-    if (!activeTab) return;
+  // Resolves false on failure so MonacoEditor keeps the draft dirty.
+  const handleSave = useCallback(async (newContent: string): Promise<boolean> => {
+    if (!activeTab) return false;
     try {
       await api.files.writeFile(activeTab.filePath, newContent);
-      // Record mtime so the file watcher can distinguish our write from external changes
-      const stat = await api.files.stat(activeTab.filePath);
-      _savedMtimes.set(activeTab.filePath, stat.modifiedAt);
-      updateSavedContent(activeTab.filePath, newContent);
-      fileState.setTabDirty(activeTab.id, false);
-      fileState.triggerRefresh();
-      // Update cache
-      const cached = _fileCache.get(activeTab.filePath);
-      if (cached) {
-        cached.content = newContent;
-      }
     } catch (err) {
       api.ui.showError(`Failed to save: ${err}`);
+      return false;
     }
-  }, [api, activeTab?.id, activeTab?.filePath]);
+    await recordSavedMtime(activeTab.filePath);
+    updateSavedContent(activeTab.filePath, newContent);
+    fileState.setTabDirty(activeTab.id, false);
+    fileState.triggerRefresh();
+    // Update cache
+    const cached = _fileCache.get(activeTab.filePath);
+    if (cached) {
+      cached.content = newContent;
+    }
+    return true;
+  }, [api, recordSavedMtime, activeTab?.id, activeTab?.filePath]);
 
   // ── Scroll state handler ──────────────────────────────────────────
 
@@ -409,12 +425,11 @@ export function FileViewer({ api }: { api: PluginAPI }) {
   const handleDialogSave = useCallback(async () => {
     if (!unsavedDialog) return;
     const tab = fileState.getTab(unsavedDialog.tabId);
-    if (tab) {
-      await saveFile(tab.filePath);
-    }
+    const saved = tab ? await saveFile(tab.filePath) : true;
     const action = unsavedDialog.pendingAction;
     setUnsavedDialog(null);
-    action();
+    // A failed save keeps the tab open and dirty — closing would discard the draft
+    if (saved) action();
   }, [unsavedDialog, saveFile]);
 
   const handleDialogDiscard = useCallback(() => {
