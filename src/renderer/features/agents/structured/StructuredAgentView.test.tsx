@@ -454,4 +454,69 @@ describe('StructuredAgentView', () => {
     const cards = screen.getAllByTestId('tool-card');
     expect(cards.length).toBeLessThanOrEqual(MAX_EVENTS);
   });
+
+  // ── Stable identity (audit finding 10a/10b) ─────────────────────────
+
+  function permission(id: string): StructuredEvent {
+    return {
+      type: 'permission_request',
+      timestamp: Date.now(),
+      data: { id, toolName: 'Bash', toolInput: { command: `echo ${id}` } },
+    };
+  }
+
+  it('a second permission banner stays answerable after the first is answered', () => {
+    const { emit } = setupEventSource();
+    render(<StructuredAgentView agentId={AGENT_ID} />);
+
+    act(() => {
+      emit(permission('perm1'));
+      emit(permission('perm2'));
+    });
+
+    act(() => {
+      fireEvent.click(screen.getAllByTestId('permission-approve')[0]);
+    });
+    expect(window.clubhouse.agent.respondPermission).toHaveBeenCalledWith(AGENT_ID, 'perm1', true);
+
+    // perm2 has shifted into perm1's old position; it must not inherit
+    // perm1's "already responded" state.
+    const remaining = screen.getByTestId('permission-banner');
+    expect(remaining.dataset.requestId).toBe('perm2');
+    act(() => {
+      fireEvent.click(screen.getByTestId('permission-deny'));
+    });
+    expect(window.clubhouse.agent.respondPermission).toHaveBeenCalledWith(AGENT_ID, 'perm2', false);
+    expect(screen.queryByTestId('permission-banner')).not.toBeInTheDocument();
+  });
+
+  it('tool completion still lands on its card after an earlier permission is removed', () => {
+    const { emit } = setupEventSource();
+    render(<StructuredAgentView agentId={AGENT_ID} />);
+
+    act(() => {
+      emit(permission('perm1'));
+      emit({
+        type: 'tool_start',
+        timestamp: Date.now(),
+        data: { id: 't1', name: 'Bash', displayVerb: 'Running', input: {} },
+      });
+    });
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('permission-approve'));
+    });
+
+    act(() => {
+      emit({ type: 'tool_output', timestamp: Date.now(), data: { id: 't1', output: 'tool says hi', isPartial: false } });
+      emit({
+        type: 'tool_end',
+        timestamp: Date.now(),
+        data: { id: 't1', name: 'Bash', result: 'ok', durationMs: 77, status: 'success' },
+      });
+    });
+
+    expect(screen.getByText('tool says hi')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-card').dataset.toolStatus).toBe('completed');
+  });
 });

@@ -37,7 +37,7 @@ interface Props {
  * Multiple StructuredEvents may collapse into a single feed item
  * (e.g. consecutive text_delta events become one MessageStream).
  */
-type FeedItem =
+type FeedItemBody =
   | { kind: 'text'; text: string; isStreaming: boolean }
   | { kind: 'tool'; tool: ToolStart; output: string; end?: ToolEnd; status: ToolStatus }
   | { kind: 'permission'; request: PermissionRequest }
@@ -47,12 +47,19 @@ type FeedItem =
   | { kind: 'plan'; plan: PlanUpdate }
   | { kind: 'error'; error: ErrorEvent };
 
+/**
+ * `key` is a stable, monotonically assigned identity used as the React key.
+ * It must never be derived from the item's position: the feed is trimmed to
+ * MAX_EVENTS and answered permissions are removed, both of which shift
+ * indexes. Index keys let React reuse one item's component state (e.g. a
+ * PermissionBanner's "already responded" flag) for a different item.
+ */
+export type FeedItem = FeedItemBody & { key: number };
+
 export interface ViewState {
   feedItems: FeedItem[];
-  /** Tool ID → index in feedItems, for fast updates */
-  toolIndexMap: Map<string, number>;
-  /** Command ID → index in feedItems */
-  commandIndexMap: Map<string, number>;
+  /** Next FeedItem.key to hand out */
+  nextKey: number;
   pendingPermissions: Map<string, PermissionRequest>;
   plan: PlanUpdate | null;
   usage: UsageEvent | null;
@@ -62,8 +69,7 @@ export interface ViewState {
 
 export const initialState: ViewState = {
   feedItems: [],
-  toolIndexMap: new Map(),
-  commandIndexMap: new Map(),
+  nextKey: 0,
   pendingPermissions: new Map(),
   plan: null,
   usage: null,
@@ -165,8 +171,8 @@ export function StructuredAgentView({ agentId }: Props) {
           </div>
         )}
 
-        {state.feedItems.map((item, i) => (
-          <FeedItemRenderer key={i} item={item} onPermissionRespond={handlePermissionResponse} />
+        {state.feedItems.map((item) => (
+          <FeedItemRenderer key={item.key} item={item} onPermissionRespond={handlePermissionResponse} />
         ))}
 
         {/* End summary */}
@@ -242,10 +248,9 @@ function EndIcon({ reason }: { reason: string }) {
 
 export function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
   // Lazy-copy: only clone a data structure when this event actually mutates it.
-  // This avoids copying up to 500 feedItems + two Maps on every event.
+  // This avoids copying up to 500 feedItems on every event.
   let feedItems = prev.feedItems;
-  let toolIndexMap = prev.toolIndexMap;
-  let commandIndexMap = prev.commandIndexMap;
+  let nextKey = prev.nextKey;
   let pendingPermissions = prev.pendingPermissions;
   let plan = prev.plan;
   let usage = prev.usage;
@@ -259,16 +264,37 @@ export function processEvent(prev: ViewState, event: StructuredEvent): ViewState
       feedCloned = true;
     }
   }
+  function push(item: FeedItemBody) {
+    cloneFeed();
+    feedItems.push({ ...item, key: nextKey++ } as FeedItem);
+  }
+  // Tool/command items are located by their event id, never by a cached
+  // index: trimming and permission removal shift positions, so a cached
+  // index would attach output/completion to the wrong card.
+  function findToolIdx(id: string): number {
+    for (let i = feedItems.length - 1; i >= 0; i--) {
+      const item = feedItems[i];
+      if (item.kind === 'tool' && item.tool.id === id) return i;
+    }
+    return -1;
+  }
+  function findCommandIdx(id: string): number {
+    for (let i = feedItems.length - 1; i >= 0; i--) {
+      const item = feedItems[i];
+      if (item.kind === 'command' && item.command.id === id) return i;
+    }
+    return -1;
+  }
 
   switch (event.type) {
     case 'text_delta': {
       const data = event.data as TextDelta;
       const last = feedItems[feedItems.length - 1];
-      cloneFeed();
       if (last && last.kind === 'text' && last.isStreaming) {
+        cloneFeed();
         feedItems[feedItems.length - 1] = { ...last, text: last.text + data.text };
       } else {
-        feedItems.push({ kind: 'text', text: data.text, isStreaming: true });
+        push({ kind: 'text', text: data.text, isStreaming: true });
       }
       break;
     }
@@ -276,29 +302,25 @@ export function processEvent(prev: ViewState, event: StructuredEvent): ViewState
     case 'text_done': {
       const data = event.data as TextDone;
       const last = feedItems[feedItems.length - 1];
-      cloneFeed();
       if (last && last.kind === 'text') {
-        feedItems[feedItems.length - 1] = { kind: 'text', text: data.text, isStreaming: false };
+        cloneFeed();
+        feedItems[feedItems.length - 1] = { kind: 'text', text: data.text, isStreaming: false, key: last.key };
       } else {
-        feedItems.push({ kind: 'text', text: data.text, isStreaming: false });
+        push({ kind: 'text', text: data.text, isStreaming: false });
       }
       break;
     }
 
     case 'tool_start': {
       const data = event.data as ToolStart;
-      cloneFeed();
-      const idx = feedItems.length;
-      feedItems.push({ kind: 'tool', tool: data, output: '', status: 'running' });
-      toolIndexMap = new Map(prev.toolIndexMap);
-      toolIndexMap.set(data.id, idx);
+      push({ kind: 'tool', tool: data, output: '', status: 'running' });
       break;
     }
 
     case 'tool_output': {
       const data = event.data as ToolOutput;
-      const idx = toolIndexMap.get(data.id);
-      if (idx != null && feedItems[idx]?.kind === 'tool') {
+      const idx = findToolIdx(data.id);
+      if (idx !== -1) {
         cloneFeed();
         const item = feedItems[idx] as Extract<FeedItem, { kind: 'tool' }>;
         feedItems[idx] = { ...item, output: item.output + data.output };
@@ -308,8 +330,8 @@ export function processEvent(prev: ViewState, event: StructuredEvent): ViewState
 
     case 'tool_end': {
       const data = event.data as ToolEnd;
-      const idx = toolIndexMap.get(data.id);
-      if (idx != null && feedItems[idx]?.kind === 'tool') {
+      const idx = findToolIdx(data.id);
+      if (idx !== -1) {
         cloneFeed();
         const item = feedItems[idx] as Extract<FeedItem, { kind: 'tool' }>;
         feedItems[idx] = {
@@ -323,32 +345,27 @@ export function processEvent(prev: ViewState, event: StructuredEvent): ViewState
 
     case 'file_diff': {
       const data = event.data as FileDiff;
-      cloneFeed();
-      feedItems.push({ kind: 'diff', diff: data });
+      push({ kind: 'diff', diff: data });
       break;
     }
 
     case 'command_output': {
       const data = event.data as CommandOutput;
-      cloneFeed();
-      const existingIdx = commandIndexMap.get(data.id);
-      if (existingIdx != null) {
-        feedItems[existingIdx] = { kind: 'command', command: data };
+      const existingIdx = findCommandIdx(data.id);
+      if (existingIdx !== -1) {
+        cloneFeed();
+        feedItems[existingIdx] = { kind: 'command', command: data, key: feedItems[existingIdx].key };
       } else {
-        const idx = feedItems.length;
-        feedItems.push({ kind: 'command', command: data });
-        commandIndexMap = new Map(prev.commandIndexMap);
-        commandIndexMap.set(data.id, idx);
+        push({ kind: 'command', command: data });
       }
       break;
     }
 
     case 'permission_request': {
       const data = event.data as PermissionRequest;
-      cloneFeed();
       pendingPermissions = new Map(pendingPermissions);
       pendingPermissions.set(data.id, data);
-      feedItems.push({ kind: 'permission', request: data });
+      push({ kind: 'permission', request: data });
       break;
     }
 
@@ -361,23 +378,23 @@ export function processEvent(prev: ViewState, event: StructuredEvent): ViewState
     case 'thinking': {
       const data = event.data as Thinking;
       const last = feedItems[feedItems.length - 1];
-      cloneFeed();
       if (last && last.kind === 'thinking' && last.isStreaming) {
+        cloneFeed();
         feedItems[feedItems.length - 1] = {
           kind: 'thinking',
           text: last.text + data.text,
           isStreaming: data.isPartial,
+          key: last.key,
         };
       } else {
-        feedItems.push({ kind: 'thinking', text: data.text, isStreaming: data.isPartial });
+        push({ kind: 'thinking', text: data.text, isStreaming: data.isPartial });
       }
       break;
     }
 
     case 'error': {
       const data = event.data as ErrorEvent;
-      cloneFeed();
-      feedItems.push({ kind: 'error', error: data });
+      push({ kind: 'error', error: data });
       break;
     }
 
@@ -402,8 +419,7 @@ export function processEvent(prev: ViewState, event: StructuredEvent): ViewState
       isComplete = true;
       endReason = data.reason;
       if (data.summary) {
-        cloneFeed();
-        feedItems.push({ kind: 'text', text: data.summary, isStreaming: false });
+        push({ kind: 'text', text: data.summary, isStreaming: false });
       }
       break;
     }
@@ -417,8 +433,7 @@ export function processEvent(prev: ViewState, event: StructuredEvent): ViewState
   // Skip state update if nothing changed
   if (
     feedItems === prev.feedItems &&
-    toolIndexMap === prev.toolIndexMap &&
-    commandIndexMap === prev.commandIndexMap &&
+    nextKey === prev.nextKey &&
     pendingPermissions === prev.pendingPermissions &&
     plan === prev.plan &&
     usage === prev.usage &&
@@ -428,5 +443,5 @@ export function processEvent(prev: ViewState, event: StructuredEvent): ViewState
     return prev;
   }
 
-  return { feedItems, toolIndexMap, commandIndexMap, pendingPermissions, plan, usage, isComplete, endReason };
+  return { feedItems, nextKey, pendingPermissions, plan, usage, isComplete, endReason };
 }
