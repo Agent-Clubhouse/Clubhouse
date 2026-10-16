@@ -32,6 +32,22 @@ describe('clubhouseModeStore', () => {
 
       expect(useClubhouseModeStore.getState().enabled).toBe(false);
     });
+
+    it('a slow load response does not roll back a toggle made while it was in flight', async () => {
+      let resolveLoad!: (v: unknown) => void;
+      window.clubhouse.app.getClubhouseModeSettings = vi.fn().mockReturnValue(
+        new Promise((res) => { resolveLoad = res; }),
+      );
+      window.clubhouse.app.saveClubhouseModeSettings = vi.fn().mockResolvedValue(undefined);
+
+      const load = useClubhouseModeStore.getState().loadSettings();
+      await useClubhouseModeStore.getState().setEnabled(true);
+      resolveLoad({ enabled: false, projectOverrides: { '/p': true } });
+      await load;
+
+      expect(useClubhouseModeStore.getState().enabled).toBe(true);
+      expect(useClubhouseModeStore.getState().projectOverrides).toEqual({ '/p': true });
+    });
   });
 
   describe('isEnabledForProject', () => {

@@ -1796,3 +1796,93 @@ describe('Atomic write and backup recovery', () => {
     }
   });
 });
+
+describe('registry shape validation (invalid data must not become an empty registry)', () => {
+  const BACKUP_PATH = path.join(BASE_DIR, 'projects.json.bak');
+  const goodBackup = {
+    version: 1,
+    projects: [{ id: 'proj_bak', name: 'Backup', path: '/backup' }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+    vi.mocked(fsp.rename).mockResolvedValue(undefined);
+    vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
+  });
+
+  function mockPrimaryAndBackup(primary: unknown, backup: unknown) {
+    vi.mocked(pathExists).mockImplementation(async (p: any) => {
+      const s = String(p);
+      if (s === STORE_PATH) return true;
+      if (s === BACKUP_PATH) return backup !== undefined;
+      return true;
+    });
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      const s = String(p);
+      if (s === STORE_PATH) return JSON.stringify(primary);
+      if (s === BACKUP_PATH) return JSON.stringify(backup);
+      return '';
+    });
+  }
+
+  it.each([
+    ['empty object', {}],
+    ['null', null],
+    ['v1 with non-array projects', { version: 1, projects: 'nope' }],
+    ['array of only invalid entries', [null, 42, { id: 'x' }]],
+  ])('%s primary falls back to the backup without overwriting it', async (_label, primary) => {
+    mockPrimaryAndBackup(primary, goodBackup);
+
+    const result = await list();
+
+    expect(result).toEqual(goodBackup.projects);
+    // Invalid primary is quarantined, not silently accepted as an empty registry
+    expect(vi.mocked(fsp.rename)).toHaveBeenCalledWith(STORE_PATH, expect.stringMatching(/corrupt-\d+/));
+    // The healthy backup is never overwritten by the invalid primary
+    expect(vi.mocked(fsp.copyFile)).not.toHaveBeenCalledWith(STORE_PATH, BACKUP_PATH);
+  });
+
+  it('does not rotate an invalid primary over the backup even if quarantine fails', async () => {
+    mockPrimaryAndBackup({}, goodBackup);
+    vi.mocked(fsp.rename).mockImplementation(async (src: any) => {
+      if (String(src) === STORE_PATH) throw new Error('EPERM');
+    });
+
+    const result = await list();
+
+    expect(result).toEqual(goodBackup.projects);
+    expect(vi.mocked(fsp.copyFile)).not.toHaveBeenCalledWith(STORE_PATH, BACKUP_PATH);
+  });
+
+  it('drops null/invalid entries from an array but keeps the valid ones', async () => {
+    const valid = { id: 'proj_ok', name: 'OK', path: '/ok' };
+    mockPrimaryAndBackup({ version: 1, projects: [null, valid, { name: 'no id' }, 'str'] }, goodBackup);
+
+    const result = await list();
+
+    expect(result).toEqual([valid]);
+    expect(vi.mocked(fsp.rename)).not.toHaveBeenCalledWith(STORE_PATH, expect.stringMatching(/corrupt-\d+/));
+  });
+
+  it('a partially-malformed primary is not rotated over the backup on write', async () => {
+    const valid = { id: 'proj_ok', name: 'OK', path: '/ok' };
+    mockPrimaryAndBackup({ version: 1, projects: [null, valid] }, goodBackup);
+
+    await add('/Users/me/new-project');
+
+    expect(vi.mocked(fsp.copyFile)).not.toHaveBeenCalledWith(STORE_PATH, BACKUP_PATH);
+  });
+
+  it('a valid empty v1 registry is accepted and still rotated on write', async () => {
+    mockPrimaryAndBackup({ version: 1, projects: [] }, goodBackup);
+
+    expect(await list()).toEqual([]);
+    expect(vi.mocked(fsp.rename)).not.toHaveBeenCalledWith(STORE_PATH, expect.stringMatching(/corrupt-\d+/));
+
+    await add('/Users/me/new-project');
+    expect(vi.mocked(fsp.copyFile)).toHaveBeenCalledWith(STORE_PATH, BACKUP_PATH);
+  });
+});
