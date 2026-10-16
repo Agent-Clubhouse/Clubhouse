@@ -77,7 +77,7 @@ const mockProvider = {
   toolVerb: vi.fn(),
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: true, hooks: true,
-    sessionResume: true, permissions: true, structuredMode: false,
+    sessionResume: true, permissions: true,
   })),
 };
 
@@ -87,7 +87,6 @@ vi.mock('../orchestrators', () => ({
   isHookCapable: vi.fn((p: any) => p.getCapabilities().hooks && typeof p.writeHooksConfig === 'function'),
   isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless && typeof p.buildHeadlessCommand === 'function'),
   isSessionCapable: vi.fn((p: any) => p.getCapabilities().sessionResume && typeof p.listSessions === 'function'),
-  isStructuredCapable: vi.fn((p: any) => p.getCapabilities().structuredMode && typeof p.createStructuredAdapter === 'function'),
 }));
 
 import {

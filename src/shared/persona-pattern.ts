@@ -19,7 +19,6 @@ export interface PatternSettings {
   mcpIds?: string[];
   mcpConfigs?: Record<string, Record<string, string>>;
   freeAgentMode?: boolean;
-  structuredMode?: boolean;
   mission?: string;
   buildCommand?: string;
   testCommand?: string;
@@ -35,7 +34,6 @@ export const PATTERN_SETTING_KEYS: Array<keyof PatternSettings> = [
   'mcpIds',
   'mcpConfigs',
   'freeAgentMode',
-  'structuredMode',
   'mission',
   'buildCommand',
   'testCommand',

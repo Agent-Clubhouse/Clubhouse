@@ -562,7 +562,6 @@ export function registerGroupProjectTools(): void {
           mission: message,
           orchestrator: agentConfig.orchestrator,
           freeAgentMode: agentConfig.freeAgentMode,
-          structuredMode: agentConfig.structuredMode,
           resume,
           sessionId: resume ? agentConfig.lastSessionId : undefined,
         });

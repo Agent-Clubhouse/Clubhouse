@@ -18,7 +18,6 @@ import * as ptyManager from './pty-manager';
 import * as themeService from './theme-service';
 import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
-import * as structuredManager from './structured-manager';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
 import { groupProjectRegistry } from './group-project-registry';
@@ -36,11 +35,11 @@ import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestr
 import { appLog } from './log-service';
 
 /**
- * Check if an agent is currently running in any execution mode (PTY, headless, or structured).
+ * Check if an agent is currently running in any execution mode (PTY or headless).
  * Centralises the compound check so new execution modes only need updating here.
  */
 function isAgentRunning(agentId: string): boolean {
-  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId);
+  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId);
 }
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -49,7 +48,6 @@ import { decodeDigestSince, SINCE_CHANNELS_PARAM } from '../../shared/digest-sin
 import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
-import type { StructuredEvent } from '../../shared/structured-events';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
 import type {
   AnnexStatus,
@@ -107,7 +105,6 @@ let unsubHookEvent: (() => void) | null = null;
 let unsubPtyExit: (() => void) | null = null;
 let unsubAgentSpawned: (() => void) | null = null;
 let unsubPermissionRequest: (() => void) | null = null;
-let unsubStructuredEvent: (() => void) | null = null;
 let unsubGroupProjectChanged: (() => void) | null = null;
 let unsubBulletinMessage: (() => void) | null = null;
 let unsubGroupProjectRegistry: (() => void) | null = null;
@@ -146,7 +143,6 @@ function unsubscribeEventBus(): void {
   unsubPtyExit?.();
   unsubAgentSpawned?.();
   unsubPermissionRequest?.();
-  unsubStructuredEvent?.();
   unsubGroupProjectChanged?.();
   unsubBulletinMessage?.();
   unsubGroupProjectRegistry?.();
@@ -155,7 +151,6 @@ function unsubscribeEventBus(): void {
   unsubPtyExit = null;
   unsubAgentSpawned = null;
   unsubPermissionRequest = null;
-  unsubStructuredEvent = null;
   unsubGroupProjectChanged = null;
   unsubBulletinMessage = null;
   unsubGroupProjectRegistry = null;
@@ -221,33 +216,8 @@ function getDetailedStatus(agentId: string): AgentDetailedStatus | null {
   return status;
 }
 
-/** Derive a detailed status from a StructuredEvent (for structured mode agents). */
-function structuredEventToDetailedStatus(event: StructuredEvent): AgentDetailedStatus | null {
-  switch (event.type) {
-    case 'tool_start': {
-      const data = event.data as { name: string; displayVerb: string };
-      return { state: 'working', message: data.displayVerb || 'Working', toolName: data.name, timestamp: event.timestamp };
-    }
-    case 'tool_end': {
-      const data = event.data as { name: string };
-      return { state: 'idle', message: 'Thinking', toolName: data.name, timestamp: event.timestamp };
-    }
-    case 'permission_request': {
-      const data = event.data as { toolName: string };
-      return { state: 'needs_permission', message: 'Needs permission', toolName: data.toolName, timestamp: event.timestamp };
-    }
-    case 'error':
-      return { state: 'tool_error', message: (event.data as { message: string }).message, timestamp: event.timestamp };
-    case 'end':
-      return { state: 'idle', message: 'Idle', timestamp: event.timestamp };
-    default:
-      return null; // text_delta, thinking, usage, etc. don't update detailed status
-  }
-}
-
 /** Resolve the execution mode of an agent. */
 export function getAgentExecutionMode(agentId: string): AgentExecutionMode {
-  if (structuredManager.isStructuredSession(agentId)) return 'structured';
   if (isHeadlessAgent(agentId)) return 'headless';
   return 'pty';
 }
@@ -767,7 +737,7 @@ async function handleIconRequest(res: http.ServerResponse, url: string): Promise
 // ---------------------------------------------------------------------------
 
 /**
- * Poll until the agent is registered as running (PTY, headless, or structured).
+ * Poll until the agent is registered as running (PTY or headless).
  * spawnAgent() resolves after the process is launched but before runtime
  * registration completes, so a brief poll avoids the race where
  * broadcastSnapshotRefresh() builds a snapshot showing 'sleeping'.
@@ -1016,7 +986,7 @@ async function handleWakeAgent(
 
     // Wait for the agent to be registered as running before refreshing the
     // snapshot.  spawnAgent() resolves after the process is launched, but the
-    // PTY / headless / structured session may not yet be registered, causing
+    // PTY / headless session may not yet be registered, causing
     // mapDurableAgent() to report 'sleeping' instead of 'running'.
     await waitForAgentRunning(config.id);
     broadcastSnapshotRefresh();
@@ -1093,56 +1063,6 @@ function handlePermissionResponse(
   }
 
   sendJson(res, 200, { ok: true, requestId, decision });
-}
-
-// ---------------------------------------------------------------------------
-// Structured permission response (Issue 396)
-// ---------------------------------------------------------------------------
-
-async function handleStructuredPermissionResponse(
-  res: http.ServerResponse,
-  agentId: string,
-  body: Record<string, unknown>,
-): Promise<void> {
-  const requestId = body.requestId as string | undefined;
-  const approved = body.approved as boolean | undefined;
-  const reason = body.reason as string | undefined;
-
-  if (!requestId) {
-    sendJson(res, 400, { error: 'missing_request_id' });
-    return;
-  }
-
-  if (typeof approved !== 'boolean') {
-    sendJson(res, 400, { error: 'missing_approved' });
-    return;
-  }
-
-  if (!structuredManager.isStructuredSession(agentId)) {
-    sendJson(res, 404, { error: 'no_structured_session' });
-    return;
-  }
-
-  try {
-    await structuredManager.respondToPermission(agentId, requestId, approved, reason);
-
-    // Broadcast confirmation
-    broadcastAndBuffer('permission:response', {
-      requestId,
-      agentId,
-      decision: approved ? 'allow' : 'deny',
-    });
-
-    // Clear the needs_permission detailed status
-    const current = detailedStatusCache.get(agentId);
-    if (current?.state === 'needs_permission') {
-      detailedStatusCache.delete(agentId);
-    }
-
-    sendJson(res, 200, { ok: true, requestId, approved });
-  } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : 'permission_failed' });
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1646,12 +1566,6 @@ async function handlePermissionResponseRoute(ctx: AnnexRouteContext, match: RegE
   readJsonBody(ctx.req, ctx.res, (body) => handlePermissionResponse(ctx.res, agentId, body));
 }
 
-async function handleStructuredPermissionResponseRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
-  if (ctx.requireMtls()) return;
-  const agentId = decodeURIComponent(match[1]);
-  readJsonBody(ctx.req, ctx.res, (body) => handleStructuredPermissionResponse(ctx.res, agentId, body));
-}
-
 async function handleAgentMessageRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   if (ctx.requireMtls()) return;
   const agentId = decodeURIComponent(match[1]);
@@ -1667,9 +1581,7 @@ async function handleAgentMessageRoute(ctx: AnnexRouteContext, match: RegExpMatc
     }
     const mode = getAgentExecutionMode(agentId);
     try {
-      if (mode === 'structured') {
-        await structuredManager.sendMessage(agentId, message);
-      } else if (mode === 'pty' && ptyManager.isRunning(agentId)) {
+      if (mode === 'pty' && ptyManager.isRunning(agentId)) {
         ptyManager.write(agentId, message);
       } else {
         sendJson(ctx.res, 400, { error: `cannot send message to agent in '${mode}' mode` });
@@ -1943,8 +1855,6 @@ async function handleGroupProjectInjectRoute(ctx: AnnexRouteContext): Promise<vo
           ptyManager.write(agentId, message);
           ptyManager.write(agentId, '\r');
         }
-      } else if (reg.runtime === 'structured') {
-        await structuredManager.sendMessage(agentId, message);
       }
       sendJson(ctx.res, 200, { ok: true });
     } catch (err) {
@@ -2034,7 +1944,6 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/agents\/quick$/, handler: handleQuickChildAgentRoute },
   { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/wake$/, handler: handleWakeAgentRoute },
   { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/permission-response$/, handler: handlePermissionResponseRoute },
-  { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/structured-permission$/, handler: handleStructuredPermissionResponseRoute },
   { method: 'POST', pattern: /^\/api\/v1\/agents\/([^/]+)\/message$/, handler: handleAgentMessageRoute },
   { method: 'POST', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents\/durable$/, handler: handleDurableCreationRoute },
   { method: 'POST', pattern: /^\/api\/v1\/projects\/([^/]+)\/agents\/([^/]+)\/delete$/, handler: handleDurableDeleteRoute },
@@ -2674,14 +2583,6 @@ export function start(): void {
     const detailedStatus = hookEventToDetailedStatus(event);
     detailedStatusCache.set(agentId, detailedStatus);
     broadcastAndBuffer('hook:event', { agentId, event, detailedStatus });
-  });
-
-  unsubStructuredEvent = annexEventBus.onStructuredEvent((agentId, event) => {
-    const detailedStatus = structuredEventToDetailedStatus(event);
-    if (detailedStatus) {
-      detailedStatusCache.set(agentId, detailedStatus);
-    }
-    broadcastAndBuffer('structured:event', { agentId, event, detailedStatus });
   });
 
   unsubPtyExit = annexEventBus.onPtyExit((agentId, exitCode) => {

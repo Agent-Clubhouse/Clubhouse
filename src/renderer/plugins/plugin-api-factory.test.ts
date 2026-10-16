@@ -2767,7 +2767,7 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const result = await api.agents.createDurable({ name: 'test-agent', color: 'blue' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'test-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, undefined, undefined,
+          '/projects/my-project', 'test-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, undefined,
         );
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', durableConfig, false);
         expect(result).toBe('new-agent');
@@ -2787,7 +2787,7 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
         await api.agents.createDurable({ projectId: 'proj-2', name: 'other-agent', color: 'red' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/p2', 'other-agent', 'red', undefined, false, undefined, undefined, undefined, undefined, undefined, undefined,
+          '/projects/p2', 'other-agent', 'red', undefined, false, undefined, undefined, undefined, undefined, undefined,
         );
         expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', durableConfig, false);
       });
@@ -2814,7 +2814,7 @@ describe('plugin-api-factory', () => {
           useWorktree: true, orchestrator: 'claude-code', mcpIds: ['mcp-1'],
         });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'full-agent', 'green', 'opus', true, 'claude-code', undefined, ['mcp-1'], undefined, undefined, undefined,
+          '/projects/my-project', 'full-agent', 'green', 'opus', true, 'claude-code', undefined, ['mcp-1'], undefined, undefined,
         );
       });
 
@@ -2825,19 +2825,60 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.createDurable({ name: 'agent', color: 'red', model: 'default' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'agent', 'red', undefined, false, undefined, undefined, undefined, undefined, undefined, undefined,
+          '/projects/my-project', 'agent', 'red', undefined, false, undefined, undefined, undefined, undefined, undefined,
         );
       });
 
-      it('passes structuredMode through (#1564)', async () => {
-        const durableConfig = { id: 'new-agent', name: 'structured-agent' };
-        mockAgent.createDurable.mockResolvedValue(durableConfig);
-        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
-        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
-        await api.agents.createDurable({ name: 'structured-agent', color: 'blue', structuredMode: true });
-        expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'structured-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, true, undefined,
-        );
+      it('ignores the deprecated structuredMode option and warns (structured mode removed)', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+          const durableConfig = { id: 'new-agent', name: 'legacy-agent' };
+          mockAgent.createDurable.mockResolvedValue(durableConfig);
+          const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+          const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+          const result = await api.agents.createDurable({ name: 'legacy-agent', color: 'blue', structuredMode: true });
+
+          // The agent is still created and spawned...
+          expect(result).toBe('new-agent');
+          expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', durableConfig, false);
+          // ...but structuredMode is not forwarded to the bridge.
+          expect(mockAgent.createDurable).toHaveBeenCalledWith(
+            '/projects/my-project', 'legacy-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, undefined,
+          );
+          expect(mockAgent.createDurable.mock.calls[0]).not.toContain(true);
+          expect(warnSpy).toHaveBeenCalledTimes(1);
+          expect(warnSpy.mock.calls[0][0]).toContain('test-plugin');
+          expect(warnSpy.mock.calls[0][0]).toContain('structuredMode');
+        } finally {
+          warnSpy.mockRestore();
+        }
+      });
+
+      it('warns once per call when structuredMode is passed, even as false', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+          mockAgent.createDurable.mockResolvedValue({ id: 'new-agent', name: 'a' });
+          vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+          const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+          await api.agents.createDurable({ name: 'a', color: 'blue', structuredMode: false });
+          await api.agents.createDurable({ name: 'a', color: 'blue', structuredMode: true });
+          expect(warnSpy).toHaveBeenCalledTimes(2);
+        } finally {
+          warnSpy.mockRestore();
+        }
+      });
+
+      it('does not warn when structuredMode is omitted', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+          mockAgent.createDurable.mockResolvedValue({ id: 'new-agent', name: 'a' });
+          vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+          const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+          await api.agents.createDurable({ name: 'a', color: 'blue' });
+          expect(warnSpy).not.toHaveBeenCalled();
+        } finally {
+          warnSpy.mockRestore();
+        }
       });
 
       it('passes persona through (#1565)', async () => {
@@ -2847,7 +2888,7 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.createDurable({ name: 'qa-agent', color: 'blue', persona: 'qa' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'qa-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, undefined, 'qa',
+          '/projects/my-project', 'qa-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, 'qa',
         );
       });
 
@@ -2871,7 +2912,7 @@ describe('plugin-api-factory', () => {
           api.agents.createDurable({ name: 'free-agent', color: 'red', freeAgentMode: true }),
         ).resolves.toBe('new-agent');
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'free-agent', 'red', undefined, false, undefined, true, undefined, undefined, undefined, undefined,
+          '/projects/my-project', 'free-agent', 'red', undefined, false, undefined, true, undefined, undefined, undefined,
         );
       });
     });

@@ -10,17 +10,14 @@ import {
   HeadlessOpts,
   HeadlessCommandResult,
   NormalizedHookEvent,
-  StructuredAdapter,
   HookCapable,
   HeadlessCapable,
   SessionCapable,
-  StructuredCapable,
   AgentFileCapable,
   PERMISSION_HOOK_TIMEOUT_SEC,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
-import { AcpAdapter } from './adapters';
 import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -57,7 +54,7 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   userPromptSubmitted: 'notification',
 };
 
-export class CopilotCliProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable, StructuredCapable, AgentFileCapable {
+export class CopilotCliProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable, AgentFileCapable {
   readonly id = 'copilot-cli' as const;
   readonly displayName = 'GitHub Copilot CLI';
   readonly shortName = 'GHCP';
@@ -146,8 +143,6 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       supportsPositionalMission: false,
       supportsAutoResumeAfterUpdate: true,
       permissions: true,
-      structuredMode: true,
-      structuredProtocol: 'acp',
     };
   }
 
@@ -199,8 +194,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
   /**
    * Build the `--agent` / `--source` flag pair for Copilot CLI.  Used by both
-   * `buildSpawnCommand` (PTY) and the structured/ACP path (via `extraArgs`),
-   * so the flag-construction logic lives here only.
+   * `buildSpawnCommand` (PTY), so the flag-construction logic lives here only.
    */
   buildAgentFileArgs(opts: { agentFile?: string; agentSource?: string }): string[] {
     const args: string[] = [];
@@ -222,20 +216,6 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     if (Object.keys(servers).length === 0) return [];
     const config = JSON.stringify({ mcpServers: servers });
     return ['--additional-mcp-config', config];
-  }
-
-  // ── StructuredCapable ───────────────────────────────────────────────────
-
-  createStructuredAdapter(_opts?: { resume?: boolean }): StructuredAdapter {
-    return new AcpAdapter({
-      binary: this.findBinary(),
-      // --autopilot lets Copilot CLI v1.0.23+ run autonomously without per-step
-      // approval round-trips. Structured (ACP) sessions are non-interactive by
-      // definition, so they always opt in. Interactive PTY sessions only opt in
-      // when freeAgentMode is set (see buildSpawnCommand).
-      args: ['--acp', '--stdio', '--autopilot'],
-      toolVerbs: TOOL_VERBS,
-    });
   }
 
   // ── HookCapable ─────────────────────────────────────────────────────────

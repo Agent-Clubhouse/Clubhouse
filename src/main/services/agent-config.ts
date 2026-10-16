@@ -447,7 +447,17 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
       },
     });
   }
-  if (removed.length > 0 || droppedInvalid) {
+  // Structured mode was removed (the Chat runtime replaces it). Drop the legacy
+  // per-agent flag so those agents start in the terminal, and persist the
+  // cleaned list once.
+  const strippedLegacy = stripLegacyStructuredMode(deduped);
+  if (strippedLegacy > 0) {
+    appLog('core:agent-config', 'info', `Removed legacy structuredMode from ${strippedLegacy} agent(s)`, {
+      meta: { projectPath },
+    });
+  }
+
+  if (removed.length > 0 || droppedInvalid || strippedLegacy > 0) {
     // Persist the cleaned list without clobbering a valid backup when the
     // current file had to be recovered from backup first, or when the current
     // file held invalid records (copying it into the backup would replace the
@@ -460,6 +470,22 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
   }
 
   return deduped;
+}
+
+/**
+ * Remove the legacy `structuredMode` flag from agent records in place.
+ * Returns how many records carried it.
+ */
+export function stripLegacyStructuredMode(agents: DurableAgentConfig[]): number {
+  let count = 0;
+  for (const agent of agents) {
+    const record = agent as DurableAgentConfig & { structuredMode?: unknown };
+    if ('structuredMode' in record) {
+      delete record.structuredMode;
+      count++;
+    }
+  }
+  return count;
 }
 
 async function writeAgentsToDisk(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
@@ -1076,7 +1102,6 @@ export async function createDurable(
   freeAgentMode?: boolean,
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
-  structuredMode?: boolean,
   persona?: string,
 ): Promise<DurableAgentConfig> {
   await ensureDir(clubhouseDir(projectPath));
@@ -1163,7 +1188,6 @@ export async function createDurable(
     ...(model && model !== 'default' ? { model } : {}),
     ...(orchestrator ? { orchestrator } : {}),
     ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
-    ...(structuredMode ? { structuredMode } : {}),
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
     ...(mcpConfigs && Object.keys(mcpConfigs).length > 0 ? { mcpConfigs } : {}),
     ...(persona ? { persona } : {}),

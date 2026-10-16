@@ -160,7 +160,6 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         model: config.model,
         orchestrator: config.orchestrator,
         freeAgentMode: config.freeAgentMode || undefined,
-        structuredMode: config.structuredMode || undefined,
         mcpIds: config.mcpIds,
         resuming: resume || undefined,
       };
@@ -184,7 +183,6 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           mission,
           orchestrator: config.orchestrator,
           freeAgentMode: config.freeAgentMode,
-          structuredMode: config.structuredMode,
           resume,
           sessionId: resume ? config.lastSessionId : undefined,
         });

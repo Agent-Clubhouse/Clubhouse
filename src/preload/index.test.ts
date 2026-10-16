@@ -204,7 +204,6 @@ describe('preload IPC bridge', () => {
         false,
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
-        true,
         'persona',
       )).resolves.toBe('bridge-result');
 
@@ -219,7 +218,6 @@ describe('preload IPC bridge', () => {
         false,
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
-        true,
         'persona',
       );
     });

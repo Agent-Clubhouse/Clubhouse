@@ -2,13 +2,12 @@
  * Shoulder Tap — urgent, ephemeral direct messaging for group project agents.
  *
  * Shared by MCP tool handler (agent taps) AND IPC handler (human taps).
- * Injects a message into the target agent's PTY (or structured input). The
+ * Injects a message into the target agent's PTY. The
  * tap is NOT recorded to the bulletin board — if a response is expected,
  * the target is told to post to the sender's inbox channel.
  */
 
 import { agentRegistry } from './agent-registry';
-import * as structuredManager from './structured-manager';
 import { inboxChannelName } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -145,9 +144,6 @@ export async function executeShoulderTap(params: ShoulderTapParams): Promise<Sho
 
         await submitAfterPaste(binding.agentId, timing);
 
-        delivered.push({ agentId: binding.agentId, agentName, status: 'delivered' });
-      } else if (reg.runtime === 'structured') {
-        await structuredManager.sendMessage(binding.agentId, taggedMessage);
         delivered.push({ agentId: binding.agentId, agentName, status: 'delivered' });
       } else {
         failed.push({ agentId: binding.agentId, agentName, status: 'unsupported-runtime' });

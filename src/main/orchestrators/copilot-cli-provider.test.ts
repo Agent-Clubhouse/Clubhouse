@@ -57,20 +57,6 @@ vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` })),
 }));
 
-vi.mock('./adapters', () => ({
-  AcpAdapter: class MockAcpAdapter {
-    public ctorOpts: any;
-    constructor(opts: any) {
-      this.ctorOpts = opts;
-    }
-    start = vi.fn();
-    sendMessage = vi.fn();
-    respondToPermission = vi.fn();
-    cancel = vi.fn();
-    dispose = vi.fn();
-  },
-}));
-
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
@@ -129,40 +115,6 @@ describe('CopilotCliProvider', () => {
       expect(caps.sessionResume).toBe(true);
       expect(caps.permissions).toBe(true);
       expect(caps.structuredOutput).toBe(true);
-    });
-
-    it('reports structuredMode enabled with acp protocol', () => {
-      const caps = provider.getCapabilities();
-      expect(caps.structuredMode).toBe(true);
-      expect(caps.structuredProtocol).toBe('acp');
-    });
-  });
-
-  describe('createStructuredAdapter', () => {
-    it('returns an AcpAdapter instance', () => {
-      const adapter = provider.createStructuredAdapter!();
-      expect(adapter).toBeDefined();
-      expect(typeof adapter.start).toBe('function');
-      expect(typeof adapter.sendMessage).toBe('function');
-      expect(typeof adapter.respondToPermission).toBe('function');
-      expect(typeof adapter.cancel).toBe('function');
-      expect(typeof adapter.dispose).toBe('function');
-    });
-
-    it('passes --acp and --stdio in spawn args', () => {
-      const adapter = provider.createStructuredAdapter!() as any;
-      expect(adapter.ctorOpts.args).toContain('--acp');
-      expect(adapter.ctorOpts.args).toContain('--stdio');
-    });
-
-    it('passes --autopilot in spawn args (Mission 72: structured mode is autonomous)', () => {
-      const adapter = provider.createStructuredAdapter!() as any;
-      expect(adapter.ctorOpts.args).toContain('--autopilot');
-    });
-
-    it('uses the resolved binary path', () => {
-      const adapter = provider.createStructuredAdapter!() as any;
-      expect(adapter.ctorOpts.binary).toBe('/usr/local/bin/copilot');
     });
   });
 

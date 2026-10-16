@@ -9,15 +9,12 @@ import {
   HeadlessOpts,
   HeadlessCommandResult,
   NormalizedHookEvent,
-  StructuredAdapter,
   HookCapable,
   HeadlessCapable,
   SessionCapable,
-  StructuredCapable,
   PERMISSION_HOOK_TIMEOUT_SEC,
 } from './types';
 import { BaseProvider } from './base-provider';
-import { StreamJsonAdapter } from './adapters/stream-json-adapter';
 import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -57,7 +54,7 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PermissionRequest: 'permission_request',
 };
 
-export class ClaudeCodeProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable, StructuredCapable {
+export class ClaudeCodeProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable {
   readonly id = 'claude-code' as const;
   readonly displayName = 'Claude Code';
   readonly shortName = 'CC';
@@ -123,8 +120,6 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       supportsPositionalMission: true,
       supportsAutoResumeAfterUpdate: true,
       permissions: true,
-      structuredMode: true,
-      structuredProtocol: 'acp',
     };
   }
 
@@ -274,20 +269,6 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     }
 
     return { binary, args, outputKind: 'stream-json' };
-  }
-
-  // ── StructuredCapable ───────────────────────────────────────────────────
-
-  createStructuredAdapter(opts?: { resume?: boolean }): StructuredAdapter {
-    const baseArgs: string[] = [];
-    if (opts?.resume) {
-      baseArgs.push('--continue');
-    }
-    return new StreamJsonAdapter({
-      binary: this.findBinary(),
-      baseArgs,
-      toolVerbs: TOOL_VERBS,
-    });
   }
 
   // ── SessionCapable ──────────────────────────────────────────────────────

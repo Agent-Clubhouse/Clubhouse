@@ -35,7 +35,7 @@ vi.mock('./AddAgentDialog', () => ({
     <div data-testid="add-agent-dialog">
       <button onClick={onClose}>Close</button>
       <button
-        onClick={() => onCreate('new-durable', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined, 'qa')}
+        onClick={() => onCreate('new-durable', 'indigo', 'default', false, 'claude-code', undefined, undefined, 'qa')}
         data-testid="add-agent-dialog-submit-with-persona"
       >
         Submit with persona
@@ -65,7 +65,6 @@ vi.mock('./TemplateConfigDialog', () => ({
         orchestrator: 'claude-code',
         useWorktree: true,
         freeAgentMode: false,
-        structuredMode: false,
       })}>Confirm Template</button>
       <button onClick={onClose}>Cancel Config</button>
     </div>
@@ -245,7 +244,6 @@ describe('AgentList dropdown', () => {
       undefined,            // freeAgentMode (false → undefined)
       undefined,            // mcpIds
       undefined,            // mcpConfigs
-      undefined,            // structuredMode (false → undefined)
       'qa',                 // persona ID
     );
   });
@@ -265,7 +263,7 @@ describe('AgentList dropdown', () => {
     });
 
     expect(createDurableSpy).toHaveBeenCalledWith(
-      '/project', 'new-durable', 'indigo', undefined, false, 'claude-code', undefined, undefined, undefined, undefined, 'qa',
+      '/project', 'new-durable', 'indigo', undefined, false, 'claude-code', undefined, undefined, undefined, 'qa',
     );
   });
 });

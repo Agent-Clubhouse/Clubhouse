@@ -222,7 +222,6 @@ function pickPatternSettings(agent: DurableAgentConfig): PatternSettings {
   if (agent.mcpIds && agent.mcpIds.length > 0) s.mcpIds = agent.mcpIds;
   if (agent.mcpConfigs && Object.keys(agent.mcpConfigs).length > 0) s.mcpConfigs = agent.mcpConfigs;
   if (agent.freeAgentMode) s.freeAgentMode = true;
-  if (agent.structuredMode) s.structuredMode = true;
   if (agent.mission) s.mission = agent.mission;
   if (agent.buildCommand) s.buildCommand = agent.buildCommand;
   if (agent.testCommand) s.testCommand = agent.testCommand;

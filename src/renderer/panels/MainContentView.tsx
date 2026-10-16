@@ -6,7 +6,6 @@ import { useProjectStore } from '../stores/projectStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
 import { SleepingAgent } from '../features/agents/SleepingAgent';
 import { HeadlessAgentView } from '../features/agents/HeadlessAgentView';
-import { StructuredAgentView } from '../features/agents/structured/StructuredAgentView';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/agents/QuickAgentGhost';
 import { PoppedOutPlaceholder } from '../features/popout/PoppedOutPlaceholder';
@@ -68,19 +67,6 @@ export function MainContentView() {
   const isAgentView = explorerTab === 'agents';
   const [terminalFocused, setTerminalFocused] = useState(false);
   const prevProjectIdRef = useRef(activeProjectId);
-
-  // Structured Mode is gated behind an experimental flag. Even if an agent has
-  // structuredMode persisted in its config (e.g. set when the flag was on), we
-  // must not route into StructuredAgentView when the flag is off — otherwise
-  // toggling the flag off would still change visible behavior.
-  const [structuredModeFlag, setStructuredModeFlag] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    window.clubhouse.app.getExperimentalSettings()
-      .then((flags) => { if (!cancelled) setStructuredModeFlag(!!flags.structuredMode); })
-      .catch(() => { /* leave disabled on failure */ });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     if (!isAgentView) {
@@ -188,24 +174,6 @@ export function MainContentView() {
       return (
         <div className="relative h-full">
           <HeadlessAgentView agent={activeAgent} />
-          {isSatelliteDisconnected && activeSatellite && (
-            <SatelliteDisconnectedOverlay
-              satelliteId={activeSatellite.fingerprint}
-              satelliteAlias={activeSatellite.alias}
-              satelliteState={activeSatellite.state}
-            />
-          )}
-        </div>
-      );
-    }
-
-    // Structured running agents get the rich chat feed instead of a terminal.
-    // Gated on the experimental flag so a persisted structuredMode doesn't keep
-    // changing behavior after the flag is turned off.
-    if (activeAgent.structuredMode && structuredModeFlag) {
-      return (
-        <div className="relative h-full">
-          <StructuredAgentView agentId={activeAgentId!} />
           {isSatelliteDisconnected && activeSatellite && (
             <SatelliteDisconnectedOverlay
               satelliteId={activeSatellite.fingerprint}

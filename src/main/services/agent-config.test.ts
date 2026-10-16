@@ -89,6 +89,7 @@ import {
   saveAgentIcon,
   clearAgentConfigCache,
   flushAgentConfig,
+  stripLegacyStructuredMode,
   getBackupInfo,
   restoreFromBackup,
 } from './agent-config';
@@ -182,6 +183,67 @@ describe('readAgents (via listDurable)', () => {
     const fromGet = await getDurableConfig(PROJECT_PATH, 'durable_copilot');
     expect(fromGet?.agentFile).toBe('k8s-assistant');
     expect(fromGet?.agentSource).toBe('~/.copilot/agents');
+  });
+
+  describe('legacy structuredMode migration', () => {
+    beforeEach(() => {
+      vi.mocked(fsp.writeFile).mockReset();
+    });
+
+    it('strips structuredMode from loaded agents and persists the cleaned list', async () => {
+      mockAgentsFile([
+        { id: 'durable_a', name: 'a', color: 'indigo', createdAt: '2024-01-01', structuredMode: true },
+        { id: 'durable_b', name: 'b', color: 'emerald', createdAt: '2024-01-01', structuredMode: false },
+        { id: 'durable_c', name: 'c', color: 'amber', createdAt: '2024-01-01' },
+      ]);
+      let written = '';
+      captureMainAgentWrite((v) => { written = v; });
+
+      const result = await listDurable(PROJECT_PATH);
+
+      expect(result).toHaveLength(3);
+      for (const agent of result) {
+        expect(agent).not.toHaveProperty('structuredMode');
+      }
+      expect(written).not.toBe('');
+      const persisted = JSON.parse(written);
+      expect(persisted.map((a: any) => a.id)).toEqual(['durable_a', 'durable_b', 'durable_c']);
+      for (const agent of persisted) {
+        expect(agent).not.toHaveProperty('structuredMode');
+      }
+    });
+
+    it('does not rewrite agents.json when no agent carries structuredMode', async () => {
+      mockAgentsFile([
+        { id: 'durable_a', name: 'a', color: 'indigo', createdAt: '2024-01-01' },
+      ]);
+
+      await listDurable(PROJECT_PATH);
+
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('stripLegacyStructuredMode', () => {
+  it('deletes structuredMode in place and returns how many records carried it', () => {
+    const agents: any[] = [
+      { id: 'a', structuredMode: true },
+      { id: 'b', structuredMode: false },
+      { id: 'c' },
+    ];
+    expect(stripLegacyStructuredMode(agents)).toBe(2);
+    expect(agents).toEqual([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+  });
+
+  it('returns 0 and leaves records untouched when none carry the flag', () => {
+    const agents: any[] = [{ id: 'a', name: 'x' }];
+    expect(stripLegacyStructuredMode(agents)).toBe(0);
+    expect(agents).toEqual([{ id: 'a', name: 'x' }]);
+  });
+
+  it('handles an empty list', () => {
+    expect(stripLegacyStructuredMode([])).toBe(0);
   });
 });
 
@@ -433,17 +495,7 @@ describe('createDurable', () => {
     expect(config).not.toHaveProperty('freeAgentMode');
   });
 
-  it('includes structuredMode when true', async () => {
-    const config = await createDurable(PROJECT_PATH, 'structured-agent', 'indigo', 'default', true, undefined, false, undefined, undefined, true);
-    expect(config.structuredMode).toBe(true);
-  });
-
-  it('omits structuredMode when false', async () => {
-    const config = await createDurable(PROJECT_PATH, 'no-structured', 'indigo', 'default', true, undefined, false, undefined, undefined, false);
-    expect(config).not.toHaveProperty('structuredMode');
-  });
-
-  it('omits structuredMode when undefined', async () => {
+  it('never writes structuredMode', async () => {
     const config = await createDurable(PROJECT_PATH, 'default-mode', 'indigo');
     expect(config).not.toHaveProperty('structuredMode');
   });

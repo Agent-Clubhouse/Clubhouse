@@ -28,7 +28,7 @@ vi.mock('../../hooks/useModelOptions', () => ({
 vi.mock('../../hooks/useEffectiveOrchestrators', () => ({
   useEffectiveOrchestrators: () => ({
     effectiveOrchestrators: [
-      { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { permissions: true, structuredMode: true } },
+      { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { permissions: true } },
       { id: 'copilot-cli', displayName: 'GitHub Copilot', shortName: 'GHCP', capabilities: { permissions: false } },
     ],
     activeProfile: undefined,
@@ -51,7 +51,7 @@ function resetStores() {
         id: 'claude-code',
         displayName: 'Claude Code',
         shortName: 'CC',
-        capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true, structuredMode: true },
+        capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true },
       },
       {
         id: 'copilot-cli',
@@ -79,8 +79,6 @@ describe('TemplateConfigDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
-    // Reset experimental flag mock to default (off) for each test.
-    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
   });
 
   it('renders with persona name in header', () => {
@@ -127,9 +125,9 @@ describe('TemplateConfigDialog', () => {
         orchestrator: 'claude-code',
         useWorktree: true,
         freeAgentMode: false,
-        structuredMode: false,
       }),
     );
+    expect(defaultProps.onCreate.mock.calls[0][0]).not.toHaveProperty('structuredMode');
   });
 
   it('calls onClose when Cancel is clicked', () => {
@@ -183,34 +181,13 @@ describe('TemplateConfigDialog', () => {
     expect(call.persona.content).toBe('# QA\nTesting instructions...');
   });
 
-  describe('Structured Mode gating (experimental flag)', () => {
-    it('hides Structured Mode toggle when experimental.structuredMode is off (default)', async () => {
-      render(<TemplateConfigDialog {...defaultProps} />);
-      await waitFor(() => {
-        expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
-      });
-      expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
-      expect(screen.queryByText('Use Structured Mode')).not.toBeInTheDocument();
+  it('does not render a Structured Mode toggle, even with the legacy experimental flag set', async () => {
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
+    render(<TemplateConfigDialog {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByText('Create Agent')).toBeInTheDocument();
     });
-
-    it('shows Structured Mode toggle when experimental.structuredMode is on', async () => {
-      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
-      render(<TemplateConfigDialog {...defaultProps} />);
-      await waitFor(() => {
-        expect(screen.getByTestId('structured-mode-field')).toBeInTheDocument();
-      });
-      expect(screen.getByText('Use Structured Mode')).toBeInTheDocument();
-    });
-
-    it('forces structuredMode to false in submitted config when flag is off', async () => {
-      render(<TemplateConfigDialog {...defaultProps} />);
-      await waitFor(() => {
-        expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
-      });
-      fireEvent.click(screen.getByText('Create Agent'));
-      expect(defaultProps.onCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ structuredMode: false }),
-      );
-    });
+    expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
+    expect(screen.queryByText('Use Structured Mode')).not.toBeInTheDocument();
   });
 });

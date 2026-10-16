@@ -137,10 +137,6 @@ describe('CodexCliProvider', () => {
       expect(provider.getCapabilities().permissions).toBe(true);
     });
 
-    it('reports structuredMode as true', () => {
-      expect(provider.getCapabilities().structuredMode).toBe(true);
-    });
-
     it('returns object with all required keys', () => {
       const caps = provider.getCapabilities();
       expect(typeof caps.headless).toBe('boolean');
@@ -148,7 +144,6 @@ describe('CodexCliProvider', () => {
       expect(typeof caps.hooks).toBe('boolean');
       expect(typeof caps.sessionResume).toBe('boolean');
       expect(typeof caps.permissions).toBe('boolean');
-      expect(typeof caps.structuredMode).toBe('boolean');
     });
   });
 
@@ -765,18 +760,6 @@ describe('CodexCliProvider', () => {
     it('handles server with no env', () => {
       const args = provider.buildMcpArgs({ clubhouse: { command: 'node' } });
       expect(args.some(a => a.includes('.env.'))).toBe(false);
-    });
-  });
-
-  describe('createStructuredAdapter', () => {
-    it('returns a StructuredAdapter with required methods', () => {
-      const adapter = provider.createStructuredAdapter();
-      expect(adapter).toBeDefined();
-      expect(typeof adapter.start).toBe('function');
-      expect(typeof adapter.sendMessage).toBe('function');
-      expect(typeof adapter.respondToPermission).toBe('function');
-      expect(typeof adapter.cancel).toBe('function');
-      expect(typeof adapter.dispose).toBe('function');
     });
   });
 

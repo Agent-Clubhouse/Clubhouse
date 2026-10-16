@@ -12,7 +12,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { HelpSearchInput } from './help/HelpSearchInput';
-import { ActionBar } from './agents/structured/ActionBar';
 import { CommandPaletteInput } from './command-palette/CommandPaletteInput';
 
 // ── CommandPaletteStore mock ───────────────────────────────────────────────
@@ -26,11 +25,6 @@ vi.mock('../stores/commandPaletteStore', () => {
   hook.subscribe = () => () => {};
   return { useCommandPaletteStore: hook };
 });
-
-// ── CostTracker mock (child of ActionBar) ─────────────────────────────────
-vi.mock('./agents/structured/CostTracker', () => ({
-  CostTracker: () => null,
-}));
 
 // ── Helper: check no old ad-hoc patterns remain on element ────────────────
 function assertNoAdHocFocusPattern(el: HTMLElement): void {
@@ -62,28 +56,6 @@ describe('CommandPaletteInput — focus ring (VQ-FI-01)', () => {
     render(<CommandPaletteInput />);
     const input = screen.getByPlaceholderText('Type to search...');
     expect(input.className).toContain('focus-ring');
-    assertNoAdHocFocusPattern(input);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────
-// ActionBar
-// ─────────────────────────────────────────────────────────────────────────
-
-describe('ActionBar — focus ring (VQ-FI-01)', () => {
-  it('message input carries focus-ring-dim class (was: outline-none focus:border-ctp-accent/50)', () => {
-    render(
-      <ActionBar
-        agentId="test-agent"
-        elapsed={0}
-        usage={null}
-        isComplete={false}
-        onStop={vi.fn()}
-        onSendMessage={vi.fn()}
-      />
-    );
-    const input = screen.getByPlaceholderText('Send a message...');
-    expect(input.className).toContain('focus-ring-dim');
     assertNoAdHocFocusPattern(input);
   });
 });

@@ -692,17 +692,17 @@ describe('plugin-loader', () => {
     it('clears flags for removed features (assistant, agentQueue, sessions)', async () => {
       setupCanvasBuiltins();
       mockApp.getExperimentalSettings.mockResolvedValue({
-        assistant: true, agentQueue: true, sessions: false, structuredMode: true,
+        assistant: true, agentQueue: true, sessions: false, otherFeature: true,
       });
 
       await initializePluginSystem();
 
-      expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({ structuredMode: true });
+      expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({ otherFeature: true });
     });
 
     it('does not migrate canvas when experimentalFlags.canvas is falsy', async () => {
       setupCanvasBuiltins();
-      mockApp.getExperimentalSettings.mockResolvedValue({ structuredMode: true });
+      mockApp.getExperimentalSettings.mockResolvedValue({ otherFeature: true });
 
       await initializePluginSystem();
 

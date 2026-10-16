@@ -671,6 +671,7 @@ export interface AgentsAPI {
     orchestrator?: string;
     freeAgentMode?: boolean;
     mcpIds?: string[];
+    /** @deprecated Structured mode was removed. Accepted for compatibility and ignored; will be removed in the next plugin API major. */
     structuredMode?: boolean;
     persona?: string;
   }): Promise<string>;

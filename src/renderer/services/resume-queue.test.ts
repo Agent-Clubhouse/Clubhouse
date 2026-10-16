@@ -358,6 +358,7 @@ describe('resume-queue', () => {
       createdAt: '2025-01-01T00:00:00.000Z',
       model: 'claude-opus-4',
       freeAgentMode: true,
+      // Legacy flag from before structured mode was removed; must be ignored.
       structuredMode: true,
       mcpIds: ['mcp-1', 'mcp-2'],
       orchestrator: 'claude-code',
@@ -484,7 +485,7 @@ describe('resume-queue', () => {
       );
     });
 
-    it('restores structuredMode from durable config', async () => {
+    it('does not restore a legacy structuredMode from durable config', async () => {
       const entry = makeEntry({ agentId: 'settings-agent', resumeStrategy: 'auto' });
 
       vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
@@ -495,21 +496,22 @@ describe('resume-queue', () => {
 
       await processResumeQueue(makeState([entry]));
 
-      // Verify Agent store has structuredMode
+      // The Agent written to the store does not carry structuredMode
       const setStateCalls = mockSetState.mock.calls;
       const agentSetCall = setStateCalls.find((call) => {
         if (typeof call[0] === 'function') {
           const result = call[0]({ agents: {}, agentSpawnedAt: {} });
-          return result?.agents?.['settings-agent']?.structuredMode === true;
+          return !!result?.agents?.['settings-agent'];
         }
         return false;
       });
       expect(agentSetCall).toBeDefined();
+      const agent = (agentSetCall![0] as (s: unknown) => any)({ agents: {}, agentSpawnedAt: {} }).agents['settings-agent'];
+      expect(agent).not.toHaveProperty('structuredMode');
 
-      // structuredMode passed to spawnAgent
-      expect(mockSpawnAgent).toHaveBeenCalledWith(
-        expect.objectContaining({ structuredMode: true }),
-      );
+      // ...and spawnAgent is not asked for structured mode
+      expect(mockSpawnAgent).toHaveBeenCalled();
+      expect(mockSpawnAgent.mock.calls[0][0]).not.toHaveProperty('structuredMode');
     });
 
     it('restores mcpIds and branch from durable config', async () => {
@@ -643,7 +645,7 @@ describe('resume-queue', () => {
       expect(mockGetDurableConfig).not.toHaveBeenCalled();
     });
 
-    it('passes freeAgentMode and structuredMode to spawnAgent in fallback retry', async () => {
+    it('passes freeAgentMode to spawnAgent in fallback retry', async () => {
       const entry = makeEntry({
         agentId: 'fallback-settings-agent',
         sessionId: 'session-xyz',
@@ -665,15 +667,15 @@ describe('resume-queue', () => {
 
       await processResumeQueue(makeState([entry]));
 
-      // Second (fallback) call should still include freeAgentMode and structuredMode
+      // Second (fallback) call should still include freeAgentMode
       expect(mockSpawnAgent).toHaveBeenNthCalledWith(
         2,
         expect.objectContaining({
           freeAgentMode: true,
-          structuredMode: true,
           sessionId: undefined,
         }),
       );
+      expect(mockSpawnAgent.mock.calls[1][0]).not.toHaveProperty('structuredMode');
     });
   });
 });

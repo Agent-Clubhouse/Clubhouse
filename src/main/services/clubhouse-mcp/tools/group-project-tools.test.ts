@@ -35,17 +35,12 @@ vi.mock('../../pty-manager', () => ({
   isRunning: (...args: unknown[]) => mockIsRunning(...args),
 }));
 
-vi.mock('../../structured-manager', () => ({
-  sendMessage: vi.fn().mockResolvedValue(undefined),
-}));
-
 const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
 const mockKillAgent = vi.fn().mockResolvedValue(undefined);
 vi.mock('../../agent-system', () => ({
   spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
   killAgent: (...args: unknown[]) => mockKillAgent(...args),
   isHeadlessAgent: vi.fn().mockReturnValue(false),
-  isStructuredAgent: vi.fn().mockReturnValue(false),
 }));
 
 const mockBroadcastToAllWindows = vi.fn();
@@ -807,7 +802,6 @@ describe('GroupProjectTools', () => {
         worktreePath: '/test/proj/wt',
         lastSessionId: 'session-123',
         freeAgentMode: true,
-        structuredMode: true,
       },
     ]);
 
@@ -842,7 +836,6 @@ describe('GroupProjectTools', () => {
         resume: true,
         sessionId: 'session-123',
         freeAgentMode: true,
-        structuredMode: true,
       }),
     );
   });

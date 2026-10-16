@@ -96,7 +96,6 @@ vi.mock('./annex-event-bus', () => ({
   onHookEvent: vi.fn().mockReturnValue(() => {}),
   onPtyExit: vi.fn().mockReturnValue(() => {}),
   onAgentSpawned: vi.fn().mockReturnValue(() => {}),
-  onStructuredEvent: vi.fn().mockReturnValue(() => {}),
   onGroupProjectChanged: vi.fn().mockReturnValue(() => {}),
   onBulletinMessage: vi.fn().mockReturnValue(() => {}),
   emitGroupProjectChanged: vi.fn(),
@@ -182,13 +181,6 @@ vi.mock('./agent-system', () => ({
   isHeadlessAgent: vi.fn().mockReturnValue(false),
 }));
 
-// Mock structured-manager
-vi.mock('./structured-manager', () => ({
-  isStructuredSession: vi.fn().mockReturnValue(false),
-  respondToPermission: vi.fn().mockResolvedValue(undefined),
-  sendMessage: vi.fn().mockResolvedValue(undefined),
-}));
-
 // Mock name-generator
 vi.mock('../../shared/name-generator', () => ({
   generateQuickName: vi.fn().mockReturnValue('swift-fox'),
@@ -215,7 +207,6 @@ import * as projectStore from './project-store';
 import * as agentConfigModule from './agent-config';
 import * as ptyManagerModule from './pty-manager';
 import * as agentSystem from './agent-system';
-import * as structuredManagerModule from './structured-manager';
 import * as _eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
@@ -298,8 +289,6 @@ describe('annex-server', () => {
     vi.mocked(agentSystem.spawnAgent).mockResolvedValue(undefined);
     vi.mocked(agentSystem.getAvailableOrchestrators).mockReturnValue([]);
     vi.mocked(pluginStorage.readKey).mockResolvedValue(null);
-    vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
-    vi.mocked(structuredManagerModule.respondToPermission).mockResolvedValue(undefined);
     vi.mocked(generateQuickName).mockReturnValue('swift-fox');
     mockBonjour.publish.mockReturnValue(mockBonjourService);
     vi.mocked(Bonjour).mockImplementation(() => mockBonjour as any);
@@ -324,7 +313,6 @@ describe('annex-server', () => {
     vi.mocked(annexEventBus.onHookEvent).mockReturnValue(() => {});
     vi.mocked(annexEventBus.onPtyExit).mockReturnValue(() => {});
     vi.mocked(annexEventBus.onAgentSpawned).mockReturnValue(() => {});
-    vi.mocked(annexEventBus.onStructuredEvent).mockReturnValue(() => {});
   });
 
   afterEach(() => {
@@ -1232,16 +1220,6 @@ describe('annex-server', () => {
       );
     });
 
-    it('handles aborted request to structured permission', async () => {
-      const { port, token } = await startAndPair();
-
-      await abortedPost(port, '/api/v1/agents/some-agent/structured-permission', token);
-
-      expect(appLog).toHaveBeenCalledWith(
-        'core:annex', 'error', 'readBody failed',
-        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
-      );
-    });
   });
 
   // -------------------------------------------------------------------------
@@ -1264,23 +1242,6 @@ describe('annex-server', () => {
       const agents = JSON.parse(res.body);
       expect(agents[0].status).toBe('running');
       expect(agents[0].executionMode).toBe('pty');
-    });
-
-    it('includes executionMode=structured for structured agents', async () => {
-      vi.mocked(projectStore.list).mockReturnValue([
-        { id: 'proj_1', name: 'test', path: '/tmp/test' },
-      ]);
-      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
-        { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01' } as any,
-      ]);
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
-
-      const { port, token } = await startAndPair();
-
-      const res = await request(port, 'GET', '/api/v1/projects/proj_1/agents', undefined, authHeaders(token));
-      const agents = JSON.parse(res.body);
-      expect(agents[0].status).toBe('running');
-      expect(agents[0].executionMode).toBe('structured');
     });
 
     it('includes executionMode=headless for headless agents', async () => {
@@ -1314,89 +1275,6 @@ describe('annex-server', () => {
       const agents = JSON.parse(res.body);
       expect(agents[0].status).toBe('sleeping');
       expect(agents[0].executionMode).toBeNull();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Issue 396: Structured permission response
-  // -------------------------------------------------------------------------
-
-  describe('structured permission response', () => {
-    it('POST /api/v1/agents/:id/structured-permission resolves permission', async () => {
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
-
-      const { port, token } = await startAndPair();
-
-      const res = await request(
-        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
-        { requestId: 'req-1', approved: true, reason: 'user approved' },
-        authHeaders(token),
-      );
-      expect(res.status).toBe(200);
-      const body = JSON.parse(res.body);
-      expect(body.ok).toBe(true);
-      expect(body.approved).toBe(true);
-      expect(structuredManagerModule.respondToPermission).toHaveBeenCalledWith(
-        'durable_1', 'req-1', true, 'user approved',
-      );
-    });
-
-    it('POST /api/v1/agents/:id/structured-permission denies permission', async () => {
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
-
-      const { port, token } = await startAndPair();
-
-      const res = await request(
-        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
-        { requestId: 'req-2', approved: false },
-        authHeaders(token),
-      );
-      expect(res.status).toBe(200);
-      const body = JSON.parse(res.body);
-      expect(body.ok).toBe(true);
-      expect(body.approved).toBe(false);
-    });
-
-    it('returns 400 for missing requestId', async () => {
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
-
-      const { port, token } = await startAndPair();
-
-      const res = await request(
-        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
-        { approved: true },
-        authHeaders(token),
-      );
-      expect(res.status).toBe(400);
-      expect(JSON.parse(res.body)).toEqual({ error: 'missing_request_id' });
-    });
-
-    it('returns 400 for missing approved field', async () => {
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
-
-      const { port, token } = await startAndPair();
-
-      const res = await request(
-        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
-        { requestId: 'req-1' },
-        authHeaders(token),
-      );
-      expect(res.status).toBe(400);
-      expect(JSON.parse(res.body)).toEqual({ error: 'missing_approved' });
-    });
-
-    it('returns 404 for non-structured agent', async () => {
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
-
-      const { port, token } = await startAndPair();
-
-      const res = await request(
-        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
-        { requestId: 'req-1', approved: true },
-        authHeaders(token),
-      );
-      expect(res.status).toBe(404);
-      expect(JSON.parse(res.body)).toEqual({ error: 'no_structured_session' });
     });
   });
 
@@ -2150,7 +2028,6 @@ describe('annex-server', () => {
     it('POST /api/v1/agents/:id/message sends to PTY agent', async () => {
       const { port, token } = await startAndPair();
       vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
       vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
 
       const res = await request(port, 'POST', '/api/v1/agents/agent-1/message', { message: 'hello\n' }, authHeaders(token));
@@ -2159,18 +2036,6 @@ describe('annex-server', () => {
       expect(body.ok).toBe(true);
       expect(body.mode).toBe('pty');
       expect(ptyManagerModule.write).toHaveBeenCalledWith('agent-1', 'hello\n');
-    });
-
-    it('POST /api/v1/agents/:id/message sends to structured agent', async () => {
-      const { port, token } = await startAndPair();
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
-
-      const res = await request(port, 'POST', '/api/v1/agents/agent-2/message', { message: 'do something' }, authHeaders(token));
-      const body = JSON.parse(res.body);
-      expect(res.status).toBe(200);
-      expect(body.ok).toBe(true);
-      expect(body.mode).toBe('structured');
-      expect(structuredManagerModule.sendMessage).toHaveBeenCalledWith('agent-2', 'do something');
     });
 
     it('returns 400 when message is missing', async () => {
@@ -2182,7 +2047,6 @@ describe('annex-server', () => {
 
     it('returns 400 for headless agent', async () => {
       const { port, token } = await startAndPair();
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
       vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(true);
 
       const res = await request(port, 'POST', '/api/v1/agents/agent-1/message', { message: 'hello' }, authHeaders(token));
@@ -2698,10 +2562,9 @@ describe('annex-server', () => {
         { agentId: 'agent-h1', agentName: 'headless-agent', targetId: 'gp_1', targetKind: 'group-project', label: 'GP' } as any,
       ]);
 
-      // Agent is headless-only (not PTY, not structured)
+      // Agent is headless-only (not PTY)
       vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
       vi.mocked(agentSystem.isHeadlessAgent).mockImplementation((id: string) => id === 'agent-h1');
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
 
       const { port, token } = await startAndPair();
 
@@ -2713,36 +2576,6 @@ describe('annex-server', () => {
       const members = JSON.parse(res.body);
       expect(members).toHaveLength(1);
       expect(members[0].agentName).toBe('headless-agent');
-      expect(members[0].status).toBe('connected');
-    }, 10_000);
-
-    it('structured agent shows as connected in GP members endpoint', async () => {
-      const { groupProjectRegistry } = await import('./group-project-registry');
-      const { bindingManager } = await import('./clubhouse-mcp/binding-manager');
-
-      vi.mocked(groupProjectRegistry.get).mockResolvedValue({
-        id: 'gp_1', name: 'Test GP', description: '', members: [],
-      } as any);
-
-      vi.mocked(bindingManager.getAllBindings).mockReturnValue([
-        { agentId: 'agent-s1', agentName: 'structured-agent', targetId: 'gp_1', targetKind: 'group-project', label: 'GP' } as any,
-      ]);
-
-      // Agent is structured-only
-      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
-      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
-      vi.mocked(structuredManagerModule.isStructuredSession).mockImplementation((id: string) => id === 'agent-s1');
-
-      const { port, token } = await startAndPair();
-
-      const res = await request(
-        port, 'GET', '/api/v1/group-projects/gp_1/members',
-        undefined, authHeaders(token),
-      );
-      expect(res.status).toBe(200);
-      const members = JSON.parse(res.body);
-      expect(members).toHaveLength(1);
-      expect(members[0].agentName).toBe('structured-agent');
       expect(members[0].status).toBe('connected');
     }, 10_000);
 
@@ -2761,7 +2594,6 @@ describe('annex-server', () => {
       // Agent is not running in any mode
       vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
       vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
-      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
 
       const { port, token } = await startAndPair();
 

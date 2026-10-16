@@ -96,7 +96,6 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       worktreePath: entry.worktreePath,
       branch: durableConfig?.branch,
       freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode ?? undefined,
-      structuredMode: durableConfig?.structuredMode || undefined,
       mcpIds: durableConfig?.mcpIds,
     };
 
@@ -123,7 +122,6 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       mission: entry.mission,
       permissionMode: entry.permissionMode,
       freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode,
-      structuredMode: durableConfig?.structuredMode,
     });
 
     // Clear the resuming spinner overlay and mark resume complete
@@ -162,7 +160,6 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
           mission: entry.mission,
           permissionMode: entry.permissionMode,
           freeAgentMode: entry.freeAgentMode ?? fallbackConfig?.freeAgentMode,
-          structuredMode: fallbackConfig?.structuredMode,
         });
         useAgentStore.setState((s) => {
           const agent = s.agents[entry.agentId];

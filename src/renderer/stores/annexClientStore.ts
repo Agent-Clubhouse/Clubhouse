@@ -374,7 +374,7 @@ export function initAnnexClientListener(): () => void {
         throttledHookUpdate(satelliteId, p.agentId, p.detailedStatus);
       }
     } else if (type === 'structured:event') {
-      // Structured-mode agent status update
+      // Sent only by satellites on versions before structured mode was removed.
       const p = payload as { agentId: string; event: unknown; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
       if (p.agentId && p.detailedStatus) {
         throttledHookUpdate(satelliteId, p.agentId, p.detailedStatus);

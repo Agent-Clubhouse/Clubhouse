@@ -3,13 +3,11 @@ import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { SpawnAgentParams } from '../../shared/types';
-import { StructuredSessionOpts } from '../orchestrators/types';
-import { isSessionCapable, isStructuredCapable } from '../orchestrators';
+import { isSessionCapable } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
 import { agentRegistry } from '../services/agent-registry';
 import * as headlessManager from '../services/headless-manager';
-import * as structuredManager from '../services/structured-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from '../services/session-reader';
 import { appLog } from '../services/log-service';
@@ -42,7 +40,7 @@ export function registerAgentHandlers(): void {
   ));
 
   // Returns the subset of the given agent IDs that currently have a live
-  // session (PTY / headless / structured) in the main process. The renderer
+  // session (PTY / headless) in the main process. The renderer
   // calls this after (re)loading durable agents to reconcile status, so a
   // reopened window shows running agents as 'running' immediately instead of
   // waiting for the next poll tick or hook event.
@@ -56,9 +54,9 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, structuredMode, persona) => {
-        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs as Record<string, Record<string, string>> | undefined, structuredMode, persona);
+      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), stringArg({ optional: true })],
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona) => {
+        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs as Record<string, Record<string, string>> | undefined, persona);
 
         // Inject persona instructions into the agent's worktree
         if (persona && config.worktreePath) {
@@ -419,56 +417,6 @@ export function registerAgentHandlers(): void {
           });
           return null;
         }
-      },
-    ),
-  );
-
-  // --- Structured mode handlers ---
-
-  ipcMain.handle(IPC.AGENT.START_STRUCTURED, withValidatedArgs(
-    [stringArg(), objectArg<StructuredSessionOpts>()],
-    async (_event, agentId, opts) => {
-      try {
-        const orchestratorId = agentSystem.getAgentOrchestrator(agentId);
-        const projectPath = agentSystem.getAgentProjectPath(agentId);
-        if (!projectPath) throw new Error(`No project path found for agent ${agentId}`);
-
-        const provider = await agentSystem.resolveOrchestrator(projectPath, orchestratorId);
-        if (!isStructuredCapable(provider)) {
-          throw new Error(`${provider.displayName} does not support structured mode`);
-        }
-
-        const adapter = provider.createStructuredAdapter();
-        await structuredManager.startStructuredSession(agentId, adapter, opts);
-      } catch (err) {
-        appLog('core:ipc', 'error', 'Structured session start failed', {
-          meta: { agentId, error: err instanceof Error ? err.message : String(err) },
-        });
-        throw err;
-      }
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.CANCEL_STRUCTURED, withValidatedArgs(
-    [stringArg()],
-    async (_event, agentId) => {
-      await structuredManager.cancelSession(agentId);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.SEND_STRUCTURED_MESSAGE, withValidatedArgs(
-    [stringArg(), stringArg({ minLength: 0 })],
-    async (_event, agentId, message) => {
-      await structuredManager.sendMessage(agentId, message);
-    },
-  ));
-
-  ipcMain.handle(
-    IPC.AGENT.RESPOND_PERMISSION,
-    withValidatedArgs(
-      [stringArg(), stringArg(), booleanArg(), stringArg({ optional: true })],
-      async (_event, agentId, requestId, approved, reason) => {
-        await structuredManager.respondToPermission(agentId, requestId, approved, reason);
       },
     ),
   );
