@@ -34,6 +34,22 @@ import { consumePendingProtocolAction } from '../services/protocol-service';
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
 const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
 
+/**
+ * app.exit() skips before-quit, so the shutdown flush never runs on these
+ * paths. Persist pending agent-config writes first; a flush failure is logged
+ * but must not block the restart the user asked for.
+ */
+async function flushAgentConfigsBeforeExit(): Promise<void> {
+  try {
+    const { flushAllAgentConfigs } = await import('../services/agent-config');
+    await flushAllAgentConfigs();
+  } catch (err) {
+    logService.appLog('core:shutdown', 'error', 'Failed to flush agent configs before exit', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, withValidatedArgs(
     [stringArg()],
@@ -272,7 +288,8 @@ export function registerAppHandlers(): void {
     return autoUpdateService.getStatus();
   });
 
-  ipcMain.handle(IPC.APP.APPLY_UPDATE, () => {
+  ipcMain.handle(IPC.APP.APPLY_UPDATE, async () => {
+    await flushAgentConfigsBeforeExit();
     return autoUpdateService.applyUpdate();
   });
 
@@ -401,7 +418,8 @@ export function registerAppHandlers(): void {
   ));
 
   // --- App Restart ---
-  ipcMain.handle(IPC.APP.RESTART, () => {
+  ipcMain.handle(IPC.APP.RESTART, async () => {
+    await flushAgentConfigsBeforeExit();
     app.relaunch();
     app.exit(0);
   });
