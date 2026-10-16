@@ -291,7 +291,7 @@ describe('restart-session-service', () => {
       expect(result).toEqual([]);
     });
 
-    it('returns only PTY agents, filtering out headless and structured runtimes', () => {
+    it('returns only PTY agents, filtering out headless runtimes', () => {
       agentRegistry.register('pty-agent', {
         projectPath: '/projects/club',
         orchestrator: 'claude-code' as const,
@@ -301,11 +301,6 @@ describe('restart-session-service', () => {
         projectPath: '/projects/club',
         orchestrator: 'claude-code' as const,
         runtime: 'headless',
-      });
-      agentRegistry.register('structured-agent', {
-        projectPath: '/projects/club',
-        orchestrator: 'claude-code' as const,
-        runtime: 'structured',
       });
 
       vi.mocked(ptyManager.getLastActivity).mockReturnValue(null);

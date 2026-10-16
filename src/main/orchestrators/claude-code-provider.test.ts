@@ -457,37 +457,6 @@ describe('ClaudeCodeProvider', () => {
     });
   });
 
-  describe('getCapabilities', () => {
-    it('reports structuredMode as true', () => {
-      expect(provider.getCapabilities().structuredMode).toBe(true);
-    });
-  });
-
-  describe('createStructuredAdapter', () => {
-    it('returns a StructuredAdapter with required methods', () => {
-      const adapter = provider.createStructuredAdapter!();
-      expect(adapter).toBeDefined();
-      expect(typeof adapter.start).toBe('function');
-      expect(typeof adapter.sendMessage).toBe('function');
-      expect(typeof adapter.respondToPermission).toBe('function');
-      expect(typeof adapter.cancel).toBe('function');
-      expect(typeof adapter.dispose).toBe('function');
-    });
-
-    it('creates adapter without --no-session-persistence by default', () => {
-      const adapter = provider.createStructuredAdapter!();
-      // The adapter should not have --no-session-persistence, allowing sessions to persist
-      // for follow-up messages with --continue
-      expect(adapter).toBeDefined();
-    });
-
-    it('creates adapter with --continue when resume: true', () => {
-      const adapter = provider.createStructuredAdapter!({ resume: true });
-      expect(adapter).toBeDefined();
-      // The adapter is created — the --continue flag is in baseArgs internally
-    });
-  });
-
   describe('resolveProjectDir (via listSessions and readSessionTranscript)', () => {
     // Use a custom config dir to avoid path.resolve ambiguity with homedir
     const customConfigDir = '/test/config';

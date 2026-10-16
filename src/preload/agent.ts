@@ -9,8 +9,8 @@ export const agent = {
     ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>
     ipcRenderer.invoke(IPC.AGENT.GET_RUNNING_STATUSES, agentIds),
-  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, structuredMode?: boolean, persona?: string) =>
-    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, structuredMode, persona),
+  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, persona?: string) =>
+    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona),
   deleteDurable: (projectPath: string, agentId: string) =>
     ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
   renameDurable: (projectPath: string, agentId: string, newName: string) =>
@@ -58,7 +58,6 @@ export const agent = {
     allowedTools?: string[];
     orchestrator?: string;
     freeAgentMode?: boolean;
-    structuredMode?: boolean;
     resume?: boolean;
     sessionId?: string;
     pluginOwner?: string;
@@ -209,29 +208,6 @@ export const agent = {
   } | null> =>
     ipcRenderer.invoke(IPC.AGENT.GET_SESSION_SUMMARY, projectPath, agentId, sessionId, orchestrator),
 
-  // Structured mode
-  startStructured: (agentId: string, opts: {
-    mission: string;
-    systemPrompt?: string;
-    model?: string;
-    cwd: string;
-    env?: Record<string, string>;
-    sessionId?: string;
-    allowedTools?: string[];
-    disallowedTools?: string[];
-    freeAgentMode?: boolean;
-  }) =>
-    ipcRenderer.invoke(IPC.AGENT.START_STRUCTURED, agentId, opts),
-
-  cancelStructured: (agentId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.CANCEL_STRUCTURED, agentId),
-
-  sendStructuredMessage: (agentId: string, message: string) =>
-    ipcRenderer.invoke(IPC.AGENT.SEND_STRUCTURED_MESSAGE, agentId, message),
-
-  respondPermission: (agentId: string, requestId: string, approved: boolean, reason?: string) =>
-    ipcRenderer.invoke(IPC.AGENT.RESPOND_PERMISSION, agentId, requestId, approved, reason),
-
   // Durable (PTY) agent permission queue — desktop-local approve/deny.
   listPendingPermissions: (agentId?: string): Promise<PendingPermissionInfo[]> =>
     ipcRenderer.invoke(IPC.AGENT.LIST_PENDING_PERMISSIONS, agentId),
@@ -263,15 +239,5 @@ export const agent = {
   restoreFromBackup: (projectPath: string) =>
     ipcRenderer.invoke(IPC.AGENT.RESTORE_FROM_BACKUP, projectPath),
 
-  onStructuredEvent: (callback: (agentId: string, event: {
-    type: string;
-    timestamp: number;
-    data: unknown;
-  }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, agentId: string, structuredEvent: Parameters<typeof callback>[1]) =>
-      callback(agentId, structuredEvent);
-    ipcRenderer.on(IPC.AGENT.STRUCTURED_EVENT, listener);
-    return () => { ipcRenderer.removeListener(IPC.AGENT.STRUCTURED_EVENT, listener); };
-  },
   },
 };

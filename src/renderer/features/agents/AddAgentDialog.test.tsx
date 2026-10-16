@@ -39,7 +39,7 @@ function resetStores() {
         id: 'claude-code',
         displayName: 'Claude Code',
         shortName: 'CC',
-        capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true, structuredMode: true },
+        capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true },
       },
     ],
     availability: { 'claude-code': { available: true } },
@@ -56,8 +56,6 @@ describe('AddAgentDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
-    // Reset experimental flag mock to default (off) for each test.
-    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({});
   });
 
   it('renders without crash', () => {
@@ -101,7 +99,7 @@ describe('AddAgentDialog', () => {
     render(<AddAgentDialog {...defaultProps} />);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined, undefined,
+      'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined,
     );
   });
 
@@ -132,7 +130,7 @@ describe('AddAgentDialog', () => {
     fireEvent.change(input, { target: { value: 'my-custom-agent' } });
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'my-custom-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined, undefined,
+      'my-custom-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined,
     );
   });
 
@@ -142,7 +140,7 @@ describe('AddAgentDialog', () => {
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', true, 'claude-code', undefined, undefined, undefined, undefined,
+      'test-agent', 'indigo', 'default', true, 'claude-code', undefined, undefined, undefined,
     );
   });
 
@@ -172,7 +170,7 @@ describe('AddAgentDialog', () => {
       fireEvent.change(screen.getByTestId('add-agent-persona-select'), { target: { value: 'qa' } });
       fireEvent.click(screen.getByText('Create Agent'));
       expect(defaultProps.onCreate).toHaveBeenCalledWith(
-        'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined, 'qa',
+        'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, 'qa',
       );
     });
   });
@@ -212,44 +210,19 @@ describe('AddAgentDialog', () => {
     });
   });
 
-  describe('Structured Mode gating (experimental flag)', () => {
-    it('hides Structured Mode toggle when experimental.structuredMode is off (default)', async () => {
-      render(<AddAgentDialog {...defaultProps} />);
-      // Wait for async settings load to settle
-      await waitFor(() => {
-        expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
-      });
-      expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
-      expect(screen.queryByText('Use Structured Mode')).not.toBeInTheDocument();
+  it('does not render a Structured Mode toggle, even with the legacy experimental flag set', async () => {
+    window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
+    render(<AddAgentDialog {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByText('Create Agent')).toBeInTheDocument();
     });
+    expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
+    expect(screen.queryByText('Use Structured Mode')).not.toBeInTheDocument();
+  });
 
-    it('shows Structured Mode toggle when experimental.structuredMode is on', async () => {
-      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
-      render(<AddAgentDialog {...defaultProps} />);
-      await waitFor(() => {
-        expect(screen.getByTestId('structured-mode-field')).toBeInTheDocument();
-      });
-      expect(screen.getByText('Use Structured Mode')).toBeInTheDocument();
-    });
-
-    it('keeps Structured Mode hidden when getExperimentalSettings rejects', async () => {
-      window.clubhouse.app.getExperimentalSettings = vi.fn().mockRejectedValue(new Error('IPC down'));
-      render(<AddAgentDialog {...defaultProps} />);
-      await waitFor(() => {
-        expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
-      });
-      expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
-    });
-
-    it('does not propagate structuredMode in onCreate when flag is off', async () => {
-      render(<AddAgentDialog {...defaultProps} />);
-      await waitFor(() => {
-        expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
-      });
-      fireEvent.click(screen.getByText('Create Agent'));
-      // Last positional arg (structuredMode) must be undefined
-      const callArgs = (defaultProps.onCreate as any).mock.calls[0];
-      expect(callArgs[callArgs.length - 1]).toBeUndefined();
-    });
+  it('calls onCreate with exactly eight positional args (no structuredMode slot)', () => {
+    render(<AddAgentDialog {...defaultProps} />);
+    fireEvent.click(screen.getByText('Create Agent'));
+    expect((defaultProps.onCreate as any).mock.calls[0]).toHaveLength(8);
   });
 });

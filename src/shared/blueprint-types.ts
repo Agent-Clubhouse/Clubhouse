@@ -122,7 +122,10 @@ export interface BlueprintAgentDef {
   freeAgent?: boolean;
   /** Whether the agent uses a git worktree. */
   useWorktree?: boolean;
-  /** Whether the agent uses structured mode. */
+  /**
+   * @deprecated Structured mode was removed. Still accepted on import so older
+   * blueprints parse; ignored and no longer written on export.
+   */
   structured?: boolean;
   /** Matching hints for import-time agent resolution. */
   matchBy?: BlueprintAgentMatchBy;

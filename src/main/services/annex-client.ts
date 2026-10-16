@@ -581,7 +581,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
 
     case 'pty:exit':
     case 'hook:event':
-    case 'structured:event':
+    case 'structured:event': // satellites on versions before structured mode was removed
     case 'agent:spawned':
     case 'agent:woken':
     case 'agent:completed':

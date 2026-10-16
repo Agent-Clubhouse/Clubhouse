@@ -2,8 +2,6 @@
  * Types shared between main, preload and renderer for the durable (PTY) agent
  * permission queue — the hook-driven approve/deny path used by Claude Code /
  * Copilot CLI / Codex CLI agents.
- *
- * Structured-mode sessions use a separate path (see structured-events.ts).
  */
 
 /** A permission request awaiting an allow/deny decision. */

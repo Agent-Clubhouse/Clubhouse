@@ -29,11 +29,6 @@ vi.mock('../../pty-manager', () => ({
   getBuffer: (id: string) => mockPtyGetBuffer(id),
 }));
 
-const mockStructuredSendMessage = vi.fn();
-vi.mock('../../structured-manager', () => ({
-  sendMessage: (...args: unknown[]) => mockStructuredSendMessage(...args),
-}));
-
 vi.mock('../../log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -90,7 +85,6 @@ describe('AgentTools', () => {
     mockAgentRegistryGet.mockReset();
     mockPtyWrite.mockReset();
     mockPtyGetBuffer.mockReset();
-    mockStructuredSendMessage.mockReset();
     mockGetProvider.mockReset();
     mockMkdir.mockReset().mockResolvedValue(undefined);
     mockWriteFile.mockReset().mockResolvedValue(undefined);
@@ -449,14 +443,6 @@ describe('AgentTools', () => {
       expect(firstWrite[1]).toMatch(/^\[TASK:t_[a-z0-9]+\] \[FROM:mega-camel@myapp\] hello$/);
     });
 
-    it('sends tagged message to structured agent', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
-      const result = await callTool('agent-1', sendToolName, { message: 'hello', task_id: 'abc' });
-      expect(result.isError).toBeFalsy();
-      expect(mockStructuredSendMessage).toHaveBeenCalledWith('agent-2', expect.stringContaining('[TASK:abc]'));
-      expect(mockStructuredSendMessage).toHaveBeenCalledWith('agent-2', expect.stringContaining('[FROM:mega-camel@myapp]'));
-    });
-
     it('returns error when agent not running', async () => {
       mockAgentRegistryGet.mockReturnValue(undefined);
       const result = await callTool('agent-1', sendToolName, { message: 'hello' });
@@ -531,7 +517,7 @@ describe('AgentTools', () => {
     });
 
     it('returns error for non-PTY agents', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'headless', orchestrator: 'claude-code' });
       const result = await callTool('agent-1', readToolName, {});
       expect(result.isError).toBe(true);
     });
@@ -577,15 +563,6 @@ describe('AgentTools', () => {
       const result = await callTool('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('PTY write failed');
-    });
-
-    it('handles structured manager failure', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
-      mockStructuredSendMessage.mockRejectedValue(new Error('Structured send failed'));
-
-      const result = await callTool('agent-1', sendToolName, { message: 'hello' });
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Structured send failed');
     });
   });
 
@@ -766,17 +743,15 @@ describe('AgentTools', () => {
       expect(result.content[0].text).toContain('task_id=sf1');
     });
 
-    it('sends to structured agent', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
+    it('returns error for headless runtime', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'headless', orchestrator: 'claude-code' });
       const result = await callTool('agent-1', sendFileToolName, {
         content: 'data',
         task_id: 'sf2',
       });
-      expect(result.isError).toBeFalsy();
-      expect(mockStructuredSendMessage).toHaveBeenCalledWith(
-        'agent-2',
-        expect.stringContaining('File delivered'),
-      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('does not support input');
+      expect(mockPtyWrite).not.toHaveBeenCalled();
     });
 
     it('returns error when agent not running', async () => {
@@ -969,7 +944,7 @@ describe('AgentTools', () => {
     });
 
     it('returns error for non-pty runtime', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'headless', orchestrator: 'claude-code' });
       const toolName = agentToolName(binding, 'clear_agent');
       const result = await callTool('caller-1', toolName, {});
 
@@ -1012,7 +987,7 @@ describe('AgentTools', () => {
     });
 
     it('returns error for non-pty runtime', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'headless', orchestrator: 'claude-code' });
       const toolName = agentToolName(binding, 'compact_agent');
       const result = await callTool('caller-1', toolName, {});
 

@@ -115,7 +115,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
 
   const handleCreateDurable = useCallback(async (
     name: string, color: string, model: string, useWorktree: boolean,
-    orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean, persona?: string,
+    orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], persona?: string,
   ) => {
     const project = activeProjectForCreate;
     if (!project) return;
@@ -130,7 +130,6 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         orchestrator,
         freeAgentMode,
         mcpIds,
-        structuredMode,
         persona,
       });
       setShowCreateDialog(false);

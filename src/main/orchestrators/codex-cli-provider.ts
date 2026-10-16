@@ -10,8 +10,6 @@ import {
   HeadlessOpts,
   HeadlessCommandResult,
   HeadlessCapable,
-  StructuredAdapter,
-  StructuredCapable,
   HookCapable,
   SessionCapable,
   NormalizedHookEvent,
@@ -20,7 +18,6 @@ import {
 import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
-import { CodexAppServerAdapter } from './adapters';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
 import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
@@ -185,7 +182,7 @@ function codexAutonomyArgs(permissionMode: SpawnOpts['permissionMode']): string[
   return ['--sandbox', 'workspace-write', '--ask-for-approval', 'never'];
 }
 
-export class CodexCliProvider extends BaseProvider implements HeadlessCapable, StructuredCapable, HookCapable, SessionCapable {
+export class CodexCliProvider extends BaseProvider implements HeadlessCapable, HookCapable, SessionCapable {
   readonly id = 'codex-cli' as const;
   readonly displayName = 'Codex CLI';
   readonly shortName = 'CX';
@@ -268,7 +265,6 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
       supportsPositionalMission: false,
       supportsAutoResumeAfterUpdate: true,
       permissions: true,
-      structuredMode: true,
     };
   }
 
@@ -401,15 +397,6 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     }
 
     return args;
-  }
-
-  // ── StructuredCapable ───────────────────────────────────────────────────
-
-  createStructuredAdapter(_opts?: { resume?: boolean }): StructuredAdapter {
-    return new CodexAppServerAdapter({
-      binary: this.findBinary(),
-      toolVerbs: TOOL_VERBS,
-    });
   }
 
   // ── HookCapable ─────────────────────────────────────────────────────────

@@ -133,12 +133,6 @@ export const IPC = {
     // Backup & recovery
     GET_BACKUP_INFO: 'agent:get-backup-info',
     RESTORE_FROM_BACKUP: 'agent:restore-from-backup',
-    // Structured mode channels
-    STRUCTURED_EVENT: 'agent:structured-event',                // Main → Renderer
-    START_STRUCTURED: 'agent:start-structured',                // Renderer → Main
-    CANCEL_STRUCTURED: 'agent:cancel-structured',              // Renderer → Main
-    SEND_STRUCTURED_MESSAGE: 'agent:send-structured-message',  // Renderer → Main
-    RESPOND_PERMISSION: 'agent:respond-permission',            // Renderer → Main
     // Durable (PTY) agent permission queue — the desktop-local approve/deny
     // path. Without these, a durable agent's permission request can only be
     // answered by a connected Annex/iOS client (issue #1553).

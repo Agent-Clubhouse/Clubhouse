@@ -6,9 +6,9 @@ export interface ArchInfo {
 
 export type OrchestratorId = 'claude-code' | (string & {});
 
-export type AgentExecutionMode = 'pty' | 'headless' | 'structured';
+export type AgentExecutionMode = 'pty' | 'headless';
 
-export type SpawnMode = 'headless' | 'interactive' | 'structured';
+export type SpawnMode = 'headless' | 'interactive';
 
 /** Controls what CLI flag is used when agents need autonomous permissions. */
 export type FreeAgentPermissionMode = 'auto' | 'skip-all';
@@ -21,8 +21,6 @@ export interface ProviderCapabilities {
   supportsPositionalMission?: boolean;
   supportsAutoResumeAfterUpdate?: boolean;
   permissions: boolean;
-  structuredMode: boolean;
-  structuredProtocol?: 'acp';
 }
 
 export interface OrchestratorInfo {
@@ -74,11 +72,9 @@ export interface Agent {
   parentAgentId?: string;
   orchestrator?: OrchestratorId;
   headless?: boolean;
-  /** Execution mode: 'pty' (terminal), 'headless' (feed), or 'structured' (rich UI) */
+  /** Execution mode: 'pty' (terminal) or 'headless' (feed) */
   executionMode?: AgentExecutionMode;
   freeAgentMode?: boolean;
-  /** When true, this agent runs in structured mode instead of PTY */
-  structuredMode?: boolean;
   /** MCP IDs active for this agent via launch wrapper */
   mcpIds?: string[];
   /** Set when the agent is resuming a previous CLI session (spinner overlay) */
@@ -204,8 +200,6 @@ export interface DurableAgentConfig {
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
-  /** When true, this durable agent spawns in structured mode instead of PTY */
-  structuredMode?: boolean;
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
@@ -303,7 +297,6 @@ export interface DurableConfigUpdates {
   lastSessionId?: string | null;
   mcpIds?: string[] | null;
   mcpConfigs?: Record<string, Record<string, string>> | null;
-  structuredMode?: boolean;
   persona?: string;
   mission?: string;
   buildCommand?: string;
@@ -605,6 +598,13 @@ export interface ExperimentalSettings {
   /** Record of feature flags: key is the feature id, value is enabled/disabled */
   [key: string]: boolean;
 }
+
+/**
+ * Set in experimental settings by the main-process migration when the removed
+ * `structuredMode` flag was on, so the renderer can show a one-time notice.
+ * The renderer clears it after showing the notice.
+ */
+export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
 
 // --- Security settings ---
 
@@ -1063,14 +1063,6 @@ export interface AgentDetailedStatus {
   message: string;
   toolName?: string;
   timestamp: number;
-}
-
-// ── Annex structured event forwarding ──────────────────────────────────
-
-export interface AnnexStructuredMessage {
-  type: 'structured_event';
-  agentId: string;
-  event: import('./structured-events').StructuredEvent;
 }
 
 export interface AnnexApprovalResponse {

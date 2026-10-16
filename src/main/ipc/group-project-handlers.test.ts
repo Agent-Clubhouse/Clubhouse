@@ -55,10 +55,6 @@ vi.mock('../services/pty-manager', () => ({
   getBuffer: vi.fn(() => ''),
 }));
 
-vi.mock('../services/structured-manager', () => ({
-  sendMessage: vi.fn(async () => undefined),
-}));
-
 const mockWriteChunkedBracketedPaste = vi.fn(async () => undefined);
 const mockSubmitAfterPaste = vi.fn(async () => undefined);
 vi.mock('../services/clubhouse-mcp/tools/agent-tools', () => ({

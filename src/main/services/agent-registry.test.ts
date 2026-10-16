@@ -96,7 +96,7 @@ describe('agent-registry', () => {
     });
 
     it('ignores setRuntime for unregistered agent', () => {
-      agentRegistry.setRuntime('nonexistent', 'structured');
+      agentRegistry.setRuntime('nonexistent', 'headless');
       expect(agentRegistry.get('nonexistent')).toBeUndefined();
     });
 

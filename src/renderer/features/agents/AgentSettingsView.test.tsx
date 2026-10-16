@@ -60,7 +60,6 @@ vi.mock('./TemplateConfigDialog', () => ({
           orchestrator: 'claude-code',
           useWorktree: true,
           freeAgentMode: false,
-          structuredMode: false,
         })}>
           Create Agent
         </button>
@@ -286,23 +285,12 @@ describe('AgentSettingsView', () => {
       expect(screen.getByText('Free Agent Mode')).toBeInTheDocument();
     });
 
-    it('hides Structured Mode toggle when experimental.structuredMode is off (default)', async () => {
-      renderSettings();
-      // Wait for async settings load to settle
-      await waitFor(() => {
-        expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled();
-      });
-      expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
-      expect(screen.queryByText('Structured Mode')).not.toBeInTheDocument();
-    });
-
-    it('shows Structured Mode toggle when experimental.structuredMode is on', async () => {
+    it('does not render a Structured Mode toggle, even with the legacy experimental flag set', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
       renderSettings();
-      await waitFor(() => {
-        expect(screen.getByTestId('structured-mode-field')).toBeInTheDocument();
-      });
-      expect(screen.getByText('Structured Mode')).toBeInTheDocument();
+      expect(await screen.findByText('Free Agent Mode')).toBeInTheDocument();
+      expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
+      expect(screen.queryByText('Structured Mode')).not.toBeInTheDocument();
     });
 
     it('shows shared settings info note', () => {
@@ -787,7 +775,7 @@ describe('AgentSettingsView', () => {
       await waitFor(() => {
         expect((window.clubhouse.agent as any).createDurable).toHaveBeenCalledWith(
           '/project', 'code-reviewer', 'indigo', undefined, true,
-          'claude-code', undefined, undefined, undefined, undefined,
+          'claude-code', undefined, undefined, undefined,
         );
       });
     });

@@ -67,7 +67,7 @@ export function initGroupProjectLifecycle(): void {
 /** Check whether an agent has a live process (PTY or registered runtime). */
 export function isAgentAlive(agentId: string): boolean {
   if (ptyManager.isRunning(agentId)) return true;
-  // Agent may be running in headless or structured mode — check registry
+  // Agent may be running in headless mode — check registry
   return agentRegistry.get(agentId) !== undefined;
 }
 

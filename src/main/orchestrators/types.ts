@@ -1,10 +1,9 @@
-import type { StructuredEvent } from '../../shared/structured-events';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import type { McpServerDef } from '../../shared/types';
 
 export type OrchestratorId = 'claude-code' | (string & {});
 
-export type AgentExecutionMode = 'pty' | 'headless' | 'structured';
+export type AgentExecutionMode = 'pty' | 'headless';
 
 export interface SpawnOpts {
   cwd: string;
@@ -128,8 +127,6 @@ export interface ProviderCapabilities {
   /** Whether the provider can be restored automatically after an app update. */
   supportsAutoResumeAfterUpdate?: boolean;
   permissions: boolean;
-  structuredMode: boolean;
-  structuredProtocol?: 'acp';
 }
 
 /**
@@ -210,19 +207,14 @@ export interface SessionCapable {
   extractSessionId(ptyBuffer: string): string | null;
 }
 
-/** Providers that support structured mode via an adapter */
-export interface StructuredCapable {
-  createStructuredAdapter(opts?: { resume?: boolean }): StructuredAdapter;
-}
-
 /**
  * Providers that consume the `agentFile` / `agentSource` SpawnOpts to load a
  * named CLI agent definition from a source directory.  Currently only Copilot
  * CLI implements this; other providers silently ignore those fields.
  *
  * The single helper produces the args used by both the PTY path (via
- * `buildSpawnCommand`) and the structured/ACP path (via `extraArgs`), so the
- * flag-construction logic lives in exactly one place per provider.
+ * `buildSpawnCommand`), so the flag-construction logic lives in exactly one
+ * place per provider.
  */
 export interface AgentFileCapable {
   buildAgentFileArgs(opts: { agentFile?: string; agentSource?: string }): string[];
@@ -246,12 +238,6 @@ export function isHeadlessCapable(provider: OrchestratorProvider): provider is O
 export function isSessionCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & SessionCapable {
   return provider.getCapabilities().sessionResume
     && typeof (provider as unknown as SessionCapable).listSessions === 'function';
-}
-
-/** Check if a provider supports structured mode */
-export function isStructuredCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & StructuredCapable {
-  return provider.getCapabilities().structuredMode
-    && typeof (provider as unknown as StructuredCapable).createStructuredAdapter === 'function';
 }
 
 /** Check if a provider consumes agentFile / agentSource (e.g. Copilot CLI's --agent / --source) */
@@ -332,41 +318,4 @@ export interface OrchestratorProvider {
    * whatever the project configured — to avoid transitive electron imports.
    */
   buildMcpArgs?(servers: Record<string, McpServerDef>): string[];
-}
-
-// ── Structured Mode ─────────────────────────────────────────────────────────
-
-export interface StructuredSessionOpts {
-  mission: string;
-  systemPrompt?: string;
-  model?: string;
-  cwd: string;
-  env?: Record<string, string>;
-  sessionId?: string; // for resume
-  allowedTools?: string[];
-  disallowedTools?: string[];
-  freeAgentMode?: boolean;
-  /** Permission mode for autonomous execution: 'auto' uses Claude's auto-approve classifier, 'skip-all' bypasses all permissions */
-  permissionMode?: 'auto' | 'skip-all';
-  /** Shell command prefix prepended before the CLI binary */
-  commandPrefix?: string;
-  /** Extra CLI args appended after generated args (e.g. MCP server config flags). */
-  extraArgs?: string[];
-}
-
-export interface StructuredAdapter {
-  /** Start a structured session. Returns an async iterable of StructuredEvents. */
-  start(opts: StructuredSessionOpts): AsyncIterable<StructuredEvent>;
-
-  /** Send a follow-up user message mid-session */
-  sendMessage(message: string): Promise<void>;
-
-  /** Respond to a permission request */
-  respondToPermission(requestId: string, approved: boolean, reason?: string): Promise<void>;
-
-  /** Cancel the running session */
-  cancel(): Promise<void>;
-
-  /** Cleanup resources */
-  dispose(): void;
 }
