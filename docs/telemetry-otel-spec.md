@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review (scoping/design only, no implementation). Revision 2 records the maintainer's decisions (§10.1) and adds regression-informed priorities (§12). |
+| **Status** | Draft for review (scoping/design only, no implementation). Revision 2 records the maintainer's decisions (§10.1) and adds regression-informed priorities (§12). Revision 4 (2026-10-16) follows code changes since: [#1930](https://github.com/Agent-Clubhouse/Clubhouse/pull/1930) removed the Assistant, Agent Queue and Sessions features, [#1915](https://github.com/Agent-Clubhouse/Clubhouse/pull/1915) removed the Hub plugin, and structured mode is being removed in favour of native chat ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)). Their coverage is dropped or moved to chat; §12 keeps them as history. |
 | **Date** | 2026-10-16 |
 | **Target** | Clubhouse 0.43+ (Electron 43, Node ≥ 22) |
 | **Supersedes** | [`docs/telemetry-design/`](telemetry-design/01-overview.md) (June 2026 log-subscriber plugin design) |
@@ -207,8 +207,8 @@ Each subsection lists the **spans** (with boundaries in code), **metrics**, **er
 | `c.app.session.duration` | histogram, s; recorded at shutdown | `c.shutdown.kind` (`clean`/`update_restart`/`restart`) | S |
 | `c.app.shutdown.duration` | histogram, s | — | S |
 | `c.app.unclean_exits` | counter, recorded on next startup | `c.shutdown.previous` (`unknown_exit`/`crash_loop`) | E |
-| `c.window.relay.timeouts` | counter | `c.relay.kind` (`agent_state`/`hub`/`canvas`, `window-handlers.ts:104,312,378`) | S |
-| `c.window.popouts` | counter | `c.popout.type` (`agent`/`hub`/`canvas`) | S |
+| `c.window.relay.timeouts` | counter | `c.relay.kind` (`agent_state`/`canvas`; the Hub relay went with the Hub plugin in #1915) | S |
+| `c.window.popouts` | counter | `c.popout.type` (`agent`/`canvas`) | S |
 
 **Detecting unclean exits.** Write `telemetry/last-session.json` at startup containing `{session_id, started_at}`. Mark it clean in `c.app.shutdown`. If it is still unmarked at the next startup, emit `c.app.unclean_exit`. This is cheap crash detection without `crashReporter`.
 
@@ -280,9 +280,9 @@ c.agent.spawn             (root; ends when process launched)
   │    ├─ c.hooks.configure
   │    ├─ c.mcp.inject
   │    └─ c.provider.build_command
-  └─ c.pty.spawn | c.headless.spawn | c.structured.start
+  └─ c.pty.spawn | c.headless.spawn | c.chat.start
 c.agent.first_output      (event on run; carries latency)
-c.agent.turn              (structured mode; one per turn)
+c.agent.turn              (chat runtime; one per turn; mapped from the chat event bus, §9.1)
 c.agent.permission        (root per permission request)
 c.agent.exit              (root; short; classifies the exit)
 c.agent.kill              (root; user/system kill with escalation)
@@ -301,23 +301,23 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
 - **Boundaries:** `spawnAgent` entry to the `return` after `AGENT_AWOKE` (`:269`, `:321` or `:328`), or the throw (`:115-121`, `:329-332`).
 - **Children:** listed in the tree above, with source lines in the agent survey. `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`). Codex also runs `codex --version` on every spawn. The span carries `c.binary.lookup_tier ∈ {cache, well_known, path_scan, login_shell}`.
 - **Attributes:**
-  - `c.agent.kind` (`durable`/`quick`/`companion`/`assistant`)
+  - `c.agent.kind` (`durable`/`quick`/`companion`)
   - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`other`)
-  - `c.agent.runtime` (`pty`/`headless`/`structured`)
+  - `c.agent.runtime` (`pty`/`headless`/`chat`)
   - `c.agent.runtime.reason` (`requested`/`fallback_no_mission`/`fallback_not_capable`/`default`)
-  - `c.structured.adapter` (`stream_json`/`acp`/`codex_app_server`)
+  - `c.chat.driver` (`claude_stream_json`/`codex_app_server`/`copilot_acp`), from chat's capability record
   - `c.agent.resume` (bool)
   - `c.model.family` (bucketed against `MODEL_OPTIONS`: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`)
   - `c.agent.uses_worktree`, `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool)
   - `c.agent.id_hash`, `c.agent.run.id_hash`
-- **`error.type`:** `orchestrator_unknown`, `binary_not_found`, `binary_check_failed`, `preflight_failed`, `cwd_invalid`, `pty_spawn_failed`, `headless_no_pid`, `structured_start_failed`, `materialize_failed` (non-fatal warning).
+- **`error.type`:** `orchestrator_unknown`, `binary_not_found`, `binary_check_failed`, `preflight_failed`, `cwd_invalid`, `pty_spawn_failed`, `headless_no_pid`, `chat_start_failed`, `materialize_failed` (non-fatal warning).
 
 #### Run, first output and readiness
 
 There is no CLI "ready" signal. The proxies below are recorded as **events** on a minimal `c.agent.run` span. That span is started at spawn and **ended at exit**, but because it can be long-lived it is exported only when it ends, as normal OTel behavior. A run lasting days is acceptable: an unfinished span is simply never exported, and the metrics below still capture the data.
 
 - `c.agent.shell_ready`: the first PTY `onData`, where the pending command flushes (`pty-manager.ts:125-137`). PTY only.
-- `c.agent.first_output`: the first data after the flush (PTY), the first stdout JSONL event (headless, `headless-manager.ts:328`), or the first `text_delta` (structured).
+- `c.agent.first_output`: the first data after the flush (PTY), the first stdout JSONL event (headless, `headless-manager.ts:328`), or the first assistant-text event on the chat bus (chat).
 - `c.agent.first_hook`: the first hook event for this agent ID (`hook-server.ts`). This is the best "the CLI is alive and working" proxy for hook-capable providers.
 
 **Metrics (level S)**
@@ -330,27 +330,29 @@ There is no CLI "ready" signal. The proxies below are recorded as **events** on 
 | `c.agent.run.duration` | histogram, s | kind, orchestrator, runtime, `c.agent.exit.class` |
 | `c.agent.active` | UpDownCounter (or observable gauge from `agentRegistry`) | kind, runtime |
 | `c.pty.output.bytes` | counter, By; **incremented at exit from a per-session byte total, never per chunk** | orchestrator |
-| `c.agent.tool_calls` | counter, fed from hook-server `pre_tool`/`post_tool`/`tool_error` and from structured/headless `tool_start`/`tool_end` | orchestrator, `c.tool.bucket`, `c.tool.result` (`ok`/`error`) |
+| `c.agent.tool_calls` | counter, fed from hook-server `pre_tool`/`post_tool`/`tool_error` and from chat/headless tool start and end events | orchestrator, `c.tool.bucket`, `c.tool.result` (`ok`/`error`) |
 | `c.agent.hook_events` | counter | orchestrator, `c.hook.kind` (`pre_tool`/`post_tool`/`stop`/`notification`/`tool_error`/`permission_request`) |
 
 **Tool name bucketing.** `c.tool.bucket` reports the provider's built-in tool name, from a static list per orchestrator: `Bash`, `Edit`, `Write`, `Read`, `Glob`, `Grep`, `WebFetch`, `Agent`, …. Otherwise it reports `mcp_clubhouse`, `mcp_other` or `other`. **MCP tool names are never sent**: they embed server names and hashes, and are user-defined.
 
 **Tool-call spans (level D only).** A span `c.agent.tool_call` pairs `pre_tool` with `post_tool`/`tool_error`, matched by agent ID and tool-use ID where the hook payload carries one. For headless and structured runs the pairing uses `tool_use.id` → `tool_result.tool_use_id`. The adapters hard-code `durationMs: 0`, so the duration comes from timestamps. At about 1,300 tool calls a day for this user, the volume is acceptable as opt-in only.
 
-#### Structured turns (`structured-manager.ts`)
+#### Chat turns (mapped from the chat event bus, §9.1)
+
+Structured mode (`structured-manager.ts` and its StreamJson, ACP and Codex adapters) is being removed and is **not** instrumented. Native chat ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)) publishes normalized events on a main-process bus it owns. Telemetry maps them as follows once both exist; whichever lands second owns this mapping.
 
 | Span | Boundaries | Attributes / errors | Level |
 |---|---|---|---|
-| `c.agent.turn` | `startStructuredSession`/`sendMessage` → `end` event | `c.turn.end_reason` (`complete`/`error`/`cancelled`/`timeout`); `c.turn.time_to_first_token` (s, also an event); `c.turn.tool_calls` (count); token usage as `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` (numbers only, from `usage` events); `error.type ∈ {max_tokens, max_turn_requests, refusal, prompt_failed, session_start_failed, turn_failed, rpc_timeout, process_exited, unhandled_server_request}` | S |
-| ↳ `c.structured.rpc` | ACP `initialize` / `session/new` / `session/prompt`; Codex `thread/start` / `turn/start` | `rpc.method` from a fixed list | D |
+| `c.agent.turn` | chat bus turn-start → turn-end event | `c.turn.end_reason` (`complete`/`error`/`cancelled`/`timeout`); `c.turn.time_to_first_token` (s, also an event); `c.turn.tool_calls` (count); token usage as `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` (numbers only); `c.chat.driver`; `error.type` from chat's closed error set (for example `max_tokens`, `refusal`, `rpc_timeout`, `process_exited`, `unhandled_server_request`) | S |
+| ↳ `c.chat.rpc` | per-driver protocol calls (Codex `thread/start` / `turn/start`, ACP `session/prompt`, …), if chat exposes them on the bus | `rpc.method` from a fixed list | D |
 
-Metrics: `c.agent.turn.duration` (s), `c.agent.tokens` counter (unit `{token}`, split by `gen_ai.token.type` = `input`/`output`), `c.agent.cost` (USD, from headless `result.total_cost_usd` where present).
+Metrics: `c.agent.turn.duration` (s), `c.agent.tokens` counter (unit `{token}`, split by `gen_ai.token.type` = `input`/`output`), `c.agent.cost` (USD, from headless `result.total_cost_usd` or chat usage events where present).
 
-#### Permissions (hook path and structured path)
+#### Permissions (hook path and chat path)
 
 | Span | Boundaries | Attributes | Level |
 |---|---|---|---|
-| `c.agent.permission` (root) | `permissionQueue.createPermission` (`hook-server.ts:162`) → `res.end` (`:194`). For structured runs: the `permission_request` event → `respondToPermission` (`structured-manager.ts:191`). | `c.permission.decision` (`allow`/`deny`/`ask`), `c.permission.result` (`resolved`/`timeout`/`expired`/`agent_mismatch`/`not_found`), `c.permission.source` (`desktop`/`annex`), `c.permission.path` (`hook`/`structured`), `c.tool.bucket`, orchestrator | S |
+| `c.agent.permission` (root) | `permissionQueue.createPermission` (`hook-server.ts:162`) → `res.end` (`:194`). For chat runs: the chat bus's permission-request event → its decision event. | `c.permission.decision` (`allow`/`deny`/`ask`), `c.permission.result` (`resolved`/`timeout`/`expired`/`agent_mismatch`/`not_found`), `c.permission.source` (`desktop`/`annex`), `c.permission.path` (`hook`/`chat`), `c.tool.bucket`, orchestrator | S |
 
 Metrics: `c.agent.permission.wait` histogram (s; already computed as `elapsedMs`), `c.agent.permission.stuck` counter (the 30 s stuck scan, `hook-server.ts:358`).
 
@@ -358,7 +360,7 @@ Metrics: `c.agent.permission.wait` histogram (s; already computed as `elapsedMs`
 
 | Span | Boundaries | Attributes | Level |
 |---|---|---|---|
-| `c.agent.exit` (root, short) | `broadcastAgentExit` (`agent-exit-broadcast.ts:26`), plus **the structured exit path that bypasses it** (`structured-manager.ts:125`; see §11) | `c.agent.exit.class` (see below), `process.exit.code` (int), `c.agent.exit.signal` (`SIGTERM`/`SIGKILL`/none), `c.agent.run.duration_s`, `c.pty.output.bytes` | S |
+| `c.agent.exit` (root, short) | `broadcastAgentExit` (`agent-exit-broadcast.ts:26`) (structured mode's bypass, F1, was fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928); chat exits must also go through it) | `c.agent.exit.class` (see below), `process.exit.code` (int), `c.agent.exit.signal` (`SIGTERM`/`SIGKILL`/none), `c.agent.run.duration_s`, `c.pty.output.bytes` | S |
 | `c.agent.kill` | `killAgent` (`agent-system.ts:526`) → exit | `c.kill.trigger` (`user`/`quick_auto_stop`/`shutdown`/`replace`/`sweeper`), `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`, from `gracefulKill` `:498-548`) | S |
 
 `c.agent.exit.class` takes one of:
@@ -371,14 +373,8 @@ Metrics: `c.agent.permission.wait` histogram (s; already computed as `elapsedMs`
 | `killed_user` | user kill |
 | `killed_escalated` | SIGKILL reached |
 | `stale_swept` | removed by the stale sweeper |
-| `structured_error` | `end.reason=error` |
+| `chat_error` | chat turn ended with `end_reason=error` and the session closed |
 | `replaced` | session replaced. This currently emits no exit event; instrument it at `pty-manager.ts:290`. |
-
-#### Agent queue (`agent-queue-runner.ts`)
-
-- **`c.queue.task` (root, S):** from `createdAt` to completion. Children: `c.queue.wait` (created → claimed, which is not computed today) and `c.queue.run` (startedAt → exit, parent of the agent spawn).
-- **Attributes:** `c.queue.task.status`, `error.type ∈ {queue_missing, no_project, spawn_failed, nonzero_exit}`, `c.queue.concurrency`.
-- **Metrics:** `c.queue.depth` (observable gauge), `c.queue.tasks` counter.
 
 #### Group projects and shoulder taps
 
@@ -443,7 +439,7 @@ Failures here often come back as return values (`false`, `[]`) rather than excep
 
 ### 4.10 Plugins: built-in and community (`renderer/plugins/plugin-loader.ts`)
 
-**Plugin identity attribute.** `c.plugin.ref` is the raw plugin ID **only** when the plugin is built-in, or listed in the cached official registry with `official:true` and no `marketplaceId`. Otherwise it is `hmac(id)`. `c.plugin.origin ∈ {builtin, official_registry, custom_marketplace, preview, sideloaded}` always accompanies it. The built-ins are `hub`, `terminal`, `files`, `browser`, `git`, `canvas`, `review`, `group-project`, `sticky-note`, `agent-queue`, `sessions`, `goobers`.
+**Plugin identity attribute.** `c.plugin.ref` is the raw plugin ID **only** when the plugin is built-in, or listed in the cached official registry with `official:true` and no `marketplaceId`. Otherwise it is `hmac(id)`. `c.plugin.origin ∈ {builtin, official_registry, custom_marketplace, preview, sideloaded}` always accompanies it. The built-ins are `terminal`, `files`, `browser`, `git`, `canvas`, `review`, `group-project`, `sticky-note`, `goobers`.
 
 | Instrument | Boundaries / attributes | Level |
 |---|---|---|
@@ -462,7 +458,7 @@ Failures here often come back as return values (`false`, `[]`) rather than excep
 | `c.canvas.load` | `loadCanvas` `:360` + `loadWires`. `c.canvas.load.result ∈ {ok, recovered_from_backup, degraded, unreadable, failed, remote_hydrated}`. Attributes: `c.canvas.count`, `c.canvas.view.count_bucket`, `c.canvas.wire.count_bucket` | S (E for `unreadable`/`failed`) |
 | `c.canvas.save` | **no per-autosave span.** Histogram `c.canvas.save.duration` plus counter `c.canvas.saves` by `c.canvas.persist_gate` (`ok`/`blocked`/`verify_empty`/`snapshot_first`) and result | S |
 | `c.canvas.save.failed` | exception record; the currently unhandled rejection at `main.ts:253` must get a `.catch` | E |
-| `c.canvas.command` | assistant/MCP canvas commands (`canvas-command-handler.ts:798`), named by command (`add_view`, `connect_views`, …; a static list) | S |
+| `c.canvas.command` | MCP canvas commands (`canvas-command-handler.ts:798`), named by command (`add_view`, `connect_views`, …; a static list) | S |
 | `c.canvas.views` | counter of views added, by `c.canvas.view.type` (`agent`/`anchor`/`plugin`/`sticky-note`/`zone`) | S |
 
 ### 4.11 Marketplace and plugin updates
@@ -521,7 +517,6 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.onboarding.*` | `started`/`cohort_selected` (`new-dev`/`experienced-dev`/`seasoned-dev`)/`completed`/`dismissed` |
 | `c.help.topic_viewed` | `c.help.topic` (static IDs from `help-content.ts`). **Search text is never sent.** |
 | `c.blueprint.*` | `export` (destination enum), `import` (match-status counts), `create_from_builtin` (`small-squad`/`large-squad`) |
-| `c.assistant.*` | `started` (mode `interactive`/`structured`/`headless`), `message_sent` (count only), `action_approved` |
 | `c.theme.changed` | `c.theme.kind` (`builtin`/`plugin`), `c.theme.builtin_id` if built-in |
 | `c.popout.opened` | `c.popout.type` |
 | `c.telemetry.*` | `enabled`, `level_changed`, `disabled` (sent as the last record before shutdown of the exporter), `test` |
@@ -551,9 +546,9 @@ All attribute keys are declared in **one file**, `src/shared/telemetry/attribute
 
 ```ts
 export const ATTR = {
-  agentKind:     enumAttr('clubhouse.agent.kind', ['durable', 'quick', 'companion', 'assistant']),
+  agentKind:     enumAttr('clubhouse.agent.kind', ['durable', 'quick', 'companion']),
   orchestrator:  enumAttr('clubhouse.orchestrator', ['claude-code', 'codex-cli', 'copilot-cli', 'other']),
-  agentRuntime:  enumAttr('clubhouse.agent.runtime', ['pty', 'headless', 'structured']),
+  agentRuntime:  enumAttr('clubhouse.agent.runtime', ['pty', 'headless']),   // 'chat' added by whichever of chat/telemetry lands second
   exitCode:      intAttr('process.exit.code'),
   agentIdHash:   hashAttr('clubhouse.agent.id_hash'),
   sizeBucket:    enumAttr('clubhouse.size_bucket', ['0', '<1KB', '<100KB', '<1MB', '<10MB', '<100MB', '>=100MB']),
@@ -642,7 +637,7 @@ Explicitly **not set**: `host.name`, `os.description`, `process.command_args`, `
 | Orchestrators | `c.orchestrators.used` (sorted CSV from the enum) |
 | Theme | `c.theme.kind`, `c.theme.builtin_id` |
 | Feature flags | `c.clubhouse_mode`, `c.headless.enabled`, `c.mcp.enabled`, `c.annex.server`, `c.annex.client`, `c.annex.satellites.count` |
-| Experimental | `c.experimental.*` (known keys only: `sessions`, `agentQueue`, `goobers`, `assistant`, `themeGradients`) |
+| Experimental | `c.experimental.*` (known keys only: `goobers`, `themeGradients`, plus chat's flag once it exists) |
 | Plugins | `c.plugins.builtin_enabled` (CSV of built-in IDs), `c.plugins.community.count`, `c.marketplace.custom.count`, `c.plugins.external_enabled` |
 | Logging | `c.logging.enabled`, `c.logging.min_level` |
 | Notifications | notification booleans |
@@ -1017,7 +1012,7 @@ requests
 
 - A **satellite** is a Clubhouse install running `annex-server`. A **controller** is a Clubhouse install running `annex-client`, and it dials the satellite.
 - The Annex **iOS app** is a separate, non-Clubhouse client that uses bearer tokens.
-- Desktop controllers send `agent:spawn`/`wake`/`kill`/`pty:input` over WS, plus about 40 REST routes. Satellites stream `pty:data`, hook, structured and permission events back to every client.
+- Desktop controllers send `agent:spawn`/`wake`/`kill`/`pty:input` over WS, plus about 40 REST routes. Satellites stream `pty:data`, hook, chat and permission events back to every client.
 
 **Rules:**
 
@@ -1028,7 +1023,7 @@ requests
    - `traceparent` contains only random IDs and a sampled flag, so receiving it reveals nothing.
    - If both installs point at the **same** App Insights resource (the common one-person, two-machines case), `c.annex.remote_spawn` on the controller and `c.agent.spawn` on the satellite appear as one end-to-end transaction. `clubhouse.annex.role` and `service.instance.id` tell them apart.
    - Protocol compatibility: `tc` is an optional field. Old satellites ignore unknown fields (they parse JSON loosely). Confirm this in Phase 6 against the dual-instance E2E.
-3. **No per-event spans for the event stream.** That includes PTY data fan-out, hook and structured event fan-out (`broadcastAndBuffer`), and controller-side `handleSatelliteMessage`. These are counters with byte totals (§4.12).
+3. **No per-event spans for the event stream.** That includes PTY data fan-out, hook and chat event fan-out (`broadcastAndBuffer`), and controller-side `handleSatelliteMessage`. These are counters with byte totals (§4.12).
 4. **Peer identity is never an attribute.** No fingerprints, aliases, hostnames, IPs or ports. `c.annex.client.kind` (desktop/mobile) and peer counts are allowed.
 5. **The iOS app is out of scope.** If it later adopts OTel, it should reuse this registry's names for the shared flows (pair, connect, permission) and honor rule 2. Satellite-side spans already cover its server interactions.
 6. **The `?token=` query auth** (`annex-server.ts:2567`) is one more reason never to record URLs. The registry has no URL attribute at all.
@@ -1042,7 +1037,7 @@ requests
 | Telemetry disabled | 0 module loads, no allocations on hot paths | SDK chunk not imported; facade is a constant-false branch |
 | PTY `onData` (`pty-manager.ts:350`) | **no telemetry code inside**; a single `bytes += data.length` on a per-session counter that already exists in spirit (`appendToBuffer`) | totals attached at exit |
 | Hook server request | ≤ 1 counter increment (two with tool bucketing); no span below Detailed | `Counter.add` is about 100 ns |
-| Structured/headless event loops | no telemetry per delta; first-token event fires once per turn via a flag | |
+| Chat/headless event loops | no telemetry per delta; first-token event fires once per turn via a flag | |
 | Git status poll | 1 histogram record per poll | |
 | Main-thread export work | batching every 5 s (spans/logs) or 60 s (metrics); serialization off hot paths | `BatchSpanProcessor` `maxExportBatchSize: 256` |
 | Startup when enabled | < 30 ms added before `ready`, measured in Phase 1 | lazy chunk, async init, backdated span |
@@ -1058,7 +1053,7 @@ Sizes: **S** ≈ ≤ 400 LOC, **M** ≈ 400–1,000, **L** ≈ 1,000–1,800, co
 | 1 | **Foundation: SDK, pipeline, both destinations** | <ul><li>Spike: bundle the OTel SDK, the Azure exporter **and the OTLP/HTTP-JSON exporters** in lazy main chunks; packaged-build smoke test in CI; size check.</li><li>`src/main/telemetry/`: facade, bootstrap, destination abstraction (`azure.ts`, `otlp.ts`), providers, resource, attribute registry, redaction processors, scrubber, HMAC IDs, `FlowSampler`, session caps, preview tee, offline dir, flush-on-quit and `flushBeforeExit()` at all `app.exit` sites.</li><li>Statsbeat off; **egress-allowlist CI test for both destinations**.</li><li>Only instrumentation: `c.app.sessions`, `c.telemetry.test`.</li><li>Feature flag `experimental.telemetry` until Phase 3 lands.</li></ul> | **L** | — |
 | 2 | **Settings UX** | `TELEMETRY` managed settings; `safeStorage` secret store (connection string and OTLP header values) with the Linux backend warning; **App Insights panel (toggle, connection string, test event) plus a separate Other destinations panel (OTLP endpoint, headers, protocol)**; one-active-destination switching; connection-string and OTLP endpoint/header validation; destination confirmation step; level picker incl. Errors; test event; preview dialog; consent confirm; help topic incl. install-ID privacy; reset ID; delete local telemetry data | **M** | 1 |
 | 3 | **Errors, lifecycle, health, persistence integrity** | <ul><li>**Workbook v1** (§6.10): Overview, Reliability, Startup and updates, and Data integrity tabs, plus the KQL-vs-registry test.</li><li>Crash and error handlers (main, renderer, `AppErrorBoundary`), renderer facade and `telemetry:emit`, `app:renderer-ready`.</li><li>Startup and shutdown span trees, unclean-exit detection, safe-mode events, config snapshot.</li><li>**Auto-update spans plus `c.update.apply.verified` and `c.install.kind`** (§12, H6).</li><li>**Process health, renderer long frames, pipeline health** (§4.15).</li><li>**Persistence integrity across all JSON stores** (§12, H1).</li></ul> **First "useful" release.** | **L** (could split 3a errors/lifecycle/update, 3b health/persistence) | 1 (2 for user-facing) |
-| 4 | **Agents** (main-process half now; structured turns via the chat event model, §9.1) | Create/spawn span trees across all three runtimes; run and first-output events; exit classification incl. the structured path; kill escalation; permissions; structured turns and tokens; hook-event and tool-call metrics; MCP tool calls; queue; shoulder taps; **assistant spawn and turns mapped into the agent tree (H14)**; Workbook Agents and Permissions tabs. **Plus the regression signals:** CLI version on spawn, structured protocol-unknown counter, turn-stall watchdog, silent-hooks run, session-listing span, inject-delivery span, hook teardown, ID-collision repair, status reconcile, `c.ui.action_failed` for agent flows (§12, H2, H3, H7) | **L** (split 4a spawn/exit/drift, 4b permissions/turns/MCP/queue) | 3 |
+| 4 | **Agents** (main-process half now; chat turns via the chat event bus, §9.1) | Create/spawn span trees across all three runtimes; run and first-output events; exit classification incl. the structured path; kill escalation; permissions; hook-event and tool-call metrics; MCP tool calls; shoulder taps; Workbook Agents and Permissions tabs. **Plus the regression signals:** CLI version on spawn, structured protocol-unknown counter, turn-stall watchdog, silent-hooks run, session-listing span, inject-delivery span, hook teardown, ID-collision repair, status reconcile, `c.ui.action_failed` for agent flows (§12, H2, H3, H7) | **L** (split 4a spawn/exit/drift, 4b permissions/turns/MCP/queue) | 3 |
 | 5 | **Workspace** (main-process half now; UI call sites owned by the refresh, §9.1) | Project switch, add/remove, store recovery; git user-op spans and poll histogram; worktree spans; files, search and watch gauges; plugin system, activation and module-load results; Monaco load span; editor save conflicts; canvas load/save; marketplace; bulletin post results; MCP tools-list; settings and feature-usage events; Workbook Plugins and Workspace tabs (§12, H5, H8, H10, H11) | **L** (split 5a projects/git/files/editor, 5b plugins/canvas/marketplace/features) | 3 |
 | 6 | **Annex, Goobers and Detailed level** | Annex spans and metrics with address family and identity-regeneration events; `traceparent` over the WS envelope and REST (dual-instance E2E spec); Goobers lifecycle, data-age gauge and stream-mode events; Detailed-level tool-call, IPC latency and Annex route spans; Workbook Annex and Goobers tab (§12, H9, H12). **H9 is P0 after the March pass, so the Annex connect, pair and reconnect spans may move into Phase 4 if Phase 6 slips.** | **M** | 4 |
 | 7 | **Workbook completion, appLog bridge, source maps** | **Workbook:** Deploy to Azure ARM wrapper and docs page, alert rules for every P0 signal (§12), import checklist. **appLog:** `telemetry` field, severity mapping, trace IDs in local JSONL, initial opt-in sites. **Optional:** release source maps for stack symbolication. | **M** | 3–6 |
@@ -1068,19 +1063,19 @@ Sizes: **S** ≈ ≤ 400 LOC, **M** ≈ 400–1,000, **L** ≈ 1,000–1,800, co
 
 **Why OTLP moved from Phase 7 to Phase 1.** It is an exporter swap behind the destination abstraction, adds about 150 KB, and needs no new instrumentation. Building both destinations in Phase 1 keeps the abstraction honest and lets the egress test cover both from the start.
 
-### 9.1 Sequencing with the UI refresh and structured chat (decision 2026-10-16)
+### 9.1 Sequencing with the UI refresh and native chat (decisions 2026-10-16)
 
 Two large changes are planned alongside telemetry:
 
 - the **chrome refresh**: project rail, explorer, agent list, title bar, panels and command palette (mockups in the refresh session's artifact);
-- **structured chat** ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)): native chat over the coding CLIs. It rewrites the structured adapters behind one Clubhouse event model, with real session and turn IDs and multi-turn sessions.
+- **native chat** ([#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916)): chat over the coding CLIs, with one Clubhouse event model, real session and turn IDs and multi-turn sessions. It replaces structured mode, which is being removed (branch `chore/remove-structured-mode`, which also drops the `core:structured*` log namespaces).
 
 Telemetry is split **by layer**. It does not wait for either change, and they do not wait for it.
 
 **1. Land now, before both changes.** This work is UI-independent and will not be thrown away:
 
 - Phases 1–3 as written: pipeline, both destinations, the settings section, errors and lifecycle, update, process health, persistence integrity, and Workbook v1.
-- **Phase 4, main-process half.** Spawn, run, exit and kill classification, permissions, hooks, MCP, queue, shoulder taps, CLI-version drift signals, hook teardown, ID-collision repair and status reconcile. The PTY path stays in use while chat rolls out, and the hook and permission paths are shared.
+- **Phase 4, main-process half.** Spawn, run, exit and kill classification, permissions, hooks, MCP, shoulder taps, CLI-version drift signals, hook teardown, ID-collision repair and status reconcile. The PTY path stays in use while chat rolls out, and the hook and permission paths are shared.
 - **Phase 5, main-process half.** Git and worktrees, the file, search and watch services, plugin activation and module loading, Monaco load, canvas load and save, the marketplace, and project-store recovery.
 - **Renderer foundation.** The renderer facade, `telemetry:emit`, `AppErrorBoundary`, window `error` and `unhandledrejection` handlers, long-frame collection and the swallowed-catch lint rule. These wrap the root, so any layout keeps them.
 
@@ -1096,11 +1091,13 @@ Landing this first gives a **baseline** before the refresh and chat ship: crash-
 
 These were roughly 15–20% of the planned telemetry work. That is an estimate from the coverage map, not a measurement. Building them once, on the new UI, avoids doing them twice.
 
-**3. Owned by structured chat.** Do **not** instrument today's structured adapters (StreamJson, ACP, Codex app-server); they are being replaced. Instead:
+**3. Chat and telemetry are independent.** This matches [#1916](https://github.com/Agent-Clubhouse/Clubhouse/pull/1916) §7.3 and §8.1.
 
-- Telemetry subscribes **once** to the new Clubhouse event model, mapping turn start and end, tool start and end, permission request and decision, usage and errors onto `c.agent.turn`, `c.agent.tool_call`, `c.agent.permission` and token metrics. This replaces the structured-turn items in Phase 4. It is less code and covers all three CLIs.
-- The chat project's capability record supplies `c.structured.adapter` and the protocol-drift signals (`c.structured.protocol.unknown`, `c.agent.turn.stalled`) at the driver boundary.
-- `c.agent.runtime` gains a value for the new chat runtime. PTY and headless values stay while those paths exist.
+- **Neither waits for the other.** Chat ships as experimental without waiting for telemetry, and telemetry doesn't wait for chat.
+- **Chat owns its event bus.** Chat publishes its normalized events on a main-process bus that it owns: turn start and end, tool start and end, permission request and decision, usage, and errors. Chat imports nothing from telemetry.
+- **Telemetry subscribes when it lands.** It maps those events onto `c.agent.turn`, `c.agent.tool_call`, `c.agent.permission` and the token metrics (§4.4). It adds the driver-boundary signals under `c.chat.*`: `c.chat.driver` and `c.chat.protocol.unknown`, plus `c.agent.turn.stalled`. New code uses `chat`, not `structured`.
+- **Whichever lands second owns the mapping** code and its tests, and adds `chat` to `c.agent.runtime` in the registry.
+- **Structured mode is not instrumented.** It is being removed. PTY and headless values stay while those paths exist.
 
 **Ownership.**
 
@@ -1110,11 +1107,17 @@ These were roughly 15–20% of the planned telemetry work. That is an estimate f
 | Attribute registry (`src/shared/telemetry/attributes.ts`) | Telemetry, via CODEOWNERS review on every addition |
 | Workbook and alert rules | Telemetry |
 | Call sites in new UI views | Refresh |
-| Event-model mapping and driver-boundary signals | Structured chat, with telemetry reviewing the registry entries |
+| Chat event bus | Chat |
+| Mapping chat events to telemetry, and the `c.chat.*` signals | Whichever of chat or telemetry lands second, with telemetry reviewing the registry entries |
 
-**Parity checklist (required in both specs).** The refresh spec and the structured-chat spec must each include a telemetry parity checklist, and neither ships until it passes:
+**Parity checklist (required in both specs).** The refresh spec and the chat spec must each include this telemetry parity checklist.
 
-1. Every span, metric and event the replaced UI or adapter emits has a named equivalent in the new code, or is explicitly retired in the registry with a reason.
+- **Refresh:** the checklist gates shipping.
+- **Chat:** it applies once both chat and telemetry exist, and gates only chat's promotion from experimental to stable or default.
+
+The checklist:
+
+1. Every span, metric and event the replaced UI or runtime emits has a named equivalent in the new code, or is explicitly retired in the registry with a reason.
 2. Every Workbook panel that charted the old signal still has data. The KQL-vs-registry test (§6.10) enforces names; a manual import against a scratch resource confirms the panels render.
 3. New views and drivers add their `c.view` / `c.agent.runtime` values and their `c.ui.action_failed` actions to the registry in the same PR.
 4. P0 signals from §12 keep their level (Errors or Standard) and their alert rules.
@@ -1129,7 +1132,7 @@ These were roughly 15–20% of the planned telemetry work. That is an estimate f
 | Azure exporter is pre-1.0 (beta.46) with frequent breaking changes and version lockstep with OTel 0.2xx experimental packages | High | Medium | Pin exact versions; Dependabot group for `@opentelemetry/*` + `@azure/monitor-opentelemetry-exporter`; a contract test that exports one of each signal to a mock ingestion server and snapshots the payload shape |
 | Exporter contacts endpoints other than the user's (Statsbeat, AAD discovery) | Medium | **High (trust)** | Disable Statsbeat; egress-allowlist test is a release blocker (§6.7) |
 | Privacy regression: a new attribute or call site leaks a path or name | Medium | High | Typed registry + lint import restriction + runtime redaction + fuzz test + key snapshot test; CODEOWNERS on `src/shared/telemetry/attributes.ts` |
-| Hot-path performance (PTY, hook server, structured deltas) | Low (by design) | Medium | §8 budget; vitest micro-benchmark around hook-server `handleRequest` with telemetry on/off; no spans below Detailed |
+| Hot-path performance (PTY, hook server, chat deltas) | Low (by design) | Medium | §8 budget; vitest micro-benchmark around hook-server `handleRequest` with telemetry on/off; no spans below Detailed |
 | Bundle size | Low | Low | ~1 MB lazy chunk vs ~97 MB asar; CI size guard at 2 MB |
 | Windows: path scrubbing (`C:\`, UNC, `\\?\`), `safeStorage` (DPAPI, fine), `app.exit` paths during Squirrel update | Medium | Medium | Scrubber tests on the Windows CI runner using `os.homedir()`; `flushBeforeExit` covers Squirrel relaunch |
 | Linux `safeStorage` falls back to `basic_text` without a keyring | Medium | Low | Detect the backend and warn the user; the ingestion-only credential limits the blast radius |
@@ -1221,7 +1224,7 @@ The **Fixes** column counts fix commits by files touched, before and after 2026-
 | # | Hot spot (code path) | Fixes Mar–mid-Apr / since | Survival · code path | Incidents | How it failed | Signals that would have caught it (existing → **new**) | Priority |
 |---|---|---|---|---|---|---|---|
 | H1 | **Persistence and data integrity**: canvas KV, `agents.json`, `projects.json`, plugin KV, settings stores, group-project registry and bulletin | 12 / 10 | 99% (2) · **Current** | [#665](https://github.com/Agent-Clubhouse/Clubhouse/issues/665) (lost updates in file-based stores), [#706](https://github.com/Agent-Clubhouse/Clubhouse/issues/706), [#1225](https://github.com/Agent-Clubhouse/Clubhouse/issues/1225) (canvas autosave overwrote wires on boot); then [#1561](https://github.com/Agent-Clubhouse/Clubhouse/issues/1561), [#1548](https://github.com/Agent-Clubhouse/Clubhouse/issues/1548) (reverted in [#1551](https://github.com/Agent-Clubhouse/Clubhouse/issues/1551)), [#1909](https://github.com/Agent-Clubhouse/Clubhouse/issues/1909), [#1907](https://github.com/Agent-Clubhouse/Clubhouse/issues/1907), [#1906](https://github.com/Agent-Clubhouse/Clubhouse/issues/1906), [#1630](https://github.com/Agent-Clubhouse/Clubhouse/issues/1630), [#1644](https://github.com/Agent-Clubhouse/Clubhouse/issues/1644), [#1629](https://github.com/Agent-Clubhouse/Clubhouse/issues/1629), [#1627](https://github.com/Agent-Clubhouse/Clubhouse/issues/1627), [#1628](https://github.com/Agent-Clubhouse/Clubhouse/issues/1628), [#1660](https://github.com/Agent-Clubhouse/Clubhouse/issues/1660), [#1631](https://github.com/Agent-Clubhouse/Clubhouse/issues/1631) (open), [#1645](https://github.com/Agent-Clubhouse/Clubhouse/issues/1645), [#1639](https://github.com/Agent-Clubhouse/Clubhouse/issues/1639), [#1462](https://github.com/Agent-Clubhouse/Clubhouse/issues/1462), [#1659](https://github.com/Agent-Clubhouse/Clubhouse/issues/1659), [#1661](https://github.com/Agent-Clubhouse/Clubhouse/issues/1661) | **Mostly silent data loss.** Examples: autosave over a failed hydration, a good `.bak` overwritten by auto-recovery, non-atomic writes, a flush racing mutations. | `c.canvas.load` result, `c.project.store.recovery` → **`c.persist.writes` {store, result: ok/failed/skipped_guard}, `c.persist.write.duration`, `c.persist.recovery` event {store, action: quarantined/restored_from_backup/backup_corrupt/reset_to_default/backup_overwritten}, `c.persist.guard_blocked` {store, reason: degraded_hydration/verify_empty/barrier}, `c.persist.flush_barrier.wait`** at the shared write points (`createSettingsStore`, `agent-config` flush, `project-store` `writeStore`, `plugin-storage` `writeKey`, group-project registry and bulletin flush, canvas KV) | **P0** |
-| H2 | **Provider CLI drift and structured protocols**: Codex, Copilot, ACP and stream-json | 21 / 18 | 89% (1) · **Current** | [#683](https://github.com/Agent-Clubhouse/Clubhouse/issues/683), [#1033](https://github.com/Agent-Clubhouse/Clubhouse/issues/1033), [#1215](https://github.com/Agent-Clubhouse/Clubhouse/issues/1215), [#1221](https://github.com/Agent-Clubhouse/Clubhouse/issues/1221), [#1314](https://github.com/Agent-Clubhouse/Clubhouse/issues/1314) (structured event validation and queue race); then [#1716](https://github.com/Agent-Clubhouse/Clubhouse/issues/1716) (Codex could not launch), [#1714](https://github.com/Agent-Clubhouse/Clubhouse/issues/1714), [#1710](https://github.com/Agent-Clubhouse/Clubhouse/issues/1710), [#1720](https://github.com/Agent-Clubhouse/Clubhouse/issues/1720) (7 of 9 server requests dropped, turns hang), [#1729](https://github.com/Agent-Clubhouse/Clubhouse/issues/1729), [#1911](https://github.com/Agent-Clubhouse/Clubhouse/issues/1911) (wire formats), [#1717](https://github.com/Agent-Clubhouse/Clubhouse/issues/1717), [#1725](https://github.com/Agent-Clubhouse/Clubhouse/issues/1725), [#1726](https://github.com/Agent-Clubhouse/Clubhouse/issues/1726), [#1727](https://github.com/Agent-Clubhouse/Clubhouse/issues/1727), [#1733](https://github.com/Agent-Clubhouse/Clubhouse/issues/1733), [#1732](https://github.com/Agent-Clubhouse/Clubhouse/issues/1732), [#1426](https://github.com/Agent-Clubhouse/Clubhouse/issues/1426), [#1718](https://github.com/Agent-Clubhouse/Clubhouse/issues/1718) (open), [#1728](https://github.com/Agent-Clubhouse/Clubhouse/issues/1728) (open), [#1719](https://github.com/Agent-Clubhouse/Clubhouse/issues/1719) (open), [#1531](https://github.com/Agent-Clubhouse/Clubhouse/issues/1531) (open) | Upstream CLI releases changed flags, wire formats and storage paths. Failures showed as hangs, empty lists or immediate exits. | `c.agent.spawn` errors, `early_failure` exit class, `c.agent.turn` end reason → **`c.provider.cli_version` (major.minor, captured in `check_availability`) on spawn spans and the `c.agent.spawns` / `c.agent.exit` metrics, so a spike lines up with an upstream release; `c.structured.protocol.unknown` {adapter, kind: request/notification/field, method from an allowlist or `unknown`}; `c.agent.turn.stalled` (a watchdog fires when a turn has no event for 5 min); `c.agent.hooks.silent_run` (a run over 60 s with hooks configured but zero hook events); `c.provider.list_sessions` span {result-count and dirs-scanned buckets}; `c.pty.inject` span {kind: shoulder_tap/polling/mcp_wake/mission, result: submitted/unconfirmed/failed}** | **P0** |
+| H2 | **Provider CLI drift and structured protocols**: Codex, Copilot, ACP and stream-json | 21 / 18 | 89% (1) · **Current** | [#683](https://github.com/Agent-Clubhouse/Clubhouse/issues/683), [#1033](https://github.com/Agent-Clubhouse/Clubhouse/issues/1033), [#1215](https://github.com/Agent-Clubhouse/Clubhouse/issues/1215), [#1221](https://github.com/Agent-Clubhouse/Clubhouse/issues/1221), [#1314](https://github.com/Agent-Clubhouse/Clubhouse/issues/1314) (structured event validation and queue race); then [#1716](https://github.com/Agent-Clubhouse/Clubhouse/issues/1716) (Codex could not launch), [#1714](https://github.com/Agent-Clubhouse/Clubhouse/issues/1714), [#1710](https://github.com/Agent-Clubhouse/Clubhouse/issues/1710), [#1720](https://github.com/Agent-Clubhouse/Clubhouse/issues/1720) (7 of 9 server requests dropped, turns hang), [#1729](https://github.com/Agent-Clubhouse/Clubhouse/issues/1729), [#1911](https://github.com/Agent-Clubhouse/Clubhouse/issues/1911) (wire formats), [#1717](https://github.com/Agent-Clubhouse/Clubhouse/issues/1717), [#1725](https://github.com/Agent-Clubhouse/Clubhouse/issues/1725), [#1726](https://github.com/Agent-Clubhouse/Clubhouse/issues/1726), [#1727](https://github.com/Agent-Clubhouse/Clubhouse/issues/1727), [#1733](https://github.com/Agent-Clubhouse/Clubhouse/issues/1733), [#1732](https://github.com/Agent-Clubhouse/Clubhouse/issues/1732), [#1426](https://github.com/Agent-Clubhouse/Clubhouse/issues/1426), [#1718](https://github.com/Agent-Clubhouse/Clubhouse/issues/1718) (open), [#1728](https://github.com/Agent-Clubhouse/Clubhouse/issues/1728) (open), [#1719](https://github.com/Agent-Clubhouse/Clubhouse/issues/1719) (open), [#1531](https://github.com/Agent-Clubhouse/Clubhouse/issues/1531) (open) | Upstream CLI releases changed flags, wire formats and storage paths. Failures showed as hangs, empty lists or immediate exits. | `c.agent.spawn` errors, `early_failure` exit class, `c.agent.turn` end reason → **`c.provider.cli_version` (major.minor, captured in `check_availability`) on spawn spans and the `c.agent.spawns` / `c.agent.exit` metrics, so a spike lines up with an upstream release; `c.chat.protocol.unknown` {adapter, kind: request/notification/field, method from an allowlist or `unknown`}; `c.agent.turn.stalled` (a watchdog fires when a turn has no event for 5 min); `c.agent.hooks.silent_run` (a run over 60 s with hooks configured but zero hook events); `c.provider.list_sessions` span {result-count and dirs-scanned buckets}; `c.pty.inject` span {kind: shoulder_tap/polling/mcp_wake/mission, result: submitted/unconfirmed/failed}** | **P0** |
 | H3 | **Hooks and permissions** | 8 / 3 | 92% (0) · **Current** | [#971](https://github.com/Agent-Clubhouse/Clubhouse/issues/971) (agent stuck in needs_permission after resolution); then [#1427](https://github.com/Agent-Clubhouse/Clubhouse/issues/1427) (permission timeout race), [#1558](https://github.com/Agent-Clubhouse/Clubhouse/issues/1558), [#1518](https://github.com/Agent-Clubhouse/Clubhouse/issues/1518), [#1721](https://github.com/Agent-Clubhouse/Clubhouse/issues/1721), [#5](https://github.com/Agent-Clubhouse/Clubhouse/issues/5) | A permission was never surfaced or timed out unseen; hooks were left behind after a stop. | `c.agent.permission` result and wait, `c.agent.permission.stuck` → **`c.permission.prompt_shown` bool on the permission span; `c.hooks.teardown` span {orchestrator, result}** | **P0** |
 | H4 | **Terminal and PTY**: xterm rendering, input, replay | 24 / 6 | 84% (5) · **Current**, scroll-guardian approach superseded ([#1097](https://github.com/Agent-Clubhouse/Clubhouse/issues/1097), [#1115](https://github.com/Agent-Clubhouse/Clubhouse/issues/1115)) by the xterm 6 rework ([#1910](https://github.com/Agent-Clubhouse/Clubhouse/issues/1910)) | [#882](https://github.com/Agent-Clubhouse/Clubhouse/issues/882), [#886](https://github.com/Agent-Clubhouse/Clubhouse/issues/886), [#1081](https://github.com/Agent-Clubhouse/Clubhouse/issues/1081) (PTY buffer race), [#1097](https://github.com/Agent-Clubhouse/Clubhouse/issues/1097), [#1115](https://github.com/Agent-Clubhouse/Clubhouse/issues/1115); then [#1910](https://github.com/Agent-Clubhouse/Clubhouse/issues/1910), [#1393](https://github.com/Agent-Clubhouse/Clubhouse/issues/1393) ("can scroll but can't type"), [#1413](https://github.com/Agent-Clubhouse/Clubhouse/issues/1413), [#1389](https://github.com/Agent-Clubhouse/Clubhouse/issues/1389), [#1528](https://github.com/Agent-Clubhouse/Clubhouse/issues/1528) (macOS PTY worker starvation), [#1490](https://github.com/Agent-Clubhouse/Clubhouse/issues/1490), [#1503](https://github.com/Agent-Clubhouse/Clubhouse/issues/1503), [#1390](https://github.com/Agent-Clubhouse/Clubhouse/issues/1390), [#936](https://github.com/Agent-Clubhouse/Clubhouse/issues/936), [#1634](https://github.com/Agent-Clubhouse/Clubhouse/issues/1634), [#310](https://github.com/Agent-Clubhouse/Clubhouse/issues/310) (open) | Output was duplicated or garbled, input was lost, focus wedged. The PTY was healthy but the UI was not. | `c.pty.spawn` errors, time to shell ready, event-loop delay (§4.15), long frames in the `terminal` view → **`c.pty.write.dropped` (oversized writes), `c.terminal.focus_recovered` (the [#1393](https://github.com/Agent-Clubhouse/Clubhouse/issues/1393) recovery path firing), `c.terminal.replay` event {bytes bucket, dedup_trimmed}** | **P1** |
 | H5 | **Plugin loading, activation and marketplace** | 9 / 4 | 88% (2) · **Current**, blob-URL loader ([#1499](https://github.com/Agent-Clubhouse/Clubhouse/issues/1499)) superseded by the plugin protocol ([#1522](https://github.com/Agent-Clubhouse/Clubhouse/issues/1522)) | [#409](https://github.com/Agent-Clubhouse/Clubhouse/issues/409), [#1061](https://github.com/Agent-Clubhouse/Clubhouse/issues/1061) (plugin discovery deadlock); then [#1499](https://github.com/Agent-Clubhouse/Clubhouse/issues/1499) → [#1520](https://github.com/Agent-Clubhouse/Clubhouse/issues/1520) → [#1522](https://github.com/Agent-Clubhouse/Clubhouse/issues/1522) → [#1527](https://github.com/Agent-Clubhouse/Clubhouse/issues/1527) (a four-PR regression chain), [#1554](https://github.com/Agent-Clubhouse/Clubhouse/issues/1554) (stuck activation), [#1832](https://github.com/Agent-Clubhouse/Clubhouse/issues/1832) (Monaco hang with a theme plugin), [#1903](https://github.com/Agent-Clubhouse/Clubhouse/issues/1903), [#1902](https://github.com/Agent-Clubhouse/Clubhouse/issues/1902) (failed install deleted existing plugins), [#1674](https://github.com/Agent-Clubhouse/Clubhouse/issues/1674), [#1654](https://github.com/Agent-Clubhouse/Clubhouse/issues/1654), [#1679](https://github.com/Agent-Clubhouse/Clubhouse/issues/1679) (open), [#1453](https://github.com/Agent-Clubhouse/Clubhouse/issues/1453) (open), [#1682](https://github.com/Agent-Clubhouse/Clubhouse/issues/1682) (open) | Plugins failed to import (multi-file, JS main, `./` paths), spun forever, or broke unrelated views. | `c.plugin.activate` errors, `c.plugin.protocol.requests`, `c.plugin.install` failure stage → **`c.plugin.module_load` result by `c.plugin.module_kind` (single_file/multi_file/js_main/ts_main); `c.plugin.activation.recovered`; `c.editor.monaco_load` span {result ok/timeout, `c.theme.kind`}; `c.plugin.install` result `rolled_back`; `c.plugin.command.duplicate_registration` counter** | **P0** |
@@ -1233,7 +1236,7 @@ The **Fixes** column counts fix commits by files touched, before and after 2026-
 | H11 | **Editor and files** | 22 / 4 | 83% (1) · **Current** | [#520](https://github.com/Agent-Clubhouse/Clubhouse/issues/520) (search crash, V8 serializer overflow), [#661](https://github.com/Agent-Clubhouse/Clubhouse/issues/661) (EXC_BREAKPOINT from a stale watcher), [#678](https://github.com/Agent-Clubhouse/Clubhouse/issues/678) (watcher handle leak), [#856](https://github.com/Agent-Clubhouse/Clubhouse/issues/856); then [#1908](https://github.com/Agent-Clubhouse/Clubhouse/issues/1908) (drafts lost on failed saves or stale reads), [#1905](https://github.com/Agent-Clubhouse/Clubhouse/issues/1905) (file watches not scoped per window; UTF-8 split across chunks), [#1493](https://github.com/Agent-Clubhouse/Clubhouse/issues/1493), [#1697](https://github.com/Agent-Clubhouse/Clubhouse/issues/1697) (duplicate watchers), [#1451](https://github.com/Agent-Clubhouse/Clubhouse/issues/1451) | **Silent loss of edits**; resource leaks. | `c.file.save` errors, `c.file_watch.active` → **`c.file.save` result `stale_conflict` / `draft_preserved`; `c.file_watch.active` split by `c.window.kind`; `c.editor.monaco_load` (shared with H5)** | **P0** for save, P1 otherwise |
 | H12 | **Goobers panel** (experimental) | 0 / 8 issues | n/a (code added in Sep) · **Current** | [#1888](https://github.com/Agent-Clubhouse/Clubhouse/issues/1888), [#1881](https://github.com/Agent-Clubhouse/Clubhouse/issues/1881), [#1880](https://github.com/Agent-Clubhouse/Clubhouse/issues/1880), [#1876](https://github.com/Agent-Clubhouse/Clubhouse/issues/1876), [#1890](https://github.com/Agent-Clubhouse/Clubhouse/issues/1890), [#1879](https://github.com/Agent-Clubhouse/Clubhouse/issues/1879), [#1874](https://github.com/Agent-Clubhouse/Clubhouse/issues/1874), [#1894](https://github.com/Agent-Clubhouse/Clubhouse/issues/1894) (a 2026-09-19/20 burst) | Stale data presented as live; the SSE stream never went live. | `c.goobers.sse.connect`, liveness transitions → **`c.goobers.data.age` (observable gauge, s since the last fresh payload per stream); `c.goobers.stream.mode` events (`live`/`polling`)** | **P2** |
 | H13 | **Electron upgrade fallout** | 2 / 0 | 100% (0) · **Current** | [#1586](https://github.com/Agent-Clubhouse/Clubhouse/issues/1586) (Electron 43: relocator renderer crash, node-pty `spawn-helper` permissions), [#1688](https://github.com/Agent-Clubhouse/Clubhouse/issues/1688), [#1681](https://github.com/Agent-Clubhouse/Clubhouse/issues/1681) (security fuses removed) | Crashes and spawn failures right after an upgrade. | `c.renderer.gone`, `c.pty.spawn` / `c.shell.spawn` errors, with `clubhouse.electron.version` on the resource → **`error.type=spawn_helper_not_executable`**. Fuse state is a build property: a CI check, not telemetry. | **P1** |
-| H14 | **Assistant** (`features/assistant`, `assistant-handlers`, its structured mode and canvas commands) | 24 / 3 | 80% (1) · **Current** (experimental) | [#1169](https://github.com/Agent-Clubhouse/Clubhouse/issues/1169), [#1175](https://github.com/Agent-Clubhouse/Clubhouse/issues/1175), [#1176](https://github.com/Agent-Clubhouse/Clubhouse/issues/1176) (project re-selection stuck after leaving the assistant), [#1197](https://github.com/Agent-Clubhouse/Clubhouse/issues/1197) (React crash from hook ordering), [#1236](https://github.com/Agent-Clubhouse/Clubhouse/issues/1236), [#1301](https://github.com/Agent-Clubhouse/Clubhouse/issues/1301), [#1316](https://github.com/Agent-Clubhouse/Clubhouse/issues/1316), [#1317](https://github.com/Agent-Clubhouse/Clubhouse/issues/1317) | Render crashes, races between canvas commands and follow-ups, stuck navigation. | usage events, `AppErrorBoundary` → **assistant spawns go through `c.agent.spawn` with `c.agent.kind=assistant`; `c.assistant.turn` span (mode, end reason, error.type); `c.canvas.command` results tagged `c.command.source=assistant`; render errors carry `c.view=assistant`** | **P1** |
+| H14 | **Assistant** (`features/assistant`, `assistant-handlers`, its structured mode and canvas commands) | 24 / 3 | 80% (1) · **Current** (experimental) | [#1169](https://github.com/Agent-Clubhouse/Clubhouse/issues/1169), [#1175](https://github.com/Agent-Clubhouse/Clubhouse/issues/1175), [#1176](https://github.com/Agent-Clubhouse/Clubhouse/issues/1176) (project re-selection stuck after leaving the assistant), [#1197](https://github.com/Agent-Clubhouse/Clubhouse/issues/1197) (React crash from hook ordering), [#1236](https://github.com/Agent-Clubhouse/Clubhouse/issues/1236), [#1301](https://github.com/Agent-Clubhouse/Clubhouse/issues/1301), [#1316](https://github.com/Agent-Clubhouse/Clubhouse/issues/1316), [#1317](https://github.com/Agent-Clubhouse/Clubhouse/issues/1317) | Render crashes, races between canvas commands and follow-ups, stuck navigation. | usage events, `AppErrorBoundary` → **assistant spawns go through `c.agent.spawn` with `c.agent.kind=assistant`; `c.assistant.turn` span (mode, end reason, error.type); `c.canvas.command` results tagged `c.command.source=assistant`; render errors carry `c.view=assistant`** | **Retired**: feature removed in [#1930](https://github.com/Agent-Clubhouse/Clubhouse/pull/1930); kept as history |
 
 ### 12.2a Cross-cutting patterns (mostly March)
 
@@ -1254,7 +1257,7 @@ These recur across hot spots. No single span catches them, so each gets a rule i
 
 ### 12.4 What changes in the plan
 
-- **P0 flows** are H1, H2, H3, H5, H6, H7, **H9**, the H11 save path, and `c.bulletin.post` from H8. H10 and H14 are P1.
+- **P0 flows** are H1, H2, H3, H5, H6, H7, **H9**, the H11 save path, and `c.bulletin.post` from H8. H10 is P1. H14 is retired (Assistant removed in #1930).
   - Their new signals are tagged E or S, never D.
   - They are listed in Phases 3–5 (§9).
   - Each gets an alert-ready query in the Phase 7 workbook. Examples: a persistence `recovery` or `guard_blocked` event, `apply_not_taken`, spawn `early_failure` grouped by `c.provider.cli_version`, and `c.agent.hooks.silent_run`.
@@ -1271,8 +1274,8 @@ These recur across hot spots. No single span catches them, so each gets a rule i
 |---|---|
 | App | `c.app.startup`ᴿ (`.main_ready`, `.register_ipc`, `.safe_mode_check`, `.create_window`, `.renderer_init`, `.load_settings`, `.plugin_system`), `c.app.shutdown`ᴿ, `c.window.create`ᴿ, `c.renderer.unresponsive`ᴿ |
 | Update | `c.update.check`ᴿ (`.fetch_manifest`), `c.update.download`ᴿ (`.verify`), `c.update.apply`ᴿ, `c.update.session_resume`ᴿ |
-| Agent | `c.agent.create`ᴿ, `c.agent.delete`ᴿ, `c.agent.quick_launch`ᴿ (renderer), `c.agent.spawn`ᴿ (`c.provider.resolve`, `c.provider.check_availability`, `c.agent.materialize`, `c.agent.prepare_pty`, `c.hooks.configure`, `c.mcp.inject`, `c.provider.build_command`, `c.pty.spawn`, `c.headless.spawn`, `c.structured.start`), `c.agent.run`, `c.agent.turn`ᴿ (`c.structured.rpc`), `c.agent.permission`ᴿ, `c.agent.exit`ᴿ, `c.agent.kill`ᴿ, `c.agent.tool_call` (D) |
-| Queue / group | `c.queue.task`ᴿ (`.wait`, `.run`), `c.group.shoulder_tap`ᴿ, `c.group.membership_sync`ᴿ |
+| Agent | `c.agent.create`ᴿ, `c.agent.delete`ᴿ, `c.agent.quick_launch`ᴿ (renderer), `c.agent.spawn`ᴿ (`c.provider.resolve`, `c.provider.check_availability`, `c.agent.materialize`, `c.agent.prepare_pty`, `c.hooks.configure`, `c.mcp.inject`, `c.provider.build_command`, `c.pty.spawn`, `c.headless.spawn`, `c.chat.start`), `c.agent.run`, `c.agent.turn`ᴿ (`c.chat.rpc`), `c.agent.permission`ᴿ, `c.agent.exit`ᴿ, `c.agent.kill`ᴿ, `c.agent.tool_call` (D) |
+| Group | `c.group.shoulder_tap`ᴿ, `c.group.membership_sync`ᴿ |
 | MCP / hooks | `c.mcp.bridge.start`, `c.mcp.tool_call`ᴿ, `c.hook_server.start` |
 | Projects / git / files | `c.project.switch`ᴿ, `c.project.add`ᴿ, `c.project.remove`ᴿ, `c.project.git_init`ᴿ, `c.git.<op>`ᴿ, `c.git.worktree_add`, `c.git.worktree_remove`, `c.file.open`ᴿ, `c.file.save`ᴿ, `c.file.tree.read`, `c.search.query`ᴿ, `c.editor.open_external` |
 | Plugins / canvas / marketplace | `c.plugin_system.init`, `c.plugin.activate`, `c.plugin.deactivate`, `c.canvas.load`ᴿ, `c.canvas.command`ᴿ, `c.marketplace.fetch_registry`ᴿ, `c.plugin.install`ᴿ, `c.plugin.update_check`ᴿ, `c.plugin.update`ᴿ, `c.plugin.uninstall`ᴿ |
@@ -1291,7 +1294,7 @@ These recur across hot spots. No single span catches them, so each gets a rule i
 | App | `c.app.sessions`, `c.app.startup.duration`, `c.app.session.duration`, `c.app.shutdown.duration`, `c.app.unclean_exits`, `c.window.relay.timeouts`, `c.window.popouts` |
 | Update | `c.update.checks`, `c.update.failures`, `c.update.download.duration` |
 | Agent | `c.agent.spawns`, `c.agent.spawn.duration`, `c.agent.time_to_first_output`, `c.agent.run.duration`, `c.agent.active`, `c.pty.output.bytes`, `c.agent.tool_calls`, `c.agent.hook_events`, `c.agent.turn.duration`, `c.agent.tokens`, `c.agent.cost`, `c.agent.permission.wait`, `c.agent.permission.stuck` |
-| Queue / group | `c.queue.depth`, `c.queue.tasks`, `c.group.bulletin.posts` |
+| Group | `c.group.bulletin.posts` |
 | MCP / hooks | `c.mcp.tool_calls`, `c.mcp.tool_call.duration`, `c.mcp.auth_rejected`, `c.mcp.sessions`, `c.hook_server.requests` |
 | Projects / git / files | `c.projects.count`, `c.git.status.duration`, `c.git.status.polls`, `c.git.subprocess.duration`, `c.file.ops`, `c.file_watch.active`, `c.file_watch.errors` |
 | Plugins / canvas | `c.plugin.permission_violation`, `c.plugin.api_calls`, `c.plugin.protocol.requests`, `c.canvas.save.duration`, `c.canvas.saves`, `c.canvas.views` |
@@ -1299,7 +1302,7 @@ These recur across hot spots. No single span catches them, so each gets a rule i
 | Goobers | `c.goobers.polls`, `c.goobers.poll.skipped`, `c.goobers.poll.duration` |
 | Telemetry | `c.telemetry.dropped`, `c.telemetry.export.failures`, `c.telemetry.offline.items` |
 | Process health (rev 2) | `c.process.eventloop.delay.p99`, `c.process.eventloop.delay.max`, `c.process.memory`, `c.process.cpu`, `c.renderer.long_frames`, `c.renderer.long_frame.duration` |
-| Regression signals (rev 2) | `c.persist.writes`, `c.persist.write.duration`, `c.persist.flush_barrier.wait`, `c.structured.protocol.unknown`, `c.agent.status_reconciled`, `c.agent.name_collision`, `c.pty.write.dropped`, `c.terminal.focus_recovered`, `c.plugin.module_load`, `c.plugin.activation.recovered`, `c.plugin.command.duplicate_registration`, `c.bulletin.post`, `c.annex.control.denied`, `c.goobers.data.age` |
+| Regression signals (rev 2) | `c.persist.writes`, `c.persist.write.duration`, `c.persist.flush_barrier.wait`, `c.chat.protocol.unknown`, `c.agent.status_reconciled`, `c.agent.name_collision`, `c.pty.write.dropped`, `c.terminal.focus_recovered`, `c.plugin.module_load`, `c.plugin.activation.recovered`, `c.plugin.command.duplicate_registration`, `c.bulletin.post`, `c.annex.control.denied`, `c.goobers.data.age` |
 | Plugin telemetry (rev 2) | `c.plugin.telemetry.rejected`, `c.plugin.telemetry.throttled`, plugin metrics `clubhouse.plugin.<name>` |
 
 ## Appendix B: App Insights table mapping
