@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { Readable } from 'stream';
+import * as os from 'os';
+import * as path from 'path';
 
 // --- Mocks ---
 
 // Mock electron
 const mockSend = vi.fn();
+const mockUserData = vi.hoisted(() => ({ dir: '/tmp/clubhouse-test' }));
 vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/clubhouse-test' },
+  app: { getPath: () => mockUserData.dir },
   BrowserWindow: {
     getAllWindows: () => [{
       isDestroyed: () => false,
@@ -574,6 +577,21 @@ describe('headless-manager', () => {
   describe('readTranscript', () => {
     it('returns null for unknown agent', async () => {
       expect(await readTranscript('unknown-agent')).toBeNull();
+    });
+
+    it('resolves the logs dir from userData at call time, not module load (isolated profiles)', async () => {
+      const original = mockUserData.dir;
+      // Simulates index.ts applying CLUBHOUSE_USER_DATA after this module was imported
+      mockUserData.dir = path.join(os.tmpdir(), 'clubhouse-isolated-profile');
+      try {
+        await readTranscript('disk-agent');
+        expect(mockFsPromises.readFile).toHaveBeenCalledWith(
+          path.join(mockUserData.dir, 'agent-logs', 'disk-agent.jsonl'),
+          'utf-8',
+        );
+      } finally {
+        mockUserData.dir = original;
+      }
     });
 
     it('returns in-memory transcript for active session', async () => {
