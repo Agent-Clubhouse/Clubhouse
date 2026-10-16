@@ -122,9 +122,9 @@ export const ATTR = {
   telemetryDestination: enumAttr('clubhouse.telemetry.destination', ['azure', 'otlp']),
 
   // Agents (§5.1 examples; instrumented from Phase 3)
-  agentKind: enumAttr('clubhouse.agent.kind', ['durable', 'quick', 'companion', 'assistant']),
+  agentKind: enumAttr('clubhouse.agent.kind', ['durable', 'quick', 'companion']),
   orchestrator: enumAttr('clubhouse.orchestrator', ['claude-code', 'codex-cli', 'copilot-cli', 'other']),
-  agentRuntime: enumAttr('clubhouse.agent.runtime', ['pty', 'headless', 'structured']),
+  agentRuntime: enumAttr('clubhouse.agent.runtime', ['pty', 'headless']),
   exitCode: intAttr('process.exit.code'),
   agentIdHash: hashAttr('clubhouse.agent.id_hash'),
   sizeBucket: enumAttr('clubhouse.size_bucket', ['0', '<1KB', '<100KB', '<1MB', '<10MB', '<100MB', '>=100MB']),

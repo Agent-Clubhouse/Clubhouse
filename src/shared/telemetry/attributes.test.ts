@@ -26,7 +26,7 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   telemetryDestination: { good: ATTR.telemetryDestination('otlp'), key: 'clubhouse.telemetry.destination' },
   agentKind: { good: ATTR.agentKind('durable'), key: 'clubhouse.agent.kind' },
   orchestrator: { good: ATTR.orchestrator('codex-cli'), key: 'clubhouse.orchestrator' },
-  agentRuntime: { good: ATTR.agentRuntime('structured'), key: 'clubhouse.agent.runtime' },
+  agentRuntime: { good: ATTR.agentRuntime('headless'), key: 'clubhouse.agent.runtime' },
   exitCode: { good: ATTR.exitCode(137), key: 'process.exit.code' },
   agentIdHash: { good: ATTR.agentIdHash('agent_123'), key: 'clubhouse.agent.id_hash' },
   sizeBucket: { good: ATTR.sizeBucket('<1MB'), key: 'clubhouse.size_bucket' },
