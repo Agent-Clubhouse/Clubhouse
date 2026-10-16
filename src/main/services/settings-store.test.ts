@@ -12,6 +12,7 @@ vi.mock('fs', () => ({
   readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
   promises: {
     writeFile: vi.fn(async () => {}),
+    chmod: vi.fn(async () => {}),
   },
 }));
 
@@ -341,6 +342,32 @@ describe('settings-store', () => {
 });
 
 // ── LB-SP-003: write errors logged (not silently swallowed) ──────────────
+
+describe('file mode option', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetPath.mockReturnValue('/tmp/test-app');
+    resetAllSettingsStoresForTests();
+  });
+
+  it('creates the file with the mode and tightens an existing file to it', async () => {
+    const store = createSettingsStore<TestSettings>('secret.json', DEFAULTS, undefined, { mode: 0o600 });
+    await store.save({ ...DEFAULTS, name: 'x' });
+    const filePath = path.join('/tmp/test-app', 'secret.json');
+    expect(fs.promises.writeFile).toHaveBeenCalledWith(filePath, expect.any(String), { encoding: 'utf-8', mode: 0o600 });
+    if (process.platform === 'win32') {
+      expect(fs.promises.chmod).not.toHaveBeenCalled();
+    } else {
+      expect(fs.promises.chmod).toHaveBeenCalledWith(filePath, 0o600);
+    }
+  });
+
+  it('leaves permissions alone without a mode', async () => {
+    const store = createSettingsStore<TestSettings>('plain.json', DEFAULTS);
+    await store.save(DEFAULTS);
+    expect(fs.promises.chmod).not.toHaveBeenCalled();
+  });
+});
 
 describe('LB-SP-003: write errors are surfaced, not silently swallowed', () => {
   beforeEach(() => {

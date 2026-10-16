@@ -185,4 +185,24 @@ export default tseslint.config(
       '.clubhouse/agents/**/node_modules/**',
     ],
   },
+  {
+    // Telemetry attributes go through the typed registry (src/shared/telemetry/
+    // attributes.ts); nobody outside the telemetry modules may reach the OTel
+    // API and call span.setAttribute('cwd', ...) directly (spec §5.1).
+    files: ['src/**/*.ts', 'src/**/*.tsx'],
+    ignores: ['src/main/telemetry/**', 'src/renderer/telemetry/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@opentelemetry/*', '@azure/monitor-opentelemetry-exporter'],
+              message: 'Use tel/ATTR from src/main/telemetry instead of the OpenTelemetry API directly.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

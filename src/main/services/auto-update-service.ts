@@ -11,6 +11,7 @@ import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifa
 import { createSettingsStore } from './settings-store';
 import { appLog, flush as flushLogs } from './log-service';
 import { pathExists } from './fs-utils';
+import { flushBeforeExit } from '../telemetry/facade';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -824,6 +825,8 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeEx
   } else {
     await fsp.writeFile(script, buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, script), { mode: 0o755 });
   }
+  // Flush telemetry before the updater starts: app.exit() skips before-quit.
+  if (relaunch) await flushBeforeExit();
   const child = spawn('bash', [script], { detached: true, stdio: 'ignore' });
   await waitForChildSpawn(child);
   child.unref();
@@ -849,6 +852,9 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch, befo
       windowsHide: true,
     });
     flushLogs();
+    // Before --processStart: the relaunched instance must not race this one
+    // for the single-instance lock while telemetry flushes.
+    await flushBeforeExit();
     const child = spawn(updateExe, ['--processStart', appExeName], {
       detached: true,
       stdio: 'ignore',
@@ -893,6 +899,7 @@ export async function applyLinuxUpdate(context: ApplyContext, { relaunch, before
     if (relaunch) {
       await beforeExit?.();
       app.relaunch();
+      await flushBeforeExit();
       app.exit(0);
     }
     return true;
@@ -906,6 +913,7 @@ export async function applyLinuxUpdate(context: ApplyContext, { relaunch, before
   if (relaunch) {
     await beforeExit?.();
     app.relaunch();
+    await flushBeforeExit();
     app.exit(0);
   }
   return true;
@@ -987,6 +995,7 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
     throw err;
   }
   app.relaunch();
+  await flushBeforeExit();
   app.exit(0);
   return;
 }

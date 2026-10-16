@@ -86,7 +86,17 @@ export function createSettingsStore<T>(
         // Note: appLog cannot be imported here (circular: settings-store → log-service → log-settings → settings-store).
         console.warn(`[settings-store] Previous write to ${filename} failed:`, err instanceof Error ? err.message : err);
       })
-      .then(() => fs.promises.writeFile(filePath, serialized, options?.mode != null ? { encoding: 'utf-8', mode: options.mode } : 'utf-8'))
+      .then(async () => {
+        if (options?.mode == null) {
+          await fs.promises.writeFile(filePath, serialized, 'utf-8');
+          return;
+        }
+        await fs.promises.writeFile(filePath, serialized, { encoding: 'utf-8', mode: options.mode });
+        // writeFile's mode only applies when it creates the file; tighten a
+        // pre-existing file (e.g. created 0644 by hand or an older version) too.
+        // No-op on Windows, where POSIX modes don't apply.
+        if (process.platform !== 'win32') await fs.promises.chmod(filePath, options.mode);
+      })
       .catch((err) => {
         console.error(`[settings-store] Write to ${filename} failed — cache may diverge from disk:`, err instanceof Error ? err.message : err);
         throw err;
