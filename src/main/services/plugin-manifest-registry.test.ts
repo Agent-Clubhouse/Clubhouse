@@ -145,7 +145,7 @@ describe('plugin-manifest-registry', () => {
   it('loads trusted builtin manifests at initialization', async () => {
     await initializeTrustedManifests();
 
-    expect(getManifest('hub')).toBeDefined();
+    expect(getManifest('hub')).toBeUndefined();
     expect(getManifest('terminal')).toBeDefined();
     expect(getManifest('files')).toBeDefined();
     expect(getManifest('browser')).toBeDefined();
@@ -205,7 +205,7 @@ describe('plugin-manifest-registry', () => {
 
     await initializeTrustedManifests();
 
-    expect(getManifest('hub')).toBeUndefined();
+    expect(getManifest('terminal')).toBeUndefined();
     expect(getManifest('community-plugin')).toBeUndefined();
   });
 

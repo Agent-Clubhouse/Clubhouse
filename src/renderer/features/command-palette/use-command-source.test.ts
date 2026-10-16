@@ -94,26 +94,6 @@ vi.mock('../../stores/annexStore', () => ({
   ),
 }));
 
-const mockSetProjectActiveHub = vi.fn();
-const mockSetAppActiveHub = vi.fn();
-
-const projectHubState = {
-  hubs: [{ id: 'ph1', name: 'ProjectHub1' }] as any[],
-  activeHubId: 'ph1',
-  setActiveHub: mockSetProjectActiveHub,
-};
-
-const appHubState = {
-  hubs: [{ id: 'ah1', name: 'AppHub1' }, { id: 'ah2', name: 'AppHub2' }] as any[],
-  activeHubId: 'ah1',
-  setActiveHub: mockSetAppActiveHub,
-};
-
-const mockProjectHubStore = Object.assign(
-  (selector: any) => selector(projectHubState),
-  { getState: () => projectHubState, subscribe: () => () => {}, destroy: () => {} },
-);
-
 vi.mock('zustand', async () => {
   const actual = await vi.importActual('zustand');
   return {
@@ -121,14 +101,6 @@ vi.mock('zustand', async () => {
     useStore: (store: any, selector: any) => selector(store.getState()),
   };
 });
-
-vi.mock('../../plugins/builtin/hub/main', () => ({
-  getProjectHubStore: () => mockProjectHubStore,
-  useAppHubStore: Object.assign(
-    (selector: any) => selector(appHubState),
-    { getState: () => appHubState },
-  ),
-}));
 
 const mockSetProjectActiveCanvas = vi.fn();
 const mockSetAppActiveCanvas = vi.fn();
@@ -167,7 +139,7 @@ vi.mock('../../plugins/plugin-commands', () => ({
   pluginCommandRegistry: { execute: vi.fn() },
 }));
 
-// Mock window.clubhouse.plugin and app for cross-project hub storage + preview eligibility
+// Mock window.clubhouse.plugin and app for cross-project canvas storage + preview eligibility
 const mockStorageRead = vi.fn();
 const mockStorageWrite = vi.fn();
 const mockIsPreviewEligible = vi.fn().mockResolvedValue(true);
@@ -197,13 +169,11 @@ describe('useCommandSource', () => {
     uiStoreState.explorerTab = 'agents';
     annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     annexState.status = { advertising: false, port: 0, pin: '', connectedCount: 0 };
-    pluginStoreState.appEnabled = ['hub', 'canvas'];
+    pluginStoreState.appEnabled = ['canvas'];
     projectStoreState.activeProjectId = 'p1';
-    projectHubState.hubs = [{ id: 'ph1', name: 'ProjectHub1' }];
-    projectHubState.activeHubId = 'ph1';
     projectCanvasState.canvases = [{ id: 'pc1', name: 'ProjectCanvas1' }];
     projectCanvasState.activeCanvasId = 'pc1';
-    // Default: no hubs/canvases in other projects
+    // Default: no canvases in other projects
     mockStorageRead.mockResolvedValue(null);
     mockStorageWrite.mockResolvedValue(undefined);
     // Default: preview-eligible (restored after clearAllMocks)
@@ -312,59 +282,7 @@ describe('useCommandSource', () => {
     expect(mockSetSettingsSubPage).toHaveBeenCalledWith('orchestrators');
   });
 
-  // ── Spaces (hub + canvas) resolution tests ──────────────────────────
-
-  it('includes both project hubs and app hubs when a project is active', () => {
-    const { result } = renderHook(() => useCommandSource());
-    const projectHub = findItem(result.current, 'hub:project:ph1');
-    const appHub1 = findItem(result.current, 'hub:app:ah1');
-    const appHub2 = findItem(result.current, 'hub:app:ah2');
-    expect(projectHub).toBeDefined();
-    expect(projectHub.label).toBe('ProjectHub1');
-    expect(appHub1).toBeDefined();
-    expect(appHub1.label).toBe('AppHub1');
-    expect(appHub2).toBeDefined();
-    expect(appHub2.label).toBe('AppHub2');
-  });
-
-  it('marks the active project hub as Active with Hub prefix', () => {
-    const { result } = renderHook(() => useCommandSource());
-    const projectHub = findItem(result.current, 'hub:project:ph1');
-    expect(projectHub.detail).toBe('Hub · Active');
-  });
-
-  it('shows project name with Hub prefix in detail for non-active project hubs', () => {
-    projectHubState.hubs = [{ id: 'ph1', name: 'PH1' }, { id: 'ph2', name: 'PH2' }];
-    projectHubState.activeHubId = 'ph1';
-    const { result } = renderHook(() => useCommandSource());
-    const ph2 = findItem(result.current, 'hub:project:ph2');
-    expect(ph2.detail).toBe('Hub · Test');
-    projectHubState.hubs = [{ id: 'ph1', name: 'ProjectHub1' }];
-  });
-
-  it('labels app hubs with Hub · Home detail', () => {
-    const { result } = renderHook(() => useCommandSource());
-    const appHub2 = findItem(result.current, 'hub:app:ah2');
-    expect(appHub2.detail).toBe('Hub · Home');
-  });
-
-  it('project hub execution switches to project, navigates to hub tab, and activates hub', () => {
-    const { result } = renderHook(() => useCommandSource());
-    const projectHub = findItem(result.current, 'hub:project:ph1');
-    projectHub.execute();
-    expect(mockSetActiveProject).toHaveBeenCalledWith('p1');
-    expect(mockSetExplorerTab).toHaveBeenCalledWith('plugin:hub', 'p1');
-    expect(mockSetProjectActiveHub).toHaveBeenCalledWith('ph1');
-  });
-
-  it('app hub execution switches to home, navigates to hub tab, and activates hub', () => {
-    const { result } = renderHook(() => useCommandSource());
-    const appHub = findItem(result.current, 'hub:app:ah1');
-    appHub.execute();
-    expect(mockSetActiveProject).toHaveBeenCalledWith(null);
-    expect(mockSetExplorerTab).toHaveBeenCalledWith('plugin:hub');
-    expect(mockSetAppActiveHub).toHaveBeenCalledWith('ah1');
-  });
+  // ── Spaces resolution tests ──────────────────────────
 
   it('all space items have # type indicator and Spaces category', () => {
     const { result } = renderHook(() => useCommandSource());
@@ -375,12 +293,10 @@ describe('useCommandSource', () => {
     }
   });
 
-  // ── Cross-project hub tests ─────────────────────────────────────────
-
-  it('loads hubs from non-active projects via storage', async () => {
+  it('skips active project when loading cross-project canvases', async () => {
     mockStorageRead.mockImplementation(async (req: any) => {
-      if (req.projectPath === '/other' && req.key === 'hub-instances') {
-        return [{ id: 'oh1', name: 'OtherHub1' }, { id: 'oh2', name: 'OtherHub2' }];
+      if (req.projectPath === '/other' && req.key === 'canvas-instances') {
+        return [{ id: 'oc1', name: 'OtherCanvas1' }];
       }
       return null;
     });
@@ -388,62 +304,7 @@ describe('useCommandSource', () => {
     const { result } = renderHook(() => useCommandSource());
 
     await waitFor(() => {
-      const oh1 = findItem(result.current, 'hub:project:p2:oh1');
-      expect(oh1).toBeDefined();
-    });
-
-    const oh1 = findItem(result.current, 'hub:project:p2:oh1');
-    const oh2 = findItem(result.current, 'hub:project:p2:oh2');
-    expect(oh1.label).toBe('OtherHub1');
-    expect(oh1.detail).toBe('Hub · Other');
-    expect(oh1.category).toBe('Spaces');
-    expect(oh1.typeIndicator).toBe('#');
-    expect(oh2).toBeDefined();
-    expect(oh2.label).toBe('OtherHub2');
-  });
-
-  it('cross-project hub execution pre-writes active hub to storage then switches', async () => {
-    mockStorageRead.mockImplementation(async (req: any) => {
-      if (req.projectPath === '/other' && req.key === 'hub-instances') {
-        return [{ id: 'oh1', name: 'OtherHub1' }];
-      }
-      return null;
-    });
-
-    const { result } = renderHook(() => useCommandSource());
-
-    await waitFor(() => {
-      expect(findItem(result.current, 'hub:project:p2:oh1')).toBeDefined();
-    });
-
-    const oh1 = findItem(result.current, 'hub:project:p2:oh1');
-    await act(async () => {
-      await oh1.execute();
-    });
-
-    expect(mockStorageWrite).toHaveBeenCalledWith({
-      pluginId: 'hub',
-      scope: 'project-local',
-      key: 'hub-active-id',
-      value: 'oh1',
-      projectPath: '/other',
-    });
-    expect(mockSetActiveProject).toHaveBeenCalledWith('p2');
-    expect(mockSetExplorerTab).toHaveBeenCalledWith('plugin:hub', 'p2');
-  });
-
-  it('skips active project when loading cross-project hubs', async () => {
-    mockStorageRead.mockImplementation(async (req: any) => {
-      if (req.projectPath === '/other' && req.key === 'hub-instances') {
-        return [{ id: 'oh1', name: 'OtherHub1' }];
-      }
-      return null;
-    });
-
-    const { result } = renderHook(() => useCommandSource());
-
-    await waitFor(() => {
-      expect(findItem(result.current, 'hub:project:p2:oh1')).toBeDefined();
+      expect(findItem(result.current, 'canvas:project:p2:oc1')).toBeDefined();
     });
 
     // Should NOT have read storage for the active project
@@ -463,9 +324,8 @@ describe('useCommandSource', () => {
       await new Promise((r) => setTimeout(r, 10));
     });
 
-    // Active project hubs and app hubs should still be present
-    expect(findItem(result.current, 'hub:project:ph1')).toBeDefined();
-    expect(findItem(result.current, 'hub:app:ah1')).toBeDefined();
+    // Active project canvases should still be present
+    expect(findItem(result.current, 'canvas:project:pc1')).toBeDefined();
   });
 
   // ── Canvas resolution tests ─────────────────────────────────────────
@@ -565,14 +425,11 @@ describe('useCommandSource', () => {
     expect(mockSetExplorerTab).toHaveBeenCalledWith('plugin:canvas', 'p2');
   });
 
-  it('hub items show Hub prefix and canvas items show Canvas prefix in detail', () => {
+  it('never lists Hub items, and canvas items show Canvas prefix in detail', () => {
     const { result } = renderHook(() => useCommandSource());
-    const hubItems = result.current.filter((i: any) => i.id.startsWith('hub:'));
+    expect(result.current.filter((i: any) => i.id.startsWith('hub:'))).toHaveLength(0);
     const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
 
-    for (const hub of hubItems) {
-      expect(hub.detail).toMatch(/^Hub/);
-    }
     for (const canvas of canvasItems) {
       expect(canvas.detail).toMatch(/^Canvas/);
     }
@@ -582,62 +439,10 @@ describe('useCommandSource', () => {
 
   it('hides all canvas items when canvas plugin is not in appEnabled', () => {
     const saved = pluginStoreState.appEnabled;
-    pluginStoreState.appEnabled = ['hub'];
-    try {
-      const { result } = renderHook(() => useCommandSource());
-      const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
-      expect(canvasItems).toHaveLength(0);
-    } finally {
-      pluginStoreState.appEnabled = saved;
-    }
-  });
-
-  it('still shows hub items when canvas plugin is disabled', () => {
-    const saved = pluginStoreState.appEnabled;
-    pluginStoreState.appEnabled = ['hub'];
-    try {
-      const { result } = renderHook(() => useCommandSource());
-      const hubItems = result.current.filter((i: any) => i.id.startsWith('hub:'));
-      expect(hubItems.length).toBeGreaterThan(0);
-    } finally {
-      pluginStoreState.appEnabled = saved;
-    }
-  });
-
-  // ── Hub gating: items hidden when hub plugin disabled ──────────────
-
-  it('hides all hub items when hub plugin is not in appEnabled', () => {
-    const saved = pluginStoreState.appEnabled;
-    pluginStoreState.appEnabled = ['canvas'];
-    try {
-      const { result } = renderHook(() => useCommandSource());
-      const hubItems = result.current.filter((i: any) => i.id.startsWith('hub:'));
-      expect(hubItems).toHaveLength(0);
-    } finally {
-      pluginStoreState.appEnabled = saved;
-    }
-  });
-
-  it('still shows canvas items when hub plugin is disabled', () => {
-    const saved = pluginStoreState.appEnabled;
-    pluginStoreState.appEnabled = ['canvas'];
-    try {
-      const { result } = renderHook(() => useCommandSource());
-      const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
-      expect(canvasItems.length).toBeGreaterThan(0);
-    } finally {
-      pluginStoreState.appEnabled = saved;
-    }
-  });
-
-  it('hides both hub and canvas items when both plugins are disabled', () => {
-    const saved = pluginStoreState.appEnabled;
     pluginStoreState.appEnabled = [];
     try {
       const { result } = renderHook(() => useCommandSource());
-      const hubItems = result.current.filter((i: any) => i.id.startsWith('hub:'));
       const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
-      expect(hubItems).toHaveLength(0);
       expect(canvasItems).toHaveLength(0);
     } finally {
       pluginStoreState.appEnabled = saved;

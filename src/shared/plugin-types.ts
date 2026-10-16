@@ -439,12 +439,14 @@ export interface PluginModule {
   deactivate?(): void | Promise<void>;
   MainPanel?: React.ComponentType<{ api: PluginAPI }>;
   SidebarPanel?: React.ComponentType<{ api: PluginAPI }>;
+  /** @deprecated The built-in Hub was removed; this export is never rendered. Kept for SDK compatibility. */
   HubPanel?: React.ComponentType<HubPanelProps>;
   SettingsPanel?: React.ComponentType<{ api: PluginAPI }>;
   /** Global dialog panel rendered as a modal overlay (v0.7+). */
   DialogPanel?: React.ComponentType<{ api: PluginAPI; onClose: () => void }>;
 }
 
+/** @deprecated The built-in Hub was removed. Kept for SDK compatibility. */
 export interface HubPanelProps {
   paneId: string;
   resourceId?: string;
@@ -698,9 +700,10 @@ export interface AgentsAPI {
   getCompanionWorkspace(): Promise<string>;
 }
 
+/** @deprecated The built-in Hub was removed; `api.hub` is an empty namespace kept for SDK compatibility. */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface HubAPI {
-  // Reserved for future hub integration methods
+  // Intentionally empty
 }
 
 export interface NavigationAPI {
@@ -810,6 +813,7 @@ export interface PopoutEntry {
   params: {
     type: 'agent' | 'hub' | 'canvas';
     agentId?: string;
+    /** @deprecated Hub pop-outs no longer exist. */
     hubId?: string;
     canvasId?: string;
     projectId?: string;
@@ -820,6 +824,7 @@ export interface PopoutEntry {
 export interface PopoutState {
   popouts: PopoutEntry[];
   findAgentPopout(agentId: string): PopoutEntry | undefined;
+  /** @deprecated Hub pop-outs no longer exist; always returns undefined. */
   findHubPopout(hubId: string): PopoutEntry | undefined;
   findCanvasPopout(canvasId: string): PopoutEntry | undefined;
 }
@@ -835,7 +840,7 @@ export interface WindowAPI {
   /**
    * React hook: reactively tracks which views are currently popped out to separate
    * windows. Call from a plugin panel component to detect when its own view (e.g. a
-   * specific agent, hub, or canvas) has been popped out, so it can render
+   * specific agent or canvas) has been popped out, so it can render
    * `widgets.PopoutPlaceholder` instead of duplicating the content. @since 0.9
    */
   usePopoutState(): PopoutState;
@@ -1316,6 +1321,7 @@ export interface PluginAPI {
   events: EventsAPI;
   settings: SettingsAPI;
   agents: AgentsAPI;
+  /** @deprecated The built-in Hub was removed; empty namespace kept for SDK compatibility. */
   hub: HubAPI;
   navigation: NavigationAPI;
   widgets: WidgetsAPI;

@@ -15,7 +15,7 @@ registerMcpCommand({
   description:
     'List all available command palette commands. Returns an array of { id, label, category, keywords, detail }. ' +
     'Use this to discover what navigation and action commands are available, then use run_command to execute them. ' +
-    'Commands include: navigating to projects, agents, canvases, hubs, settings pages, and app actions. ' +
+    'Commands include: navigating to projects, agents, canvases, settings pages, and app actions. ' +
     'Optionally filter by category: "Projects", "Agents", "Spaces", "Navigation", "Settings", "Actions".',
   inputSchema: {
     type: 'object',
@@ -76,7 +76,7 @@ registerMcpCommand({
   nameSuffix: 'run_command',
   description:
     'Execute a command palette command by its ID. Use list_commands first to discover available commands. ' +
-    'This gives you full app navigation and control: open projects, switch to canvases/hubs, ' +
+    'This gives you full app navigation and control: open projects, switch to canvases, ' +
     'toggle settings, open the assistant panel, and more. ' +
     'Example IDs: "canvas:project:CANVAS_ID", "project:PROJECT_ID", "agent:AGENT_ID", ' +
     '"nav:agents", "nav:home", "action:toggle-settings".',

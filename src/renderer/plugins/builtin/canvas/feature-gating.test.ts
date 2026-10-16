@@ -60,7 +60,7 @@ describe('canvas feature gating', () => {
   it('base plugins always present regardless of flags', () => {
     const plugins = getBuiltinPlugins({});
     const ids = plugins.map((p) => p.manifest.id);
-    for (const id of ['hub', 'terminal', 'files']) {
+    for (const id of ['terminal', 'files']) {
       expect(ids).toContain(id);
     }
   });
@@ -77,9 +77,9 @@ describe('canvas feature gating', () => {
     expect(defaults.has('sticky-note')).toBe(true);
   });
 
-  it('hub is NOT in default enabled IDs', () => {
-    const defaults = getDefaultEnabledIds({});
-    expect(defaults.has('hub')).toBe(false);
+  it('the removed Hub is neither registered nor default-enabled', () => {
+    expect(getBuiltinPlugins({}).map((p) => p.manifest.id)).not.toContain('hub');
+    expect(getDefaultEnabledIds({}).has('hub')).toBe(false);
   });
 
   it('review is always loaded (not behind experimental flag)', () => {

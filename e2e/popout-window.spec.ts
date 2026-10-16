@@ -87,9 +87,8 @@ function writeAgentsJson(
  * then falling back to the next window if we accidentally captured DevTools.
  */
 async function createPopout(params: {
-  type: 'agent' | 'hub';
+  type: 'agent' | 'canvas';
   agentId?: string;
-  hubId?: string;
   projectId?: string;
   title?: string;
 }): Promise<{ page: Page; windowId: number }> {

@@ -22,11 +22,9 @@ import { useKeyboardShortcutsStore, eventToBinding } from './stores/keyboardShor
 import { getCommandActions } from './features/command-palette/command-actions';
 import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
 import { pluginEventBus } from './plugins/plugin-events';
-import { getProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
-import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
 import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore, getKnownProjectIds } from './plugins/builtin/canvas/main';
 import { applyCanvasMutation } from './plugins/builtin/canvas/canvas-sync';
-import type { AgentHookEvent, AgentStatus, HubMutation, CanvasMutation, SoundEvent, ResolvedProtocolAction } from '../shared/types';
+import type { AgentHookEvent, AgentStatus, CanvasMutation, SoundEvent, ResolvedProtocolAction } from '../shared/types';
 import { fileState } from './plugins/builtin/files/state';
 import { useSoundStore } from './stores/soundStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
@@ -81,37 +79,6 @@ function initWindowListeners(): (() => void)[] {
         agentIcons: state.agentIcons,
       });
     }),
-  );
-
-  // Respond to hub state requests from pop-out windows
-  removers.push(
-    window.clubhouse.window.onRequestHubState(
-      (requestId: string, hubId: string, scope: string, projectId?: string) => {
-        const store = scope === 'global' ? useAppHubStore : getProjectHubStore(projectId ?? null);
-        const state = store.getState();
-        const hub = state.hubs.find((h) => h.id === hubId);
-        if (hub) {
-          window.clubhouse.window.respondHubState(requestId, {
-            hubId: hub.id,
-            paneTree: hub.paneTree,
-            focusedPaneId: hub.focusedPaneId,
-            zoomedPaneId: hub.zoomedPaneId,
-          });
-        } else {
-          window.clubhouse.window.respondHubState(requestId, null);
-        }
-      },
-    ),
-  );
-
-  // Apply hub mutations forwarded from pop-out windows
-  removers.push(
-    window.clubhouse.window.onHubMutation(
-      (hubId: string, scope: string, mutation: unknown, projectId?: string) => {
-        const store = scope === 'global' ? useAppHubStore : getProjectHubStore(projectId ?? null);
-        applyHubMutation(store, hubId, mutation as HubMutation);
-      },
-    ),
   );
 
   // Respond to canvas state requests from pop-out windows

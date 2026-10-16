@@ -516,7 +516,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   // `focus-active-terminal` (default Ctrl/Cmd+Shift+T), the dispatcher in
   // app-event-bridge.ts emits FOCUS_ACTIVE_TERMINAL_EVENT on window.  The
   // active (focused) AgentTerminal re-focuses its xterm.  Multiple
-  // AgentTerminal instances mount at once (hub panes, popouts); only the
+  // AgentTerminal instances mount at once (canvas cards, popouts); only the
   // one with `focused === true` should respond so we don't steal focus.
   useEffect(() => {
     if (!focused) return;

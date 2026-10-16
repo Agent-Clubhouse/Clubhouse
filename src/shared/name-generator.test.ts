@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateDurableName, generateQuickName, generateHubName, generateZoneName, AGENT_COLORS } from './name-generator';
+import { generateDurableName, generateQuickName, generateCanvasName, generateZoneName, AGENT_COLORS } from './name-generator';
 
 describe('generateDurableName', () => {
   it('returns adjective-animal format', () => {
@@ -41,15 +41,15 @@ describe('generateQuickName', () => {
   });
 });
 
-describe('generateHubName', () => {
+describe('generateCanvasName', () => {
   it('returns adjective-place format', () => {
-    const name = generateHubName();
+    const name = generateCanvasName();
     expect(name).toMatch(/^[a-z]+-[a-z]+$/);
   });
 
   it('always produces non-empty, hyphenated, lowercase strings (100 iterations)', () => {
     for (let i = 0; i < 100; i++) {
-      const name = generateHubName();
+      const name = generateCanvasName();
       expect(name.length).toBeGreaterThan(0);
       expect(name).toContain('-');
       expect(name).toBe(name.toLowerCase());

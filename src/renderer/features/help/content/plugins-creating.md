@@ -56,9 +56,8 @@ Community plugins use `manifest.json`. Built-in plugins use TypeScript (`manifes
 | `MainPanel` | React component for the main content area |
 | `SidebarPanel` | React component for the accessory panel |
 | `SettingsPanel` | Custom settings UI (when `settingsPanel: 'custom'`) |
-| `HubPanel` | Panel for Hub integration (dual-scoped plugins) |
 
-All receive `{ api: PluginAPI }` as props (except `HubPanel` which gets `{ paneId, resourceId }`).
+All receive `{ api: PluginAPI }` as props.
 
 ## Key API Namespaces
 

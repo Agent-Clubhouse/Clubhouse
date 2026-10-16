@@ -1,6 +1,6 @@
 import { create, StoreApi, UseBoundStore } from 'zustand';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
-import { generateHubName } from '../../../../shared/name-generator';
+import { generateCanvasName } from '../../../../shared/name-generator';
 import { rendererLog } from '../../renderer-logger';
 import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, ZoneCanvasView, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
@@ -191,7 +191,7 @@ const REMOVED_TYPES = new Set(['browser', 'file', 'legacy-file', 'terminal', 'le
 function createCanvasInstance(): CanvasInstance {
   return {
     id: generateCanvasId(),
-    name: generateHubName(),
+    name: generateCanvasName(),
     views: [],
     viewport: { panX: 0, panY: 0, zoom: 1 },
     nextZIndex: 0,
@@ -275,7 +275,7 @@ function normalizeCanvasInstance(
 
     return {
       id: s.id ?? generateCanvasId(),
-      name: s.name ?? generateHubName(),
+      name: s.name ?? generateCanvasName(),
       views: restoredViews,
       viewport,
       nextZIndex: s.nextZIndex ?? restoredViews.length,
@@ -295,7 +295,7 @@ function normalizeCanvasInstance(
     });
     return {
       id: s?.id ?? generateCanvasId(),
-      name: s?.name ?? generateHubName(),
+      name: s?.name ?? generateCanvasName(),
       views: [],
       viewport: { panX: 0, panY: 0, zoom: 1 },
       nextZIndex: 0,

@@ -21,7 +21,7 @@ Open `Cmd+K`, then type a prefix:
 |--------|-----------|
 | `@` | Agents |
 | `/` | Projects |
-| `#` | Hubs |
+| `#` | Canvases |
 | `>` | Commands & Settings |
 
 ## App Shortcuts

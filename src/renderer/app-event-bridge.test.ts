@@ -10,8 +10,6 @@ const mockRemovers = {
   onNotificationClicked: vi.fn(),
   onAgentAttention: vi.fn(),
   onRequestAgentState: vi.fn(),
-  onRequestHubState: vi.fn(),
-  onHubMutation: vi.fn(),
   onRequestCanvasState: vi.fn(),
   onCanvasMutation: vi.fn(),
   onRequestDurableReload: vi.fn(),
@@ -51,9 +49,6 @@ vi.stubGlobal('window', {
       onRequestAgentState: vi.fn(() => mockRemovers.onRequestAgentState),
       respondAgentState: vi.fn(),
       broadcastAgentState: vi.fn(),
-      onRequestHubState: vi.fn(() => mockRemovers.onRequestHubState),
-      respondHubState: vi.fn(),
-      onHubMutation: vi.fn(() => mockRemovers.onHubMutation),
       onRequestCanvasState: vi.fn(() => mockRemovers.onRequestCanvasState),
       respondCanvasState: vi.fn(),
       onCanvasMutation: vi.fn(() => mockRemovers.onCanvasMutation),
@@ -287,15 +282,6 @@ vi.mock('./plugins/plugin-events', () => ({
   pluginEventBus: { emit: vi.fn() },
 }));
 
-vi.mock('./plugins/builtin/hub/main', () => ({
-  getProjectHubStore: vi.fn(() => ({ getState: () => ({ hubs: [] }) })),
-  useAppHubStore: { getState: () => ({ hubs: [] }) },
-}));
-
-vi.mock('./plugins/builtin/hub/hub-sync', () => ({
-  applyHubMutation: vi.fn(),
-}));
-
 vi.mock('./plugins/builtin/canvas/main', () => ({
   useAppCanvasStore: { getState: () => ({ canvases: [] }) },
   getProjectCanvasStore: vi.fn(() => ({ getState: () => ({ canvases: [] }) })),
@@ -350,8 +336,6 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.app.onNotificationClicked).toHaveBeenCalled();
     expect(window.clubhouse.app.onAgentAttention).toHaveBeenCalled();
     expect(window.clubhouse.window.onRequestAgentState).toHaveBeenCalled();
-    expect(window.clubhouse.window.onRequestHubState).toHaveBeenCalled();
-    expect(window.clubhouse.window.onHubMutation).toHaveBeenCalled();
     expect(window.clubhouse.window.onRequestCanvasState).toHaveBeenCalled();
     expect(window.clubhouse.window.onCanvasMutation).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToAgent).toHaveBeenCalled();

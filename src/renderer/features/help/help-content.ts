@@ -1,7 +1,6 @@
 import gettingStarted from './content/general-getting-started.md';
 import dashboard from './content/general-dashboard.md';
 import commandPalette from './content/general-command-palette.md';
-import hub from './content/general-hub.md';
 import navigation from './content/general-navigation.md';
 import keyboardShortcuts from './content/general-keyboard-shortcuts.md';
 import updates from './content/general-updates.md';
@@ -58,7 +57,6 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'getting-started', title: 'Getting Started', content: gettingStarted },
       { id: 'dashboard', title: 'Dashboard', content: dashboard },
       { id: 'command-palette', title: 'Command Palette', content: commandPalette },
-      { id: 'hub', title: 'Hub & Workspaces', content: hub },
       { id: 'navigation', title: 'Navigation & Layout', content: navigation },
       { id: 'keyboard-shortcuts', title: 'Keyboard Shortcuts', content: keyboardShortcuts },
       { id: 'updates', title: 'Updates', content: updates },

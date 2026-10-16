@@ -119,7 +119,7 @@ Plugins extend Clubhouse with custom tabs, commands, themes, sounds, and agent c
 
 Current supported API versions: `0.5`, `0.6`, `0.7`, `0.8`. See [PRINCIPLES.md](PRINCIPLES.md) for the versioning contract.
 
-Built-in plugins: Hub (split-pane agent workspace), Files (Monaco editor + file browser), Terminal, Canvas (visual wiring workspace), Sessions, Git, Browser, Review, Group Project.
+Built-in plugins: Files (Monaco editor + file browser), Terminal, Canvas (visual wiring workspace), Sessions, Git, Browser, Review, Group Project.
 
 ## Tech Stack
 

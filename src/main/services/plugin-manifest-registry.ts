@@ -3,7 +3,6 @@ import * as path from 'path';
 import type { PluginManifest } from '../../shared/plugin-types';
 import { validateManifest } from '../../shared/manifest-validator';
 import { manifest as filesManifest } from '../../renderer/plugins/builtin/files/manifest';
-import { manifest as hubManifest } from '../../renderer/plugins/builtin/hub/manifest';
 import { manifest as terminalManifest } from '../../renderer/plugins/builtin/terminal/manifest';
 import { manifest as browserManifest } from '../../renderer/plugins/builtin/browser/manifest';
 import { manifest as gitManifest } from '../../renderer/plugins/builtin/git/manifest';
@@ -37,7 +36,6 @@ import { getGlobalPluginDataDir } from './plugin-storage';
 const trustedManifests = new Map<string, PluginManifest>();
 
 const builtinManifestById = new Map<string, PluginManifest>([
-  [hubManifest.id, hubManifest],
   [terminalManifest.id, terminalManifest],
   [filesManifest.id, filesManifest],
   [browserManifest.id, browserManifest],

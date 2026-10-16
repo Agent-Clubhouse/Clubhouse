@@ -11,6 +11,7 @@ import { useQuickAgentStore } from './stores/quickAgentStore';
 import { usePluginStore } from './plugins/plugin-store';
 import { handleProjectSwitch, getBuiltinProjectPluginIds, pluginSystemReady } from './plugins/plugin-loader';
 import { rendererLog } from './plugins/renderer-logger';
+import { stripRetiredPluginIds } from './plugins/retired-plugins';
 import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
 import { AssistantView } from './features/assistant/AssistantView';
@@ -198,6 +199,19 @@ export function App() {
             let expFlags = {};
             try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
             if (cancelled) return;
+            if (Array.isArray(saved)) {
+              // Drop removed built-ins (e.g. the Hub) from the persisted list.
+              const stripped = stripRetiredPluginIds(saved, (id) => id in usePluginStore.getState().plugins);
+              if (stripped.changed) {
+                saved = stripped.ids;
+                window.clubhouse.plugin.storageWrite({
+                  pluginId: '_system',
+                  scope: 'global',
+                  key: `project-enabled-${activeProjectId}`,
+                  value: saved,
+                }).catch(() => { /* best effort — re-stripped on next load */ });
+              }
+            }
             const merged = Array.isArray(saved)
               ? saved
               : getBuiltinProjectPluginIds(expFlags);

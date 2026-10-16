@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { ExplorerTab, SettingsSubPage } from '../../shared/types';
 import { rendererLog } from '../plugins/renderer-logger';
+import { usePluginStore } from '../plugins/plugin-store';
+import { migrateRetiredExplorerTab } from '../plugins/retired-plugins';
 
 const VIEW_PREFS_KEY = 'clubhouse_view_prefs';
 const ACTIVE_HOST_KEY = 'clubhouse_active_host';
@@ -82,6 +84,11 @@ interface UIState {
 
 const initialPrefs = loadViewPrefs();
 
+/** Redirect tabs that point at a removed built-in plugin (e.g. the Hub) to Agents. */
+function resolveExplorerTab(tab: ExplorerTab): ExplorerTab {
+  return migrateRetiredExplorerTab(tab, (id) => id in usePluginStore.getState().plugins);
+}
+
 function loadActiveHost(): string | null {
   try {
     return localStorage.getItem(ACTIVE_HOST_KEY) || null;
@@ -120,7 +127,8 @@ export const useUIStore = create<UIState>((set, get) => ({
     }
   },
 
-  setExplorerTab: (tab, projectId?) => {
+  setExplorerTab: (requestedTab, projectId?) => {
+    const tab = resolveExplorerTab(requestedTab);
     set({ explorerTab: tab });
     if (projectId && tab !== 'settings' && tab !== 'help') {
       set((s) => ({ projectExplorerTab: { ...s.projectExplorerTab, [projectId]: tab } }));
@@ -129,7 +137,7 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   restoreProjectView: (projectId) => {
     const saved = get().projectExplorerTab[projectId];
-    set({ explorerTab: saved || 'agents' });
+    set({ explorerTab: saved ? resolveExplorerTab(saved) : 'agents' });
   },
   setSettingsSubPage: (page) => set({ settingsSubPage: page }),
   setSettingsContext: (context) => set({

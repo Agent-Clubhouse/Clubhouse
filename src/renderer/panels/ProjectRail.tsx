@@ -256,7 +256,6 @@ export function ProjectRail() {
 
   const plugins = usePluginStore((s) => s.plugins);
   const appEnabled = usePluginStore((s) => s.appEnabled);
-  const pluginSettings = usePluginStore((s) => s.pluginSettings);
 
   const satellites = useAnnexClientStore((s) => s.satellites);
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
@@ -305,12 +304,6 @@ export function ProjectRail() {
       if (entry.manifest.scope !== 'app' && entry.manifest.scope !== 'dual') return false;
       if (entry.status === 'incompatible') return false;
       if (!entry.manifest.contributes?.railItem) return false;
-      // For dual plugins, check cross-project-hub setting
-      if (entry.manifest.scope === 'dual') {
-        const settings = pluginSettings[`app:${entry.manifest.id}`];
-        const crossProjectSetting = settings?.['cross-project-hub'];
-        if (crossProjectSetting === false) return false;
-      }
       return true;
     });
 
