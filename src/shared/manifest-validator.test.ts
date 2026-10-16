@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateManifest } from './manifest-validator';
+import { validateManifest, isValidPluginId } from './manifest-validator';
 
 /** Minimal valid manifest for API 0.9 */
 function validManifest(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -17,6 +17,19 @@ function validManifest(overrides: Record<string, unknown> = {}): Record<string, 
     ...overrides,
   };
 }
+
+describe('isValidPluginId', () => {
+  it.each(['my-plugin', 'abc', 'plugin-2', '0'])('accepts %j', (id) => {
+    expect(isValidPluginId(id)).toBe(true);
+  });
+
+  it.each(['', '.', '..', '../x', 'a/b', 'a\\b', '/abs', 'C:\\abs', 'Upper', 'dot.id', ' space', 'x\0y', 123, null, undefined])(
+    'rejects %j',
+    (id) => {
+      expect(isValidPluginId(id)).toBe(false);
+    },
+  );
+});
 
 describe('validateManifest', () => {
   // --- Core validation ---

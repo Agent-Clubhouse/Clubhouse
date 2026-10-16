@@ -16,6 +16,7 @@ import type {
   PluginUpdateResult,
 } from '../../shared/marketplace-types';
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
+import { isValidPluginId } from '../../shared/manifest-validator';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -171,6 +172,12 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
 // ---------------------------------------------------------------------------
 
 export async function updatePlugin(pluginId: string): Promise<PluginUpdateResult> {
+  // Installed ids come from on-disk manifests, which are not validated; never
+  // let one name a path outside the plugins root.
+  if (!isValidPluginId(pluginId)) {
+    return { success: false, pluginId, error: `Invalid plugin id: ${JSON.stringify(pluginId)}` };
+  }
+
   const updateInfo = status.updates.find((u) => u.pluginId === pluginId);
   if (!updateInfo) {
     return { success: false, pluginId, error: 'No update available for this plugin' };
@@ -187,7 +194,9 @@ export async function updatePlugin(pluginId: string): Promise<PluginUpdateResult
 
   try {
     // Install the new version (reuses existing install logic which handles
-    // download, SHA256 verification, extraction, and old version removal)
+    // download, SHA256 verification, staged extraction, and swapping out the
+    // old version only once the new one validates — a failed update leaves
+    // the current install in place)
     status = { ...status, updating: { ...status.updating, [pluginId]: 'installing' } };
     broadcastStatus();
 

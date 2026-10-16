@@ -439,6 +439,13 @@ describe('plugin-update-service', () => {
   });
 
   describe('updatePlugin', () => {
+    it('refuses unsafe plugin ids without calling installPlugin', async () => {
+      const result = await updatePlugin('../escape');
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid plugin id');
+      expect(installPlugin).not.toHaveBeenCalled();
+    });
+
     it('returns error when no update is available', async () => {
       const result = await updatePlugin('nonexistent');
       expect(result.success).toBe(false);
