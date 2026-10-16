@@ -142,6 +142,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
                 backupAgentCount: backupInfo.backupAgents.length,
                 currentCount: configs.length,
                 missingNames: missing.map((a: DurableAgentConfig) => a.name),
+                projectId,
                 projectPath,
               },
             });
@@ -152,7 +153,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
       }
     },
 
-    restoreFromBackup: async (projectPath) => {
+    restoreFromBackup: async (projectId, projectPath) => {
       const result = await window.clubhouse.agent.restoreFromBackup(projectPath);
       if (result.restoredCount > 0) {
         // Reload agents into store
@@ -162,7 +163,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           if (!agents[config.id]) {
             agents[config.id] = {
               id: config.id,
-              projectId: Object.values(get().agents)[0]?.projectId || '',
+              projectId,
               name: config.name,
               kind: 'durable',
               status: 'sleeping',
