@@ -261,6 +261,52 @@ export function shellEscape(s: string): string {
 }
 
 /**
+ * Shared bash fragments for the macOS update scripts. They expect APP,
+ * NEW_APP, BACKUP and SCRIPT to be set.
+ *
+ * Any failure restores the previous bundle (when it was moved aside), keeps
+ * the extract dir and download for diagnosis/retry, and exits non-zero.
+ */
+const MAC_FAIL_FN = [
+  'fail() {',
+  '  echo "clubhouse-update: $1" >&2',
+  '  rm -f "$SCRIPT"',
+  '  exit 1',
+  '}',
+];
+
+const MAC_VERIFY_AND_REPLACE = [
+  // Refuse a partially extracted bundle before touching the installed app
+  'if [ ! -f "$NEW_APP/Contents/Info.plist" ]; then fail "update bundle is missing Contents/Info.plist"; fi',
+  'HAS_EXEC=',
+  'for f in "$NEW_APP"/Contents/MacOS/*; do',
+  '  if [ -f "$f" ] && [ -x "$f" ]; then HAS_EXEC=1; break; fi',
+  'done',
+  'if [ -z "$HAS_EXEC" ]; then fail "update bundle has no executable in Contents/MacOS"; fi',
+  // Move the old bundle aside (never delete it up front) so a failed move can be undone
+  'if [ -e "$APP" ]; then',
+  '  rm -rf "$BACKUP" || fail "could not clear stale backup $BACKUP"',
+  '  mv "$APP" "$BACKUP" || fail "could not move old bundle aside"',
+  'fi',
+  'if ! mv "$NEW_APP" "$APP"; then',
+  '  rm -rf "$APP"',
+  '  if [ -e "$BACKUP" ]; then mv "$BACKUP" "$APP" || fail "could not restore old bundle from $BACKUP"; fi',
+  '  fail "could not move new bundle into place"',
+  'fi',
+  'rm -rf "$BACKUP"',
+];
+
+function macScriptVars(appBundlePath: string, tmpExtract: string, downloadPath: string, scriptPath: string): string[] {
+  return [
+    `APP=${shellEscape(appBundlePath)}`,
+    'BACKUP="$APP.update-backup"',
+    `EXTRACT=${shellEscape(tmpExtract)}`,
+    `DOWNLOAD=${shellEscape(downloadPath)}`,
+    `SCRIPT=${shellEscape(scriptPath)}`,
+  ];
+}
+
+/**
  * Build a macOS shell script that waits for the app to exit, replaces the
  * old .app bundle with the extracted update, relaunches it, and cleans up.
  */
@@ -274,12 +320,16 @@ export function buildMacUpdateScript(
   return [
     '#!/bin/bash',
     'sleep 1',
-    `rm -rf ${shellEscape(appBundlePath)}`,
-    `mv ${shellEscape(newAppPath)} ${shellEscape(appBundlePath)}`,
-    `open ${shellEscape(appBundlePath)}`,
-    `rm -rf ${shellEscape(tmpExtract)}`,
-    `rm -f ${shellEscape(downloadPath)}`,
-    `rm -f ${shellEscape(scriptPath)}`,
+    ...macScriptVars(appBundlePath, tmpExtract, downloadPath, scriptPath),
+    `NEW_APP=${shellEscape(newAppPath)}`,
+    ...MAC_FAIL_FN,
+    ...MAC_VERIFY_AND_REPLACE,
+    // A failed relaunch is not an update failure — the new bundle is in place
+    'open "$APP"',
+    'rm -rf "$EXTRACT"',
+    'rm -f "$DOWNLOAD"',
+    'rm -f "$SCRIPT"',
+    'exit 0',
   ].join('\n');
 }
 
@@ -299,24 +349,19 @@ export function buildMacQuitUpdateScript(
   return [
     '#!/bin/bash',
     'sleep 1',
-    // Extract the update archive
-    `rm -rf ${shellEscape(tmpExtract)}`,
-    `mkdir -p ${shellEscape(tmpExtract)}`,
-    `unzip -o -q ${shellEscape(downloadPath)} -d ${shellEscape(tmpExtract)}`,
-    // Find the .app bundle; abort if extraction failed
-    `APP_PATH=$(find ${shellEscape(tmpExtract)} -maxdepth 1 -name "*.app" -print -quit)`,
-    'if [ -z "$APP_PATH" ]; then',
-    `  rm -rf ${shellEscape(tmpExtract)}`,
-    `  rm -f ${shellEscape(scriptPath)}`,
-    '  exit 1',
-    'fi',
-    // Replace old app bundle with the new one
-    `rm -rf ${shellEscape(appBundlePath)}`,
-    `mv "$APP_PATH" ${shellEscape(appBundlePath)}`,
-    // Clean up temp files
-    `rm -rf ${shellEscape(tmpExtract)}`,
-    `rm -f ${shellEscape(downloadPath)}`,
-    `rm -f ${shellEscape(scriptPath)}`,
+    ...macScriptVars(appBundlePath, tmpExtract, downloadPath, scriptPath),
+    ...MAC_FAIL_FN,
+    // Extract the update archive; a failed or partial extraction aborts
+    'rm -rf "$EXTRACT"',
+    'mkdir -p "$EXTRACT" || fail "could not create extract dir"',
+    'unzip -o -q "$DOWNLOAD" -d "$EXTRACT" || fail "could not extract update archive"',
+    'NEW_APP=$(find "$EXTRACT" -maxdepth 1 -name "*.app" -print -quit)',
+    'if [ -z "$NEW_APP" ]; then fail "no .app bundle in update archive"; fi',
+    ...MAC_VERIFY_AND_REPLACE,
+    'rm -rf "$EXTRACT"',
+    'rm -f "$DOWNLOAD"',
+    'rm -f "$SCRIPT"',
+    'exit 0',
   ].join('\n');
 }
 
@@ -416,7 +461,20 @@ export function downloadFile(
 
         const totalSize = expectedSize || parseInt(res.headers['content-length'] || '0', 10);
         let downloadedBytes = 0;
+        let settled = false;
         const file = fs.createWriteStream(destPath);
+
+        // An interrupted body (socket reset, server closing early) never ends the
+        // pipe, so settle explicitly: close the write stream, then drop the partial file.
+        const fail = (err: Error) => {
+          if (settled) return;
+          settled = true;
+          res.unpipe(file);
+          res.destroy();
+          file.once('close', () => fs.unlink(destPath, () => {}));
+          file.destroy();
+          reject(err);
+        };
 
         res.on('data', (chunk: Buffer) => {
           downloadedBytes += chunk.length;
@@ -424,9 +482,16 @@ export function downloadFile(
             onProgress(Math.min(99, Math.round((downloadedBytes / totalSize) * 100)));
           }
         });
+        res.on('aborted', () => fail(new Error(`Download interrupted after ${downloadedBytes} bytes`)));
+        res.on('error', fail);
+        res.on('close', () => {
+          if (!res.complete) fail(new Error(`Download interrupted after ${downloadedBytes} bytes`));
+        });
 
         res.pipe(file);
         file.on('finish', () => {
+          if (settled) return;
+          settled = true;
           file.close();
           if (totalSize > 0 && downloadedBytes !== totalSize) {
             fs.unlink(destPath, () => {});
@@ -436,10 +501,7 @@ export function downloadFile(
           onProgress(100);
           resolve();
         });
-        file.on('error', (err) => {
-          fs.unlink(destPath, () => {});
-          reject(err);
-        });
+        file.on('error', fail);
       });
       req.on('error', reject);
       req.on('timeout', () => { req.destroy(); reject(new Error('Download timed out')); });
