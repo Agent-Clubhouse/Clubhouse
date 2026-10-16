@@ -16,6 +16,7 @@ import type {
   MarketplacePluginWithSource,
 } from '../../shared/marketplace-types';
 import { SUPPORTED_REGISTRY_VERSION } from '../../shared/marketplace-types';
+import { isValidPluginId } from '../../shared/manifest-validator';
 
 const REGISTRY_URL =
   'https://raw.githubusercontent.com/Agent-Clubhouse/Clubhouse-Workshop/main/registry/registry.json';
@@ -201,16 +202,55 @@ export async function fetchAllRegistries(customMarketplaces: CustomMarketplace[]
   return { official, custom, allPlugins };
 }
 
+/**
+ * Resolve the install directory for `pluginId`, refusing anything that is not
+ * a valid plugin id or would not land directly inside `pluginsDir`.
+ */
+function resolvePluginInstallDir(pluginsDir: string, pluginId: string): string {
+  if (!isValidPluginId(pluginId)) {
+    throw new Error(`Invalid plugin id: ${JSON.stringify(pluginId)}`);
+  }
+  const root = path.resolve(pluginsDir);
+  const pluginDir = path.resolve(root, pluginId);
+  if (path.dirname(pluginDir) !== root) {
+    throw new Error(`Plugin path escapes plugins directory: ${pluginId}`);
+  }
+  return pluginDir;
+}
+
+function isErrnoCode(err: unknown, code: string): boolean {
+  return typeof err === 'object' && err !== null && (err as NodeJS.ErrnoException).code === code;
+}
+
 export async function installPlugin(req: MarketplaceInstallRequest): Promise<MarketplaceInstallResult> {
   const { pluginId, assetUrl, sha256 } = req;
 
+  const pluginsDir = getCommunityPluginsDir();
+  let pluginDir: string;
+  try {
+    pluginDir = resolvePluginInstallDir(pluginsDir, pluginId);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    appLog('marketplace', 'error', `Refusing to install plugin: ${message}`);
+    return { success: false, error: message };
+  }
+
   appLog('marketplace', 'info', `Installing plugin: ${pluginId} from ${assetUrl}`);
 
-  const pluginsDir = getCommunityPluginsDir();
+  // Everything is downloaded, extracted and validated in a fresh staging
+  // directory. It lives beside (not inside) the plugins root so plugin
+  // discovery never sees a half-installed plugin, and on the same volume so
+  // the final swap is a rename. Failure cleanup only ever removes this
+  // staging directory — the existing install is untouched until the new one
+  // is fully validated.
+  const stagingRoot = path.join(path.dirname(pluginsDir), '.plugin-staging');
   await fsp.mkdir(pluginsDir, { recursive: true });
-
-  const pluginDir = path.join(pluginsDir, pluginId);
-  const tmpZipPath = path.join(pluginsDir, `${pluginId}.tmp.zip`);
+  await fsp.mkdir(stagingRoot, { recursive: true });
+  const stagingDir = await fsp.mkdtemp(path.join(stagingRoot, `${pluginId}-`));
+  const tmpZipPath = path.join(stagingDir, `${pluginId}.tmp.zip`);
+  const extractDir = path.join(stagingDir, 'plugin');
+  const backupDir = path.join(stagingDir, 'previous');
+  let preserveStaging = false;
 
   try {
     // 1. Download the zip
@@ -226,52 +266,74 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
       return { success: false, error: `Integrity check failed: expected ${sha256}, got ${hash}` };
     }
 
-    // 3. Write zip to temp file
+    // 3. Write zip to the staging directory
     await fsp.writeFile(tmpZipPath, buffer);
 
-    // 4. Remove old version if present
-    await fsp.rm(pluginDir, { recursive: true, force: true });
-
-    // 5. Extract using adm-zip (cross-platform, no shell dependency)
-    await fsp.mkdir(pluginDir, { recursive: true });
+    // 4. Extract using adm-zip (cross-platform, no shell dependency)
+    await fsp.mkdir(extractDir, { recursive: true });
     const zip = new AdmZip(tmpZipPath);
-    zip.extractAllTo(pluginDir, true);
+    zip.extractAllTo(extractDir, true);
 
-    // 6. If the zip extracted into a single subdirectory, hoist its contents up
-    const entries = await fsp.readdir(pluginDir);
+    // 5. If the zip extracted into a single subdirectory, hoist its contents up
+    const entries = await fsp.readdir(extractDir);
     if (entries.length === 1) {
-      const singleDir = path.join(pluginDir, entries[0]);
+      const singleDir = path.join(extractDir, entries[0]);
       const singleStat = await fsp.stat(singleDir);
       if (singleStat.isDirectory()) {
         const innerEntries = await fsp.readdir(singleDir);
         for (const e of innerEntries) {
-          await fsp.rename(path.join(singleDir, e), path.join(pluginDir, e));
+          await fsp.rename(path.join(singleDir, e), path.join(extractDir, e));
         }
         await fsp.rmdir(singleDir);
       }
     }
 
-    // 7. Verify manifest.json exists
+    // 6. Verify manifest.json exists
     try {
-      await fsp.access(path.join(pluginDir, 'manifest.json'));
+      await fsp.access(path.join(extractDir, 'manifest.json'));
     } catch {
-      await fsp.rm(pluginDir, { recursive: true, force: true });
       return { success: false, error: 'Downloaded plugin does not contain a manifest.json' };
     }
 
-    // 8. Write .marketplace marker so the client knows this was installed from the marketplace
-    await fsp.writeFile(path.join(pluginDir, '.marketplace'), '', 'utf-8');
+    // 7. Write .marketplace marker so the client knows this was installed from the marketplace
+    await fsp.writeFile(path.join(extractDir, '.marketplace'), '', 'utf-8');
+
+    // 8. Swap into place: move the old install aside, move the new one in,
+    //    and restore the old one if the second move fails.
+    let hadPrevious = false;
+    try {
+      await fsp.rename(pluginDir, backupDir);
+      hadPrevious = true;
+    } catch (err: unknown) {
+      if (!isErrnoCode(err, 'ENOENT')) throw err;
+    }
+    try {
+      await fsp.rename(extractDir, pluginDir);
+    } catch (err: unknown) {
+      if (hadPrevious) {
+        try {
+          await fsp.rename(backupDir, pluginDir);
+        } catch (restoreErr: unknown) {
+          const restoreMsg = restoreErr instanceof Error ? restoreErr.message : String(restoreErr);
+          appLog('marketplace', 'error', `Failed to restore previous install of ${pluginId} from ${backupDir}: ${restoreMsg}`);
+          // Leave the staging directory (and the backup in it) for manual recovery.
+          preserveStaging = true;
+        }
+      }
+      throw err;
+    }
 
     appLog('marketplace', 'info', `Plugin ${pluginId} installed successfully`);
     return { success: true };
   } catch (err: unknown) {
-    // Clean up on failure
-    try { await fsp.rm(pluginDir, { recursive: true, force: true }); } catch { /* ignore */ }
     const message = err instanceof Error ? err.message : String(err);
     appLog('marketplace', 'error', `Failed to install ${pluginId}: ${message}`);
     return { success: false, error: message };
   } finally {
-    // Clean up temp zip
-    try { await fsp.unlink(tmpZipPath); } catch { /* ignore */ }
+    // Clean up the staging directory (temp zip, failed extraction, or the
+    // superseded previous install after a successful swap).
+    if (!preserveStaging) {
+      try { await fsp.rm(stagingDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
   }
 }

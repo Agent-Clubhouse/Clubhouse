@@ -126,6 +126,21 @@ describe('marketplace-handlers', () => {
     expect(() => handler({}, { version: '1.0', assetUrl: 'url', sha256: 'abc' })).toThrow('pluginId must be a non-empty string');
   });
 
+  it.each(['../escape', '..', 'a/b', 'a\\b', '/abs/path', 'C:\\abs', 'Upper', 'dot.id'])(
+    'rejects INSTALL_PLUGIN with unsafe pluginId %j',
+    (pluginId) => {
+      const handler = handlers.get(IPC.MARKETPLACE.INSTALL_PLUGIN)!;
+      expect(() => handler({}, { pluginId, version: '1.0', assetUrl: 'url', sha256: 'abc' })).toThrow('pluginId must match');
+      expect(marketplaceService.installPlugin).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['../escape', 'a/b', '/abs/path'])('rejects UPDATE_PLUGIN with unsafe pluginId %j', (pluginId) => {
+    const handler = handlers.get(IPC.MARKETPLACE.UPDATE_PLUGIN)!;
+    expect(() => handler({}, { pluginId })).toThrow('pluginId must match');
+    expect(pluginUpdateService.updatePlugin).not.toHaveBeenCalled();
+  });
+
   it('rejects non-object for UPDATE_PLUGIN', () => {
     const handler = handlers.get(IPC.MARKETPLACE.UPDATE_PLUGIN)!;
     expect(() => handler({}, 'not-object')).toThrow('must be an object');
