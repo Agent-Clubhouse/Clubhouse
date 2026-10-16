@@ -59,6 +59,10 @@ export interface BlueprintAgentDef {
   mcpServers?: string[];
   freeAgent?: boolean;
   useWorktree?: boolean;
+  /**
+   * @deprecated Structured mode was removed. Still accepted on import so older
+   * blueprints parse; ignored and no longer written on export.
+   */
   structured?: boolean;
   matchBy?: {
     name?: string;
