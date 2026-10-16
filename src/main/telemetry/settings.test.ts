@@ -2,7 +2,8 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { normalizeLevel, normalizeSampleRate, parseConnectionString, validateDestination } from './settings';
+import { app } from 'electron';
+import { normalizeLevel, normalizeSampleRate, parseConnectionString, TEST_AZURE_HOST_ENV, validateDestination } from './settings';
 import { countOfflineItems, pruneOfflineDir } from './offline';
 import { createIdentity, hashId, isValidIdentity } from './ids';
 import { buildResourceAttributes, channelForVersion, majorMinor, RESOURCE_KEYS } from './resource';
@@ -19,10 +20,35 @@ describe('validateDestination', () => {
   });
 
   it.each([
+    'https://chinaeast2-0.in.applicationinsights.azure.cn/',
+    'https://usgovvirginia-1.in.applicationinsights.azure.us/',
+    'https://dc.applicationinsights.us/',
+  ])('accepts sovereign-cloud ingestion host %s', (endpoint) => {
+    expect(validateDestination({ kind: 'azure', connectionString: `InstrumentationKey=${IKEY};IngestionEndpoint=${endpoint}` }).ok).toBe(true);
+  });
+
+  it('only allows the test ingestion host override for the exact host:port in unpackaged builds', () => {
+    const cs = `InstrumentationKey=${IKEY};IngestionEndpoint=https://127.0.0.1:4443/`;
+    expect(validateDestination({ kind: 'azure', connectionString: cs })).toEqual({ ok: false, reason: 'not_azure_ingestion_host' });
+    process.env[TEST_AZURE_HOST_ENV] = '127.0.0.1:4443';
+    try {
+      expect(validateDestination({ kind: 'azure', connectionString: cs }).ok).toBe(true);
+      expect(validateDestination({ kind: 'azure', connectionString: cs.replace('4443', '4444') }).ok).toBe(false);
+      (app as { isPackaged: boolean }).isPackaged = true;
+      expect(validateDestination({ kind: 'azure', connectionString: cs }).ok).toBe(false);
+    } finally {
+      (app as { isPackaged: boolean }).isPackaged = false;
+      delete process.env[TEST_AZURE_HOST_ENV];
+    }
+  });
+
+  it.each([
     [`InstrumentationKey=${IKEY}`, 'missing_ingestion_endpoint'],
+    [`InstrumentationKey=${IKEY};IngestionEndpoint=https://collector.example.com/`, 'not_azure_ingestion_host'],
+    [`InstrumentationKey=${IKEY};IngestionEndpoint=https://applicationinsights.azure.com.evil.io/`, 'not_azure_ingestion_host'],
     ['IngestionEndpoint=https://x.example', 'invalid_instrumentation_key'],
     [`InstrumentationKey=not-a-key;IngestionEndpoint=https://x.example`, 'invalid_instrumentation_key'],
-    [`InstrumentationKey=${IKEY};IngestionEndpoint=http://x.example`, 'https_required'],
+    [`InstrumentationKey=${IKEY};IngestionEndpoint=http://westus2-1.in.applicationinsights.azure.com`, 'https_required'],
   ])('rejects connection string %j', (cs, reason) => {
     expect(validateDestination({ kind: 'azure', connectionString: cs })).toEqual({ ok: false, reason });
   });

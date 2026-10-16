@@ -13,7 +13,7 @@
  *    constructor (`export/base.js`). `APPLICATIONINSIGHTS_STATSBEAT_DISABLED`
  *    only disables "non-essential" statsbeat, and
  *    `APPLICATIONINSIGHTS_SDKSTATS_DISABLED` only the customer SDK stats; we
- *    set all three.
+ *    set all three, for the duration of construction only.
  *  - OneSettings remote configuration (settings.sdk.monitor.azure.com),
  *    polled 5–15 s after the first exporter is constructed. beta.46 has no
  *    option or env var for it, and it can remotely flip offline storage and
@@ -61,7 +61,23 @@ export function isOneSettingsNeutralized(): boolean {
 }
 
 export function createAzureExporters(opts: AzureDestinationOptions): DestinationExporters {
+  // beta.46 reads these only in the exporter constructors (trackStatsbeat) and
+  // in Statsbeat code that never initializes once trackStatsbeat is false. Set
+  // them for construction only, then restore, so they don't leak into agent
+  // PTYs and switch off Statsbeat in users' own App Insights apps.
+  const saved = Object.keys(STATSBEAT_ENV_FLAGS).map((name) => [name, process.env[name]] as const);
   for (const [name, value] of Object.entries(STATSBEAT_ENV_FLAGS)) process.env[name] = value;
+  try {
+    return construct(opts);
+  } finally {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+
+function construct(opts: AzureDestinationOptions): DestinationExporters {
   neutralizeOneSettings();
 
   const common = {

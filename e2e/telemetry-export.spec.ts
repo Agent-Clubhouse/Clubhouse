@@ -131,6 +131,8 @@ test.describe('Telemetry export', () => {
 
     const prevCa = process.env.NODE_EXTRA_CA_CERTS;
     process.env.NODE_EXTRA_CA_CERTS = caFile;
+    // Unpackaged-only override of the App Insights host allowlist (settings.ts).
+    process.env.CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST = `127.0.0.1:${mock.port}`;
     let launched: Awaited<ReturnType<typeof launchApp>> | undefined;
     try {
       launched = await launchApp({
@@ -159,6 +161,7 @@ test.describe('Telemetry export', () => {
       // Only the configured endpoint's ingestion path was ever hit.
       for (const r of mock.received) expect(r.url.startsWith('/v2.1/track')).toBe(true);
     } finally {
+      delete process.env.CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST;
       if (prevCa === undefined) delete process.env.NODE_EXTRA_CA_CERTS;
       else process.env.NODE_EXTRA_CA_CERTS = prevCa;
       await launched?.electronApp.close().catch(() => {});

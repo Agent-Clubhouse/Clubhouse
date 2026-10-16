@@ -151,6 +151,11 @@ export function isPending(): boolean {
  * Flush queued telemetry before the process exits. Never throws and never
  * waits longer than `timeoutMs`. Call before every `app.exit()`: those paths
  * skip `before-quit` and the shutdown-guard cleanups.
+ *
+ * A no-op while the SDK chunk is still loading: anything buffered by then
+ * (including `clubhouse.app.sessions`) is dropped if the app quits within
+ * the first moments of startup. Accepted: waiting on the load would delay
+ * an early quit for telemetry the user has not seen yet.
  */
 export async function flushBeforeExit(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): Promise<void> {
   const rt = runtime;

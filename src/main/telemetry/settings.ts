@@ -6,6 +6,7 @@
  * values) in this 0600 file. Phase 2 moves secrets to `safeStorage` with the
  * Settings UI; until then the whole feature sits behind the experimental flag.
  */
+import { app } from 'electron';
 import { createSettingsStore } from '../services/settings-store';
 import * as experimentalSettings from '../services/experimental-settings';
 import { TELEMETRY_LEVELS, type TelemetryLevel } from '../../shared/telemetry/attributes';
@@ -65,6 +66,32 @@ export function isExperimentEnabled(): boolean {
 // --- Destination validation -------------------------------------------------
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/**
+ * App Insights ingestion host suffixes: public cloud, Azure China and Azure
+ * US Government (spec §6.8). Any other host must use the Other (OTLP)
+ * destination, which has its own confirmation step.
+ */
+export const AZURE_INGESTION_HOST_SUFFIXES = [
+  '.applicationinsights.azure.com',
+  '.applicationinsights.azure.cn',
+  '.applicationinsights.azure.us',
+  '.applicationinsights.us',
+] as const;
+
+/**
+ * Test-only escape hatch so the egress test and E2E can point the Azure
+ * destination at a mock on 127.0.0.1. Honoured only in unpackaged builds and
+ * only for the exact `host:port` given.
+ */
+export const TEST_AZURE_HOST_ENV = 'CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST';
+
+export function isAllowedAzureIngestionHost(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  if (AZURE_INGESTION_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true;
+  const testHost = process.env[TEST_AZURE_HOST_ENV];
+  return !app.isPackaged && !!testHost && url.host === testHost;
+}
 const HEADER_TOKEN_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const RESERVED_HEADERS = new Set(['content-type', 'content-length', 'host']);
 const IKEY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -73,7 +100,12 @@ export type DestinationValidation =
   | { ok: true; host: string; url: URL }
   | { ok: false; reason: string };
 
-/** HTTPS only, except plain HTTP to a loopback host (tests, local collectors). */
+/**
+ * HTTPS only, except plain HTTP to a literal loopback host (a local collector,
+ * spec decision #8). Hostnames that merely resolve to loopback need HTTPS; the
+ * OTLP destination pins `localhost` to 127.0.0.1/::1 and refuses Clubhouse's
+ * own ports at connect time (destinations/otlp.ts).
+ */
 function validateEndpointUrl(raw: string): DestinationValidation {
   let url: URL;
   try {
@@ -108,7 +140,17 @@ export function validateDestination(dest: DestinationConfig | null | undefined):
     // Instrumentation-key-only ingestion was retired; the endpoint is required
     // so the exporter never falls back to its global default host.
     if (!parts.ingestionendpoint) return { ok: false, reason: 'missing_ingestion_endpoint' };
-    return validateEndpointUrl(parts.ingestionendpoint);
+    let url: URL;
+    try {
+      url = new URL(parts.ingestionendpoint);
+    } catch {
+      return { ok: false, reason: 'invalid_url' };
+    }
+    if (url.username || url.password) return { ok: false, reason: 'credentials_in_url' };
+    // The exporter upgrades any http: endpoint to https:, so only https: is meaningful.
+    if (url.protocol !== 'https:') return { ok: false, reason: 'https_required' };
+    if (!isAllowedAzureIngestionHost(url)) return { ok: false, reason: 'not_azure_ingestion_host' };
+    return { ok: true, host: url.host, url };
   }
   if (dest.kind === 'otlp') {
     if (typeof dest.endpoint !== 'string') return { ok: false, reason: 'missing_endpoint' };

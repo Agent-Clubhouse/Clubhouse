@@ -58,6 +58,8 @@ vi.mock('../services/log-service', () => ({
 import { disableTelemetry, initTelemetry, recordAppSession, sendTestEvent, whenStarted } from './bootstrap';
 import { tel } from './facade';
 import { createAzureExporters, isOneSettingsNeutralized, STATSBEAT_ENV_FLAGS } from './destinations/azure';
+import { createOtlpExporters } from './destinations/otlp';
+import { TEST_AZURE_HOST_ENV } from './settings';
 import { ConfigurationManager } from '../../../node_modules/@azure/monitor-opentelemetry-exporter/dist/commonjs/_configuration/configurationManager.js';
 
 interface Received {
@@ -194,6 +196,10 @@ async function exerciseAllSignals(): Promise<void> {
 describe('telemetry egress allowlist', () => {
   it('Azure Monitor destination only contacts the configured ingestion endpoint', async () => {
     port = httpsPort;
+    process.env[TEST_AZURE_HOST_ENV] = `127.0.0.1:${httpsPort}`;
+    onTestFinished(() => {
+      delete process.env[TEST_AZURE_HOST_ENV];
+    });
     // Trust the mock server's certificate (Node >= 22.19); older runtimes
     // fall back to skipping verification for this test only.
     if (typeof tls.setDefaultCACertificates === 'function') {
@@ -261,6 +267,37 @@ describe('telemetry egress allowlist', () => {
   }, 30_000);
 });
 
+describe('OTLP loopback hardening', () => {
+  it('resolves localhost through the pinned lookup, never the system resolver', async () => {
+    port = httpPort;
+    state.settings = {
+      enabled: true,
+      level: 'standard',
+      sampleRate: 1,
+      destination: { kind: 'otlp', endpoint: `http://localhost:${port}` },
+    };
+    await exerciseAllSignals();
+    expect(received.length).toBeGreaterThan(0);
+    expect(lookups).toEqual([]);
+    for (const c of connects) expect(c.port).toBe(port);
+  }, 30_000);
+
+  it("refuses to post into Clubhouse's own loopback ports", async () => {
+    const { spanExporter } = createOtlpExporters({ endpoint: `http://127.0.0.1:${httpPort}`, reservedPorts: () => [httpPort] });
+    const result = await new Promise<{ code: number; error?: Error }>((resolve) => spanExporter.export([], resolve));
+    expect(result.code).not.toBe(0);
+    expect(result.error?.message).toContain("Clubhouse's own port");
+    expect(received).toEqual([]);
+    await spanExporter.shutdown();
+
+    // Control: the same export to a non-reserved port goes through.
+    const control = createOtlpExporters({ endpoint: `http://127.0.0.1:${httpPort}`, reservedPorts: () => [1] });
+    const ok = await new Promise<{ code: number }>((resolve) => control.spanExporter.export([], resolve));
+    expect(ok.code).toBe(0);
+    await control.spanExporter.shutdown();
+  });
+});
+
 describe('Azure exporter self-telemetry', () => {
   it('constructs exporters with Statsbeat tracking off and OneSettings held', () => {
     for (const name of Object.keys(STATSBEAT_ENV_FLAGS)) delete process.env[name];
@@ -271,7 +308,8 @@ describe('Azure exporter self-telemetry', () => {
     for (const exporter of [exporters.spanExporter, exporters.metricExporter, exporters.logExporter]) {
       expect((exporter as unknown as { trackStatsbeat: boolean }).trackStatsbeat).toBe(false);
     }
-    expect(process.env.APPLICATION_INSIGHTS_NO_STATSBEAT).toBe('true');
+    // Set only while constructing, so agent PTYs never inherit them.
+    for (const name of Object.keys(STATSBEAT_ENV_FLAGS)) expect(process.env[name]).toBeUndefined();
     expect(isOneSettingsNeutralized()).toBe(true);
     return Promise.all([exporters.spanExporter.shutdown(), exporters.metricExporter.shutdown(), exporters.logExporter.shutdown()]);
   });

@@ -66,6 +66,26 @@ function annexRole(): ResourceInputs['annexRole'] {
   return 'none';
 }
 
+/** Ports of Clubhouse's own loopback servers; OTLP must never post into them. */
+function clubhousePorts(): number[] {
+  const ports: number[] = [];
+  const read = (fn: () => number | number[]) => {
+    try {
+      ports.push(...([] as number[]).concat(fn()));
+    } catch {
+      // Service not loaded or not listening.
+    }
+  };
+  // Lazy: these services are heavy and only needed when a connection opens.
+  read(() => (require('../services/hook-server') as typeof import('../services/hook-server')).getPort());
+  read(() => (require('../services/clubhouse-mcp/bridge-server') as typeof import('../services/clubhouse-mcp/bridge-server')).getPort());
+  read(() => {
+    const status = (require('../services/annex-server') as typeof import('../services/annex-server')).getStatus();
+    return [status.port, status.pairingPort];
+  });
+  return ports;
+}
+
 async function ensureIdentity(settings: TelemetrySettings): Promise<TelemetryIdentity> {
   if (isValidIdentity(settings)) return { installId: settings.installId, hashSalt: settings.hashSalt };
   const identity = createIdentity();
@@ -79,7 +99,7 @@ async function loadExporters(dest: DestinationConfig): Promise<DestinationExport
     return createAzureExporters({ connectionString: dest.connectionString, storageDirectory: getOfflineDir() });
   }
   const { createOtlpExporters } = await loadOtlpDestination();
-  return createOtlpExporters({ endpoint: dest.endpoint, headers: dest.headers });
+  return createOtlpExporters({ endpoint: dest.endpoint, headers: dest.headers, reservedPorts: clubhousePorts });
 }
 
 function startOfflinePrune(): void {
