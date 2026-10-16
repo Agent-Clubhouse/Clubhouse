@@ -6,9 +6,9 @@ Related: [docs/telemetry-otel-spec.md §9.1](telemetry-otel-spec.md), #1933 (spl
 
 ## 1. Goal and scope
 
-Today, on a 1400px window, the navigation chrome takes 566px of width before the agent pane starts:
+Today, on a 1400px window, the navigation chrome takes 556px of width in three columns, and the agent pane starts at x=566 once the resize dividers are counted:
 
-- a 76px project rail
+- the project rail: 76px when the project list scrolls (measured with 18 projects), 70px otherwise (`ProjectRail.tsx:359`)
 - a 200px explorer column
 - a 280px agent list
 
@@ -54,8 +54,13 @@ All decided 2026-10-16. The artifact's decision log has the reasoning.
 Status as of 2026-10-16:
 - Hub has been removed (#1915).
 - Assistant, Agent Queue and Sessions have been removed (#1930).
-- Structured mode removal is still open, on `chore/remove-structured-mode`. Do not edit `AddAgentDialog.tsx`, `AgentSettingsView.tsx`, `TemplateConfigDialog.tsx` or `panels/MainContentView.tsx` until it merges.
-- The telemetry renderer foundation (facade, `AppErrorBoundary`, long-frame collection, swallowed-catch lint) must be on main before Phase 1. It gives the baseline the redesign is measured against (§9.1).
+- Structured mode removal is still open as #1937 (`chore/remove-structured-mode`). Until it merges, do not edit:
+  - `features/agents/AddAgentDialog.tsx`, `AgentSettingsView.tsx`, `TemplateConfigDialog.tsx`, `AgentList.tsx` and `orchestrator-options.ts`
+  - `features/settings/ExperimentalSettingsView.tsx`
+  - `panels/MainContentView.tsx`
+  - `e2e/start-agent.spec.ts`
+- The telemetry renderer foundation is a hard dependency of chrome Phase 1. That is the facade, `telemetry:emit`, `AppErrorBoundary`, long-frame collection and the swallowed-catch lint. It ships in **telemetry Phase 3**, not Phase 1. Chrome Phase 1 does not start until telemetry Phase 3 is on main, because Phase 3 provides the `legacy` baseline the redesign is measured against (telemetry spec §9.1).
+- #1898 (rail activity dots and an Active-first view) is also open. It edits `ProjectRail.tsx`, `ExplorerRail.tsx`, `SatelliteSection.tsx` and `uiStore.ts`, and adds `utils/projectActivity.ts`. Its UI targets the legacy rail, and the new shell does not carry it over: its indicator and view menu are superseded by the project tree's roll-ups and its pinned/recent/idle order. Its idea of “active” (agents running now) differs from the idle rule here (any activity in the last N days). If #1898 merges first, Phase 4 reuses its `projectActivity.ts` and adds the idle-window function beside it under a distinct name, rather than adding a second module. Whether #1898 still merges, given it would only live in the legacy shell during dual support, is the maintainer's call.
 
 ## 4. Architecture
 
@@ -78,7 +83,7 @@ Status as of 2026-10-16:
 | `titlebar/overflow.ts` | Pure function `(tabs, widths, budget, activeId, mru) => { shown, overflow }`. Fills from the left. The active tab is always shown. The overflow list is ordered by most recent use. |
 | `sidebar/Sidebar.tsx` | Composes the sidebar sections. Switches the body between the agent tree, a plugin list, and Settings. |
 | `sidebar/HostSwitcher.tsx` | The host pill and its menu. Reuses `SatelliteSection` logic. |
-| `sidebar/AppRow.tsx` | The Canvas and Review buttons, plus overflow for other app-level plugin `railItem`s (§6). |
+| `sidebar/AppRow.tsx` | The Canvas and Review buttons, plus an overflow menu for every other top-position `railItem`, such as Goobers (§6). |
 | `sidebar/NeedsYou.tsx` | The full section, or the 30px strip variant used in list mode. |
 | `sidebar/ProjectTree.tsx` | Pinned, recent and idle grouping. Collapse and collapse-all. Project drag-reorder (reuses `projectStore.reorderProjects`). |
 | `sidebar/ProjectGroup.tsx` | Project header (hover handle, pin, new agent, menu), agent rows, the sleeping fold, and quick-agent rows. |
@@ -101,7 +106,7 @@ Status as of 2026-10-16:
 | `src/renderer/features/agents/AgentAvatar.tsx` | New `2xs` size (18px). The orchestrator glyph becomes neutral. |
 | `src/renderer/features/agents/AgentListItem.tsx` | Context-menu actions move into a shared hook used by both rows. The legacy row is otherwise unchanged. |
 | `src/renderer/stores/uiStore.ts` | `projectExplorerTab` stays the source of the last tab per project. `explorerTab` values map to title-bar tabs. `showHome` is ignored in the new shell. |
-| `src/renderer/stores/keyboardShortcutsStore.ts` | New defaults behind the flag, plus an override migration (§5.3). |
+| `src/renderer/stores/keyboardShortcutsStore.ts` | Definitions and defaults become per shell, so `buildShortcuts(definitions, overrides)` takes the active shell's set. The new shell's overrides live under `clubhouse_chrome_v2` (§5.3). |
 | `src/renderer/features/command-palette/` | Adds commands for projects, agents, hosts and tabs. The palette replaces “switch to project N”. |
 | `src/renderer/plugins/builtin/terminal` | In the new shell, follows the scope from `chromeStore`. The targets list is hidden. |
 | `src/renderer/plugins/builtin/files` (`FileTree.ts`) | Root follows the scope. The worktree selector is hidden in the new shell. |
@@ -116,8 +121,9 @@ Status as of 2026-10-16:
 ### 4.4 Removed when the legacy shell is removed (§10, last stage)
 
 - `panels/ProjectRail.tsx`, `panels/ExplorerRail.tsx`, `components/RailSection.tsx`, and the explorer half of `components/ProjectPanelLayout.tsx`.
-- `features/projects/Dashboard.tsx`, the `showHome` setting, and the rail pin.
-- The `go-home` and `switch-project-*` shortcut definitions.
+- `features/projects/Dashboard.tsx` and the rail pin.
+- The `showHome` setting. While both shells exist, the Home row in `features/settings/DisplaySettingsView.tsx:8` is hidden when the new shell is active and still shown in the legacy shell. Both the row and `uiStore.showHome` are deleted with the legacy shell.
+- The legacy shortcut set (`go-home`, `switch-project-*`, `toggle-accessory`) and the legacy overrides key `clubhouse_keyboard_shortcut_overrides`, after its still-valid entries have been carried into the new shell's overrides.
 - The legacy `AgentList` / `AgentListItem` views, once the row actions hook is the only consumer.
 
 ### 4.5 Scope model
@@ -163,16 +169,24 @@ All new state lives under new keys. The legacy shell keeps reading its own keys 
 ### 5.2 View preferences (`clubhouse_view_prefs`)
 
 - `projectExplorerTab[projectId]` is reused as the last tab per project. `agents` maps to the Agents tab. Values for plugins that no longer exist fall back to Agents (the #1915 pattern).
-- `showHome` is ignored by the new shell and removed with the legacy shell. With `activeProjectId === null` and at least one project, startup opens the most recently active project's Agents tab instead of Home.
+- `showHome` is ignored by the new shell, and its Display setting row is hidden there (§4.4). It is removed with the legacy shell. With `activeProjectId === null` and at least one project, startup opens the most recently active project's Agents tab instead of Home.
 
-### 5.3 Keyboard shortcuts (`clubhouse_keyboard_shortcut_overrides`)
+### 5.3 Keyboard shortcuts
 
-- New default bindings apply only in the new shell:
-  - `tab-1`…`tab-9` → `Meta+1…9`
-  - `switch-agent-1…9` moves to `Meta+Alt+1…9`
-- Retired definitions: `go-home` and `switch-project-*`. Overrides that point at retired ids are dropped.
-- If a user override collides with a new default, the user's binding wins and the new action stays unbound. Settings shows the conflict.
-- Migration runs once, keyed by a version number in the overrides payload. It is unit-tested for: no overrides, overrides of retired ids, and colliding overrides.
+The legacy key `clubhouse_keyboard_shortcut_overrides` is a flat `Record<string, string>` (`keyboardShortcutsStore.ts:11`). It has no room for a version marker, and the legacy shell and older app versions both read it. It stays untouched while the legacy shell exists, so turning the flag off, or downgrading, restores the user's bindings exactly.
+
+- **Per-shell definitions.** `buildShortcuts` is global today. It becomes `buildShortcuts(definitions, overrides)`, and the active shell supplies both arguments. The Keyboard Shortcuts settings page edits the active shell's set.
+- **Legacy set (unchanged).** `switch-agent-N` = `Meta+N`, `switch-project-N` = `Meta+Alt+N`, `go-home` = `Meta+Shift+H`, `toggle-accessory` = `Meta+Shift+B`, plus the shared actions below.
+- **New-shell set:**
+  - `tab-1`…`tab-9` = `Meta+1…9`. `tab-1` is Agents.
+  - `switch-agent-1…9` = `Meta+Alt+1…9`, in sidebar order. Note that `Meta+Alt+N` means switch to project N in the legacy shell and switch to agent N in the new one.
+  - `go-home`, `switch-project-*` and `toggle-accessory` are not defined, because there is no Home and no accessory column.
+  - Shared actions keep their ids and defaults: `command-palette` (`Meta+K`), `toggle-settings` (`Meta+,`), `toggle-help` (`Meta+Shift+/`, opens Help in the pane), `toggle-sidebar` (`Meta+B`, collapses the sidebar), `new-quick-agent` (`Meta+Shift+N`, opens the start page composer), `focus-active-terminal` (`Meta+Shift+T`), `add-project` (`Meta+Shift+O`) and `close-project` (`Meta+Shift+W`).
+- **New-shell storage.** Overrides are stored in `clubhouse_chrome_v2` as `shortcuts: {version, overrides}`.
+- **Seeding.** The first time the new shell runs, it copies legacy overrides for ids that exist in both sets with the same meaning: the shared actions and `switch-agent-N`. It never copies retired ids. It never writes to the legacy key.
+- **Collisions.** If a seeded or user override collides with a new-shell default, the user's binding wins, the default action stays unbound, and Settings shows the conflict.
+- **Removal.** Retired ids leave the legacy key only when the legacy shell is removed (§4.4).
+- **Tests.** Unit-tested for: no overrides; legacy overrides of retired ids, which are not seeded and stay intact in the legacy key; colliding overrides; and a flag-off round trip, where the legacy bindings are unchanged.
 
 ### 5.4 Project order, pins and idle
 
@@ -193,10 +207,12 @@ v1 needs no plugin changes. The mapping:
 | `tab` with `layout: 'sidebar-content'` (default) | Explorer entry plus accessory column | Title-bar tab. Its `SidebarPanel` swaps into the sidebar body. |
 | `tab` with `layout: 'full'` | Explorer entry, full-width content | Title-bar tab. The agent tree stays in the sidebar. |
 | `tab.title` / `railItem.title` | Window title | Breadcrumb text |
-| `railItem` (`position: 'top'`) | Rail button | The Canvas and Review built-ins occupy the app row. Other top items go in an app-row overflow menu. |
+| `railItem` (`position: 'top'`) | Rail button | Canvas and Review get the two inline app-row buttons. Every other top item goes in the app-row overflow menu. Today that is Goobers (`builtin/goobers/manifest.ts:18`) and any external plugin with a top rail item. |
 | `railItem` (`position: 'bottom'`) | Rail bottom | Footer icon with a tooltip |
 | Badges (`badgeStore`) | Rail and tab badges | Tab label count, project header roll-up, app row count |
 | Annex gating (`annexEnabled`) | Dimmed rail and tab items | Same rule, applied to the title-bar tab and the app row |
+
+Canvas and Review declare both a `railItem` and a `tab`, so they appear twice, at two scopes. That is intended. The `railItem` is the app-level view, which the app row opens: the cross-project canvas, and Review across all projects. The `tab` is the project-level view, a title-bar tab for the current project. The Review tab follows today's per-project plugin enablement, so it only shows in projects where Review is enabled.
 
 Third-party plugins cannot read the new scope in v1. Built-ins read `chromeStore` directly. A scope API, native title-bar and sidebar contribution points, and a deprecation timeline for the old fields are tracked in #1934.
 
@@ -207,6 +223,8 @@ Before Phase 1 ships, add a plugin-author note to the docs, and verify the insta
 Each phase lands behind `newChrome` and keeps the legacy shell working. Sizes follow the telemetry spec's convention (S/M/L).
 
 ### Phase 1: shell, sidebar and rows (L, two PRs)
+
+Depends on telemetry Phase 3 being on main (§3).
 
 - 1a:
   - `ChromeShell`, the flag, `chromeStore` (width, collapsed, selection), and the resize divider (220px minimum).
@@ -260,7 +278,8 @@ Phases 1–4 run in order. Phase 4 can start as soon as 2a lands. It touches dif
 Per [telemetry spec §9.1](telemetry-otel-spec.md), the redesign owns the UI-coupled instrumentation. It is built on the telemetry facade and the typed attribute registry.
 
 Owned call sites:
-- `c.view` values for every new surface: `chrome.sidebar.agents`, `chrome.sidebar.list.<tab>`, `chrome.sidebar.settings`, `chrome.title.<tab>`, `chrome.start_page`, `chrome.first_run`, `chrome.host_menu`. They feed slow-frame tracking and render errors.
+- `c.view` stays the coarse, bounded enum from the telemetry spec (§4.15: `agent`/`terminal`/`canvas`/`files`/`git`/`settings`/`plugin`/`other`). The new shell sets it from the active title-bar tab and pane. Every non-built-in tab maps to `plugin`, and the start page and first run map to `other`. No new `c.view` values are added.
+- Where in the new chrome the user is goes in a separate bounded attribute, `c.ui.surface`: `sidebar_agents`, `sidebar_list`, `sidebar_settings`, `start_page`, `first_run`, `host_menu`, `more_menu`, `hover_card`, `row_menu`. Plugin-owned lists all report `sidebar_list`, and plugin ids are never used as values, which keeps the long-frame and render-error metrics well under the cap of 200 attribute sets per instrument (telemetry spec, metric export settings). It goes on slow-frame and render-error signals beside `c.view`.
 - The project-switch span, moved out of the `App.tsx` effect into the selection path. It also fires when a remote “Needs you” click switches host.
 - File open and save spans in the Files viewer under the new scope.
 - Command-palette and feature-usage events:
@@ -273,12 +292,12 @@ Owned call sites:
   - Dismiss and Clear all
   - hover card actions
 - `c.ui.action_failed` at every new catch site. The lint rule enforces this.
-- A new attribute `c.ui.chrome` = `legacy` | `v2` on UI events, so the two shells can be compared during dual support.
+- A new **resource (session) attribute** `c.ui.chrome` = `legacy` | `v2`, set once at startup from the flag. Gate item 5 compares session-level metrics (crash-free sessions, startup p95), so the attribute has to sit on every item in the session, not only on UI events. Switching the layout therefore takes effect on the next launch, and the settings toggle says so. One session never mixes the two shells.
 
 Must pass before the flag goes stable:
 1. Every span, metric and event the legacy shell emits has a named equivalent in the new shell, or is retired in the registry with a reason.
 2. Every Clubhouse Workbook panel that charted an old signal still has data.
-3. New `c.view` and `c.ui.action_failed` values, and `c.ui.chrome`, are added to `src/shared/telemetry/attributes.ts` in the same PR as the code, with telemetry review via CODEOWNERS.
+3. New `c.ui.surface` and `c.ui.action_failed` values, and the `c.ui.chrome` resource attribute, are added to `src/shared/telemetry/attributes.ts` in the same PR as the code, with telemetry review via CODEOWNERS.
 4. P0 regression signals keep their level and alert rules.
 5. Crash-free rate, startup p95 and slow frames under `v2` are no worse than the `legacy` baseline over the same window.
 
@@ -290,14 +309,39 @@ Unit tests (vitest), plus `npm run typecheck` and lint, since vitest does not ty
 - Selection and scope resolution, including agents without worktrees.
 - The idle rule, including sleeping agents and pinned projects.
 - The `needsAttention` selector across hosts.
-- The shortcut migration (§5.3).
+- Per-shell shortcut definitions and seeding, including the flag-off round trip (§5.3).
 - `projectExplorerTab` fallback.
 - `FinishedQuickAgents` Dismiss and Clear all.
 - `ListBody` swapping for `sidebar-content` versus `full` tabs.
 
-E2E (Playwright/Electron). Run in CI only, not locally. These 14 specs reference test IDs that do not exist in the new shell (`explorer-tab-*`, `rail-pin-button`, `nav-home`, `rail-container`, `project-*`, `agent-list`):
+E2E (Playwright/Electron). Run in CI only, not locally.
 
-`agent-list-ui`, `canvas-group-project-create`, `find-replace`, `navigation`, `open-project`, `plugin-system`, `popout-window`, `project-switching`, `rail-hover-flyout`, `rail-pin`, `smoke-agent-lifecycle`, `smoke-blank-screen`, `terminal-e2e`, `terminal`.
+To keep churn down, the new shell **keeps today's test IDs wherever the element has the same meaning**:
+
+| Test ID | Element in the new shell |
+|---|---|
+| `nav-add-project` | Add project (sidebar project menu and first run) |
+| `nav-settings`, `nav-help` | Footer Settings and Help |
+| `title-bar` | Title bar root |
+| `agent-item-<agentId>` | Sidebar agent row (not a new `agent-row-*` id) |
+| `project-<projectId>` | Project header |
+| `explorer-tab-<tabId>` | Title-bar tab, including `explorer-tab-agents` and `explorer-tab-plugin:<id>` |
+| `agent-list` | The agent tree inside the sidebar |
+| `resize-divider` | Sidebar resize handle |
+
+Three IDs have no equivalent and are legacy-only: `nav-home`, `rail-pin-button` and `rail-container`.
+
+Twenty-five E2E files use the old IDs, counting helpers and fixtures. All of them have to run under both shells, and any that use the legacy-only IDs need a branch for the new shell:
+
+- Shared helpers and fixtures: `smoke-helpers.ts`, `annex-v2/helpers.ts`, `fixtures/project-smoke/index.ts`.
+- Specs:
+  - `agent-list-ui`, `agent-real-cli`, `annex-v2/full-demo`
+  - `canvas-create`, `canvas-golden-path`, `canvas-group-project-create`
+  - `command-palette`, `find-replace`, `navigation`, `open-project`, `plugin-system`, `popout-window`, `project-switching`
+  - `rail-hover-flyout`, `rail-pin`
+  - `smoke-agent-lifecycle`, `smoke-blank-screen`, `smoke-settings-persistence`
+  - `start-agent` (also edited by #1937, so rebase onto it)
+  - `terminal-e2e`, `terminal`
 
 - During dual support, these run against both shells through a fixture that sets `newChrome`.
 - `rail-hover-flyout` and `rail-pin` are legacy-only and get deleted with the legacy shell.
@@ -310,15 +354,15 @@ E2E (Playwright/Electron). Run in CI only, not locally. These 14 specs reference
   - the start page
   - first run
   - Settings navigation
-- New test IDs, as a contract:
-  - `chrome-sidebar`, `chrome-sidebar-resize`
+- Test IDs for new elements only, as a contract (existing IDs above are kept):
+  - `chrome-sidebar`
   - `host-switcher`, `host-menu`
   - `app-row-canvas`, `app-row-review`
   - `needs-you`, `needs-you-row-<agentId>`
-  - `project-group-<projectId>`, `project-header-<projectId>`, `project-collapse-all`, `idle-projects`
-  - `agent-row-<agentId>`, `agent-hover-card`
+  - `project-group-<projectId>` (the header keeps `project-<projectId>`), `project-collapse-all`, `idle-projects`
+  - `agent-hover-card`
   - `finished-quick-<projectId>`, `sleeping-fold-<projectId>`
-  - `title-tab-<tabId>`, `title-more`
+  - `title-more` (tabs keep `explorer-tab-<tabId>`)
   - `list-breadcrumb`, `settings-nav`, `start-page`, `first-run`
 - Known flake: the canvas golden-path right-click spec on macOS and Windows CI. Re-run before investigating.
 - Manual QA on real hardware for anything drag-related (project and agent reorder, tab pinning out of the More menu). Synthetic input does not reproduce native macOS drag behavior.
