@@ -17,7 +17,17 @@ interface WatchEntry {
   destroyedListener: (() => void) | null;
 }
 
+/**
+ * Active watches keyed by `${webContentsId}:${watchId}`. Watch IDs are minted
+ * by per-renderer counters (e.g. `plugin:<id>:1`), so the same ID can arrive
+ * from two windows — scoping by sender keeps one window from replacing or
+ * stopping another window's watch.
+ */
 const activeWatches = new Map<string, WatchEntry>();
+
+function watchKey(webContentsId: number, watchId: string): string {
+  return `${webContentsId}:${watchId}`;
+}
 
 /** Debounce interval for batching file events (ms). */
 const DEBOUNCE_MS = 200;
@@ -35,7 +45,7 @@ function flushPendingEvents(entry: WatchEntry): void {
     entry.debounceTimer = null;
   }
   if (entry.sender.isDestroyed()) {
-    stopWatch(entry.watchId);
+    stopWatch(entry.watchId, entry.webContentsId);
     return;
   }
   if (entry.pendingEvents.size > 0) {
@@ -44,7 +54,7 @@ function flushPendingEvents(entry: WatchEntry): void {
     try {
       entry.sender.send(IPC.FILE.WATCH_EVENT, { watchId: entry.watchId, events });
     } catch {
-      stopWatch(entry.watchId);
+      stopWatch(entry.watchId, entry.webContentsId);
     }
   }
 }
@@ -54,9 +64,12 @@ function flushPendingEvents(entry: WatchEntry): void {
  * Events are batched and sent to the renderer via IPC.
  */
 export function startWatch(watchId: string, glob: string, sender: Electron.WebContents): void {
-  // Clean up existing watch with same ID
-  if (activeWatches.has(watchId)) {
-    stopWatch(watchId);
+  // Capture the id up front — a destroyed webContents throws on property access.
+  const webContentsId = sender.id;
+  const key = watchKey(webContentsId, watchId);
+  // Clean up this sender's existing watch with the same ID
+  if (activeWatches.has(key)) {
+    stopWatch(watchId, webContentsId);
   }
 
   // Extract the base directory from the glob (everything before the first wildcard)
@@ -69,7 +82,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     watchId,
     glob,
     watcher: null as unknown as fs.FSWatcher,
-    webContentsId: sender.id,
+    webContentsId,
     debounceTimer: null,
     pendingEvents: new Map(),
     sender,
@@ -97,7 +110,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
           type = 'deleted';
         }
         // Guard: watch may have been stopped while we awaited
-        if (!activeWatches.has(watchId)) return;
+        if (activeWatches.get(key) !== entry) return;
       } else {
         type = 'modified';
       }
@@ -118,11 +131,11 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     });
 
     entry.watcher = watcher;
-    activeWatches.set(watchId, entry);
+    activeWatches.set(key, entry);
 
     // Automatically clean up when the sender webContents is destroyed
     const destroyedListener = () => {
-      stopWatch(watchId);
+      stopWatch(watchId, webContentsId);
     };
     entry.destroyedListener = destroyedListener;
     sender.once('destroyed', destroyedListener);
@@ -131,9 +144,10 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
   }
 }
 
-/** Stop a file watch by ID. */
-export function stopWatch(watchId: string): void {
-  const entry = activeWatches.get(watchId);
+/** Stop a file watch by ID, scoped to the webContents that started it. */
+export function stopWatch(watchId: string, webContentsId: number): void {
+  const key = watchKey(webContentsId, watchId);
+  const entry = activeWatches.get(key);
   if (!entry) return;
 
   if (entry.debounceTimer) {
@@ -148,30 +162,30 @@ export function stopWatch(watchId: string): void {
   } catch {
     // Already closed
   }
-  activeWatches.delete(watchId);
+  activeWatches.delete(key);
 }
 
 /** Stop all watches (cleanup on window close). */
 export function stopAllWatches(): void {
-  const watchIds = [...activeWatches.keys()];
-  for (const watchId of watchIds) {
-    stopWatch(watchId);
+  const entries = [...activeWatches.values()];
+  for (const entry of entries) {
+    stopWatch(entry.watchId, entry.webContentsId);
   }
 }
 
 /** Clean up watches when a window is closed. */
 export function cleanupWatchesForWindow(win: BrowserWindow): void {
   const webContentsId = win.webContents.id;
-  const toStop = [...activeWatches.entries()]
-    .filter(([, entry]) => entry.webContentsId === webContentsId)
-    .map(([watchId]) => watchId);
+  const toStop = [...activeWatches.values()]
+    .filter((entry) => entry.webContentsId === webContentsId)
+    .map((entry) => entry.watchId);
   for (const watchId of toStop) {
-    stopWatch(watchId);
+    stopWatch(watchId, webContentsId);
   }
 }
 
 /** @internal Exported for tests only. */
-export { activeWatches as _activeWatches, MAX_PENDING_EVENTS };
+export { activeWatches as _activeWatches, watchKey as _watchKey, MAX_PENDING_EVENTS };
 
 /** Return the number of currently active watches (for testing). */
 export function getActiveWatchCount(): number {

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { createInterface } from 'readline';
+import { StringDecoder } from 'string_decoder';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { JsonlParser, StreamJsonEvent } from './jsonl-parser';
@@ -363,20 +364,30 @@ function setupStdoutHandler(
   agentId: string,
   io: IOState,
 ): void {
-  proc.stdout?.on('data', (chunk: Buffer) => {
-    const str = chunk.toString();
-    io.stdoutBytes += str.length;
-    if (io.stdoutBytes === str.length) {
-      // First stdout chunk — log it for diagnostics
-      appLog('core:headless', 'info', `First stdout data`, {
-        meta: { agentId, bytes: str.length, preview: str.slice(0, 200) },
-      });
-    }
+  // Decode incrementally so a multi-byte UTF-8 character split across two
+  // chunks is reassembled instead of becoming U+FFFD replacement chars.
+  const decoder = new StringDecoder('utf8');
+  const consume = (str: string) => {
     if (session.parser) {
       session.parser.feed(str);
     } else {
       session.textBuffer = (session.textBuffer || '') + str;
     }
+  };
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    const str = decoder.write(chunk);
+    io.stdoutBytes += chunk.length;
+    if (io.stdoutBytes === chunk.length) {
+      // First stdout chunk — log it for diagnostics
+      appLog('core:headless', 'info', `First stdout data`, {
+        meta: { agentId, bytes: chunk.length, preview: str.slice(0, 200) },
+      });
+    }
+    consume(str);
+  });
+  proc.stdout?.on('end', () => {
+    const tail = decoder.end();
+    if (tail) consume(tail);
   });
 }
 
@@ -386,8 +397,9 @@ function setupStderrHandler(
   agentId: string,
   io: IOState,
 ): void {
+  const decoder = new StringDecoder('utf8');
   proc.stderr?.on('data', (chunk: Buffer) => {
-    const msg = chunk.toString().trim();
+    const msg = decoder.write(chunk).trim();
     if (!msg) return;
 
     const msgBytes = Buffer.byteLength(msg, 'utf-8');

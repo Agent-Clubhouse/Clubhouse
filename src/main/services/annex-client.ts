@@ -285,9 +285,11 @@ export function bracketHost(host: string): string {
 function httpGet(host: string, port: number, path: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = http.get(`http://${bracketHost(host)}:${port}${path}`, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode || 0, body }));
+      // Collect raw bytes and decode once — per-chunk string coercion corrupts
+      // multi-byte UTF-8 characters split across chunk boundaries.
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer | string) => { chunks.push(typeof c === 'string' ? Buffer.from(c) : c); });
+      res.on('end', () => resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString('utf8') }));
     });
     req.on('error', reject);
     req.setTimeout(10_000, () => { req.destroy(); reject(new Error('timeout')); });
@@ -304,9 +306,11 @@ function httpPost(host: string, port: number, path: string, data: unknown): Prom
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(json) },
     }, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode || 0, body }));
+      // Collect raw bytes and decode once — per-chunk string coercion corrupts
+      // multi-byte UTF-8 characters split across chunk boundaries.
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer | string) => { chunks.push(typeof c === 'string' ? Buffer.from(c) : c); });
+      res.on('end', () => resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString('utf8') }));
     });
     req.on('error', reject);
     req.setTimeout(10_000, () => { req.destroy(); reject(new Error('timeout')); });

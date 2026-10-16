@@ -28,6 +28,7 @@
  * forever) for why that property is non-negotiable here.
  */
 import * as http from 'http';
+import { StringDecoder } from 'string_decoder';
 import { parseJsonBody } from './goobers-http';
 import type { ModelInvalidation } from '../../shared/goobers-api-types';
 
@@ -102,9 +103,11 @@ interface ParsedErrorBody {
 
 function readBody(res: http.IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
-    let body = '';
-    res.on('data', (chunk) => { body += chunk; });
-    res.on('end', () => resolve(body));
+    // Collect raw bytes and decode once — per-chunk string coercion corrupts
+    // multi-byte UTF-8 characters split across chunk boundaries.
+    const chunks: Buffer[] = [];
+    res.on('data', (c: Buffer | string) => { chunks.push(typeof c === 'string' ? Buffer.from(c) : c); });
+    res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
   });
 }
 
@@ -229,9 +232,11 @@ export function startEventStream(
         // headers immediately per eventstream.go, but sends no synthetic
         // frame just to say "connected").
         armWatchdog();
-        res.setEncoding('utf-8');
-        res.on('data', (chunk: string) => {
-          buffer += chunk;
+        // Decode incrementally so a multi-byte character split across chunks
+        // is reassembled; string chunks pass through unchanged.
+        const decoder = new StringDecoder('utf8');
+        res.on('data', (chunk: Buffer | string) => {
+          buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
           let idx: number;
           while ((idx = buffer.indexOf('\n\n')) >= 0) {
             const rawFrame = buffer.slice(0, idx);

@@ -166,6 +166,24 @@ describe('headless-manager', () => {
       );
     });
 
+    it('reassembles multi-byte UTF-8 characters split across stdout chunks', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const event = { type: 'assistant', message: { content: [{ type: 'text', text: 'cost €5 🎉' }] } };
+      const bytes = Buffer.from(JSON.stringify(event) + '\n');
+      const euroAt = bytes.indexOf(Buffer.from('€')) + 1;
+      const emojiAt = bytes.indexOf(Buffer.from('🎉')) + 2;
+      mockProcess.stdout!.emit('data', bytes.subarray(0, euroAt));
+      mockProcess.stdout!.emit('data', bytes.subarray(euroAt, emojiAt));
+      mockProcess.stdout!.emit('data', bytes.subarray(emojiAt));
+
+      const write = mockWriteStream.write.mock.calls.find(
+        (call) => typeof call[0] === 'string' && call[0].includes('"type":"assistant"'),
+      );
+      expect(write).toBeDefined();
+      expect(JSON.parse(write![0] as string).message.content[0].text).toBe('cost €5 🎉');
+    });
+
     it('emits pre_tool hook events for tool_use in assistant messages', async () => {
       await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
@@ -373,6 +391,37 @@ describe('headless-manager', () => {
       expect(resultEvent.result).toBe('Fixed the auth bug.\nUpdated 3 files.');
       expect(resultEvent.cost_usd).toBe(0);
       expect(resultEvent.duration_ms).toBeGreaterThanOrEqual(0);
+    });
+
+    it('reassembles multi-byte UTF-8 characters split across chunks in text mode', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+
+      const bytes = Buffer.from('Total: €42 ✅');
+      const splitAt = bytes.indexOf(Buffer.from('€')) + 2;
+      mockProcess.stdout!.emit('data', bytes.subarray(0, splitAt));
+      mockProcess.stdout!.emit('data', bytes.subarray(splitAt));
+      mockProcess.emit('close', 0);
+
+      const resultWrite = mockWriteStream.write.mock.calls.find(
+        (call) => typeof call[0] === 'string' && call[0].includes('"type":"result"'),
+      );
+      expect(JSON.parse(resultWrite![0] as string).result).toBe('Total: €42 ✅');
+    });
+
+    it('flushes a trailing incomplete UTF-8 sequence when stdout ends', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+
+      // Output truncated mid-character: the decoder holds the partial bytes
+      // until 'end', then emits a replacement char rather than dropping them.
+      const bytes = Buffer.from('done €');
+      mockProcess.stdout!.emit('data', bytes.subarray(0, bytes.length - 1));
+      mockProcess.stdout!.emit('end');
+      mockProcess.emit('close', 0);
+
+      const resultWrite = mockWriteStream.write.mock.calls.find(
+        (call) => typeof call[0] === 'string' && call[0].includes('"type":"result"'),
+      );
+      expect(JSON.parse(resultWrite![0] as string).result).toBe('done \uFFFD');
     });
 
     it('emits stop hook event on close with truncated message', async () => {

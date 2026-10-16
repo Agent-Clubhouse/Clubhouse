@@ -114,6 +114,19 @@ describe('httpGetJson', () => {
     expect(parseJsonBody(result.body)).toEqual({ ok: true });
   });
 
+  it('decodes multi-byte UTF-8 characters split across response chunks', async () => {
+    const { promise, respond } = startRequest();
+    const res = new FakeIncomingMessage(200);
+    respond(res);
+    const bytes = Buffer.from('{"name":"€🎉"}');
+    const splitAt = bytes.indexOf(Buffer.from('🎉')) + 2;
+    res.emit('data', bytes.subarray(0, splitAt));
+    res.emit('data', bytes.subarray(splitAt));
+    res.emit('end');
+
+    expect(await promise).toEqual({ status: 200, body: '{"name":"€🎉"}' });
+  });
+
   it('resolves (does not reject) on a non-2xx status, carrying the status through', async () => {
     const { promise, respond } = startRequest();
     const res = new FakeIncomingMessage(503);
