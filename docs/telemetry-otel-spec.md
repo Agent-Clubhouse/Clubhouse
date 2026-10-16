@@ -951,7 +951,7 @@ Community plugins can send their own telemetry to the user's destination, under 
   - its declared events, spans and metrics;
   - its records in the last hour;
   - a toggle.
-- **Every toggle defaults to off**, even after the permission is granted. The same toggle appears on the plugin's detail settings page. Grants are stored as `pluginGrants` in the `TELEMETRY` settings (§6.8).
+- **Every toggle defaults to off for every plugin, official-registry plugins included** (decision 2026-10-16), even after the permission is granted. The same toggle appears on the plugin's detail settings page. Grants are stored as `pluginGrants` in the `TELEMETRY` settings (§6.8).
 - Revoking a grant takes effect immediately, and that plugin's queued items are dropped.
 
 **Today's official registry** (`Clubhouse-Workshop/registry/registry.json`, updated 2026-04-25, fetched 2026-10-16). It lists 16 plugins, all `official: true`, all by Clubhouse Workshop:
@@ -961,7 +961,7 @@ Community plugins can send their own telemetry to the user's destination, under 
 | Code plugins (9) | `bug-report`, `automations`, `github-issues`, `kanboss`, `ado-work-items`, `wiki`, `pomodoro`, `daily-admin`, `lounge` | Yes, once they declare the `telemetry` permission and a schema |
 | Theme packs (7) | `fall-themes`, `neon-themes`, `ocean-themes`, `spring-themes`, `summer-themes`, `winter-themes`, `tech-modern` | No: they declare no permissions and run no code |
 
-The preview registry holds 8 of the same IDs (`pomodoro` and the 7 theme packs). Nothing in either registry is marked unofficial. Every plugin that qualifies for a raw `c.plugin.ref` (§4.10) is therefore currently a maintainer-authored Workshop plugin. That is what makes "default on for official plugins" a real option (§10.1, still open).
+The preview registry holds 8 of the same IDs (`pomodoro` and the 7 theme packs). Nothing in either registry is marked unofficial. Every plugin that qualifies for a raw `c.plugin.ref` (§4.10) is therefore currently a maintainer-authored Workshop plugin. Even so, grants default to off for official plugins too (decision 2026-10-16, §10.1).
 - The preview dialog labels plugin items with their source plugin.
 
 ### 6.10 The Clubhouse Workbook (decision 2026-10-16: planned deliverable)
@@ -1102,12 +1102,11 @@ Sizes: **S** ≈ ≤ 400 LOC, **M** ≈ 400–1,000, **L** ≈ 1,000–1,800, co
 | 4 | Where does OTLP go? | **In the main Settings UI** as a Destination choice. App Insights stays the preselected, one-field default. OTLP is HTTP/JSON only, HTTPS only, with headers in `safeStorage` and a destination confirmation. It moves from Phase 7 to Phase 1. | §6.3, §6.8, §9 |
 | 5 | Ship an Azure Monitor Workbook? | **Yes, a planned deliverable.** A gallery template, a Deploy to Azure ARM wrapper and optional alert rules. It grows tab by tab with Phases 3–6 and is finished in Phase 7. | §6.10, §9 |
 | 6 | How should Settings be laid out? | **App Insights first and simple:** a panel with the toggle, connection string and test event, nothing else. **Other destinations** (generic OTLP: endpoint, headers, protocol) sit in their own panel on the same page. One destination is active at a time. | §6.8 |
+| 9 | Plugin telemetry default for official-registry plugins? | **Off for every plugin, official ones included.** A plugin sends nothing until the user switches on its toggle. | §6.9 |
 | 8 | Local OTLP collector? | **Allowed.** Plain HTTP to `localhost`, `127.0.0.1` or `[::1]` only, with pinned resolution and Clubhouse's own ports refused. Everything else needs HTTPS. | §6.8 |
 | 7 | Coverage goal and history window | **Broad coverage of critical paths**, weighted by regressions from **March 2026 onward**. That window covers the churn peak. Each hot spot is marked as a current or superseded code path. | §4.15, §12 |
 
-**Still open:**
-
-1. Should plugin telemetry grants default to on for plugins from the official registry? The default stays off for all plugins until decided.
+No open questions remain.
 
 ---
 
