@@ -1,6 +1,6 @@
 # Structured chat over coding CLIs: research and design
 
-Status: research, no code changes · Date: 2026-10-16 · Repo state: `f4451aaa`
+Status: research and design · Date: 2026-10-16 · Code citations: `main` at `8bd2b9e0` (before structured mode's removal in [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937))
 
 Interactive version with mockups: https://claude.ai/artifact/3CtVdSGUdfhcnecMLozaQD (private; ask the maintainer for access)
 
@@ -21,7 +21,7 @@ This document looks at replacing the embedded TUIs of Claude Code, OpenAI Codex 
   - **Codex:** `codex app-server` v2 over stdio, with types generated from the pinned version.
   - **Copilot:** finish the existing ACP driver, then move to the Copilot SDK. The ACP driver stays as the generic driver for other ACP agents.
 - **Subscription plans (hard constraint):**
-  - Codex (ChatGPT Plus/Pro) and Copilot (Pro+/Max) are clearly allowed for a local open-source app.
+  - Codex (ChatGPT Plus and Pro) and Copilot (Pro, Pro+ and Max) are clearly allowed for a local open-source app.
   - Claude Pro/Max/Team are allowed, per Anthropic's Help Center article of 2026-10-07: "You can still use the Claude Agent SDK, claude -p, and third-party apps with your subscription limits." The maintainer ruled this the governing text (§4).
 - **Terminal stays first-class:** each provider can be set to Chat or Terminal, with an automatic fall back to the terminal if a CLI update breaks the protocol or terms change (§7.1).
 - **Rollout in four steps (§8.0):**
@@ -71,7 +71,7 @@ This document looks at replacing the embedded TUIs of Claude Code, OpenAI Codex 
 
 ### Missing or broken
 
-- **Every turn ends the session.** All adapters call `queue.finish()` at turn end. The manager then kills the process (`structured-manager.ts:123-127`), the agent goes to `sleeping`, and the feed is lost. A follow-up `sendMessage` fails with "No structured session found", and Stop kills the agent.
+- **Every turn ends the session.** All adapters call `queue.finish()` at turn end. The manager's `finally` block then cleans up the session and broadcasts an exit (`structured-manager.ts:124-126`; since #1928 via `broadcastAgentExit`), the agent goes to `sleeping`, and the feed is lost. A follow-up `sendMessage` fails with "No structured session found", and Stop kills the agent.
 - **Claude** (`stream-json-adapter.ts`):
   - It is single-turn with stdin closed; `sendMessage` and `respondToPermission` throw.
   - Tool input is always `{}`.
@@ -86,7 +86,6 @@ This document looks at replacing the embedded TUIs of Claude Code, OpenAI Codex 
   - Codex command output replaces instead of appending.
   - `PermissionBanner` auto-denies after a client-invented 120 s and offers yes/no only.
   - The composer is a one-line input that disappears when the session ends.
-  - The Assistant calls preload methods that don't exist (`assistant-agent.ts:624,647`).
 - **Durable structured agents** skip Clubhouse MCP injection, hooks, `CLUBHOUSE_AGENT_ID`/nonce env and the launch wrapper (`agent-system.ts:229-266` vs `:387-476`).
 - **Sessions and transcripts:** no session ids are captured, and the transcript is reopened with `'w'` on every start.
 - **IPC exposure:** `agent:start-structured` accepts renderer-supplied env, args and command prefix, and has no caller.
@@ -366,7 +365,7 @@ The Claude column covers both modes. The Agent SDK (default) and raw `-p` stream
 
 | Capability | Claude Agent SDK / `-p` | Claude via ACP | Codex app-server | Codex via ACP | Copilot SDK | Copilot `--acp` |
 |---|---|---|---|---|---|---|
-| **Works on $100–200 plans** | ✅ Pro/Max/Team (2026-10-07 article) | ✅ (built on the SDK) | ✅ Pro, local OSS | ✅ | ✅ Pro+/Max | ✅ (preview) |
+| **Works on $100–200 plans** | ✅ Pro/Max/Team (2026-10-07 article) | ✅ (built on the SDK) | ✅ Pro, local OSS | ✅ | ✅ Pro, Pro+, Max | ✅ (preview) |
 | Multi-turn | ✅ streaming input | ✅ | ✅ threads | ✅ | ✅ | ✅ |
 | Resume / history | ✅ resume, fork, resume-at | ✅ list/load/resume/fork | ✅ resume, fork, read, paged, revert | ✅ | ✅ | ◐ load replays; no resume or fork |
 | Interrupt | ✅ control interrupt | ✅ cancel | ✅ `turn/interrupt` | ✅ | ✅ | ✅ `session/cancel` |
@@ -500,7 +499,8 @@ The fix is a main-process **`AgentRuntime` interface** with two implementations,
 | Typing, paste, file drop | `AgentTerminal.tsx:247,484,550`, `useFileDrop.ts:44` | `sendMessage(text, attachments)` |
 | MCP `send_message` / `send_file`, shoulder taps, group-project inject | `agent-tools.ts:45-155,270-310,553-570`, `group-project-shoulder-tap.ts`, `group-project-handlers.ts:243-268` | `sendMessage` with steer or queue priority. Chat doesn't need the timed bracketed-paste-then-Enter workaround. |
 | Group PM polling nudges | `group-project-lifecycle.ts:34-38` (`injectPtyMessage`, no runtime check) and callers | `sendMessage` |
-| MCP `clear_agent` / `compact_agent`, group PM `/clear` `/compact` | `agent-tools.ts:612,649`, `group-project-tools.ts:955,1018` (no runtime check) | `clearContext()` (new session or thread) and `compact()` (Claude `/compact` prompt, Codex `thread/compact/start`, Copilot `/compact` prompt) |
+| MCP `clear_agent` / `compact_agent` | `agent-tools.ts:611-612,648-649` (already checks `runtime === 'pty'` and errors otherwise) | `clearContext()` (new session or thread) and `compact()` (Claude `/compact` prompt, Codex `thread/compact/start`, Copilot `/compact` prompt) |
+| Group PM `/clear` `/compact` | `group-project-tools.ts:955,1018` (**no runtime check**: writes to a PTY even when there isn't one) | Same `clearContext()` / `compact()` |
 | Update-restart interrupt (`\x03`) and graceful `/exit` | `app-handlers.ts:479`, `pty-manager.ts:498-570` | `interrupt()` and `stop()` |
 | MCP `read_output` | `agent-tools.ts:395-410` | `readTranscript(tail)` over the normalized transcript |
 | Status: working, needs permission, idle, error | Claude hooks → `hook-server.ts` → `agentStatusSlice.ts:97-193`, plus notifications, sounds and plugin `agent:hook` events (`app-event-bridge.ts:362-390`) | Chat events emit the same status transitions and the same hook-shaped events to the renderer. Today's structured mode sends these to Annex only, so structured agents get no list status, badges or notifications. |
@@ -510,7 +510,7 @@ The fix is a main-process **`AgentRuntime` interface** with two implementations,
 | Quick-agent completion | PTY exit plus `/tmp` summary file, stop hook auto-kill (`app-event-bridge.ts:167-276,392-407`) | Not needed for now: quick agents stay headless (§8, decision 2) |
 | Popout, canvas and plugin views | `PopoutAgentView.tsx:69`, `AgentCanvasView.tsx:313`, plugin `widgets.AgentTerminal` | A runtime-aware `AgentView` that renders chat or terminal. Plugins keep `AgentTerminal` and gain `AgentView`. |
 | Annex buffer replay, iOS keystrokes, iOS image paste | `annex-server.ts:1312,2209,281` | Transcript replay endpoint, `sendMessage`, image attachments |
-| Spawn: nonce, Clubhouse MCP, env, launch wrapper | `agent-system.ts:345-479` (skipped today by structured, TODO at `:208`) | Same spawn preparation for both runtimes. Copy the Assistant's structured path (`assistant-handlers.ts:503-540`). |
+| Spawn: nonce, Clubhouse MCP, env, launch wrapper | `spawnPtyAgent` in `agent-system.ts:335-479` (nonce `:345`, `injectClubhouseMcp` `:392`, `applyLaunchWrapper` `:450`, env `:476`); structured mode skipped all of it | Factor this preparation out of `spawnPtyAgent` so both runtimes share it |
 
 Free Agent Mode maps onto the permission ladder: `auto` → Auto, `skip-all` → Full access.
 
@@ -525,7 +525,7 @@ Chat should land on its own schedule, in either the current chrome or the refres
 - **Telemetry:** chat publishes its normalized events on a main-process bus that it owns, and nothing in chat imports telemetry.
   - When the telemetry pipeline lands, it subscribes to that bus. Whichever lands second does the mapping in §8.1. If chat lands first, the drivers already emit the drift and stall signals as log lines and events, ready to map.
   - Graduation (rollout step 3) uses telemetry when it exists. When it doesn't, the bar is green zero-token CI, error counts from the existing logs, and beta feedback.
-  - This differs from #1914 §9.1, which says neither ships until the parity checklist passes. The telemetry spec needs the matching edit: parity is required when both exist, and the checklist is owned by whichever lands second.
+  - The telemetry spec says the same since [#1935](https://github.com/Agent-Clubhouse/Clubhouse/pull/1935) (§9.1): parity is required once both exist, and it gates only chat's promotion to stable and default.
 
 ### UI
 
@@ -543,7 +543,7 @@ See the artifact's mockups for the details.
 
 ## 8. Phased plan
 
-Sizes are in engineer-weeks. Phases 0–4 ship behind a new experimental **Chat** setting in beta builds. Phase 5 promotes it to stable and makes it the default. The old `structuredMode` flag isn't reused (§8.0).
+Sizes are in engineer-weeks. Rollout step 1 (removing structured mode) ships unflagged, because it only removes code and migrates users to the terminal. Phases 0–4 of the new chat ship behind a new experimental **Chat** setting in beta builds. Phase 5 promotes it to stable and makes it the default. The old `structuredMode` flag isn't reused (§8.0).
 
 ### Before we begin
 
@@ -556,7 +556,7 @@ These were settled with the maintainer on 2026-10-16, along with the spikes to r
    - The CLI's native session id is used only to resume the model's context.
    - The transcript survives the CLI's own cleanup, gives Annex and `read_output` one format, and feeds telemetry later.
 2. **Which agents get chat: durable agents. Decided.**
-   - Quick agents stay fire-and-forget (headless) with no interactive chat. Missions and the Assistant keep their current modes.
+   - Quick agents stay fire-and-forget (headless) with no interactive chat. Headless missions keep their current mode. The Assistant was removed in #1930.
    - *Future milestone:* make a running quick agent's progress visible as a read-only live stream of its messages, tool calls and reasoning. The headless manager already parses stream-json, so the same renderer could show it. This is tracked in [#1932](https://github.com/Agent-Clubhouse/Clubhouse/issues/1932), not planned.
 3. **Process model: one CLI process per chat session. Decided.**
    - The process stays alive between turns and sleeps after about 30 idle minutes. The next message resumes it by session id.
@@ -597,27 +597,26 @@ These were settled with the maintainer on 2026-10-16, along with the spikes to r
 
 ### 8.0 Rollout: four steps from structured mode to Chat by default
 
-**Step 1 — Remove structured mode as it stands.** This is its own PR, ahead of any chat work, and about S (3–4 days).
+**Step 1 — Remove structured mode as it stands.** This is implemented in [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937). It ships unflagged, ahead of any chat work.
 
-- **Delete:**
-  - `src/renderer/features/agents/structured/` (StructuredAgentView and its components) and the `MainContentView` routing to it.
-  - `structured-manager.ts`, the structured IPC channels and handlers (including `agent:start-structured`), and the preload methods.
-  - The three adapters (`stream-json-adapter.ts`, `codex-app-server-adapter.ts`/`-client.ts`, `acp-adapter.ts`/`acp-client.ts`) and `buildStructuredAdapter` on the providers.
-  - The `structuredMode` provider capability, the experimental flag, and the per-agent checkboxes (`AddAgentDialog`, `TemplateConfigDialog`, `AgentSettingsView`).
-  - The quick-agent `structured` spawn mode, and the Assistant's `structured` mode.
-- **Keep:** move `ndjson-rpc-base.ts` and `structured-spawn.ts` (with #1911's Windows `.cmd` fix) to where the new drivers will live. They're transport plumbing, not structured-mode UI.
-- **Safe migration to the terminal.** This is a one-time, idempotent startup migration with a version marker:
-  - **Durable agents:** drop `structuredMode` from each agent config. These agents start in the standard terminal (PTY) mode next time. Their session ids weren't captured, so there's nothing to resume.
-  - **Experimental settings:** drop the `structuredMode` key.
-  - **Assistant:** a saved mode of `structured` becomes `interactive`.
-  - **Personas, materialization, blueprints and templates:** stop writing `structuredMode` / `structured`, and ignore them on read. Old exports still import cleanly.
-  - **Plugin API:** `structuredMode` in `agents.createDurable` options is accepted and ignored, with a deprecation warning. Remove it at the next plugin API major, per `docs/sdk-versioning.md`.
-  - **Agents running in structured mode** at upgrade time are killed by the update, as today (resume-on-update excludes them). They come back as sleeping terminal agents.
-  - **Old logs:** leave `agent-logs/*-structured.jsonl` in place. They're no longer written and are harmless.
-  - **Notice:** if the migration changed anything, show a one-time notice: "Structured mode was removed. N agents now open in the terminal."
-- **Annex:** remove the structured-event forwarding outright. The iOS app hasn't shipped, so there's nothing to version.
-- **Telemetry:** if the telemetry attribute registry exists by then, retire `core:structured*` and `usage/structured-session` there, with "replaced by Chat" as the reason. If it doesn't, there's nothing to do.
-- **Tests:** delete the structured unit tests and the IPC-stubbed structured E2E specs. Add unit tests for the migration.
+- **Deleted:**
+  - the structured renderer (`src/renderer/features/agents/structured/`) and its `MainContentView` routing;
+  - `structured-manager.ts` and `shared/structured-events.ts`;
+  - the three adapters (`stream-json-adapter.ts`, `codex-app-server-adapter.ts`, `acp-adapter.ts`);
+  - the structured IPC channels and handlers, and the preload methods (`startStructured`, `cancelStructured`, `sendStructuredMessage`, `respondPermission`, `onStructuredEvent`);
+  - the `structuredMode` / `structuredProtocol` provider capabilities, `StructuredCapable`, the experimental flag, and the per-agent toggles (`AddAgentDialog`, `TemplateConfigDialog`, `AgentSettingsView`);
+  - the quick-agent `structured` spawn mode;
+  - the `runtime === 'structured'` branches in shoulder taps, group-project inject, MCP `send_message` / `send_file` and the Annex message routes;
+  - Annex's `/structured-permission` route and its `structured:event` forwarding.
+- **Kept in place** in `src/main/orchestrators/adapters/` as plumbing for the chat drivers: `acp-client.ts`, `codex-app-server-client.ts`, `async-queue.ts`, `ndjson-rpc-base.ts` and `structured-spawn.ts`. These carry #1911's protocol and Windows fixes.
+- **Safe migration to the terminal** (idempotent, no user action):
+  - `agents.json`: the legacy `structuredMode` flag is dropped on read and the cleaned list is persisted, so those agents start in the terminal.
+  - Experimental settings: `structuredMode` is dropped. If it was on, the renderer shows one info toast, then clears its marker: "Structured mode was removed. Agents that used it now open in the terminal."
+  - Headless settings: a legacy `structured` spawn mode, as the default or a per-project override, becomes `interactive`.
+  - Persona patterns, blueprints and templates: the field is ignored on read and no longer written. The blueprint types keep `structured?` as `@deprecated` so older files still parse.
+  - Plugin API: `agents.createDurable({ structuredMode })` is accepted, ignored and logs a deprecation warning. It's removed at the next plugin API major.
+  - Agents running in structured mode at upgrade time are killed by the update, as before, and come back as sleeping terminal agents.
+- **Annex:** desktop satellites on older versions may still send `structured:event`, and the client still passes it through. The iOS app hasn't shipped, so nothing needed versioning.
 
 **Step 2 — Ship Chat as an experimental feature in beta builds** (phases 0–4).
 
@@ -652,7 +651,7 @@ These were settled with the maintainer on 2026-10-16, along with the spikes to r
 
 ### 8.1 Telemetry parity checklist
 
-This adapts §9.1 of `docs/telemetry-otel-spec.md` ([#1914](https://github.com/Agent-Clubhouse/Clubhouse/pull/1914)) to keep chat independent (§7.3). Telemetry won't instrument today's structured adapters, because they're being removed. Instead it subscribes once to chat's event bus. Whichever of chat or telemetry lands second does this mapping:
+This matches §9.1 of `docs/telemetry-otel-spec.md` as amended in [#1935](https://github.com/Agent-Clubhouse/Clubhouse/pull/1935). Telemetry doesn't instrument the structured adapters, because #1937 removes them. Instead it subscribes once to chat's event bus. Whichever of chat or telemetry lands second does this mapping:
 
 | Chat event model | Telemetry signal |
 |---|---|
@@ -664,7 +663,7 @@ This adapts §9.1 of `docs/telemetry-otel-spec.md` ([#1914](https://github.com/A
 
 The driver boundary and capability record provide:
 
-- `c.chat.driver`: `claude_agent_sdk`, `claude_stream_json`, `codex_app_server` or `copilot_acp`
+- `c.chat.driver`: `claude_agent_sdk`, `claude_stream_json`, `codex_app_server`, `copilot_acp`, and `copilot_sdk` later. `claude_agent_sdk` depends on [#1938](https://github.com/Agent-Clubhouse/Clubhouse/pull/1938), which adds it to the telemetry spec.
 - the protocol-drift signal `c.chat.protocol.unknown`, for unknown message, item or notification types
 - `c.chat.rpc` and `c.chat.start` (names per the telemetry spec in #1935)
 - `c.agent.turn.stalled`
@@ -672,7 +671,7 @@ The driver boundary and capability record provide:
 
 **Once both exist, Chat isn't promoted to stable and default (rollout step 3) until all four pass.** Experimental betas don't wait on telemetry.
 
-- [ ] Every span, metric and event the replaced adapters emit has a named equivalent in the new code, or is explicitly retired in the telemetry attribute registry with a reason.
+- [ ] Every span, metric and event the replaced UI or runtime emits has a named equivalent in the new code, or is explicitly retired in the registry with a reason.
 - [ ] Every Workbook panel that charted the old signal still has data. The KQL-vs-registry test checks names; a manual import into a scratch App Insights resource confirms the panels render.
 - [ ] New drivers add their `c.agent.runtime`, `c.chat.driver` and `c.ui.action_failed` values to `src/shared/telemetry/attributes.ts` in the same PR, with telemetry review via CODEOWNERS.
 - [ ] P0 regression signals keep their level (Errors or Standard) and their alert rules.
