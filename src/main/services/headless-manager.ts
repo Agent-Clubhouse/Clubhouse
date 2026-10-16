@@ -1,6 +1,7 @@
 import { spawn as cpSpawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import { createInterface } from 'readline';
 import { StringDecoder } from 'string_decoder';
@@ -425,6 +426,18 @@ function setupStderrHandler(
 }
 
 /**
+ * Map a child process close result to a single exit code. A process killed by
+ * a signal has a null code; report it as 128 + signal number (the shell
+ * convention) so callers never mistake a kill for success.
+ */
+export function resolveExitCode(code: number | null, signal: NodeJS.Signals | null): number {
+  if (code !== null) return code;
+  if (!signal) return 0;
+  const signum = os.constants.signals[signal];
+  return signum ? 128 + signum : 1;
+}
+
+/**
  * Wire the process close and error handlers.
  *
  * Handles parser flushing, text-mode result synthesis, session cleanup,
@@ -442,9 +455,10 @@ function setupExitHandlers(
 ): void {
   let exited = false;
 
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     if (exited) return;
     exited = true;
+    const exitCode = resolveExitCode(code, signal);
 
     if (session.parser) {
       session.parser.flush();
@@ -480,15 +494,15 @@ function setupExitHandlers(
       cleanupHeadlessSession(agentId);
 
       appLog('core:headless', 'info', `Process exited`, {
-        meta: { agentId, exitCode: code, stdoutBytes: io.stdoutBytes, events: session.transcript.length, stderr: io.stderrChunks.join('\n').slice(0, 500) },
+        meta: { agentId, exitCode, signal, stdoutBytes: io.stdoutBytes, events: session.transcript.length, stderr: io.stderrChunks.join('\n').slice(0, 500) },
       });
 
-      onExit?.(agentId, code ?? 0);
+      onExit?.(agentId, exitCode);
 
-      broadcastAgentExit(agentId, code ?? 0);
+      broadcastAgentExit(agentId, exitCode);
     } else {
       appLog('core:headless', 'info', `Old process exited after session replacement — skipping cleanup`, {
-        meta: { agentId, exitCode: code },
+        meta: { agentId, exitCode, signal },
       });
     }
   });

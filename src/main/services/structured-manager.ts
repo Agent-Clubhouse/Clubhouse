@@ -7,6 +7,7 @@ import type { StructuredEvent } from '../../shared/structured-events';
 import type { AgentHookEvent } from '../../shared/types';
 import type { StructuredAdapter, StructuredSessionOpts } from '../orchestrators/types';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { broadcastAgentExit } from './agent-exit-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { appLog } from './log-service';
 
@@ -122,8 +123,7 @@ async function consumeEvents(session: StructuredSession, opts: StructuredSession
     throw err;
   } finally {
     cleanupSession(session);
-    broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode);
-    annexEventBus.emitPtyExit(agentId, exitCode);
+    broadcastAgentExit(agentId, exitCode);
   }
 }
 

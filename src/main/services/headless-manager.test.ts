@@ -112,6 +112,7 @@ import {
   startStaleSweep,
   stopStaleSweep,
   _internal,
+  resolveExitCode,
 } from './headless-manager';
 
 describe('headless-manager', () => {
@@ -516,6 +517,18 @@ describe('headless-manager', () => {
         (call) => typeof call[0] === 'string' && call[0].includes('"type":"result"')
       );
       expect(resultWrite).toBeDefined();
+    });
+
+    it('reports a non-zero exit code when the process is killed by a signal', async () => {
+      const onExit = vi.fn();
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+
+      mockProcess.emit('close', null, 'SIGTERM');
+
+      const expected = 128 + os.constants.signals.SIGTERM;
+      expect(onExit).toHaveBeenCalledWith('test-agent', expected);
+      expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', expected);
+      expect(mockEmitPtyExit).toHaveBeenCalledWith('test-agent', expected);
     });
   });
 
@@ -1855,5 +1868,21 @@ describe('headless-manager _internal helpers', () => {
       ).rejects.toThrow('restricted system directory');
       expect(mockCpSpawn).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('resolveExitCode', () => {
+  it('passes a numeric exit code through', () => {
+    expect(resolveExitCode(0, null)).toBe(0);
+    expect(resolveExitCode(2, null)).toBe(2);
+  });
+
+  it('maps signal termination to 128 + signal number', () => {
+    expect(resolveExitCode(null, 'SIGTERM')).toBe(128 + os.constants.signals.SIGTERM);
+    expect(resolveExitCode(null, 'SIGKILL')).toBe(128 + os.constants.signals.SIGKILL);
+  });
+
+  it('treats a missing code and signal as a clean exit', () => {
+    expect(resolveExitCode(null, null)).toBe(0);
   });
 });
