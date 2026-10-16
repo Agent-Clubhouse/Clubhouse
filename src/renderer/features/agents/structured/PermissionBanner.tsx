@@ -17,6 +17,11 @@ export function PermissionBanner({ request, onRespond }: Props) {
   const respondedRef = useRef(false);
 
   useEffect(() => {
+    // A new request gets a fresh countdown and response latch. The parent
+    // keys banners by stable feed identity, but never let a previous
+    // request's "responded" flag leave this one unanswerable.
+    respondedRef.current = false;
+    setRemaining(TIMEOUT_SECONDS);
     const tick = setInterval(() => {
       setRemaining((r) => {
         if (r <= 1) {

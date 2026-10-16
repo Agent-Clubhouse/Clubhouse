@@ -6,6 +6,16 @@ export { DEPRECATED_PLUGIN_API_VERSIONS };
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 
+/**
+ * True when `id` is a well-formed plugin id. The allowlist (lowercase
+ * alphanumerics and hyphens) also guarantees the id is a single, safe path
+ * segment — no separators, `..`, or absolute paths — so it can be used to
+ * name a directory under the plugins root.
+ */
+export function isValidPluginId(id: unknown): id is string {
+  return typeof id === 'string' && PLUGIN_ID_REGEX.test(id);
+}
+
 interface ValidationResult {
   valid: boolean;
   manifest?: PluginManifest;

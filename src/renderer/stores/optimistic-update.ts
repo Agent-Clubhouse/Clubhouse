@@ -67,3 +67,33 @@ export async function optimisticUpdate<State>(
     }
   }
 }
+
+// Per-store load sequence numbers, keyed like _storeKeyVersions.
+const _storeLoadSeq = new WeakMap<GetFn, number>();
+
+/**
+ * Begin a settings load for a store that uses optimisticUpdate. Call before
+ * awaiting the IPC fetch; pass the fetched values to the returned function to
+ * get the subset that is still safe to apply:
+ *
+ * - returns `null` if a newer load for the same store has started since
+ *   (its response is authoritative, this one is stale), and
+ * - omits any key written by an optimistic update issued after this load
+ *   began, so a slow load response can't roll back a newer user choice.
+ */
+export function beginLoad<State>(get: () => State): (loaded: Partial<State>) => Partial<State> | null {
+  const startVersion = _globalVersion;
+  const seq = (_storeLoadSeq.get(get) ?? 0) + 1;
+  _storeLoadSeq.set(get, seq);
+
+  return (loaded) => {
+    if (_storeLoadSeq.get(get) !== seq) return null;
+    const versionMap = getVersionMap(get);
+    const safe: Partial<State> = {};
+    for (const key of Object.keys(loaded) as (keyof State)[]) {
+      if ((versionMap.get(key as string) ?? 0) > startVersion) continue;
+      safe[key] = loaded[key];
+    }
+    return safe;
+  };
+}

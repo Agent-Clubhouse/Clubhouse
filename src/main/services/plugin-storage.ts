@@ -102,13 +102,30 @@ function getCorruptQuarantinePath(file: string): string {
   return path.join(path.dirname(file), `.corrupt-${stamp}-${path.basename(file)}`);
 }
 
-/** Read and parse one JSON file, quarantining it if it exists but is corrupt. */
-async function readJsonFileOrQuarantine(file: string): Promise<{ found: boolean; value?: unknown }> {
+/**
+ * Only these mean "there is no file here". Anything else (EACCES, EIO, EBUSY,
+ * EMFILE, a transiently unmounted/locked directory…) means the file may well
+ * exist but could not be read right now — reporting that as "missing" lets a
+ * caller hydrate an empty state and autosave it over the real data.
+ */
+function isMissingFileError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+type JsonFileRead = { found: boolean; value?: unknown; error?: unknown };
+
+/**
+ * Read and parse one JSON file, quarantining it if it exists but is corrupt.
+ * A read that fails for any reason other than the file being absent is
+ * reported via `error` so callers can distinguish "missing" from "unreadable".
+ */
+async function readJsonFileOrQuarantine(file: string): Promise<JsonFileRead> {
   let raw: string;
   try {
     raw = await fs.readFile(file, 'utf-8');
-  } catch {
-    return { found: false };
+  } catch (err) {
+    return isMissingFileError(err) ? { found: false } : { found: false, error: err };
   }
   try {
     return { found: true, value: JSON.parse(raw) };
@@ -131,9 +148,22 @@ export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   const primary = await readJsonFileOrQuarantine(file);
   if (primary.found) return primary.value;
 
-  // Primary missing or corrupt (and now quarantined) — fall back to the backup.
+  // Primary missing, corrupt (and now quarantined) or unreadable — fall back
+  // to the backup.
   const backup = await readJsonFileOrQuarantine(getBackupPath(file));
-  return backup.found ? backup.value : undefined;
+  if (backup.found) return backup.value;
+
+  // Neither copy could be used. Only report "absent" when nothing was
+  // unreadable; otherwise throw so the caller does not mistake an I/O failure
+  // for an empty key and overwrite real data with defaults.
+  const error = primary.error ?? backup.error;
+  if (error) {
+    appLog('core:plugin-storage', 'warn', 'Plugin storage key is unreadable', {
+      meta: { pluginId: req.pluginId, key: req.key, error: error instanceof Error ? error.message : String(error) },
+    });
+    throw error;
+  }
+  return undefined;
 }
 
 export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {

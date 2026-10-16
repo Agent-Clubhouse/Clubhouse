@@ -4,7 +4,22 @@ import { AsyncQueue } from './async-queue';
 import { AcpClient, RpcError } from './acp-client';
 import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
 import { appLog } from '../../services/log-service';
-import { validateCommandPrefix } from '../../services/command-prefix-validation';
+import { resolveStructuredSpawn } from './structured-spawn';
+
+/** JSON-RPC "Method not found" — the standard reply for a request we can't serve. */
+const JSONRPC_METHOD_NOT_FOUND = -32601;
+
+/** ACP v1 `PermissionOption` (see session/request_permission). */
+interface AcpPermissionOption {
+  optionId: string;
+  name?: string;
+  kind?: string;
+}
+
+interface PendingPermission {
+  rpcId: string | number;
+  options: AcpPermissionOption[];
+}
 
 export interface AcpAdapterOpts {
   binary: string;
@@ -16,19 +31,24 @@ export interface AcpAdapterOpts {
 /**
  * StructuredAdapter implementation for ACP (Agent Client Protocol).
  *
- * Protocol flow:
+ * Protocol flow (ACP v1):
  *   1. initialize (handshake with protocolVersion)
- *   2. initialized (notification)
- *   3. session/new (create session, get sessionId)
- *   4. session/prompt (send prompt to session)
+ *   2. session/new (create session, get sessionId)
+ *   3. session/prompt — streams `session/update` notifications and answers
+ *      only when the turn is over, with a `stopReason`
  *
  * Translates ACP JSON-RPC notifications/requests into StructuredEvents.
+ * Agent output arrives as `session/update` notifications whose `update`
+ * object is discriminated by `update.sessionUpdate`.
  */
 export class AcpAdapter implements StructuredAdapter {
   private client: AcpClient | null = null;
   private queue: AsyncQueue<StructuredEvent> | null = null;
-  private pendingApprovals = new Map<string, string | number>();
+  private pendingApprovals = new Map<string, PendingPermission>();
+  /** Tool names by toolCallId — `tool_call_update` usually omits the name. */
+  private toolNames = new Map<string, string>();
   private sessionId: string | null = null;
+  private turnEnded = false;
   private opts: AcpAdapterOpts;
 
   constructor(opts: AcpAdapterOpts) {
@@ -68,28 +88,39 @@ export class AcpAdapter implements StructuredAdapter {
       args.push(...sessionOpts.extraArgs);
     }
 
-    // When a command prefix is set, wrap via shell so the prefix runs first
-    const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
-    const spawnArgs = sessionOpts.commandPrefix
-      ? ['-c', `${validateCommandPrefix(sessionOpts.commandPrefix)} && exec "$@"`, '_', this.opts.binary, ...args]
-      : args;
+    // Command prefix → shell wrapper; Windows .cmd/.bat shims → cmd.exe
+    const spawn = resolveStructuredSpawn(this.opts.binary, args, sessionOpts.commandPrefix);
 
     appLog('core:structured', 'info', 'AcpAdapter spawning', {
-      meta: { binary: spawnBinary, cwd: sessionOpts.cwd, model: sessionOpts.model },
+      meta: { binary: spawn.binary, cwd: sessionOpts.cwd, model: sessionOpts.model },
     });
 
     this.client = new AcpClient({
-      binary: spawnBinary,
-      args: spawnArgs,
+      binary: spawn.binary,
+      args: spawn.args,
+      windowsVerbatimArguments: spawn.windowsVerbatimArguments,
       cwd: sessionOpts.cwd,
       env,
       onNotification: (method, params) => {
-        const event = this.mapNotification(method, params);
-        if (event) queue.push(event);
+        for (const event of this.mapNotification(method, params)) queue.push(event);
       },
       onServerRequest: (id, method, params) => {
         const event = this.mapServerRequest(id, method, params);
-        if (event) queue.push(event);
+        if (event) {
+          queue.push(event);
+          return;
+        }
+        // Nothing will ever answer this id, and the agent blocks its turn on
+        // it — reject now rather than stall silently.
+        this.client?.respondWithError(
+          id,
+          JSONRPC_METHOD_NOT_FOUND,
+          `Clubhouse does not handle the '${method}' request`,
+        );
+        queue.push(this.makeEvent('error', {
+          code: 'unhandled_server_request',
+          message: `The agent asked for '${method}', which Clubhouse cannot answer. That step was declined.`,
+        }));
       },
       onExit: (code) => {
         const stderr = this.client?.getStderr()?.trim();
@@ -98,10 +129,13 @@ export class AcpAdapter implements StructuredAdapter {
             meta: { stderr: stderr.length > 2000 ? stderr.substring(0, 2000) + '…' : stderr },
           });
         }
-        queue.push(this.makeEvent('end', {
-          reason: code === 0 ? 'complete' : 'error',
-          summary: code === 0 ? undefined : `Process exited with code ${code}`,
-        }));
+        if (!this.turnEnded) {
+          this.turnEnded = true;
+          queue.push(this.makeEvent('end', {
+            reason: code === 0 ? 'complete' : 'error',
+            summary: code === 0 ? undefined : `Process exited with code ${code}`,
+          }));
+        }
         queue.finish();
       },
       onLog: (level, message, meta) => {
@@ -128,6 +162,7 @@ export class AcpAdapter implements StructuredAdapter {
           reason: 'error',
           summary: err instanceof Error ? err.message : String(err),
         }));
+        this.turnEnded = true;
         queue.finish();
       });
 
@@ -137,10 +172,9 @@ export class AcpAdapter implements StructuredAdapter {
   async sendMessage(message: string): Promise<void> {
     if (!this.client) throw new Error('Adapter not started');
     if (!this.sessionId) throw new Error('No active session');
-    await this.client.request('session/prompt', {
-      sessionId: this.sessionId,
-      prompt: [{ type: 'text', text: message }],
-    });
+    // The prompt's reply arrives only when the turn ends, possibly minutes
+    // from now; its outcome is reported through the event stream.
+    void this.runPrompt([{ type: 'text', text: message }]);
   }
 
   async respondToPermission(
@@ -148,16 +182,51 @@ export class AcpAdapter implements StructuredAdapter {
     approved: boolean,
     _reason?: string,
   ): Promise<void> {
-    const rpcId = this.pendingApprovals.get(requestId);
-    if (rpcId === undefined) {
+    const pending = this.pendingApprovals.get(requestId);
+    if (pending === undefined) {
       throw new Error(`No pending approval for request ${requestId}`);
     }
     this.pendingApprovals.delete(requestId);
-    this.client?.respond(rpcId, { approved });
+
+    // ACP answers with one of the offered options.  Prefer the one-shot kind
+    // so a single decision is never remembered beyond this call.
+    const kinds = approved ? ['allow_once', 'allow_always'] : ['reject_once', 'reject_always'];
+    const option = kinds
+      .map((kind) => pending.options.find((o) => o.kind === kind))
+      .find((o): o is AcpPermissionOption => o !== undefined);
+
+    if (!option) {
+      appLog('core:structured:acp', 'warn', 'No matching permission option; answering cancelled', {
+        meta: { requestId, approved, kinds: pending.options.map((o) => o.kind) },
+      });
+    }
+
+    this.client?.respond(pending.rpcId, {
+      outcome: option
+        ? { outcome: 'selected', optionId: option.optionId }
+        : { outcome: 'cancelled' },
+    });
   }
 
+  /**
+   * Cancel the running turn with ACP's `session/cancel`.  The agent then
+   * answers the in-flight prompt with stopReason `cancelled`, which ends the
+   * turn.  Falls back to killing when there is no turn to cancel.
+   */
   async cancel(): Promise<void> {
     if (!this.client) return;
+
+    if (this.sessionId && !this.turnEnded && this.client.alive) {
+      // The spec requires every pending permission request to be answered
+      // `cancelled` once the client cancels.
+      for (const { rpcId } of this.pendingApprovals.values()) {
+        this.client.respond(rpcId, { outcome: { outcome: 'cancelled' } });
+      }
+      this.pendingApprovals.clear();
+      this.client.notify('session/cancel', { sessionId: this.sessionId });
+      return;
+    }
+
     this.client.kill();
   }
 
@@ -168,6 +237,7 @@ export class AcpAdapter implements StructuredAdapter {
     this.queue = null;
     this.sessionId = null;
     this.pendingApprovals.clear();
+    this.toolNames.clear();
   }
 
   // ── Session lifecycle ────────────────────────────────────────────────────
@@ -206,125 +276,164 @@ export class AcpAdapter implements StructuredAdapter {
     if (parts.length === 0) return;
 
     // Send the initial prompt
-    await this.client.request('session/prompt', {
-      sessionId: this.sessionId,
-      prompt: parts,
-    });
+    await this.runPrompt(parts);
+  }
+
+  /**
+   * Send `session/prompt` and end the turn from its reply.  Never rejects:
+   * the outcome is reported as events.  No RPC timeout — the reply arrives
+   * only when the whole turn is over, which can take many minutes.
+   */
+  private async runPrompt(prompt: Array<{ type: string; text: string }>): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    this.turnEnded = false;
+
+    let result: { stopReason?: unknown } | undefined;
+    try {
+      result = await client.request('session/prompt', {
+        sessionId: this.sessionId,
+        prompt,
+      }, { timeoutMs: null }) as { stopReason?: unknown } | undefined;
+    } catch (err) {
+      // A process exit has already ended the turn; anything else is a failure.
+      if (this.turnEnded || this.client !== client) return;
+      const message = err instanceof Error ? err.message : String(err);
+      this.endTurn('error', message, { code: 'prompt_failed', message });
+      return;
+    }
+
+    if (this.turnEnded || this.client !== client) return;
+    this.completeTurn(result?.stopReason);
+  }
+
+  /** End the turn according to the ACP `StopReason` of the prompt reply. */
+  private completeTurn(stopReason: unknown): void {
+    switch (stopReason) {
+      case 'end_turn':
+        this.endTurn('complete');
+        return;
+      case 'cancelled':
+        this.endTurn('cancelled', 'Turn cancelled');
+        return;
+      case 'max_tokens':
+        this.endTurn('error', 'The agent reached its maximum token limit', {
+          code: 'max_tokens',
+          message: 'The agent reached its maximum token limit',
+        });
+        return;
+      case 'max_turn_requests':
+        this.endTurn('error', 'The agent reached its maximum number of requests for this turn', {
+          code: 'max_turn_requests',
+          message: 'The agent reached its maximum number of requests for this turn',
+        });
+        return;
+      case 'refusal':
+        this.endTurn('error', 'The agent refused to continue', {
+          code: 'refusal',
+          message: 'The agent refused to continue',
+        });
+        return;
+      default:
+        appLog('core:structured:acp', 'warn', 'session/prompt returned an unknown stopReason', {
+          meta: { stopReason },
+        });
+        this.endTurn('complete');
+    }
+  }
+
+  private endTurn(
+    reason: 'complete' | 'error' | 'cancelled',
+    summary?: string,
+    error?: { code: string; message: string },
+  ): void {
+    this.turnEnded = true;
+    this.pendingApprovals.clear();
+    if (error) this.queue?.push(this.makeEvent('error', error));
+    this.queue?.push(this.makeEvent('end', { reason, summary }));
+    this.queue?.finish();
   }
 
   // ── Event mapping ─────────────────────────────────────────────────────────
 
-  private mapNotification(
-    method: string,
-    params: unknown,
-  ): StructuredEvent | null {
+  private mapNotification(method: string, params: unknown): StructuredEvent[] {
     const p = (params ?? {}) as Record<string, unknown>;
 
-    switch (method) {
+    if (method !== 'session/update') {
+      appLog('core:structured:acp', 'debug', `Unmapped ACP notification: ${method}`, {
+        meta: { method, paramsKeys: Object.keys(p) },
+      });
+      return [];
+    }
+
+    const update = (p.update ?? {}) as Record<string, unknown>;
+    const kind = String(update.sessionUpdate ?? '');
+
+    switch (kind) {
       case 'agent_message_chunk':
-        return this.makeEvent('text_delta', {
-          text: String(p.text ?? ''),
-        });
-
-      case 'agent_thought_chunk':
-        return this.makeEvent('thinking', {
-          text: String(p.text ?? ''),
-          isPartial: true,
-        });
-
-      case 'tool_call': {
-        if (p.requires_approval) {
-          return this.makeEvent('permission_request', {
-            id: String(p.id ?? ''),
-            toolName: String(p.name ?? ''),
-            toolInput: (p.input as Record<string, unknown>) ?? {},
-            description: this.resolveToolVerb(String(p.name ?? ''))
-              + ' ' + String(p.name ?? ''),
-          });
-        }
-        return this.makeEvent('tool_start', {
-          id: String(p.id ?? ''),
-          name: String(p.name ?? ''),
-          displayVerb: this.resolveToolVerb(String(p.name ?? '')),
-          input: (p.input as Record<string, unknown>) ?? {},
-        });
+      case 'agent_thought_chunk': {
+        const text = this.contentText(update.content);
+        if (text === null) return [];
+        return [kind === 'agent_message_chunk'
+          ? this.makeEvent('text_delta', { text })
+          : this.makeEvent('thinking', { text, isPartial: true })];
       }
 
-      case 'tool_result':
-        return this.makeEvent('tool_end', {
-          id: String(p.id ?? ''),
-          name: String(p.name ?? ''),
-          result: String(p.result ?? ''),
-          durationMs: Number(p.duration_ms ?? 0),
-          status: p.error ? 'error' : 'success',
-        });
+      case 'tool_call': {
+        const id = String(update.toolCallId ?? '');
+        const name = this.toolName(update);
+        this.toolNames.set(id, name);
+        const events = [this.makeEvent('tool_start', {
+          id,
+          name,
+          displayVerb: this.resolveToolVerb(name),
+          input: this.asRecord(update.rawInput),
+        })];
+        // A tool call may be reported already finished.
+        const end = this.toolEnd(id, update);
+        if (end) events.push(end);
+        return events;
+      }
 
-      case 'file_change':
-        return this.makeEvent('file_diff', {
-          path: String(p.path ?? ''),
-          changeType: (p.change_type as 'create' | 'modify' | 'delete') ?? 'modify',
-          diff: String(p.diff ?? ''),
-        });
+      case 'tool_call_update': {
+        const id = String(update.toolCallId ?? '');
+        if (typeof update.name === 'string' && update.name) this.toolNames.set(id, update.name);
+        const end = this.toolEnd(id, update);
+        return end ? [end] : [];
+      }
 
-      case 'command_execution':
-        return this.makeEvent('command_output', {
-          id: String(p.id ?? ''),
-          command: String(p.command ?? ''),
-          status: (p.status as 'running' | 'completed' | 'failed') ?? 'running',
-          output: String(p.output ?? ''),
-          exitCode: p.exit_code != null ? Number(p.exit_code) : undefined,
-        });
-
-      case 'plan':
-        return this.makeEvent('plan_update', {
-          steps: Array.isArray(p.steps)
-            ? p.steps.map((s: Record<string, unknown>) => ({
-                description: String(s.description ?? ''),
-                status: (s.status as 'pending' | 'in_progress' | 'completed' | 'failed') ?? 'pending',
-              }))
-            : [],
-        });
-
-      case 'usage':
-        return this.makeEvent('usage', {
-          inputTokens: Number(p.input_tokens ?? 0),
-          outputTokens: Number(p.output_tokens ?? 0),
-          cacheReadTokens: p.cache_read_tokens != null ? Number(p.cache_read_tokens) : undefined,
-          cacheWriteTokens: p.cache_write_tokens != null ? Number(p.cache_write_tokens) : undefined,
-          costUsd: p.cost_usd != null ? Number(p.cost_usd) : undefined,
-        });
-
-      case 'error':
-        return this.makeEvent('error', {
-          code: String(p.code ?? 'unknown'),
-          message: String(p.message ?? ''),
-          toolId: p.tool_id != null ? String(p.tool_id) : undefined,
-        });
-
-      // GHCP sends session/update during streaming with token counts and status.
-      // Map to usage events when token data is present, otherwise suppress.
-      case 'session/update': {
-        const inputTokens = p.input_tokens ?? p.inputTokens;
-        const outputTokens = p.output_tokens ?? p.outputTokens;
-        if (inputTokens != null || outputTokens != null) {
-          return this.makeEvent('usage', {
-            inputTokens: Number(inputTokens ?? 0),
-            outputTokens: Number(outputTokens ?? 0),
-            cacheReadTokens: p.cache_read_tokens != null ? Number(p.cache_read_tokens) : undefined,
-            cacheWriteTokens: undefined,
-            costUsd: p.cost_usd != null ? Number(p.cost_usd) : undefined,
-          });
-        }
-        // Status-only updates (no token data) — silently ignore
-        return null;
+      case 'plan': {
+        const entries = Array.isArray(update.entries) ? update.entries as Array<Record<string, unknown>> : [];
+        return [this.makeEvent('plan_update', {
+          steps: entries.map((e) => ({
+            description: String(e.content ?? ''),
+            status: e.status === 'in_progress' || e.status === 'completed' ? e.status : 'pending',
+          })),
+        })];
       }
 
       default:
-        appLog('core:structured:acp', 'debug', `Unmapped ACP notification: ${method}`, {
-          meta: { method, paramsKeys: Object.keys(p) },
+        // user_message_chunk, available_commands_update, current_mode_update,
+        // usage_update (context-window size, not per-turn tokens), …
+        appLog('core:structured:acp', 'debug', `Unmapped ACP session update: ${kind}`, {
+          meta: { sessionUpdate: kind, keys: Object.keys(update) },
         });
-        return null;
+        return [];
     }
+  }
+
+  /** tool_end for a tool call whose status is terminal, else null. */
+  private toolEnd(id: string, update: Record<string, unknown>): StructuredEvent | null {
+    if (update.status !== 'completed' && update.status !== 'failed') return null;
+    const name = this.toolNames.get(id) ?? this.toolName(update);
+    this.toolNames.delete(id);
+    return this.makeEvent('tool_end', {
+      id,
+      name,
+      result: this.toolResult(update),
+      durationMs: 0,
+      status: update.status === 'completed' ? 'success' : 'error',
+    });
   }
 
   private mapServerRequest(
@@ -335,16 +444,61 @@ export class AcpAdapter implements StructuredAdapter {
     if (method !== 'session/request_permission') return null;
 
     const p = (params ?? {}) as Record<string, unknown>;
-    const requestId = String(p.id ?? `perm-${rpcId}`);
+    const toolCall = (p.toolCall ?? {}) as Record<string, unknown>;
+    const options = Array.isArray(p.options)
+      ? (p.options as AcpPermissionOption[]).filter((o) => typeof o?.optionId === 'string')
+      : [];
+    const toolCallId = typeof toolCall.toolCallId === 'string' ? toolCall.toolCallId : '';
+    const requestId = toolCallId && !this.pendingApprovals.has(toolCallId)
+      ? toolCallId
+      : `perm-${rpcId}`;
 
-    this.pendingApprovals.set(requestId, rpcId);
+    this.pendingApprovals.set(requestId, { rpcId, options });
 
+    const toolName = (typeof toolCall.name === 'string' && toolCall.name)
+      || this.toolNames.get(toolCallId)
+      || this.toolName(toolCall);
     return this.makeEvent('permission_request', {
       id: requestId,
-      toolName: String(p.tool ?? ''),
-      toolInput: (p.args as Record<string, unknown>) ?? {},
-      description: String(p.description ?? ''),
+      toolName,
+      toolInput: this.asRecord(toolCall.rawInput),
+      description: typeof toolCall.title === 'string' && toolCall.title
+        ? toolCall.title
+        : `${this.resolveToolVerb(toolName)} ${toolName}`,
     });
+  }
+
+  // ── Payload helpers ───────────────────────────────────────────────────────
+
+  /** Programmatic tool name, falling back to the ACP tool kind. */
+  private toolName(toolCall: Record<string, unknown>): string {
+    if (typeof toolCall.name === 'string' && toolCall.name) return toolCall.name;
+    if (typeof toolCall.kind === 'string' && toolCall.kind) return toolCall.kind;
+    return 'tool';
+  }
+
+  /** Text of a ContentBlock, or null for non-text content. */
+  private contentText(block: unknown): string | null {
+    const b = (block ?? {}) as Record<string, unknown>;
+    return b.type === 'text' && typeof b.text === 'string' ? b.text : null;
+  }
+
+  /** Readable result of a tool call: its text content, else its raw output. */
+  private toolResult(update: Record<string, unknown>): string {
+    const content = Array.isArray(update.content) ? update.content as Array<Record<string, unknown>> : [];
+    const texts = content
+      .filter((c) => c?.type === 'content')
+      .map((c) => this.contentText(c.content))
+      .filter((t): t is string => t !== null);
+    if (texts.length > 0) return texts.join('\n');
+    if (update.rawOutput == null) return '';
+    return typeof update.rawOutput === 'string' ? update.rawOutput : JSON.stringify(update.rawOutput);
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
   }
 
   private resolveToolVerb(toolName: string): string {

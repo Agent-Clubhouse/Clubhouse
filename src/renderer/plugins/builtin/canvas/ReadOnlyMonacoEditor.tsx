@@ -17,7 +17,7 @@ interface ReadOnlyMonacoEditorProps {
   value: string;
   filePath: string;
   readOnly?: boolean;
-  onSave?: (content: string) => void;
+  onSave?: (content: string) => void | Promise<void>;
 }
 
 export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave }: ReadOnlyMonacoEditorProps) {
@@ -26,6 +26,12 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
   const monacoRef = useRef<any>(null);
   const themeId = useThemeStore((s) => s.themeId);
   const themeIdRef = useRef(themeId);
+  // Latest props for the async editor creation and the Cmd+S handler — props can
+  // change while Monaco is loading, and the keybinding outlives the mount render.
+  const latestPropsRef = useRef({ value, filePath, readOnly, onSave });
+  latestPropsRef.current = { value, filePath, readOnly, onSave };
+  /** File the editor's current model was created for. */
+  const modelPathRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -44,13 +50,15 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
       monacoRef.current = m;
       await ensureThemes(m);
 
-      const language = languageFromPath(filePath);
-      const model = m.editor.createModel(value, language);
+      const latest = latestPropsRef.current;
+      const language = languageFromPath(latest.filePath);
+      const model = m.editor.createModel(latest.value, language);
+      modelPathRef.current = latest.filePath;
 
       const editor = m.editor.create(containerRef.current, {
         model,
         theme: monacoThemeName(themeIdRef.current),
-        readOnly,
+        readOnly: latest.readOnly,
         fontSize: 12,
         fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
         bracketPairColorization: { enabled: true },
@@ -76,15 +84,18 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
         stickyScroll: { enabled: true, maxLineCount: 3 },
         lineNumbers: 'on',
         lineNumbersMinChars: 3,
-        domReadOnly: readOnly,
+        domReadOnly: latest.readOnly,
       });
 
       // Ctrl/Cmd+S to save when editable
       editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => {
-        if (onSave) {
-          const content = editor.getModel()?.getValue() ?? '';
-          onSave(content);
-        }
+        const { onSave: save, filePath: currentPath, readOnly: isReadOnly } = latestPropsRef.current;
+        // Never write a model's content to a different file than it was loaded from
+        if (!save || isReadOnly || modelPathRef.current !== currentPath) return;
+        const content = editor.getModel()?.getValue() ?? '';
+        Promise.resolve(save(content)).catch((err) => {
+          console.error('[ReadOnlyMonacoEditor] Save failed:', err);
+        });
       });
 
       editorRef.current = editor;
@@ -123,6 +134,7 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
     const language = languageFromPath(filePath);
     const newModel = m.editor.createModel(value, language);
     editor.setModel(newModel);
+    modelPathRef.current = filePath;
     oldModel?.dispose();
 
     // Reset scroll position for new file

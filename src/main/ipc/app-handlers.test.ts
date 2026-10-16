@@ -6,6 +6,8 @@ vi.mock('electron', () => ({
     getPath: vi.fn(() => '/tmp/test-app'),
     dock: { setBadge: vi.fn() },
     setBadgeCount: vi.fn(),
+    relaunch: vi.fn(),
+    exit: vi.fn(),
   },
   nativeImage: {
     createFromPath: vi.fn(() => ({ isEmpty: () => false })),
@@ -152,6 +154,11 @@ vi.mock('../services/plugin-theme-store', () => ({
 
 vi.mock('./mcp-binding-handlers', () => ({
   onMcpSettingsChanged: vi.fn(),
+}));
+
+const mockFlushAllAgentConfigs = vi.fn(async () => {});
+vi.mock('../services/agent-config', () => ({
+  flushAllAgentConfigs: () => mockFlushAllAgentConfigs(),
 }));
 
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
@@ -569,6 +576,32 @@ describe('app-handlers', () => {
     const handler = handleHandlers.get(IPC.APP.APPLY_UPDATE)!;
     await handler({});
     expect(autoUpdateService.applyUpdate).toHaveBeenCalled();
+  });
+
+  it('APPLY_UPDATE flushes pending agent configs before applying', async () => {
+    const order: string[] = [];
+    mockFlushAllAgentConfigs.mockImplementationOnce(async () => { order.push('flush'); });
+    vi.mocked(autoUpdateService.applyUpdate).mockImplementationOnce(async () => { order.push('apply'); });
+    await handleHandlers.get(IPC.APP.APPLY_UPDATE)!({});
+    expect(order).toEqual(['flush', 'apply']);
+  });
+
+  it('RESTART flushes pending agent configs before exiting', async () => {
+    const order: string[] = [];
+    mockFlushAllAgentConfigs.mockImplementationOnce(async () => { order.push('flush'); });
+    vi.mocked(app.exit).mockImplementationOnce(() => { order.push('exit'); });
+    await handleHandlers.get(IPC.APP.RESTART)!({});
+    expect(app.relaunch).toHaveBeenCalled();
+    expect(order).toEqual(['flush', 'exit']);
+  });
+
+  it('RESTART still exits when the agent config flush fails', async () => {
+    mockFlushAllAgentConfigs.mockRejectedValueOnce(new Error('disk full'));
+    await handleHandlers.get(IPC.APP.RESTART)!({});
+    expect(app.exit).toHaveBeenCalledWith(0);
+    expect(logService.appLog).toHaveBeenCalledWith(
+      'core:shutdown', 'error', 'Failed to flush agent configs before exit', expect.anything(),
+    );
   });
 
   it('GET_PENDING_RELEASE_NOTES delegates to autoUpdateService', async () => {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { ProviderCapabilities, OrchestratorInfo } from '../../shared/types';
-import { optimisticUpdate } from './optimistic-update';
+import { beginLoad, optimisticUpdate } from './optimistic-update';
 
 /** The only orchestrator whose hook server defaults to ON when unset. */
 export const DEFAULT_HOOK_SERVER_ORCHESTRATOR = 'claude-code';
@@ -27,16 +27,18 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   hookServerEnabled: {},
 
   loadSettings: async () => {
+    const applyLoaded = beginLoad(get);
     try {
       const [settings, orchestrators] = await Promise.all([
         window.clubhouse.app.getOrchestratorSettings(),
         window.clubhouse.agent.getOrchestrators(),
       ]);
-      set({
+      const safe = applyLoaded({
         enabled: settings?.enabled ?? ['claude-code'],
         hookServerEnabled: settings?.hookServerEnabled ?? {},
         allOrchestrators: Array.isArray(orchestrators) ? orchestrators : [],
       });
+      if (safe) set(safe);
     } catch {
       // Keep defaults on error
     }

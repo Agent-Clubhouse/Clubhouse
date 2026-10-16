@@ -98,10 +98,14 @@ export function stopStaleSweep(): void {
   staleSweeper.stop();
 }
 
-const LOGS_DIR = path.join(app.getPath('userData'), 'agent-logs');
+// Resolved lazily: index.ts may redirect userData (CLUBHOUSE_USER_DATA) after
+// this module is imported, and transcripts must follow the isolated profile.
+function getLogsDir(): string {
+  return path.join(app.getPath('userData'), 'agent-logs');
+}
 
 async function ensureLogsDir(): Promise<void> {
-  await fsPromises.mkdir(LOGS_DIR, { recursive: true });
+  await fsPromises.mkdir(getLogsDir(), { recursive: true });
 }
 
 /**
@@ -529,7 +533,7 @@ export async function spawnHeadless(
   }
 
   await ensureLogsDir();
-  const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
+  const transcriptPath = path.join(getLogsDir(), `${agentId}.jsonl`);
   const env = prepareSpawnEnv(extraEnv);
 
   appLog('core:headless', 'info', `Spawning headless agent`, {
@@ -619,7 +623,7 @@ export async function readTranscript(agentId: string): Promise<string | null> {
   }
 
   // Fall back to disk for completed sessions
-  const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
+  const transcriptPath = path.join(getLogsDir(), `${agentId}.jsonl`);
   try {
     return await fsPromises.readFile(transcriptPath, 'utf-8');
   } catch {
@@ -654,7 +658,7 @@ export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo
   }
 
   // Completed session — stream from disk
-  const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
+  const transcriptPath = path.join(getLogsDir(), `${agentId}.jsonl`);
   try {
     const stat = await fsPromises.stat(transcriptPath);
     const stream = fs.createReadStream(transcriptPath, { encoding: 'utf-8' });
@@ -696,7 +700,7 @@ export async function readTranscriptPage(
 
   // Disk: stream lines to avoid loading the entire file into memory and
   // only JSON.parse the lines within the requested page window.
-  const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
+  const transcriptPath = session?.transcriptPath ?? path.join(getLogsDir(), `${agentId}.jsonl`);
   try {
     const stream = fs.createReadStream(transcriptPath, { encoding: 'utf-8' });
     const rl = createInterface({ input: stream, crlfDelay: Infinity });

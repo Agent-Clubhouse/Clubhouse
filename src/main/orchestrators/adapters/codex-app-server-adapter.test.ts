@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 import type { StructuredEvent } from '../../../shared/structured-events';
 import type { StructuredSessionOpts } from '../types';
 
@@ -11,6 +13,7 @@ vi.mock('./codex-app-server-client', () => ({
 vi.mock('../../util/shell', () => ({
   getShellEnvironment: vi.fn().mockReturnValue({ PATH: '/usr/bin', HOME: '/home/test' }),
   cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
+  winQuoteArg: (arg: string) => '"' + arg.replace(/%/g, '%%').replace(/"/g, '""') + '"',
 }));
 
 // Mock log service
@@ -49,6 +52,99 @@ async function collectEvents(
     if (events.length >= count) break;
   }
   return events;
+}
+
+async function collectAll(iterable: AsyncIterable<StructuredEvent>): Promise<StructuredEvent[]> {
+  const events: StructuredEvent[] = [];
+  for await (const event of iterable) events.push(event);
+  return events;
+}
+
+// ── Authentic app-server v2 fixtures (Codex 0.153.4 generate-ts) ──────────
+
+const THREAD = 'test-thread-1';
+const TURN = 'test-turn-1';
+
+function itemNotification(item: Record<string, unknown>) {
+  return { item, threadId: THREAD, turnId: TURN, startedAtMs: 1760000000000 };
+}
+
+function commandItem(overrides: Record<string, unknown> = {}) {
+  return {
+    type: 'commandExecution',
+    id: 'call_cmd_1',
+    pluginId: null,
+    scriptPath: null,
+    command: 'npm test',
+    cwd: '/tmp/project',
+    processId: null,
+    source: 'agent',
+    status: 'inProgress',
+    commandActions: [],
+    aggregatedOutput: null,
+    exitCode: null,
+    durationMs: null,
+    ...overrides,
+  };
+}
+
+function fileChangeItem(overrides: Record<string, unknown> = {}) {
+  return {
+    type: 'fileChange',
+    id: 'call_patch_1',
+    changes: [
+      { path: 'src/index.ts', kind: { type: 'update', move_path: null }, diff: '@@ -1 +1 @@\n-old line\n+new line\n' },
+      { path: 'src/new.ts', kind: { type: 'add' }, diff: '+content\n' },
+    ],
+    status: 'inProgress',
+    ...overrides,
+  };
+}
+
+function mcpItem(overrides: Record<string, unknown> = {}) {
+  return {
+    type: 'mcpToolCall',
+    id: 'call_mcp_1',
+    server: 'db',
+    tool: 'database_query',
+    status: 'inProgress',
+    arguments: { sql: 'SELECT 1' },
+    appContext: null,
+    pluginId: null,
+    readOnlyHint: null,
+    result: null,
+    error: null,
+    durationMs: null,
+    ...overrides,
+  };
+}
+
+function breakdown(overrides: Record<string, number>) {
+  return {
+    totalTokens: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+    ...overrides,
+  };
+}
+
+function turnCompleted(status: string, error: Record<string, unknown> | null = null) {
+  return {
+    threadId: THREAD,
+    turn: {
+      id: TURN,
+      items: [],
+      itemsView: 'notLoaded',
+      status,
+      error,
+      startedAt: 1760000000,
+      completedAt: 1760000060,
+      durationMs: 60000,
+    },
+  };
 }
 
 /** Flush pending microtasks (for async start → startThread chain) */
@@ -192,9 +288,15 @@ describe('CodexAppServerAdapter', () => {
     }));
   });
 
-  it('wraps binary with shell when commandPrefix is set', () => {
+  it('wraps binary with shell when commandPrefix is set (POSIX)', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
     const adapter = new CodexAppServerAdapter({ binary: '/usr/bin/codex' });
-    adapter.start({ ...defaultSessionOpts, commandPrefix: 'source ~/.env' });
+    try {
+      adapter.start({ ...defaultSessionOpts, commandPrefix: 'source ~/.env' });
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
 
     const opts = MockClient.mock.calls[0][0];
     expect(opts.binary).toBe('sh');
@@ -202,6 +304,23 @@ describe('CodexAppServerAdapter', () => {
     expect(opts.args[1]).toContain('source ~/.env');
     // Binary is passed as a separate arg after '_' placeholder for exec "$@"
     expect(opts.args).toContain('/usr/bin/codex');
+  });
+
+  it('launches a Windows .cmd shim through cmd.exe with verbatim args', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const binary = path.join(os.tmpdir(), 'npm', 'codex.cmd');
+    const adapter = new CodexAppServerAdapter({ binary });
+    try {
+      adapter.start(defaultSessionOpts);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+
+    const opts = MockClient.mock.calls[0][0];
+    expect(opts.binary).toBe('cmd.exe');
+    expect(opts.args).toEqual(['/d', '/s', '/c', `""${binary}" "app-server" "--listen" "stdio://""`]);
+    expect(opts.windowsVerbatimArguments).toBe(true);
   });
 
   it('emits error + end on startup failure', async () => {
@@ -331,13 +450,15 @@ describe('CodexAppServerAdapter', () => {
   });
 
   // ── Notification mapping tests ────────────────────────────────────────────
+  // Fixtures mirror the app-server v2 schema of the CI-pinned Codex CLI
+  // (0.153.4, `codex app-server generate-ts`).
 
-  it('maps item/agentMessage/delta → text_delta', async () => {
+  it('maps item/agentMessage/delta (string delta) → text_delta', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
     mockClient.onNotification('item/agentMessage/delta', {
-      delta: { text: 'Hello world' },
+      threadId: THREAD, turnId: TURN, itemId: 'msg_1', delta: 'Hello world',
     });
     mockClient.onExit(0, null);
 
@@ -346,12 +467,12 @@ describe('CodexAppServerAdapter', () => {
     expect(events[0].data).toEqual({ text: 'Hello world' });
   });
 
-  it('maps item/reasoning/summaryTextDelta → thinking', async () => {
+  it('maps item/reasoning/summaryTextDelta (string delta) → thinking', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
     mockClient.onNotification('item/reasoning/summaryTextDelta', {
-      delta: { text: 'Let me think...' },
+      threadId: THREAD, turnId: TURN, itemId: 'rs_1', delta: 'Let me think...', summaryIndex: 0,
     });
     mockClient.onExit(0, null);
 
@@ -360,69 +481,51 @@ describe('CodexAppServerAdapter', () => {
     expect(events[0].data).toEqual({ text: 'Let me think...', isPartial: true });
   });
 
-  it('maps item/started (CommandExecution) → tool_start', async () => {
+  it('maps item/started (commandExecution) → tool_start', async () => {
     const adapter = new CodexAppServerAdapter({
       binary: 'codex',
       toolVerbs: { shell: 'Running command' },
     });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/started', {
-      item: {
-        id: 'item-1',
-        type: 'command_execution',
-        details: { command: 'npm test' },
-      },
-    });
+    mockClient.onNotification('item/started', itemNotification(commandItem({ status: 'inProgress' })));
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
     expect(events[0].type).toBe('tool_start');
     expect(events[0].data).toEqual({
-      id: 'item-1',
+      id: 'call_cmd_1',
       name: 'shell',
       displayVerb: 'Running command',
       input: { command: 'npm test' },
     });
   });
 
-  it('maps item/started (FileChange) → tool_start', async () => {
+  it('maps item/started (fileChange) → tool_start', async () => {
     const adapter = new CodexAppServerAdapter({
       binary: 'codex',
       toolVerbs: { apply_patch: 'Editing file' },
     });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/started', {
-      item: {
-        id: 'item-2',
-        type: 'file_change',
-        details: { path: 'src/index.ts' },
-      },
-    });
+    mockClient.onNotification('item/started', itemNotification(fileChangeItem({ status: 'inProgress' })));
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
     expect(events[0].type).toBe('tool_start');
     expect(events[0].data).toEqual({
-      id: 'item-2',
+      id: 'call_patch_1',
       name: 'apply_patch',
       displayVerb: 'Editing file',
-      input: { path: 'src/index.ts' },
+      input: { path: 'src/index.ts, src/new.ts' },
     });
   });
 
-  it('maps item/started (McpToolCall) → tool_start', async () => {
+  it('maps item/started (mcpToolCall) → tool_start', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/started', {
-      item: {
-        id: 'item-3',
-        type: 'mcp_tool_call',
-        details: { tool: 'database_query', arguments: { sql: 'SELECT 1' } },
-      },
-    });
+    mockClient.onNotification('item/started', itemNotification(mcpItem({ status: 'inProgress' })));
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
@@ -431,13 +534,14 @@ describe('CodexAppServerAdapter', () => {
     expect((events[0].data as { input: Record<string, unknown> }).input).toEqual({ sql: 'SELECT 1' });
   });
 
-  it('maps item/completed (AgentMessage) → text_done', async () => {
+  it('maps item/completed (agentMessage) → text_done', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/completed', {
-      item: { id: 'item-1', type: 'agent_message', text: 'Done! Here is the result.' },
-    });
+    mockClient.onNotification('item/completed', itemNotification({
+      type: 'agentMessage', id: 'msg_1', text: 'Done! Here is the result.',
+      phase: null, memoryCitation: null, delivery: null, questions: null,
+    }));
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
@@ -445,41 +549,36 @@ describe('CodexAppServerAdapter', () => {
     expect(events[0].data).toEqual({ text: 'Done! Here is the result.' });
   });
 
-  it('maps item/completed (CommandExecution, success) → tool_end', async () => {
+  it('maps item/completed (commandExecution, completed) → tool_end success', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/completed', {
-      item: {
-        id: 'item-1',
-        type: 'command_execution',
-        details: { aggregated_output: 'All tests passed', exit_code: 0, status: 'Completed' },
-      },
-    });
+    mockClient.onNotification('item/completed', itemNotification(commandItem({
+      status: 'completed', aggregatedOutput: 'All tests passed', exitCode: 0, durationMs: 1234,
+    })));
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
     expect(events[0].type).toBe('tool_end');
     expect(events[0].data).toEqual({
-      id: 'item-1',
+      id: 'call_cmd_1',
       name: 'shell',
       result: 'All tests passed',
-      durationMs: 0,
+      durationMs: 1234,
       status: 'success',
     });
   });
 
-  it('maps item/completed (CommandExecution, failed) → tool_end with error', async () => {
+  it.each([
+    ['failed', 1],
+    ['declined', null],
+  ])('maps item/completed (commandExecution, %s) → tool_end error', async (status, exitCode) => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/completed', {
-      item: {
-        id: 'item-1',
-        type: 'command_execution',
-        details: { aggregated_output: 'Permission denied', exit_code: 1, status: 'Failed' },
-      },
-    });
+    mockClient.onNotification('item/completed', itemNotification(commandItem({
+      status, aggregatedOutput: 'Permission denied', exitCode,
+    })));
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
@@ -487,43 +586,91 @@ describe('CodexAppServerAdapter', () => {
     expect((events[0].data as { status: string }).status).toBe('error');
   });
 
-  it('maps item/completed (FileChange) → tool_end', async () => {
+  it('maps item/completed (fileChange) → file_diff per change + tool_end', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/completed', {
-      item: {
-        id: 'item-2',
-        type: 'file_change',
-        details: { path: 'src/index.ts' },
-      },
-    });
+    mockClient.onNotification('item/completed', itemNotification(fileChangeItem({ status: 'completed' })));
     mockClient.onExit(0, null);
 
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('tool_end');
-    expect(events[0].data).toEqual({
-      id: 'item-2',
+    const events = await collectEvents(stream, 3);
+    expect(events[0]).toMatchObject({
+      type: 'file_diff',
+      data: { path: 'src/index.ts', changeType: 'modify', diff: '@@ -1 +1 @@\n-old line\n+new line\n' },
+    });
+    expect(events[1]).toMatchObject({
+      type: 'file_diff',
+      data: { path: 'src/new.ts', changeType: 'create', diff: '+content\n' },
+    });
+    expect(events[2].type).toBe('tool_end');
+    expect(events[2].data).toEqual({
+      id: 'call_patch_1',
       name: 'apply_patch',
-      result: 'src/index.ts',
+      result: 'src/index.ts, src/new.ts',
       durationMs: 0,
       status: 'success',
     });
   });
 
-  it('maps item/completed (TodoList) → plan_update', async () => {
+  it('maps a declined fileChange → tool_end error with no diffs', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/completed', {
-      item: {
-        id: 'item-5',
-        type: 'todo_list',
-        items: [
-          { text: 'Read files', completed: true },
-          { text: 'Edit code', completed: false },
-        ],
-      },
+    mockClient.onNotification('item/completed', itemNotification(fileChangeItem({ status: 'declined' })));
+    mockClient.onExit(0, null);
+
+    const events = await collectEvents(stream, 2);
+    expect(events[0].type).toBe('tool_end');
+    expect((events[0].data as { status: string }).status).toBe('error');
+  });
+
+  it('maps item/completed (mcpToolCall) → tool_end with text result', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    mockClient.onNotification('item/completed', itemNotification(mcpItem({
+      status: 'completed',
+      result: { content: [{ type: 'text', text: '1 row' }], structuredContent: null, _meta: null },
+      durationMs: 40,
+    })));
+    mockClient.onExit(0, null);
+
+    const events = await collectEvents(stream, 2);
+    expect(events[0].data).toEqual({
+      id: 'call_mcp_1',
+      name: 'database_query',
+      result: '1 row',
+      durationMs: 40,
+      status: 'success',
+    });
+  });
+
+  it('maps item/completed (mcpToolCall, failed) → tool_end error', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    mockClient.onNotification('item/completed', itemNotification(mcpItem({
+      status: 'failed', error: { message: 'connection refused' },
+    })));
+    mockClient.onExit(0, null);
+
+    const events = await collectEvents(stream, 2);
+    expect(events[0].data).toMatchObject({ result: 'connection refused', status: 'error' });
+  });
+
+  it('maps turn/plan/updated → plan_update', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    mockClient.onNotification('turn/plan/updated', {
+      threadId: THREAD,
+      turnId: TURN,
+      explanation: null,
+      plan: [
+        { step: 'Read files', status: 'completed' },
+        { step: 'Edit code', status: 'inProgress' },
+        { step: 'Run tests', status: 'pending' },
+      ],
     });
     mockClient.onExit(0, null);
 
@@ -532,25 +679,25 @@ describe('CodexAppServerAdapter', () => {
     expect(events[0].data).toEqual({
       steps: [
         { description: 'Read files', status: 'completed' },
-        { description: 'Edit code', status: 'pending' },
+        { description: 'Edit code', status: 'in_progress' },
+        { description: 'Run tests', status: 'pending' },
       ],
     });
   });
 
-  it('maps item/commandExecution/outputDelta → command_output', async () => {
+  it('maps item/commandExecution/outputDelta (string delta) → command_output', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
     mockClient.onNotification('item/commandExecution/outputDelta', {
-      itemId: 'item-1',
-      delta: { output: 'Running tests...\n' },
+      threadId: THREAD, turnId: TURN, itemId: 'call_cmd_1', delta: 'Running tests...\n',
     });
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
     expect(events[0].type).toBe('command_output');
     expect(events[0].data).toEqual({
-      id: 'item-1',
+      id: 'call_cmd_1',
       command: '',
       status: 'running',
       output: 'Running tests...\n',
@@ -558,100 +705,89 @@ describe('CodexAppServerAdapter', () => {
     });
   });
 
-  it('maps turn/diff/updated → file_diff', async () => {
-    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
-    const stream = adapter.start(defaultSessionOpts);
-
-    mockClient.onNotification('turn/diff/updated', {
-      files: [
-        { path: 'src/index.ts', kind: 'Update', diff: '+new line\n-old line' },
-      ],
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('file_diff');
-    expect(events[0].data).toEqual({
-      path: 'src/index.ts',
-      changeType: 'modify',
-      diff: '+new line\n-old line',
-    });
-  });
-
-  it('maps turn/diff/updated with Add kind → create', async () => {
-    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
-    const stream = adapter.start(defaultSessionOpts);
-
-    mockClient.onNotification('turn/diff/updated', {
-      files: [{ path: 'new-file.ts', kind: 'Add', diff: '+content' }],
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect((events[0].data as { changeType: string }).changeType).toBe('create');
-  });
-
-  it('maps thread/tokenUsage/updated → usage', async () => {
+  it('maps thread/tokenUsage/updated → usage from the latest increment', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
     mockClient.onNotification('thread/tokenUsage/updated', {
-      usage: { input_tokens: 100, output_tokens: 50, cached_input_tokens: 80 },
+      threadId: THREAD,
+      turnId: TURN,
+      tokenUsage: {
+        total: breakdown({ inputTokens: 900, outputTokens: 400, cachedInputTokens: 600 }),
+        last: breakdown({ inputTokens: 100, outputTokens: 50, cachedInputTokens: 80, cacheWriteInputTokens: 5 }),
+        modelContextWindow: 272000,
+      },
     });
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
     expect(events[0].type).toBe('usage');
+    // The renderer sums usage events, so the increment — not the running total
     expect(events[0].data).toEqual({
       inputTokens: 100,
       outputTokens: 50,
       cacheReadTokens: 80,
-      cacheWriteTokens: undefined,
+      cacheWriteTokens: 5,
       costUsd: undefined,
     });
   });
 
-  it('maps turn/completed → usage + end, finishes queue', async () => {
+  it('maps turn/completed (completed) → end, finishes queue', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('turn/completed', {
-      status: 'completed',
-      usage: { input_tokens: 200, output_tokens: 100 },
-    });
+    mockClient.onNotification('turn/completed', turnCompleted('completed'));
 
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('usage');
+    const events = await collectAll(stream);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('end');
+    expect(events[0].data).toEqual({ reason: 'complete', summary: undefined });
+  });
+
+  it('maps turn/completed (failed) → error from turn.error + end', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    mockClient.onNotification('turn/completed', turnCompleted('failed', {
+      message: 'Context window exceeded',
+      codexErrorInfo: 'contextWindowExceeded',
+      additionalDetails: null,
+      misalignment: null,
+    }));
+
+    const events = await collectAll(stream);
+    expect(events.map(e => e.type)).toEqual(['error', 'end']);
     expect(events[0].data).toEqual({
-      inputTokens: 200,
-      outputTokens: 100,
-      cacheReadTokens: undefined,
-      cacheWriteTokens: undefined,
-      costUsd: undefined,
-    });
-    expect(events[1].type).toBe('end');
-    expect(events[1].data).toEqual({ reason: 'complete', summary: undefined });
-  });
-
-  it('maps turn/completed with failed status → usage + error + end', async () => {
-    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
-    const stream = adapter.start(defaultSessionOpts);
-
-    mockClient.onNotification('turn/completed', {
-      status: 'failed',
-      usage: { input_tokens: 50, output_tokens: 10 },
-      error: { type: 'ContextWindowExceeded', message: 'Context window exceeded' },
-    });
-
-    const events = await collectEvents(stream, 3);
-    expect(events[0].type).toBe('usage');
-    expect(events[1].type).toBe('error');
-    expect(events[1].data).toEqual({
-      code: 'ContextWindowExceeded',
+      code: 'contextWindowExceeded',
       message: 'Context window exceeded',
     });
-    expect(events[2].type).toBe('end');
-    expect((events[2].data as { reason: string }).reason).toBe('error');
+    expect(events[1].data).toEqual({ reason: 'error', summary: 'Context window exceeded' });
+  });
+
+  it('uses the variant key of an object-shaped codexErrorInfo', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    mockClient.onNotification('turn/completed', turnCompleted('failed', {
+      message: 'stream disconnected',
+      codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 502 } },
+      additionalDetails: null,
+      misalignment: null,
+    }));
+
+    const events = await collectAll(stream);
+    expect((events[0].data as { code: string }).code).toBe('responseStreamDisconnected');
+  });
+
+  it('maps turn/completed (interrupted) → end cancelled', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    mockClient.onNotification('turn/completed', turnCompleted('interrupted'));
+
+    const events = await collectAll(stream);
+    expect(events).toHaveLength(1);
+    expect(events[0].data).toEqual({ reason: 'cancelled', summary: 'Turn interrupted' });
   });
 
   it('silently ignores unknown notification methods', async () => {
@@ -666,13 +802,13 @@ describe('CodexAppServerAdapter', () => {
     expect(events[0].type).toBe('end');
   });
 
-  it('ignores item/started for unknown item types', async () => {
+  it('ignores item/started for item types it does not render', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/started', {
-      item: { id: 'item-x', type: 'unknown_type' },
-    });
+    mockClient.onNotification('item/started', itemNotification({
+      type: 'reasoning', id: 'rs_1', summary: [], content: [],
+    }));
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 1);
@@ -686,39 +822,80 @@ describe('CodexAppServerAdapter', () => {
     const stream = adapter.start(defaultSessionOpts);
 
     mockClient.onServerRequest(5, 'item/commandExecution/requestApproval', {
-      itemId: 'item-1',
-      command: 'rm -rf /tmp',
+      kind: 'command',
+      threadId: THREAD,
+      turnId: TURN,
+      itemId: 'call_cmd_1',
+      startedAtMs: 1760000000000,
+      environmentId: null,
+      command: 'rm -rf /tmp/build',
+      cwd: '/tmp/project',
     });
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
     expect(events[0].type).toBe('permission_request');
     expect(events[0].data).toEqual({
-      id: 'item-1',
+      id: 'call_cmd_1',
       toolName: 'shell',
-      toolInput: { command: 'rm -rf /tmp' },
-      description: 'Run command: rm -rf /tmp',
+      toolInput: { command: 'rm -rf /tmp/build' },
+      description: 'Run command: rm -rf /tmp/build',
     });
   });
 
-  it('maps item/fileChange/requestApproval → permission_request', async () => {
+  it('keys command approvals by approvalId when several share an itemId', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    adapter.start(defaultSessionOpts);
+
+    const base = { kind: 'command', threadId: THREAD, turnId: TURN, itemId: 'call_cmd_1', startedAtMs: 0, environmentId: null };
+    mockClient.onServerRequest(5, 'item/commandExecution/requestApproval', { ...base, approvalId: 'appr-a', command: 'ls' });
+    mockClient.onServerRequest(6, 'item/commandExecution/requestApproval', { ...base, approvalId: 'appr-b', command: 'pwd' });
+
+    await adapter.respondToPermission('appr-a', true);
+    await adapter.respondToPermission('appr-b', false);
+
+    expect(mockClient.respond).toHaveBeenCalledWith(5, { decision: 'accept' });
+    expect(mockClient.respond).toHaveBeenCalledWith(6, { decision: 'decline' });
+  });
+
+  it('maps item/fileChange/requestApproval → permission_request with the item paths', async () => {
+    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
+    const stream = adapter.start(defaultSessionOpts);
+
+    // The approval carries no paths — they come from the item announced first
+    mockClient.onNotification('item/started', itemNotification(fileChangeItem({ status: 'inProgress' })));
+    mockClient.onServerRequest(6, 'item/fileChange/requestApproval', {
+      threadId: THREAD,
+      turnId: TURN,
+      itemId: 'call_patch_1',
+      startedAtMs: 1760000000000,
+      reason: null,
+    });
+    mockClient.onExit(0, null);
+
+    const events = await collectEvents(stream, 2);
+    expect(events[1].type).toBe('permission_request');
+    expect(events[1].data).toEqual({
+      id: 'call_patch_1',
+      toolName: 'apply_patch',
+      toolInput: { path: 'src/index.ts, src/new.ts' },
+      description: 'Modify file: src/index.ts, src/new.ts',
+    });
+  });
+
+  it('describes a fileChange approval by its reason when the item is unknown', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
     mockClient.onServerRequest(6, 'item/fileChange/requestApproval', {
-      itemId: 'item-2',
-      path: '/etc/hosts',
+      threadId: THREAD, turnId: TURN, itemId: 'call_x', startedAtMs: 0,
+      reason: 'Needs write access outside the workspace',
     });
     mockClient.onExit(0, null);
 
     const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('permission_request');
-    expect(events[0].data).toEqual({
-      id: 'item-2',
-      toolName: 'apply_patch',
-      toolInput: { path: '/etc/hosts' },
-      description: 'Modify file: /etc/hosts',
-    });
+    expect((events[0].data as { description: string }).description)
+      .toBe('Needs write access outside the workspace');
   });
 
   it('answers an unhandled server request instead of leaving the turn hanging', async () => {
@@ -781,8 +958,10 @@ describe('CodexAppServerAdapter', () => {
     adapter.start(defaultSessionOpts);
 
     mockClient.onServerRequest(43, 'item/fileChange/requestApproval', {
+      threadId: THREAD,
+      turnId: TURN,
       itemId: 'perm-def',
-      path: '/etc/passwd',
+      startedAtMs: 0,
     });
 
     await adapter.respondToPermission('perm-def', false);
@@ -863,7 +1042,7 @@ describe('CodexAppServerAdapter', () => {
     adapter.start(defaultSessionOpts);
     await flushMicrotasks();
 
-    mockClient.onNotification('turn/completed', { threadId: 'test-thread-1', usage: {} });
+    mockClient.onNotification('turn/completed', turnCompleted('completed'));
     await adapter.cancel();
 
     // No turn in flight, so there is nothing to interrupt
@@ -946,10 +1125,7 @@ describe('CodexAppServerAdapter', () => {
     const stream = adapter.start(defaultSessionOpts);
 
     // turn/completed sets turnEnded = true
-    mockClient.onNotification('turn/completed', {
-      status: 'completed',
-      usage: { input_tokens: 10, output_tokens: 5 },
-    });
+    mockClient.onNotification('turn/completed', turnCompleted('completed'));
 
     // Process exit should NOT add another end event
     mockClient.onExit(0, null);
@@ -960,7 +1136,7 @@ describe('CodexAppServerAdapter', () => {
       events.push(event);
     }
 
-    // Should have usage + end from turn/completed, nothing extra from onExit
+    // A single end from turn/completed, nothing extra from onExit
     const endEvents = events.filter(e => e.type === 'end');
     expect(endEvents).toHaveLength(1);
   });
@@ -975,7 +1151,7 @@ describe('CodexAppServerAdapter', () => {
     const stream = adapter.start(defaultSessionOpts);
 
     mockClient.onNotification('item/started', {
-      item: { id: 'i1', type: 'file_change', details: { path: 'f.ts' } },
+      ...itemNotification(fileChangeItem()),
     });
     mockClient.onExit(0, null);
 
@@ -988,7 +1164,7 @@ describe('CodexAppServerAdapter', () => {
     const stream = adapter.start(defaultSessionOpts);
 
     mockClient.onNotification('item/started', {
-      item: { id: 'i1', type: 'mcp_tool_call', details: { tool: 'custom_tool', arguments: {} } },
+      ...itemNotification(mcpItem({ tool: 'custom_tool', arguments: {} })),
     });
     mockClient.onExit(0, null);
 
@@ -996,34 +1172,33 @@ describe('CodexAppServerAdapter', () => {
     expect((events[0].data as { displayVerb: string }).displayVerb).toBe('Using tool');
   });
 
-  // ── PascalCase type variants (Codex may use either) ───────────────────────
+  // ── End-to-end turn with authentic messages ───────────────────────────────
 
-  it('handles PascalCase CommandExecution in item/started', async () => {
+  it('maps a full authentic turn in order', async () => {
     const adapter = new CodexAppServerAdapter({ binary: 'codex' });
     const stream = adapter.start(defaultSessionOpts);
 
-    mockClient.onNotification('item/started', {
-      item: { id: 'i1', type: 'CommandExecution', details: { command: 'ls' } },
+    mockClient.onNotification('turn/started', { threadId: THREAD, turn: { ...turnCompleted('inProgress').turn, error: null } });
+    mockClient.onNotification('item/started', itemNotification(commandItem()));
+    mockClient.onNotification('item/commandExecution/outputDelta', { threadId: THREAD, turnId: TURN, itemId: 'call_cmd_1', delta: 'ok\n' });
+    mockClient.onNotification('item/completed', itemNotification(commandItem({ status: 'completed', aggregatedOutput: 'ok\n', exitCode: 0 })));
+    mockClient.onNotification('item/agentMessage/delta', { threadId: THREAD, turnId: TURN, itemId: 'msg_1', delta: 'Tests ' });
+    mockClient.onNotification('item/agentMessage/delta', { threadId: THREAD, turnId: TURN, itemId: 'msg_1', delta: 'pass.' });
+    mockClient.onNotification('item/completed', itemNotification({
+      type: 'agentMessage', id: 'msg_1', text: 'Tests pass.', phase: null, memoryCitation: null, delivery: null, questions: null,
+    }));
+    mockClient.onNotification('thread/tokenUsage/updated', {
+      threadId: THREAD, turnId: TURN,
+      tokenUsage: { total: breakdown({ inputTokens: 10 }), last: breakdown({ inputTokens: 10, outputTokens: 3 }), modelContextWindow: null },
     });
-    mockClient.onExit(0, null);
+    mockClient.onNotification('turn/completed', turnCompleted('completed'));
 
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('tool_start');
-    expect((events[0].data as { name: string }).name).toBe('shell');
-  });
-
-  it('handles PascalCase AgentMessage in item/completed', async () => {
-    const adapter = new CodexAppServerAdapter({ binary: 'codex' });
-    const stream = adapter.start(defaultSessionOpts);
-
-    mockClient.onNotification('item/completed', {
-      item: { id: 'i1', type: 'AgentMessage', text: 'Hello!' },
-    });
-    mockClient.onExit(0, null);
-
-    const events = await collectEvents(stream, 2);
-    expect(events[0].type).toBe('text_done');
-    expect(events[0].data).toEqual({ text: 'Hello!' });
+    const events = await collectAll(stream);
+    expect(events.map(e => e.type)).toEqual([
+      'tool_start', 'command_output', 'tool_end', 'text_delta', 'text_delta', 'text_done', 'usage', 'end',
+    ]);
+    expect(events.map(e => e.type === 'text_delta' ? (e.data as { text: string }).text : null).filter(Boolean))
+      .toEqual(['Tests ', 'pass.']);
   });
 
   // ── Diagnostic logging tests ──────────────────────────────────────────────
@@ -1122,7 +1297,8 @@ describe('CodexAppServerAdapter', () => {
     const stream = adapter.start(defaultSessionOpts);
 
     mockClient.onNotification('configWarning', {
-      message: 'Unknown config key: foo',
+      summary: 'Unknown config key: foo',
+      details: null,
     });
     mockClient.onExit(0, null);
 
