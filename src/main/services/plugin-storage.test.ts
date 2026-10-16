@@ -31,6 +31,11 @@ import {
 // electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
 const GLOBAL_BASE = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'plugin-data');
 
+function fsError(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(code), { code });
+}
+const enoent = () => fsError('ENOENT');
+
 describe('plugin-storage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,7 +57,7 @@ describe('plugin-storage', () => {
     });
 
     it('returns undefined when file does not exist', async () => {
-      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      vi.mocked(fsp.readFile).mockRejectedValue(enoent());
       const result = await readKey({ pluginId: 'my-plugin', scope: 'global', key: 'missing' });
       expect(result).toBeUndefined();
       expect(fsp.rename).not.toHaveBeenCalled();
@@ -75,7 +80,7 @@ describe('plugin-storage', () => {
       vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
         if (String(p) === file) return '{not valid json';
         if (String(p) === backupFile) return JSON.stringify({ recovered: true });
-        throw new Error('ENOENT');
+        throw enoent();
       });
       const result = await readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' });
       expect(result).toEqual({ recovered: true });
@@ -88,11 +93,62 @@ describe('plugin-storage', () => {
       const backupFile = `${file}.bak`;
       vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
         if (String(p) === backupFile) return JSON.stringify({ from: 'backup' });
-        throw new Error('ENOENT');
+        throw enoent();
       });
       const result = await readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' });
       expect(result).toEqual({ from: 'backup' });
       expect(fsp.rename).not.toHaveBeenCalled();
+    });
+
+    // Regression: a transiently unreadable storage dir (EACCES/EIO/EBUSY…)
+    // used to read back as "missing", so the canvas hydrated empty and its
+    // autosave overwrote the primary and every backup.
+    it('throws instead of reporting missing when the key is unreadable', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(fsError('EACCES'));
+      await expect(
+        readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' }),
+      ).rejects.toMatchObject({ code: 'EACCES' });
+      expect(fsp.rename).not.toHaveBeenCalled();
+    });
+
+    it('throws when the primary is unreadable and the backup is missing', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p) === file) throw fsError('EIO');
+        throw enoent();
+      });
+      await expect(
+        readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' }),
+      ).rejects.toMatchObject({ code: 'EIO' });
+    });
+
+    it('throws when the primary is missing and the backup is unreadable', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p) === file) throw enoent();
+        throw fsError('EBUSY');
+      });
+      await expect(
+        readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' }),
+      ).rejects.toMatchObject({ code: 'EBUSY' });
+    });
+
+    it('falls back to the backup when the primary is unreadable', async () => {
+      const file = path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json');
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p) === file) throw fsError('EIO');
+        return JSON.stringify({ from: 'backup' });
+      });
+      await expect(
+        readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' }),
+      ).resolves.toEqual({ from: 'backup' });
+    });
+
+    it('treats ENOTDIR as missing', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(fsError('ENOTDIR'));
+      await expect(
+        readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' }),
+      ).resolves.toBeUndefined();
     });
 
     it('uses project-scoped path when scope is project', async () => {
@@ -134,7 +190,7 @@ describe('plugin-storage', () => {
 
       vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
         if (String(p) === file) return JSON.stringify(priorValue);
-        throw new Error('ENOENT');
+        throw enoent();
       });
       vi.mocked(fsp.writeFile).mockImplementation(async (p: any) => {
         if (String(p).endsWith('.bak')) {
@@ -157,7 +213,7 @@ describe('plugin-storage', () => {
 
       vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
         if (String(p) === backupFile) return JSON.stringify(newValue);
-        throw new Error('ENOENT');
+        throw enoent();
       });
       vi.mocked(fsp.writeFile).mockImplementation(async (p: any) => {
         if (String(p) === file) {
