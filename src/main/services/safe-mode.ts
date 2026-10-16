@@ -46,6 +46,11 @@ export function incrementAttempt(enabledPlugins: string[]): void {
   writeMarker(enabledPlugins);
 }
 
+/**
+ * Prompts the user after a startup crash loop. Both choices clear the marker:
+ * the decision is carried by {@link isSafeModeActive}, not by the marker, so a
+ * stale marker must not leak into a "Try Again Normally" launch.
+ */
 export function handleSafeModeDialog(): boolean {
   const marker = readMarker();
   if (marker === null) {
@@ -64,14 +69,30 @@ export function handleSafeModeDialog(): boolean {
     defaultId: 0,
     cancelId: 1,
   });
+  clearMarker();
   if (response === 0) {
     appLog('core:safe-mode', 'warn', 'User chose safe mode — disabling all plugins');
-    clearMarker();
     return true;
   }
+  appLog('core:safe-mode', 'info', 'User chose to try again normally');
   return false;
 }
 
+let safeModeActive = false;
+
+/**
+ * Whether this process is running in safe mode. Main is the single source of
+ * truth; the renderer reads this over IPC instead of re-deriving it from the
+ * startup marker.
+ */
+export function isSafeModeActive(): boolean {
+  return safeModeActive;
+}
+
+/**
+ * Decides safe mode for this launch. Must run before registerAllHandlers(),
+ * which reads CLUBHOUSE_SAFE_MODE when initializing trusted manifests.
+ */
 export function handleSafeModeStartup(forceSafeMode = process.argv.includes('--safe-mode')): boolean {
   const userChoseSafeMode = !forceSafeMode && shouldShowSafeModeDialog() && handleSafeModeDialog();
 
@@ -81,8 +102,10 @@ export function handleSafeModeStartup(forceSafeMode = process.argv.includes('--s
       clearMarker();
     }
     process.env.CLUBHOUSE_SAFE_MODE = '1';
+    safeModeActive = true;
     return true;
   }
 
+  safeModeActive = false;
   return false;
 }

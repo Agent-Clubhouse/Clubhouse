@@ -242,6 +242,7 @@ vi.stubGlobal('clubhouse', {
     gitignoreRemove: asyncNoop,
     gitignoreCheck: async () => false,
     startupMarkerRead: async () => null,
+    isSafeModeActive: async () => false,
     startupMarkerWrite: asyncNoop,
     startupMarkerClear: asyncNoop,
     mkdir: asyncNoop,

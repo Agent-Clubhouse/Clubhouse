@@ -235,13 +235,10 @@ export function getBuiltinProjectPluginIds(experimentalFlags: ExperimentalFlags 
 export async function initializePluginSystem(): Promise<void> {
   const store = usePluginStore.getState();
 
-  // Check safe mode
-  const marker = await window.clubhouse.plugin.startupMarkerRead();
-  if (marker && marker.attempt >= 2) {
+  // Main decides safe mode at startup (crash-loop dialog or --safe-mode).
+  if (await window.clubhouse.plugin.isSafeModeActive()) {
     store.setSafeModeActive(true);
-    rendererLog('core:plugins', 'warn', 'Safe mode active — no plugins will be loaded', {
-      meta: { attempt: marker.attempt, lastEnabledPlugins: marker.lastEnabledPlugins },
-    });
+    rendererLog('core:plugins', 'warn', 'Safe mode active — no plugins will be loaded');
     _pluginSystemReadyResolve();
     return;
   }

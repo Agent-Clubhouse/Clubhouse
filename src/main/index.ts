@@ -198,6 +198,11 @@ app.on('ready', () => {
   // doesn't block the main process with a synchronous `which` call.
   initializeRipgrep();
 
+  // Safe mode: check --safe-mode flag or startup marker crash counter.
+  // Must run before registerAllHandlers(), which reads CLUBHOUSE_SAFE_MODE
+  // when initializing trusted manifests.
+  safeMode.handleSafeModeStartup();
+
   registerAllHandlers();
   buildMenu();
 
@@ -224,9 +229,6 @@ app.on('ready', () => {
       packaged: app.isPackaged,
     },
   });
-
-  // Safe mode: check --safe-mode flag or startup marker crash counter.
-  safeMode.handleSafeModeStartup();
 
   // Generate a per-run CSP nonce before creating any windows.
   // The nonce is injected into index.html and the CSP header so that inline

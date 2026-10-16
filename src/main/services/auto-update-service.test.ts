@@ -49,7 +49,7 @@ describe('auto-update-service', () => {
       expect(handler).toHaveBeenNthCalledWith(1, expect.objectContaining({
         downloadPath: readyStatus.downloadPath,
         version: readyStatus.availableVersion,
-      }), { relaunch: true });
+      }), { relaunch: true, beforeExit: expect.any(Function) });
       expect(handler).toHaveBeenNthCalledWith(2, expect.objectContaining({
         downloadPath: readyStatus.downloadPath,
         version: readyStatus.availableVersion,
@@ -296,6 +296,242 @@ describe('auto-update-service', () => {
       pathExists.mockRestore();
     });
 
+  });
+
+  // #1920: the relaunch handlers call app.exit() themselves, so the apply
+  // attempt marker has to be written before that, not after they return.
+  describe('apply attempt marker on relaunch', () => {
+    const attemptPath = path.join(testUserDataPath, 'update-apply-attempt.json');
+    const pendingPath = path.join(testUserDataPath, 'pending-update-info.json');
+    const mockApp = app as unknown as { exit?: unknown; relaunch?: unknown };
+    let exitSnapshots: Array<{ attemptWritten: boolean; pendingCleared: boolean }>;
+
+    const readyStatus = {
+      state: 'ready' as const,
+      availableVersion: '2.0.0',
+      releaseNotes: null,
+      releaseMessage: null,
+      downloadProgress: 100,
+      downloadPath: '/tmp/Clubhouse.zip',
+      error: null,
+      artifactUrl: 'https://example.com/Clubhouse-2.0.0.zip',
+      applyAttempted: false,
+    };
+
+    function spawnedChild() {
+      const child = new EventEmitter();
+      (child as EventEmitter & { unref: () => void }).unref = vi.fn();
+      queueMicrotask(() => child.emit('spawn'));
+      return child as ReturnType<typeof spawn>;
+    }
+
+    beforeEach(() => {
+      exitSnapshots = [];
+      mockApp.exit = vi.fn(() => {
+        exitSnapshots.push({
+          attemptWritten: fs.existsSync(attemptPath),
+          pendingCleared: !fs.existsSync(pendingPath),
+        });
+      });
+      mockApp.relaunch = vi.fn();
+    });
+
+    afterEach(() => {
+      delete mockApp.exit;
+      delete mockApp.relaunch;
+      vi.mocked(spawn).mockReset();
+      vi.mocked(spawn).mockImplementation(() => new EventEmitter() as ReturnType<typeof spawn>);
+      vi.mocked(execFileSync).mockReset();
+    });
+
+    it.each([
+      ['darwin', 'applyMacUpdate'],
+      ['win32', 'applyWindowsUpdate'],
+      ['linux', 'applyLinuxUpdate'],
+    ] as const)('applyUpdate on %s writes the attempt and clears pending info before the handler exits', async (platform, name) => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue(platform);
+      // Simulate a handler that exits the process: it runs beforeExit, calls
+      // app.exit, and never returns to applyUpdate.
+      const handler = vi.spyOn(platformUpdateHandlers, name).mockImplementation(async (_ctx, options) => {
+        await options.beforeExit?.();
+        (app as unknown as { exit: (code: number) => void }).exit(0);
+        return new Promise<boolean>(() => {});
+      });
+      await writePendingUpdateInfo({
+        version: readyStatus.availableVersion,
+        downloadPath: readyStatus.downloadPath,
+        releaseNotes: null,
+        releaseMessage: null,
+      });
+
+      try {
+        void applyUpdate(readyStatus);
+        await vi.waitFor(() => expect(mockApp.exit).toHaveBeenCalledWith(0));
+
+        expect(exitSnapshots).toEqual([{ attemptWritten: true, pendingCleared: true }]);
+        expect(await readApplyAttempt()).toEqual(expect.objectContaining({
+          version: readyStatus.availableVersion,
+          artifactUrl: readyStatus.artifactUrl,
+        }));
+      } finally {
+        handler.mockRestore();
+        platformSpy.mockRestore();
+      }
+    });
+
+    it('records the attempt once when a handler runs beforeExit and then returns', async () => {
+      const name = process.platform === 'darwin'
+        ? 'applyMacUpdate'
+        : process.platform === 'win32' ? 'applyWindowsUpdate' : 'applyLinuxUpdate';
+      let writtenByBeforeExit = false;
+      const handler = vi.spyOn(platformUpdateHandlers, name).mockImplementation(async (_ctx, options) => {
+        await options.beforeExit?.();
+        writtenByBeforeExit = fs.existsSync(attemptPath);
+        // Remove it so a second (duplicate) write after return would show up.
+        fs.unlinkSync(attemptPath);
+        return true;
+      });
+
+      try {
+        await applyUpdate(readyStatus);
+        expect(writtenByBeforeExit).toBe(true);
+        expect(fs.existsSync(attemptPath)).toBe(false);
+      } finally {
+        handler.mockRestore();
+      }
+    });
+
+    it('applyMacUpdate runs beforeExit before flushing and exiting on relaunch', async () => {
+      const tempDir = path.join(os.tmpdir(), `clubhouse-update-before-exit-${process.pid}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      const getPath = vi.spyOn(app, 'getPath').mockImplementation((name: string) =>
+        name === 'exe' ? '/Applications/Clubhouse.app/Contents/MacOS/Clubhouse' : tempDir,
+      );
+      vi.mocked(execFileSync).mockImplementation(((_cmd: string, args: string[]) => {
+        // unzip -o -q <zip> -d <dir>
+        fs.mkdirSync(path.join(args[args.length - 1], 'Clubhouse.app'), { recursive: true });
+        return '';
+      }) as unknown as typeof execFileSync);
+      vi.mocked(spawn).mockImplementation(spawnedChild);
+      const order: string[] = [];
+      mockApp.exit = vi.fn(() => order.push('exit'));
+
+      try {
+        await applyMacUpdate(
+          { downloadPath: '/tmp/Clubhouse.zip', version: '2.0.0', artifactUrl: null },
+          { relaunch: true, beforeExit: async () => { order.push('beforeExit'); } },
+        );
+        expect(order).toEqual(['beforeExit', 'exit']);
+      } finally {
+        pathExists.mockRestore();
+        getPath.mockRestore();
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('applyMacUpdate does not run beforeExit when the updater fails to spawn', async () => {
+      const tempDir = path.join(os.tmpdir(), `clubhouse-update-before-exit-fail-${process.pid}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      const getPath = vi.spyOn(app, 'getPath').mockImplementation((name: string) =>
+        name === 'exe' ? '/Applications/Clubhouse.app/Contents/MacOS/Clubhouse' : tempDir,
+      );
+      vi.mocked(execFileSync).mockImplementation(((_cmd: string, args: string[]) => {
+        fs.mkdirSync(path.join(args[args.length - 1], 'Clubhouse.app'), { recursive: true });
+        return '';
+      }) as unknown as typeof execFileSync);
+      vi.mocked(spawn).mockImplementation(() => {
+        const child = new EventEmitter();
+        (child as EventEmitter & { unref: () => void }).unref = vi.fn();
+        queueMicrotask(() => child.emit('error', new Error('spawn failed')));
+        return child as ReturnType<typeof spawn>;
+      });
+      const beforeExit = vi.fn(async () => {});
+
+      try {
+        await expect(applyMacUpdate(
+          { downloadPath: '/tmp/Clubhouse.zip', version: '2.0.0', artifactUrl: null },
+          { relaunch: true, beforeExit },
+        )).rejects.toThrow('spawn failed');
+        expect(beforeExit).not.toHaveBeenCalled();
+        expect(mockApp.exit).not.toHaveBeenCalled();
+      } finally {
+        pathExists.mockRestore();
+        getPath.mockRestore();
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('applyWindowsUpdate runs beforeExit after the relaunch process spawns and before exiting', async () => {
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      vi.mocked(spawn).mockImplementation(spawnedChild);
+      const order: string[] = [];
+      mockApp.exit = vi.fn(() => order.push('exit'));
+
+      try {
+        await applyWindowsUpdate(
+          { downloadPath: null, version: '2.0.0', artifactUrl: null },
+          { relaunch: true, beforeExit: async () => { order.push('beforeExit'); } },
+        );
+        expect(spawn).toHaveBeenCalledWith(expect.any(String), ['--processStart', expect.any(String)], expect.any(Object));
+        expect(order).toEqual(['beforeExit', 'exit']);
+      } finally {
+        pathExists.mockRestore();
+      }
+    });
+
+    it('applyWindowsUpdate does not run beforeExit when Update.exe --update fails', async () => {
+      const pathExists = vi.spyOn(fsUtils, 'pathExists').mockResolvedValue(true);
+      vi.mocked(execFileSync).mockImplementation(() => { throw new Error('update failed'); });
+      const beforeExit = vi.fn(async () => {});
+
+      try {
+        await expect(applyWindowsUpdate(
+          { downloadPath: null, version: '2.0.0', artifactUrl: null },
+          { relaunch: true, beforeExit },
+        )).rejects.toThrow('update failed');
+        expect(beforeExit).not.toHaveBeenCalled();
+        expect(mockApp.exit).not.toHaveBeenCalled();
+      } finally {
+        pathExists.mockRestore();
+      }
+    });
+
+    it.each(['deb', 'rpm'])('applyLinuxUpdate (.%s) runs beforeExit before relaunching', async (ext) => {
+      const downloadPath = path.join(os.tmpdir(), `Clubhouse before-exit.${ext}`);
+      fs.writeFileSync(downloadPath, '');
+      const order: string[] = [];
+      mockApp.relaunch = vi.fn(() => order.push('relaunch'));
+      mockApp.exit = vi.fn(() => order.push('exit'));
+
+      try {
+        await applyLinuxUpdate(
+          { downloadPath, version: '2.0.0', artifactUrl: null },
+          { relaunch: true, beforeExit: async () => { order.push('beforeExit'); } },
+        );
+        expect(order).toEqual(['beforeExit', 'relaunch', 'exit']);
+      } finally {
+        fs.unlinkSync(downloadPath);
+      }
+    });
+
+    it('does not run beforeExit on apply-on-quit paths', async () => {
+      const downloadPath = path.join(os.tmpdir(), 'Clubhouse before-exit-quit.deb');
+      fs.writeFileSync(downloadPath, '');
+      const beforeExit = vi.fn(async () => {});
+
+      try {
+        await applyLinuxUpdate(
+          { downloadPath, version: '2.0.0', artifactUrl: null },
+          { relaunch: false, beforeExit },
+        );
+        expect(beforeExit).not.toHaveBeenCalled();
+        expect(mockApp.exit).not.toHaveBeenCalled();
+      } finally {
+        fs.unlinkSync(downloadPath);
+      }
+    });
   });
 
   describe('isNewerVersion', () => {

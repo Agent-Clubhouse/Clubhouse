@@ -9,6 +9,7 @@ const mockPlugin = {
   startupMarkerRead: vi.fn(),
   startupMarkerWrite: vi.fn(),
   startupMarkerClear: vi.fn(),
+  isSafeModeActive: vi.fn(),
   discoverCommunity: vi.fn(),
   storageRead: vi.fn(),
   storageWrite: vi.fn(),
@@ -132,6 +133,7 @@ describe('plugin-loader', () => {
     mockPlugin.startupMarkerRead.mockResolvedValue(null);
     mockPlugin.startupMarkerWrite.mockResolvedValue(undefined);
     mockPlugin.startupMarkerClear.mockResolvedValue(undefined);
+    mockPlugin.isSafeModeActive.mockResolvedValue(false);
     mockPlugin.discoverCommunity.mockResolvedValue([]);
     mockPlugin.storageRead.mockResolvedValue(undefined);
     (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([]);
@@ -191,8 +193,8 @@ describe('plugin-loader', () => {
       expect(store.plugins['bad-plugin'].status).toBe('incompatible');
     });
 
-    it('activates safe mode when startup marker attempt >= 2', async () => {
-      mockPlugin.startupMarkerRead.mockResolvedValue({ timestamp: Date.now(), attempt: 2, lastEnabledPlugins: [] });
+    it('activates safe mode when main reports safe mode active', async () => {
+      mockPlugin.isSafeModeActive.mockResolvedValue(true);
 
       await initializePluginSystem();
 
@@ -202,8 +204,8 @@ describe('plugin-loader', () => {
       expect(mockPlugin.discoverCommunity).not.toHaveBeenCalled();
     });
 
-    it('does not activate safe mode when attempt < 2', async () => {
-      mockPlugin.startupMarkerRead.mockResolvedValue({ timestamp: Date.now(), attempt: 1, lastEnabledPlugins: [] });
+    it('does not activate safe mode when main reports it inactive', async () => {
+      mockPlugin.isSafeModeActive.mockResolvedValue(false);
       mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
         if (req.key === 'external-plugins-enabled') return true;
         return undefined;
@@ -241,8 +243,32 @@ describe('plugin-loader', () => {
       expect(mockPlugin.startupMarkerClear).toHaveBeenCalled();
     });
 
-    it('does not clear startup marker in safe mode', async () => {
+    it('ignores a stale startup marker when main reports safe mode inactive', async () => {
+      // "Try Again Normally": main decided against safe mode, so a leftover
+      // marker must not put the renderer into safe mode.
       mockPlugin.startupMarkerRead.mockResolvedValue({ timestamp: Date.now(), attempt: 3, lastEnabledPlugins: [] });
+      mockPlugin.isSafeModeActive.mockResolvedValue(false);
+
+      await initializePluginSystem();
+
+      expect(usePluginStore.getState().safeModeActive).toBe(false);
+      expect(mockPlugin.startupMarkerWrite).toHaveBeenCalled();
+    });
+
+    it('enters safe mode with no marker when main reports safe mode active', async () => {
+      // "Start in Safe Mode" / --safe-mode: main clears the marker but the
+      // renderer must still skip plugin loading.
+      mockPlugin.startupMarkerRead.mockResolvedValue(null);
+      mockPlugin.isSafeModeActive.mockResolvedValue(true);
+
+      await initializePluginSystem();
+
+      expect(usePluginStore.getState().safeModeActive).toBe(true);
+      expect(mockPlugin.startupMarkerWrite).not.toHaveBeenCalled();
+    });
+
+    it('does not clear startup marker in safe mode', async () => {
+      mockPlugin.isSafeModeActive.mockResolvedValue(true);
 
       await initializePluginSystem();
 
@@ -278,7 +304,7 @@ describe('plugin-loader', () => {
     });
 
     it('does not write startup marker in safe mode', async () => {
-      mockPlugin.startupMarkerRead.mockResolvedValue({ timestamp: Date.now(), attempt: 2, lastEnabledPlugins: [] });
+      mockPlugin.isSafeModeActive.mockResolvedValue(true);
 
       await initializePluginSystem();
 
@@ -1966,7 +1992,7 @@ describe('plugin-loader', () => {
     });
 
     it('resolves in safe mode', async () => {
-      mockPlugin.startupMarkerRead.mockResolvedValue({ timestamp: Date.now(), attempt: 3, lastEnabledPlugins: [] });
+      mockPlugin.isSafeModeActive.mockResolvedValue(true);
 
       await initializePluginSystem();
 

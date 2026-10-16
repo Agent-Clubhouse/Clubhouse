@@ -271,6 +271,7 @@ export const IPC = {
     STARTUP_MARKER_READ: 'plugin:startup-marker-read',
     STARTUP_MARKER_WRITE: 'plugin:startup-marker-write',
     STARTUP_MARKER_CLEAR: 'plugin:startup-marker-clear',
+    SAFE_MODE_ACTIVE: 'plugin:safe-mode-active',
     MKDIR: 'plugin:mkdir',
     UNINSTALL: 'plugin:uninstall',
     LOAD_MODULE_SOURCE: 'plugin:load-module-source',
