@@ -7,6 +7,9 @@ const files = new Map<string, string>();
 let writeGate: { reached: () => void; release: Promise<void> } | null = null;
 /** Errors to throw from readFile for specific paths (simulates EACCES/EBUSY). */
 const readErrors = new Map<string, NodeJS.ErrnoException>();
+/** Directory identities for stat(); paths not listed fall back to path identity. */
+const dirInodes = new Map<string, number>();
+const copiedFiles: Array<[string, string]> = [];
 
 vi.mock('child_process', () => ({
   exec: vi.fn((_cmd: string, _opts: unknown, cb: (...args: unknown[]) => void) => { cb(null, ''); return {}; }),
@@ -39,6 +42,12 @@ vi.mock('fs/promises', () => ({
     if (data !== undefined) files.set(String(dest), data);
     files.delete(String(src));
   }),
+  stat: vi.fn(async (p: string) => {
+    const ino = dirInodes.get(String(p));
+    if (ino === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    return { dev: 1, ino };
+  }),
+  copyFile: vi.fn(async (src: string, dest: string) => { copiedFiles.push([String(src), String(dest)]); }),
   appendFile: vi.fn(async () => undefined),
   mkdir: vi.fn(async () => undefined),
   rm: vi.fn(async () => undefined),
@@ -61,10 +70,12 @@ vi.mock('./agent-system', () => ({ resolveOrchestrator: vi.fn() }));
 import {
   clearAgentConfigCache,
   createDurable,
+  deleteUnregister,
   flushAgentConfig,
   flushAllAgentConfigs,
   listDurable,
   renameDurable,
+  restoreFromBackup,
 } from './agent-config';
 
 const PROJECT_PATH = path.resolve('test-project');
@@ -91,6 +102,8 @@ beforeEach(() => {
   clearAgentConfigCache();
   files.clear();
   readErrors.clear();
+  dirInodes.clear();
+  copiedFiles.length = 0;
   writeGate = null;
 });
 
@@ -213,5 +226,94 @@ describe('agent-config invalid records', () => {
 
     expect(await listDurable(PROJECT_PATH)).toEqual([]);
     expect(files.get(CONFIG_PATH)).toBe('[]');
+  });
+});
+
+describe('agent-config cross-project durable ID collisions', () => {
+  const OTHER_PATH = path.resolve('copied-project');
+  const OTHER_CONFIG = path.join(OTHER_PATH, '.clubhouse', 'agents.json');
+  const OTHER_BACKUP = path.join(OTHER_PATH, '.clubhouse', 'agents.json.bak');
+
+  it('reassigns an ID already loaded by another project and persists it', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+    files.set(OTHER_CONFIG, JSON.stringify([AGENT_A, AGENT_B]));
+
+    const first = await listDurable(PROJECT_PATH);
+    const second = await listDurable(OTHER_PATH);
+
+    expect(first.map((a) => a.id)).toEqual([AGENT_A.id]);
+    const copy = second[0];
+    expect(copy.id).not.toBe(AGENT_A.id);
+    expect(copy.id).toMatch(/^durable_\d+_[a-z0-9]+$/);
+    expect(copy).toMatchObject({ name: AGENT_A.name, color: AGENT_A.color });
+    expect(second[1].id).toBe(AGENT_B.id);
+
+    await flushAllAgentConfigs();
+    expect(diskIds(OTHER_CONFIG)).toEqual([copy.id, AGENT_B.id]);
+    expect(diskIds()).toEqual([AGENT_A.id]);
+  });
+
+  it('keeps the reassignment stable across cache reloads', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+    files.set(OTHER_CONFIG, JSON.stringify([AGENT_A]));
+
+    await listDurable(PROJECT_PATH);
+    const copyId = (await listDurable(OTHER_PATH))[0].id;
+    await flushAllAgentConfigs();
+
+    // The agents.json watcher clears a cache entry after every write.
+    clearAgentConfigCache(PROJECT_PATH);
+    clearAgentConfigCache(OTHER_PATH);
+    expect((await listDurable(OTHER_PATH)).map((a) => a.id)).toEqual([copyId]);
+    expect((await listDurable(PROJECT_PATH)).map((a) => a.id)).toEqual([AGENT_A.id]);
+    await flushAllAgentConfigs();
+    expect(diskIds()).toEqual([AGENT_A.id]);
+    expect(diskIds(OTHER_CONFIG)).toEqual([copyId]);
+  });
+
+  it('does not reassign when the same directory is reached through another path', async () => {
+    const alias = path.resolve('alias-of-test-project');
+    dirInodes.set(PROJECT_PATH, 42);
+    dirInodes.set(alias, 42);
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+    files.set(path.join(alias, '.clubhouse', 'agents.json'), JSON.stringify([AGENT_A]));
+
+    await listDurable(PROJECT_PATH);
+    expect((await listDurable(alias)).map((a) => a.id)).toEqual([AGENT_A.id]);
+  });
+
+  it('releases ownership when the owning project removes the agent', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+    files.set(OTHER_CONFIG, JSON.stringify([AGENT_A]));
+
+    await listDurable(PROJECT_PATH);
+    await deleteUnregister(PROJECT_PATH, AGENT_A.id);
+    expect((await listDurable(OTHER_PATH)).map((a) => a.id)).toEqual([AGENT_A.id]);
+  });
+
+  it('gives the reassigned agent its own icon file', async () => {
+    const withIcon = { ...AGENT_A, icon: `${AGENT_A.id}.png` };
+    files.set(CONFIG_PATH, JSON.stringify([withIcon]));
+    files.set(OTHER_CONFIG, JSON.stringify([withIcon]));
+
+    await listDurable(PROJECT_PATH);
+    const copy = (await listDurable(OTHER_PATH))[0];
+    expect(copy.icon).toBe(`${copy.id}.png`);
+    expect(copiedFiles.map(([src, dest]) => [path.basename(src), path.basename(dest)]))
+      .toEqual([[`${AGENT_A.id}.png`, `${copy.id}.png`]]);
+  });
+
+  it('reassigns foreign IDs restored from a backup', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A]));
+    files.set(OTHER_CONFIG, JSON.stringify([AGENT_B]));
+    files.set(OTHER_BACKUP, JSON.stringify([AGENT_A, AGENT_B]));
+
+    await listDurable(PROJECT_PATH);
+    const result = await restoreFromBackup(OTHER_PATH);
+    expect(result.restoredCount).toBe(1);
+    const restoredIds = result.agents.map((a) => a.id);
+    expect(restoredIds[0]).toBe(AGENT_B.id);
+    expect(restoredIds[1]).not.toBe(AGENT_A.id);
+    expect(diskIds(OTHER_CONFIG)).toEqual(restoredIds);
   });
 });

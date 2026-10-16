@@ -82,7 +82,9 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
         } else {
           // Always update projectId — the same agents.json may be loaded
           // under a different project store ID when a project is re-added
-          // or when multiple store entries share the same path.
+          // or when multiple store entries share the same path. Distinct
+          // project directories never share an ID: the main process
+          // reassigns a durable ID already loaded by another project.
           // Re-hydrate `model` too: agents.json is the source of truth for it,
           // and a store entry that lost the value (e.g. rebuilt on spawn) would
           // otherwise stay stale for the lifetime of the window.
