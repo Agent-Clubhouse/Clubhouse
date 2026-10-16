@@ -42,11 +42,13 @@ describe('ExperimentalSettingsView', () => {
   it('renders feature toggles', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
-      expect(screen.getByText('Assistant')).toBeInTheDocument();
+      expect(screen.getByText('Structured Mode')).toBeInTheDocument();
     });
-    expect(screen.getByText('Agent Queue')).toBeInTheDocument();
-    expect(screen.getByText('Structured Mode')).toBeInTheDocument();
     expect(screen.getByText('Theme Gradients & Fonts')).toBeInTheDocument();
+    // Removed features no longer have toggles
+    expect(screen.queryByText('Assistant')).not.toBeInTheDocument();
+    expect(screen.queryByText('Agent Queue')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sessions')).not.toBeInTheDocument();
   });
 
   it('renders the Goobers feature toggle', async () => {
@@ -65,21 +67,21 @@ describe('ExperimentalSettingsView', () => {
   });
 
   it('toggles a feature and saves', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({ assistant: false });
+    mockGetExperimentalSettings.mockResolvedValue({ structuredMode: false });
     const { container } = render(<ExperimentalSettingsView />);
 
     await waitFor(() => {
-      expect(screen.getByText('Assistant')).toBeInTheDocument();
+      expect(screen.getByText('Structured Mode')).toBeInTheDocument();
     });
 
     // The Toggle component renders a button with a rounded-full class
-    // First toggle is the Assistant feature
+    // First toggle is the Structured Mode feature
     const toggleBtn = container.querySelector('button.rounded-full') as HTMLElement;
     expect(toggleBtn).toBeInTheDocument();
     fireEvent.click(toggleBtn);
 
     await waitFor(() => {
-      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ assistant: true });
+      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ structuredMode: true });
     });
   });
 

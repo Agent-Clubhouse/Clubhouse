@@ -28,9 +28,6 @@ export async function captureSessionState(
 
   for (const [agentId, reg] of all) {
     if (reg.runtime !== 'pty') continue;
-    // Assistant agents are ephemeral — don't persist or resume them
-    if (isAssistantAgent(agentId)) continue;
-
     const provider = getProvider(reg.orchestrator);
     if (!provider) continue;
 

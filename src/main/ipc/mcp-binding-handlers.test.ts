@@ -39,18 +39,6 @@ vi.mock('../services/clubhouse-mcp/tools/group-project-tools', () => ({
   registerGroupProjectTools: vi.fn(),
 }));
 
-vi.mock('../services/clubhouse-mcp/tools/agent-queue-tools', () => ({
-  registerAgentQueueTools: vi.fn(),
-}));
-
-vi.mock('../services/clubhouse-mcp/tools/assistant-tools', () => ({
-  registerAssistantTools: vi.fn(),
-}));
-
-vi.mock('../services/clubhouse-mcp/canvas-command', () => ({
-  registerCanvasCommandHandler: vi.fn(),
-}));
-
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -198,12 +186,14 @@ describe('SEC-06: MCP binding IPC authorization', () => {
       expect(() => handler(fakeEvent, 'agent-1')).toThrow();
     });
 
-    it('allows bind with agent-queue targetKind', () => {
+    it('rejects the removed agent-queue and assistant targetKinds', () => {
       mockGet.mockReturnValue(undefined);
       const handler = getHandler(IPC.MCP_BINDING.BIND);
-      const target = { targetId: 'aq_123', targetKind: 'agent-queue', label: 'My Queue' };
-      expect(() => handler(fakeEvent, 'agent-1', target)).not.toThrow();
-      expect(bindingManager.bind).toHaveBeenCalledWith('agent-1', target);
+      for (const targetKind of ['agent-queue', 'assistant']) {
+        const target = { targetId: 'x_123', targetKind, label: 'Removed' };
+        expect(() => handler(fakeEvent, 'agent-1', target)).toThrow(/Invalid targetKind/);
+      }
+      expect(bindingManager.bind).not.toHaveBeenCalled();
     });
 
     it('allows bind with group-project targetKind', () => {

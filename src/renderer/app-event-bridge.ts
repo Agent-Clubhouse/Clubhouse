@@ -134,7 +134,7 @@ function initWindowListeners(): (() => void)[] {
     }),
   );
 
-  // Navigate to plugin settings when requested by the assistant
+  // Navigate to plugin settings when requested by the main process
   removers.push(
     window.clubhouse.window.onNavigateToPluginSettings((pluginId?: string) => {
       const uiStore = useUIStore.getState();

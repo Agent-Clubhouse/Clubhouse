@@ -159,7 +159,6 @@ async function handleToolsCall(
       const binding = bindings.find(b => {
         const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse'
           : b.targetKind === 'group-project' ? 'group'
-          : b.targetKind === 'agent-queue' ? 'queue'
           : b.targetKind;
         return expectedPrefix === parsed.prefix && buildToolKey(b) === parsed.toolKey;
       });

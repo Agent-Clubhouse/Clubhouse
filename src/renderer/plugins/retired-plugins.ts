@@ -5,7 +5,10 @@ import type { ExplorerTab } from '../../shared/types';
  * still name them in persisted state (enabled-plugin lists, the last explorer
  * tab), so that state is scrubbed on load rather than left to dangle.
  */
-export const RETIRED_BUILTIN_PLUGIN_IDS: ReadonlySet<string> = new Set(['hub']);
+export const RETIRED_BUILTIN_PLUGIN_IDS: ReadonlySet<string> = new Set(['hub', 'sessions', 'agent-queue']);
+
+/** Experimental flags for features that were removed rather than graduated. */
+export const RETIRED_EXPERIMENTAL_FLAGS: readonly string[] = ['assistant', 'agentQueue', 'sessions'];
 
 const FALLBACK_EXPLORER_TAB: ExplorerTab = 'agents';
 
@@ -29,11 +32,12 @@ function pluginIdForTab(tab: ExplorerTab): string | null {
   return null;
 }
 
-/** Map a tab that points at a retired built-in plugin to the Agents tab. */
+/** Map a tab that points at a retired built-in plugin, or the removed Assistant, to the Agents tab. */
 export function migrateRetiredExplorerTab(
   tab: ExplorerTab,
   isRegistered: (pluginId: string) => boolean = () => false,
 ): ExplorerTab {
+  if (tab === 'assistant') return FALLBACK_EXPLORER_TAB;
   const pluginId = pluginIdForTab(tab);
   if (pluginId && RETIRED_BUILTIN_PLUGIN_IDS.has(pluginId) && !isRegistered(pluginId)) {
     return FALLBACK_EXPLORER_TAB;

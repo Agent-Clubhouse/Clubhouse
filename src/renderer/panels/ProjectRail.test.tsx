@@ -24,9 +24,8 @@ const mockAnnexClient = {
   retry: vi.fn(),
 };
 
-// Mock the app IPC surface used by the rail's experimental-flag fetch.
-// Default: assistant disabled, so the rail renders the Help button (the
-// pre-experiment default). Tests can override per-case via vi.spyOn.
+// Mock the app IPC surface (experimental flags). The rail no longer reads any
+// flag, but tests seed a stale `assistant` flag to prove it is ignored.
 const mockApp = {
   getExperimentalSettings: vi.fn(() => Promise.resolve({} as Record<string, boolean>)),
 };
@@ -820,17 +819,16 @@ describe('ProjectRail annex-gated plugins', () => {
     useUIStore.setState({ activeHostId: 'sat-1' });
 
     render(<ProjectRail />);
-    // With the assistant flag off (default), the rail shows the Help button.
     expect(screen.getByTestId('nav-help')).toBeInTheDocument();
     expect(screen.getByTestId('nav-settings')).toBeInTheDocument();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Experimental: assistant feature flag tests
+// Help button (the experimental Assistant that used to replace it was removed)
 // ---------------------------------------------------------------------------
 
-describe('ProjectRail assistant feature flag gating', () => {
+describe('ProjectRail Help button', () => {
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', class {
       constructor(_cb: () => void) {}
@@ -841,30 +839,10 @@ describe('ProjectRail assistant feature flag gating', () => {
     mockApp.getExperimentalSettings.mockReset();
   });
 
-  it('renders the Help button (and not Assistant) when experimental.assistant is off', async () => {
-    mockApp.getExperimentalSettings.mockResolvedValue({});
-    render(<ProjectRail />);
-    await vi.waitFor(() => {
-      expect(screen.getByTestId('nav-help')).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId('nav-assistant')).not.toBeInTheDocument();
-  });
-
-  it('renders the Assistant button (and not Help) when experimental.assistant is on', async () => {
+  it('always renders Help, even with a stale experimental.assistant flag', async () => {
     mockApp.getExperimentalSettings.mockResolvedValue({ assistant: true });
     render(<ProjectRail />);
-    await vi.waitFor(() => {
-      expect(screen.getByTestId('nav-assistant')).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId('nav-help')).not.toBeInTheDocument();
-  });
-
-  it('falls back to Help when the experimental settings IPC fails', async () => {
-    mockApp.getExperimentalSettings.mockRejectedValue(new Error('IPC down'));
-    render(<ProjectRail />);
-    await vi.waitFor(() => {
-      expect(screen.getByTestId('nav-help')).toBeInTheDocument();
-    });
+    expect(await screen.findByTestId('nav-help')).toBeInTheDocument();
     expect(screen.queryByTestId('nav-assistant')).not.toBeInTheDocument();
   });
 
@@ -874,14 +852,6 @@ describe('ProjectRail assistant feature flag gating', () => {
     const helpBtn = await screen.findByTestId('nav-help');
     fireEvent.click(helpBtn);
     expect(useUIStore.getState().explorerTab).toBe('help');
-  });
-
-  it('Assistant button toggles assistant mode when flag is on', async () => {
-    mockApp.getExperimentalSettings.mockResolvedValue({ assistant: true });
-    render(<ProjectRail />);
-    const assistantBtn = await screen.findByTestId('nav-assistant');
-    fireEvent.click(assistantBtn);
-    expect(useUIStore.getState().explorerTab).toBe('assistant');
   });
 });
 
@@ -895,14 +865,14 @@ describe('ProjectRail exitSettingsAndNavigate', () => {
     resetStores();
   });
 
-  it('clicking the active project while in assistant mode restores the previous tab', () => {
+  it('clicking the active project while in help mode restores the previous tab', () => {
     useProjectStore.setState({
       projects: [makeProject({ id: 'p1', name: 'Alpha' })],
       activeProjectId: 'p1',
       gitStatus: { p1: true },
     });
     useUIStore.setState({
-      explorerTab: 'assistant',
+      explorerTab: 'help',
       previousExplorerTab: 'agents',
       showHome: true,
     });
@@ -916,7 +886,7 @@ describe('ProjectRail exitSettingsAndNavigate', () => {
     expect(useProjectStore.getState().activeProjectId).toBe('p1');
   });
 
-  it('clicking a different project while in assistant mode exits assistant and switches project', () => {
+  it('clicking a different project while in help mode exits help and switches project', () => {
     useProjectStore.setState({
       projects: [
         makeProject({ id: 'p1', name: 'Alpha' }),
@@ -926,7 +896,7 @@ describe('ProjectRail exitSettingsAndNavigate', () => {
       gitStatus: { p1: true, p2: true },
     });
     useUIStore.setState({
-      explorerTab: 'assistant',
+      explorerTab: 'help',
       previousExplorerTab: 'agents',
       showHome: true,
     });

@@ -1,9 +1,8 @@
-import React, { useMemo, useCallback, useEffect } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useCommandPaletteStore } from '../../stores/commandPaletteStore';
 import { CommandPaletteInput } from './CommandPaletteInput';
 import { CommandPaletteList } from './CommandPaletteList';
 import { useCommandSource } from './use-command-source';
-import { syncCommands } from './command-palette-registry';
 import { fuzzyFilter, FuzzyFilterItem } from './fuzzy-match';
 import { CommandItem } from './command-registry';
 
@@ -25,8 +24,6 @@ export function CommandPalette() {
   const isRecent = useCommandPaletteStore((s) => s.isRecent);
   const allCommands = useCommandSource();
 
-  // Sync commands to imperative registry for IPC access (assistant MCP tools)
-  useEffect(() => { syncCommands(allCommands); }, [allCommands]);
 
   // Filter by mode
   const modeFiltered = useMemo(() => {

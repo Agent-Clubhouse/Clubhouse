@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { PERSONA_TEMPLATES, type PersonaTemplate } from '../assistant/content/personas';
+import { PERSONA_TEMPLATES, type PersonaTemplate } from '../personas';
 import { getAgentColorHex } from '../../../shared/name-generator';
 
 /** SVG icons for each persona — simple role-suggestive shapes */

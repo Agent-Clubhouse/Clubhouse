@@ -63,7 +63,7 @@ export function registerAgentHandlers(): void {
         // Inject persona instructions into the agent's worktree
         if (persona && config.worktreePath) {
           try {
-            const { getPersonaTemplate } = await import('../../renderer/features/assistant/content/personas');
+            const { getPersonaTemplate } = await import('../../renderer/features/personas');
             const template = getPersonaTemplate(persona);
             if (template) {
               const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);

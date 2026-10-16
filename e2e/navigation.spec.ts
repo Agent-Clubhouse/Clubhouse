@@ -64,12 +64,7 @@ async function getTitleBarText(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  // Pre-seed experimental flags before launch — the rail's Assistant button
-  // is gated on `experimental.assistant` and only reads the flag once on
-  // mount, so a post-mount IPC write would not make the button appear.
-  ({ electronApp, window } = await launchApp({
-    experimental: { assistant: true, agentQueue: true },
-  }));
+  ({ electronApp, window } = await launchApp());
 
   // Expose Zustand stores globally so tests can inspect state via evaluate().
   await window.evaluate(() => {
@@ -182,22 +177,22 @@ test.describe('Explorer Tabs', () => {
     expect(title).not.toContain('Settings');
   });
 
-  test('assistant toggle opens assistant view', async () => {
-    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
-    await assistantBtn.click();
+  test('help toggle opens help view', async () => {
+    const helpBtn = window.locator('[data-testid="nav-help"]');
+    await helpBtn.click();
     await window.waitForTimeout(500);
 
     const title = await getTitleBarText();
-    expect(title).toContain('Assistant');
+    expect(title).toContain('Help');
   });
 
-  test('assistant toggle again returns to previous tab', async () => {
-    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
-    await assistantBtn.click();
+  test('help toggle again returns to previous tab', async () => {
+    const helpBtn = window.locator('[data-testid="nav-help"]');
+    await helpBtn.click();
     await window.waitForTimeout(500);
 
     const title = await getTitleBarText();
-    expect(title).not.toContain('Assistant');
+    expect(title).not.toContain('Help');
   });
 });
 
@@ -436,23 +431,23 @@ test.describe('Settings Context', () => {
     expect(title).not.toContain('Settings');
   });
 
-  test('opening assistant then clicking a project exits assistant', async () => {
-    // Open assistant
-    const assistantBtn = window.locator('[data-testid="nav-assistant"]');
-    await assistantBtn.click();
+  test('opening help then clicking a project exits help', async () => {
+    // Open help
+    const helpBtn = window.locator('[data-testid="nav-help"]');
+    await helpBtn.click();
     await window.waitForTimeout(500);
 
     let title = await getTitleBarText();
-    expect(title).toContain('Assistant');
+    expect(title).toContain('Help');
 
-    // Click project-a — should exit assistant
+    // Click project-a — should exit help
     const projA = window.locator('[title="project-a"]').first();
     await projA.click();
     await window.waitForTimeout(500);
 
     title = await getTitleBarText();
     expect(title).toContain('project-a');
-    expect(title).not.toContain('Assistant');
+    expect(title).not.toContain('Help');
   });
 });
 

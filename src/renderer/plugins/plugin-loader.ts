@@ -12,7 +12,7 @@ import { rendererLog } from './renderer-logger';
 import { dynamicImportModule } from './dynamic-import';
 import { buildPluginModuleUrl } from '../../shared/plugin-protocol-url';
 import { registerTheme, unregisterTheme } from '../themes';
-import { stripRetiredPluginIds } from './retired-plugins';
+import { RETIRED_EXPERIMENTAL_FLAGS, stripRetiredPluginIds } from './retired-plugins';
 
 const activeContexts = new Map<string, PluginContext>();
 
@@ -380,8 +380,8 @@ export async function initializePluginSystem(): Promise<void> {
     // Migration: canvas was previously auto-enabled in-memory via the
     // experimental 'canvas' flag but never persisted to the app-enabled
     // storage.  v0.38 removed the flag path, so existing users who had
-    // canvas enabled lost their enablement.  Sub-plugins (group-project,
-    // agent-queue) require MCP which is configured via MCP settings.
+    // canvas enabled lost their enablement.  Sub-plugins (group-project)
+    // require MCP which is configured via MCP settings.
     if (experimentalFlags && experimentalFlags.canvas) {
       const migrationState = usePluginStore.getState();
       if (!migrationState.appEnabled.includes('canvas')) {
@@ -402,8 +402,9 @@ export async function initializePluginSystem(): Promise<void> {
     // Clean up stale experimental flags in a single pass.
     // - 'canvas': migrated to app-enabled above
     // - 'mcp': promoted to regular setting (mcp-settings.json)
+    // - retired features (Assistant, Agent Queue, Sessions): removed outright
     {
-      const staleKeys = ['canvas', 'mcp'];
+      const staleKeys = ['canvas', 'mcp', ...RETIRED_EXPERIMENTAL_FLAGS];
       const keysToRemove = staleKeys.filter((k) => experimentalFlags && k in experimentalFlags);
       if (keysToRemove.length > 0) {
         try {

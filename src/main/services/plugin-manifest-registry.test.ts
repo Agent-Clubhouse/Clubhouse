@@ -151,7 +151,7 @@ describe('plugin-manifest-registry', () => {
     expect(getManifest('browser')).toBeDefined();
     expect(getManifest('git')).toBeDefined();
     expect(getManifest('canvas')).toBeDefined();
-    expect(getManifest('sessions')).toBeDefined();
+    expect(getManifest('sessions')).toBeUndefined();
     expect(getManifest('group-project')).toBeDefined();
   });
 

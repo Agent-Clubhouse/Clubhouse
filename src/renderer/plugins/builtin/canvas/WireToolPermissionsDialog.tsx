@@ -12,7 +12,6 @@ const TOOL_SUFFIXES: Record<string, string[]> = {
   agent: ['send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent'],
   browser: ['navigate', 'screenshot', 'get_console', 'click', 'type', 'evaluate', 'get_page_content', 'get_accessibility_tree'],
   'group-project': [...GROUP_PROJECT_TOOL_SUFFIXES],
-  'agent-queue': ['invoke', 'get_output', 'list', 'cancel', 'get_queue_info'],
   terminal: [],
 };
 
