@@ -66,7 +66,7 @@ export function CommandPaletteInput({ listboxId, activeOptionId }: Props) {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={PLACEHOLDERS[mode]}
-        className="flex-1 min-w-0 bg-transparent text-ctp-text text-[13.5px] outline-none placeholder:text-ctp-overlay0"
+        className="flex-1 min-w-0 bg-transparent text-ctp-text text-[13.5px] focus-ring placeholder:text-ctp-overlay0"
         spellCheck={false}
         autoComplete="off"
       />
