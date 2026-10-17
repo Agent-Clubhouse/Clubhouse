@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
-import { settingsButton, settingsInput } from './SettingsLayout';
+import { SettingsSection, SettingsField, settingsButton, settingsInput } from './SettingsLayout';
 import type { TelemetryLevel } from '../../../shared/telemetry/attributes';
 import type {
   OtlpHeaderInput,
@@ -91,8 +91,8 @@ export const WORKBOOK_DOCS_URL = 'https://github.com/Agent-Clubhouse/Clubhouse/b
 
 const inputClass = `${settingsInput} w-full`;
 const buttonClass = settingsButton.ghost;
-const panelClass = 'mt-[22px] pt-3 border-t border-surface-0 space-y-3';
-const panelTitleClass = 'text-[13px] font-semibold text-ctp-text';
+const panelClass = 'mt-[22px] space-y-3';
+const panelTitleClass = 'text-[13px] font-semibold text-ctp-text mb-1';
 const rowLabelClass = 'text-[13px] text-ctp-text';
 const linkClass = 'text-xs text-ctp-link hover:underline cursor-pointer';
 
@@ -212,8 +212,8 @@ export function TelemetrySettingsSection() {
     error?.panel === panel ? <p className="text-xs text-ctp-error mt-2" role="alert">{error.message}</p> : null;
 
   return (
-    <div className="mt-8" data-testid="telemetry-settings">
-      <h2 className="text-[15px] font-semibold text-ctp-text mb-1">Telemetry export</h2>
+    <div data-testid="telemetry-settings">
+      <SettingsSection title="Telemetry export" />
       <p className="text-xs text-ctp-overlay1 mb-1">
         Send anonymized diagnostics to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing is sent to the Clubhouse maintainers. Off by default.
       </p>
@@ -231,15 +231,14 @@ export function TelemetrySettingsSection() {
       {/* Azure Application Insights */}
       <section className={panelClass} aria-label="Azure Application Insights">
         <div className={panelTitleClass}>Azure Application Insights</div>
-        <div className="flex items-center justify-between">
-          <div className={rowLabelClass}>Send telemetry</div>
+        <SettingsField label="Send telemetry">
           <Toggle
             ariaLabel="Send telemetry to Application Insights"
             checked={azureOn}
             disabled={!status.azure.configured && !azureOn}
             onChange={(v) => void handleResult('azure', 'azure', (ack) => api().setEnabled('azure', v, ack))}
           />
-        </div>
+        </SettingsField>
         <div>
           <label className="block text-xs text-ctp-overlay1 mb-1" htmlFor="telemetry-cs">Connection string</label>
           {status.azure.configured && !replacingCs ? (
@@ -301,15 +300,14 @@ export function TelemetrySettingsSection() {
           <div className={panelTitleClass}>Other destinations</div>
           <div className="text-xs text-ctp-overlay1 mt-px">Send to an OpenTelemetry (OTLP) backend, on its own or alongside Application Insights.</div>
         </div>
-        <div className="flex items-center justify-between">
-          <div className={rowLabelClass}>Send to OTLP</div>
+        <SettingsField label="Send to OTLP">
           <Toggle
             ariaLabel="Send telemetry to OTLP"
             checked={otlpOn}
             disabled={!status.otlp.configured && !otlpOn}
             onChange={(v) => void handleResult('otlp', 'otlp', (ack) => api().setEnabled('otlp', v, ack))}
           />
-        </div>
+        </SettingsField>
         <div>
           <label className="block text-xs text-ctp-overlay1 mb-1" htmlFor="telemetry-otlp-endpoint">Endpoint</label>
           <input
@@ -391,15 +389,14 @@ export function TelemetrySettingsSection() {
           <p className="text-xs text-ctp-overlay1">
             User activity and errors can also go to the Clubhouse developer, so feedback reports come with context. Once you confirm the developer&apos;s host, this sends only while Feedback is connected and another destination here is on. Switch it off to stop it until you switch it back on.
           </p>
-          <div className="flex items-center justify-between">
-            <div className={rowLabelClass}>Send telemetry</div>
+          <SettingsField label="Send telemetry">
             <Toggle
               ariaLabel="Send telemetry to the Clubhouse developer"
               checked={framebriar.enabled}
               disabled={!framebriar.configured && !framebriar.enabled}
               onChange={(v) => void handleResult('framebriar', 'framebriar', (ack) => api().setEnabled('framebriar', v, ack))}
             />
-          </div>
+          </SettingsField>
           {!framebriar.configured && (
             <p className="text-xs text-ctp-subtext1" data-testid="telemetry-framebriar-needs-feedback">Connect Feedback in Settings, Feedback first.</p>
           )}

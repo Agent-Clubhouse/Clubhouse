@@ -52,10 +52,11 @@ export function PairedSatelliteList({ satellites }: Props) {
         >
           <div className="flex items-center gap-2.5 flex-1 min-w-0">
             <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-              style={{ backgroundColor: getAgentColorHex(sat.color) }}
+              className="w-[18px] h-[18px] rounded flex items-center justify-center text-xs font-bold leading-none shrink-0"
+              style={{ backgroundColor: `${getAgentColorHex(sat.color)}33`, color: getAgentColorHex(sat.color) }}
+              aria-hidden="true"
             >
-              {sat.alias.slice(0, 2).toUpperCase()}
+              {sat.alias.slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0">
               <div className="text-[13px] text-ctp-text truncate">{sat.alias}</div>

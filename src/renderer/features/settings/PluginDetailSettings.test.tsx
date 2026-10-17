@@ -219,4 +219,38 @@ describe('PluginDetailSettings', () => {
     render(<PluginDetailSettings />);
     expect(screen.getByTestId('plugin-settings-renderer')).toBeInTheDocument();
   });
+
+  describe('status lines', () => {
+    const withEntry = (extra: Record<string, unknown>, manifest: Record<string, unknown> = {}) => {
+      useUIStore.setState({ pluginSettingsId: 'test-plugin' });
+      usePluginStore.setState({
+        plugins: {
+          'test-plugin': {
+            manifest: { id: 'test-plugin', name: 'Test Plugin', version: '1.0.0', scope: 'dual', permissions: [], ...manifest },
+            ...extra,
+          },
+        } as any,
+      });
+    };
+
+    it('lets you approve pending permissions from the detail page', () => {
+      withEntry({ status: 'pending-approval', pendingPermissions: ['terminal'] });
+      render(<PluginDetailSettings />);
+      expect(screen.getByTestId('pending-approval-test-plugin')).toHaveTextContent('terminal');
+      expect(screen.getByTestId('approve-btn-test-plugin')).toBeInTheDocument();
+      expect(screen.getByTestId('reject-btn-test-plugin')).toBeInTheDocument();
+    });
+
+    it('says "Error" for an errored plugin with no message', () => {
+      withEntry({ status: 'errored' });
+      render(<PluginDetailSettings />);
+      expect(screen.getByTestId('plugin-error-test-plugin')).toHaveTextContent('Error');
+    });
+
+    it('shows the plugin API version in the meta line', () => {
+      withEntry({}, { engine: { api: 0.8 } });
+      render(<PluginDetailSettings />);
+      expect(screen.getByTestId('plugin-detail-meta')).toHaveTextContent('Plugin API 0.8');
+    });
+  });
 });

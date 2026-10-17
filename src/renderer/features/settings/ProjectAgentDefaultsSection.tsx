@@ -91,7 +91,7 @@ function ConfirmDialog({
   onCancel,
   confirming,
   confirmLabel = 'Remove',
-  confirmingLabel = 'Removing...',
+  confirmingLabel = 'Removing…',
   testId,
 }: {
   open: boolean;
@@ -165,7 +165,7 @@ function OrphanBanner({
       >
         {orphanedPluginIds.length > 1 && (
           <button type="button" onClick={handleCleanAll} disabled={cleaning !== null} className={settingsButton.danger}>
-            {cleaning ? 'Cleaning...' : 'Clean all'}
+            {cleaning ? 'Cleaning…' : 'Clean all'}
           </button>
         )}
       </SettingsField>
@@ -173,7 +173,7 @@ function OrphanBanner({
         <div key={id} className="flex items-center gap-4 h-[34px] pl-5 border-t border-surface-0">
           <span className="flex-1 min-w-0 truncate text-xs font-mono text-ctp-text">{id}</span>
           <button type="button" onClick={() => handleClean(id)} disabled={cleaning !== null} className={settingsButton.ghost}>
-            {cleaning === id ? 'Cleaning...' : 'Clean up'}
+            {cleaning === id ? 'Cleaning…' : 'Clean up'}
           </button>
         </div>
       ))}
@@ -454,7 +454,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               Reset to defaults
             </button>
             <button type="button" onClick={handleSave} disabled={!dirty || saving} className={settingsButton.primary}>
-              {saving ? 'Saving...' : 'Save defaults'}
+              {saving ? 'Saving…' : 'Save defaults'}
             </button>
           </>
         }
@@ -648,7 +648,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               setInstructions(e.target.value);
               markDirty();
             }}
-            placeholder="Default CLAUDE.md content for new agents..."
+            placeholder="Default CLAUDE.md content for new agents…"
             className={`${settingsTextArea} h-28`}
             spellCheck={false}
           />
@@ -795,7 +795,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         onCancel={() => setShowResetConfirm(false)}
         confirming={resetting}
         confirmLabel="Reset"
-        confirmingLabel="Resetting..."
+        confirmingLabel="Resetting…"
         testId="reset-defaults-confirm"
       />
 

@@ -137,7 +137,7 @@ export function ConfigChangesDialog() {
     item.category === 'instructions' || item.category === 'skills' || item.category === 'agent-templates';
 
   const title = loading
-    ? undefined
+    ? 'Checking for config changes'
     : items.length === 0
       ? 'No config changes detected'
       : 'Config changes detected';

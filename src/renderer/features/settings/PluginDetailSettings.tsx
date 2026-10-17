@@ -11,6 +11,7 @@ import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared
 import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, settingsHelp } from './SettingsLayout';
 import { pluginMetaText, usePluginEnableToggle } from './PluginListSettings';
+import { PluginStatusLines } from './PluginStatusLines';
 
 const CROSS_PROJECT_PERMISSIONS: readonly PluginPermission[] = [
   'agent-config.cross-project',
@@ -128,7 +129,9 @@ export function PluginDetailSettings() {
 
   const enabled = isEnabled(pluginSettingsId);
   const meta = pluginMetaText(entry);
-  const description = [meta, entry.manifest.description].filter(Boolean).join(' · ');
+  const apiVersion = entry.manifest.engine?.api;
+  const description = [meta, apiVersion !== undefined ? `Plugin API ${apiVersion}` : null, entry.manifest.description]
+    .filter(Boolean).join(' · ');
 
   return (
     <SettingsPage
@@ -146,6 +149,10 @@ export function PluginDetailSettings() {
         </span>
       }
     >
+      <div className="mt-1" data-testid="plugin-detail-status">
+        <PluginStatusLines entry={entry} />
+      </div>
+
       <SettingsSection title="Settings">
         {isDeclarative && entry.manifest.contributes?.settings && (
           <PluginSettingsRenderer
@@ -157,7 +164,13 @@ export function PluginDetailSettings() {
 
         {isCustom && mod?.SettingsPanel && (() => {
           const ctx = getActiveContext(pluginSettingsId, activeProjectId || undefined);
-          if (!ctx) return <p className={`${settingsHelp} py-2.5 border-t border-surface-0`}>Turn the plugin on to change its settings.</p>;
+          if (!ctx) {
+            return (
+              <p className={`${settingsHelp} py-2.5 border-t border-surface-0`}>
+                {enabled ? "Settings aren't available because the plugin didn't start." : 'Turn the plugin on to change its settings.'}
+              </p>
+            );
+          }
           const api = createPluginAPI(ctx, undefined, entry.manifest);
           const SettingsPanel = mod.SettingsPanel!;
           return (

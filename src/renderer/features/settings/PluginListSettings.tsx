@@ -3,14 +3,13 @@ import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
-import { activatePlugin, deactivatePlugin, refreshCommunityPlugins, approvePluginPermissions, rejectPluginPermissions } from '../../plugins/plugin-loader';
+import { activatePlugin, deactivatePlugin, refreshCommunityPlugins } from '../../plugins/plugin-loader';
 import { CANVAS_SUB_PLUGIN_IDS } from '../../plugins/builtin';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import type { PluginRegistryEntry } from '../../../shared/plugin-types';
-import { PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
-import { DEPRECATED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
+import { PluginStatusLines } from './PluginStatusLines';
 import { showConfirmDialog } from '../../plugins/PluginDialog';
 import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
@@ -139,13 +138,6 @@ export function usePluginEnableToggle() {
 
   return { isEnabled, toggle };
 }
-
-/** Phase label for inline update progress. */
-const UPDATE_PHASE_LABELS: Record<string, string> = {
-  downloading: 'Downloading…',
-  installing: 'Installing…',
-  reloading: 'Reloading…',
-};
 
 function GearIcon() {
   return (
@@ -364,10 +356,6 @@ function PluginRow({
   onToggle,
   onOpenSettings,
   onUninstall,
-  onUpdate,
-  updateVersion,
-  updatePhase,
-  updateError,
   projectPath,
 }: {
   entry: PluginRegistryEntry;
@@ -375,27 +363,12 @@ function PluginRow({
   onToggle: () => void;
   onOpenSettings: () => void;
   onUninstall?: () => void;
-  onUpdate?: () => void;
-  updateVersion?: string;
-  updatePhase?: string;
-  updateError?: string;
   /** When set, shows what this plugin added to the project */
   projectPath?: string;
 }) {
   const id = entry.manifest.id;
   const name = entry.manifest.name;
   const isIncompatible = entry.status === 'incompatible';
-  const isPendingApproval = entry.status === 'pending-approval';
-  const isUpdating = !!updatePhase;
-  const api = entry.manifest.engine?.api;
-  const deprecatedRemoval = api !== undefined ? DEPRECATED_PLUGIN_API_VERSIONS[api] : undefined;
-
-  const errorMessage = entry.error
-    ? (entry.error.indexOf('\n') >= 0 ? entry.error.slice(0, entry.error.indexOf('\n')) : entry.error)
-    : null;
-  const errorStack = entry.error && entry.error.indexOf('\n') >= 0
-    ? entry.error.slice(entry.error.indexOf('\n') + 1)
-    : null;
 
   return (
     <div className="py-2 border-t border-surface-0" data-testid={`plugin-row-${id}`}>
@@ -441,75 +414,7 @@ function PluginRow({
       </div>
 
       {/* One plain line per thing that needs action. Nothing when all is well. */}
-      {isIncompatible && !errorMessage && (
-        <p className="text-xs text-ctp-error mt-0.5">Doesn&apos;t work with this version of Clubhouse.</p>
-      )}
-      {!isIncompatible && deprecatedRemoval && (
-        <p className="text-xs text-ctp-warning mt-0.5" data-testid={`deprecated-api-${id}`}>
-          Uses plugin API {api}, which stops loading in {deprecatedRemoval}.
-        </p>
-      )}
-      {errorMessage && (
-        <div className="mt-0.5">
-          <p className="text-xs text-ctp-error">{errorMessage}</p>
-          {errorStack && (
-            <details className="mt-0.5">
-              <summary className="text-xs text-ctp-overlay1 cursor-pointer hover:text-ctp-text">View details</summary>
-              <pre className="text-xs text-ctp-overlay1 bg-ctp-crust border border-surface-0 p-2 rounded-md mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{errorStack}</pre>
-            </details>
-          )}
-        </div>
-      )}
-      {isPendingApproval && entry.pendingPermissions && (
-        <div className="mt-1 flex items-center gap-3" data-testid={`pending-approval-${id}`}>
-          <p className="flex-1 min-w-0 text-xs text-ctp-warning">
-            This update needs more permissions:{' '}
-            {entry.pendingPermissions.map((perm, i) => (
-              <span key={perm}>
-                {i > 0 && ', '}
-                <span className={`font-mono ${PERMISSION_RISK_LEVELS[perm] === 'dangerous' ? 'text-ctp-error' : ''}`}>{perm}</span>
-              </span>
-            ))}
-          </p>
-          <button
-            onClick={() => rejectPluginPermissions(id)}
-            className={settingsButton.quiet}
-            data-testid={`reject-btn-${id}`}
-          >
-            Reject
-          </button>
-          <button
-            onClick={() => approvePluginPermissions(id)}
-            className={settingsButton.ghost}
-            data-testid={`approve-btn-${id}`}
-          >
-            Approve and turn on
-          </button>
-        </div>
-      )}
-      {updateVersion && !isUpdating && (
-        <div className="mt-1 flex items-center gap-3" data-testid={`update-badge-${id}`}>
-          <p className="flex-1 min-w-0 text-xs text-ctp-success">Version {updateVersion} is available.</p>
-          {onUpdate && (
-            <button
-              onClick={onUpdate}
-              className={settingsButton.ghost}
-              title={`Update to ${updateVersion}`}
-              data-testid={`update-btn-${id}`}
-            >
-              Update
-            </button>
-          )}
-        </div>
-      )}
-      {isUpdating && (
-        <p className="text-xs text-ctp-overlay1 mt-0.5" data-testid={`update-phase-${id}`}>
-          {UPDATE_PHASE_LABELS[updatePhase] || 'Updating…'}
-        </p>
-      )}
-      {updateError && (
-        <p className="text-xs text-ctp-error mt-0.5">Update failed. {updateError}</p>
-      )}
+      <PluginStatusLines entry={entry} />
       {projectPath && (
         <PluginInjectionsPanel pluginId={id} projectPath={projectPath} />
       )}
@@ -676,11 +581,9 @@ export function PluginListSettings() {
   // Plugin update state
   const updates = usePluginUpdateStore((s) => s.updates);
   const updating = usePluginUpdateStore((s) => s.updating);
-  const updateErrors = usePluginUpdateStore((s) => s.updateErrors);
   const checking = usePluginUpdateStore((s) => s.checking);
   const lastCheck = usePluginUpdateStore((s) => s.lastCheck);
   const checkForUpdates = usePluginUpdateStore((s) => s.checkForUpdates);
-  const updatePlugin = usePluginUpdateStore((s) => s.updatePlugin);
   const updateAll = usePluginUpdateStore((s) => s.updateAll);
 
   const [restartHint, setRestartHint] = useState(false);
@@ -867,14 +770,10 @@ export function PluginListSettings() {
     }
   };
 
-  const getUpdateInfo = (pluginId: string) => updates.find((u) => u.pluginId === pluginId);
 
   const renderPluginList = (entries: PluginRegistryEntry[], showUninstall: boolean) => (
     <div>
       {entries.map((entry) => {
-        const updateInfo = getUpdateInfo(entry.manifest.id);
-        const phase = updating[entry.manifest.id];
-        const error = updateErrors[entry.manifest.id];
         return (
           <PluginRow
             key={entry.manifest.id}
@@ -883,10 +782,6 @@ export function PluginListSettings() {
             onToggle={() => handleToggle(entry.manifest.id)}
             onOpenSettings={() => openPluginSettings(entry.manifest.id)}
             onUninstall={showUninstall ? () => handleUninstall(entry.manifest.id) : undefined}
-            onUpdate={updateInfo ? () => updatePlugin(entry.manifest.id) : undefined}
-            updateVersion={updateInfo?.latestVersion}
-            updatePhase={phase}
-            updateError={error}
             projectPath={!isAppContext && project?.path ? project.path : undefined}
           />
         );
