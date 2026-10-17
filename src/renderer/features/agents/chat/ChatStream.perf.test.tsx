@@ -1,8 +1,9 @@
 /**
  * Long-stream check (docs/structured-chat-research.md §8, "Long streams"):
  * render about 500 blocks, then stream into the last message and confirm only
- * that block re-renders. Timings are printed for the record, and the bound is
- * loose so a slow CI machine doesn't flake it.
+ * that block re-renders. Timings are printed for the record. The only
+ * assertion is relative (chunk vs mount), with a generous timeout, so a slow
+ * or loaded CI machine doesn't flake it.
  */
 import { describe, it, expect } from 'vitest';
 import { Profiler, type ProfilerOnRenderCallback } from 'react';
@@ -56,5 +57,5 @@ describe('ChatStream with a long transcript', () => {
 
     process.stdout.write(`[chat perf] ${state.items.length} items: mount ${mountMs.toFixed(1)}ms (react ${mount.toFixed(1)}ms), one chunk ${chunkMs.toFixed(1)}ms (react ${chunk.toFixed(1)}ms)\n`);
     expect(chunk).toBeLessThan(mount / 2);
-  });
+  }, 30_000);
 });
