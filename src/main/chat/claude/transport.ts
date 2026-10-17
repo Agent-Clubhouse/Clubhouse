@@ -121,7 +121,8 @@ export function toWirePermissionResult(
 interface PendingPermission {
   input: Record<string, unknown>;
   toolUseId?: string;
-  resolve: (result: Record<string, unknown>) => void;
+  /** null when the CLI withdrew the request: nothing may be sent back for it. */
+  resolve: (result: Record<string, unknown> | null) => void;
 }
 
 /**
@@ -182,14 +183,19 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
 
   /**
    * Register a permission request and surface it. Resolves with the wire
-   * PermissionResult once the user answers via respondToPermission, or with a
-   * deny if the CLI cancels the request first.
+   * PermissionResult once the user answers via respondToPermission, or with
+   * null if the CLI cancels the request first (or already had, when `signal`
+   * is aborted on arrival; such a request is never surfaced).
    */
   protected awaitPermission(
     body: Extract<ClaudeChatEventBody, { kind: 'permission_request' }>,
     signal?: AbortSignal,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<Record<string, unknown> | null> {
     return new Promise((resolve) => {
+      if (signal?.aborted) {
+        resolve(null);
+        return;
+      }
       const { requestId } = body;
       this.pendingPermissions.set(requestId, { input: body.input, toolUseId: body.toolCallId, resolve });
       signal?.addEventListener('abort', () => this.cancelPermission(requestId), { once: true });
@@ -202,7 +208,7 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) return;
     this.pendingPermissions.delete(requestId);
-    pending.resolve(toWirePermissionResult({ behavior: 'deny', message: 'Request cancelled' }, pending.input, pending.toolUseId));
+    pending.resolve(null);
     this.pushEvent({ kind: 'permission_cancelled', requestId });
   }
 

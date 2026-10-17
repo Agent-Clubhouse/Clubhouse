@@ -253,13 +253,25 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     expect(() => t.send({ text: 'again' })).toThrow(/not running/);
   });
 
+  it('keeps the final output of a CLI that exits right after writing it', async () => {
+    const t = await start();
+    t.send({ text: 'quit' });
+    await collector.done;
+    expect(collector.of('message').map((m) => m.text.length)).toEqual([512 * 1024]);
+    expect(collector.of('turn_ended').map((e) => e.result)).toEqual(['bye']);
+    const ended = collector.of('session_ended');
+    expect(ended).toHaveLength(1);
+    expect(collector.events[collector.events.length - 1].kind).toBe('session_ended');
+    expect(ended[0].exitCode).toBe(0);
+  });
+
   it('reports a CLI crash as session_ended', async () => {
     const t = await start();
     t.send({ text: 'crash' });
     await collector.done;
     const ended = collector.of('session_ended');
     expect(ended).toHaveLength(1);
-    if (kind === 'stream-json') expect(ended[0].exitCode).toBe(3);
-    else expect(collector.of('error').some((e) => e.fatal)).toBe(true);
+    expect(ended[0].exitCode).toBe(3);
+    if (kind === 'sdk') expect(collector.of('error').some((e) => e.fatal)).toBe(true);
   });
 });

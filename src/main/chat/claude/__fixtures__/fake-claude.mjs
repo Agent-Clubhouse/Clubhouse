@@ -13,6 +13,7 @@
 //   limit  rate_limit_event before the result
 //   novel  an unknown system subtype (drift) before the result
 //   crash  exit 3 mid-turn
+//   quit   a large final assistant message and result, then exit 0 at once
 //   other  result.result = "echo:<text>|priority:<p>|shouldQuery:<b>"
 
 import { writeFileSync } from 'node:fs';
@@ -136,6 +137,17 @@ async function runTurn(msg) {
   if (text === 'novel') {
     out({ type: 'system', subtype: 'brand_new_thing', detail: 42, ...base() });
     result('novel');
+    return;
+  }
+
+  if (text === 'quit') {
+    // Large enough that the parent sees 'exit' before it has read all of stdout.
+    const big = 'x'.repeat(512 * 1024);
+    const lines = [
+      { type: 'assistant', message: { id: 'msg_quit', role: 'assistant', content: [{ type: 'text', text: big }] }, parent_tool_use_id: null, ...base() },
+      { type: 'result', subtype: 'success', is_error: false, duration_ms: 1, num_turns: 1, result: 'bye', ...base() },
+    ];
+    process.stdout.write(lines.map((l) => JSON.stringify(l)).join('\n') + '\n', () => process.exit(0));
     return;
   }
 

@@ -95,11 +95,16 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
     child.stdout?.setEncoding('utf8');
     child.stdout?.on('data', (chunk: string) => this.onStdout(chunk));
     child.stderr?.on('data', (d: Buffer) => this.log('warn', 'claude stderr', { data: d.toString().slice(0, 2000) }));
+    // 'exit' can fire before stdout is drained, so it only records the status;
+    // teardown waits for 'close', after all stdio has ended.
+    let exitStatus: { code: number | null; signal: NodeJS.Signals | null } = { code: null, signal: null };
+    child.on('exit', (code, signal) => { exitStatus = { code, signal }; });
     this.exited = new Promise((resolve) => {
-      child.on('exit', (code, signal) => {
+      child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
         this.onStdout('\n'); // flush a final unterminated line
-        this.failPendingControl(new Error(`claude exited (code ${code}, signal ${signal})`));
-        this.end(code, signal);
+        const status = { code: code ?? exitStatus.code, signal: signal ?? exitStatus.signal };
+        this.failPendingControl(new Error(`claude exited (code ${status.code}, signal ${status.signal})`));
+        this.end(status.code, status.signal);
         resolve();
       });
     });
@@ -222,7 +227,8 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
     if (request.subtype === 'can_use_tool') {
       const body = permissionRequestFromWire(requestId, request);
       if (body.kind !== 'permission_request') return;
-      void this.awaitPermission(body).then((result) => this.respondControl(requestId, result));
+      // A request the CLI cancelled (control_cancel_request) gets no response.
+      void this.awaitPermission(body).then((result) => { if (result) this.respondControl(requestId, result); });
       return;
     }
     this.log('warn', 'Unsupported control request from claude', { subtype: request.subtype });

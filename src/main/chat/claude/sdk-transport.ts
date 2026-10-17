@@ -85,7 +85,8 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
           decisionReason: o.decisionReason,
           agentId: o.agentID,
         }, o.signal);
-        return result as PermissionResult;
+        // Cancelled by the CLI: the SDK drops this answer, but canUseTool must return one.
+        return (result ?? { behavior: 'deny', message: 'Request cancelled', toolUseID: o.toolUseID }) as PermissionResult;
       },
       spawnClaudeCodeProcess: (so) => {
         const child = spawnClaude({
@@ -121,8 +122,23 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
       this.log('error', 'Claude SDK stream failed', { error: reason });
       this.pushEvent({ kind: 'error', message: reason, fatal: true });
     } finally {
-      this.end(this.child?.exitCode ?? null, this.child?.signalCode ?? null, reason);
+      const status = await this.childExit();
+      this.end(status.code, status.signal, reason);
     }
+  }
+
+  /** The CLI's exit status; the stream can end a moment before the process does. */
+  private async childExit(): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+    const child = this.child;
+    if (!child) return { code: null, signal: null };
+    if (child.exitCode === null && child.signalCode === null) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, CLOSE_GRACE_MS);
+        timer.unref?.();
+        child.once('exit', () => { clearTimeout(timer); resolve(); });
+      });
+    }
+    return { code: child.exitCode, signal: child.signalCode };
   }
 
   send(input: ClaudeUserInput): void {
