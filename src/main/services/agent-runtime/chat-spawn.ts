@@ -132,7 +132,9 @@ async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, 
 
 /**
  * Try to start the agent in chat. Returns true when it did; false means the
- * caller should fall back to the terminal.
+ * caller should fall back to the terminal. `onStarting` is called once a
+ * driver and CLI are found and the chat start really begins, so a caller can
+ * tell a failed start (called, then false) from an agent that was never chat.
  *
  * Drivers are tried in fallback order. One is skipped when it is paused after
  * repeated failures, its handshake fails, or its CLI version is below the
@@ -146,6 +148,7 @@ export async function tryStartChatAgent(
   profileEnv: Record<string, string> | undefined,
   commandPrefix: string | undefined,
   durableConfig: DurableAgentConfig | null | undefined,
+  onStarting?: () => void,
 ): Promise<boolean> {
   // Only durable agents get chat for now; quick agents stay fire-and-forget.
   if (params.kind !== 'durable') return false;
@@ -168,6 +171,7 @@ export async function tryStartChatAgent(
     });
     return false;
   }
+  onStarting?.();
 
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;

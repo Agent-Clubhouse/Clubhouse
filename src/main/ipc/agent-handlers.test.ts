@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ATTR } from '../../shared/telemetry/attributes';
+import { setRuntime } from '../telemetry/facade';
+import { errorTypeOf, type Classification, type TelemetryRuntime } from '../telemetry/types';
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp/clubhouse-test') },
@@ -169,6 +172,50 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.DELETE_DURABLE)!;
     await handler({}, '/project', 'agent-1');
     expect(agentConfig.deleteDurable).toHaveBeenCalledWith('/project', 'agent-1');
+  });
+
+  describe('create and delete telemetry', () => {
+    type Flow = { name: string; attrs: unknown[]; outcome?: Classification; thrown?: unknown };
+    let flows: Flow[];
+    beforeEach(() => {
+      flows = [];
+      setRuntime({
+        level: 'standard',
+        flow: (name: string, opts: { attrs?: unknown[] }, fn: () => unknown, extras?: { classify?: (r: unknown) => Classification }) => {
+          const f: Flow = { name, attrs: [...(opts.attrs ?? [])] };
+          flows.push(f);
+          return Promise.resolve(fn()).then(
+            (r) => { f.outcome = extras?.classify ? extras.classify(r) : 'ok'; return r; },
+            (err) => { f.thrown = err; throw err; },
+          );
+        },
+        step: (_n: string, fn: (s: unknown) => unknown) => fn({ set: () => {} }),
+        count: vi.fn(),
+      } as unknown as TelemetryRuntime);
+    });
+    afterEach(() => setRuntime(null));
+
+    it('classifies deletes by result and mode', async () => {
+      vi.mocked(agentConfig.deleteForce).mockResolvedValueOnce({ ok: false, message: 'dirty worktree' });
+      await handlers.get(IPC.AGENT.DELETE_FORCE)!({}, '/project', 'agent-1');
+      await handlers.get(IPC.AGENT.DELETE_UNREGISTER)!({}, '/project', 'agent-1');
+      expect(flows).toEqual([
+        { name: 'clubhouse.agent.delete', attrs: [ATTR.deleteMode('force')], outcome: { error: 'delete_failed' } },
+        { name: 'clubhouse.agent.delete', attrs: [ATTR.deleteMode('unregister')], outcome: 'ok' },
+      ]);
+    });
+
+    it('rethrows the identical error from create and delete, typed for telemetry', async () => {
+      const createErr = new Error('disk full');
+      const deleteErr = new Error('locked');
+      vi.mocked(agentConfig.createDurable).mockRejectedValueOnce(createErr);
+      vi.mocked(agentConfig.deleteDurable).mockRejectedValueOnce(deleteErr);
+      await expect(handlers.get(IPC.AGENT.CREATE_DURABLE)!({}, '/project', 'Bot', '#fff')).rejects.toBe(createErr);
+      await expect(handlers.get(IPC.AGENT.DELETE_DURABLE)!({}, '/project', 'agent-1')).rejects.toBe(deleteErr);
+      expect(flows.map((f) => f.name)).toEqual(['clubhouse.agent.create', 'clubhouse.agent.delete']);
+      expect(errorTypeOf(createErr)).toBe('write_failed');
+      expect(errorTypeOf(deleteErr)).toBe('delete_failed');
+    });
   });
 
   it('RENAME_DURABLE delegates to agentConfig.renameDurable', async () => {

@@ -26,6 +26,10 @@ import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
 import { tryStartChatAgent } from './agent-runtime/chat-spawn';
+import { ATTR } from '../../shared/telemetry/attributes';
+import { tel, tagError, withErrorType } from '../telemetry/facade';
+import { agentKillRequested, clearSpawnKind, noteSpawnKind } from '../telemetry/agent-telemetry';
+import { recordChatStart, recordSpawn, spawnAttrs, type SpawnFacts } from '../telemetry/spawn-telemetry';
 
 /** Expand leading `~` or `~/` to the user's home directory. */
 export function expandHome(p: string): string {
@@ -89,14 +93,44 @@ export function getRunningAgentIds(agentIds: string[]): string[] {
   return agentIds.filter(isAgentRunning);
 }
 
-export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
+export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
+  const facts: SpawnFacts = { model: params.model };
+  const startMs = Date.now();
+  await tel.flow(
+    'clubhouse.agent.spawn',
+    { attrs: [ATTR.agentKind(params.kind), ATTR.agentResume(params.resume === true)] },
+    async (span) => {
+      try {
+        await spawnAgentInner(params, facts);
+      } catch (err) {
+        try {
+          clearSpawnKind(params.agentId);
+          recordSpawn(params.kind, facts, startMs, err);
+          span.set(...spawnAttrs(facts));
+        } catch {
+          // telemetry-exempt: never replace the spawn error with a telemetry one
+        }
+        throw err;
+      }
+      recordSpawn(params.kind, facts, startMs, undefined);
+      span.set(...spawnAttrs(facts));
+    },
+    { classify: () => (facts.noPid ? { error: 'headless_no_pid' } : 'ok') },
+  );
+}
+
+async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): Promise<void> {
   let params = inParams;
-  const provider = await resolveOrchestrator(params.projectPath, params.orchestrator);
+  const provider = await tel.step('clubhouse.provider.resolve', () =>
+    withErrorType('orchestrator_unknown', () => resolveOrchestrator(params.projectPath, params.orchestrator)),
+  );
+  facts.orchestrator = provider.id;
 
   // Resolve profile env early so it can be passed to checkAvailability.
   // This ensures auth checks (e.g. CLAUDE_CONFIG_DIR) use the correct
   // config directory when a profile is active.
   const profileEnv = await resolveProfileEnv(params.projectPath, provider.id);
+  facts.profileActive = profileEnv !== undefined;
 
   // Read project-level command prefix for shell environment setup
   const projectDefaults = await readProjectAgentDefaults(params.projectPath);
@@ -105,14 +139,16 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
   // Pre-flight: verify the orchestrator CLI is available before spawning.
   // This catches missing binaries and auth issues early with clear errors,
   // rather than letting the PTY start and exit immediately.
-  const availability = await provider.checkAvailability(profileEnv);
-  if (!availability.available) {
-    const msg = availability.error || `${provider.displayName} CLI is not available`;
-    appLog('core:agent', 'error', `Pre-flight check failed for ${provider.id}`, {
-      meta: { agentId: params.agentId, error: msg },
-    });
-    throw new Error(msg);
-  }
+  await tel.step('clubhouse.provider.check_availability', async () => {
+    const availability = await provider.checkAvailability(profileEnv);
+    if (!availability.available) {
+      const msg = availability.error || `${provider.displayName} CLI is not available`;
+      appLog('core:agent', 'error', `Pre-flight check failed for ${provider.id}`, {
+        meta: { agentId: params.agentId, error: msg },
+      });
+      throw tagError(new Error(msg), 'preflight_failed');
+    }
+  });
 
   agentRegistry.register(params.agentId, {
     projectPath: params.projectPath,
@@ -135,11 +171,14 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
     }
 
     // Clubhouse Mode: materialize project defaults into worktree before spawn
-    if (params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath)) {
+    facts.clubhouseMode = params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath);
+    if (facts.clubhouseMode) {
       try {
         const config = await getDurableConfig(params.projectPath, params.agentId);
         if (config && !config.clubhouseModeOverride && config.worktreePath) {
-          await materializeAgent({ projectPath: params.projectPath, agent: config, provider });
+          await tel.step('clubhouse.agent.materialize', () =>
+            withErrorType('materialize_failed', () => materializeAgent({ projectPath: params.projectPath, agent: config, provider })),
+          );
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -195,25 +234,35 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
         }
       } catch { /* config not available — use caller-provided values */ }
     }
+    facts.model = params.model;
 
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
 
     // Chat runtime (experimental): durable agents whose provider is set to
     // Chat and has a registered driver. Falls through to the terminal otherwise.
-    const startedInChat = await tryStartChatAgent({
-      agentId: params.agentId,
-      projectPath: params.projectPath,
-      cwd: params.cwd,
-      kind: params.kind,
-      model: params.model,
-      mission: params.mission,
-      systemPrompt: params.systemPrompt,
-      freeAgentMode: params.freeAgentMode,
-      permissionMode,
-      resume: params.resume,
-      sessionId: params.sessionId,
-    }, provider, profileEnv, commandPrefix, durableConfig);
+    let chatStartMs: number | undefined;
+    let startedInChat: boolean;
+    try {
+      startedInChat = await withErrorType('chat_start_failed', () => tryStartChatAgent({
+        agentId: params.agentId,
+        projectPath: params.projectPath,
+        cwd: params.cwd,
+        kind: params.kind,
+        model: params.model,
+        mission: params.mission,
+        systemPrompt: params.systemPrompt,
+        freeAgentMode: params.freeAgentMode,
+        permissionMode,
+        resume: params.resume,
+        sessionId: params.sessionId,
+      }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }));
+    } catch (err) {
+      recordChatStart(chatStartMs, false);
+      throw err;
+    }
+    recordChatStart(chatStartMs, startedInChat);
     if (startedInChat) {
+      facts.runtime = 'chat';
       broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
       return;
     }
@@ -234,6 +283,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
 
       if (headlessResult) {
         agentRegistry.setRuntime(params.agentId, 'headless');
+        facts.runtime = 'headless';
         // Apply launch wrapper transform if configured and validation passes.
         // Plugin-enabled lookup is treated as always-true: plugins live renderer-side,
         // main has no real-time view. Binary-on-PATH check still catches the common case.
@@ -250,8 +300,10 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
             wrapperApplied = true;
           }
         }
+        facts.wrapperApplied = wrapperApplied;
         const spawnEnv = { ...headlessResult.env, ...profileEnv, ...(wrapperApplied ? wrapperConfig?.env : undefined), CLUBHOUSE_AGENT_ID: params.agentId };
-        await headlessManager.spawnHeadless(
+        noteSpawnKind(params.agentId, params.kind);
+        await tel.step('clubhouse.headless.spawn', () => headlessManager.spawnHeadless(
           params.agentId,
           params.cwd,
           headlessBin,
@@ -265,14 +317,16 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
           },
           commandPrefix,
           headlessResult.createEventNormalizer,
-        );
+        ));
+        facts.noPid = !headlessManager.hasPid(params.agentId);
         broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
         return;
       }
     }
 
     // Fall back to PTY mode
-    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs);
+    facts.runtime = 'pty';
+    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts);
     broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
   } catch (err) {
     untrackAgent(params.agentId);
@@ -289,6 +343,7 @@ async function spawnPtyAgent(
   wrapperConfig?: LaunchWrapperConfig,
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
+  facts: SpawnFacts = {},
 ): Promise<void> {
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);
@@ -313,6 +368,7 @@ async function spawnPtyAgent(
     } catch { /* config not available */ }
   }
   const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
+  facts.mcpEnabled = mcpEnabledForSpawn;
   // Snapshot MCP config for all formats — TOML injection is now supported
   // and the config-pipeline restore logic handles both JSON and TOML files.
   if (mcpEnabledForSpawn) {
@@ -325,25 +381,27 @@ async function spawnPtyAgent(
 
   // Run hook server setup, MCP bridge setup, and command building in parallel.
   let mcpPort = 0;
-  const [, , spawnCmd] = await Promise.all([
-    waitHookServerReady().then(async (port) => {
+  const [, , spawnCmd] = await tel.step('clubhouse.agent.prepare_pty', () => Promise.all([
+    waitHookServerReady().then((port) => tel.step('clubhouse.hooks.configure', async () => {
       // Inject Clubhouse hooks only when the provider supports them AND the
       // user has opted this orchestrator into the hook server (app-level).
       // Default: on for Claude Code, off for every other orchestrator.
+      facts.hooksEnabled = false;
       if (isHookCapable(provider) && orchestratorSettings.isHookServerEnabled(provider.id)) {
+        facts.hooksEnabled = true;
         const hookUrl = `http://127.0.0.1:${port}/hook`;
         await provider.writeHooksConfig(params.cwd, hookUrl);
       }
-    }),
-    waitMcpBridgeReady().then(async (port) => {
+    })),
+    waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
       mcpPort = port;
       await injectClubhouseMcp(params.cwd, params.agentId, port, nonce, provider.conventions);
-    }).catch((err) => {
+    })).catch((err) => {
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
         meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
       });
     }),
-    provider.buildSpawnCommand({
+    tel.step('clubhouse.provider.build_command', () => provider.buildSpawnCommand({
       cwd: params.cwd,
       model: params.model,
       mission: params.mission,
@@ -356,8 +414,8 @@ async function spawnPtyAgent(
       sessionId: params.sessionId,
       agentFile: params.agentFile,
       agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
-    }),
-  ]);
+    })),
+  ]));
 
   // Inject MCP args for providers that need CLI-based MCP config (e.g. Copilot CLI)
   let { binary, args } = spawnCmd;
@@ -401,6 +459,7 @@ async function spawnPtyAgent(
       wrapperApplied = true;
     }
   }
+  facts.wrapperApplied = wrapperApplied;
 
   appLog('core:agent', 'info', `Spawning ${params.kind} agent`, {
     meta: {
@@ -432,7 +491,8 @@ async function spawnPtyAgent(
     });
   }
 
-  await ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
+  noteSpawnKind(params.agentId, params.kind);
+  await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
     if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
@@ -468,11 +528,17 @@ async function spawnPtyAgent(
         });
       }
     }
-  }, commandPrefix);
+  }, commandPrefix)));
 }
 
-export async function killAgent(agentId: string, projectPath: string, orchestrator?: OrchestratorId): Promise<void> {
+export async function killAgent(
+  agentId: string,
+  projectPath: string,
+  orchestrator?: OrchestratorId,
+  trigger: 'user' | 'agent_tool' = 'user',
+): Promise<void> {
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
+  agentKillRequested(agentId, trigger);
   try {
     const tracked = agentRegistry.get(agentId);
 

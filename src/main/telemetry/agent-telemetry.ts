@@ -8,10 +8,11 @@
  * here ever holds a span open: a run is replayed with explicit times when it
  * exits. On the PTY data path the only work is one Map lookup and an add.
  *
- * The spawn tree (provider resolution, materialization, MCP injection) and the
- * agent kind come with Phase 4b on top of the AgentRuntime seam (#1950). Chat
- * runs open here from the chat event bus (chat-telemetry.ts, spec §9.1) and
- * close on the same exit broadcast.
+ * Phase 4b adds the agent kind (noted by spawnAgent just before the process
+ * starts) and the `clubhouse.agent.kill` span, replayed at exit from the
+ * moment killAgent was asked. The spawn tree lives in spawn-telemetry.ts.
+ * Chat runs open here from the chat event bus (chat-telemetry.ts, spec §9.1)
+ * and close on the same exit broadcast.
  *
  * No OpenTelemetry imports: part of the main bundle. The orchestrator lookup
  * is injected at install time so the runtime managers don't pick up a
@@ -24,6 +25,8 @@ import { isTelemetryActive, replaySpan, tel } from './facade';
 export { recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
 
 type Runtime = 'pty' | 'headless' | 'chat';
+type Kind = Parameters<typeof ATTR.agentKind>[0];
+type KillTrigger = Parameters<typeof ATTR.killTrigger>[0];
 type Orchestrator = Parameters<typeof ATTR.orchestrator>[0];
 type KillStage = Parameters<typeof ATTR.killStage>[0];
 type ExitClass = Parameters<typeof ATTR.agentExitClass>[0];
@@ -35,6 +38,7 @@ const KILL_ORDER: KillStage[] = ['exit_command', 'eof', 'sigterm', 'sigkill'];
 
 interface Run {
   runtime: Runtime;
+  kind?: Kind;
   orchestrator: Orchestrator;
   startMs: number;
   shellReady: boolean;
@@ -42,9 +46,13 @@ interface Run {
   bytes: number;
   killStage?: KillStage;
   swept: boolean;
+  /** Set when killAgent asked for this run to stop. */
+  kill?: { startMs: number; trigger: KillTrigger };
 }
 
 const runs = new Map<string, Run>();
+/** Kinds noted by spawnAgent for a process about to start, keyed by agent id. */
+const pendingKinds = new Map<string, Kind>();
 let lookupOrchestrator: (agentId: string) => string | undefined = () => undefined;
 
 function orchestratorOf(agentId: string): Orchestrator {
@@ -56,12 +64,33 @@ function base(run: Run): TelAttr[] {
   return [ATTR.agentRuntime(run.runtime), ATTR.orchestrator(run.orchestrator)];
 }
 
+/** spawnAgent: the next run started for `agentId` is of this kind. */
+export function noteSpawnKind(agentId: string, kind: Kind): void {
+  if (!isTelemetryActive()) return;
+  pendingKinds.set(agentId, kind);
+}
+
+/** spawnAgent failed before a process started: forget the noted kind. */
+export function clearSpawnKind(agentId: string): void {
+  pendingKinds.delete(agentId);
+}
+
+/** killAgent was asked to stop this run. The kill span is replayed when the run ends. */
+export function agentKillRequested(agentId: string, trigger: KillTrigger, atMs = Date.now()): void {
+  const run = runs.get(agentId);
+  if (!run || run.kill) return;
+  run.kill = { startMs: atMs, trigger };
+}
+
 /** A PTY or headless agent process started. A previous run for the same id is closed as replaced. */
 export function agentRunStarted(agentId: string, runtime: Runtime, atMs = Date.now()): void {
   if (!isTelemetryActive()) return;
   if (runs.has(agentId)) endRun(agentId, null, 'replaced', atMs);
+  const kind = pendingKinds.get(agentId);
+  pendingKinds.delete(agentId);
   runs.set(agentId, {
     runtime,
+    kind,
     orchestrator: orchestratorOf(agentId),
     startMs: atMs,
     shellReady: false,
@@ -146,6 +175,7 @@ function endRun(agentId: string, exitCode: number | null, forced: ExitClass | nu
   runs.delete(agentId);
   const exitClass = forced ?? classifyExit(run, exitCode, atMs);
   const attrs = [...base(run), ATTR.agentExitClass(exitClass)];
+  if (run.kind) attrs.push(ATTR.agentKind(run.kind));
   const spanAttrs = [...attrs];
   if (exitCode !== null) spanAttrs.push(ATTR.exitCode(exitCode));
   if (run.killStage) spanAttrs.push(ATTR.killStage(run.killStage));
@@ -161,6 +191,17 @@ function endRun(agentId: string, exitCode: number | null, forced: ExitClass | nu
   tel.count('clubhouse.agent.runs', 1, attrs);
   tel.count('clubhouse.agent.run.duration', (atMs - run.startMs) / 1000, attrs);
   if (run.bytes > 0) tel.count('clubhouse.pty.output.bytes', run.bytes, base(run));
+  if (run.kill) {
+    const killAttrs = [...base(run), ATTR.killTrigger(run.kill.trigger), ATTR.agentExitClass(exitClass)];
+    if (run.killStage) killAttrs.push(ATTR.killStage(run.killStage));
+    replaySpan({
+      name: 'clubhouse.agent.kill',
+      startMs: run.kill.startMs,
+      endMs: Math.max(atMs, run.kill.startMs),
+      attrs: killAttrs,
+      outcome: 'ok',
+    });
+  }
 }
 
 // --- Wiring ---------------------------------------------------------------------
@@ -178,6 +219,7 @@ export function installAgentTelemetry(getOrchestrator: (agentId: string) => stri
 /** Test-only reset. */
 export function _resetAgentTelemetryForTests(): void {
   runs.clear();
+  pendingKinds.clear();
   installed = false;
   lookupOrchestrator = () => undefined;
 }

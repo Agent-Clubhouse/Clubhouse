@@ -9,7 +9,10 @@
 import type { EventName, MetricName, SpanName, TelAttr } from '../../shared/telemetry/attributes';
 import {
   NOOP_SPAN,
+  errorTypeOf,
+  tagError,
   type Classification,
+  type ErrorType,
   type ExceptionOptions,
   type FlowExtras,
   type FlowOptions,
@@ -61,7 +64,7 @@ function bufferedSpan<T>(name: SpanName, opts: FlowOptions, fn: (s: SpanHandle) 
   try {
     result = fn(handle);
   } catch (err) {
-    record({ error: 'unknown' });
+    record({ error: errorTypeOf(err) });
     buffer((rt) => rt.exception(err, { origin: 'main', handled: false }));
     throw err;
   }
@@ -69,7 +72,7 @@ function bufferedSpan<T>(name: SpanName, opts: FlowOptions, fn: (s: SpanHandle) 
     Promise.resolve(result).then(
       (r) => record(classify(r)),
       (err) => {
-        record({ error: 'unknown' });
+        record({ error: errorTypeOf(err) });
         buffer((rt) => rt.exception(err, { origin: 'main', handled: false }));
       },
     );
@@ -107,6 +110,29 @@ function trackFlow<T>(name: SpanName, fn: (span: SpanHandle) => T): (span: SpanH
 /** The most recently started root flow still running, if any. */
 export function currentFlow(): SpanName | null {
   return activeFlows.length > 0 ? activeFlows[activeFlows.length - 1] : null;
+}
+
+export { tagError } from './types';
+
+/**
+ * Run `fn`, tagging anything it throws or rejects with `type` (see tagError).
+ * Returns `fn`'s own value: while telemetry is off it is a plain call, and a
+ * synchronous result is never wrapped in a promise.
+ */
+export function withErrorType<T>(type: ErrorType, fn: () => T): T {
+  if (!runtime && !pending) return fn();
+  let result: T;
+  try {
+    result = fn();
+  } catch (err) {
+    throw tagError(err, type);
+  }
+  if (isPromiseLike(result)) {
+    return Promise.resolve(result).catch((err: unknown) => {
+      throw tagError(err, type);
+    }) as T;
+  }
+  return result;
 }
 
 export const tel = {

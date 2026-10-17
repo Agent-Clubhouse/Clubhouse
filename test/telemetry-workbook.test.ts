@@ -40,10 +40,10 @@ const names = new Set<string>([...Object.keys(SPANS), ...Object.keys(METRICS), .
 const attributes = new Set<string>([...allAttributeKeys(), ...Object.values(SDK_ATTRIBUTE_KEYS)]);
 
 describe('Clubhouse Workbook', () => {
-  it('has the v1 tabs plus the Phase 5 Workspace and Plugins tabs and Chat', async () => {
+  it('has the v1 tabs plus Workspace, Plugins, Agents and Chat', async () => {
     const wb = await loadWorkbook();
     const groups = wb.items.filter((i) => i.type === 12).map((i) => i.name);
-    expect(groups).toEqual(['tab-overview', 'tab-reliability', 'tab-startup', 'tab-integrity', 'tab-workspace', 'tab-plugins', 'tab-chat']);
+    expect(groups).toEqual(['tab-overview', 'tab-reliability', 'tab-startup', 'tab-integrity', 'tab-workspace', 'tab-plugins', 'tab-agents', 'tab-chat']);
   });
 
   it('only queries span, metric and event names that exist in the registry', async () => {

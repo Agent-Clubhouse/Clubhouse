@@ -35,6 +35,7 @@ vi.mock('./headless-manager', () => ({
   kill: (...args: unknown[]) => mockHeadlessKill(...args),
   isHeadless: (...args: unknown[]) => mockHeadlessIsHeadless(...args),
   readTranscript: (...args: unknown[]) => mockReadTranscript(...args),
+  hasPid: () => true,
 }));
 
 // Mock headless-settings

@@ -133,6 +133,17 @@ export const ERROR_TYPES = [
   // Agents (§4.4, Phase 4)
   'mcp_tool_error',
   'mcp_tool_threw',
+  // Agents: create, spawn, delete, shoulder taps (§4.4, Phase 4b)
+  'orchestrator_unknown',
+  'preflight_failed',
+  'cwd_invalid',
+  'pty_spawn_failed',
+  'headless_no_pid',
+  'chat_start_failed',
+  'materialize_failed',
+  'worktree_failed',
+  'delete_failed',
+  'tap_undelivered',
   // Workspace (§4.7–4.10, Phase 5)
   'not_a_repo',
   'validation',
@@ -383,6 +394,27 @@ export const ATTR = {
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
+  // Phase 4b: spawn, create, delete, kill, shoulder taps
+  agentResume: boolAttr('clubhouse.agent.resume'),
+  usesWorktree: boolAttr('clubhouse.agent.uses_worktree'),
+  mcpEnabled: boolAttr('clubhouse.mcp.enabled'),
+  hooksEnabled: boolAttr('clubhouse.hooks.enabled'),
+  profileActive: boolAttr('clubhouse.profile.active'),
+  wrapperApplied: boolAttr('clubhouse.wrapper.applied'),
+  /** Bucketed from the model string; never the raw model name. */
+  modelFamily: enumAttr('clubhouse.model.family', ['opus', 'sonnet', 'haiku', 'gpt-5', 'default', 'other']),
+  /**
+   * Who asked for a kill. Renderer kills over the agent IPC (including
+   * quick-agent auto-stop) are `user`; `other` is a kill that reached the
+   * runtime managers without a known caller (terminal IPC, force-kill).
+   */
+  killTrigger: enumAttr('clubhouse.kill.trigger', ['user', 'agent_tool', 'annex', 'shutdown', 'other']),
+  deleteMode: enumAttr('clubhouse.agent.delete.mode', [
+    'standard', 'commit_push', 'cleanup_branch', 'save_patch', 'force', 'unregister',
+  ]),
+  tapBroadcast: boolAttr('clubhouse.tap.broadcast'),
+  targetsCount: intAttr('clubhouse.targets.count'),
+  deliveryResult: enumAttr('clubhouse.delivery.result', ['delivered', 'not_running', 'unsupported_runtime']),
   // Workspace (§4.7–4.10, Phase 5). Counts are bucketed with countBucket().
   gitOp: enumAttr('clubhouse.git.op', GIT_OPS),
   gitTimedOut: boolAttr('clubhouse.git.timed_out'),
@@ -498,6 +530,28 @@ export const SPANS = {
   'clubhouse.agent.permission': { level: 'standard', root: true },
   /** One Clubhouse MCP tool call served to an agent. */
   'clubhouse.mcp.tool_call': { level: 'standard', root: true },
+  /** Durable agent creation (IPC entry → config written, persona applied). */
+  'clubhouse.agent.create': { level: 'standard', root: true },
+  'clubhouse.agent.persona_inject': { level: 'standard', root: false },
+  /** Durable agent deletion, any mode. */
+  'clubhouse.agent.delete': { level: 'standard', root: true },
+  /** spawnAgent entry → process launched (or the throw). */
+  'clubhouse.agent.spawn': { level: 'standard', root: true },
+  'clubhouse.provider.resolve': { level: 'standard', root: false },
+  'clubhouse.provider.check_availability': { level: 'standard', root: false },
+  'clubhouse.agent.materialize': { level: 'standard', root: false },
+  'clubhouse.agent.prepare_pty': { level: 'standard', root: false },
+  'clubhouse.hooks.configure': { level: 'standard', root: false },
+  'clubhouse.mcp.inject': { level: 'standard', root: false },
+  'clubhouse.provider.build_command': { level: 'standard', root: false },
+  'clubhouse.pty.spawn': { level: 'standard', root: false },
+  'clubhouse.headless.spawn': { level: 'standard', root: false },
+  /** Chat driver start inside a spawn; only when a chat start really began. */
+  'clubhouse.chat.start': { level: 'standard', root: false },
+  /** killAgent → exit. Replayed at exit; carries the trigger and the stage reached. */
+  'clubhouse.agent.kill': { level: 'standard', root: true },
+  /** One shoulder tap (direct or broadcast) to group-project members. */
+  'clubhouse.group.shoulder_tap': { level: 'standard', root: true },
   // Workspace (§4.7–4.10, Phase 5)
   'clubhouse.project.add': { level: 'standard', root: true },
   'clubhouse.project.add.ensure_gitignore': { level: 'standard', root: false },
@@ -697,13 +751,13 @@ export const METRICS = {
   },
   'clubhouse.agent.runs': {
     kind: 'counter', unit: '{run}', level: 'standard',
-    description: 'Agent runs that ended, by runtime, orchestrator and exit class',
-    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
+    description: 'Agent runs that ended, by kind, runtime, orchestrator and exit class',
+    attributes: ['clubhouse.agent.kind', 'clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
   },
   'clubhouse.agent.run.duration': {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Agent run length, spawn to exit',
-    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
+    attributes: ['clubhouse.agent.kind', 'clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
   },
   'clubhouse.agent.time_to_shell_ready': {
     kind: 'histogram', unit: 's', level: 'standard',
@@ -754,6 +808,21 @@ export const METRICS = {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Time to resolve an agent CLI binary, by lookup tier (login_shell blocks the main thread)',
     attributes: ['clubhouse.binary.lookup_tier'],
+  },
+  'clubhouse.agent.spawns': {
+    kind: 'counter', unit: '{spawn}', level: 'standard',
+    description: 'Agent spawn attempts by kind, orchestrator, runtime and outcome',
+    attributes: ['clubhouse.agent.kind', 'clubhouse.orchestrator', 'clubhouse.agent.runtime', 'clubhouse.outcome', 'error.type'],
+  },
+  'clubhouse.agent.spawn.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'spawnAgent entry to process launched',
+    attributes: ['clubhouse.agent.kind', 'clubhouse.orchestrator', 'clubhouse.agent.runtime'],
+  },
+  'clubhouse.group.shoulder_tap.deliveries': {
+    kind: 'counter', unit: '{delivery}', level: 'standard',
+    description: 'Shoulder tap deliveries by result and target runtime',
+    attributes: ['clubhouse.delivery.result', 'clubhouse.agent.runtime'],
   },
   'clubhouse.telemetry.export.failures': {
     kind: 'counter',

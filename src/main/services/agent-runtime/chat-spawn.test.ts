@@ -86,13 +86,16 @@ describe('chat spawn', () => {
 
   it('falls back to the terminal when the mode is terminal, the agent is quick, or no driver exists', async () => {
     registerChatDriver(new FakeChatDriver());
+    const onStarting = vi.fn();
     mode.value = { mode: 'terminal' };
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe(false);
     mode.value = { mode: 'chat' };
-    expect(await tryStartChatAgent({ ...params, kind: 'quick' }, provider, undefined, undefined, null)).toBe(false);
+    expect(await tryStartChatAgent({ ...params, kind: 'quick' }, provider, undefined, undefined, null, onStarting)).toBe(false);
     clearChatDrivers();
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe(false);
     expect(registry.setRuntime).not.toHaveBeenCalled();
+    // Never chat: no start began.
+    expect(onStarting).not.toHaveBeenCalled();
   });
 
   it('falls back to the terminal when the CLI binary cannot be found', async () => {
@@ -111,7 +114,10 @@ describe('chat spawn', () => {
       return session;
     };
     registerChatDriver(driver);
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+    const onStarting = vi.fn();
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe(false);
+    // A start that began and fell back.
+    expect(onStarting).toHaveBeenCalledTimes(1);
     expect(driver.last.closed).toBe(true);
     expect(registry.setRuntime).toHaveBeenLastCalledWith('agent-1', 'pty');
     expect(getAgentRuntime('agent-1')).toBeUndefined();
