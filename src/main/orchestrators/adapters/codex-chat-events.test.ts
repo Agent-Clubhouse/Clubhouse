@@ -6,6 +6,10 @@ import * as fx from './codex-protocol/__fixtures__/app-server-session';
 
 const at = { threadId: fx.THREAD_ID, turnId: fx.TURN_ID };
 
+function itemStarted(item: Extract<ServerNotification, { method: 'item/started' }>['params']['item']): ServerNotification {
+  return { method: 'item/started', params: { ...at, item, startedAtMs: 1 } };
+}
+
 function mapAll(mapper: CodexChatEventMapper, notifications: ServerNotification[]): ChatEventDraft[] {
   return notifications.flatMap((n) => mapper.mapNotification(n));
 }
@@ -137,6 +141,110 @@ describe('CodexChatEventMapper', () => {
     expect(events[1]).toMatchObject({ type: 'turn_ended', data: { stopReason: 'max_tokens' } });
   });
 
+  it('reports a terminal failure once across error → failed turn/completed', () => {
+    const turnError = fx.failedTurnCompleted.params.turn.error!;
+    const events = mapAll(mapper, [
+      fx.secondTurnStarted,
+      { method: 'error', params: { threadId: fx.THREAD_ID, turnId: fx.SECOND_TURN_ID, willRetry: false, error: turnError } },
+      fx.failedTurnCompleted,
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual(['turn_started', 'error', 'turn_ended']);
+    expect(events[1].data).toEqual({ code: 'rate_limited', message: 'usage limit reached', fatal: false, willRetry: false });
+    expect(events[2].data).toMatchObject({ stopReason: 'error' });
+  });
+
+  it('keeps a retrying error and still reports the eventual failure', () => {
+    const turnError = fx.failedTurnCompleted.params.turn.error!;
+    const events = mapAll(mapper, [
+      { method: 'error', params: { threadId: fx.THREAD_ID, turnId: fx.SECOND_TURN_ID, willRetry: true, error: turnError } },
+      fx.failedTurnCompleted,
+    ]);
+
+    expect(events.map((e) => [e.type, e.type === 'error' ? e.data.willRetry : undefined])).toEqual([
+      ['error', true],
+      ['error', undefined],
+      ['turn_ended', undefined],
+    ]);
+  });
+
+  describe('items', () => {
+    const started = (item: Parameters<typeof itemStarted>[0]) => mapper.mapNotification(itemStarted(item));
+    const completed = (item: Parameters<typeof itemStarted>[0]) =>
+      mapper.mapNotification({ method: 'item/completed', params: { ...at, item, completedAtMs: 2 } });
+
+    it('maps an MCP tool call', () => {
+      const item = {
+        type: 'mcpToolCall' as const, id: 'mcp-1', server: 'clubhouse', tool: 'send_message', status: 'inProgress' as const,
+        arguments: { to: 'agent-2' }, appContext: null, pluginId: null, readOnlyHint: null, result: null, error: null, durationMs: null,
+      };
+      expect(started(item)[0].data).toEqual({
+        toolCallId: 'mcp-1', kind: 'other', title: 'clubhouse: send_message', status: 'in_progress',
+        toolName: 'mcp__clubhouse__send_message', rawInput: { to: 'agent-2' },
+      });
+      expect(completed({ ...item, status: 'failed', error: { message: 'no such agent' }, durationMs: 12 })[0].data).toEqual({
+        toolCallId: 'mcp-1', status: 'failed', error: 'no such agent', durationMs: 12,
+      });
+      const result = { content: [{ type: 'text', text: 'sent' }], structuredContent: null, _meta: null };
+      expect(completed({ ...item, status: 'completed', result })[0].data).toEqual({ toolCallId: 'mcp-1', status: 'completed', rawOutput: result });
+    });
+
+    it('maps a dynamic tool call, failing on success:false', () => {
+      const item = {
+        type: 'dynamicToolCall' as const, id: 'dyn-1', namespace: 'ext', tool: 'lookup', arguments: {}, status: 'inProgress' as const,
+        contentItems: null, success: null, durationMs: null,
+      };
+      expect(started(item)[0].data).toMatchObject({ toolCallId: 'dyn-1', title: 'lookup', toolName: 'ext.lookup', kind: 'other' });
+      expect(completed({ ...item, status: 'completed', success: false })[0].data).toMatchObject({ status: 'failed' });
+      expect(completed({ ...item, status: 'completed', success: true })[0].data).toMatchObject({ status: 'completed' });
+    });
+
+    it('maps a web search', () => {
+      const item = { type: 'webSearch' as const, id: 'ws-1', query: 'codex app-server', action: null, results: null };
+      expect(started(item)[0].data).toEqual({ toolCallId: 'ws-1', kind: 'fetch', title: 'Search: codex app-server', status: 'in_progress', toolName: 'webSearch' });
+      expect(completed(item)[0].data).toEqual({ toolCallId: 'ws-1', status: 'completed' });
+    });
+
+    it('maps an image view as a completed read', () => {
+      expect(started({ type: 'imageView', id: 'img-1', path: 'shot.png' })[0].data).toEqual({
+        toolCallId: 'img-1', kind: 'read', title: 'View shot.png', status: 'completed', toolName: 'imageView', locations: [{ path: 'shot.png' }],
+      });
+    });
+
+    it('maps collab agent calls to one subagent event per receiver thread', () => {
+      const item = {
+        type: 'collabAgentToolCall' as const, id: 'collab-1', tool: 'spawnAgent' as const, status: 'inProgress' as const,
+        senderThreadId: fx.THREAD_ID, receiverThreadIds: ['sub-a', 'sub-b'], prompt: 'help', model: null, reasoningEffort: null, agentsStates: {},
+      };
+      expect(started(item).map((e) => e.data)).toEqual([
+        { subagentId: 'sub-a', name: 'spawnAgent', status: 'running', parentToolCallId: 'collab-1', nativeSessionId: 'sub-a' },
+        { subagentId: 'sub-b', name: 'spawnAgent', status: 'running', parentToolCallId: 'collab-1', nativeSessionId: 'sub-b' },
+      ]);
+      expect(completed({ ...item, status: 'interrupted' })[0].data).toMatchObject({ status: 'cancelled' });
+      expect(completed({ ...item, status: 'failed' })[0].data).toMatchObject({ status: 'failed' });
+      expect(completed({ ...item, status: 'completed' })[0].data).toMatchObject({ status: 'completed' });
+    });
+
+    it('uses the reasoning summary, falling back to raw content', () => {
+      expect(completed({ type: 'reasoning', id: 'r-1', summary: ['First', 'Second'], content: ['raw'] })[0].data).toEqual({ messageId: 'r-1', text: 'First\n\nSecond' });
+      expect(completed({ type: 'reasoning', id: 'r-2', summary: [], content: ['raw a', 'raw b'] })[0].data).toEqual({ messageId: 'r-2', text: 'raw a\n\nraw b' });
+      expect(completed({ type: 'reasoning', id: 'r-3', summary: [], content: [] })).toEqual([]);
+    });
+
+    it('maps a context compaction to a notice', () => {
+      expect(completed({ type: 'contextCompaction', id: 'cc-1' })).toEqual([
+        { type: 'notice', data: { level: 'info', code: 'context_compacted', message: 'Context compacted' } },
+      ]);
+    });
+  });
+
+  it('maps a model reroute to model_changed', () => {
+    expect(mapper.mapNotification({
+      method: 'model/rerouted',
+      params: { ...at, fromModel: 'gpt-5-codex', toModel: 'gpt-5', reason: 'highRiskCyberActivity' },
+    })).toEqual([{ type: 'model_changed', data: { modelId: 'gpt-5' } }]);
+  });
+
   it('maps thread status flags to session states', () => {
     const state = (status: Extract<ServerNotification, { method: 'thread/status/changed' }>['params']['status']) =>
       mapper.mapNotification({ method: 'thread/status/changed', params: { threadId: fx.THREAD_ID, status } });
@@ -256,6 +364,47 @@ describe('CodexChatEventMapper', () => {
       ]);
       expect(mapper.resolvePermission('1', 'accept')).toBeUndefined();
       expect(mapper.mapNotification(fx.serverRequestResolved)).toEqual([]);
+    });
+
+    describe('additional-permissions requests', () => {
+      const request = {
+        method: 'item/permissions/requestApproval' as const,
+        id: 11,
+        params: {
+          ...at, itemId: 'item-perm-1', environmentId: null, startedAtMs: 1, cwd: 'workspace', reason: 'needs to fetch deps',
+          permissions: { network: { enabled: true }, fileSystem: { read: null, write: ['build'] } },
+        },
+      };
+
+      it('maps to a permission_request with turn and session grants', () => {
+        expect(mapper.mapServerRequest(request)).toEqual([{
+          type: 'permission_request',
+          data: {
+            requestId: '11',
+            title: 'Allow network access and write access to build',
+            description: 'needs to fetch deps',
+            toolCallId: 'item-perm-1',
+            toolName: 'permissions',
+            rawInput: request.params.permissions,
+            options: [
+              { optionId: 'grantForTurn', kind: 'allow_once', label: 'Allow for this turn' },
+              { optionId: 'grantForSession', kind: 'allow_session', label: 'Allow for this session' },
+              { optionId: 'decline', kind: 'reject_once', label: 'Deny' },
+            ],
+          },
+        }]);
+      });
+
+      it.each([
+        ['grantForTurn', { permissions: request.params.permissions, scope: 'turn' }, 'allow'],
+        ['grantForSession', { permissions: request.params.permissions, scope: 'session' }, 'allow'],
+        ['decline', { permissions: {}, scope: 'turn' }, 'deny'],
+      ])('resolves %s', (optionId, result, outcome) => {
+        mapper.mapServerRequest(request);
+        const resolved = mapper.resolvePermission('11', optionId);
+        expect(resolved?.reply).toEqual({ id: 11, method: 'item/permissions/requestApproval', result });
+        expect(resolved?.event.data).toMatchObject({ decision: outcome });
+      });
     });
 
     it('returns null for server requests the contract cannot express', () => {

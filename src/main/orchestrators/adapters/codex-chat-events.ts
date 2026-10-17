@@ -22,7 +22,6 @@ import {
   commandApprovalDecisions,
   FILE_CHANGE_APPROVAL_DECISIONS,
   type CodexErrorInfo,
-  type CodexServerRequestMethod,
   type CodexServerRequestResult,
   type CodexUnrecognizedMessage,
   type CommandExecutionApprovalDecision,
@@ -51,7 +50,14 @@ export type CodexPermissionReply =
       id: RequestId;
       method: 'item/fileChange/requestApproval';
       result: CodexServerRequestResult<'item/fileChange/requestApproval'>;
+    }
+  | {
+      id: RequestId;
+      method: 'item/permissions/requestApproval';
+      result: CodexServerRequestResult<'item/permissions/requestApproval'>;
     };
+
+type PermissionOutcome = 'allow' | 'deny' | 'cancelled';
 
 export interface CodexQuestionReply {
   id: RequestId;
@@ -59,16 +65,19 @@ export interface CodexQuestionReply {
   result: CodexServerRequestResult<'item/tool/requestUserInput'>;
 }
 
-interface OpenPermission {
-  id: RequestId;
-  method: Extract<CodexServerRequestMethod, 'item/commandExecution/requestApproval' | 'item/fileChange/requestApproval'>;
-  decisions: Map<string, CommandExecutionApprovalDecision | FileChangeApprovalDecision>;
+/** An open permission request: the native reply and outcome behind each option id. */
+type OpenPermission = Map<string, { reply: CodexPermissionReply; outcome: PermissionOutcome }>;
+
+function decisionOutcome(decision: CommandExecutionApprovalDecision | FileChangeApprovalDecision): PermissionOutcome {
+  return decision === 'decline' ? 'deny' : decision === 'cancel' ? 'cancelled' : 'allow';
 }
 
 export class CodexChatEventMapper {
   private readonly planText = new Map<string, string>();
   private readonly openPermissions = new Map<string, OpenPermission>();
   private readonly openQuestions = new Map<string, RequestId>();
+  /** Turns whose terminal error already went out via an `error` notification. */
+  private readonly erroredTurns = new Set<string>();
 
   /** Translate one notification. Known methods with no chat meaning map to nothing. */
   mapNotification(notification: ServerNotification): ChatEventDraft[] {
@@ -82,7 +91,10 @@ export class CodexChatEventMapper {
       case 'turn/completed': {
         const { turn } = notification.params;
         const events: ChatEventDraft[] = [];
-        if (turn.status === 'failed' && turn.error) {
+        // Codex usually reports a terminal failure twice: an `error` with
+        // willRetry false, then this turn/completed carrying the same error.
+        const alreadyReported = this.erroredTurns.delete(turn.id);
+        if (turn.status === 'failed' && turn.error && !alreadyReported) {
           events.push({ type: 'error', data: { ...errorData(turn.error), fatal: false } });
         }
         events.push({
@@ -163,7 +175,8 @@ export class CodexChatEventMapper {
         return limits.length > 0 ? [{ type: 'usage', data: { scope: 'session', limits } }] : [];
       }
       case 'error': {
-        const { error, willRetry } = notification.params;
+        const { error, willRetry, turnId } = notification.params;
+        if (!willRetry) this.erroredTurns.add(turnId);
         return [{ type: 'error', data: { ...errorData(error), fatal: false, willRetry } }];
       }
       case 'model/rerouted':
@@ -204,16 +217,19 @@ export class CodexChatEventMapper {
     switch (request.method) {
       case 'item/commandExecution/requestApproval': {
         const { params } = request;
-        const decisions = new Map<string, CommandExecutionApprovalDecision>();
+        const open: OpenPermission = new Map();
         let networkIndex = 0;
         const options = commandApprovalDecisions(params).map((decision) => {
           const isNetwork = typeof decision === 'object' && 'applyNetworkPolicyAmendment' in decision;
           const option = commandOption(decision, isNetwork ? networkIndex++ : 0);
-          decisions.set(option.optionId, decision);
+          open.set(option.optionId, {
+            reply: { id: request.id, method: request.method, result: { decision } },
+            outcome: decisionOutcome(decision),
+          });
           return option;
         });
         const requestId = String(request.id);
-        this.openPermissions.set(requestId, { id: request.id, method: request.method, decisions });
+        this.openPermissions.set(requestId, open);
         return [{
           type: 'permission_request',
           data: {
@@ -229,13 +245,16 @@ export class CodexChatEventMapper {
       }
       case 'item/fileChange/requestApproval': {
         const { params } = request;
-        const decisions = new Map<string, FileChangeApprovalDecision>();
+        const open: OpenPermission = new Map();
         const options = FILE_CHANGE_APPROVAL_DECISIONS.map((decision) => {
-          decisions.set(decision, decision);
+          open.set(decision, {
+            reply: { id: request.id, method: request.method, result: { decision } },
+            outcome: decisionOutcome(decision),
+          });
           return fileChangeOption(decision);
         });
         const requestId = String(request.id);
-        this.openPermissions.set(requestId, { id: request.id, method: request.method, decisions });
+        this.openPermissions.set(requestId, open);
         return [{
           type: 'permission_request',
           data: {
@@ -246,6 +265,44 @@ export class CodexChatEventMapper {
             toolName: 'fileChange',
             ...(params.grantRoot && { rawInput: { grantRoot: params.grantRoot } }),
             options,
+          },
+        }];
+      }
+      case 'item/permissions/requestApproval': {
+        const { params } = request;
+        const requestId = String(request.id);
+        const { network, fileSystem } = params.permissions;
+        const granted = {
+          ...(network && { network }),
+          ...(fileSystem && { fileSystem }),
+        };
+        const reply = (result: CodexServerRequestResult<'item/permissions/requestApproval'>): CodexPermissionReply =>
+          ({ id: request.id, method: request.method, result });
+        this.openPermissions.set(requestId, new Map([
+          ['grantForTurn', { reply: reply({ permissions: granted, scope: 'turn' }), outcome: 'allow' }],
+          ['grantForSession', { reply: reply({ permissions: granted, scope: 'session' }), outcome: 'allow' }],
+          // Granting nothing is how a client declines.
+          ['decline', { reply: reply({ permissions: {}, scope: 'turn' }), outcome: 'deny' }],
+        ]));
+        const asks = [
+          ...(network?.enabled ? ['network access'] : []),
+          ...(fileSystem?.write?.length ? [`write access to ${fileSystem.write.join(', ')}`] : []),
+          ...(fileSystem?.read?.length ? [`read access to ${fileSystem.read.join(', ')}`] : []),
+        ];
+        return [{
+          type: 'permission_request',
+          data: {
+            requestId,
+            title: asks.length > 0 ? `Allow ${asks.join(' and ')}` : 'Grant additional permissions',
+            ...(params.reason && { description: params.reason }),
+            toolCallId: params.itemId,
+            toolName: 'permissions',
+            rawInput: params.permissions,
+            options: [
+              { optionId: 'grantForTurn', kind: 'allow_once', label: 'Allow for this turn' },
+              { optionId: 'grantForSession', kind: 'allow_session', label: 'Allow for this session' },
+              { optionId: 'decline', kind: 'reject_once', label: 'Deny' },
+            ],
           },
         }];
       }
@@ -307,18 +364,12 @@ export class CodexChatEventMapper {
     optionId: string,
     by: Extract<ChatEventDraft, { type: 'permission_resolved' }>['data']['by'] = 'user',
   ): { reply: CodexPermissionReply; event: ChatEventDraft } | undefined {
-    const open = this.openPermissions.get(requestId);
-    const decision = open?.decisions.get(optionId);
-    if (!open || decision === undefined) return undefined;
+    const option = this.openPermissions.get(requestId)?.get(optionId);
+    if (!option) return undefined;
     this.openPermissions.delete(requestId);
-
-    const reply = open.method === 'item/commandExecution/requestApproval'
-      ? { id: open.id, method: open.method, result: { decision: decision as CommandExecutionApprovalDecision } }
-      : { id: open.id, method: open.method, result: { decision: decision as FileChangeApprovalDecision } };
-    const outcome = decision === 'decline' ? 'deny' : decision === 'cancel' ? 'cancelled' : 'allow';
     return {
-      reply,
-      event: { type: 'permission_resolved', data: { requestId, optionId, decision: outcome, by } },
+      reply: option.reply,
+      event: { type: 'permission_resolved', data: { requestId, optionId, decision: option.outcome, by } },
     };
   }
 

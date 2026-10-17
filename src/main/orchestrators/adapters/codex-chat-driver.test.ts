@@ -7,6 +7,7 @@ vi.mock('child_process', () => ({
 
 import { spawn } from 'child_process';
 import {
+  appServerArgs,
   CODEX_CHAT_CAPABILITIES,
   CodexChatDriver,
   codexLevelSettings,
@@ -214,6 +215,82 @@ describe('CodexChatDriver', () => {
       threadId: fx.THREAD_ID,
       input: [{ type: 'text', text: 'live steer', text_elements: [] }],
       expectedTurnId: fx.TURN_ID,
+    });
+  });
+
+  it('a steer that loses the race with turn completion starts a new turn', async () => {
+    useServer({
+      'turn/steer': () => {
+        // The turn finishes before Codex sees the steer.
+        server.send(fx.interruptedTurnCompleted);
+        return { error: { code: -32600, message: 'expected turn mismatch' } };
+      },
+    });
+    const { session } = await startSession();
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+
+    expect(await session.send([{ type: 'text', text: 'late' }], 'steer')).toBe('prompt');
+    expect(server.requests('turn/start')[0].params).toMatchObject({ input: [{ type: 'text', text: 'late', text_elements: [] }] });
+  });
+
+  it('a steer rejected while the turn is still running is surfaced', async () => {
+    useServer({ 'turn/steer': () => ({ error: { code: -32600, message: 'activeTurnNotSteerable' } }) });
+    const { session } = await startSession();
+    server.send(fx.completedTurnNotifications[1]);
+
+    await expect(session.send([{ type: 'text', text: 'x' }], 'steer')).rejects.toThrow('activeTurnNotSteerable');
+    expect(server.requests('turn/start')).toHaveLength(0);
+  });
+
+  it('setLevel keeps the sandbox Codex resolved for the thread', async () => {
+    const userSandbox = {
+      type: 'workspaceWrite' as const, writableRoots: ['workspace', 'shared-cache'], networkAccess: true,
+      excludeTmpdirEnvVar: false, excludeSlashTmp: true,
+    };
+    useServer({ 'thread/start': () => ({ result: { ...fx.threadStartResult, sandbox: userSandbox } }) });
+    const { session } = await startSession({ level: 'ask' });
+
+    await session.setLevel('auto');
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+
+    expect(server.requests('turn/start')[0].params).toMatchObject({ approvalPolicy: 'never', sandboxPolicy: userSandbox });
+  });
+
+  it('passes app-server options through extraArgs and drops terminal flags', async () => {
+    const onLog = vi.fn();
+    const session = await new CodexChatDriver({ onLog }).start({
+      ...baseOpts,
+      extraArgs: ['-c', 'model_verbosity="low"', '--enable=web_search', '--full-auto', '--model', 'o3', '--strict-config'],
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'codex',
+      ['app-server', '-c', 'model_verbosity="low"', '--enable=web_search', '--strict-config'],
+      expect.anything(),
+    );
+    expect(onLog).toHaveBeenCalledWith('warn', 'Ignoring extraArgs that codex app-server does not accept', { dropped: ['--full-auto', '--model', 'o3'] });
+    await session.close();
+  });
+
+  it('round-trips an additional-permissions request', async () => {
+    const { session, take } = await startSession();
+    await take(1);
+
+    server.send({
+      method: 'item/permissions/requestApproval',
+      id: 12,
+      params: {
+        threadId: fx.THREAD_ID, turnId: fx.TURN_ID, itemId: 'p', environmentId: null, startedAtMs: 1, cwd: 'workspace', reason: null,
+        permissions: { network: { enabled: true }, fileSystem: null },
+      },
+    });
+    expect(await take(1)).toMatchObject([{ type: 'permission_request', data: { requestId: '12' } }]);
+
+    await session.respondPermission('12', 'grantForSession');
+
+    expect(server.received[server.received.length - 1]).toEqual({
+      id: 12,
+      result: { permissions: { network: { enabled: true } }, scope: 'session' },
     });
   });
 
@@ -433,6 +510,20 @@ describe('codex driver helpers', () => {
     ['full_access', 'never', 'danger-full-access'],
   ] as const)('level %s → %s / %s', (level, approvalPolicy, sandbox) => {
     expect(codexLevelSettings(level)).toEqual({ approvalPolicy, sandbox });
+  });
+
+  it('appServerArgs keeps config overrides and feature toggles only', () => {
+    expect(appServerArgs(['--config', 'a=1', '-c=b=2', '--disable', 'x', 'prompt text', '-c'])).toEqual({
+      args: ['--config', 'a=1', '-c=b=2', '--disable', 'x'],
+      dropped: ['prompt text', '-c'],
+    });
+  });
+
+  it('reuses the thread sandbox only when its type matches the level', () => {
+    const readOnly = { type: 'readOnly' as const, networkAccess: true };
+    expect(codexSandboxPolicy('read-only', 'repo', readOnly)).toBe(readOnly);
+    expect(codexSandboxPolicy('workspace-write', 'repo', readOnly)).toMatchObject({ type: 'workspaceWrite', writableRoots: ['repo'] });
+    expect(codexSandboxPolicy('danger-full-access', 'repo', readOnly)).toEqual({ type: 'dangerFullAccess' });
   });
 
   it('builds sandbox policies scoped to the cwd', () => {

@@ -75,16 +75,49 @@ export function codexLevelSettings(level: PermissionLevel): { approvalPolicy: As
   }
 }
 
-/** turn/start takes a full SandboxPolicy rather than a mode. */
-export function codexSandboxPolicy(mode: SandboxMode, cwd: string): SandboxPolicy {
+/**
+ * turn/start takes a full SandboxPolicy rather than a mode. When the thread's
+ * own policy (from thread/start, which honours config.toml) already has the
+ * requested type it is reused, so a level change keeps the user's writable
+ * roots and network setting.
+ */
+export function codexSandboxPolicy(mode: SandboxMode, cwd: string, threadPolicy?: SandboxPolicy): SandboxPolicy {
   switch (mode) {
     case 'read-only':
-      return { type: 'readOnly', networkAccess: false };
+      return threadPolicy?.type === 'readOnly' ? threadPolicy : { type: 'readOnly', networkAccess: false };
     case 'workspace-write':
-      return { type: 'workspaceWrite', writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
+      return threadPolicy?.type === 'workspaceWrite'
+        ? threadPolicy
+        : { type: 'workspaceWrite', writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
     case 'danger-full-access':
       return { type: 'dangerFullAccess' };
   }
+}
+
+/** `codex app-server` options; everything else in extraArgs is a terminal (TUI) flag. */
+const APP_SERVER_VALUE_FLAGS = new Set(['-c', '--config', '--enable', '--disable']);
+const APP_SERVER_BOOLEAN_FLAGS = new Set(['--strict-config']);
+
+/**
+ * Keep the extraArgs `codex app-server` accepts (config overrides and feature
+ * toggles). Per the contract extraArgs are best-effort, so terminal-only
+ * flags (--model, --full-auto, a prompt, …) are dropped and reported.
+ */
+export function appServerArgs(extraArgs: readonly string[]): { args: string[]; dropped: string[] } {
+  const args: string[] = [];
+  const dropped: string[] = [];
+  for (let i = 0; i < extraArgs.length; i++) {
+    const arg = extraArgs[i];
+    const flag = arg.split('=', 1)[0];
+    if (APP_SERVER_BOOLEAN_FLAGS.has(arg) || (APP_SERVER_VALUE_FLAGS.has(flag) && arg.includes('='))) {
+      args.push(arg);
+    } else if (APP_SERVER_VALUE_FLAGS.has(arg) && i + 1 < extraArgs.length) {
+      args.push(arg, extraArgs[++i]);
+    } else {
+      dropped.push(arg);
+    }
+  }
+  return { args, dropped };
 }
 
 /** `codex_cli_rs/0.153.4 (Mac OS 15.5; arm64) …` → `0.153.4`. */
@@ -139,9 +172,15 @@ class CodexChatSession implements ChatDriverSession {
   private exited: Promise<void>;
   /** Overrides applied on the next turn/start (Codex keeps them for later turns too). */
   private nextTurn: Partial<TurnStartParams> = {};
+  /** The sandbox policy Codex resolved for the thread, used as the base for level changes. */
+  private threadSandbox: SandboxPolicy | undefined;
 
   constructor(private readonly opts: ChatDriverStartOptions, onLog?: LogFn) {
-    const spawnCmd = resolveStructuredSpawn(opts.binaryPath, ['app-server', ...(opts.extraArgs ?? [])], opts.commandPrefix);
+    const { args, dropped } = appServerArgs(opts.extraArgs ?? []);
+    if (dropped.length > 0) {
+      onLog?.('warn', 'Ignoring extraArgs that codex app-server does not accept', { dropped });
+    }
+    const spawnCmd = resolveStructuredSpawn(opts.binaryPath, ['app-server', ...args], opts.commandPrefix);
     let markExited: () => void = () => {};
     this.exited = new Promise((resolve) => { markExited = resolve; });
     this.client = new CodexAppServerClient({
@@ -218,6 +257,7 @@ class CodexChatSession implements ChatDriverSession {
     }
 
     this.threadId = result.thread.id;
+    this.threadSandbox = result.sandbox;
     if (opts.effort) this.nextTurn.effort = opts.effort as TurnStartParams['effort'];
 
     this.queue.push({
@@ -252,8 +292,15 @@ class CodexChatSession implements ChatDriverSession {
     const threadId = this.requireThread();
     const input = toCodexInput(content);
     if (delivery === 'steer' && this.client.getActiveTurnId(threadId)) {
-      await this.client.turnSteer(threadId, input);
-      return 'steer';
+      try {
+        await this.client.turnSteer(threadId, input);
+        return 'steer';
+      } catch (err) {
+        // The turn can end between the check and the steer, and Codex then
+        // rejects the stale expectedTurnId. With no turn left running, the
+        // message starts the next one instead of being lost.
+        if (this.client.getActiveTurnId(threadId)) throw err;
+      }
     }
     // Queueing is the runtime's job (capabilities.queue === 'client'), so
     // anything that isn't a live steer starts a turn.
@@ -278,13 +325,8 @@ class CodexChatSession implements ChatDriverSession {
   async respondPermission(requestId: string, optionId: string): Promise<void> {
     const resolved = this.mapper.resolvePermission(requestId, optionId);
     if (!resolved) throw new Error(`No open Codex permission request ${requestId} with option ${optionId}`);
-    const { reply } = resolved;
-    // Two branches so each call sees one member of the reply union.
-    if (reply.method === 'item/commandExecution/requestApproval') {
-      this.client.respondToServerRequest(reply.id, reply.method, reply.result);
-    } else {
-      this.client.respondToServerRequest(reply.id, reply.method, reply.result);
-    }
+    // Each reply was built with its method's result type in the mapper.
+    this.client.respond(resolved.reply.id, resolved.reply.result);
     this.emit(resolved.event);
   }
 
@@ -298,7 +340,7 @@ class CodexChatSession implements ChatDriverSession {
   async setLevel(level: PermissionLevel): Promise<void> {
     const { approvalPolicy, sandbox } = codexLevelSettings(level);
     this.nextTurn.approvalPolicy = approvalPolicy;
-    this.nextTurn.sandboxPolicy = codexSandboxPolicy(sandbox, this.opts.cwd);
+    this.nextTurn.sandboxPolicy = codexSandboxPolicy(sandbox, this.opts.cwd, this.threadSandbox);
     this.emit({ type: 'mode_changed', data: { level, nativeMode: `${approvalPolicy}/${sandbox}` } });
   }
 
