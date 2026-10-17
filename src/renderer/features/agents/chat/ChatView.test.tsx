@@ -19,10 +19,10 @@ const agent: Agent = {
 function makeActions(): ChatActions & { [K in keyof ChatActions]: ReturnType<typeof vi.fn> } {
   return {
     send: vi.fn(async () => ({ delivery: 'prompt' as const })),
-    interrupt: vi.fn(async () => {}),
+    interrupt: vi.fn(async () => true),
     respondPermission: vi.fn(async () => true),
     answerQuestion: vi.fn(async () => true),
-    setLevel: vi.fn(async () => {}),
+    setLevel: vi.fn(async () => true),
   };
 }
 
@@ -854,5 +854,47 @@ describe('ChatView login banner', () => {
     expect(screen.getByTestId('chat-login-banner')).toHaveTextContent('This CLI needs you to log in.');
     fireEvent.click(screen.getByRole('button', { name: 'Log in in the terminal' }));
     expect(onSwitchToTerminal).toHaveBeenCalled();
+  });
+});
+
+describe('compound actions stop when their first step fails (#2057)', () => {
+  it('sends after a successful interrupt (Stop & send)', async () => {
+    const { actions } = renderFixture('copilot', 'steer');
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Skip the tests' } });
+    fireEvent.click(screen.getByTestId('chat-send-primary'));
+    await waitFor(() => expect(actions.send).toHaveBeenCalledWith('Skip the tests', 'auto'));
+    expect(actions.interrupt).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send when the interrupt fails, and puts the draft back', async () => {
+    const actions = makeActions();
+    actions.interrupt.mockResolvedValueOnce(false);
+    renderFixture('copilot', 'steer', actions);
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Skip the tests' } });
+    fireEvent.click(screen.getByTestId('chat-send-primary'));
+    await waitFor(() => expect(actions.interrupt).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByLabelText('Message')).toHaveValue('Skip the tests'));
+    expect(actions.send).not.toHaveBeenCalled();
+  });
+
+  it('implements the plan after a successful level change', async () => {
+    const { actions } = renderFixture('copilot', 'plan');
+    fireEvent.click(screen.getByText('Switch to Ask first and implement'));
+    await waitFor(() => expect(actions.send).toHaveBeenCalledWith('Implement the plan.', 'auto'));
+    expect(actions.setLevel).toHaveBeenCalledWith('ask');
+  });
+
+  it('does not implement the plan when the level change fails', async () => {
+    const actions = makeActions();
+    actions.setLevel.mockResolvedValueOnce(false);
+    renderFixture('copilot', 'plan', actions);
+    fireEvent.click(screen.getByText('Switch to Ask first and implement'));
+    await waitFor(() => expect(actions.setLevel).toHaveBeenCalledWith('ask'));
+    // Let the failed level change settle and the handler finish before checking it didn't send.
+    await act(async () => {
+      await actions.setLevel.mock.results[0].value;
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(actions.send).not.toHaveBeenCalled();
   });
 });
