@@ -5,6 +5,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
+import { wakeDurableAgent, type WakeMode } from './wake-durable-agent';
 
 /**
  * The agent row's actions, shared by the legacy list row and the new chrome's
@@ -113,7 +114,6 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
 
   const killAgent = useAgentStore((s) => s.killAgent);
   const removeAgent = useAgentStore((s) => s.removeAgent);
-  const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const openDeleteDialog = useAgentStore((s) => s.openDeleteDialog);
   const openApplyPersonaDialog = useAgentStore((s) => s.openApplyPersonaDialog);
@@ -140,33 +140,17 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
   }, [agent.status, agent.kind, agent.id, killAgent, removeAgent, isRemote, remoteParts, sendAgentKill]);
 
-  const handleWake = useCallback(async () => {
+  const wake = useCallback(async (mode: WakeMode) => {
     if (agent.status === 'running') return;
     if (isRemote && remoteParts) {
-      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId);
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, mode === 'resume' ? { resume: true } : undefined);
       return;
     }
     if (!activeProject) return;
-    const configs = await window.clubhouse.agent.listDurable(activeProject.path);
-    const config = configs.find((c: any) => c.id === agent.id);
-    if (config) {
-      await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
-    }
-  }, [activeProject, agent.status, agent.id, spawnDurableAgent, isRemote, remoteParts, sendAgentWake]);
-
-  const handleWakeAndResume = useCallback(async () => {
-    if (agent.status === 'running') return;
-    if (isRemote && remoteParts) {
-      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, { resume: true });
-      return;
-    }
-    if (!activeProject) return;
-    const configs = await window.clubhouse.agent.listDurable(activeProject.path);
-    const config = configs.find((c: any) => c.id === agent.id);
-    if (config) {
-      await spawnDurableAgent(activeProject.id, activeProject.path, config, true);
-    }
-  }, [activeProject, agent.status, agent.id, spawnDurableAgent, isRemote, remoteParts, sendAgentWake]);
+    await wakeDurableAgent(activeProject.id, activeProject.path, agent.id, mode);
+  }, [activeProject, agent.status, agent.id, isRemote, remoteParts, sendAgentWake]);
+  const handleWake = useCallback(() => { void wake('resume'); }, [wake]);
+  const handleWakeNewSession = useCallback(() => { void wake('new'); }, [wake]);
 
   const handleDelete = useCallback(() => {
     openDeleteDialog(agent.id);
@@ -218,24 +202,24 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     } else if (isDurable && agent.status === 'sleeping') {
       list.push({
         id: 'wake',
-        label: 'Wake',
+        label: 'Wake & Resume',
         icon: <span>{'\u25B6'}</span>,
         hoverColor: 'hover:text-ctp-success',
         visible: true,
         handler: handleWake,
       });
       list.push({
-        id: 'wake-resume',
-        label: 'Wake & Resume',
+        id: 'wake-new',
+        label: 'Start New Session',
         icon: (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M1 4v6h6" />
-            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
           </svg>
         ),
         hoverColor: 'hover:text-ctp-success',
         visible: true,
-        handler: handleWakeAndResume,
+        handler: handleWakeNewSession,
       });
     }
 
@@ -337,7 +321,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeAndResume, handlePopOut, handleSpawnChild, handleSettings, handleDelete, handleApplyPersona, handleExtractPersona]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleDelete, handleApplyPersona, handleExtractPersona]);
 
   return actions;
 }

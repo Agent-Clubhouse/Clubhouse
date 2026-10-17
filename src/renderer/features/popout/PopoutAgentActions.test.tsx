@@ -13,7 +13,12 @@ vi.mock('../../stores/agentStore', () => ({
 }));
 
 vi.mock('../../stores/projectStore', () => ({
-  useProjectStore: (selector: (s: any) => any) => selector({ projects: [] }),
+  useProjectStore: (selector: (s: any) => any) => selector({ projects: [{ id: 'proj-1', path: '/proj' }] }),
+}));
+
+const mockWake = vi.fn();
+vi.mock('../agents/wake-durable-agent', () => ({
+  wakeDurableAgent: (...args: unknown[]) => mockWake(...args),
 }));
 
 const agent = (over: Record<string, unknown> = {}) => ({
@@ -48,6 +53,13 @@ describe('PopoutAgentActions', () => {
     render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
     expect(screen.getByTestId('popout-wake-button')).toBeInTheDocument();
     expect(screen.queryByTestId('popout-stop-button')).not.toBeInTheDocument();
+  });
+
+  it('wakes by resuming the last session, like every other Wake', async () => {
+    mockAgents['agent-1'] = agent({ status: 'sleeping' });
+    render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
+    fireEvent.click(screen.getByTestId('popout-wake-button'));
+    await waitFor(() => expect(mockWake).toHaveBeenCalledWith('proj-1', '/proj', 'agent-1', 'resume'));
   });
 
   it('offers no Wake for a sleeping quick agent', () => {
