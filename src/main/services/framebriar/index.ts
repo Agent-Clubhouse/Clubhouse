@@ -28,6 +28,7 @@ export function getFeedbackService(): FeedbackService {
       dataDir: path.join(app.getPath('userData'), 'framebriar'),
       appVersion: app.getVersion(),
       isOnline: () => net.isOnline(),
+      log: (level, msg, meta) => appLog('core:feedback', level, msg, meta ? { meta } : undefined),
     });
     // The button, notices and Settings follow main's status in every window.
     s.onChange((status) => broadcastToAllWindows(IPC.FEEDBACK.STATUS_CHANGED, status));
@@ -49,11 +50,8 @@ export function getFeedbackService(): FeedbackService {
 /** Called after the main window exists (app ready: Linux safeStorage backends load late). */
 export function startFeedback(): void {
   if (!isFeedbackEnabled()) return;
-  getFeedbackService().start().catch((err) => {
-    appLog('core:feedback', 'warn', 'Feedback start failed', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
-    });
-  });
+  // telemetry-exempt: the service logs its own start failure; status shows it to the user.
+  getFeedbackService().start().catch(() => {});
 }
 
 /** Stop the running service (one bounded flush; the outbox and enrollment stay on disk). */
