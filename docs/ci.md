@@ -2,65 +2,74 @@
 
 How Validate spends runners, and why. The constraint: this plan has about 60 concurrent Linux and Windows runners but only **5 macOS** runners. When every PR also ran macOS, the macOS queue became the bottleneck for the whole repository.
 
+The rules, in short:
+- Every behaviour is tested on every PR, on Linux and Windows.
+- macOS runs only what genuinely differs on macOS: at most **2 short macOS jobs per PR**, neither of them the long pole.
+- The complete macOS matrix is still available with the `full-ci` label or a manual run.
+
 ## What runs when
 
 | Trigger | Linux + Windows | macOS |
 |---|---|---|
 | PR, docs only | nothing (`paths-ignore`) | nothing |
-| PR, code | lint, typecheck + API surface, unit (2 shards per OS), one build per OS, E2E (3 shards per OS), Annex E2E | one **targeted** job, only if the change is macOS-relevant |
-| PR touching only unit tests | lint, typecheck, unit | targeted job only if macOS-relevant |
-| PR labelled `full-ci`, Dependabot, manual dispatch | everything | everything (unit, build, E2E, Annex E2E) |
-| Push to `main` | everything, plus the Linux package smoke test | the targeted job (reduced set) |
-| Nightly 07:00 UTC (`validate.yml`) | everything | nothing (see the next row) |
-| Nightly 08:00 UTC (`nightly-macos.yml`) | — | full unit, typecheck, E2E and Annex E2E; files or updates a tracking issue on failure |
+| PR, code | lint; typecheck + API surface (one Linux job); unit tests (2 shards per OS); **one build per OS, then E2E (3 shards per OS) and Annex E2E from that build** | **macOS unit** (~2.5 min), plus **macOS build + E2E smoke** (~9 min) only if the change touches packaging, dependencies or window/keyboard chrome |
+| PR touching only unit tests | lint, typecheck, unit | macOS unit |
+| Dependabot PR | as a code PR, plus the Linux package smoke test | as a code PR. Electron and native-module bumps trigger macOS build |
+| `full-ci` label, manual dispatch | everything | everything (unit, build, sharded E2E, Annex E2E) |
+| Push to `main` | everything, plus the Linux package smoke test | macOS unit, plus macOS build if the push is macOS-relevant |
+| Daily, 07:00 UTC | everything | macOS unit and macOS build. This catches runner-image and Xcode drift that no change would trigger, for about 12 macOS minutes a day. |
 
-`full-ci` is the escape hatch. Add the label to any PR to get the complete matrix, including full macOS.
+## Deciding what a change needs
 
-## Deciding what a PR needs
+The `changes` job classifies the diff with `node scripts/ci/classify-changes.mjs`. For a PR it diffs the base against the head; for a push to main it diffs `before` against the new head. With no usable base, for example a new branch, it runs everything. The step summary prints the decision and the reason.
 
-The `changes` job runs `git diff -U0 base...head | node scripts/ci/classify-changes.mjs`. The step summary prints its decision and the reason.
+- **Docs-only:** everything under `docs/`, `notes/`, top-level `*.md`, `.github` templates, or `LICENSE`. `paths-ignore` skips these PRs before any runner starts. Markdown under `src/` is bundled app content, so it doesn't count as docs.
+- **E2E:** every change except docs and unit tests (`*.test.ts(x)`, `__fixtures__`, `__mocks__`, `test/`).
+- **macOS build:** any one of these.
+  - **A packaging input:** `forge.config.ts`, `entitlements.plist`, `scripts/fix-node-pty.js` or `.icns` icons. The CI files themselves count too.
+  - **A dependency change** to Electron, node-pty, `@electron/*` or `@electron-forge/*`, in `package.json` or the lockfile, including lockfile `resolved` URLs.
+  - **A changed line touching macOS behaviour** in window chrome, the app menu, preload or the renderer: `'darwin'`, `titleBarStyle`, `trafficLightPosition`, `app.dock`, `setVibrancy`, `safeStorage`, `systemPreferences`, `isMac`, `metaKey`, `osxSign` or `osxNotarize`. An unrelated edit to a file with a darwin branch elsewhere doesn't count, and neither does a darwin platform mock in a test.
 
-- **Docs-only:** everything under `docs/`, `notes/`, top-level `*.md`, `.github` templates, or `LICENSE`. `paths-ignore` skips these before any runner starts. Markdown under `src/` is bundled app content, so it doesn't count as docs.
-- **E2E:** every change except docs and unit tests (`*.test.ts(x)`, `__fixtures__`, `__mocks__`, `test/`). A PR that only changes unit tests skips the build and E2E.
-- **macOS-relevant:** any one of these.
-  - **A file that exists for macOS:**
-    - `forge.config.ts`, `entitlements.plist`, `scripts/fix-node-pty.js`, `.icns` icons;
-    - `src/main/services/auto-update*` (Squirrel.Mac; `auto-update-apply.test.ts` runs only on darwin);
-    - `src/main/telemetry/secret-store.ts` (keychain `safeStorage`);
-    - `src/main/util/shell.ts` (the login-shell env);
-    - the CI files themselves.
-  - **A changed line in non-test source that touches macOS behaviour:** `'darwin'`, `safeStorage`, `systemPreferences`, `titleBarStyle`, `trafficLightPosition`, `app.dock`, `setVibrancy`, `osxSign` or `osxNotarize`. An unrelated edit to a file that has a darwin branch elsewhere doesn't count, and neither does a `darwin` platform mock in a test.
-  - **A dependency change to Electron, node-pty, `@electron/*` or `@electron-forge/*`**, in `package.json` or the lockfile, which changes what gets built for macOS.
+macOS code that runs at unit level needs no classification, because the macOS unit job runs on every code PR. That covers auto-update, the keychain, the login shell and FSEvents.
 
-### Which tests need a Mac
+Over the 67 PRs measured below, macOS build would have run on **8 (12%)**:
+- the Electron bump in #1941;
+- title bar, sidebar inset, start page and Meta-key changes: 4;
+- CI changes: 3.
 
-Almost every unit test mocks `process.platform`, so it runs identically on Linux. The E2E specs only branch on the modifier key (Meta versus Control), which Linux and Windows exercise with Control. What genuinely needs macOS:
+## The two macOS jobs
 
-| Area | Why | Where it's checked |
+**macOS unit**, on every code PR (about 2.5 min). It skips the Electron download, then runs:
+- **The unit tests for code that behaves differently on macOS:**
+  - `auto-update` (the apply test runs only on darwin);
+  - `secret-store` (keychain) and `install-kind`;
+  - `shell` (zsh login env), and `shared` (the `/opt/homebrew` CLI paths);
+  - `window-handlers` and `app-handlers`;
+  - `goobers-service` (FSEvents timing);
+  - `renderer/chrome`;
+  - the terminal `clipboard` and `keyboardShortcutsStore` (Cmd versus Ctrl).
+- **`vitest related` for the changed source files.**
+
+**macOS build + E2E smoke**, only when the change is macOS-relevant (about 9 min).
+1. **`electron-forge package` for macOS:** asar, fuses, the `osxSign` config, and node-pty's darwin prebuild with the `fix-node-pty.js` spawn-helper fix.
+2. **The specs whose behaviour differs on macOS:** `app-launch`, `smoke-blank-screen` and `popout-window` for window chrome and traffic lights; `command-palette` and `find-replace` for Cmd shortcuts; and `terminal` for the node-pty spawn helper.
+
+## Coverage map
+
+The table below shows where every behaviour the old macOS legs tested is covered now. "Before" is the PR matrix before #1984, which ran typecheck, unit, E2E and Annex E2E on macOS for every PR.
+
+| Previously tested on macOS, on every PR | Now covered by | Why that's equivalent |
 |---|---|---|
-| Packaging | `electron-forge package` for macOS: asar, fuses, `osxSign` config, node-pty's darwin prebuild (`fix-node-pty.js`) | Targeted job; nightly |
-| Auto-update apply | Squirrel.Mac; the apply test only runs on darwin | Targeted job (when touched); nightly |
-| Keychain | `safeStorage` in `telemetry/secret-store.ts` | Targeted job (when touched); nightly |
-| Window chrome | `titleBarStyle`, traffic lights (`ChromeTitleBar`, `window-handlers`, `ChromeSidebar` inset), app menu and dock (`src/main/index.ts`) | Targeted job: the `app-launch`, `smoke-blank-screen` and `popout-window` specs; nightly |
-| Keyboard | Cmd versus Ctrl (`keyboardShortcutsStore`, terminal `clipboard`) | Targeted job: the `command-palette` spec; nightly |
-| Shell environment | zsh login shell, `path_helper`, `/opt/homebrew/bin` CLI paths | Targeted job (when touched); nightly |
-| FSEvents | `fs.watch` latency differs from inotify (the goobers address watcher) | Nightly |
+| Typecheck | Linux typecheck, every PR | `tsc` output doesn't depend on the OS, and Linux paths are case-sensitive, so Linux catches more |
+| ~560 unit/component files | Linux and Windows unit, every PR | They mock `process.platform` and use temp dirs, so they run identically on every OS |
+| Unit tests with darwin-only paths (Squirrel.Mac apply, keychain, login shell, `/opt/homebrew` CLI paths, FSEvents watcher, title bar, Cmd shortcuts, clipboard) | macOS unit, every PR | Same tests, on a real Mac, on every PR |
+| Unit tests affected by the change | macOS unit (`vitest related`), every PR, plus Linux and Windows | The change's tests also run on a Mac |
+| macOS packaging (it ran inside every macOS E2E job) | macOS build, when packaging, dependency or chrome inputs change; also daily | Packaging only changes when its inputs change; daily covers runner-image drift |
+| E2E specs, all ~33 files (core UI, terminal, agents, plugins, canvas, settings, onboarding, …) | Linux and Windows E2E, 3 shards each, every PR | The same specs; their only platform branch is Meta versus Control, which Linux and Windows run with Control |
+| macOS-specific E2E behaviour: traffic lights, title bar, app menu, Cmd shortcuts, node-pty spawn helper | macOS build smoke set, when chrome or keyboard code changes; also daily | Those specs on a real Mac, triggered by the changes that can break them |
+| Annex E2E (dual instance, `bonjour-service` discovery) | Linux and Windows Annex E2E, every PR | `bonjour-service` is pure-JS multicast DNS, and Annex has no darwin code path |
 
-## The targeted macOS job
-
-This is one `macos-latest` job, about 10 minutes long. It runs these steps in order:
-1. **On PRs only:** `vitest related` for the changed source files.
-2. **The macOS-specific unit tests:** auto-update, secret store, install kind, shell, window handlers, CLI paths, chrome, clipboard and shortcuts. That's about 27 files and 10 seconds.
-3. **`electron-forge package`.**
-4. **An E2E smoke set:** `app-launch`, `smoke-blank-screen`, `command-palette` and `popout-window`.
-
-## Nightly macOS and the tracking issue
-
-`nightly-macos.yml` runs the full suite on macOS, and its `report` job then runs `scripts/ci/nightly-report.mjs` over the JUnit results, from vitest and from Playwright. It keeps one tracking issue up to date:
-
-- **The first failing night opens an issue.** It's titled `[MEDIUM][TEST] Nightly macOS CI failures` and labelled `nightly-macos`, `bug`, `type:bug`, `severity: MEDIUM` and `area:e2e`. It lists the failing tests.
-- **Later failing nights comment on that same issue,** listing new failures, tests still failing, and tests fixed since the last report. They also refresh the issue body, which keeps the current failing set in a hidden marker.
-- **The first passing night comments and closes the issue.**
+The one narrowing: a change that touches none of the triggers can't break the macOS-specific UI and packaging checks by construction. Even so, if a runner image or Xcode update changes behaviour, the daily run surfaces it within a day, and `full-ci` runs the complete macOS matrix on demand.
 
 ## Building once
 
@@ -71,12 +80,12 @@ The three E2E shards and the Annex E2E job for that OS each run `npm ci`, downlo
 ## Caching and skipped downloads
 
 - **npm:** `actions/setup-node` caches it.
-- **Electron binary:** jobs that launch Electron (E2E, Annex, macOS) cache the roughly 100 MB binary in its default cache directory, keyed by the lockfile.
-- **Skipped downloads:** lint, typecheck and unit jobs set `ELECTRON_SKIP_BINARY_DOWNLOAD=1`, because vitest aliases `electron` to a mock and they never launch it.
+- **Electron binary:** the jobs that launch Electron cache the roughly 100 MB binary in its default cache directory, keyed by the lockfile.
+- **Skipped downloads:** lint, typecheck, unit and macOS unit set `ELECTRON_SKIP_BINARY_DOWNLOAD=1`, because vitest aliases `electron` to a mock and these jobs never launch it.
 
-## Measurements behind this design
+## Measurements
 
-These are from the Validate runs between 2026-10-16 07:00 and 2026-10-17 06:40 UTC: 187 runs (193 attempts), 186 of them for PRs, across 67 PR branches. They were collected with `gh api …/actions/runs/{id}/attempts/{n}/jobs`. Most of these runs used the matrix from before #1984, which ran every job on all three OSes for every PR. Times are minutes: queue is job created to started, and run is started to completed.
+These are from the Validate runs between 2026-10-16 07:00 and 2026-10-17 06:40 UTC: 187 runs (193 attempts), 186 of them for PRs, across 67 PR branches. They were collected with `gh api …/actions/runs/{id}/attempts/{n}/jobs`. Most of the runs used the pre-#1984 matrix. Times are minutes: queue is job created to started, and run is started to completed.
 
 | Job | OS | Queue p50 | Queue p90 | Run p50 | Run p90 |
 |---|---|---|---|---|---|
@@ -89,47 +98,58 @@ These are from the Validate runs between 2026-10-16 07:00 and 2026-10-17 06:40 U
 | Unit + Component | Windows / Linux | 0.0 | 0.1–0.5 | 6.1 / 4.3 | 6.7 / 5.5 |
 | Typecheck | macOS / Windows / Linux | 4.7 / 0 / 0 | 37.0 / 0.2 / 0.6 | 1.1 / 1.4 / 0.7 | 1.4 / 1.8 / 0.8 |
 | Linux package smoke | Linux | 0.0 | 0.0 | 6.4 | 6.9 |
-| Lint, API surface | Linux | 0.0 | 0.3–0.4 | 0.8 | 0.9 |
+| Lint, API surface | Linux | 0.0 | 0.3–0.4 | 0.8 | 0.8 |
 
-- **macOS queueing:** while Linux and Windows jobs started immediately, macOS jobs waited 5–9 minutes at the median and 35–41 minutes at p90. In the snapshot behind this work, macOS had 5 running and 89 queued, against 51 running and 0 queued on Linux and Windows.
-- **Runner minutes in the window:** Linux 4,289 (1,073 jobs), Windows 3,910 (605) and macOS 3,579 (513). That's roughly 30% of the minutes on 5 of the ~65 runners.
+- **macOS load:** across the 119 runs with a complete macOS leg, macOS used 27.2 minutes per run at the median (p90 32.1). macOS took about 30% of all runner minutes, 3,579 of 11,778, on 5 of the ~65 runners. It was the only queue: 5 running and 89 queued at the snapshot, against 51 running and 0 queued on Linux and Windows.
 - **Dominant steps:**
-  - "Build app" (`electron-forge package`) took 4.5 (Linux), 5.1 (Windows) and 6.0 (macOS) minutes, and it ran in every E2E and every Annex E2E job: 6 packages per run.
-  - E2E test execution took 6.5 to 7.4 minutes.
-  - `npm ci` took 0.5 to 0.7 minutes.
-  - Typecheck ran three times, plus once more inside the API surface job, though `tsc` doesn't depend on the OS.
+  - "Build app" (`electron-forge package`) took 4.5 (Linux), 5.1 (Windows) and 6.0 (macOS) minutes, and it ran in every E2E and Annex E2E job: 6 packages per run.
+  - E2E execution took 6.5 to 7.4 minutes, and `npm ci` 0.5 to 0.7.
+  - `tsc` ran 4 times per run, on 3 OSes plus the API surface job.
 - **Superseded runs:** 75 of 193 attempts were cancelled by a newer push. Jobs already running when that happened burned 163 macOS minutes.
-- **Failures and flakes:**
-  - Unit failed on 12 macOS commits, 12 Windows and 5 Linux. Five failures passed on rerun of the same commit (3 macOS, 2 Windows).
-  - E2E failed on 9 macOS commits, against 5 Linux and 2 Windows. macOS E2E was the least reliable leg.
-- **PR mix:** 5 of 67 PRs (7%) were docs-only and ran the full matrix anyway. 13 of 67 (19%) would get the targeted macOS job under the rules above:
-  - auto-update changes: 6;
-  - title bar, traffic-light and darwin lines: 3;
-  - CI changes: 3;
-  - the keychain secret store: 1;
-  - the Electron bump in #1941: 1.
+- **Flakes:**
+  - Unit failed and then passed on rerun of the same commit 5 times (3 macOS, 2 Windows).
+  - E2E failed on 9 macOS commits, against 5 Linux and 2 Windows.
 
-## Before and after, per PR
+## Compute and long pole: before, now and proposed
 
-The estimates use the medians above. "Now" is main after #1984 and #1995, which removed E2E from PRs and then macOS from the PR matrix.
+These are per-job medians from the table above. The proposed figures are estimates, built from the same medians:
+- **Unit shards:** half the test step, plus the job overhead.
+- **E2E shards:** a third of the test step, plus overhead and an artifact download.
+- **The build job:** the old "Build app" step, plus overhead and the upload.
 
-| | Before #1984 | Now | With this design |
-|---|---|---|---|
-| E2E on a PR | macOS, Windows, Linux | none (needs `full-ci`) | Linux and Windows, sharded |
-| PR wall-clock (code PR) | ~21 min median (macOS E2E queue + run), ~52 min p90 | ~7 min (Windows unit) | ~10–11 min: build ~6.2, then E2E shard ~3.8 |
-| macOS minutes per PR | ~28 (4 jobs) | 0 | ~1.8 on average (19% × ~10 min) |
-| macOS on the PR's critical path | yes | no | only for macOS-relevant PRs, ~10 min |
-| Linux + Windows minutes per PR | ~58 | ~14 | ~55, with E2E restored |
-| Docs-only PR | full matrix | partial | no runners |
-| Push to main, macOS | ~28 min (4 jobs) | ~28 min (4 jobs) | ~10 min (1 job) |
-| Nightly macOS | full matrix | full matrix | ~20 min (2 jobs) plus the issue report |
+### Per PR run (minutes of runner time)
 
-On macOS the saving is about 26 minutes per PR against the old matrix, and about 18 minutes per push to main against today. The coverage traded away:
-- **Full macOS unit and E2E on a PR** now come only from the nightly run and the `full-ci` label, and their regressions surface the next morning as the tracking issue.
-- **The Linux package smoke test** runs only on main, full runs and the nightly.
+| | Linux | Windows | macOS | Total | macOS jobs | Long pole |
+|---|---|---|---|---|---|---|
+| **Before** (pre-#1984: E2E on all 3 OSes) | 30.5 | 27.5 | 27.8 | 85.8 | 4 | macOS E2E: 14.2 run, ~20.4 with the median queue, ~52 at p90 |
+| **Now** (#1984 + #1995: no E2E on PRs, no macOS) | 6.6 | 7.5 | 0 | 14.1 | 0 | Windows unit, 6.1 |
+| **Proposed** | ~22.6 | ~27.1 | ~3.6 average (2.5 always, plus 9.3 on 12%) | ~53 | 1, or 2 for 12% of PRs | Windows build then E2E shard, ~10.5 |
+
+Proposed against before, with the same coverage:
+- **Total compute:** −38%.
+- **Long pole:** −26% on run time alone, or −49% once the median macOS queue is counted.
+- **macOS minutes:** 27.8 → ~3.6 average (−87%), with at most ~12 in the worst case.
+- **macOS jobs:** at most 2 per PR, both shorter than the Linux/Windows critical path.
+
+With demand down from 4 macOS jobs per PR to ~1.1, the macOS queue that drove the p90 should drain too.
+
+Proposed against now: more compute, because E2E returns to every PR. Today, PRs get no E2E at all, and E2E problems only surface after merge.
+
+### Per push to main
+
+| | Linux | Windows | macOS | Total |
+|---|---|---|---|---|
+| Before and now (full matrix) | 30.5 | 27.5 | 27.8 | 85.8 |
+| Proposed | ~29.0 (with the package smoke test) | ~27.1 | ~3.6 average | ~60 (−30%) |
+
+### If E2E should stay opt-in on PRs
+
+Gating the `build` job on `complete`, as #1984 did, gives a lean PR:
+- **Compute:** about 7.0 on Linux, 7.3 on Windows and 2.5 on macOS, ~17 minutes in total.
+- **Long pole:** a Windows unit shard, ~3.7 minutes. That's 40% shorter than today's 6.1 minutes.
+- **Pushes to main:** they keep the ~30% saving.
 
 ## Follow-ups
 
 - **Webpack-only build:** E2E only needs `.webpack/`, but `electron-forge package` also packages the app into `out/`. A webpack-only build, or a webpack filesystem cache, would take a minute or two off each `build` job, which is the critical path.
-- **Shard balancing:** with timings from the new per-shard JUnit artifacts, Playwright shards could be balanced by duration instead of by file.
-- **Required checks:** if branch protection ever requires status checks, mark the `changes` job's skipped dependents as acceptable. Skipped jobs report as successful, so the current shape already works.
+- **Shard balancing:** the per-shard JUnit artifacts will give real spec timings, so the shards can be balanced by duration instead of by file.

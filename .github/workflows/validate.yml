@@ -3,18 +3,19 @@ name: Validate
 # How this workflow spends runners, and why: docs/ci.md.
 #
 # macOS runners are capped at 5 concurrent jobs on this plan, while Linux and
-# Windows have ~60. So every PR is validated on Linux and Windows (lint,
-# typecheck, sharded unit tests, and E2E sharded over a single build per OS),
-# and macOS only runs where macOS behaviour can differ:
+# Windows have ~60. Every PR is validated on Linux and Windows (lint,
+# typecheck, sharded unit tests, and E2E sharded over a single build per OS).
+# macOS gets at most two short jobs per PR, neither on the critical path:
 #
-# - PRs: one targeted macOS job, only when scripts/ci/classify-changes.mjs
-#   finds macOS-relevant changes (packaging, auto-update, keychain, title bar,
-#   darwin branches, ...).
-# - Pushes to main: Linux/Windows in full plus the same reduced macOS job.
-# - `full-ci` label, Dependabot and manual runs: the complete matrix,
-#   including full macOS unit and E2E.
-# - Full macOS every night: .github/workflows/nightly-macos.yml, which files
-#   or updates a tracking issue when it fails.
+# - macOS unit: every code PR. The unit tests for code that behaves
+#   differently on macOS, plus the tests related to the change, on a real Mac.
+# - macOS build: only when scripts/ci/classify-changes.mjs finds packaging,
+#   dependency or window/keyboard chrome changes. Packages the app for macOS
+#   and runs an E2E smoke set for the macOS-specific UI.
+#
+# Pushes to main and the daily schedule run the same two jobs (on main, the
+# build job only for macOS-relevant pushes). `full-ci` and manual runs add the
+# complete macOS matrix.
 
 on:
   pull_request:
@@ -33,7 +34,8 @@ on:
   push:
     branches: [main]
   schedule:
-    # Nightly Linux/Windows run (07:00 UTC). Full macOS runs in nightly-macos.yml.
+    # Daily (07:00 UTC): Linux/Windows in full and both macOS jobs, which catches
+    # runner-image and toolchain drift that no change would trigger.
     - cron: '0 7 * * *'
   workflow_dispatch:
 
@@ -62,9 +64,10 @@ jobs:
         run: node scripts/dependabot-preflight.mjs
 
   # Decides what the rest of the run needs. Outputs:
-  #   complete  the full matrix including macOS (full-ci, Dependabot, manual)
-  #   e2e       build the app and run E2E (false for unit-test-only PRs)
-  #   macos     run the targeted macOS job
+  #   complete     every job on every OS, macOS included (full-ci, manual)
+  #   full         Linux/Windows extras: the Linux package smoke test
+  #   e2e          build the app and run E2E (false for unit-test-only changes)
+  #   macos_build  run the macOS build job
   changes:
     needs: dependency-preflight
     if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
@@ -73,8 +76,9 @@ jobs:
     timeout-minutes: 5
     outputs:
       complete: ${{ steps.plan.outputs.complete }}
+      full: ${{ steps.plan.outputs.full }}
       e2e: ${{ steps.plan.outputs.e2e }}
-      macos: ${{ steps.plan.outputs.macos }}
+      macos_build: ${{ steps.plan.outputs.macos_build }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -88,22 +92,35 @@ jobs:
           EVENT: ${{ github.event_name }}
           ACTOR: ${{ github.actor }}
           FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "workflow_dispatch" ] || [ "$ACTOR" = "dependabot[bot]" ] || [ "$FULL_CI" = "true" ]; then
-            printf 'complete=true\ne2e=true\nmacos=false\n' >> "$GITHUB_OUTPUT"
-            echo "Complete matrix ($EVENT, actor $ACTOR, full-ci=$FULL_CI)" >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$EVENT" = "push" ]; then
-            printf 'complete=false\ne2e=true\nmacos=true\n' >> "$GITHUB_OUTPUT"
-            echo "Push to main: Linux/Windows in full, reduced macOS" >> "$GITHUB_STEP_SUMMARY"
+          out() { printf '%s\n' "$@" | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"; }
+          if [ "$EVENT" = "workflow_dispatch" ] || [ "$FULL_CI" = "true" ]; then
+            out complete=true full=true e2e=true macos_build=false
           elif [ "$EVENT" = "schedule" ]; then
-            printf 'complete=false\ne2e=true\nmacos=false\n' >> "$GITHUB_OUTPUT"
-            echo "Nightly: Linux/Windows in full (macOS: nightly-macos.yml)" >> "$GITHUB_STEP_SUMMARY"
+            # Daily: everything on Linux/Windows, both macOS jobs (catches
+            # runner-image and toolchain drift that no change triggers).
+            out complete=false full=true e2e=true macos_build=true
           else
-            echo 'complete=false' >> "$GITHUB_OUTPUT"
-            git diff -U0 "$BASE...$HEAD" | node scripts/ci/classify-changes.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+            if [ "$EVENT" = "push" ]; then
+              BASE="$PUSH_BEFORE"; HEAD="$GITHUB_SHA"; FULL=true
+            else
+              BASE="$PR_BASE"; HEAD="$PR_HEAD"
+              # Dependabot also gets the Linux package smoke test.
+              if [ "$ACTOR" = "dependabot[bot]" ]; then FULL=true; else FULL=false; fi
+            fi
+            out complete=false "full=$FULL"
+            # A new branch pushes with an all-zero `before`; a force-push can
+            # name a commit that's gone. Classify only against a real base.
+            if [ -n "$BASE" ] && [ "${BASE//0/}" != "" ] && git rev-parse --verify --quiet "$BASE^{commit}" > /dev/null; then
+              git diff -U0 "$BASE...$HEAD" | env -u GITHUB_OUTPUT node scripts/ci/classify-changes.mjs | grep -E '^(e2e|macos_build|macos_build_reason)=' | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            else
+              # No usable base (a new branch, or a force-push past history): run everything.
+              out e2e=true macos_build=true macos_build_reason=no-base
+            fi
           fi
 
   lint:
@@ -329,19 +346,19 @@ jobs:
           name: annex-traces-${{ matrix.os }}
           path: test-results/
 
-  # The one macOS job outside the complete matrix: PRs with macOS-relevant
-  # changes, and every push to main. It covers what Linux/Windows can't:
-  # macOS packaging, darwin code paths on a real Mac, and a window/keyboard
-  # E2E smoke set. Everything else gets full macOS coverage nightly.
-  macos:
+  # macOS job 1 of 2: every code PR, ~3 min. The unit tests for code that
+  # behaves differently on macOS (Squirrel.Mac apply, keychain, login shell,
+  # FSEvents, window chrome, Cmd shortcuts), plus the tests related to the
+  # change, on a real Mac. Everything else is platform-independent and runs on
+  # Linux and Windows.
+  macos-unit:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.macos == 'true' }}
-    name: macOS targeted checks
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.complete != 'true' }}
+    name: macOS unit
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
-      PLAYWRIGHT_IGNORE_ANNEX: '1'
-      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -350,57 +367,83 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-            ~/AppData/Local/electron/Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
-      - name: Unit tests related to the change
-        if: github.event_name == 'pull_request'
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          FILES=$(git diff --name-only --diff-filter=d "$BASE...$HEAD" -- src | grep -E '\.(ts|tsx)$' || true)
-          if [ -z "$FILES" ]; then echo "No source changes to relate tests to"; exit 0; fi
-          # shellcheck disable=SC2086
-          npx vitest related --run --passWithNoTests $FILES
       - name: macOS-specific unit tests
-        # Tests for code with real darwin branches (auto-update apply runs
-        # only on darwin), on a real Mac.
         run: >-
-          npx vitest run
+          npx vitest run --reporter=default --reporter=junit --outputFile.junit=test-results/macos-unit.xml
           src/main/services/auto-update
           src/main/telemetry/secret-store
           src/main/telemetry/install-kind
           src/main/util/shell
           src/main/ipc/window-handlers
+          src/main/ipc/app-handlers
           src/main/orchestrators/shared
+          src/main/services/goobers-service
           src/renderer/chrome
           src/renderer/features/terminal/clipboard
           src/renderer/stores/keyboardShortcutsStore
+      - name: Unit tests related to the change
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$PR_BASE" ]; then RANGE="$PR_BASE...$PR_HEAD"; elif [ -n "$PUSH_BEFORE" ]; then RANGE="$PUSH_BEFORE...$GITHUB_SHA"; else echo "No change range"; exit 0; fi
+          FILES=$(git diff --name-only --diff-filter=d "$RANGE" -- src 2>/dev/null | grep -E '\.(ts|tsx)$' || true)
+          if [ -z "$FILES" ]; then echo "No source changes to relate tests to"; exit 0; fi
+          # shellcheck disable=SC2086
+          npx vitest related --run --passWithNoTests $FILES
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: macos-unit-results
+          path: test-results/
+
+  # macOS job 2 of 2: only for packaging, dependency and window/keyboard chrome
+  # changes (scripts/ci/classify-changes.mjs), ~9 min. Packages the app for
+  # macOS (asar, fuses, osxSign config, node-pty's darwin prebuild) and runs
+  # the specs whose behaviour differs on macOS: window chrome, Cmd shortcuts
+  # and the terminal's node-pty spawn helper.
+  macos-build:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.macos_build == 'true' && needs.changes.outputs.complete != 'true' }}
+    name: macOS build + E2E smoke
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      PLAYWRIGHT_IGNORE_ANNEX: '1'
+      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
       - name: Build app (macOS packaging)
         run: npx electron-forge package
-      - name: E2E smoke (window chrome, keyboard)
+      - name: E2E smoke (window chrome, Cmd shortcuts, terminal)
         run: >-
           npx playwright test --reporter=line,junit
           e2e/app-launch.spec.ts
           e2e/smoke-blank-screen.spec.ts
-          e2e/command-palette.spec.ts
           e2e/popout-window.spec.ts
+          e2e/command-palette.spec.ts
+          e2e/find-replace.spec.ts
+          e2e/terminal.spec.ts
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: macos-targeted-results
+          name: macos-build-results
           path: test-results/
 
   make-linux:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.complete == 'true') }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.full == 'true' }}
     name: Linux Package Smoke Test
     runs-on: ubuntu-latest
     steps:
