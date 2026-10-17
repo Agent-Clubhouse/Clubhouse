@@ -115,11 +115,14 @@ function makeFakeSettings(initial: GoobersSettings): ManagedSettings<GoobersSett
   };
 }
 
-/** Real fs.promises calls chain several sequential awaits (stat, stat, readFile) —
- *  a single setImmediate can land between the first and second, so flush with
- *  a real timer instead of a microtask/next-tick. */
-function flush(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20));
+const reconciliations: Promise<void>[] = [];
+const activeServices = new Set<GoobersService>();
+
+/** Await real filesystem reconciliation before allowing follow-up callbacks to
+ * settle. A fixed delay alone races stat/readFile on busy CI workers. */
+async function flush(): Promise<void> {
+  await Promise.all(reconciliations);
+  await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 function defaultSettings(overrides: Partial<GoobersSettings> = {}): GoobersSettings {
@@ -149,6 +152,20 @@ const realPlatform = process.platform;
 // block) explicitly re-pin 'win32' as the first line of their own test body,
 // which runs after this beforeEach and overrides it.
 beforeEach(() => {
+  reconciliations.length = 0;
+  activeServices.clear();
+  // Observe the real operation without replacing any validation or liveness
+  // behavior. subscribe() intentionally does not return its completion promise.
+  const prototype = GoobersService.prototype as unknown as {
+    reconcile(settings: GoobersSettings): Promise<void>;
+  };
+  const reconcile = prototype.reconcile;
+  vi.spyOn(prototype, 'reconcile').mockImplementation(function (this: GoobersService, settings) {
+    activeServices.add(this);
+    const completion = reconcile.call(this, settings);
+    reconciliations.push(completion);
+    return completion;
+  });
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goobers-service-test-'));
   Object.defineProperty(process, 'platform', { value: 'darwin' });
   mockGetAllWindows.mockReset().mockReturnValue([]);
@@ -158,10 +175,16 @@ beforeEach(() => {
   mockStartEventStream.mockReset().mockImplementation(() => ({ close: vi.fn() }));
 });
 
-afterEach(() => {
-  fs.rmSync(tmpRoot, { recursive: true, force: true });
-  vi.restoreAllMocks();
-  Object.defineProperty(process, 'platform', { value: realPlatform });
+afterEach(async () => {
+  try {
+    await Promise.all(reconciliations);
+  } finally {
+    // A prior service's poll must never consume the next test's mock snapshot.
+    for (const service of activeServices) service.teardown();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    vi.restoreAllMocks();
+    Object.defineProperty(process, 'platform', { value: realPlatform });
+  }
 });
 
 describe('validateInstanceRoot', () => {

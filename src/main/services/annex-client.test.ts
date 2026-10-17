@@ -5,7 +5,7 @@
  * Bonjour, HTTP, and peer dependencies. The three root-cause bugs (startClient
  * never called, unpaired services dropped, no pairing flow) are each covered.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Mocks — set up before importing the module under test
@@ -244,6 +244,15 @@ describe('annex-client', () => {
     // Now reset all mocks (call counts, implementations) and re-wire
     vi.clearAllMocks();
     resetAllMocks();
+  });
+
+  afterEach(async () => {
+    // Let scheduled mock socket-open callbacks finish before stopping the client;
+    // otherwise they can restart a heartbeat or overwrite the next test's socket.
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(0);
+    else await new Promise((resolve) => setTimeout(resolve, 0));
+    annexClient.stopClient();
+    vi.useRealTimers();
   });
 
   // ---- startClient / stopClient ----

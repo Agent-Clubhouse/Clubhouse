@@ -1149,7 +1149,7 @@ describe('plugin-loader', () => {
       expect(result.messages.map((message) => message.message)).toContain(
         'Builtin plugins may not import host internals outside the documented allowlist.',
       );
-    });
+    }, 15_000); // ESLint cold-loads the full TypeScript rule set on shared CI workers.
     const mockDynamicImport = dynamicImportModule as ReturnType<typeof vi.fn>;
 
     it('builds a clubhouse-plugin: URL from a unix path for dynamic import', async () => {
