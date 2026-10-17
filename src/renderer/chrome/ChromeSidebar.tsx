@@ -329,10 +329,13 @@ export function ChromeSidebar() {
     reportChromeFeature('agent_select');
   }, [openAgent]);
 
-  const projectEnabled = usePluginStore((s) => s.projectEnabled);
+  // A string key rather than the whole projectEnabled record (selector-safety
+  // guard): the sidebar re-renders only when the set of Terminal projects changes.
+  const terminalProjectKey = usePluginStore((s) => Object.entries(s.projectEnabled)
+    .filter(([, ids]) => ids.includes('terminal')).map(([id]) => id).sort().join('\n'));
   const terminalProjectIds = useMemo(
-    () => new Set(Object.entries(projectEnabled).filter(([, ids]) => ids.includes('terminal')).map(([id]) => id)),
-    [projectEnabled],
+    () => new Set(terminalProjectKey ? terminalProjectKey.split('\n') : []),
+    [terminalProjectKey],
   );
   // The hover card's Open terminal: the agent, on the Terminal tab (its scope).
   const openTerminal = useCallback((agent: Agent) => {
