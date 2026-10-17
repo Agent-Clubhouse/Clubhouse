@@ -39,15 +39,25 @@ export interface DetailsFocus {
 interface AgentDetailsState {
   open: boolean;
   focus: DetailsFocus | null;
+  /** Agents whose pane shows the Changes review instead of Chat or Terminal. */
+  review: Record<string, boolean>;
   toggle: () => void;
   setOpen: (open: boolean) => void;
   /** Show the column and open one card in it. */
   reveal: (focus: Omit<DetailsFocus, 'nonce'>) => void;
+  setReview: (agentId: string, on: boolean) => void;
 }
 
 export const useAgentDetailsStore = create<AgentDetailsState>((set, get) => ({
   open: readOpen(),
   focus: null,
+  review: {},
+  setReview: (agentId, on) => set((s) => {
+    if (!!s.review[agentId] === on) return s;
+    const review = { ...s.review };
+    if (on) review[agentId] = true; else delete review[agentId];
+    return { review };
+  }),
   toggle: () => get().setOpen(!get().open),
   setOpen: (open) => { writeOpen(open); set({ open }); },
   reveal: (focus) => {

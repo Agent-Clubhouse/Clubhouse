@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { BranchChanges, BranchFilePatch } from '../shared/git-branch';
-import type { GitNumstatEntry } from '../shared/types';
+import type { BranchChanges, BranchFilePatch, PullRequestInfo } from '../shared/git-branch';
+import type { GitLogEntry, GitNumstatEntry, GitOpResult } from '../shared/types';
 
 export const git = {
   git: {
@@ -43,9 +43,16 @@ export const git = {
   diffNumstat: (dirPath: string, base?: string): Promise<GitNumstatEntry[]> =>
     ipcRenderer.invoke(IPC.GIT.DIFF_NUMSTAT, dirPath, base ?? undefined),
   /** The branch against its merge base with main, uncommitted work included (#2032). */
-  branchChanges: (dirPath: string, base?: string): Promise<BranchChanges> =>
-    ipcRenderer.invoke(IPC.GIT.BRANCH_CHANGES, dirPath, base),
+  branchChanges: (dirPath: string, base?: string, counts?: boolean): Promise<BranchChanges> =>
+    ipcRenderer.invoke(IPC.GIT.BRANCH_CHANGES, dirPath, base, counts),
   branchFilePatch: (dirPath: string, filePath: string, base?: string): Promise<BranchFilePatch> =>
     ipcRenderer.invoke(IPC.GIT.BRANCH_FILE_PATCH, dirPath, filePath, base),
+  branchLog: (dirPath: string, base?: string): Promise<GitLogEntry[]> =>
+    ipcRenderer.invoke(IPC.GIT.BRANCH_LOG, dirPath, base),
+  pullRequestInfo: (dirPath: string): Promise<PullRequestInfo> =>
+    ipcRenderer.invoke(IPC.GIT.PULL_REQUEST_INFO, dirPath),
+  /** Push HEAD to origin and set its upstream. */
+  pushBranch: (dirPath: string): Promise<GitOpResult> =>
+    ipcRenderer.invoke(IPC.GIT.PUSH_BRANCH, dirPath),
   },
 };

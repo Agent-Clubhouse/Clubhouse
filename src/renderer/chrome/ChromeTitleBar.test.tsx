@@ -52,6 +52,21 @@ describe('ChromeTitleBar', () => {
     expect(screen.getByTestId('explorer-tab-plugin:files').textContent).toContain('Files');
   });
 
+  it('has no Git tab in the new layout; review lives in Changes (#2032)', async () => {
+    registerTabPlugin('files', 'Files');
+    registerTabPlugin('git', 'Git');
+    usePluginStore.setState({ projectEnabled: { p1: ['files', 'git'] } });
+    const { useChromeFlagStore } = await import('./chromeFlag');
+    useChromeFlagStore.setState({ enabled: true });
+    try {
+      render(<ChromeTitleBar />);
+      expect(screen.getByTestId('explorer-tab-plugin:files')).toBeTruthy();
+      expect(screen.queryByTestId('explorer-tab-plugin:git')).toBeNull();
+    } finally {
+      useChromeFlagStore.setState({ enabled: false });
+    }
+  });
+
   it('selects a tab for the active project', () => {
     registerTabPlugin('files', 'Files');
     usePluginStore.setState({ projectEnabled: { p1: ['files'] } });

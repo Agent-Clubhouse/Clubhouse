@@ -18,6 +18,28 @@ export interface BranchChanges {
   noBase?: boolean;
   /** Changes since the merge base: committed, uncommitted and untracked. */
   files: ChangedFile[];
+  /** Commits on the branch since the merge base (only when counts are asked for). */
+  ahead?: number;
+  /** Uncommitted and untracked files in `git status` (only when counts are asked for). */
+  uncommitted?: number;
+}
+
+/** Where a branch stands with its remote and pull request. */
+export interface PullRequestInfo {
+  /** False when the folder isn't in a git work tree. */
+  available: boolean;
+  branch?: string;
+  base?: string;
+  /** There is an `origin` remote. */
+  hasRemote?: boolean;
+  /** origin has this branch. */
+  pushed?: boolean;
+  /** Commits not on origin's copy of the branch yet; absent when it was never pushed. */
+  unpushed?: number;
+  /** An open or merged pull request for the branch, when `gh` is installed and signed in. */
+  pr?: { url: string; number: number; state: string };
+  /** GitHub's page for opening a pull request from this branch. */
+  compareUrl?: string;
 }
 
 /** One file's change on the branch. An untracked file comes back as its whole text. */

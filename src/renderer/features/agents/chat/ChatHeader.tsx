@@ -3,7 +3,7 @@ import type { Agent } from '../../../../shared/types';
 import type { ChatDriverId, UsageLimit } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { chatDot } from '../agent-status';
-import { AgentPaneToolbar, type PaneUsage } from '../pane/AgentPaneToolbar';
+import { AgentPaneToolbar, type PaneUsage, type ReviewView } from '../pane/AgentPaneToolbar';
 import { formatElapsed, formatTokens } from './view-model';
 import { ChatDefaultTip } from './ChatDefaultTip';
 
@@ -89,6 +89,8 @@ interface ChatHeaderProps {
   switching?: boolean;
   /** The Agent details toggle (#2032), in the toolbar's slot for it. */
   detailsToggle?: ReactNode;
+  /** The Changes review segment (#2032). */
+  review?: ReviewView;
   /** Offer the agent's ⋯ menu (main pane only). */
   showMenu?: boolean;
   /** Name the agent in the bar (the classic shell's main pane has no breadcrumb). */
@@ -96,7 +98,7 @@ interface ChatHeaderProps {
 }
 
 /** The chat runtime's pane toolbar: AgentPaneToolbar fed from the chat session. */
-export function ChatHeader({ agent, state, onSwitchToTerminal, switching, detailsToggle, showMenu, showName }: ChatHeaderProps) {
+export function ChatHeader({ agent, state, onSwitchToTerminal, switching, detailsToggle, review, showMenu, showName }: ChatHeaderProps) {
   const now = useNow(state.state === 'running' && state.turnStartedAt !== null);
   return (
     <AgentPaneToolbar
@@ -109,7 +111,8 @@ export function ChatHeader({ agent, state, onSwitchToTerminal, switching, detail
       usage={chatUsage(state)}
       runtime={onSwitchToTerminal
         ? { value: 'chat', onChange: onSwitchToTerminal, disabled: switching, tip: <ChatDefaultTip agent={agent} /> }
-        : undefined}
+        : { value: 'chat' }}
+      review={review}
       detailsToggle={detailsToggle}
       showMenu={showMenu}
       showName={showName}

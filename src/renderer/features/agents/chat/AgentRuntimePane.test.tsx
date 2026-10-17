@@ -47,7 +47,8 @@ describe('AgentRuntimePane', () => {
     expect(screen.getByTestId('terminal-pane-bar')).toBeInTheDocument();
     expect(screen.getByTestId('agent-details-toggle')).toBeInTheDocument();
     expect(api.chat.getAgentRuntime).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('runtime-switch')).not.toBeInTheDocument();
+    // No Chat to switch to: the switch is Terminal and the Changes review.
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['Terminal', 'Changes']);
   });
 
   it('renders the terminal alone outside the main pane', async () => {
@@ -94,7 +95,7 @@ describe('AgentRuntimePane', () => {
     setFlag(true);
     setRuntime(true, true);
     api.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
-    const { unmount } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} />);
+    const { unmount } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} context="popout" />);
     await screen.findByTestId('chat-view');
     expect(screen.queryByTestId('runtime-switch')).not.toBeInTheDocument();
     unmount();

@@ -175,9 +175,11 @@ export interface AgentDetailsProps {
   missedSubagentId?: string | null;
   /** Opens the full Changes review. */
   onReviewAll?: () => void;
+  /** The branch against main, when the pane already reads it (useAgentReview). */
+  branch?: BranchChanges | null;
 }
 
-export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll }: AgentDetailsProps) {
+export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll, branch: givenBranch }: AgentDetailsProps) {
   const setOpen = useAgentDetailsStore((s) => s.setOpen);
   const focus = useAgentDetailsStore((s) => s.focus);
   const [openCards, setOpenCards] = useState<Set<CardId>>(() => new Set());
@@ -206,7 +208,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
   // Chat refreshes when a turn starts or ends; the terminal when its hook status moves on.
   const refreshKey = chat ? `${chat.turnId ?? 'idle'}:${chat.state ?? ''}` : `${hook?.state ?? ''}:${hook?.toolName ?? ''}:${agent.status}`;
-  const branch = useBranchChanges(cwd, refreshKey);
+  const ownBranch = useBranchChanges(givenBranch === undefined ? cwd : undefined, refreshKey);
+  const branch = givenBranch === undefined ? ownBranch : givenBranch;
 
   const { items, subagents, capabilities, state: runState } = chat ?? {};
   const map = useMemo(

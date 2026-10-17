@@ -14,6 +14,7 @@ import { useSidebarMode, type SidebarMode } from './listTabs';
 import { useChromeScope } from './scope';
 import { hostOf } from './hosts';
 import { ProjectStartPage } from './pages/ProjectStartPage';
+import { ProjectHome } from './pages/ProjectChanges';
 import { FirstRun } from './pages/FirstRun';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { reportChromePage, reportChromeSurface, reportChromeView, type ChromeSurface } from './telemetry';
@@ -126,7 +127,7 @@ export function ChromeBody() {
       // With projects, the fallback above selects one on the next render.
       return firstRun ? <FirstRun /> : null;
     }
-    if (startPage && activeProject) return <ProjectStartPage project={activeProject} />;
+    if (startPage && activeProject) return <ProjectHome project={activeProject} overview={<ProjectStartPage project={activeProject} />} />;
     // A tab's own list lives in the sidebar (spec §4.6), so the pane is just the tab's content.
     return <MainContentView />;
   }, [isSettings, isHelp, appPluginId, activeProjectId, activeHostId, firstRun, startPage, activeProject]);

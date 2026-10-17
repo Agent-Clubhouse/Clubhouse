@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { getBranchChanges, getBranchFilePatch, resolveMergeBase } from './git-service';
+import { getBranchChanges, getBranchFilePatch, getBranchLog, getPullRequestInfo, githubRepoOf, pushUpstream, resolveMergeBase } from './git-service';
 
 let repo: string;
 const temps: string[] = [];
@@ -156,6 +156,48 @@ describe('git branch against main', { timeout: 30_000 }, () => {
   it('reports no base when there is no main or master', async () => {
     git('branch', '-m', 'main', 'trunk');
     expect(await getBranchChanges(repo)).toMatchObject({ available: true, noBase: true, files: [] });
+  });
+
+  it('counts commits and uncommitted files only when asked', async () => {
+    git('checkout', '-q', '-b', 'agent/work');
+    write('src/app.ts', 'export const a = 2;\n');
+    git('commit', '-q', '-am', 'branch commit');
+    write('notes.md', 'x\n');
+    expect((await getBranchChanges(repo)).ahead).toBeUndefined();
+    expect(await getBranchChanges(repo, undefined, true)).toMatchObject({ ahead: 1, uncommitted: 1 });
+  });
+
+  it('logs only the branch\'s own commits', async () => {
+    git('checkout', '-q', '-b', 'agent/work');
+    write('src/app.ts', 'export const a = 2;\n');
+    git('commit', '-q', '-am', 'branch commit');
+    expect((await getBranchLog(repo)).map((e) => e.subject)).toEqual(['branch commit']);
+  });
+
+  it('reads GitHub remotes in ssh and https form only', () => {
+    expect(githubRepoOf('git@github.com:Agent-Clubhouse/Clubhouse.git')).toBe('Agent-Clubhouse/Clubhouse');
+    expect(githubRepoOf('https://github.com/Agent-Clubhouse/Clubhouse')).toBe('Agent-Clubhouse/Clubhouse');
+    expect(githubRepoOf('https://gitlab.com/a/b.git')).toBeNull();
+  });
+
+  it('knows whether the branch is pushed, and pushes it with an upstream', async () => {
+    withOrigin();
+    git('checkout', '-q', '-b', 'agent/work');
+    write('src/app.ts', 'export const a = 2;\n');
+    git('commit', '-q', '-am', 'branch commit');
+    expect(await getPullRequestInfo(repo)).toMatchObject({ available: true, branch: 'agent/work', base: 'main', hasRemote: true, pushed: false });
+    expect(await pushUpstream(repo)).toMatchObject({ ok: true });
+    const info = await getPullRequestInfo(repo);
+    expect(info).toMatchObject({ pushed: true, unpushed: 0 });
+    // Not a GitHub remote: no compare page to open.
+    expect(info.compareUrl).toBeUndefined();
+  });
+
+  it('reports a failed push', async () => {
+    git('remote', 'add', 'origin', path.join(os.tmpdir(), 'no-such-remote-xyz'));
+    const r = await pushUpstream(repo);
+    expect(r.ok).toBe(false);
+    expect(r.message.length).toBeGreaterThan(0);
   });
 
   it('shares one read between concurrent callers', async () => {
