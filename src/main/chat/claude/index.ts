@@ -26,5 +26,5 @@ export function createClaudeTransport(kind: ClaudeTransportKind, opts: ClaudeTra
 }
 
 /** Contract-facing driver (src/shared/chat): what the chat runtime should use. */
-export { ClaudeChatDriver, ClaudeChatDriverSession } from './driver';
+export { ClaudeChatDriver, ClaudeChatDriverSession, registerClaudeChatDrivers } from './driver';
 export type { ClaudeChatDriverId } from './driver';

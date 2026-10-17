@@ -2,7 +2,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type ChatDriverId, type PermissionLevel } from '../../../shared/chat/capabilities';
 import type {
+  ChatErrorCode,
   ChatEventDraft,
+  ChatQuestion,
+  ChatQuestionAnswers,
   ContentBlock,
   MessageDelivery,
   PermissionOption,
@@ -12,7 +15,13 @@ import type {
   ToolKind,
   TurnStopReason,
 } from '../../../shared/chat/events';
-import type { ChatDriver, ChatDriverProbe, ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
+import type {
+  ChatDriver,
+  ChatDriverProbe,
+  ChatDriverSession,
+  ChatDriverStartOptions,
+  PermissionResponseExtras,
+} from '../../../shared/chat/runtime';
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import type { ClaudeChatEvent, ClaudePermissionMode, ClaudePermissionUpdate, ClaudeUsage } from './events';
 import { ClaudeSdkTransport } from './sdk-transport';
@@ -60,18 +69,22 @@ export function claudeCapabilities(startLevel: PermissionLevel): ChatCapabilitie
     queue: 'native',
     interrupt: true,
     resume: 'native',
-    fork: true,
     planApproval: true,
+    // AskUserQuestion arrives as a can_use_tool request; it is surfaced as `question`.
+    questions: true,
     subagents: 'full',
     usage: 'cost',
     limits: true,
     images: true,
     slashCommands: true,
     modelSwitch: 'live',
+    // Claude takes --effort at launch only.
+    effortSwitch: 'restart',
     liveLevels: startLevel === 'full_access'
       ? ['plan', 'ask', 'auto_edit', 'auto', 'full_access']
       : ['plan', 'ask', 'auto_edit', 'auto'],
     login: 'terminal',
+    systemPrompt: true,
   };
 }
 
@@ -173,6 +186,53 @@ export function claudePermissionOptions(suggestions: ClaudePermissionUpdate[]): 
   return options;
 }
 
+// ── Questions ───────────────────────────────────────────────────────────────
+
+/**
+ * Claude's AskUserQuestion input (`questions: [{ question, header, options:
+ * [{ label, description }], multiSelect }]`) as contract questions. The
+ * question text is the id, because the answer goes back keyed by it.
+ */
+export function claudeQuestions(input: Obj): ChatQuestion[] | undefined {
+  if (!Array.isArray(input.questions)) return undefined;
+  const questions = input.questions.filter(isObj).map((q): ChatQuestion => {
+    const prompt = str(q.question) ?? '';
+    return {
+      id: prompt,
+      prompt,
+      header: str(q.header),
+      options: Array.isArray(q.options)
+        ? q.options.filter(isObj).map((o) => ({ id: str(o.label) ?? '', label: str(o.label) ?? '', description: str(o.description) }))
+        : undefined,
+      multiSelect: q.multiSelect === true,
+      // Claude's own UI always offers "Other" with free text.
+      allowFreeText: true,
+    };
+  });
+  return questions.length ? questions : undefined;
+}
+
+/** AskUserQuestion's approved input: the original plus `answers` keyed by question text. */
+export function claudeQuestionInput(input: Obj, answers: ChatQuestionAnswers): Obj {
+  const flat: Record<string, string> = {};
+  for (const [id, a] of Object.entries(answers)) flat[id] = Array.isArray(a) ? a.join(', ') : a;
+  return { ...input, answers: flat };
+}
+
+/** Map Claude's assistant `error` values onto the contract's closed error codes. */
+function claudeErrorCode(message: string): ChatErrorCode {
+  if (message.includes('rate_limit')) return 'rate_limited';
+  if (message.includes('authentication') || message.includes('billing')) return 'auth_required';
+  if (message.includes('max_output_tokens')) return 'max_tokens';
+  return 'unknown';
+}
+
+const LIMIT_STATUS: Record<string, 'ok' | 'warning' | 'exceeded'> = {
+  allowed: 'ok',
+  allowed_warning: 'warning',
+  rejected: 'exceeded',
+};
+
 // ── Usage ───────────────────────────────────────────────────────────────────
 
 function tokens(u: ClaudeUsage | undefined) {
@@ -200,7 +260,7 @@ export type ClaudeTransportFactory = (id: ClaudeChatDriverId, opts: ClaudeTransp
 const defaultTransportFactory: ClaudeTransportFactory = (id, opts) =>
   id === 'claude_agent_sdk' ? new ClaudeSdkTransport(opts) : new ClaudeStreamTransport(opts);
 
-interface ToolInfo { name: string; input: Obj }
+interface ToolInfo { name: string; input: Obj; parentToolCallId?: string }
 
 /**
  * One chat session over a Claude transport, translated to the shared chat
@@ -212,6 +272,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private readonly queue = new AsyncQueue<ChatEventDraft>();
   private readonly tools = new Map<string, ToolInfo>();
   private readonly pendingPermissions = new Map<string, ClaudePermissionUpdate[]>();
+  /** AskUserQuestion requests, surfaced as `question`: requestId → tool input. */
+  private readonly pendingQuestions = new Map<string, Obj>();
+  /** Subagent names from task_started; later task_* messages don't repeat them. */
+  private readonly subagentNames = new Map<string, string>();
   private turn = 0;
   private turnRunning = false;
   private interrupting = false;
@@ -270,16 +334,19 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     await this.transport.interrupt();
   }
 
-  async respondPermission(requestId: string, optionId: string): Promise<void> {
+  async respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> {
     const suggestions = this.pendingPermissions.get(requestId);
     if (!suggestions) throw new Error(`No pending Claude permission request ${requestId}`);
     this.pendingPermissions.delete(requestId);
+    // e.g. a revised plan for ExitPlanMode
+    const updatedInput = isObj(extras?.updatedInput) ? extras.updatedInput : undefined;
     if (optionId === CLAUDE_OPTION_ALLOW) {
-      this.transport.respondToPermission(requestId, { behavior: 'allow' });
+      this.transport.respondToPermission(requestId, { behavior: 'allow', updatedInput });
     } else if (optionId === CLAUDE_OPTION_ALLOW_ALWAYS) {
-      this.transport.respondToPermission(requestId, { behavior: 'allow', updatedPermissions: suggestions });
+      this.transport.respondToPermission(requestId, { behavior: 'allow', updatedInput, updatedPermissions: suggestions });
     } else if (optionId === CLAUDE_OPTION_DENY) {
-      this.transport.respondToPermission(requestId, { behavior: 'deny', message: 'The user denied this request.' });
+      // A denial message tells Claude what to do instead.
+      this.transport.respondToPermission(requestId, { behavior: 'deny', message: extras?.message || 'The user denied this request.' });
     } else {
       this.pendingPermissions.set(requestId, suggestions);
       throw new Error(`Unknown Claude permission option ${optionId}`);
@@ -290,9 +357,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     }, true);
   }
 
-  async answerQuestion(): Promise<void> {
-    // AskUserQuestion reaches Claude hosts as a can_use_tool permission; capabilities.questions is false.
-    throw new Error('Claude chat questions arrive as permission requests');
+  async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> {
+    const input = this.pendingQuestions.get(requestId);
+    if (!input) throw new Error(`No pending Claude question ${requestId}`);
+    this.pendingQuestions.delete(requestId);
+    this.transport.respondToPermission(requestId, { behavior: 'allow', updatedInput: claudeQuestionInput(input, answers) });
+    this.push({ type: 'question_resolved', data: { requestId, answers } }, true);
   }
 
   async setLevel(level: PermissionLevel): Promise<void> {
@@ -305,6 +375,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
 
   async setModel(modelId: string, effort?: string): Promise<void> {
     await this.transport.setModel(modelId === 'default' ? undefined : modelId);
+    // effortSwitch is 'restart': the runtime passes the new effort at the next start.
     if (effort) this.log?.('info', '[claude-chat] Effort applies from the next session start', { effort });
     this.model = modelId;
     this.push({ type: 'model_changed', data: { modelId } });
@@ -385,8 +456,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         return;
       }
       case 'session_started':
-        // system/init: the native session id and resolved model are known now.
+        // system/init only arrives with the first prompt: the native session id and resolved model are known now.
         this.costIsEstimate = ev.apiKeySource === undefined || ev.apiKeySource === 'none';
+        this.push({
+          type: 'session_info',
+          data: { nativeSessionId: ev.sessionId || undefined, cliVersion: ev.cliVersion || undefined, model: ev.model || undefined },
+        });
         if (ev.model && ev.model !== this.model) {
           this.model = ev.model;
           this.push({ type: 'model_changed', data: { modelId: ev.model } });
@@ -400,17 +475,17 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       case 'thought_chunk':
       case 'message':
       case 'thought': {
-        // Subagent text belongs to its tool call; the contract has no subagent message field yet.
-        if (ev.parentToolCallId) return;
         const messageId = ev.messageId ?? `turn-${this.turn}`;
         const type = ev.kind === 'message_chunk' ? 'agent_message_chunk'
           : ev.kind === 'thought_chunk' ? 'agent_thought_chunk'
           : ev.kind === 'message' ? 'agent_message' : 'agent_thought';
-        this.push({ type, data: { messageId, text: ev.text } } as ChatEventDraft, true);
+        // A subagent is identified by the Task tool call that started it (parent_tool_use_id).
+        const data = ev.parentToolCallId ? { messageId, text: ev.text, subagentId: ev.parentToolCallId } : { messageId, text: ev.text };
+        this.push({ type, data } as ChatEventDraft, true);
         return;
       }
       case 'tool_call': {
-        this.tools.set(ev.toolCallId, { name: ev.name, input: ev.input });
+        this.tools.set(ev.toolCallId, { name: ev.name, input: ev.input, parentToolCallId: ev.parentToolCallId });
         this.push({
           type: 'tool_call',
           data: {
@@ -445,7 +520,13 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         }, true);
         return;
       }
-      case 'permission_request':
+      case 'permission_request': {
+        const questions = ev.toolName === 'AskUserQuestion' ? claudeQuestions(ev.input) : undefined;
+        if (questions) {
+          this.pendingQuestions.set(ev.requestId, ev.input);
+          this.push({ type: 'question', data: { requestId: ev.requestId, questions, toolCallId: ev.toolCallId, subagentId: this.subagentOf(ev.toolCallId) } }, true);
+          return;
+        }
         this.pendingPermissions.set(ev.requestId, ev.suggestions);
         this.push({
           type: 'permission_request',
@@ -459,10 +540,16 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             toolName: ev.toolName,
             rawInput: ev.input,
             options: claudePermissionOptions(ev.suggestions),
+            subagentId: this.subagentOf(ev.toolCallId),
           },
         }, true);
         return;
+      }
       case 'permission_cancelled':
+        if (this.pendingQuestions.delete(ev.requestId)) {
+          this.push({ type: 'question_resolved', data: { requestId: ev.requestId, answers: {}, cancelled: true } }, true);
+          return;
+        }
         if (!this.pendingPermissions.delete(ev.requestId)) return;
         this.push({ type: 'permission_resolved', data: { requestId: ev.requestId, decision: 'cancelled', by: 'agent' } }, true);
         return;
@@ -472,7 +559,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       case 'turn_ended': {
         const stopReason = this.stopReason(ev.subtype, ev.isError);
         if (stopReason === 'error') {
-          this.push({ type: 'error', data: { code: ev.subtype, message: ev.errors?.join('; ') || ev.result || 'Turn failed', fatal: false } }, true);
+          this.push({ type: 'error', data: { code: 'unknown', message: ev.errors?.join('; ') || ev.result || `Turn failed (${ev.subtype})`, fatal: false } }, true);
         }
         const t = tokens(ev.usage);
         this.push({ type: 'usage', data: { scope: 'turn', tokens: t, costUsd: ev.totalCostUsd, costIsEstimate: ev.totalCostUsd !== undefined ? this.costIsEstimate : undefined } }, true);
@@ -482,12 +569,13 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         return;
       }
       case 'rate_limit': {
-        if (ev.utilization !== undefined) {
-          const window = (ev.rateLimitType && LIMIT_WINDOWS[ev.rateLimitType]) ?? ev.rateLimitType ?? 'limit';
-          // The CLI reports resetsAt in epoch seconds; the contract uses epoch ms like ts.
-          const resetsAt = ev.resetsAt !== undefined && ev.resetsAt < 1e12 ? ev.resetsAt * 1000 : ev.resetsAt;
-          this.push({ type: 'usage', data: { scope: 'session', limits: [{ window, utilization: ev.utilization, resetsAt }] } });
-        }
+        const window = (ev.rateLimitType && LIMIT_WINDOWS[ev.rateLimitType]) ?? ev.rateLimitType ?? 'limit';
+        // The CLI reports resetsAt in epoch seconds; the contract uses epoch ms like ts.
+        const resetsAt = ev.resetsAt !== undefined && ev.resetsAt < 1e12 ? ev.resetsAt * 1000 : ev.resetsAt;
+        this.push({
+          type: 'usage',
+          data: { scope: 'session', limits: [{ window, utilization: ev.utilization, status: LIMIT_STATUS[ev.status], resetsAt }] },
+        });
         if (ev.status === 'rejected') {
           this.push({ type: 'notice', data: { level: 'warn', code: 'rate_limited', message: 'Plan usage limit reached' } });
         }
@@ -503,16 +591,20 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.changeLevel(levelFromClaudeMode(ev.permissionMode), ev.permissionMode);
         return;
       case 'error':
-        this.push({ type: 'error', data: { code: 'claude_error', message: ev.message, fatal: ev.fatal } }, !ev.fatal);
+        this.push({ type: 'error', data: { code: ev.fatal ? 'driver_stream_failed' : claudeErrorCode(ev.message), message: ev.message, fatal: ev.fatal } }, !ev.fatal);
         return;
       case 'unmapped':
-        this.push({ type: 'protocol_unknown', data: { driver: this.driverId, kind: 'event', name: ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type } });
+        this.push({ type: 'protocol_unknown', data: { driver: this.driverId, kind: 'field', name: ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type } });
         return;
       case 'session_ended':
         for (const requestId of this.pendingPermissions.keys()) {
           this.push({ type: 'permission_resolved', data: { requestId, decision: 'cancelled', by: 'agent' } }, true);
         }
+        for (const requestId of this.pendingQuestions.keys()) {
+          this.push({ type: 'question_resolved', data: { requestId, answers: {}, cancelled: true } }, true);
+        }
         this.pendingPermissions.clear();
+        this.pendingQuestions.clear();
         this.push({
           type: 'session_ended',
           data: {
@@ -525,6 +617,11 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     }
   }
 
+  /** The subagent (its Task tool call id) a tool call ran in, if any. */
+  private subagentOf(toolCallId: string | undefined): string | undefined {
+    return toolCallId ? this.tools.get(toolCallId)?.parentToolCallId : undefined;
+  }
+
   private stopReason(subtype: string, isError: boolean): TurnStopReason {
     if (subtype === 'error_max_turns') return 'max_turns';
     if (this.interrupting && (subtype === 'error_during_execution' || isError)) return 'cancelled';
@@ -534,12 +631,14 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
 
   private mapSubagent(ev: Extract<ClaudeChatEvent, { kind: 'subagent' }>): void {
     const raw = ev.raw;
+    const subagentId = str(raw.tool_use_id) ?? ev.taskId;
     if (ev.phase === 'started') {
+      this.subagentNames.set(subagentId, str(raw.subagent_type) ?? 'subagent');
       this.push({
         type: 'subagent',
         data: {
-          subagentId: ev.taskId,
-          name: str(raw.subagent_type) ?? 'subagent',
+          subagentId,
+          name: this.subagentNames.get(subagentId) ?? 'subagent',
           description: str(raw.description),
           status: 'running',
           parentToolCallId: str(raw.tool_use_id),
@@ -550,8 +649,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       this.push({
         type: 'subagent',
         data: {
-          subagentId: ev.taskId,
-          name: str(raw.subagent_type) ?? 'subagent',
+          subagentId,
+          name: str(raw.subagent_type) ?? this.subagentNames.get(subagentId) ?? 'subagent',
           status: s === 'failed' ? 'failed' : s === 'stopped' || s === 'killed' ? 'cancelled' : 'completed',
           parentToolCallId: str(raw.tool_use_id),
         },
@@ -631,4 +730,21 @@ export class ClaudeChatDriver implements ChatDriver {
   private createTransport(opts: ClaudeTransportOptions): ClaudeTransport {
     return (this.deps.createTransport ?? defaultTransportFactory)(this.id, opts);
   }
+}
+
+/**
+ * Register both Claude drivers with the chat runtime's registry
+ * (`registerChatDriver` in services/agent-runtime/chat-drivers.ts). The SDK
+ * driver goes first: the registry falls back to the first one registered for
+ * a provider, and the SDK is Claude's default mode. Returns one unregister.
+ */
+export function registerClaudeChatDrivers(
+  register: (driver: ChatDriver) => () => void,
+  deps: { createTransport?: ClaudeTransportFactory; log?: ClaudeTransportLog } = {},
+): () => void {
+  const unregister = [
+    register(new ClaudeChatDriver('claude_agent_sdk', deps)),
+    register(new ClaudeChatDriver('claude_stream_json', deps)),
+  ];
+  return () => unregister.forEach((u) => u());
 }

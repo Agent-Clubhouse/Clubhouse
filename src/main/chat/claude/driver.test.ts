@@ -13,6 +13,7 @@ import {
   claudeToolKind,
   claudeToolTitle,
   levelFromClaudeMode,
+  registerClaudeChatDrivers,
   type ClaudeChatDriverId,
   type ClaudeChatDriverSession,
   type ClaudeTransportFactory,
@@ -123,7 +124,8 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     expect(drafts.of('agent_message')[0].data).toEqual({ messageId: 'msg_hello', text: 'Hello' });
     expect(drafts.of('usage')[0].data).toMatchObject({ scope: 'turn', costIsEstimate: true });
     expect(s.nativeSessionId).toBe('fake-session-1');
-    // Model reported by system/init.
+    // system/init arrives with the first prompt: native id and model via session_info.
+    expect(drafts.of('session_info').map((d) => d.data)).toEqual([{ nativeSessionId: 'fake-session-1', cliVersion: '2.1.300-fake', model: 'claude-fake-1' }]);
     expect(drafts.of('model_changed').map((d) => d.data.modelId)).toEqual(['claude-fake-1']);
     // Every draft becomes a valid envelope once stamped.
     drafts.all.forEach((d, i) => {
@@ -144,8 +146,45 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     expect((await drafts.waitFor('permission_resolved')).data).toEqual({ requestId: req.data.requestId, optionId: 'allow_always', decision: 'allow', by: 'user' });
     const update = await drafts.waitFor('tool_call_update');
     expect(update.data).toMatchObject({ toolCallId: 'toolu_1', status: 'completed', content: [{ type: 'terminal', command: 'ls', output: 'file.txt' }] });
+    await drafts.waitFor('agent_message', (d) => d.data.text === `allowed:{"command":"ls"}:${JSON.stringify([{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'ls' }], behavior: 'allow', destination: 'localSettings' }])}`);
     await drafts.waitFor('turn_ended');
     await expect(s.respondPermission(req.data.requestId, 'allow')).rejects.toThrow(/No pending/);
+  });
+
+  it('surfaces AskUserQuestion as a question and answers it', async () => {
+    const s = await start();
+    await s.send([{ type: 'text', text: 'ask' }], 'prompt');
+    const q = await drafts.waitFor('question');
+    expect(q.data).toMatchObject({
+      toolCallId: 'toolu_ask',
+      questions: [{
+        id: 'Which DB?', prompt: 'Which DB?', header: 'DB', multiSelect: false, allowFreeText: true,
+        options: [{ id: 'Postgres', label: 'Postgres', description: 'SQL' }, { id: 'SQLite', label: 'SQLite' }],
+      }],
+    });
+    expect(drafts.of('permission_request')).toHaveLength(0);
+    await s.answerQuestion(q.data.requestId, { 'Which DB?': 'SQLite' });
+    await drafts.waitFor('agent_message', (d) => d.data.text === 'answers:{"Which DB?":"SQLite"}');
+    expect((await drafts.waitFor('question_resolved')).data).toEqual({ requestId: q.data.requestId, answers: { 'Which DB?': 'SQLite' } });
+  });
+
+  it('tags subagent text and tools with the Task call id', async () => {
+    const s = await start();
+    await s.send([{ type: 'text', text: 'sub' }], 'prompt');
+    await drafts.waitFor('turn_ended');
+    expect(drafts.of('subagent').map((d) => [d.data.subagentId, d.data.status, d.data.name])).toEqual([
+      ['toolu_task', 'running', 'Explore'], ['toolu_task', 'completed', 'Explore'],
+    ]);
+    expect(drafts.of('agent_message').find((d) => d.data.text === 'Looking around')?.data.subagentId).toBe('toolu_task');
+    expect(drafts.of('tool_call').find((d) => d.data.toolCallId === 'toolu_sub_read')?.data.subagentId).toBe('toolu_task');
+  });
+
+  it('passes a denial message and an edited input through', async () => {
+    const s = await start();
+    await s.send([{ type: 'text', text: 'tool' }], 'prompt');
+    const req = await drafts.waitFor('permission_request');
+    await s.respondPermission(req.data.requestId, 'allow', { updatedInput: { command: 'ls -la' } });
+    await drafts.waitFor('agent_message', (d) => d.data.text === 'allowed:{"command":"ls -la"}:null');
   });
 
   it('denies, and reports an unknown option without consuming the request', async () => {
@@ -153,8 +192,8 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     await s.send([{ type: 'text', text: 'tool' }], 'prompt');
     const req = await drafts.waitFor('permission_request');
     await expect(s.respondPermission(req.data.requestId, 'bogus')).rejects.toThrow(/Unknown/);
-    await s.respondPermission(req.data.requestId, 'deny');
-    expect((await drafts.waitFor('tool_call_update')).data).toMatchObject({ status: 'failed', error: 'The user denied this request.' });
+    await s.respondPermission(req.data.requestId, 'deny', { message: 'Use git status instead' });
+    expect((await drafts.waitFor('tool_call_update')).data).toMatchObject({ status: 'failed', error: 'Use git status instead' });
   });
 
   it('interrupt cancels the pending permission and ends the turn as cancelled', async () => {
@@ -192,11 +231,11 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     const s = await start();
     await s.send([{ type: 'text', text: 'limit' }], 'prompt');
     expect((await drafts.waitFor('usage', (d) => d.data.scope === 'session')).data.limits).toEqual([
-      { window: '5h', utilization: 0.91, resetsAt: 1760000000000 },
+      { window: '5h', utilization: 0.91, status: 'warning', resetsAt: 1760000000000 },
     ]);
     await drafts.waitFor('turn_ended');
     await s.send([{ type: 'text', text: 'novel' }], 'prompt');
-    expect((await drafts.waitFor('protocol_unknown')).data).toEqual({ driver: id, kind: 'event', name: 'system/brand_new_thing' });
+    expect((await drafts.waitFor('protocol_unknown')).data).toEqual({ driver: id, kind: 'field', name: 'system/brand_new_thing' });
   });
 
   it('ends with session_ended: stopped on close, error on crash', async () => {
@@ -210,6 +249,19 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     await crashing.send([{ type: 'text', text: 'crash' }], 'prompt');
     await drafts.done;
     expect(drafts.of('session_ended')[0].data.reason).toBe('error');
+  });
+});
+
+describe('registerClaudeChatDrivers', () => {
+  it('registers the SDK driver first, then stream-json, and unregisters both', () => {
+    const registered: string[] = [];
+    const unregister = registerClaudeChatDrivers((d) => {
+      registered.push(`${d.provider}:${d.id}`);
+      return () => registered.splice(registered.indexOf(`${d.provider}:${d.id}`), 1);
+    });
+    expect(registered).toEqual(['claude-code:claude_agent_sdk', 'claude-code:claude_stream_json']);
+    unregister();
+    expect(registered).toEqual([]);
   });
 });
 
