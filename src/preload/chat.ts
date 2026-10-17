@@ -1,13 +1,31 @@
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../shared/chat';
+import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult, StagedChatAttachment } from '../shared/chat';
+import { CHAT_IMAGE_MAX_BYTES } from '../shared/chat';
 
 export const chat = {
   chat: {
     readTranscript: (agentId: string, tail?: number): Promise<ChatEvent[]> =>
       ipcRenderer.invoke(IPC.CHAT.READ_TRANSCRIPT, agentId, tail),
-    sendMessage: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery): Promise<RuntimeSendResult> =>
-      ipcRenderer.invoke(IPC.CHAT.SEND_MESSAGE, agentId, text, delivery),
+    /** `attachmentIds` come from stageAttachment. */
+    sendMessage: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]): Promise<RuntimeSendResult> =>
+      ipcRenderer.invoke(IPC.CHAT.SEND_MESSAGE, agentId, text, delivery, attachmentIds),
+    /**
+     * Hand a dropped, picked or pasted File to main for checking. The path is
+     * resolved here from the File itself, so page code can only stage files
+     * the user actually gave it; a File with no path (pasted) goes as bytes.
+     */
+    stageAttachment: async (agentId: string, file: File, opts?: { imagesAllowed?: boolean }): Promise<StagedChatAttachment> => {
+      const filePath = webUtils.getPathForFile(file);
+      if (filePath) return ipcRenderer.invoke(IPC.CHAT.STAGE_ATTACHMENT, agentId, { path: filePath, name: file.name });
+      if (opts?.imagesAllowed === false) throw new Error("This agent's chat can't take pasted images");
+      if (file.size > CHAT_IMAGE_MAX_BYTES) throw new Error('Pasted images must be 3.75 MB or smaller');
+      return ipcRenderer.invoke(IPC.CHAT.STAGE_ATTACHMENT, agentId, {
+        data: new Uint8Array(await file.arrayBuffer()),
+        name: file.name,
+        ...(opts?.imagesAllowed !== undefined ? { imagesAllowed: opts.imagesAllowed } : {}),
+      });
+    },
     interrupt: (agentId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.INTERRUPT, agentId),
     respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> =>
@@ -24,6 +42,13 @@ export const chat = {
       ipcRenderer.invoke(IPC.CHAT.SAVE_RUNTIME_SETTINGS, settings),
     getAgentRuntime: (agentId: string, provider?: string): Promise<ChatAgentRuntimeInfo> =>
       ipcRenderer.invoke(IPC.CHAT.GET_AGENT_RUNTIME, agentId, provider),
+    /** An agent didn't get the chat it asked for: it fell back to another driver or the terminal. */
+    onRuntimeNotice: (callback: (agentId: string, notice: { level: 'info' | 'warn'; code: string; message: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, notice: { level: 'info' | 'warn'; code: string; message: string }) =>
+        callback(agentId, notice);
+      ipcRenderer.on(IPC.CHAT.RUNTIME_NOTICE, listener);
+      return () => { ipcRenderer.removeListener(IPC.CHAT.RUNTIME_NOTICE, listener); };
+    },
     onEvent: (callback: (event: ChatEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, chatEvent: ChatEvent) => callback(chatEvent);
       ipcRenderer.on(IPC.CHAT.EVENT, listener);

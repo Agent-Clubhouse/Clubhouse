@@ -11,6 +11,8 @@
  */
 
 /** Bump on breaking attribute changes; exported as `clubhouse.telemetry.schema`. */
+import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
+
 export const TELEMETRY_SCHEMA_VERSION = 1;
 
 /** Maximum length of any exported string attribute (spec §5.1). */
@@ -129,6 +131,39 @@ export const ERROR_TYPES = [
   'worktree_failed',
   'delete_failed',
   'tap_undelivered',
+  // Workspace (§4.7–4.10, Phase 5)
+  'not_a_repo',
+  'validation',
+  'nonzero_exit',
+  'no_remote',
+  'conflict',
+  'auth',
+  'git_init_failed',
+  'ENOENT',
+  'EACCES',
+  'EISDIR',
+  'ENOTDIR',
+  'EEXIST',
+  'EPERM',
+  'ENOSPC',
+  'EMFILE',
+  'path_denied',
+  'max_buffer',
+  'bad_regex',
+  'rg_failed',
+  'activation_timeout',
+  'module_resolve_failed',
+  'invalid_export',
+  'activate_threw',
+  'base_missing',
+  'create_failed',
+  'canvas_unreadable',
+  'canvas_load_failed',
+  // Workspace 5b (§4.11)
+  'invalid_json',
+  'invalid_id',
+  'install_failed',
+  'no_update_available',
   // Annex (§4.12, Phase 6)
   'identity_unreachable',
   'identity_invalid',
@@ -145,6 +180,49 @@ export const ERROR_TYPES = [
 
 export const OUTCOMES = ['ok', 'error', 'cancelled', 'timeout', 'skipped'] as const;
 export type Outcome = (typeof OUTCOMES)[number];
+
+/** Coarse buckets for item counts (files, tree nodes, matches, views). */
+export const COUNT_BUCKETS = ['0', '1-9', '10-99', '100-999', '1000-9999', '>=10000'] as const;
+export type CountBucket = (typeof COUNT_BUCKETS)[number];
+
+export function countBucket(n: number): CountBucket {
+  if (!(n > 0)) return '0';
+  if (n < 10) return '1-9';
+  if (n < 100) return '10-99';
+  if (n < 1000) return '100-999';
+  if (n < 10_000) return '1000-9999';
+  return '>=10000';
+}
+
+/** User-initiated git operations (§4.8), plus the polled status. */
+export const GIT_OPS = [
+  'checkout', 'stage', 'unstage', 'stage_all', 'unstage_all', 'discard', 'commit', 'push', 'pull',
+  'create_branch', 'stash', 'stash_pop', 'diff', 'show_commit', 'worktree_list',
+  'status', 'other',
+] as const;
+export type GitOp = (typeof GIT_OPS)[number];
+
+/**
+ * Managed and legacy settings domains (§4.14). The key only, never values;
+ * chat runtime settings are left to the chat telemetry mapping (§9.1).
+ */
+export const SETTINGS_KEYS = [
+  'clipboard', 'editor', 'mcp', 'security', 'goobers', 'annex', 'notifications', 'orchestrators', 'headless',
+  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'clubhouse_mode', 'experimental', 'marketplace', 'theme',
+] as const;
+
+/** Built-in theme ids (shared/types.ts BuiltinThemeId); plugin themes report `other`. */
+export const BUILTIN_THEME_IDS = [
+  'catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark', 'cyberpunk',
+] as const;
+
+/** Supported plugin API versions, kept in sync with the manifest validator. */
+export const PLUGIN_API_VERSION_VALUES: readonly string[] = SUPPORTED_PLUGIN_API_VERSIONS.map(String);
+
+/** Built-in plugins (§4.10): the only plugin ids ever sent raw. */
+export const BUILTIN_PLUGIN_IDS = [
+  'terminal', 'files', 'browser', 'git', 'canvas', 'review', 'group-project', 'sticky-note', 'goobers',
+] as const;
 
 // --- The registry -----------------------------------------------------------
 
@@ -209,10 +287,12 @@ export const ATTR = {
     'sidebar_toggle', 'sidebar_resize', 'tab_select', 'project_select', 'agent_select', 'app_item_open',
     'needs_you_select', 'project_collapse', 'project_collapse_all', 'project_pin', 'project_reorder',
     'fold_toggle', 'completed_dismiss', 'completed_clear', 'new_agent_open', 'search_open',
+    'start_page_start', 'completed_open', 'first_run_add', 'first_run_drop',
+    'host_switch', 'host_retry', 'host_settings_open', 'needs_you_remote_select',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [
-    'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create',
+    'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create', 'agent_start',
   ]),
   // App lifecycle (§4.1, Phase 3b)
   shutdownStep: enumAttr('clubhouse.shutdown.step', [
@@ -314,6 +394,52 @@ export const ATTR = {
   tapBroadcast: boolAttr('clubhouse.tap.broadcast'),
   targetsCount: intAttr('clubhouse.targets.count'),
   deliveryResult: enumAttr('clubhouse.delivery.result', ['delivered', 'not_running', 'unsupported_runtime']),
+  // Workspace (§4.7–4.10, Phase 5). Counts are bucketed with countBucket().
+  gitOp: enumAttr('clubhouse.git.op', GIT_OPS),
+  gitTimedOut: boolAttr('clubhouse.git.timed_out'),
+  gitStatusFileCount: enumAttr('clubhouse.git.status.file_count_bucket', COUNT_BUCKETS),
+  fileOp: enumAttr('clubhouse.file.op', ['read', 'write', 'read_binary', 'read_tree', 'mkdir', 'delete', 'rename', 'copy', 'stat']),
+  fileResult: enumAttr('clubhouse.file.result', ['ok', 'error']),
+  treeNodeCount: enumAttr('clubhouse.tree.node_count_bucket', COUNT_BUCKETS),
+  treeHitCap: boolAttr('clubhouse.tree.hit_cap'),
+  searchEngine: enumAttr('clubhouse.search.engine', ['rg', 'node']),
+  searchTruncated: boolAttr('clubhouse.search.truncated'),
+  searchMatchCount: enumAttr('clubhouse.search.match_count_bucket', COUNT_BUCKETS),
+  searchRegex: boolAttr('clubhouse.search.regex'),
+  searchCaseSensitive: boolAttr('clubhouse.search.case_sensitive'),
+  searchWholeWord: boolAttr('clubhouse.search.whole_word'),
+  editorBucket: enumAttr('clubhouse.editor.bucket', ['vscode', 'cursor', 'zed', 'jetbrains', 'other']),
+  /** Built-in plugin ids are sent as-is; any other plugin is `other` plus `clubhouse.plugin.id_hash`. */
+  pluginRef: enumAttr('clubhouse.plugin.ref', [...BUILTIN_PLUGIN_IDS, 'other']),
+  pluginIdHash: hashAttr('clubhouse.plugin.id_hash'),
+  pluginOrigin: enumAttr('clubhouse.plugin.origin', ['builtin', 'marketplace', 'sideloaded']),
+  pluginScope: enumAttr('clubhouse.plugin.scope', ['project', 'app', 'dual']),
+  /** The manifest's `engine.api` (0.5, 0.9, ...) as a string; unsupported versions become `other`. */
+  pluginApiVersion: enumAttr('clubhouse.plugin.api_version', PLUGIN_API_VERSION_VALUES),
+  attempt: intAttr('clubhouse.attempt'),
+  pluginProtocolResult: enumAttr('clubhouse.plugin.protocol.result', ['ok', 'denied', 'not_found']),
+  canvasLoadResult: enumAttr('clubhouse.canvas.load.result', ['ok', 'new', 'recovered_from_backup', 'degraded', 'unreadable', 'failed']),
+  canvasCount: intAttr('clubhouse.canvas.count'),
+  canvasViewCount: enumAttr('clubhouse.canvas.view.count_bucket', COUNT_BUCKETS),
+
+  // Workspace 5b: marketplace, plugin updates, settings and feature events (§4.11, §4.14)
+  registryKind: enumAttr('clubhouse.registry.kind', ['official', 'custom']),
+  cacheHit: boolAttr('clubhouse.cache.hit'),
+  httpStatusCode: intAttr('http.response.status_code'),
+  installFailureStage: enumAttr('clubhouse.install.failure_stage', ['invalid_id', 'download_http', 'integrity', 'extract', 'no_manifest', 'swap', 'restore']),
+  updatesAvailable: intAttr('clubhouse.updates.available.count'),
+  updatesIncompatible: intAttr('clubhouse.updates.incompatible.count'),
+  settingsKey: enumAttr('clubhouse.settings.key', SETTINGS_KEYS),
+  themeBuiltinId: enumAttr('clubhouse.theme.builtin_id', [...BUILTIN_THEME_IDS, 'other']),
+  popoutType: enumAttr('clubhouse.popout.type', ['agent', 'canvas']),
+  /**
+   * A bulletin post (§12 H8): `evicted_message` when the topic's own cap
+   * dropped older messages, `evicted_topic` when the board-wide cap dropped
+   * messages from other topics, `rejected` for an oversized body.
+   */
+  bulletinPostResult: enumAttr('clubhouse.bulletin.post.result', ['ok', 'evicted_message', 'evicted_topic', 'rejected']),
+  mcpToolsCount: enumAttr('clubhouse.mcp.tools.count_bucket', COUNT_BUCKETS),
+  mcpToolsEmpty: boolAttr('clubhouse.mcp.tools.empty'),
 
   // Annex (§4.12, §7, Phase 6). Peer identity is never an attribute: no
   // fingerprints, aliases, hosts, addresses or ports.
@@ -489,6 +615,43 @@ export const SPANS = {
   'clubhouse.agent.kill': { level: 'standard', root: true },
   /** One shoulder tap (direct or broadcast) to group-project members. */
   'clubhouse.group.shoulder_tap': { level: 'standard', root: true },
+  // Workspace (§4.7–4.10, Phase 5)
+  'clubhouse.project.add': { level: 'standard', root: true },
+  'clubhouse.project.add.ensure_gitignore': { level: 'standard', root: false },
+  'clubhouse.project.remove': { level: 'standard', root: true },
+  'clubhouse.project.git_init': { level: 'standard', root: true },
+  'clubhouse.git.checkout': { level: 'standard', root: true },
+  'clubhouse.git.stage': { level: 'standard', root: true },
+  'clubhouse.git.unstage': { level: 'standard', root: true },
+  'clubhouse.git.stage_all': { level: 'standard', root: true },
+  'clubhouse.git.unstage_all': { level: 'standard', root: true },
+  'clubhouse.git.discard': { level: 'standard', root: true },
+  'clubhouse.git.commit': { level: 'standard', root: true },
+  'clubhouse.git.push': { level: 'standard', root: true },
+  'clubhouse.git.pull': { level: 'standard', root: true },
+  'clubhouse.git.create_branch': { level: 'standard', root: true },
+  'clubhouse.git.stash': { level: 'standard', root: true },
+  'clubhouse.git.stash_pop': { level: 'standard', root: true },
+  'clubhouse.git.diff': { level: 'standard', root: true },
+  'clubhouse.git.show_commit': { level: 'standard', root: true },
+  'clubhouse.git.worktree_list': { level: 'standard', root: true },
+  /** Children of the agent create/delete flows (Phase 4). */
+  'clubhouse.git.worktree_add': { level: 'standard', root: false },
+  'clubhouse.git.worktree_remove': { level: 'standard', root: false },
+  /** Exemplar for a status poll slower than 2 s; polls themselves never get spans. */
+  'clubhouse.git.status.slow': { level: 'detailed', root: true },
+  'clubhouse.file.tree.read': { level: 'standard', root: true },
+  'clubhouse.search.query': { level: 'standard', root: true },
+  'clubhouse.editor.open_external': { level: 'standard', root: true },
+  'clubhouse.editor.monaco_load': { level: 'standard', root: true },
+  'clubhouse.plugin.activate': { level: 'standard', root: true },
+  'clubhouse.canvas.load': { level: 'standard', root: true },
+  // Workspace 5b (§4.11)
+  'clubhouse.marketplace.fetch_registry': { level: 'standard', root: true },
+  'clubhouse.plugin.install': { level: 'standard', root: true },
+  'clubhouse.plugin.update_check': { level: 'standard', root: true },
+  'clubhouse.plugin.update': { level: 'standard', root: true },
+  'clubhouse.plugin.uninstall': { level: 'standard', root: true },
 } as const satisfies Record<string, SpanDef>;
 export type SpanName = keyof typeof SPANS;
 
@@ -756,6 +919,58 @@ export const METRICS = {
     description: 'Failed exporter batches',
     attributes: ['clubhouse.telemetry.signal', 'clubhouse.http.class'],
   },
+  // Workspace (§4.7–4.10, Phase 5)
+  'clubhouse.projects.count': {
+    kind: 'gauge', unit: '{project}', level: 'standard',
+    description: 'Projects in the project list, sampled once a minute',
+    attributes: [],
+  },
+  'clubhouse.git.status.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Polled git status (getGitInfo) duration',
+    attributes: ['clubhouse.git.status.file_count_bucket'],
+  },
+  'clubhouse.git.status.polls': {
+    kind: 'counter', unit: '{poll}', level: 'standard',
+    description: 'Polled git status calls',
+    attributes: [],
+  },
+  'clubhouse.git.subprocess.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'git subprocess duration by operation',
+    attributes: ['clubhouse.git.op'],
+  },
+  'clubhouse.file.ops': {
+    kind: 'counter', unit: '{op}', level: 'standard',
+    description: 'File service operations by result',
+    attributes: ['clubhouse.file.op', 'clubhouse.file.result', 'error.type'],
+  },
+  'clubhouse.file.path_denied': {
+    kind: 'counter', unit: '{denial}', level: 'errors',
+    description: 'Paths refused by the file sandbox (outside allowed project roots)',
+    attributes: [],
+  },
+  'clubhouse.file_watch.active': {
+    kind: 'gauge', unit: '{watch}', level: 'standard',
+    description: 'Active file watches, sampled once a minute',
+    attributes: [],
+  },
+  'clubhouse.file_watch.errors': {
+    kind: 'counter', unit: '{error}', level: 'errors',
+    description: 'File watches that failed to start',
+    attributes: ['error.type'],
+  },
+  'clubhouse.plugin.protocol.requests': {
+    kind: 'counter', unit: '{request}', level: 'standard',
+    description: 'clubhouse-plugin: module requests by result',
+    attributes: ['clubhouse.plugin.protocol.result'],
+  },
+  // Workspace 5b
+  'clubhouse.group.bulletin.posts': {
+    kind: 'counter', unit: '{post}', level: 'standard',
+    description: 'Bulletin posts by result, from any source (MCP or UI)',
+    attributes: ['clubhouse.bulletin.post.result'],
+  },
 } as const satisfies Record<string, MetricDef>;
 export type MetricName = keyof typeof METRICS;
 
@@ -795,6 +1010,21 @@ export const EVENTS = {
   'clubhouse.persist.recovery': { level: 'errors' },
   /** A data-loss guard blocked saves. Sent once per store and reason per session. */
   'clubhouse.persist.guard_blocked': { level: 'errors' },
+  // Workspace (§4.7–4.10, Phase 5)
+  /** A file changed on disk while its editor tab had unsaved edits. */
+  'clubhouse.editor.save_conflict': { level: 'errors' },
+  // Workspace 5b: settings and feature usage (§4.14), main-process call sites only.
+  /** Attributes: `clubhouse.settings.key`. Never values. */
+  'clubhouse.settings.changed': { level: 'standard' },
+  /** Attributes: `clubhouse.theme.kind`, `clubhouse.theme.builtin_id`. */
+  'clubhouse.theme.changed': { level: 'standard' },
+  /** Attributes: `clubhouse.popout.type`. */
+  'clubhouse.popout.opened': { level: 'standard' },
+  /** Attributes: `clubhouse.outcome`. */
+  'clubhouse.blueprint.exported': { level: 'standard' },
+  'clubhouse.blueprint.imported': { level: 'standard' },
+  /** An agent listed its MCP tools (§12 H8). Attributes: tool-count bucket, empty flag. */
+  'clubhouse.mcp.tools_list': { level: 'standard' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

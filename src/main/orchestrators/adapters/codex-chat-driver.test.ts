@@ -9,6 +9,8 @@ import { spawn } from 'child_process';
 import {
   appServerArgs,
   CODEX_CHAT_CAPABILITIES,
+  CODEX_SLASH_COMMANDS,
+  parseCodexSlashCommand,
   CodexChatDriver,
   codexLevelSettings,
   codexSandboxPolicy,
@@ -72,6 +74,7 @@ function createFakeServer(handlers: Record<string, Handler>) {
 }
 
 const defaultHandlers: Record<string, Handler> = {
+  'review/start': () => ({ result: { turn: fx.turnStartResult.turn, reviewThreadId: fx.THREAD_ID } }),
   'initialize': () => ({ result: fx.initializeResult }),
   'thread/start': () => ({ result: fx.threadStartResult }),
   'thread/resume': () => ({ result: fx.threadResumeResult }),
@@ -88,6 +91,12 @@ const baseOpts: ChatDriverStartOptions = {
   binaryPath: 'codex',
   level: 'auto_edit',
 };
+
+/** Consume the opening session_started and commands_available. */
+async function skipStart(take: (n: number) => Promise<ChatEventDraft[]>): Promise<void> {
+  const opening = await take(2);
+  expect(opening.map((e) => e.type)).toEqual(['session_started', 'commands_available']);
+}
 
 describe('CodexChatDriver', () => {
   let server: ReturnType<typeof createFakeServer>;
@@ -156,6 +165,47 @@ describe('CodexChatDriver', () => {
     });
   });
 
+  it('passes translated MCP servers and reports the ones Codex cannot run', async () => {
+    const onLog = vi.fn();
+    const session = await new CodexChatDriver({ onLog }).start({
+      ...baseOpts,
+      mcpServers: {
+        clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
+        remote: { type: 'http', url: 'https://mcp.example.test/mcp', headers: { Authorization: 'Bearer x' } },
+        events: { type: 'sse', url: 'https://sse.example.test/sse' },
+      },
+    });
+    const iterator = session.events[Symbol.asyncIterator]();
+
+    expect(server.requests('thread/start')[0].params).toMatchObject({
+      config: {
+        mcp_servers: {
+          clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
+          remote: { url: 'https://mcp.example.test/mcp', http_headers: { Authorization: 'Bearer x' } },
+        },
+      },
+    });
+    expect(Object.keys((server.requests('thread/start')[0].params as { config: { mcp_servers: object } }).config.mcp_servers))
+      .toEqual(['clubhouse', 'remote']);
+    // Find the notice among the opening events rather than at a fixed index,
+    // so other start-up events (commands_available) don't break this.
+    server.send({ method: 'thread/status/changed', params: { threadId: fx.THREAD_ID, status: { type: 'idle' } } });
+    const opening: ChatEventDraft[] = [];
+    for (let i = 0; i < 3; i++) opening.push((await iterator.next()).value as ChatEventDraft);
+    expect(opening[0]).toMatchObject({ type: 'session_started' });
+    expect(opening).toContainEqual({
+      type: 'notice',
+      data: { level: 'warn', code: 'mcp_servers_skipped', message: "Left out MCP servers Codex can't run: events (Codex has no SSE transport)" },
+    });
+    expect(onLog).toHaveBeenCalledWith('warn', 'MCP servers Codex cannot run were left out', { skipped: [{ name: 'events', reason: 'Codex has no SSE transport' }] });
+    await session.close();
+  });
+
+  it('sends no MCP config when there are no servers', async () => {
+    await startSession();
+    expect(server.requests('thread/start')[0].params).not.toHaveProperty('config');
+  });
+
   it('resumes a native thread', async () => {
     const { next } = await startSession({ resumeNativeSessionId: fx.THREAD_ID });
 
@@ -168,7 +218,7 @@ describe('CodexChatDriver', () => {
     useServer({ initialize: () => ({ result: { ...fx.initializeResult, userAgent: 'codex_cli_rs/0.163.0 (x)' } }) });
     const { take } = await startSession();
 
-    const [, notice] = await take(2);
+    const [, , notice] = await take(3);
     expect(notice).toMatchObject({ type: 'notice', data: { level: 'info', code: 'untested_cli_version' } });
   });
 
@@ -181,7 +231,7 @@ describe('CodexChatDriver', () => {
     });
     const { take } = await startSession();
 
-    expect((await take(2)).map((e) => e.type)).toEqual(['session_started', 'session_state']);
+    expect((await take(3)).map((e) => e.type)).toEqual(['session_started', 'commands_available', 'session_state']);
   });
 
   it('rejects and kills the process when the thread cannot start', async () => {
@@ -274,7 +324,7 @@ describe('CodexChatDriver', () => {
 
   it('round-trips an additional-permissions request', async () => {
     const { session, take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     server.send({
       method: 'item/permissions/requestApproval',
@@ -296,7 +346,7 @@ describe('CodexChatDriver', () => {
 
   it('attributes subagent-thread messages to the subagent and drops its lifecycle', async () => {
     const { take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     const sub = { threadId: 'subagent-thread', turnId: 'sub-turn' };
     server.send({ method: 'turn/started', params: { threadId: sub.threadId, turn: { ...fx.turnStartResult.turn, id: 'sub-turn' } } });
@@ -312,7 +362,7 @@ describe('CodexChatDriver', () => {
 
   it('tags a subagent approval with its subagent id', async () => {
     const { take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     server.send({ ...fx.commandApprovalRequest, id: 9, params: { ...fx.commandApprovalRequest.params, threadId: 'subagent-thread' } });
 
@@ -331,6 +381,129 @@ describe('CodexChatDriver', () => {
     expect(server.requests('turn/interrupt')[0].params).toEqual({ threadId: fx.THREAD_ID, turnId: fx.TURN_ID });
   });
 
+  it('lists its slash commands right after session_started', async () => {
+    const { take } = await startSession();
+
+    const [, commands] = await take(2);
+    expect(commands).toEqual({ type: 'commands_available', data: { commands: [...CODEX_SLASH_COMMANDS] } });
+  });
+
+  it.each([
+    ['/review', { type: 'uncommittedChanges' }],
+    ['/review branch main', { type: 'baseBranch', branch: 'main' }],
+    ['/review commit 3f2a9c1', { type: 'commit', sha: '3f2a9c1', title: null }],
+    ['/review focus on error handling', { type: 'custom', instructions: 'focus on error handling' }],
+  ])('%s starts an inline review', async (text, target) => {
+    const { session } = await startSession();
+
+    expect(await session.send([{ type: 'text', text }], 'prompt')).toBe('prompt');
+
+    expect(server.requests('review/start')[0].params).toEqual({ threadId: fx.THREAD_ID, target, delivery: 'inline' });
+    expect(server.requests('turn/start')).toHaveLength(0);
+  });
+
+  it('/compact compacts the thread instead of sending a prompt', async () => {
+    const { session } = await startSession();
+
+    await session.send([{ type: 'text', text: '/compact' }], 'prompt');
+
+    expect(server.requests('thread/compact/start')[0].params).toEqual({ threadId: fx.THREAD_ID });
+    expect(server.requests('turn/start')).toHaveLength(0);
+  });
+
+  it('refuses a slash command while a turn is running', async () => {
+    const { session } = await startSession();
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+
+    await expect(session.send([{ type: 'text', text: '/review' }], 'steer')).rejects.toThrow('Finish or stop the current turn before running /review');
+    expect(server.requests('review/start')).toHaveLength(0);
+  });
+
+  it('rejects a malformed command without calling Codex', async () => {
+    const { session } = await startSession();
+
+    await expect(session.send([{ type: 'text', text: '/review branch --upload-pack=x' }], 'prompt')).rejects.toThrow('Usage: /review branch <name>');
+    expect(server.requests('review/start')).toHaveLength(0);
+    expect(server.requests('turn/start')).toHaveLength(0);
+  });
+
+  it('refuses /compact while a turn is running', async () => {
+    const { session } = await startSession();
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+
+    await expect(session.send([{ type: 'text', text: '/compact' }], 'prompt')).rejects.toThrow('before running /compact');
+    expect(server.requests('thread/compact/start')).toHaveLength(0);
+  });
+
+  it('a second command sent before the review turn has started is refused, until that turn ends', async () => {
+    const { session } = await startSession();
+
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    // review/start answered, but turn/started hasn't arrived yet.
+    await expect(session.send([{ type: 'text', text: '/review' }], 'prompt')).rejects.toThrow('before running /review');
+
+    server.send({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn: { ...fx.turnStartResult.turn, status: 'completed' } } });
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    expect(server.requests('review/start')).toHaveLength(2);
+  });
+
+  it('a review turn that ends before review/start answers does not block later commands', async () => {
+    useServer({
+      'review/start': () => {
+        server.send({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn: { ...fx.turnStartResult.turn, status: 'completed' } } });
+        return { result: { turn: fx.turnStartResult.turn, reviewThreadId: fx.THREAD_ID } };
+      },
+    });
+    const { session } = await startSession();
+
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    await session.send([{ type: 'text', text: '/compact' }], 'prompt');
+
+    expect(server.requests('thread/compact/start')).toHaveLength(1);
+  });
+
+  it('a failed review/start does not block later commands', async () => {
+    let fail = true;
+    useServer({ 'review/start': () => (fail ? { error: { code: -32600, message: 'not a git repository' } } : { result: { turn: fx.turnStartResult.turn, reviewThreadId: fx.THREAD_ID } }) });
+    const { session } = await startSession();
+
+    await expect(session.send([{ type: 'text', text: '/review' }], 'prompt')).rejects.toThrow('not a git repository');
+    fail = false;
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    expect(server.requests('review/start')).toHaveLength(2);
+  });
+
+  it('a command refused mid-turn runs once that turn ends (queued, then drained)', async () => {
+    const { session } = await startSession();
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+    await expect(session.send([{ type: 'text', text: '/review' }], 'prompt')).rejects.toThrow();
+
+    server.send(fx.interruptedTurnCompleted); // the running turn ends
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+
+    expect(server.requests('review/start')).toHaveLength(1);
+  });
+
+  it('review/start does not consume pending model or level overrides', async () => {
+    const { session } = await startSession();
+    await session.setModel('gpt-5');
+
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    expect(server.requests('review/start')[0].params).not.toHaveProperty('model');
+    server.send({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn: { ...fx.turnStartResult.turn, status: 'completed' } } });
+
+    await session.send([{ type: 'text', text: 'next' }], 'prompt');
+    expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-5' });
+  });
+
+  it('sends an unknown /word to the model as an ordinary prompt', async () => {
+    const { session } = await startSession();
+
+    await session.send([{ type: 'text', text: '/explain this' }], 'prompt');
+
+    expect(server.requests('turn/start')[0].params).toMatchObject({ input: [{ type: 'text', text: '/explain this' }] });
+  });
+
   it('compact starts thread compaction', async () => {
     const { session } = await startSession();
     await session.compact();
@@ -341,7 +514,7 @@ describe('CodexChatDriver', () => {
 
   it('setLevel applies approval and sandbox from the next turn', async () => {
     const { session, take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     await session.setLevel('full_access');
     expect(await take(1)).toEqual([{ type: 'mode_changed', data: { level: 'full_access', nativeMode: 'never/danger-full-access' } }]);
@@ -355,7 +528,7 @@ describe('CodexChatDriver', () => {
 
   it('setModel applies the model and effort from the next turn', async () => {
     const { session, take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     await session.setModel('gpt-5', 'low');
     expect(await take(1)).toEqual([{ type: 'model_changed', data: { modelId: 'gpt-5', effort: 'low' } }]);
@@ -381,7 +554,7 @@ describe('CodexChatDriver', () => {
 
   it('round-trips a command approval', async () => {
     const { session, take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     server.send(fx.commandApprovalRequest);
     const [request] = await take(1);
@@ -401,7 +574,7 @@ describe('CodexChatDriver', () => {
 
   it('round-trips a file-change approval', async () => {
     const { session, take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     server.send(fx.fileChangeApprovalRequest);
     await take(1);
@@ -412,7 +585,7 @@ describe('CodexChatDriver', () => {
 
   it('declines server requests the contract cannot express', async () => {
     const { take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     server.send({
       method: 'item/tool/call',
@@ -428,7 +601,7 @@ describe('CodexChatDriver', () => {
 
   it('surfaces unknown notifications as protocol_unknown', async () => {
     const { take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     server.send({ method: 'thread/brandNew', params: {} });
 
@@ -439,7 +612,7 @@ describe('CodexChatDriver', () => {
 
   it('round-trips a question', async () => {
     const { session, take } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     server.send({
       method: 'item/tool/requestUserInput',
@@ -462,7 +635,7 @@ describe('CodexChatDriver', () => {
 
   it('close stops the process and ends the stream as stopped', async () => {
     const { session, take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
 
     await session.close();
 
@@ -474,7 +647,138 @@ describe('CodexChatDriver', () => {
 
   it('a crash ends the stream with the exit code', async () => {
     const { take, rest } = await startSession();
+    await skipStart(take);
+
+    server.exit(1);
+
+    expect(await rest()).toEqual([{ type: 'session_ended', data: { reason: 'error', exitCode: 1 } }]);
+  });
+
+  it('a crash mid-turn reports process_exited and ends the turn before the session', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+    expect(await take(1)).toMatchObject([{ type: 'turn_started' }]);
+
+    server.exit(1);
+
+    expect(await rest()).toEqual([
+      { type: 'error', data: { code: 'process_exited', message: 'Codex app-server exited with code 1 during a turn', fatal: true } },
+      { type: 'turn_ended', data: { stopReason: 'error' } },
+      { type: 'session_ended', data: { reason: 'error', exitCode: 1 } },
+    ]);
+  });
+
+  it('close mid-turn ends the turn as cancelled, with no error', async () => {
+    const { session, take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
     await take(1);
+
+    await session.close();
+
+    expect(await rest()).toEqual([
+      { type: 'turn_ended', data: { stopReason: 'cancelled' } },
+      { type: 'session_ended', data: { reason: 'stopped' } },
+    ]);
+  });
+
+  it('a crash cancels open approvals so no card outlives the process', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    server.send(fx.commandApprovalRequest);
+    await take(2);
+
+    server.exit(1);
+
+    const events = await rest();
+    expect(events.map((e) => e.type)).toEqual(['error', 'turn_ended', 'permission_resolved', 'session_ended']);
+    expect(events[2]).toEqual({ type: 'permission_resolved', data: { requestId: '0', decision: 'cancelled', by: 'agent' } });
+  });
+
+  it('a crash after interrupt() ends the turn as cancelled, with no error', async () => {
+    useServer({ 'turn/interrupt': () => ({ result: {} }) });
+    const { session, take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    await session.interrupt();
+    server.exit(1); // dies before turn/completed confirms the interrupt
+
+    expect(await rest()).toEqual([
+      { type: 'turn_ended', data: { stopReason: 'cancelled' } },
+      { type: 'session_ended', data: { reason: 'error', exitCode: 1 } },
+    ]);
+  });
+
+  it('a failed interrupt leaves a later crash reported as an error', async () => {
+    useServer({ 'turn/interrupt': () => ({ error: { code: -32600, message: 'no such turn' } }) });
+    const { session, take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    await expect(session.interrupt()).rejects.toThrow('no such turn');
+    server.exit(1);
+
+    expect((await rest()).map((e) => e.type === 'turn_ended' ? `turn_ended:${e.data.stopReason}` : e.type))
+      .toEqual(['error', 'turn_ended:error', 'session_ended']);
+  });
+
+  it('a signal kill mid-turn names the signal', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    server.proc.emit('exit', null, 'SIGKILL');
+
+    expect(await rest()).toEqual([
+      { type: 'error', data: { code: 'process_exited', message: 'Codex app-server exited on SIGKILL during a turn', fatal: true } },
+      { type: 'turn_ended', data: { stopReason: 'error' } },
+      { type: 'session_ended', data: { reason: 'error', message: 'Codex app-server exited on SIGKILL' } },
+    ]);
+  });
+
+  it('a crash cancels an open question', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    server.send({
+      method: 'item/tool/requestUserInput',
+      id: 8,
+      params: {
+        threadId: fx.THREAD_ID, turnId: fx.TURN_ID, itemId: 'q', isBlocking: true, autoResolutionMs: null,
+        questions: [{ id: 'q1', header: '', question: 'Which?', isOther: true, isSecret: false, options: null }],
+      },
+    });
+    await take(2);
+
+    server.exit(1);
+
+    const events = await rest();
+    expect(events.map((e) => e.type)).toEqual(['error', 'turn_ended', 'question_resolved', 'session_ended']);
+    expect(events[2]).toEqual({ type: 'question_resolved', data: { requestId: '8', answers: {}, cancelled: true } });
+  });
+
+  it('a crash after the turn finished adds no turn_ended', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+    server.send(fx.interruptedTurnCompleted); // turn/completed for the same turn
+    await take(2);
+
+    server.exit(1);
+
+    expect(await rest()).toEqual([{ type: 'session_ended', data: { reason: 'error', exitCode: 1 } }]);
+  });
+
+  it('subagent turns do not count as the chat turn running', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send({ method: 'turn/started', params: { threadId: 'subagent-thread', turn: { ...fx.turnStartResult.turn, id: 'sub-turn' } } });
 
     server.exit(1);
 
@@ -510,6 +814,23 @@ describe('codex driver helpers', () => {
     ['full_access', 'never', 'danger-full-access'],
   ] as const)('level %s → %s / %s', (level, approvalPolicy, sandbox) => {
     expect(codexLevelSettings(level)).toEqual({ approvalPolicy, sandbox });
+  });
+
+  it('parseCodexSlashCommand recognises only whole known commands', () => {
+    const t = (text: string) => parseCodexSlashCommand([{ type: 'text', text }]);
+    expect(t('/compact')).toEqual({ name: 'compact' });
+    expect(t('  /review  ')).toEqual({ name: 'review', target: { type: 'uncommittedChanges' } });
+    expect(t('/reviewer')).toBeUndefined();
+    expect(t('please /review')).toBeUndefined();
+    // Malformed arguments to a known command are errors, not instructions.
+    expect(t('/compact now')).toEqual({ name: 'invalid', error: '/compact takes no arguments' });
+    expect(t('/review branch')).toEqual({ name: 'invalid', error: 'Usage: /review branch <name>' });
+    expect(t('/review branch a b')).toEqual({ name: 'invalid', error: 'Usage: /review branch <name>' });
+    expect(t('/review branch -c')).toEqual({ name: 'invalid', error: 'Usage: /review branch <name>' });
+    expect(t('/review commit not-a-sha')).toEqual({ name: 'invalid', error: 'Usage: /review commit <sha>' });
+    expect(t('/review commit')).toEqual({ name: 'invalid', error: 'Usage: /review commit <sha>' });
+    expect(t('/review the branch handling')).toEqual({ name: 'review', target: { type: 'custom', instructions: 'the branch handling' } });
+    expect(parseCodexSlashCommand([{ type: 'text', text: '/review' }, { type: 'file', path: 'a.ts' }])).toBeUndefined();
   });
 
   it('appServerArgs keeps config overrides and feature toggles only', () => {
@@ -554,6 +875,7 @@ describe('codex driver helpers', () => {
       liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
       login: 'terminal',
       systemPrompt: true,
+      slashCommands: true,
     });
   });
 });

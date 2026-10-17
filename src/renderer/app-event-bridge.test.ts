@@ -33,6 +33,7 @@ const mockRemovers = {
   onPermissionPending: vi.fn(),
   onPermissionSettled: vi.fn(),
   onChatEvent: vi.fn(),
+  onChatRuntimeNotice: vi.fn(),
 };
 
 vi.stubGlobal('window', {
@@ -103,6 +104,7 @@ vi.stubGlobal('window', {
     },
     chat: {
       onEvent: vi.fn(() => mockRemovers.onChatEvent),
+      onRuntimeNotice: vi.fn(() => mockRemovers.onChatRuntimeNotice),
     },
   },
   addEventListener: vi.fn(),
@@ -413,6 +415,12 @@ describe('initAppEventBridge', () => {
       'Agent agent-1 started without the latest Clubhouse Mode settings: malformed wildcard template',
       'error',
     );
+  });
+
+  it('shows a toast with the reason when an agent falls back from chat', () => {
+    const onRuntimeNotice = vi.mocked(window.clubhouse.chat.onRuntimeNotice).mock.calls[0][0];
+    onRuntimeNotice('agent-unknown', { level: 'warn', code: 'fallback', message: 'Opened in the terminal: Claude Code (Agent SDK) handshake failed: boom' });
+    expect(mockAddToast).toHaveBeenCalledWith('agent-unknown: Opened in the terminal: Claude Code (Agent SDK) handshake failed: boom', 'info');
   });
 
   it('should register keyboard event listener', () => {

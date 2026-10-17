@@ -1,4 +1,4 @@
-import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaration } from '../../shared/plugin-types';
+import type { PluginContext, PluginModule, PluginManifest, PluginRegistryEntry, PluginThemeDeclaration } from '../../shared/plugin-types';
 import { PERMISSION_RISK_LEVELS } from '../../shared/plugin-types';
 import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors, ThemeFonts, ThemeGradients } from '../../shared/types';
 import { usePluginStore } from './plugin-store';
@@ -13,6 +13,8 @@ import { dynamicImportModule } from './dynamic-import';
 import { buildPluginModuleUrl } from '../../shared/plugin-protocol-url';
 import { registerTheme, unregisterTheme } from '../themes';
 import { RETIRED_EXPERIMENTAL_FLAGS, stripRetiredPluginIds } from './retired-plugins';
+import { ATTR, isTelemetryEnabled, tel } from '../telemetry';
+import type { Classification } from '../telemetry/facade';
 
 const activeContexts = new Map<string, PluginContext>();
 
@@ -465,7 +467,68 @@ export async function initializePluginSystem(): Promise<void> {
   }
 }
 
+/**
+ * Activate a plugin, measured as `clubhouse.plugin.activate` (spec §4.10).
+ * Built-in plugin ids are sent as-is; any other plugin is `other` plus a
+ * salted id hash. No span when there is nothing to activate.
+ */
 export async function activatePlugin(
+  pluginId: string,
+  projectId?: string,
+  projectPath?: string,
+): Promise<void> {
+  const entry = usePluginStore.getState().plugins[pluginId];
+  const contextKey = projectId ? `${pluginId}:${projectId}` : pluginId;
+  if (!entry || !isTelemetryEnabled() || !willAttemptActivation(entry, contextKey, projectId)) {
+    return activatePluginNow(pluginId, projectId, projectPath);
+  }
+  const builtin = entry.source === 'builtin';
+  const attempt = (activationFailures.get(activationContextKey(pluginId, projectId))?.attempts ?? 0) + 1;
+  return tel.flow('clubhouse.plugin.activate', {
+    attrs: [
+      ATTR.pluginRef(builtin ? (pluginId as Parameters<typeof ATTR.pluginRef>[0]) : 'other'),
+      ...(builtin ? [] : [ATTR.pluginIdHash(pluginId)]),
+      ATTR.pluginOrigin(builtin ? 'builtin' : entry.source === 'marketplace' ? 'marketplace' : 'sideloaded'),
+      ATTR.pluginScope(entry.manifest.scope),
+      ATTR.pluginApiVersion(String(entry.manifest.engine?.api ?? 'none')),
+      ATTR.attempt(attempt),
+    ],
+  }, () => activatePluginNow(pluginId, projectId, projectPath), {
+    classify: () => classifyActivation(pluginId, contextKey),
+  });
+}
+
+/**
+ * Mirrors activatePluginNow's early returns, so the span covers real
+ * attempts only: not already-active contexts, blocked statuses, a project
+ * plugin without a project, or an errored plugin whose retry is still
+ * backing off or out of attempts (those would re-report the old error).
+ */
+function willAttemptActivation(entry: PluginRegistryEntry, contextKey: string, projectId?: string): boolean {
+  if (activeContexts.has(contextKey)) return false;
+  if (entry.status === 'incompatible' || entry.status === 'disabled' || entry.status === 'pending-approval') return false;
+  if (entry.manifest.scope === 'project' && !projectId) return false;
+  if (entry.status === 'errored') {
+    const failure = activationFailures.get(activationContextKey(entry.manifest.id, projectId));
+    if ((failure?.attempts ?? 0) >= MAX_ACTIVATION_ATTEMPTS) return false;
+    if (failure && Date.now() < failure.nextEligibleAt) return false;
+  }
+  return true;
+}
+
+/** The activation outcome, from the plugin's state once activatePluginNow settled. */
+export function classifyActivation(pluginId: string, contextKey: string): Classification {
+  if (activeContexts.has(contextKey)) return 'ok';
+  const entry = usePluginStore.getState().plugins[pluginId];
+  if (entry?.status !== 'errored') return { outcome: 'skipped' };
+  const detail = entry.error ?? '';
+  if (/module-graph resolution|Failed to load module/i.test(detail)) return { error: 'module_resolve_failed' };
+  if (/did not export/i.test(detail)) return { error: 'invalid_export' };
+  if (/timed out|timeout/i.test(detail)) return { error: 'activation_timeout' };
+  return { error: 'activate_threw' };
+}
+
+async function activatePluginNow(
   pluginId: string,
   projectId?: string,
   projectPath?: string,

@@ -336,6 +336,14 @@ function initAgentWakingListener(): () => void {
   };
 }
 
+/** Toast when an agent falls back from chat (to another driver or the terminal), with the reason. */
+function initChatRuntimeNoticeListener(): () => void {
+  return window.clubhouse.chat.onRuntimeNotice((agentId, notice) => {
+    const name = useAgentStore.getState().agents[agentId]?.name ?? agentId;
+    useToastStore.getState().addToast(`${name}: ${notice.message}`, 'info');
+  });
+}
+
 /**
  * Keep the durable-agent permission queue mirrored in the renderer so the
  * approve/deny prompt can be shown. Seeded from the main process so a window
@@ -736,6 +744,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(...initWindowListeners());
   cleanups.push(initPtyExitListener());
   cleanups.push(initAgentWakingListener());
+  cleanups.push(initChatRuntimeNoticeListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initPermissionQueueListener());
   cleanups.push(initAnnexSpawnListener());

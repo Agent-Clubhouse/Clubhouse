@@ -27,7 +27,7 @@ export function NeedsYou({ items, projectNames, activeAgentId, onSelect, onRevie
         )}
       </div>
       <div className="flex flex-col gap-px px-1.5">
-        {items.map(({ agent, reason, message }) => {
+        {items.map(({ agent, reason, message, hostLabel }) => {
           const active = agent.id === activeAgentId;
           return (
             <button
@@ -43,7 +43,9 @@ export function NeedsYou({ items, projectNames, activeAgentId, onSelect, onRevie
               <span className="min-w-0 flex-1 flex flex-col">
                 <span className="flex items-baseline gap-1.5 min-w-0">
                   <span className="text-[13px] font-medium text-ctp-text truncate">{agent.name}</span>
-                  <span className="text-xs text-ctp-overlay1 truncate">{projectNames[agent.projectId]}</span>
+                  <span className="text-xs text-ctp-overlay1 truncate">
+                    {projectNames[agent.projectId]}{hostLabel ? ` on ${hostLabel}` : ''}
+                  </span>
                 </span>
                 <span className={`text-xs truncate ${reason === 'permission' ? 'text-ctp-warning' : 'text-ctp-error'}`}>{message}</span>
               </span>

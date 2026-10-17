@@ -4,11 +4,12 @@
  * queues. Stop (Esc) interrupts the turn and keeps the session.
  */
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type PermissionLevel } from '../../../../shared/chat';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
-import { CheckIcon, ChevronDown, PlanIcon, ShieldIcon, StopIcon, UpIcon } from './icons';
+import { CheckIcon, ChevronDown, FileIcon, PaperclipIcon, PlanIcon, ShieldIcon, StopIcon, UpIcon, XIcon } from './icons';
+import { attachmentFromFile, attachmentName, type ComposerAttachment } from './attachments';
 import { composerModes, LEVEL_DESCRIPTIONS, LEVEL_LABELS, type SendAction } from './view-model';
 
 const ACTION_LABELS: Record<SendAction, string> = {
@@ -70,7 +71,7 @@ export function QueueList({ queued }: { queued: QueuedMessage[] }) {
       {queued.map((q, i) => (
         <div key={q.messageId} className={`flex items-center gap-2.5 px-3 py-1.5 text-[12.5px] text-ctp-subtext1 ${i > 0 ? 'border-t border-surface-0' : ''}`}>
           <span className="w-[18px] h-[18px] rounded bg-surface-0 grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
-          <span className="truncate min-w-0">{q.text}</span>
+          <span className="truncate min-w-0">{q.text || queuedAttachmentLabel(q)}</span>
         </div>
       ))}
     </div>
@@ -156,15 +157,59 @@ export interface ComposerProps {
   /** The draft is owned by the caller so it outlives this component. */
   text: string;
   onTextChange: (text: string) => void;
-  onSend: (text: string, action: SendAction) => void;
+  /** Agent the attachments are staged for; attaching is off without it. */
+  attachmentAgentId?: string;
+  /** Unsent attachments, owned by the caller like the text. */
+  attachments?: ComposerAttachment[];
+  onAttachmentsChange?: (attachments: ComposerAttachment[]) => void;
+  /** Staged attachment ids, only passed when there are some. */
+  onSend: (text: string, action: SendAction, attachmentIds?: string[]) => void;
   onStop: () => void;
   onLevelChange: (level: PermissionLevel) => void;
 }
 
+const NO_ATTACHMENTS: ComposerAttachment[] = [];
+
+/** Queue row label for a message that's only attachments. */
+function queuedAttachmentLabel(q: QueuedMessage): string {
+  const names = q.content.map(attachmentName).filter((n): n is string => !!n);
+  return names.length ? names.join(', ') : '';
+}
+
+/** Pending attachments above the text box. */
+function AttachmentChips({ attachments, onRemove }: { attachments: ComposerAttachment[]; onRemove: (id: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 px-2.5 pt-2.5" data-testid="chat-attachments">
+      {attachments.map((a) => (
+        <span key={a.id} className="h-8 max-w-[220px] flex items-center gap-1.5 pl-1 pr-1.5 rounded-md bg-surface-0 text-[12px] text-ctp-subtext1" data-testid="chat-attachment">
+          {a.preview
+            ? <img src={a.preview} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />
+            : <FileIcon size={14} className="ml-1 text-ctp-overlay1 flex-shrink-0" />}
+          <span className="truncate min-w-0" title={a.kind === 'file' ? `${a.name} (sent as a file path)` : a.name}>{a.name}</span>
+          <button type="button" onClick={() => onRemove(a.id)} aria-label={`Remove ${a.name}`} className="text-ctp-overlay1 hover:text-ctp-text flex-shrink-0">
+            <XIcon size={12} />
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function Composer(props: ComposerProps) {
   const { capabilities, running, disabled, text, onTextChange: setText } = props;
+  const attachments = props.attachments ?? NO_ATTACHMENTS;
+  const agentId = props.attachmentAgentId;
+  const canAttach = !!props.onAttachmentsChange && !!agentId;
   const [cmdIndex, setCmdIndex] = useState(0);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  // Adding files is async; keep the latest list so concurrent adds don't drop
+  // each other, and count adds in flight so the cap holds across them.
+  const latest = useRef(attachments);
+  latest.current = attachments;
+  const adding = useRef(0);
   const modes = composerModes(capabilities, running);
 
   useEffect(() => {
@@ -182,11 +227,65 @@ export function Composer(props: ComposerProps) {
 
   useEffect(() => { setCmdIndex(0); }, [slashMatches.length]);
 
+  const addFiles = async (files: File[]) => {
+    if (!canAttach || !agentId || disabled || !files.length) return;
+    // Reserve room synchronously, before any await.
+    const room = Math.max(0, CHAT_ATTACHMENTS_MAX - latest.current.length - adding.current);
+    const accepted = files.slice(0, room);
+    adding.current += accepted.length;
+    // Cleared now and set only on failure, so a concurrent add can't wipe another's message.
+    setAttachError(null);
+    const errors: string[] = [];
+    if (files.length > room) errors.push(`Attach at most ${CHAT_ATTACHMENTS_MAX} files at a time`);
+    const added: ComposerAttachment[] = [];
+    try {
+      for (const file of accepted) {
+        const result = await attachmentFromFile(agentId, file, capabilities?.images === true);
+        if ('error' in result) errors.push(result.error);
+        else added.push(result);
+      }
+    } finally {
+      adding.current -= accepted.length;
+    }
+    if (errors.length) setAttachError(errors.join('. '));
+    if (added.length) props.onAttachmentsChange?.([...latest.current, ...added]);
+  };
+
+  const removeAttachment = (id: string) => {
+    props.onAttachmentsChange?.(attachments.filter((a) => a.id !== id));
+    setAttachError(null);
+  };
+
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData?.files ?? []);
+    if (!canAttach || !files.length) return;
+    e.preventDefault();
+    void addFiles(files);
+  };
+
+  const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!canAttach || disabled || !hasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(true);
+  };
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    if (!canAttach || disabled || !hasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+    void addFiles(Array.from(e.dataTransfer.files));
+  };
+
   const submit = (action: SendAction) => {
     const trimmed = text.trim();
-    if (!trimmed || disabled) return;
-    props.onSend(trimmed, action);
+    if ((!trimmed && !attachments.length) || disabled) return;
+    if (attachments.length) props.onSend(trimmed, action, attachments.map((a) => a.id));
+    else props.onSend(trimmed, action);
     setText('');
+    if (attachments.length) props.onAttachmentsChange?.([]);
+    setAttachError(null);
   };
 
   const pickCommand = (c: AvailableCommand) => {
@@ -221,7 +320,7 @@ export function Composer(props: ComposerProps) {
     submit(modes.primary);
   };
 
-  const empty = !text.trim();
+  const empty = !text.trim() && !attachments.length;
   const placeholder = disabled
     ? props.disabledReason ?? 'This session has ended'
     : `Message ${props.agentName}…${capabilities?.slashCommands ? ' / for commands' : ''}`;
@@ -245,7 +344,19 @@ export function Composer(props: ComposerProps) {
           ))}
         </div>
       )}
-      <div className={`border rounded-xl bg-ctp-mantle flex flex-col ${disabled ? 'border-surface-0 opacity-70' : 'border-surface-1 focus-within:border-ctp-accent/60'}`} data-testid="chat-composer">
+      <div
+        className={`border rounded-xl bg-ctp-mantle flex flex-col ${disabled ? 'border-surface-0 opacity-70' : dragging ? 'border-ctp-accent' : 'border-surface-1 focus-within:border-ctp-accent/60'}`}
+        data-testid="chat-composer"
+        onDragOver={onDragOver}
+        onDragLeave={(e) => {
+          // Moving between children fires dragleave too; only leaving the composer counts.
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={onDrop}
+      >
+        <span className="sr-only" aria-live="polite">{dragging ? 'Drop files to attach them' : ''}</span>
+        {dragging && <p className="px-3.5 pt-2.5 text-[12px] text-ctp-accent" data-testid="chat-drop-hint">Drop files to attach them</p>}
+        {attachments.length > 0 && <AttachmentChips attachments={attachments} onRemove={removeAttachment} />}
         <textarea
           ref={area}
           rows={1}
@@ -253,11 +364,36 @@ export function Composer(props: ComposerProps) {
           disabled={disabled}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           aria-label="Message"
           className="resize-none bg-transparent px-3.5 pt-3 pb-1.5 min-h-[44px] text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none"
         />
+        {attachError && <p className="px-3.5 pb-1 text-[11.5px] text-ctp-red" role="alert" data-testid="chat-attach-error">{attachError}</p>}
         <div className="flex items-center gap-1.5 px-2 pb-2 pt-1.5">
+          {canAttach && (
+            <>
+              <button
+                type="button"
+                disabled={disabled || attachments.length >= CHAT_ATTACHMENTS_MAX}
+                onClick={() => picker.current?.click()}
+                aria-label="Attach files"
+                title={capabilities?.images ? 'Attach images or files' : 'Attach files (this agent can\'t take images; they go as paths)'}
+                className="w-[26px] h-[26px] rounded-md grid place-items-center text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0 disabled:opacity-40"
+                data-testid="chat-attach"
+              >
+                <PaperclipIcon size={14} />
+              </button>
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                data-testid="chat-attach-input"
+                onChange={(e) => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
+              />
+            </>
+          )}
           <LevelPill level={props.level} capabilities={capabilities} onChange={props.onLevelChange} />
           {props.model && (
             <span className="h-[26px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px]" data-testid="chat-model-pill">

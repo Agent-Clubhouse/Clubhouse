@@ -393,7 +393,7 @@ The trigger is recorded where the caller is known, before the runtime manager is
 
 - `c.group.shoulder_tap` (S): `executeShoulderTap`. Attributes: `c.tap.broadcast`, `c.targets.count`. No targets is `skipped`; every target failing is `error.type = tap_undelivered`. Per-target results are a counter, not child spans: `c.group.shoulder_tap.deliveries` by `c.delivery.result` (`delivered`/`not_running`/`unsupported_runtime`) and target `c.agent.runtime`.
 - `c.group.membership_sync`: not instrumented yet.
-- `c.group.bulletin.posts` is not a separate counter: it is `c.mcp.tool_calls` filtered to `c.mcp.tool = post_bulletin`.
+- `c.group.bulletin.posts` (S) counts every post, from MCP or the UI, by `c.bulletin.post.result`: `ok`; `evicted_message` when the topic's own cap dropped older messages; `evicted_topic` when the board-wide cap dropped messages from other topics; `rejected` for an oversized body (Phase 5b, §12 H8). `c.mcp.tool_calls` with `c.mcp.tool = post_bulletin` still shows the MCP share, but without the eviction result.
 
 ### 4.5 Clubhouse MCP bridge (`clubhouse-mcp/`)
 
@@ -405,6 +405,8 @@ The trigger is recorded where the caller is known, before the runtime manager is
 | `c.mcp.tool_call.duration` histogram | tool kind | S |
 | `c.mcp.auth_rejected` counter | nonce 403s (`:71-82`) | E |
 | `c.mcp.sessions` gauge | SSE connections | D |
+
+`c.mcp.tools_list` event (S, Phase 5b): on every `tools/list`, with `c.mcp.tools.count_bucket` and `c.mcp.tools.empty`, never tool names (§12 H8, the empty-list bug #1544).
 
 The stdio relay `bridge/clubhouse-mcp-bridge.js` runs in the agent's process tree. It is **not** instrumented; there is nowhere safe for it to export from.
 
@@ -428,6 +430,8 @@ These are covered by §4.4 metrics (`hook_events`, `tool_calls`, `permission`). 
 
 Failures here often come back as return values (`false`, `[]`) rather than exceptions. The instrumentation helper must accept a `classify(result)` callback (§6.5).
 
+**As implemented (Phase 5a).** `c.project.add` does not set `c.project.has_git` (it would cost an extra git call) or `c.project.source` (which surface added the project is renderer knowledge, owned by the refresh, §9.1). Store recovery is sent as `c.persist.recovery` with `c.persist.store=projects` (Phase 3c), not a separate project event. A failed `git init` is `error.type=git_init_failed`.
+
 ### 4.8 Git and worktrees (`git-service.ts`, `agent-config.ts`)
 
 - **User-initiated operations** get spans (`c.git.op`, S). The operations are checkout, stage/unstage (all), discard, commit, push, pull, create branch, stash/pop, diff, show commit, worktree list.
@@ -437,6 +441,7 @@ Failures here often come back as return values (`false`, `[]`) rather than excep
 - **Worktree create/remove** spans are children of `c.agent.create` and `c.agent.delete`. `c.agent.delete` carries `c.agent.delete.mode ∈ {commit_push, cleanup_branch, save_patch, force, unregister}`.
 - **Polled `getGitInfo`**, every 3 s per widget (`builtin/git/main.ts:107`, `GitCanvasWidget.tsx:84`), **never gets a span.** It feeds histogram `c.git.status.duration` (s), dimension `c.size_bucket` (from file count), plus counter `c.git.status.polls`. A span is emitted only when one poll exceeds 2 s, as a slow-operation exemplar at level D.
 - `c.git.subprocess.duration` histogram by `c.git.op` covers both of the above.
+- **As implemented (Phase 5a).** The status histogram's dimension is `c.git.status.file_count_bucket`, on the shared count buckets (`0`, `1-9`, `10-99`, `100-999`, `1000-9999`, `>=10000`), not `c.size_bucket`, whose values are byte sizes. The slow-poll exemplar is `c.git.status.slow`. `c.git.worktree_add` and `c.git.worktree_remove` are only emitted while a root flow is active, so they never appear as orphans before the agent create/delete flows exist.
 
 ### 4.9 Files, editor and search
 
@@ -450,10 +455,17 @@ Failures here often come back as return values (`false`, `[]`) rather than excep
 | `c.file_watch.active` | observable gauge, from `getActiveWatchCount()` | S |
 | `c.file_watch.errors` | counter by `error.type` (`base_missing`/`create_failed`) | E |
 | `c.editor.open_external` | `OPEN_IN_EDITOR`. Attributes: `c.editor.bucket` (`vscode`/`cursor`/`zed`/`jetbrains`/`other`) | S |
+| `c.file.path_denied` | counter of paths refused by `assertAllowedPath` (Phase 5a) | E |
+| `c.editor.monaco_load` | first load of the Monaco editor chunk (Phase 5a) | S |
+| `c.editor.save_conflict` event | a file changed on disk while its editor tab had unsaved edits (Phase 5a) | E |
+
+**As implemented (Phase 5a).** `c.file.ops` carries `c.file.result` (`ok`/`error`) and, on error, `error.type` as the errno code (`ENOENT`, `EACCES`, ...) or `path_denied`. `c.tree.node_count_bucket` and `c.search.match_count_bucket` use the shared count buckets (see §4.8). Search flags are `c.search.regex`, `c.search.case_sensitive` and `c.search.whole_word`.
 
 ### 4.10 Plugins: built-in and community (`renderer/plugins/plugin-loader.ts`)
 
 **Plugin identity attribute.** `c.plugin.ref` is the raw plugin ID **only** when the plugin is built-in, or listed in the cached official registry with `official:true` and no `marketplaceId`. Otherwise it is `hmac(id)`. `c.plugin.origin ∈ {builtin, official_registry, custom_marketplace, preview, sideloaded}` always accompanies it. The built-ins are `terminal`, `files`, `browser`, `git`, `canvas`, `review`, `group-project`, `sticky-note`, `goobers`.
+
+**As implemented (Phase 5a).** `c.plugin.ref` is an enum: a built-in ID, or `other`. Any other plugin is identified by `c.plugin.id_hash` (salted HMAC, spans only), so hashes never share a key with raw IDs. `c.plugin.origin` is `builtin`, `marketplace` or `sideloaded` for now. The renderer knows the plugin source but not the registry flags, so the official-registry split, and raw IDs for official plugins, follow when the marketplace instrumentation lands (Phase 5b). `c.plugin.api_version` is the manifest's `engine.api` as a string (`0.9`); unsupported versions report `other`. `c.plugin.activate` is only emitted for real attempts: not for already-active contexts, blocked statuses, or an errored plugin whose retry is still backing off. `c.plugin.protocol.requests` carries `c.plugin.protocol.result`.
 
 | Instrument | Boundaries / attributes | Level |
 |---|---|---|
@@ -469,8 +481,8 @@ Failures here often come back as return values (`false`, `[]`) rather than excep
 
 | Instrument | Notes | Level |
 |---|---|---|
-| `c.canvas.load` | `loadCanvas` `:360` + `loadWires`. `c.canvas.load.result ∈ {ok, recovered_from_backup, degraded, unreadable, failed, remote_hydrated}`. Attributes: `c.canvas.count`, `c.canvas.view.count_bucket`, `c.canvas.wire.count_bucket` | S (E for `unreadable`/`failed`) |
-| `c.canvas.save` | **no per-autosave span.** Histogram `c.canvas.save.duration` plus counter `c.canvas.saves` by `c.canvas.persist_gate` (`ok`/`blocked`/`verify_empty`/`snapshot_first`) and result | S |
+| `c.canvas.load` | `loadCanvas` `:360` + `loadWires`. `c.canvas.load.result ∈ {ok, recovered_from_backup, degraded, unreadable, failed, remote_hydrated}`. Attributes: `c.canvas.count`, `c.canvas.view.count_bucket`, `c.canvas.wire.count_bucket`. As implemented (Phase 5a): `loadCanvas` only, with an added `new` result for a first canvas; wire counts and `remote_hydrated` are not set yet, and `error.type` is `canvas_unreadable` or `canvas_load_failed` | S (E for `unreadable`/`failed`) |
+| `c.canvas.save` | **no per-autosave span.** Histogram `c.canvas.save.duration` plus counter `c.canvas.saves` by `c.canvas.persist_gate` (`ok`/`blocked`/`verify_empty`/`snapshot_first`) and result. Covered by Phase 3c's persist signals instead (`c.persist.write.duration` for plugin storage, `c.persist.guard_blocks` with `c.persist.store=canvas`) | S |
 | `c.canvas.save.failed` | exception record; the currently unhandled rejection at `main.ts:253` must get a `.catch` | E |
 | `c.canvas.command` | MCP canvas commands (`canvas-command-handler.ts:798`), named by command (`add_view`, `connect_views`, …; a static list) | S |
 | `c.canvas.views` | counter of views added, by `c.canvas.view.type` (`agent`/`anchor`/`plugin`/`sticky-note`/`zone`) | S |
@@ -486,6 +498,8 @@ Failures here often come back as return values (`false`, `[]`) rather than excep
 | `c.plugin.uninstall` | `plugin-discovery.ts:120` | S |
 
 Custom marketplace names and URLs are never sent. The config snapshot carries only `c.marketplace.custom.count`.
+
+**As implemented (Phase 5b).** Install failures before the staging steps (creating the plugins or staging directory) throw before any stage is tracked, so they are recorded as an `install_failed` span without `c.install.failure_stage`. `c.registry.kind` is `official` or `custom`; the featured list is fetched inside the official span. `c.plugin.install` records `c.install.failure_stage` and `c.size_bucket` (download size) as attributes, with `error.type=install_failed`, and no child spans. A plugin update's install runs as its child. Plugins are identified as `c.plugin.ref=other` plus `c.plugin.id_hash`, as in Phase 5a. `c.plugin.update_check` uses `c.update.trigger` (`startup`/`periodic`/`manual`) and the two counts. A check requested while one is running is not measured.
 
 ### 4.12 Annex (satellite / controller)
 
@@ -547,6 +561,8 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.theme.changed` | `c.theme.kind` (`builtin`/`plugin`), `c.theme.builtin_id` if built-in |
 | `c.popout.opened` | `c.popout.type` |
 | `c.telemetry.*` | `enabled`, `level_changed`, `disabled` (sent as the last record before shutdown of the exporter), `test` |
+
+**As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` and `c.blueprint.exported` / `c.blueprint.imported` (with `c.outcome`) come from main. Page views, the command palette, onboarding and help topics are renderer call sites, owned by the refresh (§9.1).
 
 ### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
 

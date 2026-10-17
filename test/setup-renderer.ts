@@ -493,6 +493,7 @@ vi.stubGlobal('clubhouse', {
   chat: {
     readTranscript: async () => [],
     sendMessage: async () => ({ delivery: 'prompt' }),
+    stageAttachment: async (_agentId: string, file: File) => ({ id: `staged-${file.name}`, name: file.name, kind: 'file' as const, size: file.size, pasted: false }),
     interrupt: asyncNoop,
     respondPermission: asyncNoop,
     answerQuestion: asyncNoop,
