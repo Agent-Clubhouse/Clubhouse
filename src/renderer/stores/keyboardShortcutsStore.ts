@@ -134,6 +134,7 @@ export const LEGACY_SHORTCUTS: ShortcutSpec[] = [
   // focus back to the active agent terminal without needing a mouse click
   // (clicks don't reliably refocus under Copilot CLI's mouse tracking).
   { id: 'focus-active-terminal', label: 'Focus Active Terminal', category: 'Agents', defaultBinding: 'Meta+Shift+T' },
+  { id: 'toggle-agent-details', label: 'Toggle Agent Details', category: 'Agents', defaultBinding: 'Meta+Alt+D' },
   ...switchAgents((n) => `Meta+${n}`),
 
   // Projects
@@ -150,7 +151,7 @@ export const LEGACY_SHORTCUTS: ShortcutSpec[] = [
 /** Actions with the same id and meaning in both shells. */
 const SHARED_IDS = [
   'command-palette', 'toggle-settings', 'toggle-help', 'toggle-sidebar',
-  'new-quick-agent', 'focus-active-terminal', 'add-project', 'close-project',
+  'new-quick-agent', 'focus-active-terminal', 'toggle-agent-details', 'add-project', 'close-project',
 ];
 
 /**

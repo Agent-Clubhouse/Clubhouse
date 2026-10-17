@@ -14,8 +14,9 @@ import { createChatViewState, useAnswering, type ChatViewState } from '../../../
 import { ChatHeader } from './ChatHeader';
 import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import { ChatStream, type StreamJump } from './ChatStream';
-import { ChangesPanel } from './ChangesPanel';
-import { AgentMapPanel } from './AgentMapPanel';
+import { AgentDetails } from '../details/AgentDetails';
+import { DetailsToggle } from '../details/DetailsToggle';
+import { useAgentDetailsStore } from '../details/detailsStore';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { Composer, QueueList, TaskList, type ComposerLayout } from './Composer';
 import { useNarrow, useShortWindow } from '../pane/useNarrow';
@@ -111,26 +112,29 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const rootRef = useRef<HTMLDivElement>(null);
-  const narrow = useNarrow(rootRef);
+  const columnRef = useRef<HTMLDivElement>(null);
+  // The composer fits the transcript column, which the details column narrows.
+  const narrow = useNarrow(columnRef);
+  // Below 640px of pane there's no room beside the transcript, so details hides.
+  const paneNarrow = useNarrow(rootRef);
   // A popout near its 300px minimum height keeps the conversation, not the composer chrome.
   const short = useShortWindow() && context === 'popout';
   const composerLayout: ComposerLayout = short ? 'line' : narrow ? 'narrow' : 'wide';
   const [draft, setDraft] = useChatDraft(agent.id);
-  const [changesOpen, setChangesOpen] = useState(false);
   const [attachments, setAttachments] = useChatAttachments(agent.id);
-  const [agentMapOpen, setAgentMapOpen] = useState(false);
-  const [selectedSubagent, setSelectedSubagent] = useState<string | null>(null);
   const [jump, setJump] = useState<StreamJump | null>(null);
   const { items, subagents, capabilities } = state;
   const runState = state.state;
   const agentMap = useMemo(() => buildAgentMap({ items, subagents, capabilities, state: runState }), [items, subagents, capabilities, runState]);
   // The map exists only when the driver reports subagents and there are some.
   const hasAgentMap = agentMap.mode !== 'none' && agentMap.nodes.length > 0;
+  // Details is offered in the main pane; popouts and canvas cards are too small for its column.
+  const detailsAvailable = context === 'main';
+  const detailsOpen = useAgentDetailsStore((s) => s.open) && detailsAvailable && !paneNarrow;
+  const revealDetails = useAgentDetailsStore((s) => s.reveal);
   const openSubagent = useCallback((subagentId: string) => {
-    setChangesOpen(false);
-    setAgentMapOpen(true);
-    setSelectedSubagent(subagentId);
-  }, []);
+    revealDetails({ agentId: agent.id, card: 'subagents', subagentId });
+  }, [revealDetails, agent.id]);
   const showInStream = useCallback((subagentId: string) => {
     setJumpMissed(null);
     setJump((j) => ({ subagentId, nonce: (j?.nonce ?? 0) + 1 }));
@@ -140,13 +144,6 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const onJumpResult = useCallback((j: StreamJump, found: boolean) => {
     setJumpMissed(found ? null : j.subagentId);
   }, []);
-  const mapPanelId = `chat-agent-map-${agent.id}`;
-  const mapToggleId = `chat-agent-map-toggle-${agent.id}`;
-  const closeAgentMap = useCallback(() => {
-    setAgentMapOpen(false);
-    // Focus goes back to the toggle that opened the panel.
-    requestAnimationFrame(() => document.getElementById(mapToggleId)?.focus());
-  }, [mapToggleId]);
 
   const onSend = (text: string, action: SendAction, blocks?: string[]) => {
     const sentAttachments = attachments;
@@ -228,7 +225,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   }
 
   return (
-    <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-view-context={context} data-state={state.state ?? 'none'}>
+    <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-agent-pane={agent.id} data-view-context={context} data-state={state.state ?? 'none'}>
       <ChatHeader
         agent={agent}
         state={state}
@@ -236,19 +233,10 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         showName={context === 'main' && !isNewChromeEnabled()}
         onSwitchToTerminal={onSwitchToTerminal}
         switching={switching}
-        onToggleChanges={() => { setAgentMapOpen(false); setChangesOpen((v) => !v); }}
-        changesOpen={changesOpen}
-        {...(hasAgentMap && {
-          // One side panel at a time, so the stream keeps its width.
-          onToggleAgentMap: () => { setChangesOpen(false); setAgentMapOpen((v) => !v); },
-          agentMapOpen,
-          subagentCount: agentMap.nodes.length,
-          agentMapPanelId: mapPanelId,
-          agentMapToggleId: mapToggleId,
-        })}
+        detailsToggle={detailsAvailable ? <DetailsToggle /> : undefined}
       />
       <div className="flex-1 min-h-0 flex">
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div ref={columnRef} className="flex-1 min-w-0 flex flex-col">
           {/* Canvas cards stay quiet: the focused view announces replies, not every card on the board. */}
           <ChatStream
             state={state}
@@ -268,26 +256,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
             </div>
           </div>
         </div>
-        {changesOpen && (
-          <ChangesPanel
-            agentId={agent.id}
-            sessionId={state.sessionId}
-            refreshKey={`${state.turnId ?? 'idle'}:${state.state ?? ''}`}
-            onClose={() => setChangesOpen(false)}
-          />
-        )}
-        {hasAgentMap && agentMapOpen && (
-          <AgentMapPanel
-            id={mapPanelId}
-            missedSubagentId={jumpMissed}
-            agent={agent}
-            state={state}
-            map={agentMap}
-            selected={selectedSubagent}
-            onSelect={setSelectedSubagent}
-            onShowInStream={showInStream}
-            onClose={closeAgentMap}
-          />
+        {detailsOpen && (
+          <AgentDetails agent={agent} chat={state} onShowInStream={showInStream} missedSubagentId={jumpMissed} />
         )}
       </div>
     </div>

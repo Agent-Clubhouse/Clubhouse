@@ -99,4 +99,11 @@ export function registerGitHandlers(): void {
       return deferInvocation(() => gitService.getDiffNumstat(dirPath, base));
     },
   ));
+  ipcMain.handle(IPC.GIT.BRANCH_CHANGES, withValidatedArgs([stringArg(), stringArg({ optional: true, maxLength: 256 })], async (_event, dirPath: string, base?: string) => {
+    return deferInvocation(() => gitService.getBranchChanges(dirPath, base));
+  }));
+
+  ipcMain.handle(IPC.GIT.BRANCH_FILE_PATCH, withValidatedArgs([stringArg(), stringArg(), stringArg({ optional: true, maxLength: 256 })], async (_event, dirPath: string, filePath: string, base?: string) => {
+    return deferInvocation(() => gitService.getBranchFilePatch(dirPath, filePath, base));
+  }));
 }

@@ -216,7 +216,7 @@ export function countBucket(n: number): CountBucket {
 export const GIT_OPS = [
   'checkout', 'stage', 'unstage', 'stage_all', 'unstage_all', 'discard', 'commit', 'push', 'pull',
   'create_branch', 'stash', 'stash_pop', 'diff', 'show_commit', 'worktree_list',
-  'head_sha', 'diff_numstat',
+  'head_sha', 'diff_numstat', 'branch_changes', 'branch_patch',
   'status', 'other',
 ] as const;
 export type GitOp = (typeof GIT_OPS)[number];

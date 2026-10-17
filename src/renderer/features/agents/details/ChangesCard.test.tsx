@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ChangesResult, CheckpointTurn } from '../../../../shared/chat-checkpoints';
-import { ChangesPanel } from './ChangesPanel';
+import { CheckpointChanges, ChangesCard } from './ChangesCard';
 
 const turns: CheckpointTurn[] = [
   { sessionId: 's1', turnId: 't1', startedAt: 1, endedAt: 2, start: 'aaa', end: 'bbb' },
@@ -26,33 +26,33 @@ beforeEach(() => {
   chat.undoRevert = vi.fn(async () => ({ reverted: ['src/new.ts'], conflicts: [], skipped: [] }));
 });
 
-function renderPanel() {
-  return render(<ChangesPanel agentId="agent-1" sessionId="s1" refreshKey="k" onClose={() => {}} />);
+function renderPanel(scope: 'turn' | 'session' = 'turn') {
+  return render(<CheckpointChanges agentId="agent-1" sessionId="s1" refreshKey="k" scope={scope} />);
 }
 
-describe('ChangesPanel', () => {
-  it('lists the last turn\'s files with totals and shows the selected diff', async () => {
+describe('CheckpointChanges', () => {
+  it('lists the last turn\'s files and opens a file to its diff', async () => {
     renderPanel();
-    await screen.findByText('src/app.ts');
-    expect(screen.getByText('src/new.ts')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-changes-totals')).toHaveTextContent('+6 −1');
+    await screen.findByText('app.ts');
+    expect(screen.getByText('new.ts')).toBeInTheDocument();
     expect(chat.getChanges).toHaveBeenCalledWith('agent-1', { turnId: 't1' });
+    expect(screen.queryByTestId('chat-diff-card')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('src/app.ts'));
     await waitFor(() => expect(screen.getByTestId('chat-diff-card')).toBeInTheDocument());
     expect(chat.getChanges).toHaveBeenCalledWith('agent-1', { turnId: 't1' }, 'src/app.ts');
   });
 
-  it('switches to the session view', async () => {
-    renderPanel();
-    await screen.findByText('src/app.ts');
-    fireEvent.click(screen.getByRole('button', { name: 'Session' }));
+  it('shows the session without Revert last turn', async () => {
+    renderPanel('session');
     await waitFor(() => expect(chat.getChanges).toHaveBeenCalledWith('agent-1', { sessionId: 's1' }));
-    expect(screen.getByRole('button', { name: 'Revert last turn' })).toBeDisabled();
+    await screen.findByText('app.ts');
+    expect(screen.queryByRole('button', { name: 'Revert last turn…' })).not.toBeInTheDocument();
   });
 
   it('confirms before reverting, reports conflicts and asks again before overwriting them', async () => {
     renderPanel();
-    await screen.findByText('src/app.ts');
-    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn' }));
+    await screen.findByText('app.ts');
+    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn…' }));
     expect(screen.getByTestId('chat-changes-confirm')).toHaveTextContent('Restore 2 files to before the last turn?');
     expect(screen.queryByTestId('chat-changes-shared-warning')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
@@ -70,8 +70,8 @@ describe('ChangesPanel', () => {
 
   it('can cancel the overwrite confirmation', async () => {
     renderPanel();
-    await screen.findByText('src/app.ts');
-    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn' }));
+    await screen.findByText('app.ts');
+    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn…' }));
     fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Overwrite those too…' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -82,8 +82,8 @@ describe('ChangesPanel', () => {
   it('warns before reverting a turn another agent shared', async () => {
     chat.listCheckpoints = vi.fn(async () => [{ ...turns[0], shared: true }]);
     renderPanel();
-    await screen.findByText('src/app.ts');
-    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn' }));
+    await screen.findByText('app.ts');
+    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn…' }));
     expect(screen.getByTestId('chat-changes-shared-warning')).toHaveTextContent('Another agent was working in this folder');
   });
 
@@ -91,10 +91,10 @@ describe('ChangesPanel', () => {
     chat.getChanges = vi.fn(async () => ({ ...turnChanges, skippedLarge: ['video.mov'], skippedRepos: ['scratch'] }));
     chat.revertTurn = vi.fn(async () => ({ reverted: ['src/app.ts'], conflicts: [], skipped: ['dist/out.js'] }));
     renderPanel();
-    await screen.findByText('src/app.ts');
+    await screen.findByText('app.ts');
     expect(screen.getByTestId('chat-changes-skipped-large')).toHaveTextContent('video.mov');
     expect(screen.getByTestId('chat-changes-skipped-repos')).toHaveTextContent('scratch');
-    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn…' }));
     fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
     expect(await screen.findByTestId('chat-changes-revert-skipped')).toHaveTextContent('dist/out.js');
   });
@@ -102,7 +102,7 @@ describe('ChangesPanel', () => {
   it('offers to undo a revert', async () => {
     chat.listCheckpoints = vi.fn(async () => [{ ...turns[0], undoable: true }]);
     renderPanel();
-    await screen.findByText('src/app.ts');
+    await screen.findByText('app.ts');
     fireEvent.click(screen.getByRole('button', { name: 'Undo revert' }));
     await waitFor(() => expect(chat.undoRevert).toHaveBeenCalledWith('agent-1', 't1'));
     expect(await screen.findByTestId('chat-changes-revert-result')).toHaveTextContent('Undid the revert: restored 1 file.');
@@ -118,8 +118,56 @@ describe('ChangesPanel', () => {
     chat.listCheckpoints = vi.fn(async () => [{ ...turns[0], end: undefined, endedAt: undefined }]);
     chat.getChanges = vi.fn(async () => ({ ...turnChanges, live: true }));
     renderPanel();
-    await screen.findByText('src/app.ts');
+    await screen.findByText('app.ts');
     expect(screen.getByText('This turn is still running; showing changes so far.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Revert last turn' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Revert last turn…' })).toBeDisabled();
+  });
+});
+
+describe('ChangesCard', () => {
+  const branch = {
+    available: true, branch: 'agent/work', base: 'main', ahead: 2, uncommitted: 1,
+    files: [
+      { path: 'src/app.ts', status: 'modified' as const, additions: 10, deletions: 3, binary: false },
+      { path: 'src/notes.md', status: 'added' as const, additions: 4, deletions: 0, binary: false },
+    ],
+  };
+
+  it('answers on one line when collapsed', () => {
+    render(<ChangesCard open={false} onToggle={() => {}} cwd="/w" branch={branch} agentId="agent-1" scope="branch" onScope={() => {}} />);
+    expect(screen.getByTestId('details-card-changes-summary')).toHaveTextContent('2 files +14 −3');
+    expect(screen.queryByTestId('chat-changes-files')).not.toBeInTheDocument();
+  });
+
+  it('shows the branch against main and opens a file to its patch', async () => {
+    window.clubhouse.git.branchFilePatch = vi.fn(async () => ({ patch: PATCH }));
+    render(<ChangesCard open onToggle={() => {}} cwd="/w" branch={branch} agentId="agent-1" scope="branch" onScope={() => {}} />);
+    expect(screen.getByText('vs main')).toBeInTheDocument();
+    // A terminal agent has no turns: only the Branch scope.
+    expect(screen.queryByRole('button', { name: 'Session' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('src/app.ts'));
+    await waitFor(() => expect(screen.getByTestId('chat-diff-card')).toBeInTheDocument());
+    expect(window.clubhouse.git.branchFilePatch).toHaveBeenCalledWith('/w', 'src/app.ts', undefined);
+  });
+
+  it('says a file is too large instead of reading it', async () => {
+    window.clubhouse.git.branchFilePatch = vi.fn(async () => ({ tooLarge: true }));
+    render(<ChangesCard open onToggle={() => {}} cwd="/w" branch={branch} agentId="agent-1" scope="branch" onScope={() => {}} />);
+    fireEvent.click(screen.getByTitle('src/notes.md'));
+    expect(await screen.findByText('Too large to show here (over 1 MB).')).toBeInTheDocument();
+  });
+
+  it('offers Session and Last turn for a chat agent', () => {
+    const onScope = vi.fn();
+    render(<ChangesCard open onToggle={() => {}} cwd="/w" branch={branch} chat={{ sessionId: 's1', refreshKey: 'k' }} agentId="agent-1" scope="branch" onScope={onScope} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Last turn' }));
+    expect(onScope).toHaveBeenCalledWith('turn');
+  });
+
+  it('says plainly when the folder is not a repository or there is no main', () => {
+    const { rerender } = render(<ChangesCard open onToggle={() => {}} cwd="/w" branch={{ available: false, files: [], ahead: 0, uncommitted: 0 }} agentId="a" scope="branch" onScope={() => {}} />);
+    expect(screen.getByTestId('details-card-changes-summary')).toHaveTextContent('not a git repository');
+    rerender(<ChangesCard open onToggle={() => {}} cwd="/w" branch={{ available: true, noBase: true, files: [], ahead: 0, uncommitted: 0 }} agentId="a" scope="branch" onScope={() => {}} />);
+    expect(screen.getByText('No main or master branch to compare with.')).toBeInTheDocument();
   });
 });

@@ -2,6 +2,8 @@ import { execFile as nodeExecFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult, GitWorktreeEntry, GitCommitDetail, GitCommitFileEntry, GitNumstatEntry } from '../../shared/types';
+import type { ChangedFile } from '../../shared/chat-checkpoints';
+import type { BranchChanges, BranchFilePatch, BranchFileStatus } from '../../shared/git-branch';
 import { appLog } from './log-service';
 import { isTelemetryActive, replaySpan, tel } from '../telemetry/facade';
 import { classifyGitFailure, type GitFailure } from '../telemetry/workspace';
@@ -647,5 +649,150 @@ export async function getDiffNumstat(dirPath: string, base?: string): Promise<Gi
   } catch {
     // telemetry-exempt: polled diff stats; not a repo or a bad base means no stats.
     return [];
+  }
+}
+
+// ── An agent's branch against main (Agent details, #2032) ──────────────────
+
+/** A base the caller may pass: a ref name, never an option or a path spec. */
+function validateBaseRef(ref: string): void {
+  if (!ref || ref.startsWith('-') || ref.includes('\0') || ref.includes(':') || ref.includes('..')) {
+    throw new Error(`Invalid base: ${ref}`);
+  }
+}
+
+async function tryGitExec(args: string[], cwd: string, op: GitOp): Promise<string | null> {
+  try {
+    return (await gitExec(args, cwd, undefined, op)).trim();
+  } catch {
+    // telemetry-exempt: a probe (a ref, a merge base); failing just means it isn't there.
+    return null;
+  }
+}
+
+/**
+ * The commit an agent's branch left the project's main line at, and that
+ * line's short name. Agent worktrees branch from the root's HEAD, so a local
+ * main is often behind origin's; the merge base is taken against both and
+ * the newer one wins, so origin's later commits never count as the agent's
+ * work. origin's default branch (origin/HEAD) names the line when known.
+ */
+export async function resolveMergeBase(root: string, base?: string): Promise<{ name: string; sha: string } | null> {
+  const op: GitOp = 'branch_changes';
+  let names: string[];
+  if (base) {
+    validateBaseRef(base);
+    names = [base.replace(/^origin\//, '')];
+  } else {
+    const originHead = await tryGitExec(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], root, op);
+    names = originHead ? [originHead.replace(/^origin\//, '')] : ['main', 'master'];
+  }
+  for (const name of names) {
+    const refs = [`refs/remotes/origin/${name}`, `refs/heads/${name}`];
+    const bases = (await Promise.all(refs.map((r) => tryGitExec(['merge-base', 'HEAD', r], root, op)))).filter((s): s is string => !!s);
+    if (bases.length === 0) continue;
+    let sha = bases[0];
+    if (bases.length === 2 && bases[0] !== bases[1]) {
+      // The descendant of the two is the newer point on the main line.
+      const firstIsOlder = (await tryGitExec(['merge-base', '--is-ancestor', bases[0], bases[1]], root, op)) !== null;
+      sha = firstIsOlder ? bases[1] : bases[0];
+    }
+    return { name, sha };
+  }
+  return null;
+}
+
+/** Statuses from `git diff --name-status -z` (no rename detection, like the numstat it pairs with). */
+function parseNameStatusZ(raw: string): Map<string, BranchFileStatus> {
+  const map = new Map<string, BranchFileStatus>();
+  const parts = raw.split('\0');
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const code = parts[i];
+    if (!code) { i--; continue; }
+    map.set(parts[i + 1], code.startsWith('A') ? 'added' : code.startsWith('D') ? 'deleted' : 'modified');
+  }
+  return map;
+}
+
+/** Concurrent reads of the same folder share one run (several panes, quick refreshes). */
+const branchInFlight = new Map<string, Promise<BranchChanges>>();
+
+/**
+ * Files an agent's branch changed since it left main: committed,
+ * uncommitted and untracked, with line counts from getDiffNumstat (which
+ * caps and budgets untracked reads). Paths are relative to the repo root.
+ */
+export function getBranchChanges(dirPath: string, base?: string): Promise<BranchChanges> {
+  const key = `${dirPath}\0${base ?? ''}`;
+  const running = branchInFlight.get(key);
+  if (running) return running;
+  const run = readBranchChanges(dirPath, base).finally(() => branchInFlight.delete(key));
+  branchInFlight.set(key, run);
+  return run;
+}
+
+async function readBranchChanges(dirPath: string, base?: string): Promise<BranchChanges> {
+  const op: GitOp = 'branch_changes';
+  const root = await tryGitExec(['rev-parse', '--show-toplevel'], dirPath, op);
+  if (!root) return { available: false, files: [] };
+  const head = await tryGitExec(['rev-parse', '--abbrev-ref', 'HEAD'], root, op);
+  // A detached HEAD shows as its short sha.
+  const branch = head && head !== 'HEAD' ? head : (await tryGitExec(['rev-parse', '--short', 'HEAD'], root, op)) ?? undefined;
+  const resolved = await resolveMergeBase(root, base);
+  if (!resolved) return { available: true, branch, files: [], noBase: true };
+  const [numstat, nameStatus] = await Promise.all([
+    getDiffNumstat(root, resolved.sha),
+    gitExec(['diff', '--no-ext-diff', '--no-color', '--name-status', '-z', resolved.sha, '--'], root, undefined, op, NUMSTAT_MAX_BUFFER).catch(() => ''),
+  ]);
+  const statuses = parseNameStatusZ(nameStatus);
+  const files: ChangedFile[] = numstat
+    .map((e) => ({ path: e.path, status: statuses.get(e.path) ?? 'added', additions: e.added, deletions: e.removed, binary: e.binary }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  return { available: true, branch, base: resolved.name, mergeBase: resolved.sha, files };
+}
+
+/** Patches and untracked files past this size aren't shown; the review says the file is too large. */
+const BRANCH_PATCH_MAX_BYTES = 1024 * 1024;
+
+/**
+ * One file's change on the branch: a unified diff against the merge base, or
+ * the text of an untracked file. Large files come back as `tooLarge` without
+ * being read whole.
+ */
+export async function getBranchFilePatch(dirPath: string, filePath: string, base?: string): Promise<BranchFilePatch> {
+  validateFilePath(filePath);
+  const op: GitOp = 'branch_patch';
+  const root = await tryGitExec(['rev-parse', '--show-toplevel'], dirPath, op);
+  if (!root) return {};
+  const untracked = (await gitExec(['ls-files', '--others', '--exclude-standard', '-z', '--', filePath], root, undefined, op)).split('\0');
+  if (untracked.includes(filePath)) {
+    const full = path.join(root, filePath);
+    // lstat: a symlink shows as a link and is never followed, so nothing outside the repo is read.
+    const stat = await fs.promises.lstat(full).catch((): null => null);
+    if (stat?.isSymbolicLink()) {
+      const target = await fs.promises.readlink(full).catch((): string => '');
+      return { link: target };
+    }
+    if (!stat?.isFile()) return {};
+    // A folder on the way could itself be a link; refuse anything that resolves outside the repo.
+    const [realFile, realRoot] = await Promise.all([fs.promises.realpath(full), fs.promises.realpath(root)]);
+    if (realFile !== realRoot && !realFile.startsWith(realRoot + path.sep)) return {};
+    if (stat.size > BRANCH_PATCH_MAX_BYTES) return { tooLarge: true };
+    const buf = await fs.promises.readFile(full);
+    if (buf.includes(0)) return { binary: true };
+    return { newText: buf.toString('utf-8') };
+  }
+  const resolved = await resolveMergeBase(root, base);
+  const from = resolved?.sha ?? 'HEAD';
+  try {
+    const patch = await gitExec(
+      ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--src-prefix=a/', '--dst-prefix=b/', from, '--', filePath],
+      root, undefined, op, BRANCH_PATCH_MAX_BYTES,
+    );
+    return { patch };
+  } catch (err) {
+    // A patch past the buffer cap is reported as too large instead of failing the card.
+    if ((err as { code?: string }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return { tooLarge: true };
+    throw err;
   }
 }

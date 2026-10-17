@@ -6,6 +6,7 @@ import { foldChatEvents, useChatStore, type ChatViewState } from '../../../store
 import { CANVAS_TRANSCRIPT_TAIL, ChatView, ChatViewBody } from './ChatView';
 import { useChatDraftStore, type ChatActions } from './useChatSession';
 import { chatFixture, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
+import { useAgentDetailsStore } from '../details/detailsStore';
 
 const agent: Agent = {
   id: FIXTURE_AGENT_ID,
@@ -705,25 +706,79 @@ describe('ChatView review fixes', () => {
   });
 });
 
-describe('ChatView changes panel', () => {
-  it('opens and closes the Changes panel from the header', async () => {
-    renderFixture('claude', 'conversation');
-    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
-    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Close changes' }));
-    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
+describe('ChatView agent details', () => {
+  beforeEach(() => { useAgentDetailsStore.setState({ open: false, focus: null }); });
+
+  it('hides the details column below 640px of pane, and brings it back when there is room', () => {
+    const observers: Array<{ cb: ResizeObserverCallback; el?: Element }> = [];
+    const Orig = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      private o: { cb: ResizeObserverCallback; el?: Element };
+      constructor(cb: ResizeObserverCallback) { this.o = { cb }; observers.push(this.o); }
+      observe(el: Element) { this.o.el = el; }
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    const resizePane = (width: number) => act(() => {
+      for (const o of observers) {
+        if (o.el?.getAttribute('data-testid') === 'chat-view') o.cb([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver);
+      }
+    });
+    try {
+      useAgentDetailsStore.setState({ open: true });
+      renderFixture('claude', 'conversation');
+      expect(screen.getByTestId('agent-details')).toBeInTheDocument();
+      resizePane(560);
+      expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+      // Still "open": it comes back when the pane is wide again.
+      expect(useAgentDetailsStore.getState().open).toBe(true);
+      resizePane(1100);
+      expect(screen.getByTestId('agent-details')).toBeInTheDocument();
+    } finally {
+      globalThis.ResizeObserver = Orig;
+    }
   });
 
-  it('shows one side panel at a time: Changes and the agent map', async () => {
-    renderFixture('claude', 'subagents');
-    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
-    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
-    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
-    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-agent-map-toggle')).toHaveAttribute('aria-expanded', 'false');
+  it('shows and hides the details column from the toolbar, with every card collapsed', () => {
+    renderFixture('claude', 'conversation');
+    expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    const column = screen.getByTestId('agent-details');
+    for (const id of ['changes', 'subagents', 'canvases', 'context', 'mcp', 'session']) {
+      expect(within(column).getByTestId(`details-card-${id}`)).not.toHaveAttribute('data-open');
+    }
+    // The column sits beside the conversation, not over it.
+    expect(column.parentElement).toBe(screen.getByTestId('chat-stream').closest('[data-testid="chat-view"] > div:last-child'));
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+  });
+
+  it('opens the last turn\'s changes in the Changes card', async () => {
+    window.clubhouse.chat.listCheckpoints = vi.fn(async () => [{ sessionId: 's', turnId: 't1', startedAt: 1, start: 'a', end: 'b' }]);
+    window.clubhouse.chat.getChanges = vi.fn(async () => ({ available: true, files: [{ path: 'src/a.ts', status: 'modified' as const, additions: 1, deletions: 0, binary: false }] }));
+    renderFixture('claude', 'conversation');
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    fireEvent.click(screen.getByTestId('details-card-changes-toggle'));
+    fireEvent.click(screen.getByRole('button', { name: 'Last turn' }));
+    expect(await screen.findByText('a.ts')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revert last turn…' })).toBeInTheDocument();
+  });
+
+  it('shows the session model and plan limits in the Session card', () => {
+    renderFixture('claude', 'conversation');
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    fireEvent.click(screen.getByTestId('details-card-session-toggle'));
+    const card = screen.getByTestId('details-card-session');
+    expect(card).toHaveTextContent('Runs on');
+    expect(card).toHaveTextContent('Plan limits');
+  });
+
+  it('is not offered in popouts or canvas cards', () => {
+    const state = fold(chatFixture('claude', 'conversation'));
+    const { rerender } = render(<ChatViewBody agent={agent} state={state} actions={makeActions()} context="popout" />);
+    expect(screen.queryByTestId('agent-details-toggle')).not.toBeInTheDocument();
+    rerender(<ChatViewBody agent={agent} state={state} actions={makeActions()} context="canvas" />);
+    expect(screen.queryByTestId('agent-details-toggle')).not.toBeInTheDocument();
   });
 });
 
