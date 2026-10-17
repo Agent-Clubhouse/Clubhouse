@@ -10,7 +10,12 @@ import type { PluginRegistryEntry } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
 import { sanitizeSvg } from '../utils/sanitize-svg';
 import { ProjectTree } from './sidebar/ProjectTree';
-import { NeedsYou } from './sidebar/NeedsYou';
+import { NeedsYou, NeedsYouStrip } from './sidebar/NeedsYou';
+import { ListBody } from './sidebar/ListBody';
+import { SettingsNav } from './sidebar/SettingsNav';
+import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
+import { useSidebarMode } from './listTabs';
+import { SCOPE_FOLLOWING_TABS } from './scope';
 import { ChromeAgentDialogs, useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { selectNeedsAttention } from './sidebar/treeModel';
 import { useChromeStore } from './chromeStore';
@@ -183,6 +188,14 @@ export function ChromeSidebar() {
   const plugins = usePluginStore((s) => s.plugins);
   const appEnabled = usePluginStore((s) => s.appEnabled);
   const setProjectCollapsed = useChromeStore((s) => s.setProjectCollapsed);
+  const setProjectScope = useChromeStore((s) => s.setProjectScope);
+  const projectScopeId = useChromeStore((s) => s.projectScopeId);
+  const mode = useSidebarMode();
+  const listLabel = usePluginStore((s) => {
+    if (!explorerTab.startsWith('plugin:')) return undefined;
+    const tab = s.plugins[explorerTab.slice('plugin:'.length)]?.manifest.contributes?.tab;
+    return tab?.label;
+  });
   const forgetProjects = useChromeStore((s) => s.forgetProjects);
 
   // When a project is removed, drop its pin, collapsed state and folds. Compared
@@ -240,26 +253,40 @@ export function ChromeSidebar() {
 
   const isProjectTab = explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
 
+  // Selecting a project header makes the project root the scope (spec §4.5).
+  // The project's remembered agent is cleared too, so the project-switch effect
+  // (App.tsx restoreProjectAgent) doesn't reselect it and end the project scope.
   const selectProject = useCallback((projectId: string) => {
     setActiveProject(projectId);
+    setActiveAgent(null, projectId);
+    setProjectScope(projectId);
     setProjectCollapsed(projectId, false);
     if (!isProjectTab) useUIStore.getState().restoreProjectView(projectId);
     reportChromeFeature('project_select');
-  }, [setActiveProject, setProjectCollapsed, isProjectTab]);
+  }, [setActiveProject, setActiveAgent, setProjectScope, setProjectCollapsed, isProjectTab]);
+
+  // Selecting an agent makes its worktree the scope. On a tab that follows the
+  // scope (Terminal, Files, Git) the tab stays; otherwise the agent opens.
+  const openAgent = useCallback((agent: Agent, keepTab: boolean) => {
+    useQuickAgentStore.getState().selectCompleted(null);
+    setProjectScope(null);
+    const sameProject = useProjectStore.getState().activeProjectId === agent.projectId;
+    if (!sameProject) setActiveProject(agent.projectId);
+    // Recording the tab for the project keeps the project-switch effect from restoring another one.
+    const tab = keepTab && sameProject && SCOPE_FOLLOWING_TABS.has(explorerTab) ? explorerTab : 'agents';
+    setExplorerTab(tab, agent.projectId);
+    setActiveAgent(agent.id, agent.projectId);
+  }, [setActiveProject, setProjectScope, setExplorerTab, setActiveAgent, explorerTab]);
 
   const selectAgent = useCallback((agent: Agent) => {
-    useQuickAgentStore.getState().selectCompleted(null);
-    if (useProjectStore.getState().activeProjectId !== agent.projectId) setActiveProject(agent.projectId);
-    // Recording 'agents' for the project keeps the project-switch effect from restoring another tab.
-    setExplorerTab('agents', agent.projectId);
-    setActiveAgent(agent.id, agent.projectId);
+    openAgent(agent, true);
     reportChromeFeature('agent_select');
-  }, [setActiveProject, setExplorerTab, setActiveAgent]);
+  }, [openAgent]);
 
   const selectNeedsYou = useCallback((agent: Agent) => {
-    selectAgent(agent);
+    openAgent(agent, false);
     reportChromeFeature('needs_you_select');
-  }, [selectAgent]);
+  }, [openAgent]);
 
   const selectCompleted = useCallback((projectId: string, completedId: string) => {
     if (useProjectStore.getState().activeProjectId !== projectId) setActiveProject(projectId);
@@ -297,9 +324,21 @@ export function ChromeSidebar() {
     { label: 'Quick agent…', onSelect: () => useUIStore.getState().openQuickAgentDialog() },
   ] : [];
 
+  // The breadcrumb, or Esc inside the sidebar, returns from a list or Settings to Agents (spec §4.6).
+  const backToAgents = () => (mode === 'settings' ? useUIStore.getState().toggleSettings() : setExplorerTab('agents', activeProjectId ?? undefined));
+  const onSidebarKeyDown = (e: React.KeyboardEvent) => {
+    if (mode === 'tree' || e.key !== 'Escape' || e.defaultPrevented) return;
+    const target = e.target as HTMLElement;
+    // Esc in a field belongs to the field (clearing a search, closing a picker).
+    if (target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]')) return;
+    e.preventDefault();
+    backToAgents();
+  };
+
   return (
     <aside
       data-testid="chrome-sidebar"
+      onKeyDown={onSidebarKeyDown}
       aria-label="Sidebar"
       className="h-full min-h-0 flex flex-col bg-ctp-mantle border-r border-surface-0 overflow-hidden"
     >
@@ -322,16 +361,27 @@ export function ChromeSidebar() {
 
       <AppRow inline={inlineItems} overflow={overflowItems} explorerTab={explorerTab} onOpen={openAppItem} />
 
-      <NeedsYou
-        items={needs}
-        projectNames={projectNames}
-        activeAgentId={activeAgentId}
-        onSelect={selectNeedsYou}
-        onReview={reviewEnabled ? () => openAppItem('review') : undefined}
-      />
+      {mode !== 'tree' && (
+        <>
+          <SidebarBreadcrumb current={mode === 'settings' ? 'Settings' : listLabel ?? 'List'} onBack={backToAgents} />
+          <NeedsYouStrip items={needs} onSelect={selectNeedsYou} onReview={reviewEnabled ? () => openAppItem('review') : undefined} />
+          {mode === 'settings' ? <SettingsNav /> : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
+        </>
+      )}
 
-      <div className="flex-1 min-h-0 flex flex-col">
+      {mode === 'tree' && (
+        <NeedsYou
+          items={needs}
+          projectNames={projectNames}
+          activeAgentId={activeAgentId}
+          onSelect={selectNeedsYou}
+          onReview={reviewEnabled ? () => openAppItem('review') : undefined}
+        />
+      )}
+
+      <div className={`flex-1 min-h-0 flex-col ${mode === 'tree' ? 'flex' : 'hidden'}`}>
         <ProjectTree
+          projectScopeId={projectScopeId}
           projects={projects}
           projectIcons={projectIcons}
           agentsByProject={agentsByProject}
