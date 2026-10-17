@@ -3,7 +3,7 @@ import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { SpawnAgentParams } from '../../shared/types';
-import { isSessionCapable } from '../orchestrators';
+import { isSessionCapable, type OrchestratorId } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
 import { agentRegistry } from '../services/agent-registry';
@@ -17,8 +17,72 @@ import { refreshClubhouseModeReadme } from '../services/materialization-service'
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as permissionQueue from '../services/annex-permission-queue';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
+import { ATTR } from '../../shared/telemetry/attributes';
+import type { DeleteResult } from '../../shared/types';
+import { tel, tagError, withErrorType } from '../telemetry/facade';
+import { orchestratorAttr } from '../telemetry/spawn-telemetry';
+
+type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
+
+/**
+ * Wrap a durable-agent delete in the `clubhouse.agent.delete` flow. A thrown
+ * error or a result with `ok: false` is `delete_failed`. (The save-patch
+ * dialog's cancel returns before this, so it is not recorded.)
+ */
+function deleteFlow<T extends DeleteResult | void>(mode: DeleteMode, fn: () => Promise<T>): Promise<T> {
+  return tel.flow('clubhouse.agent.delete', { attrs: [ATTR.deleteMode(mode)] }, () => withErrorType('delete_failed', fn), {
+    classify: (r) => (!r || r.ok ? 'ok' : { error: 'delete_failed' }),
+  });
+}
 
 type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
+
+
+async function createDurableAgent(
+  projectPath: string,
+  name: string,
+  color: string,
+  model: string | undefined,
+  useWorktree: boolean | undefined,
+  orchestrator: string | undefined,
+  freeAgentMode: boolean | undefined,
+  mcpIds: string[] | undefined,
+  mcpConfigs: Record<string, Record<string, string>> | undefined,
+  persona: string | undefined,
+) {
+  let config: Awaited<ReturnType<typeof agentConfig.createDurable>>;
+  try {
+    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, persona);
+  } catch (err) {
+    // worktree_failed is tagged at its throw site; anything else is a write failure.
+    throw tagError(err, 'write_failed');
+  }
+
+  // Inject persona instructions into the agent's worktree
+  const worktreePath = config.worktreePath;
+  if (persona && worktreePath) {
+    try {
+      await tel.step('clubhouse.agent.persona_inject', async () => {
+        const { getPersonaTemplate } = await import('../../renderer/features/personas');
+        const template = getPersonaTemplate(persona);
+        if (template) {
+          const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator as OrchestratorId | undefined);
+          let existing = '';
+          try { existing = await provider.readInstructions(worktreePath); } catch { /* no existing */ }
+          const combined = existing ? `${existing}\n\n${template.content}` : template.content;
+          await provider.writeInstructions(worktreePath, combined);
+        }
+      });
+    } catch (err) {
+      appLog('agents', 'warn', 'Failed to inject persona instructions on create', {
+        meta: { agentName: name, persona, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+
+  broadcastSnapshotRefresh();
+  return config;
+}
 
 export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, withValidatedArgs(
@@ -55,38 +119,18 @@ export function registerAgentHandlers(): void {
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
       [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), stringArg({ optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona) => {
-        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs as Record<string, Record<string, string>> | undefined, persona);
-
-        // Inject persona instructions into the agent's worktree
-        if (persona && config.worktreePath) {
-          try {
-            const { getPersonaTemplate } = await import('../../renderer/features/personas');
-            const template = getPersonaTemplate(persona);
-            if (template) {
-              const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
-              let existing = '';
-              try { existing = await provider.readInstructions(config.worktreePath); } catch { /* no existing */ }
-              const combined = existing ? `${existing}\n\n${template.content}` : template.content;
-              await provider.writeInstructions(config.worktreePath, combined);
-            }
-          } catch (err) {
-            appLog('agents', 'warn', 'Failed to inject persona instructions on create', {
-              meta: { agentName: name, persona, error: err instanceof Error ? err.message : String(err) },
-            });
-          }
-        }
-
-        broadcastSnapshotRefresh();
-        return config;
-      },
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona) => tel.flow(
+        'clubhouse.agent.create',
+        { attrs: [ATTR.usesWorktree(useWorktree !== false), ATTR.orchestrator(orchestratorAttr(orchestrator))] },
+        () => createDurableAgent(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs as Record<string, Record<string, string>> | undefined, persona),
+      ),
     ),
   );
 
   ipcMain.handle(IPC.AGENT.DELETE_DURABLE, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      const result = await agentConfig.deleteDurable(projectPath, agentId);
+      const result = await deleteFlow('standard', () => agentConfig.deleteDurable(projectPath, agentId));
       bindingManager.unbindAgent(agentId);
       bindingManager.unbindTarget(agentId);
       broadcastSnapshotRefresh();
@@ -186,7 +230,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_COMMIT_PUSH, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      const result = await agentConfig.deleteCommitAndPush(projectPath, agentId);
+      const result = await deleteFlow('commit_push', () => agentConfig.deleteCommitAndPush(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
     },
@@ -195,7 +239,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_CLEANUP_BRANCH, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      const result = await agentConfig.deleteWithCleanupBranch(projectPath, agentId);
+      const result = await deleteFlow('cleanup_branch', () => agentConfig.deleteWithCleanupBranch(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
     },
@@ -216,7 +260,8 @@ export function registerAgentHandlers(): void {
         return { ok: false, message: 'cancelled' };
       }
 
-      const deleteResult = await agentConfig.deleteSaveAsPatch(projectPath, agentId, result.filePath);
+      const filePath = result.filePath;
+      const deleteResult = await deleteFlow('save_patch', () => agentConfig.deleteSaveAsPatch(projectPath, agentId, filePath));
       if (deleteResult.ok) broadcastSnapshotRefresh();
       return deleteResult;
     },
@@ -225,7 +270,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_FORCE, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      const result = await agentConfig.deleteForce(projectPath, agentId);
+      const result = await deleteFlow('force', () => agentConfig.deleteForce(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
     },
@@ -234,7 +279,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_UNREGISTER, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      const result = await agentConfig.deleteUnregister(projectPath, agentId);
+      const result = await deleteFlow('unregister', () => agentConfig.deleteUnregister(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
     },

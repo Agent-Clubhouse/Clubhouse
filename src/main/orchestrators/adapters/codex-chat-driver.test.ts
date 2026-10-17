@@ -656,7 +656,7 @@ describe('CodexChatDriver', () => {
 
   it('a crash mid-turn reports process_exited and ends the turn before the session', async () => {
     const { take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
     server.send(fx.completedTurnNotifications[1]); // turn/started
     expect(await take(1)).toMatchObject([{ type: 'turn_started' }]);
 
@@ -671,7 +671,7 @@ describe('CodexChatDriver', () => {
 
   it('close mid-turn ends the turn as cancelled, with no error', async () => {
     const { session, take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
     server.send(fx.completedTurnNotifications[1]);
     await take(1);
 
@@ -685,7 +685,7 @@ describe('CodexChatDriver', () => {
 
   it('a crash cancels open approvals so no card outlives the process', async () => {
     const { take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
     server.send(fx.completedTurnNotifications[1]);
     server.send(fx.commandApprovalRequest);
     await take(2);
@@ -700,7 +700,7 @@ describe('CodexChatDriver', () => {
   it('a crash after interrupt() ends the turn as cancelled, with no error', async () => {
     useServer({ 'turn/interrupt': () => ({ result: {} }) });
     const { session, take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
     server.send(fx.completedTurnNotifications[1]);
     await take(1);
 
@@ -716,7 +716,7 @@ describe('CodexChatDriver', () => {
   it('a failed interrupt leaves a later crash reported as an error', async () => {
     useServer({ 'turn/interrupt': () => ({ error: { code: -32600, message: 'no such turn' } }) });
     const { session, take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
     server.send(fx.completedTurnNotifications[1]);
     await take(1);
 
@@ -729,7 +729,7 @@ describe('CodexChatDriver', () => {
 
   it('a signal kill mid-turn names the signal', async () => {
     const { take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
     server.send(fx.completedTurnNotifications[1]);
     await take(1);
 
@@ -744,7 +744,7 @@ describe('CodexChatDriver', () => {
 
   it('a crash cancels an open question', async () => {
     const { take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
     server.send(fx.completedTurnNotifications[1]);
     server.send({
       method: 'item/tool/requestUserInput',
@@ -765,7 +765,7 @@ describe('CodexChatDriver', () => {
 
   it('a crash after the turn finished adds no turn_ended', async () => {
     const { take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
     server.send(fx.completedTurnNotifications[1]); // turn/started
     server.send(fx.interruptedTurnCompleted); // turn/completed for the same turn
     await take(2);
@@ -777,7 +777,7 @@ describe('CodexChatDriver', () => {
 
   it('subagent turns do not count as the chat turn running', async () => {
     const { take, rest } = await startSession();
-    await take(1);
+    await skipStart(take);
     server.send({ method: 'turn/started', params: { threadId: 'subagent-thread', turn: { ...fx.turnStartResult.turn, id: 'sub-turn' } } });
 
     server.exit(1);

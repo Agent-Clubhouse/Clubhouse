@@ -9,10 +9,11 @@ import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRunti
 import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS } from '../../shared/chat';
 import { getAgentRuntime, isChatAgent, readChatTranscript, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
+import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, undoRevert, isRevertRunning, type ChangesScope } from '../services/agent-runtime/checkpoint-tracker';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg } from './validation';
 import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '../services/agent-runtime/chat-attachments';
 
 function requireChatRuntime(agentId: string) {
@@ -61,6 +62,7 @@ export function registerChatHandlers(): void {
   unsubscribe = onChatEvent((event) => {
     broadcastToAllWindows(IPC.CHAT.EVENT, event);
     statusBridge(event);
+    handleChatEventForCheckpoints(event);
   });
 
   ipcMain.handle(IPC.CHAT.READ_TRANSCRIPT, withValidatedArgs(
@@ -74,6 +76,8 @@ export function registerChatHandlers(): void {
     async (_event, agentId, text, delivery, attachmentIds) => {
       const requested = delivery && DELIVERIES.has(delivery) ? (delivery as 'auto' | MessageDelivery) : 'auto';
       const runtime = requireChatRuntime(agentId);
+      // The agent would start editing files the revert is restoring.
+      if (await isRevertRunning(agentId)) throw new Error('Wait for the revert to finish before sending');
       // Only ids staged through STAGE_ATTACHMENT: the renderer can't name a path here.
       const attached = attachmentIds?.length ? await resolveAttachments(agentId, attachmentIds, runtime.getCapabilities?.()) : [];
       const content: ContentBlock[] = [...(text.trim() ? [{ type: 'text' as const, text }] : []), ...attached];
@@ -161,4 +165,32 @@ export function registerChatHandlers(): void {
       await chatRuntimeSettings.saveSettings(clean);
     },
   ));
+
+  // ── Checkpoints / Changes panel ──
+  ipcMain.handle(IPC.CHAT.LIST_CHECKPOINTS, withValidatedArgs(
+    [stringArg()],
+    async (_event, agentId) => listTurns(agentId),
+  ));
+
+  ipcMain.handle(IPC.CHAT.GET_CHANGES, withValidatedArgs(
+    [stringArg(), objectArg<ChangesScope>(), stringArg({ optional: true })],
+    async (_event, agentId, scope, filePath) => {
+      if (!scope || (typeof (scope as { turnId?: unknown }).turnId !== 'string' && typeof (scope as { sessionId?: unknown }).sessionId !== 'string')) {
+        throw new Error('scope needs a turnId or a sessionId');
+      }
+      return getChanges(agentId, scope, filePath);
+    },
+  ));
+
+  ipcMain.handle(IPC.CHAT.REVERT_TURN, withValidatedArgs(
+    [stringArg(), stringArg(), booleanArg({ optional: true })],
+    // revertTurn refuses while this agent or another in its worktree is mid-turn.
+    async (_event, agentId, turnId, force) => revertTurn(agentId, turnId, force === true),
+  ));
+
+  ipcMain.handle(IPC.CHAT.UNDO_REVERT, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, agentId, turnId) => undoRevert(agentId, turnId),
+  ));
+
 }

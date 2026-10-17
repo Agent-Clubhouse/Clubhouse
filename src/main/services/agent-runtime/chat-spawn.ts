@@ -33,6 +33,7 @@ import { cliLabel, evaluateCliVersion } from './chat-version-policy';
 import { ChatAgentRuntime } from './chat-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './index';
 import { readChatTranscript } from './chat-transcript';
+import { captureBeforePrompt } from './checkpoint-tracker';
 
 export interface ChatSpawnParams {
   agentId: string;
@@ -132,7 +133,9 @@ async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, 
 
 /**
  * Try to start the agent in chat. Returns true when it did; false means the
- * caller should fall back to the terminal.
+ * caller should fall back to the terminal. `onStarting` is called once a
+ * driver and CLI are found and the chat start really begins, so a caller can
+ * tell a failed start (called, then false) from an agent that was never chat.
  *
  * Drivers are tried in fallback order. One is skipped when it is paused after
  * repeated failures, its handshake fails, or its CLI version is below the
@@ -146,6 +149,7 @@ export async function tryStartChatAgent(
   profileEnv: Record<string, string> | undefined,
   commandPrefix: string | undefined,
   durableConfig: DurableAgentConfig | null | undefined,
+  onStarting?: () => void,
 ): Promise<boolean> {
   // Only durable agents get chat for now; quick agents stay fire-and-forget.
   if (params.kind !== 'durable') return false;
@@ -168,6 +172,7 @@ export async function tryStartChatAgent(
     });
     return false;
   }
+  onStarting?.();
 
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
@@ -290,6 +295,7 @@ export async function tryStartChatAgent(
         sessionStarted = true;
         return session;
       },
+      beforePrompt: () => captureBeforePrompt(params.agentId),
       onNativeSessionId: (id) => {
         void updateSessionId(params.projectPath, params.agentId, id).catch((err) => {
           appLog('core:chat', 'warn', 'Failed to persist native session id', {

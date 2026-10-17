@@ -100,6 +100,33 @@ export interface TelemetryRuntime {
 
 export const NOOP_SPAN: SpanHandle = { set: () => {} };
 
+const ERROR_TYPE_TAG = Symbol.for('clubhouse.telemetry.error_type');
+
+/**
+ * Attach a registry error type to an error before it is thrown, so a flow
+ * or step it escapes from records that type instead of `unknown`. The first
+ * tag wins: an inner, more specific tag is never overwritten. Returns the
+ * same error.
+ */
+export function tagError<E>(error: E, type: ErrorType): E {
+  if (typeof error === 'object' && error !== null && !(ERROR_TYPE_TAG in error)) {
+    try {
+      Object.defineProperty(error, ERROR_TYPE_TAG, { value: type, enumerable: false });
+    } catch {
+      // Frozen objects stay untagged.
+    }
+  }
+  return error;
+}
+
+/** The error type a thrown value was tagged with, or `unknown`. */
+export function errorTypeOf(error: unknown): ErrorType {
+  if (typeof error === 'object' && error !== null && ERROR_TYPE_TAG in error) {
+    return (error as Record<symbol, ErrorType>)[ERROR_TYPE_TAG];
+  }
+  return 'unknown';
+}
+
 /**
  * An error reported from another process (a renderer or plugin). It carries
  * the original constructor name and raw stack; the message is never sent

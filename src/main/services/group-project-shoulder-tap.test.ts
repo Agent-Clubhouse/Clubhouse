@@ -49,6 +49,9 @@ import { mcpAdapter } from './clubhouse-mcp/mcp-adapter';
 import { commandRegistry } from '../../shared/command-registry';
 import { registerGroupProjectTools } from './clubhouse-mcp/tools/group-project-tools';
 import { executeShoulderTap } from './group-project-shoulder-tap';
+import { ATTR } from '../../shared/telemetry/attributes';
+import { setRuntime } from '../telemetry/facade';
+import type { Classification, TelemetryRuntime } from '../telemetry/types';
 
 describe('executeShoulderTap', () => {
   beforeEach(() => {
@@ -176,6 +179,37 @@ describe('executeShoulderTap', () => {
     expect(result.delivered).toHaveLength(0);
     expect(result.failed).toHaveLength(1);
     expect(result.failed[0].status).toBe('not-running');
+  });
+
+  it('records an undelivered tap and its not_running delivery', async () => {
+    const project = await groupProjectRegistry.create('GhostProj2');
+    bindingManager.bind('agent-ghost2', {
+      targetId: project.id, targetKind: 'group-project', label: 'GhostProj2', agentName: 'ghost2', targetName: 'GhostProj2',
+    });
+    const count = vi.fn();
+    const outcomes: Array<{ name: string; attrs: unknown[]; outcome: Classification }> = [];
+    setRuntime({
+      level: 'standard',
+      count,
+      flow: (name: string, opts: { attrs?: unknown[] }, fn: (s: { set: (...a: unknown[]) => void }) => Promise<unknown>, extras?: { classify?: (r: unknown) => Classification }) => {
+        const attrs = [...(opts.attrs ?? [])];
+        const result = fn({ set: (...a) => attrs.push(...a) });
+        void result.then((r) => outcomes.push({ name, attrs, outcome: extras?.classify ? extras.classify(r) : 'ok' }));
+        return result;
+      },
+    } as unknown as TelemetryRuntime);
+    try {
+      await executeShoulderTap({ projectId: project.id, senderLabel: 'user', targetAgentId: 'agent-ghost2', message: 'Hi' });
+      await Promise.resolve();
+      expect(outcomes).toEqual([{
+        name: 'clubhouse.group.shoulder_tap',
+        attrs: [ATTR.tapBroadcast(false), ATTR.targetsCount(1)],
+        outcome: { error: 'tap_undelivered' },
+      }]);
+      expect(count).toHaveBeenCalledWith('clubhouse.group.shoulder_tap.deliveries', 1, [ATTR.deliveryResult('not_running')]);
+    } finally {
+      setRuntime(null);
+    }
   });
 
   it('broadcasts to all members (excluding sender)', async () => {
