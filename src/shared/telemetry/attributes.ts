@@ -310,7 +310,7 @@ export const ATTR = {
   // lists report `sidebar_list`, plugin ids are never values.
   /** Where in the new chrome the user is, beside the coarse `clubhouse.view`. */
   uiSurface: enumAttr('clubhouse.ui.surface', [
-    'sidebar_agents', 'sidebar_list', 'sidebar_settings', 'start_page', 'first_run', 'host_menu', 'more_menu', 'hover_card', 'row_menu',
+    'sidebar_agents', 'sidebar_list', 'sidebar_settings', 'sidebar_help', 'start_page', 'first_run', 'host_menu', 'more_menu', 'hover_card', 'row_menu',
   ]),
   /** Feature-usage events from the new chrome. */
   uiFeature: enumAttr('clubhouse.ui.feature', [

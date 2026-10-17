@@ -32,7 +32,7 @@ For each event:
 
 ## Per-Project Overrides
 
-Each project can use a different sound pack: **Project Settings > Sound Pack**.
+Each project can use a different sound pack: **Sound Pack Override** on the project's **Notifications & Alerts** settings page.
 
 ## Managing Packs
 
@@ -40,4 +40,4 @@ Each project can use a different sound pack: **Project Settings > Sound Pack**.
 - Delete user-created packs from Settings
 - Plugin-provided packs show a "Plugin" badge and cannot be removed
 
-**Access:** **Settings > Sound**
+**Access:** **Settings > Notifications & Alerts**, under **Sounds**

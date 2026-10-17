@@ -2,7 +2,7 @@
 
 An orchestrator is the CLI backend powering your agents — it handles AI communication, tool calls, file operations, and output streaming.
 
-## Available Orchestrators
+## Available orchestrators
 
 | Orchestrator | Description | Status |
 |-------------|-------------|--------|
@@ -12,7 +12,7 @@ An orchestrator is the CLI backend powering your agents — it handles AI commun
 
 ## Setup
 
-1. Open **Settings > Orchestrators**
+1. Open **Settings > Orchestrators & Agents**
 2. Enable/disable orchestrators with toggles
 3. Clubhouse auto-detects installed binaries via PATH
 
@@ -22,7 +22,7 @@ An orchestrator is the CLI backend powering your agents — it handles AI commun
 
 You cannot disable the last remaining orchestrator.
 
-## Capability Matrix
+## Capability matrix
 
 | Capability | Claude Code | Copilot CLI | Codex CLI |
 |-----------|:-----------:|:-----------:|:---------:|
@@ -32,11 +32,11 @@ You cannot disable the last remaining orchestrator.
 | Session resume | Yes | Yes | Yes (`--last` / most recent only; no resume-by-ID) |
 | Permissions | Yes | Yes | Yes (sandbox) |
 
-## Per-Project Selection
+## Per-project selection
 
-Each project can use a different orchestrator: **Project Settings > Orchestrator**. Only enabled orchestrators with detected binaries appear as options.
+Each project can use a different orchestrator: set **Default Orchestrator** on the project's **Orchestrators & Agents** settings page. Only enabled orchestrators with detected binaries appear as options.
 
-## Model Selection
+## Model selection
 
 Each orchestrator provides its own model list. If models are missing:
 - Update the orchestrator CLI to the latest version

@@ -2,18 +2,18 @@
 
 Clubhouse checks for updates automatically and applies them with minimal disruption.
 
-## How It Works
+## How it works
 
 1. **Check** — On startup (after 30s) and every 4 hours. Toggle auto-check in **Settings > Updates**.
 2. **Download** — Happens in the background with SHA-256 verification.
 3. **Notify** — A blue banner shows the new version. Click **Restart to update** or dismiss.
 4. **Apply** — If agents are running, a confirmation dialog warns before restarting.
 
-## After Updating
+## After updating
 
 A **What's New** dialog shows release notes on first launch after an update. View past release notes anytime in **Settings > What's New**.
 
-## Update Settings
+## Update settings
 
 Found in **Settings > Updates**:
 

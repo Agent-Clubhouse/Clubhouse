@@ -36,4 +36,4 @@ Shows up to 8 recently completed quick agents across all projects:
 
 - Click the **Home** icon in the Project Rail
 - Press `Cmd+Shift+H`
-- Toggle Dashboard visibility in **Settings > Display**
+- Toggle Dashboard visibility in **Settings > Display & UI**
