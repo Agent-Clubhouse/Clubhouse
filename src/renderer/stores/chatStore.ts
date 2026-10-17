@@ -666,7 +666,8 @@ interface ChatStoreState {
   applyEvent: (event: ChatEvent) => void;
   reset: (agentId: string) => void;
 
-  send: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery) => Promise<RuntimeSendResult>;
+  /** `attachmentIds` are staged ids from window.clubhouse.chat.stageAttachment. */
+  send: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]) => Promise<RuntimeSendResult>;
   interrupt: (agentId: string) => Promise<void>;
   respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<void>;
   answerQuestion: (agentId: string, requestId: string, answers: ChatQuestionAnswers) => Promise<void>;
@@ -729,7 +730,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     });
   },
 
-  send: (agentId, text, delivery) => window.clubhouse.chat.sendMessage(agentId, text, delivery),
+  send: (agentId, text, delivery, attachmentIds) => (attachmentIds?.length
+    ? window.clubhouse.chat.sendMessage(agentId, text, delivery, attachmentIds)
+    : window.clubhouse.chat.sendMessage(agentId, text, delivery)),
   interrupt: (agentId) => window.clubhouse.chat.interrupt(agentId),
   respondPermission: (agentId, requestId, optionId, extras) =>
     window.clubhouse.chat.respondPermission(agentId, requestId, optionId, extras),
