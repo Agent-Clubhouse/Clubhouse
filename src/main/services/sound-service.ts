@@ -375,18 +375,3 @@ export function resolveSlotPack(event: SoundEvent, projectId?: string): string |
   return settings.slotAssignments[event]?.packId ?? null;
 }
 
-/**
- * @deprecated Use resolveSlotPack instead. Kept for backward compatibility.
- */
-export function resolveActivePack(projectId?: string): string | null {
-  const settings = getSettings();
-  // Find any assigned pack (take the first one found)
-  for (const event of ALL_SOUND_EVENTS) {
-    if (projectId) {
-      const projectSlots = settings.projectOverrides?.[projectId]?.slotAssignments;
-      if (projectSlots?.[event]) return projectSlots[event]!.packId;
-    }
-    if (settings.slotAssignments[event]) return settings.slotAssignments[event]!.packId;
-  }
-  return null;
-}

@@ -11,7 +11,7 @@
 
 Clubhouse gets an **opt-in, user-configured telemetry export**. Telemetry is off by default.
 
-A user creates their own Azure Application Insights resource and pastes its **connection string** into Settings → Logging → Telemetry export. Clubhouse then sends traces, metrics and sanitized error records to that resource. Nothing goes to the Clubhouse maintainers and no ingestion key ships in the binary. Ingestion with only an instrumentation key was retired in 2025, so the connection string is the only supported input.
+A user creates their own Azure Application Insights resource and pastes its **connection string** into Settings → Logging → Telemetry export. Clubhouse then sends traces, metrics and sanitized error records to that resource, to an OpenTelemetry (OTLP) backend, or to both at once (§6.11). No ingestion key ships in the binary. The one developer-run destination is opt-in and narrow: with Feedback connected and its host confirmed, a copy of **user activity and errors only** can go to the Clubhouse developer's Framebriar service, so feedback reports have context. It runs only alongside one of the user's own destinations, never alone (§6.11). Ingestion with only an instrumentation key was retired in 2025, so the connection string is the only supported input.
 
 App Insights is the default and simplest destination: one field. For the minority who run another backend, the same Settings section offers **Other (OTLP)**: an HTTPS endpoint plus headers, sent as OTLP over HTTP/JSON (§6.8).
 
@@ -30,7 +30,7 @@ How this differs from the June 2026 design in `docs/telemetry-design/`:
 
 | June 2026 design | This spec | Why |
 |---|---|---|
-| Built-in ingestion key, maintainers' resource | **User's own resource only**; no key ships | Decided by the maintainer: self-configured, no maintainer-run backend |
+| Built-in ingestion key, maintainers' resource | **User's own destinations**; no key ships. The only developer-run destination is Framebriar, opt-in through Feedback, user activity and errors only (§6.11) | Decided by the maintainer: self-configured; the developer gets context for feedback only with the user's consent |
 | `applicationinsights` SDK `trackEvent` | **OTel API + SDK, Azure Monitor exporter by default, OTLP as an alternative** | Vendor-neutral; OTLP is one exporter swap |
 | Subscribe to `appLog` and filter by namespace tier | **Flow-based instrumentation**; `appLog` bridge only for opt-in call sites | The logs are 99% two debug/info namespaces (§2.2) and carry sensitive meta (§2.3) |
 | In-memory ring only, drop when offline | Exporter's bounded disk retry plus a cap | Laptops go offline; user-owned data |
@@ -57,7 +57,7 @@ The data-classification ideas from that design are carried forward: the never-co
 
 ### Non-goals (v1)
 
-- Maintainer-run aggregate telemetry. Nothing is collected centrally.
+- Maintainer-run aggregate telemetry collected without the user's opt-in. The only developer-run destination is Framebriar (§6.11): it receives user activity and errors only, and only while Feedback is connected, its host is confirmed, and one of the user's own destinations is on.
 - Auto-instrumentation of `http`, `fs` or `child_process`.
 - Session replay, UI click tracking or per-keystroke anything.
 - Microsoft Entra ID (AAD) ingestion auth. Resources with `DisableLocalAuth=true` reject connection-string ingestion; see §10 for the follow-up.
@@ -907,9 +907,9 @@ Logging                                         ← existing section unchanged
   ...
   "Logs are stored on your local disk only and are never transmitted."   ← text stays true
 
-Telemetry export                                ← new
+Telemetry export                                ← new (v1 layout; see §6.11 for the current per-destination panels)
   Send anonymized diagnostics to your own Azure Application Insights.
-  Nothing is sent to the Clubhouse maintainers. Off by default.        [Learn what's sent]
+  Off by default.                                                       [Learn what's sent]
 
   ┌ Azure Application Insights ────────────────────────────────────────┐
   │ [●] Send telemetry                                                  │
@@ -942,10 +942,9 @@ Telemetry export                                ← new
 
 - **The App Insights panel leads and holds only three things:** the on/off toggle, the connection string and **Send test event**. Turning the toggle on with a valid connection string starts telemetry at the Standard level. The Level row, Preview and the Workbook link sit just below the panel, outside the setup path.
 - **Other destinations is a separate panel** further down the same page. It is visible, but its fields never appear inside the App Insights flow. In v1 it offers generic OTLP: endpoint, headers and protocol. The protocol selector shows only HTTP/JSON in v1; `http/protobuf` could be added later if it bundles cleanly (§6.3).
-- **One active destination at a time.**
-  - Turning on OTLP while App Insights is on (or the reverse) shows a confirm step: "Telemetry will go to otlp.example.com instead of Application Insights."
-  - Switching flushes and shuts down the current exporter before starting the new one, and clears the offline queue, so nothing buffered for one destination is ever sent to another.
-  - Sending to both at once is technically easy in OTel (two processors) but would widen the "where does my data go" question, so v1 does not do it.
+- **One active destination at a time** (v1; superseded by multi-destination export, [#2005](https://github.com/Agent-Clubhouse/Clubhouse/pull/2005), §6.11).
+  - In v1, turning on OTLP while App Insights was on (or the reverse) showed a confirm step and switched destinations, clearing the offline queue.
+  - Today several destinations can be on at once, each with its own panel, level, preset, health and test event. The "where does my data go" question is answered by the consent dialog, which lists every host that will receive data, and by confirming each destination's host before it sends.
 
 - **Connection string handling:**
   - It is parsed locally. `InstrumentationKey` must be a GUID and `IngestionEndpoint` must be an `https:` URL whose host ends in `.applicationinsights.azure.com` or a sovereign-cloud equivalent. The allowlist lives in code. Any other host requires the Other (OTLP) destination.
@@ -1091,7 +1090,7 @@ requests
 
 ### 6.11 Multiple destinations and per-destination filters
 
-Telemetry can go to several destinations at once, for example everything to the user's own App Insights and only user activity and errors to a feedback service. Sampling and redaction stay global: an item is sampled and scrubbed once, then fans out. Session caps are per destination.
+Telemetry can go to several destinations at once, for example everything to the user's own App Insights and only user activity and errors to the developer's Framebriar service (below). Sampling and redaction stay global: an item is sampled and scrubbed once, then fans out. Session caps are per destination.
 
 **Settings.** `telemetry-settings.json` holds a `destinations` list with one entry per kind, in display order. Each entry has:
 
@@ -1152,6 +1151,12 @@ Fan-out, filters, consent, health and the test event are shared.
 - **Turning destinations on and off:** turning one on or off restarts the exporter with the others still running. Turning Azure off, or changing its resource, clears its offline queue. The offline queue is Azure's alone.
 - **Health:** `ok`, `pending`, `failing` (with the plain-words reason) or `error` (could not start). It comes from each destination's own export results. A destination counts as failing while any signal's latest export failed.
 - **Signals:** `c.telemetry.enabled` is emitted once per active destination kind, with `c.telemetry.destination`. `c.telemetry.export.failures` carries the destination kind.
+
+**The Framebriar destination** ([#2006](https://github.com/Agent-Clubhouse/Clubhouse/pull/2006)). This is the one developer-run destination: the Clubhouse developer's Framebriar service, which also receives Feedback reports. It exists so that a feedback report comes with context about what the user was doing. It has no URL or key fields; it rides on Feedback's enrollment.
+
+- **What it gets:** its default preset is "User activity and errors" at Standard, so never prompts, terminal output, paths or Detailed high-volume spans (§5, the preset table above). Its exporter is OTLP with delta temporality. It sets `session.id` to the Feedback session on a per-destination view of the resource, which is how reports and telemetry correlate. It copies `clubhouse.install.id`, `clubhouse.ui.chrome` and `clubhouse.channel` onto items, because Framebriar keeps few resource attributes.
+- **When it runs:** it is derived, not a sticky switch. It is on exactly while Feedback is connected, at least one of the user's own destinations is exporting, its host is the one the user confirmed, and the user hasn't switched it off. It never exports alone. Before every batch it re-reads Feedback's state, and with Feedback disconnected, switched off, in another session, or without a token, nothing is sent.
+- **Consent:** its host is listed in the export consent dialog when Feedback is connected. After connecting Feedback while export is on, the Feedback page asks "Share telemetry with the developer?", naming every host; Not now records it as off. Its Settings panel ("Clubhouse developer (Framebriar)") has the same switch, level, preset, health and test event as the others.
 
 ## 7. Annex satellites and controllers
 
@@ -1303,7 +1308,7 @@ The checklist:
 | 3 | Community plugin telemetry? | **Yes.** A permissioned `api.telemetry` with a scoped namespace, a declared schema, the same allowlist and redaction, rate limits and per-plugin grants that default to off. | §6.9, Phase 8 |
 | 4 | Where does OTLP go? | **In the main Settings UI** as a Destination choice. App Insights stays the preselected, one-field default. OTLP is HTTP/JSON only, HTTPS only, with headers in `safeStorage` and a destination confirmation. It moves from Phase 7 to Phase 1. | §6.3, §6.8, §9 |
 | 5 | Ship an Azure Monitor Workbook? | **Yes, a planned deliverable.** A gallery template, a Deploy to Azure ARM wrapper and optional alert rules. It grows tab by tab with Phases 3–6 and is finished in Phase 7. | §6.10, §9 |
-| 6 | How should Settings be laid out? | **App Insights first and simple:** a panel with the toggle, connection string and test event, nothing else. **Other destinations** (generic OTLP: endpoint, headers, protocol) sit in their own panel on the same page. One destination is active at a time. | §6.8 |
+| 6 | How should Settings be laid out? | **App Insights first and simple:** a panel with the toggle, connection string and test event, nothing else. **Other destinations** (generic OTLP: endpoint, headers, protocol) sit in their own panel on the same page. One destination is active at a time. *(2026-10-17: multi-destination export, [#2005](https://github.com/Agent-Clubhouse/Clubhouse/pull/2005), lets several run at once, and the Framebriar destination, [#2006](https://github.com/Agent-Clubhouse/Clubhouse/pull/2006), adds an opt-in developer panel; §6.11.)* | §6.8 |
 | 9 | Plugin telemetry default for official-registry plugins? | **Off for every plugin, official ones included.** A plugin sends nothing until the user switches on its toggle. | §6.9 |
 | 8 | Local OTLP collector? | **Allowed.** Plain HTTP to `localhost`, `127.0.0.1` or `[::1]` only, with pinned resolution and Clubhouse's own ports refused. Everything else needs HTTPS. | §6.8 |
 | 7 | Coverage goal and history window | **Broad coverage of critical paths**, weighted by regressions from **March 2026 onward**. That window covers the churn peak. Each hot spot is marked as a current or superseded code path. | §4.15, §12 |
