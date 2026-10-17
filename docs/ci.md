@@ -12,7 +12,7 @@ The rules, in short:
 | Trigger | Linux + Windows | macOS |
 |---|---|---|
 | PR, docs only | nothing (`paths-ignore`) | nothing |
-| PR, code | lint; typecheck + API surface (one Linux job); unit tests (2 shards per OS); **one build per OS, then E2E (3 shards per OS) and Annex E2E from that build** | **macOS unit** (~2.5 min), plus **macOS build + E2E smoke** (~9 min) only if the change touches packaging, dependencies or window/keyboard chrome |
+| PR, code | lint; Codex schema drift; typecheck + API surface (one Linux job); unit tests (2 shards per OS); **one build per OS, then E2E (3 shards per OS) and Annex E2E from that build** | **macOS unit** (~2.5 min), plus **macOS build + E2E smoke** (~9 min) only if the change touches packaging, dependencies or window/keyboard chrome |
 | PR touching only unit tests | lint, typecheck, unit | macOS unit |
 | Dependabot PR | as a code PR, plus the Linux package smoke test | as a code PR. Electron and native-module bumps trigger macOS build |
 | `full-ci` label, manual dispatch | everything | everything (unit, build, sharded E2E, Annex E2E) |

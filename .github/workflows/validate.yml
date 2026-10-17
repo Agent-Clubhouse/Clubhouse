@@ -146,6 +146,22 @@ jobs:
       # enforced on protected branches instead of remaining advisory.
       - run: npm run lint
 
+  codex-schema-drift:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result == 'success' }}
+    name: Codex app-server schema drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Regenerates the vendored bindings from the codex-cli pin in
+      # scheduled-real-cli-e2e.yml (`codex app-server generate-ts`: no login,
+      # no model request) and fails if they differ from what is committed.
+      - run: npm run codex:check-types
+
   # tsc is platform-independent, so it runs once, on Linux (case-sensitive
   # paths catch more than Windows would). It also carries the API surface
   # gate, which used to repeat the same tsc in a job of its own.
