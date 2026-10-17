@@ -215,5 +215,5 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
   abstract request(method: string, params?: unknown, options?: RpcRequestOptions): Promise<unknown>;
   abstract notify(method: string, params?: unknown): void;
   abstract respond(id: number | string, result: unknown): void;
-  abstract start(): Promise<void>;
+  abstract start(): Promise<unknown>;
 }

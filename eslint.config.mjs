@@ -183,6 +183,8 @@ export default tseslint.config(
       '.clubhouse/agents/**/out/**',
       '.clubhouse/agents/**/dist/**',
       '.clubhouse/agents/**/node_modules/**',
+      // Vendored output of `codex app-server generate-ts`; see scripts/generate-codex-app-server-types.mjs.
+      'src/main/orchestrators/adapters/codex-protocol/generated/**',
     ],
   },
   {
