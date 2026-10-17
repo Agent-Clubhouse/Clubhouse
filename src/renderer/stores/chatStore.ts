@@ -30,6 +30,7 @@ import type {
   PlanEntry,
   RuntimeSendResult,
   TokenUsage,
+  TurnStopReason,
   ToolCallContent,
   ToolCallLocation,
   ToolCallStatus,
@@ -118,6 +119,16 @@ export interface PlanDocumentItem extends ChatItemBase {
   toolCallId?: string;
 }
 
+/** Closes a turn: drives the turn footer (duration, usage) and turn-failure states. */
+export interface TurnEndItem extends ChatItemBase {
+  kind: 'turn_end';
+  stopReason: TurnStopReason;
+  durationMs?: number;
+  usage?: TokenUsage;
+  costUsd?: number;
+  costIsEstimate?: boolean;
+}
+
 /** Marks the start of a new chat session (e.g. after clearing context). */
 export interface SessionDividerItem extends ChatItemBase {
   kind: 'session_divider';
@@ -133,6 +144,7 @@ export type ChatItem =
   | NoticeItem
   | ErrorItem
   | PlanDocumentItem
+  | TurnEndItem
   | SessionDividerItem;
 
 export type PendingPermission = ChatEventDataMap['permission_request'] & { turnId?: string; ts: number };
@@ -182,6 +194,8 @@ export interface ChatViewState {
   lastSeq: Record<string, number>;
   /** Turn in progress, if any. */
   turnId: string | null;
+  /** ts of the running turn's turn_started, for the elapsed timer. */
+  turnStartedAt: number | null;
   items: ChatItem[];
   pendingPermissions: PendingPermission[];
   pendingQuestions: PendingQuestion[];
@@ -190,6 +204,8 @@ export interface ChatViewState {
   usage: ChatUsage;
   commands: AvailableCommand[];
   queued: QueuedMessage[];
+  /** Native messages the driver didn't recognize (protocol drift), by name. */
+  protocolUnknown: Record<string, number>;
 }
 
 export function createChatViewState(agentId: string): ChatViewState {
@@ -207,6 +223,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     nativeSessionId: null,
     lastSeq: {},
     turnId: null,
+    turnStartedAt: null,
     items: [],
     pendingPermissions: [],
     pendingQuestions: [],
@@ -215,6 +232,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     usage: { turn: null, session: null, limits: [], context: null },
     commands: [],
     queued: [],
+    protocolUnknown: {},
   };
 }
 
@@ -262,6 +280,7 @@ function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
     ...state,
     sessionId: event.sessionId,
     turnId: null,
+    turnStartedAt: null,
     pendingPermissions: [],
     pendingQuestions: [],
     plan: [],
@@ -378,6 +397,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         ...state,
         state: event.data.reason === 'error' ? 'error' : 'sleeping',
         turnId: null,
+        turnStartedAt: null,
         items: stopStreaming(state.items, undefined),
       };
 
@@ -388,7 +408,10 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       return {
         ...state,
         turnId: event.turnId ?? null,
+        turnStartedAt: event.ts,
         state: 'running',
+        // usage.turn describes the running turn from here on.
+        usage: { ...state.usage, turn: null },
         queued: delivered ? rest : state.queued,
         items: delivered ? [...state.items, queuedToItem(delivered, event)] : state.items,
       };
@@ -396,11 +419,22 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'turn_ended': {
       const d = event.data;
       const hasUsage = d.usage !== undefined || d.costUsd !== undefined;
+      const durationMs = d.durationMs ?? (state.turnStartedAt !== null ? event.ts - state.turnStartedAt : undefined);
+      const end: TurnEndItem = { ...itemBase(event, `turn_end:${sid}:${event.turnId ?? event.seq}`), kind: 'turn_end', stopReason: d.stopReason };
+      if (durationMs !== undefined) end.durationMs = durationMs;
+      // Drivers may report a turn's usage in a scope 'turn' usage event instead of on turn_ended.
+      const turnUsage = state.usage.turn;
+      const tokens = d.usage ?? turnUsage?.tokens;
+      const costUsd = d.costUsd ?? turnUsage?.costUsd;
+      if (tokens !== undefined) end.usage = tokens;
+      if (costUsd !== undefined) end.costUsd = costUsd;
+      if (turnUsage?.costIsEstimate !== undefined) end.costIsEstimate = turnUsage.costIsEstimate;
       return {
         ...state,
         turnId: null,
+        turnStartedAt: null,
         state: d.stopReason === 'error' ? 'error' : 'idle',
-        items: stopStreaming(state.items, event.turnId),
+        items: [...stopStreaming(state.items, event.turnId), end],
         usage: hasUsage ? { ...state.usage, turn: usageSnapshot(d) } : state.usage,
       };
     }
@@ -599,9 +633,13 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       return { ...state, items: [...state.items, item] };
     }
 
-    case 'protocol_unknown':
+    case 'protocol_unknown': {
+      // Diagnostics: counted so the view can say the CLI sent something this build doesn't understand.
+      const name = `${event.data.kind}:${event.data.name}`;
+      return { ...state, protocolUnknown: { ...state.protocolUnknown, [name]: (state.protocolUnknown[name] ?? 0) + 1 } };
+    }
     default:
-      // Diagnostics only, or an event type newer than this build: track seq, render nothing.
+      // An event type newer than this build: track seq, render nothing.
       return state;
   }
 }

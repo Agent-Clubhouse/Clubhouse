@@ -1,0 +1,347 @@
+/**
+ * Pure derivations from a ChatViewState into what ChatView renders. Kept out
+ * of the components so the grouping rules are testable on fixture streams.
+ *
+ * Every downgrade here reads ChatCapabilities, never the provider or driver
+ * id (docs/structured-chat-research.md §7, "Capabilities, not provider checks").
+ */
+
+import type { ChatCapabilities, PermissionLevel, ToolCallContent } from '../../../../shared/chat';
+import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, SubagentInfo, ToolCallItem } from '../../../stores/chatStore';
+
+// ── Stream blocks ───────────────────────────────────────────────────────────
+
+export interface ItemBlock { type: 'item'; key: string; item: ChatItem }
+/** A run of consecutive read-only tool calls, shown as one "Explored" row. */
+export interface ExploreBlock { type: 'explore'; key: string; tools: ToolCallItem[] }
+/** A subagent with its own work folded underneath. */
+export interface SubagentBlock { type: 'subagent'; key: string; info: SubagentInfo; tool?: ToolCallItem; children: ChatItem[] }
+export type StreamBlock = ItemBlock | ExploreBlock | SubagentBlock;
+
+const READ_ONLY_KINDS = new Set(['read', 'search', 'fetch', 'think']);
+
+/** A tool call that only looks around: no diff or output, didn't fail. */
+export function isExploreTool(item: ChatItem): item is ToolCallItem {
+  if (item.kind !== 'tool_call') return false;
+  if (!READ_ONLY_KINDS.has(item.toolKind)) return false;
+  if (item.status === 'failed' || item.status === 'pending') return false;
+  return !item.content.some((c) => c.type === 'diff' || c.type === 'terminal');
+}
+
+/**
+ * Turn the flat item list into render blocks.
+ *
+ * - With `subagents: 'full'`, items tagged with a known subagent move under
+ *   that subagent's card, which replaces its parent tool call. With 'ids_only'
+ *   or 'none' they stay in the main stream as ordinary rows.
+ * - Two or more consecutive read-only tools fold into an ExploreBlock.
+ */
+export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagents' | 'capabilities'>): StreamBlock[] {
+  const { items, subagents } = state;
+  const nestSubagents = state.capabilities?.subagents === 'full';
+
+  const childrenOf = new Map<string, ChatItem[]>();
+  const byParentTool = new Map<string, SubagentInfo>();
+  if (nestSubagents) {
+    for (const info of Object.values(subagents)) {
+      childrenOf.set(info.subagentId, []);
+      if (info.parentToolCallId) byParentTool.set(info.parentToolCallId, info);
+    }
+  }
+
+  const top: Array<ChatItem | SubagentBlock> = [];
+  const placed = new Set<string>();
+  const placeSubagent = (info: SubagentInfo, tool?: ToolCallItem) => {
+    placed.add(info.subagentId);
+    top.push({ type: 'subagent', key: `sub:${info.subagentId}`, info, ...(tool && { tool }), children: childrenOf.get(info.subagentId) ?? [] });
+  };
+
+  for (const item of items) {
+    const subId = 'subagentId' in item ? item.subagentId : undefined;
+    if (nestSubagents && subId && childrenOf.has(subId)) {
+      childrenOf.get(subId)!.push(item);
+      // A subagent without a parent tool call appears where its work starts.
+      if (!placed.has(subId)) placeSubagent(subagents[subId]);
+      continue;
+    }
+    if (nestSubagents && item.kind === 'tool_call' && byParentTool.has(item.toolCallId)) {
+      const info = byParentTool.get(item.toolCallId)!;
+      if (!placed.has(info.subagentId)) placeSubagent(info, item);
+      continue;
+    }
+    top.push(item);
+  }
+
+  const blocks: StreamBlock[] = [];
+  let run: ToolCallItem[] = [];
+  const flush = () => {
+    if (run.length >= 2) blocks.push({ type: 'explore', key: `explore:${run[0].id}`, tools: run });
+    else for (const t of run) blocks.push({ type: 'item', key: t.id, item: t });
+    run = [];
+  };
+  for (const entry of top) {
+    if ('type' in entry && entry.type === 'subagent') {
+      flush();
+      blocks.push(entry);
+      continue;
+    }
+    const item = entry as ChatItem;
+    if (isExploreTool(item)) {
+      run.push(item);
+      continue;
+    }
+    flush();
+    blocks.push({ type: 'item', key: item.id, item });
+  }
+  flush();
+  return blocks;
+}
+
+/** "Explored 3 files, 2 searches". */
+export function exploreLabel(tools: ToolCallItem[], running: boolean): string {
+  let files = 0;
+  let searches = 0;
+  let other = 0;
+  for (const t of tools) {
+    if (t.toolKind === 'read') files++;
+    else if (t.toolKind === 'search') searches++;
+    else other++;
+  }
+  const parts: string[] = [];
+  if (files) parts.push(`${files} ${files === 1 ? 'file' : 'files'}`);
+  if (searches) parts.push(`${searches} ${searches === 1 ? 'search' : 'searches'}`);
+  if (other) parts.push(`${other} ${other === 1 ? 'lookup' : 'lookups'}`);
+  return `${running ? 'Exploring' : 'Explored'} ${parts.join(', ')}`;
+}
+
+/** The target to show next to a tool's verb: first location, else the title. */
+export function toolTarget(tool: ToolCallItem): string {
+  return tool.locations?.[0]?.path ?? tool.title;
+}
+
+export function diffContent(tool: ToolCallItem): Array<Extract<ToolCallContent, { type: 'diff' }>> {
+  return tool.content.filter((c): c is Extract<ToolCallContent, { type: 'diff' }> => c.type === 'diff');
+}
+
+/** Terminal output, joined across appended chunks. */
+export function terminalContent(tool: ToolCallItem): { command?: string; output: string; exitCode?: number } | null {
+  const chunks = tool.content.filter((c): c is Extract<ToolCallContent, { type: 'terminal' }> => c.type === 'terminal');
+  if (chunks.length === 0) return null;
+  const last = chunks[chunks.length - 1];
+  const command = chunks.find((c) => c.command)?.command;
+  return {
+    ...(command !== undefined && { command }),
+    output: chunks.map((c) => c.output).join(''),
+    ...(last.exitCode !== undefined && { exitCode: last.exitCode }),
+  };
+}
+
+/** The command a tool ran, from its terminal content or its raw input. */
+export function commandOf(tool: ToolCallItem): string {
+  const term = terminalContent(tool);
+  if (term?.command) return term.command;
+  const input = tool.rawInput as { command?: unknown } | undefined;
+  if (input && typeof input.command === 'string') return input.command;
+  return tool.title;
+}
+
+// ── Diffs ───────────────────────────────────────────────────────────────────
+
+export interface DiffLine {
+  type: 'add' | 'del' | 'ctx' | 'hunk';
+  text: string;
+  oldNo?: number;
+  newNo?: number;
+}
+
+export function parseUnifiedDiff(raw: string): DiffLine[] {
+  const out: DiffLine[] = [];
+  let oldNo = 0;
+  let newNo = 0;
+  for (const line of raw.split('\n')) {
+    if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('diff ') || line.startsWith('index ')) continue;
+    if (line.startsWith('@@')) {
+      const m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (m) { oldNo = Number(m[1]); newNo = Number(m[2]); }
+      out.push({ type: 'hunk', text: line });
+    } else if (line.startsWith('+')) {
+      out.push({ type: 'add', text: line.slice(1), newNo: newNo++ });
+    } else if (line.startsWith('-')) {
+      out.push({ type: 'del', text: line.slice(1), oldNo: oldNo++ });
+    } else if (line.startsWith(' ')) {
+      out.push({ type: 'ctx', text: line.slice(1), oldNo: oldNo++, newNo: newNo++ });
+    }
+  }
+  return out;
+}
+
+/** Line diff of old/new text (LCS). Fine for the edit sizes a single tool call makes. */
+export function diffTexts(oldText: string | undefined, newText: string | undefined, startLine = 1): DiffLine[] {
+  const a = oldText ? oldText.split('\n') : [];
+  const b = newText ? newText.split('\n') : [];
+  if (a.length * b.length > 4_000_000) {
+    // Too large to diff in the renderer: show it as a replace.
+    return [
+      ...a.map((text, i) => ({ type: 'del' as const, text, oldNo: startLine + i })),
+      ...b.map((text, i) => ({ type: 'add' as const, text, newNo: startLine + i })),
+    ];
+  }
+  const dp: Uint32Array[] = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      out.push({ type: 'ctx', text: a[i], oldNo: startLine + i, newNo: startLine + j }); i++; j++;
+    } else if (i < a.length && (j >= b.length || dp[i + 1][j] >= dp[i][j + 1])) {
+      // Removals before additions, as in a unified diff.
+      out.push({ type: 'del', text: a[i], oldNo: startLine + i }); i++;
+    } else {
+      out.push({ type: 'add', text: b[j], newNo: startLine + j }); j++;
+    }
+  }
+  return out;
+}
+
+export function diffLines(diff: Extract<ToolCallContent, { type: 'diff' }>, startLine?: number): DiffLine[] {
+  if (diff.unifiedDiff) return parseUnifiedDiff(diff.unifiedDiff);
+  return diffTexts(diff.oldText, diff.newText, startLine);
+}
+
+export function diffStats(lines: DiffLine[]): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const l of lines) {
+    if (l.type === 'add') added++;
+    else if (l.type === 'del') removed++;
+  }
+  return { added, removed };
+}
+
+// ── Composer and dock ───────────────────────────────────────────────────────
+
+export type SendAction = 'send' | 'steer' | 'stop_and_send' | 'queue';
+
+export interface ComposerModes {
+  /** What Enter does. */
+  primary: SendAction;
+  /** What Shift+Enter does, or null when there's no second action. */
+  secondary: SendAction | null;
+  /** Stop (Esc) cancels the running turn. */
+  canStop: boolean;
+}
+
+/**
+ * Idle: Enter sends. Running: Enter steers when the driver can, otherwise
+ * "Stop and send" when it can interrupt, otherwise it queues. Shift+Enter
+ * queues when any queue exists.
+ */
+export function composerModes(caps: ChatCapabilities | null, running: boolean): ComposerModes {
+  if (!running) return { primary: 'send', secondary: null, canStop: false };
+  const canQueue = !!caps && caps.queue !== 'none';
+  const canStop = !!caps?.interrupt;
+  if (caps?.steer) return { primary: 'steer', secondary: canQueue ? 'queue' : null, canStop };
+  if (canStop) return { primary: 'stop_and_send', secondary: canQueue ? 'queue' : null, canStop };
+  return { primary: 'queue', secondary: null, canStop };
+}
+
+export const LEVEL_LABELS: Record<PermissionLevel, string> = {
+  plan: 'Plan',
+  ask: 'Ask first',
+  auto_edit: 'Auto-accept edits',
+  auto: 'Auto',
+  full_access: 'Full access',
+};
+
+export const LEVEL_DESCRIPTIONS: Record<PermissionLevel, string> = {
+  plan: 'Reads and plans, changes nothing',
+  ask: 'Asks before edits and commands',
+  auto_edit: 'Edits files, asks before commands',
+  auto: 'Decides what needs approval',
+  full_access: 'No prompts',
+};
+
+export function isRunningState(state: ChatViewState['state']): boolean {
+  return state === 'running' || state === 'waiting_permission' || state === 'waiting_input';
+}
+
+/**
+ * The session is over: it slept or stopped, or it failed with a fatal error.
+ * A turn that ended in error leaves the session alive, so it isn't "ended".
+ */
+export function isSessionEnded(state: ChatViewState): boolean {
+  if (state.state === 'sleeping') return true;
+  if (state.state !== 'error') return false;
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const it = state.items[i];
+    if (it.kind === 'error') return it.fatal;
+    if (it.kind === 'turn_end' || it.kind === 'user_message') return false;
+  }
+  return false;
+}
+
+/** The plan document a permission request approves, if it's a plan approval. */
+export function planForRequest(items: ChatItem[], req: PendingPermission): PlanDocumentItem | undefined {
+  if (!req.toolCallId) return undefined;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === 'plan_document' && it.toolCallId === req.toolCallId) return it;
+  }
+  return undefined;
+}
+
+/**
+ * Without structured plan approval, a session in Plan with a plan ready and no
+ * turn running gets Clubhouse's own "switch level and implement" action.
+ */
+export function needsManualPlanHandoff(state: ChatViewState): boolean {
+  if (state.capabilities?.planApproval) return false;
+  if (state.level !== 'plan' || isRunningState(state.state)) return false;
+  const hasPlan = state.plan.length > 0 || state.items.some((i) => i.kind === 'plan_document' && i.status === 'ready');
+  return hasPlan;
+}
+
+/** Level to continue in after a manual plan hand-off: the first non-plan level the driver can switch to live. */
+export function implementLevel(caps: ChatCapabilities | null): PermissionLevel | null {
+  const live = caps?.liveLevels ?? [];
+  for (const level of ['auto_edit', 'ask', 'auto'] as const) {
+    if (live.includes(level)) return level;
+  }
+  return null;
+}
+
+// ── Formatting ──────────────────────────────────────────────────────────────
+
+export function formatDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rest = s % 60;
+  if (m < 60) return rest ? `${m}m ${rest}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
+/** Clock-style elapsed time for the header, e.g. "0:42". */
+export function formatElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+
+export function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 100_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+}
+
+export function formatCost(usd: number, estimate?: boolean): string {
+  const v = usd < 0.01 ? '<$0.01' : `$${usd.toFixed(2)}`;
+  return estimate ? `≈ ${v} at API rates` : v;
+}

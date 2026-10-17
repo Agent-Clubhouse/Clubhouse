@@ -4,6 +4,7 @@ import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
+import { AgentRuntimePane } from '../features/agents/chat/AgentRuntimePane';
 import { SleepingAgent } from '../features/agents/SleepingAgent';
 import { HeadlessAgentView } from '../features/agents/HeadlessAgentView';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
@@ -191,7 +192,10 @@ export function MainContentView() {
 
     return (
       <div className="relative h-full bg-ctp-base" data-testid="agent-terminal-view">
-        <AgentTerminal agentId={activeAgentId!} focused={terminalFocused} />
+        <AgentRuntimePane
+          agent={activeAgent}
+          terminal={<AgentTerminal agentId={activeAgentId!} focused={terminalFocused} />}
+        />
         {isSatellitePaused && (
           <div className="absolute inset-0 flex items-center justify-center bg-ctp-base/80 z-10">
             <div className="text-center">

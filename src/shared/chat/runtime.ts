@@ -213,6 +213,14 @@ export interface ChatDriver {
 
 // ── Settings ────────────────────────────────────────────────────────────────
 
+/** What the renderer needs to choose an agent's view. */
+export interface ChatAgentRuntimeInfo {
+  /** The agent is running in the chat runtime right now. */
+  chat: boolean;
+  /** A chat driver is registered for the agent's provider, so it can switch to chat. */
+  chatAvailable: boolean;
+}
+
 export type AgentRuntimeMode = 'chat' | 'terminal';
 
 export interface ProviderRuntimeSetting {
