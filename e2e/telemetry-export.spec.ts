@@ -290,6 +290,8 @@ test.describe('Telemetry export', () => {
           enabled: true,
           level: 'standard',
           sampleRate: 1,
+          // #1952 gates export on recorded consent; ignored before it lands.
+          consentVersion: 1,
           destination: { kind: 'otlp', endpoint: `http://127.0.0.1:${mock.port}` },
         },
       },
