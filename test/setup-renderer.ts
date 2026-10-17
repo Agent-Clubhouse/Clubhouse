@@ -500,6 +500,7 @@ vi.stubGlobal('clubhouse', {
     setModel: asyncNoop,
     getRuntimeSettings: async () => ({}),
     saveRuntimeSettings: asyncNoop,
+    getAgentRuntime: async () => ({ chat: false, chatAvailable: false }),
     onEvent: () => noop,
   },
   window: {
