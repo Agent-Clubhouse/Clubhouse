@@ -84,6 +84,7 @@ export function dispatchRendererItems(items: RendererItem[], kind: WindowKind): 
           tel.exception(new ForwardedError(item.errorType, item.stack), {
             origin: item.origin,
             handled: item.handled,
+            attrs: [...item.attrs, ...tag],
           });
           break;
       }

@@ -36,6 +36,8 @@ export interface FlowExtras<T> {
 export interface ExceptionOptions {
   origin: 'main' | 'renderer' | 'plugin';
   handled: boolean;
+  /** Extra registry attributes, e.g. the window kind or error boundary. */
+  attrs?: TelAttr[];
 }
 
 /** A span recorded before the SDK was ready, replayed with explicit times. */

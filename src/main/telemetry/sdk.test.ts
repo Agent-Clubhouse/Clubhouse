@@ -12,6 +12,7 @@ import { SessionCaps } from './caps';
 import { PreviewTee } from './preview-tee';
 import { hashId } from './ids';
 import type { TelemetryRuntime } from './types';
+import { ForwardedError } from './types';
 
 const salt = Buffer.alloc(32, 7);
 
@@ -73,6 +74,25 @@ describe('startSdk', () => {
     expect(ev?.attributes?.['exception.type']).toBe('TypeError');
     const record = logs.getFinishedLogRecords().find((l) => l.eventName === 'clubhouse.exception');
     expect(record?.body).toBe('clubhouse.exception');
+    expect(JSON.stringify(record?.attributes)).not.toContain('secret');
+  });
+
+  it('keeps forwarded renderer errors\' class name and extra attributes on the exception record', async () => {
+    const { rt, logs } = setup();
+    active = rt;
+    rt.exception(new ForwardedError('RangeError', 'RangeError: secret\n    at render (renderer.js:10:5)'), {
+      origin: 'renderer',
+      handled: true,
+      attrs: [ATTR.windowKind('popout'), ATTR.errorBoundary('app')],
+    });
+    await rt.forceFlush(1000);
+    const record = logs.getFinishedLogRecords().find((l) => l.eventName === 'clubhouse.exception');
+    expect(record?.attributes).toMatchObject({
+      'exception.type': 'RangeError',
+      'clubhouse.exception.origin': 'renderer',
+      'clubhouse.window.kind': 'popout',
+      'clubhouse.error.boundary': 'app',
+    });
     expect(JSON.stringify(record?.attributes)).not.toContain('secret');
   });
 

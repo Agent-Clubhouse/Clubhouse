@@ -108,7 +108,7 @@ describe('renderer bridge', () => {
     expect(err).toBeInstanceOf(ForwardedError);
     expect((err as ForwardedError).forwardedType).toBe('TypeError');
     expect((err as Error).message).toBe('');
-    expect(opts).toEqual({ origin: 'plugin', handled: true });
+    expect(opts).toEqual({ origin: 'plugin', handled: true, attrs: [ATTR.process('renderer'), ATTR.windowKind('main')] });
   });
 
   it('accepts renderer-ready once, and only from the main window', () => {

@@ -237,7 +237,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       [SDK_ATTRIBUTE_KEYS.exceptionType]: type,
       [SDK_ATTRIBUTE_KEYS.exceptionMessage]: type,
       [SDK_ATTRIBUTE_KEYS.exceptionStacktrace]: stack,
-      ...toAttributes([ATTR.exceptionOrigin(origin.origin), ATTR.exceptionHandled(origin.handled)]),
+      ...toAttributes([ATTR.exceptionOrigin(origin.origin), ATTR.exceptionHandled(origin.handled), ...(origin.attrs ?? [])]),
     };
     span?.addEvent('exception', attributes);
     if (levelAllows(level, EVENTS['clubhouse.exception'].level)) {
