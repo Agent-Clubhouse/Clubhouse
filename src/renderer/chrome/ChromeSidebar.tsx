@@ -3,6 +3,8 @@ import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
+import { useAnnexClientStore, type SatelliteConnection } from '../stores/annexClientStore';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useOrderedShallow } from '../hooks/useOrderedShallow';
@@ -17,14 +19,17 @@ import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
 import { useSidebarMode } from './listTabs';
 import { SCOPE_FOLLOWING_TABS } from './scope';
 import { ChromeAgentDialogs, useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
-import { selectNeedsAttention } from './sidebar/treeModel';
+import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './sidebar/treeModel';
+import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
+import { useClickOutside } from './sidebar/useClickOutside';
+import { hostOf, switchHost } from './hosts';
 import { useChromeStore } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 
 /**
- * Sidebar for the new chrome, Phase 1b (docs/chrome-redesign-spec.md §2, §4.2):
- * Canvas and Review, search and New, “Needs you”, the project tree, and a
- * footer. The host switcher arrives in Phase 3; lists and the start page in Phase 2.
+ * Sidebar for the new chrome (docs/chrome-redesign-spec.md §2, §4.2): the host
+ * switcher, Canvas and Review, search and New, “Needs you” across hosts, the
+ * active host's project tree (or a tab's list, or Settings), and a footer.
  *
  * Legacy test IDs are kept where the element means the same thing (§9):
  * `project-<id>`, `agent-item-<id>`, `agent-list`, `nav-add-project`,
@@ -40,21 +45,13 @@ const PLUGIN_FALLBACK_ICON = (
 /** App-level items that get the inline buttons; every other top rail item goes in the overflow menu. */
 const INLINE_APP_ITEMS = ['canvas', 'review'];
 
+const NO_COMPLETED: Record<string, never[]> = {};
+
 const railIcon = (entry: PluginRegistryEntry) => {
   const icon = entry.manifest.contributes!.railItem!.icon;
   return icon ? <span className="flex items-center" dangerouslySetInnerHTML={{ __html: sanitizeSvg(icon) }} /> : PLUGIN_FALLBACK_ICON;
 };
 
-function useClickOutside(ref: React.RefObject<HTMLElement | null>, open: boolean, onClose: () => void) {
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
-  }, [ref, open, onClose]);
-}
 
 function MenuButton({ label, testId, children, items, disabled }: {
   label: string;
@@ -197,6 +194,18 @@ export function ChromeSidebar() {
     return tab?.label;
   });
   const forgetProjects = useChromeStore((s) => s.forgetProjects);
+  const activeHostId = useUIStore((s) => s.activeHostId);
+  const satellites = useAnnexClientStore((s) => s.satellites);
+  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
+  const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
+  const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus);
+  const remoteProjectIcons = useRemoteProjectStore((s) => s.remoteProjectIcons);
+  const isRemoteHost = activeHostId !== null;
+
+  // A satellite that was unpaired can't stay the host (as in the legacy rail).
+  useEffect(() => {
+    if (activeHostId && satellites.length > 0 && !satellites.some((s) => s.id === activeHostId)) switchHost(null);
+  }, [activeHostId, satellites]);
 
   // When a project is removed, drop its pin, collapsed state and folds. Compared
   // against the previous non-empty list so the empty list at startup prunes nothing.
@@ -232,18 +241,40 @@ export function ChromeSidebar() {
     };
   }, [appEnabled, plugins]);
 
-  // Local agents grouped by project (satellites arrive with the host switcher, Phase 3).
+  // The tree shows the active host: local projects, or a satellite's (spec §2, hosts option 1).
+  const treeProjects = useMemo(
+    () => (activeHostId ? satelliteProjects[activeHostId] ?? [] : projects),
+    [activeHostId, satelliteProjects, projects],
+  );
+  const treeAgents = isRemoteHost ? remoteAgents : agents;
+  const treeDetailed = isRemoteHost ? remoteDetailed : detailed;
   const localProjectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
   const agentsByProject = useMemo(() => {
+    const ids = new Set(treeProjects.map((p) => p.id));
     const map: Record<string, Agent[]> = {};
-    for (const agent of Object.values(agents)) {
-      if (!localProjectIds.has(agent.projectId) || agent.kind === 'companion') continue;
+    for (const agent of Object.values(treeAgents)) {
+      if (!ids.has(agent.projectId) || agent.kind === 'companion') continue;
       (map[agent.projectId] ??= []).push(agent);
     }
     return map;
-  }, [agents, localProjectIds]);
-  const needs = useMemo(() => selectNeedsAttention(agents, detailed, localProjectIds), [agents, detailed, localProjectIds]);
-  const projectNames = useMemo(() => Object.fromEntries(projects.map((p) => [p.id, p.displayName || p.name])), [projects]);
+  }, [treeAgents, treeProjects]);
+
+  // Needs you covers every host, so a blocked agent anywhere is one click away.
+  const needs = useMemo(() => mergeNeedsAttention(
+    selectNeedsAttention(agents, detailed, localProjectIds),
+    selectRemoteNeedsAttention(satellites, satelliteProjects, remoteAgents, remoteDetailed),
+  ), [agents, detailed, localProjectIds, satellites, satelliteProjects, remoteAgents, remoteDetailed]);
+  const needsByHost = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const item of needs) counts[item.hostId ?? LOCAL_HOST] = (counts[item.hostId ?? LOCAL_HOST] ?? 0) + 1;
+    return counts;
+  }, [needs]);
+  const projectNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const p of projects) names[p.id] = p.displayName || p.name;
+    for (const list of Object.values(satelliteProjects)) for (const p of list) names[p.id] = p.displayName || p.name;
+    return names;
+  }, [projects, satelliteProjects]);
   const reviewEnabled = inlineItems.some((e) => e.manifest.id === 'review');
 
   const openAppItem = useCallback((id: string) => {
@@ -267,8 +298,10 @@ export function ChromeSidebar() {
 
   // Selecting an agent makes its worktree the scope. On a tab that follows the
   // scope (Terminal, Files, Git) the tab stays; otherwise the agent opens.
+  // An agent on another host switches the host first (a remote Needs you row).
   const openAgent = useCallback((agent: Agent, keepTab: boolean) => {
     useQuickAgentStore.getState().selectCompleted(null);
+    switchHost(hostOf(agent.projectId));
     setProjectScope(null);
     const sameProject = useProjectStore.getState().activeProjectId === agent.projectId;
     if (!sameProject) setActiveProject(agent.projectId);
@@ -284,9 +317,26 @@ export function ChromeSidebar() {
   }, [openAgent]);
 
   const selectNeedsYou = useCallback((agent: Agent) => {
+    const remote = hostOf(agent.projectId) !== useUIStore.getState().activeHostId;
     openAgent(agent, false);
-    reportChromeFeature('needs_you_select');
+    reportChromeFeature(remote ? 'needs_you_remote_select' : 'needs_you_select');
   }, [openAgent]);
+
+  const onSwitchHost = useCallback((hostId: string | null) => {
+    switchHost(hostId);
+    reportChromeFeature('host_switch');
+  }, []);
+  const onRetryHost = useCallback((sat: SatelliteConnection) => {
+    void useAnnexClientStore.getState().retry(sat.fingerprint);
+    reportChromeFeature('host_retry');
+  }, []);
+  const openAnnexSettings = useCallback((page: 'annex' | 'annex-control') => {
+    const ui = useUIStore.getState();
+    ui.setSettingsContext('app');
+    ui.setSettingsSubPage(page);
+    if (ui.explorerTab !== 'settings') ui.toggleSettings();
+    reportChromeFeature('host_settings_open');
+  }, []);
 
   const selectCompleted = useCallback((projectId: string, completedId: string) => {
     setProjectScope(null);
@@ -331,7 +381,7 @@ export function ChromeSidebar() {
     if (mode === 'tree' || e.key !== 'Escape' || e.defaultPrevented) return;
     const target = e.target as HTMLElement;
     // Esc in a field belongs to the field (clearing a search, closing a picker).
-    if (target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]')) return;
+    if (target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [aria-expanded="true"]')) return;
     e.preventDefault();
     backToAgents();
   };
@@ -343,7 +393,17 @@ export function ChromeSidebar() {
       aria-label="Sidebar"
       className="h-full min-h-0 flex flex-col bg-ctp-mantle border-r border-surface-0 overflow-hidden"
     >
-      <div className="flex-shrink-0 px-2 pt-2 pb-2 flex items-center gap-1.5">
+      <div className="flex-shrink-0 pt-2" />
+      <HostSwitcher
+        satellites={satellites}
+        activeHostId={activeHostId}
+        needsByHost={needsByHost}
+        onSwitch={onSwitchHost}
+        onRetry={onRetryHost}
+        onPair={() => openAnnexSettings('annex-control')}
+        onAnnexSettings={() => openAnnexSettings('annex')}
+      />
+      <div className="flex-shrink-0 px-2 pb-2 flex items-center gap-1.5">
         <button
           type="button"
           onClick={() => { useCommandPaletteStore.getState().open(); reportChromeFeature('search_open'); }}
@@ -354,7 +414,7 @@ export function ChromeSidebar() {
           <span>Search</span>
           <kbd className="ml-auto text-xs text-ctp-overlay1">{window.clubhouse.platform === 'darwin' ? '⌘K' : 'Ctrl+K'}</kbd>
         </button>
-        <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={!activeProjectId}>
+        <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={!activeProjectId || isRemoteHost}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           New
         </MenuButton>
@@ -383,17 +443,17 @@ export function ChromeSidebar() {
       <div className={`flex-1 min-h-0 flex-col ${mode === 'tree' ? 'flex' : 'hidden'}`}>
         <ProjectTree
           projectScopeId={projectScopeId}
-          projects={projects}
-          projectIcons={projectIcons}
+          projects={treeProjects}
+          projectIcons={isRemoteHost ? remoteProjectIcons : projectIcons}
           agentsByProject={agentsByProject}
-          detailed={detailed}
-          completedByProject={completedByProject}
+          detailed={treeDetailed}
+          completedByProject={isRemoteHost ? NO_COMPLETED : completedByProject}
           activeProjectId={isProjectTab ? activeProjectId : null}
           activeAgentId={isProjectTab ? activeAgentId : null}
           selectedCompletedId={selectedCompletedId}
-          onReorder={onReorder}
+          onReorder={isRemoteHost ? undefined : onReorder}
           onSelectProject={selectProject}
-          onNewAgent={onNewAgent}
+          onNewAgent={isRemoteHost ? undefined : onNewAgent}
           onSelectAgent={selectAgent}
           onSelectCompleted={selectCompleted}
           onDismissCompleted={dismissCompleted}
