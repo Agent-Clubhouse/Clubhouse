@@ -27,7 +27,7 @@ function statusInfo(code: string): StatusInfo {
   if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-red', short: 'D' };
   if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-yellow', short: 'M' };
   if (c.startsWith('R')) return { label: 'Renamed', color: 'text-ctp-mauve', short: 'R' };
-  if (c.startsWith('C')) return { label: 'Copied', color: 'text-ctp-teal', short: 'C' };
+  if (c.startsWith('C')) return { label: 'Copied', color: 'text-ctp-info', short: 'C' };
   return { label: 'Changed', color: 'text-ctp-overlay0', short: '~' };
 }
 

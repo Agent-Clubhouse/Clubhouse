@@ -144,6 +144,7 @@ export function createTelemetry({access,endpoint=access?.endpoint,gameId,buildSh
   random=()=>Math.random(),getRandomValues=a=>crypto.getRandomValues(a),
   document=globalThis.document,window=globalThis.window,requestFrame=globalThis.requestAnimationFrame?.bind(globalThis),
   captureErrors=false,captureConsole=false,console:consoleImpl=globalThis.console,frameTime=false,
+  maxQueueAgeMs=Infinity,
   telemetry:mode='continuous',onDiagnostic=()=>{}}={}){
   if(!access||typeof access.status!=='function'||typeof access.getToken!=='function')throw Error('Playtest access controller required');
   if(typeof endpoint!=='string'||!/^https?:\/\//.test(endpoint))throw Error('Telemetry endpoint required');
@@ -158,7 +159,7 @@ export function createTelemetry({access,endpoint=access?.endpoint,gameId,buildSh
     'telemetry.sdk.name':'framebriar','telemetry.sdk.language':'webjs','telemetry.sdk.version':TELEMETRY_SDK_VERSION})};
   const scope={name:'framebriar.browser',version:TELEMETRY_SDK_VERSION};
 
-  let queue=[],queuedBytes=0,lastToken,epoch=0,forbidden=false,disposed=false,timer,timerAt=Infinity,soon=false,inflight;
+  let queue=[],queuedBytes=0,lastToken,epoch=0,forbidden=false,disposed=false,timer,timerAt=Infinity,soon=false,inflight,requestAbort;
   let blockedUntil=0,failures=0,splitting=false,batchLimit=L.bodyBytes-8*1024,seriesTotal=0,windowStart=now(),urgent=false;
   // Diagnostics ring: already-sanitized spans/logs, last 5 min, never persisted. Entry state is
   // 'local' (never handed to the gateway), 'queued', 'inflight', 'sent' or 'rejected'.
@@ -166,9 +167,10 @@ export function createTelemetry({access,endpoint=access?.endpoint,gameId,buildSh
   const instruments=new Map(),stack=[];
   const stats={sent:0,dropped:0,requests:0};
   const diag=(kind,detail)=>{try{onDiagnostic({kind,...detail});}catch{/* diagnostics never break the game */}};
-  const statusOk=v=>v?.enrolled===true&&v.notice==null&&!['disconnected','unsupported-origin','disconnecting','connecting'].includes(v.state);
+  const statusOk=v=>v?.enrolled===true&&v.notice==null&&!['disconnected','unsupported-origin','disconnecting','connecting','telemetry-disabled'].includes(v.state);
   const enabled=()=>{if(disposed||forbidden)return false;try{return statusOk(access.status());}catch{return false;}};
   function clearAll(){
+    requestAbort?.abort();requestAbort=undefined;
     epoch++;queue=[];queuedBytes=0;stack.length=0;ring=[];urgent=false;
     for(const inst of instruments.values())inst.series.clear();
     seriesTotal=0;blockedUntil=0;failures=0;lastToken=undefined;splitting=false;batchLimit=L.bodyBytes-8*1024;windowStart=now();
@@ -191,7 +193,7 @@ export function createTelemetry({access,endpoint=access?.endpoint,gameId,buildSh
   function enqueue(signal,record,extra,size=bytesOf(record)){
     if(size>L.itemBytes){stats.dropped++;diag('oversize',{signal});return;}
     if(signal!=='metric'&&idle())windowStart=now();
-    const item={signal,record,size,...extra};mark([item],'queued');
+    const item={signal,record,size,at:now(),...extra};mark([item],'queued');
     queue.push(item);queuedBytes+=size;
     evict();
     pressure();
@@ -424,15 +426,20 @@ export function createTelemetry({access,endpoint=access?.endpoint,gameId,buildSh
   }
   async function post(json,token,keepalive){
     stats.requests++;
-    return fetchImpl(url,{method:'POST',credentials:'omit',cache:'no-store',redirect:'error',keepalive,
+    const controller=new AbortController();requestAbort=controller;
+    try{return await fetchImpl(url,{method:'POST',credentials:'omit',cache:'no-store',redirect:'error',keepalive,
       headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:json,
-      ...(keepalive?{}:{signal:AbortSignal.timeout(30000)})});
+      signal:AbortSignal.any([controller.signal,AbortSignal.timeout(30000)])});}
+    finally{if(requestAbort===controller)requestAbort=undefined;}
   }
   function flush({keepalive=false}={}){
     if(inflight)return inflight;
     if(!enabled()){if(!disposed&&!forbidden)clearAll();return Promise.resolve(false);}
     if(now()<blockedUntil)return Promise.resolve(false);
     const ticket=epoch;
+    // Offline retries are memory-only and expire, even when the page stays open for days.
+    const cutoff=now()-Math.max(1000,Number(maxQueueAgeMs)||300000);
+    queue=queue.filter(item=>{if(item.at>=cutoff)return true;queuedBytes-=item.size;stats.dropped++;mark([item],'rejected');return false;});
     collectMetrics();
     clearTimer(timer);timer=undefined;timerAt=Infinity;
     if(!queue.length){return Promise.resolve(true);}

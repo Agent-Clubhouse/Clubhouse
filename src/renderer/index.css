@@ -13,6 +13,7 @@
   --color-surface-1: rgb(var(--ctp-surface1));
   --color-surface-2: rgb(var(--ctp-surface2));
   --color-ctp-accent: rgb(var(--ctp-accent));
+  --color-ctp-link: rgb(var(--ctp-link));
   --color-ctp-warning: rgb(var(--ctp-warning));
   --color-ctp-error: rgb(var(--ctp-error));
   --color-ctp-info: rgb(var(--ctp-info));

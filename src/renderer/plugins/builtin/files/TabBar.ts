@@ -383,7 +383,7 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
     // Left chevron
     showLeftChevron
       ? React.createElement('button', {
-          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay2 bg-surface-0/50 hover:text-ctp-text hover:bg-surface-0 transition-colors',
+          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay1 bg-surface-0/50 hover:text-ctp-text hover:bg-surface-0 transition-colors',
           onClick: scrollLeft,
         }, ChevronLeftIcon)
       : null,
@@ -418,7 +418,7 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
     // Right chevron
     showRightChevron
       ? React.createElement('button', {
-          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay2 bg-surface-0/50 hover:text-ctp-text hover:bg-surface-0 transition-colors',
+          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay1 bg-surface-0/50 hover:text-ctp-text hover:bg-surface-0 transition-colors',
           onClick: scrollRight,
         }, ChevronRightIcon)
       : null,

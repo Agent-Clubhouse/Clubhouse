@@ -4,6 +4,22 @@ import { useAgentStore } from '../../stores/agentStore';
 import { UpdateGateModal, UpdateGateAgent } from './UpdateGateModal';
 import type { LiveAgentInfo } from '../../../shared/types';
 
+// Literal class strings so Tailwind can see every variant it needs to generate.
+const TONES = {
+  warning: {
+    bar: 'bg-ctp-peach/10 border-ctp-peach/20 text-ctp-peach',
+    muted: 'text-ctp-peach/60',
+    primary: 'bg-ctp-peach/20 hover:bg-ctp-peach/30',
+    secondary: 'text-ctp-peach/50 hover:text-ctp-peach',
+  },
+  info: {
+    bar: 'bg-ctp-info/10 border-ctp-info/20 text-ctp-info',
+    muted: 'text-ctp-info/60',
+    primary: 'bg-ctp-info/20 hover:bg-ctp-info/30',
+    secondary: 'text-ctp-info/50 hover:text-ctp-info',
+  },
+} as const;
+
 export function UpdateBanner() {
   const status = useUpdateStore((s) => s.status);
   const dismissed = useUpdateStore((s) => s.dismissed);
@@ -116,12 +132,12 @@ export function UpdateBanner() {
     ) : null;
   }
 
-  const colorBase = useWarningStyle ? 'ctp-peach' : 'ctp-info';
+  const tone = TONES[useWarningStyle ? 'warning' : 'info'];
 
   return (
     <>
       <div
-        className={`flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-${colorBase}/10 border-b border-${colorBase}/20 text-${colorBase} text-sm`}
+        className={`flex-shrink-0 flex items-center gap-3 px-4 py-2 border-b ${tone.bar} text-sm`}
         data-testid="update-banner"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
@@ -143,31 +159,31 @@ export function UpdateBanner() {
           <span className="flex-1">
             Update v{status.availableVersion} is ready
             {status.releaseMessage ? (
-              <span className={`text-${colorBase}/60 ml-1`} data-testid="update-release-message">&mdash; {status.releaseMessage}</span>
+              <span className={`${tone.muted} ml-1`} data-testid="update-release-message">&mdash; {status.releaseMessage}</span>
             ) : '.'}
           </span>
         )}
 
         {isApplyError ? (
           <>
-            <button onClick={openUpdateDownload} className={`px-3 py-1 text-xs rounded bg-${colorBase}/20 hover:bg-${colorBase}/30 transition-colors cursor-pointer`} data-testid="update-manual-download-btn">Download manually</button>
-            <button onClick={dismiss} className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-1`} data-testid="update-dismiss-btn">x</button>
+            <button onClick={openUpdateDownload} className={`px-3 py-1 text-xs rounded ${tone.primary} transition-colors cursor-pointer`} data-testid="update-manual-download-btn">Download manually</button>
+            <button onClick={dismiss} className={`${tone.secondary} transition-colors cursor-pointer px-1`} data-testid="update-dismiss-btn">x</button>
           </>
         ) : hasFailedBefore ? (
           <>
             {status.artifactUrl && (
-              <button onClick={openUpdateDownload} className={`px-3 py-1 text-xs rounded bg-${colorBase}/20 hover:bg-${colorBase}/30 transition-colors cursor-pointer`} data-testid="update-manual-download-btn">Download manually</button>
+              <button onClick={openUpdateDownload} className={`px-3 py-1 text-xs rounded ${tone.primary} transition-colors cursor-pointer`} data-testid="update-manual-download-btn">Download manually</button>
             )}
-            <button onClick={handleRestart} className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-2 text-xs`} data-testid="update-restart-btn">Try again</button>
-            <button onClick={dismiss} className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-1`} data-testid="update-dismiss-btn">x</button>
+            <button onClick={handleRestart} className={`${tone.secondary} transition-colors cursor-pointer px-2 text-xs`} data-testid="update-restart-btn">Try again</button>
+            <button onClick={dismiss} className={`${tone.secondary} transition-colors cursor-pointer px-1`} data-testid="update-dismiss-btn">x</button>
           </>
         ) : (
           <>
-            <button onClick={handleRestart} className={`px-3 py-1 text-xs rounded bg-${colorBase}/20 hover:bg-${colorBase}/30 transition-colors cursor-pointer`} data-testid="update-restart-btn">Restart to update</button>
+            <button onClick={handleRestart} className={`px-3 py-1 text-xs rounded ${tone.primary} transition-colors cursor-pointer`} data-testid="update-restart-btn">Restart to update</button>
             {status.artifactUrl && (
-              <button onClick={openUpdateDownload} className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-2 text-xs`} data-testid="update-manual-download-btn">Download manually</button>
+              <button onClick={openUpdateDownload} className={`${tone.secondary} transition-colors cursor-pointer px-2 text-xs`} data-testid="update-manual-download-btn">Download manually</button>
             )}
-            <button onClick={dismiss} className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-1`} data-testid="update-dismiss-btn">x</button>
+            <button onClick={dismiss} className={`${tone.secondary} transition-colors cursor-pointer px-1`} data-testid="update-dismiss-btn">x</button>
           </>
         )}
       </div>

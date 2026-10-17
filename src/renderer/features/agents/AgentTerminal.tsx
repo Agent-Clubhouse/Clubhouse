@@ -577,9 +577,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
           data-testid="scroll-to-bottom"
           onClick={handleScrollToBottom}
           className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2 py-1 rounded-md
-            bg-surface-0/90 hover:bg-ctp-surface1 text-ctp-subtext0 hover:text-ctp-text
+            bg-surface-0/90 hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text
             text-xs font-medium shadow-lg backdrop-blur-sm transition-all duration-150
-            border border-ctp-surface1/50"
+            border border-surface-1/50"
           title="Scroll to bottom"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

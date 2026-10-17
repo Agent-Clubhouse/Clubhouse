@@ -1,9 +1,10 @@
 // Enrollment controller for Node/Electron main processes: a port of
 // adapters/browser/playtest-access.mjs onto the secure store (secure-store.mjs).
-// v2 contract (docs/general-feedback-v2.md): explicit single redemption that never
-// auto-retries, persisted 'connection-uncertain' marker, coalesced refresh, a 30-day family
+// v2 contract (docs/general-feedback-v2.md): explicit redemption with bounded same-attempt
+// recovery, persisted 'connection-uncertain' marker, coalesced refresh, a 30-day family
 // with one-hour upload tokens, and persistent notices until replacement or explicit clear.
 // Requests carry no Origin header; the service accepts originless clients.
+import {randomBytes} from 'node:crypto';
 export const FRAMEBRIAR_ENDPOINT='https://framebriar-masra91-poc.azurewebsites.net/api';
 const HOUR=3600000,MONTH=30*86400000;
 const token=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{43}$/.test(x);
@@ -20,8 +21,11 @@ export function validEndpoint(endpoint){
 const iso=v=>{const t=Date.parse(v);return Number.isFinite(t)?new Date(t).toISOString():null;};
 const noticeOf=n=>n?{state:n.state,expiresAt:n.expiresAt?iso(n.expiresAt):null,enrolled:n.enrolled!==false}:null;
 
-export function createAccess({endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,buildSha=null,store,
+// Cold starts of a scaled-to-zero service can take well over 10 s, so allow 45 s per access call.
+export const ACCESS_TIMEOUT_MS=45000;
+export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>new Promise(r=>setTimeout(r,ms)),endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,buildSha=null,store,
   fetchImpl=(...a)=>fetch(...a),now=()=>Date.now(),setTimer=unrefTimer,clearTimer=clearTimeout,onChange=()=>{}}={}){
+  let lastAttempt; // {invitation, attemptId, at}: in memory only, reused when the user retries the same invite
   if(!validEndpoint(endpoint)||!/^[a-z0-9-]{1,60}$/.test(gameId??'')||(buildSha!==null&&!/^[a-f0-9]{7,40}$/.test(buildSha)))throw Error('Invalid Framebriar access scope');
   if(typeof store?.read!=='function'||typeof store.replace!=='function')throw Error('Framebriar access requires a secure store');
   let running=false,disposed=false,generation=0,revision=null,session,timer,controller,inflight,operation,failures=0;
@@ -54,7 +58,7 @@ export function createAccess({endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,bu
     try{
       const response=await fetchImpl(`${endpoint}/v1/access/${action}`,{method:'POST',redirect:'error',
         headers:{'content-type':'application/json'},body:JSON.stringify({v:1,...body}),
-        signal:AbortSignal.any([abort.signal,AbortSignal.timeout(10000)])});
+        signal:AbortSignal.any([abort.signal,AbortSignal.timeout(accessTimeoutMs)])});
       if(!current(ticket))throw fault('stale');
       if(!response.ok){await response.body?.cancel();throw fault([401,403].includes(response.status)?'denied':'transient');}
       if(response.redirected||response.headers.get('content-type')?.split(';')[0]!=='application/json')throw fault('invalid');
@@ -93,6 +97,7 @@ export function createAccess({endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,bu
     revision=next;
     session={token:value.token,refreshToken:value.refreshToken,expiresAt:value.expiresAt,refreshExpiresAt:iso(value.refreshExpiresAt)};
     notice=null;optedIn=true;failures=0;emit('connected');
+    if(!current(ticket))return false;
     const end=Date.parse(session.refreshExpiresAt),expiry=Date.parse(session.expiresAt);
     schedule((expiry>=end?end:expiry-4*60000)-now());
     return true;
@@ -141,15 +146,27 @@ export function createAccess({endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,bu
     refresh,
     async connect(invitation){
       if(disposed||!token(invitation)||operation)return false;
-      // Explicit redemption only; never retried automatically after uncertain delivery.
+      // Explicit redemption. Transient failures (timeouts, 5xx) are retried with the SAME attempt id,
+      // which the service treats idempotently for 15 min, so a slow cold start cannot burn the invite.
       halt();running=true;const ticket=generation;operation='connect';emit('connecting',null);
       try{
         const old=await load({recover:true});if(!current(ticket))return false;
         optedIn=!!old.session||!!old.notice&&old.notice.enrolled!==false;
         const next=await put(old.revision,null,{state:'connection-uncertain',expiresAt:null,enrolled:optedIn});if(!current(ticket))return false;
         if(next===null)throw fault('stale');revision=next;
-        const value=await request('redeem',{invitation,gameId,buildSha,scopeVersion:2},ticket);invitation=undefined;
-        return await accept(value,ticket);
+        if(!lastAttempt||lastAttempt.invitation!==invitation||now()-lastAttempt.at>14*60000)lastAttempt={invitation,attemptId:randomBytes(16).toString('base64url'),at:now()};
+        const attempt=lastAttempt;
+        let value;
+        for(let n=0;;n++){
+          try{value=await request('redeem',{invitation,gameId,buildSha,scopeVersion:2,attemptId:attempt.attemptId},ticket);break;}
+          catch(e){if(e?.kind!=='transient'||n>=2||!current(ticket))throw e;await retryDelay(n?5000:2000);if(!current(ticket))throw fault('stale');}
+        }
+        invitation=undefined;
+        const accepted=await accept(value,ticket);
+        // A successful response is still recoverable until validation and persistence
+        // succeed. A stopped/superseded operation must not clear a newer attempt.
+        if(accepted&&current(ticket)&&lastAttempt===attempt)lastAttempt=undefined;
+        return accepted;
       }catch(e){
         if(current(ticket)){
           session=undefined;notice={state:e?.kind==='denied'?'access-required':'connection-uncertain',expiresAt:null,enrolled:optedIn};
@@ -175,6 +192,7 @@ export function createAccess({endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,bu
     // Forgets locally (reports stay queued) and attempts server revocation.
     async disconnect(){
       if(disposed)return {forgotten:false,revoked:false};
+      lastAttempt=undefined;
       halt();running=true;const ticket=generation;operation='disconnect';emit('disconnecting',null);
       try{
         const old=await load({recover:true});if(!current(ticket))return {forgotten:false,revoked:false};
@@ -188,6 +206,6 @@ export function createAccess({endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,bu
       }catch{if(current(ticket))emit('storage-unavailable',null);return {forgotten:false,revoked:false};}
       finally{if(ticket===generation)operation=undefined;}
     },
-    dispose(){running=false;disposed=true;halt();listeners.clear();},
+    dispose(){lastAttempt=undefined;running=false;disposed=true;halt();listeners.clear();},
   });
 }

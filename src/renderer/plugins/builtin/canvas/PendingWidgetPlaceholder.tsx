@@ -82,7 +82,7 @@ export function PendingWidgetPlaceholder({
       <button
         type="button"
         onClick={handleRetry}
-        className="px-2 py-1 rounded border border-ctp-surface2 text-ctp-subtext0 hover:bg-ctp-surface0 transition-colors"
+        className="px-2 py-1 rounded border border-surface-2 text-ctp-subtext0 hover:bg-surface-0 transition-colors"
         data-testid="widget-load-retry"
       >
         Retry

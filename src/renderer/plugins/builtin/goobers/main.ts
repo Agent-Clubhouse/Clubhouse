@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
 import { useGoobersStore, initGoobersListener } from '../../../stores/goobersStore';
 import { useGoobersSettingsStore } from '../../../stores/goobersSettingsStore';
+import { useUIStore } from '../../../stores/uiStore';
 import {
   deriveGoobersPanelState,
   type GoobersPanelState,
@@ -23,7 +24,8 @@ let stopAction: (() => void) | null = null;
 export function activate(ctx: PluginContext, api: PluginAPI): void {
   cleanupListener = initGoobersListener();
   ctx.subscriptions.push(
-    api.commands.register('goobers.open', () => { /* rail navigation handles opening */ }),
+    // Straight to the store: api.navigation.setExplorerTab would remember Goobers as the active project's tab.
+    api.commands.register('goobers.open', () => useUIStore.getState().setExplorerTab('plugin:app:goobers')),
     api.commands.register('goobers.refresh', () => refreshAction?.()),
     api.commands.register('goobers.start', () => startAction?.()),
     api.commands.register('goobers.stop', () => stopAction?.()),
@@ -558,7 +560,7 @@ function Header({
 
 // ── Main Panel ─────────────────────────────────────────────────────────
 
-export function MainPanel({ api }: { api: PluginAPI }) {
+export function MainPanel(_props: { api: PluginAPI }) {
   const storeState = useGoobersStore((s) => s.state);
   const loaded = useGoobersStore((s) => s.loaded);
   const loadState = useGoobersStore((s) => s.loadState);
@@ -675,13 +677,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     }
   }, [saveGoobersSettings, loadState]);
 
-  // Deep-linking into Settings → Goobers is wired by M2's GoobersSettingsView
-  // registration (spec §14.3 lists MainContentView.tsx routing as M2 scope).
-  // This gear is a visible affordance for that link point; api is accepted
-  // so the wiring can be added here without touching MainContentView.tsx.
+  // Gear opens Settings > Goobers (routed by MainContentView).
   const handleOpenSettings = useCallback(() => {
-    void api;
-  }, [api]);
+    const ui = useUIStore.getState();
+    ui.setSettingsContext('app');
+    ui.setSettingsSubPage('goobers');
+    if (ui.explorerTab !== 'settings') ui.toggleSettings();
+  }, []);
 
   useEffect(() => {
     refreshAction = handleRefresh;

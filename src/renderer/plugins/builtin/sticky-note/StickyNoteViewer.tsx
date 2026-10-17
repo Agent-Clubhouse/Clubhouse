@@ -23,7 +23,7 @@ export function StickyNoteViewer({ content, color, noteColors, onEdit, onColorCh
 
   return (
     <div className="flex flex-col h-full" data-testid="sticky-note-viewer">
-      <div className="flex items-center justify-end gap-1.5 px-2 py-1 border-b border-ctp-surface1 shrink-0">
+      <div className="flex items-center justify-end gap-1.5 px-2 py-1 border-b border-surface-1 shrink-0">
         {noteColors.map((c) => (
           <button
             key={c}

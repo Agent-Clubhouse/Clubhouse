@@ -66,7 +66,7 @@ describe('terminal plugin manifest', () => {
     expect(cmds).toBeDefined();
     const restart = cmds!.find((c) => c.id === 'restart');
     expect(restart).toBeDefined();
-    expect(restart!.defaultBinding).toBe('Meta+Shift+T');
+    expect(restart!.defaultBinding).toBe('Meta+Alt+R');
   });
 
   it('has a tab icon (SVG string)', () => {
