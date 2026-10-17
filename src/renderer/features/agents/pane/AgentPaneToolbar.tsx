@@ -166,11 +166,6 @@ function PaneMenu({ agent }: { agent: Agent }) {
   );
 }
 
-export interface PaneToggle {
-  open: boolean;
-  onToggle: () => void;
-}
-
 export interface AgentPaneToolbarProps {
   agent: Agent;
   /** The provider, when the session reports one; defaults to the agent's orchestrator. */
@@ -183,11 +178,8 @@ export interface AgentPaneToolbarProps {
   details?: string[];
   /** Context fill and plan limits; omitted hides the meter. */
   usage?: PaneUsage | null;
-  changes?: PaneToggle;
-  /** The subagent map, with its count; only when the driver reports subagents. */
-  agentMap?: PaneToggle & { count: number; panelId: string; toggleId: string };
   runtime?: { value: RuntimeView; onChange: (v: RuntimeView) => void; disabled?: boolean; tip?: ReactNode };
-  /** Slot for the agent details toggle (#2032), before the menu. */
+  /** The Agent details toggle (#2032), before the runtime switch. */
   detailsToggle?: ReactNode;
   /** Offer the agent's ⋯ menu (the main pane; popouts have their actions in the title bar). */
   showMenu?: boolean;
@@ -198,7 +190,7 @@ export interface AgentPaneToolbarProps {
   showName?: boolean;
 }
 
-export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, details, usage, changes, agentMap, runtime, detailsToggle, showMenu, showName }: AgentPaneToolbarProps) {
+export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, details, usage, runtime, detailsToggle, showMenu, showName }: AgentPaneToolbarProps) {
   const ref = useRef<HTMLDivElement>(null);
   const narrow = useNarrow(ref);
   const shownModel = model && model !== 'default' ? model : null;
@@ -219,43 +211,14 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
         <OrchestratorGlyph orchestrator={orchestrator ?? agent.orchestrator ?? 'claude-code'} details={glyphDetails} />
         {shownModel && !narrow && <span className="ml-1 text-ctp-overlay1" data-testid="pane-model">{shownModel}</span>}
         {usage && <UsageMeter usage={usage} compact={narrow} />}
-        {(changes || agentMap || runtime) && <span className="w-px h-4 bg-surface-0 mx-1" aria-hidden="true" />}
-        {changes && (
-          <Tooltip content="Changes" disabled={!narrow}>
-            <button
-              type="button"
-              onClick={changes.onToggle}
-              aria-pressed={changes.open}
-              aria-label={narrow ? 'Changes' : undefined}
-              className={`${QUIET} ${narrow ? 'w-7 justify-center' : 'px-2'} ${changes.open ? 'bg-surface-0 text-ctp-text' : ''}`}
-              data-testid="chat-changes-toggle"
-            >
-              <DiffIcon />
-              {!narrow && 'Changes'}
-            </button>
-          </Tooltip>
-        )}
-        {agentMap && (
-          <button
-            type="button"
-            id={agentMap.toggleId}
-            onClick={agentMap.onToggle}
-            aria-pressed={agentMap.open}
-            aria-controls={agentMap.panelId}
-            aria-expanded={agentMap.open}
-            className={`${QUIET} px-2 tabular-nums ${agentMap.open ? 'bg-surface-0 text-ctp-text' : ''}`}
-            data-testid="chat-agent-map-toggle"
-          >
-            Agents{agentMap.count ? ` ${agentMap.count}` : ''}
-          </button>
-        )}
+        {(runtime || detailsToggle) && <span className="w-px h-4 bg-surface-0 mx-1" aria-hidden="true" />}
+        {detailsToggle}
         {runtime && (
           <span className="relative">
             <RuntimeSwitch value={runtime.value} onChange={runtime.onChange} disabled={runtime.disabled} compact={narrow} />
             {runtime.tip}
           </span>
         )}
-        {detailsToggle}
         {showMenu && <PaneMenu agent={agent} />}
       </span>
     </div>
@@ -266,7 +229,7 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
  * The toolbar for an agent in the terminal runtime, fed from hook status: the
  * same bar the chat runtime shows, so switching runtimes keeps it in place.
  */
-export function TerminalPaneToolbar({ agent, runtime, showMenu, showName }: Pick<AgentPaneToolbarProps, 'agent' | 'runtime' | 'showMenu' | 'showName'>) {
+export function TerminalPaneToolbar({ agent, runtime, detailsToggle, showMenu, showName }: Pick<AgentPaneToolbarProps, 'agent' | 'runtime' | 'detailsToggle' | 'showMenu' | 'showName'>) {
   const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const dot = agentDot(agent, detailed);
   // "Idle" after a stop only repeats the Done the status word already says.
@@ -280,6 +243,7 @@ export function TerminalPaneToolbar({ agent, runtime, showMenu, showName }: Pick
       model={agent.model}
       details={agent.branch ? [`Branch ${agent.branch}`] : undefined}
       runtime={runtime}
+      detailsToggle={detailsToggle}
       showMenu={showMenu}
       showName={showName}
     />

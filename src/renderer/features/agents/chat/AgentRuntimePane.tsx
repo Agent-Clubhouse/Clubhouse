@@ -20,6 +20,9 @@ import { useToastStore } from '../../../stores/toastStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
+import { AgentDetails } from '../details/AgentDetails';
+import { DetailsToggle } from '../details/DetailsToggle';
+import { useAgentDetailsStore } from '../details/detailsStore';
 import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
@@ -164,7 +167,9 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
     }
   }, [agent]);
 
-  if (flag === false || !couldBeChat) return <>{terminal}</>;
+  // The main pane always gets the toolbar and Agent details; other views show the terminal alone.
+  const plainTerminal = canSwitch ? <MainTerminal agent={agent} terminal={terminal} /> : <>{terminal}</>;
+  if (flag === false || !couldBeChat) return plainTerminal;
   // Flag or runtime still loading: a terminal here would flash before ChatView replaces it.
   if (flag === null || info === null) return <RuntimePending />;
 
@@ -196,20 +201,34 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
     );
   }
 
-  if (!info.chatAvailable || !canSwitch) return <>{terminal}</>;
+  if (!info.chatAvailable || !canSwitch) return plainTerminal;
 
   return (
+    <>
+      <MainTerminal agent={agent} terminal={terminal} runtime={{ value: 'terminal', onChange: () => requestSwitch('chat'), disabled: switching }} />
+      {confirmDialog}
+    </>
+  );
+}
+
+/** A terminal in the main pane: the pane toolbar above it and Agent details beside it (#2032). */
+function MainTerminal({ agent, terminal, runtime }: { agent: Agent; terminal: ReactNode; runtime?: { value: 'terminal'; onChange: () => void; disabled?: boolean } }) {
+  const detailsOpen = useAgentDetailsStore((s) => s.open);
+  return (
     <div className="flex flex-col h-full">
-      <div data-testid="terminal-runtime-bar">
+      <div data-testid={runtime ? 'terminal-runtime-bar' : 'terminal-pane-bar'}>
         <TerminalPaneToolbar
           agent={agent}
-          runtime={{ value: 'terminal', onChange: () => requestSwitch('chat'), disabled: switching }}
-          showMenu={context === 'main'}
+          runtime={runtime}
+          detailsToggle={<DetailsToggle />}
+          showMenu
           showName={!isNewChromeEnabled()}
         />
       </div>
-      <div className="flex-1 min-h-0 relative">{terminal}</div>
-      {confirmDialog}
+      <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-w-0 relative">{terminal}</div>
+        {detailsOpen && <AgentDetails agent={agent} />}
+      </div>
     </div>
   );
 }

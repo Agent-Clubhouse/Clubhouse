@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as gitService from '../services/git-service';
+import * as gitBranch from '../services/git-branch';
 import { booleanArg, numberArg, stringArg, withValidatedArgs } from './validation';
 
 function deferInvocation<Result>(operation: () => Promise<Result> | Result): Promise<Result> {
@@ -99,4 +100,15 @@ export function registerGitHandlers(): void {
       return deferInvocation(() => gitService.getDiffNumstat(dirPath, base));
     },
   ));
+  ipcMain.handle(IPC.GIT.BRANCH_CHANGES, withValidatedArgs([stringArg(), stringArg({ optional: true })], async (_event, dirPath: string, base?: string) => {
+    return deferInvocation(() => gitBranch.getBranchChanges(dirPath, base));
+  }));
+
+  ipcMain.handle(IPC.GIT.BRANCH_FILE_PATCH, withValidatedArgs([stringArg(), stringArg(), stringArg({ optional: true })], async (_event, dirPath: string, filePath: string, base?: string) => {
+    return deferInvocation(() => gitBranch.getBranchFilePatch(dirPath, filePath, base));
+  }));
+
+  ipcMain.handle(IPC.GIT.BRANCH_LOG, withValidatedArgs([stringArg(), stringArg({ optional: true })], async (_event, dirPath: string, base?: string) => {
+    return deferInvocation(() => gitBranch.getBranchLog(dirPath, base));
+  }));
 }

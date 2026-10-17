@@ -201,6 +201,9 @@ export const IPC = {
     COMMIT_DIFF: 'git:commit-diff',
     HEAD_SHA: 'git:head-sha',
     DIFF_NUMSTAT: 'git:diff-numstat',
+    BRANCH_CHANGES: 'git:branch-changes',
+    BRANCH_FILE_PATCH: 'git:branch-file-patch',
+    BRANCH_LOG: 'git:branch-log',
   },
   APP: {
     OPEN_EXTERNAL_URL: 'app:open-external-url',

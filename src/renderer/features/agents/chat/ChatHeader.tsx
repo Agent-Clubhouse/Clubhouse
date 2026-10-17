@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { ChatDriverId, UsageLimit } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
@@ -7,7 +7,7 @@ import { AgentPaneToolbar, type PaneUsage } from '../pane/AgentPaneToolbar';
 import { formatElapsed, formatTokens } from './view-model';
 import { ChatDefaultTip } from './ChatDefaultTip';
 
-const DRIVER_LABELS: Record<ChatDriverId, string> = {
+export const DRIVER_LABELS: Record<ChatDriverId, string> = {
   claude_agent_sdk: 'Agent SDK',
   claude_stream_json: 'stream-json',
   codex_app_server: 'app-server',
@@ -44,7 +44,7 @@ export function chatActivity(state: ChatViewState, now: number): string {
   return '';
 }
 
-function limitLabel(l: UsageLimit): string {
+export function limitLabel(l: UsageLimit): string {
   if (l.utilization !== undefined) return `${Math.round(l.utilization * 100)}%`;
   if (l.status === 'exceeded') return 'limit reached';
   if (l.status === 'warning') return 'near limit';
@@ -87,16 +87,8 @@ interface ChatHeaderProps {
   state: ChatViewState;
   onSwitchToTerminal?: () => void;
   switching?: boolean;
-  /** Toggle for the Changes panel; omitted hides the button. */
-  onToggleChanges?: () => void;
-  changesOpen?: boolean;
-  /** Toggle for the agent map, with its subagent count; omitted hides the button. */
-  onToggleAgentMap?: () => void;
-  agentMapOpen?: boolean;
-  subagentCount?: number;
-  /** DOM ids tying the toggle to the panel it controls. */
-  agentMapPanelId?: string;
-  agentMapToggleId?: string;
+  /** The Agent details toggle (#2032), in the toolbar's slot for it. */
+  detailsToggle?: ReactNode;
   /** Offer the agent's ⋯ menu (main pane only). */
   showMenu?: boolean;
   /** Name the agent in the bar (the classic shell's main pane has no breadcrumb). */
@@ -104,7 +96,7 @@ interface ChatHeaderProps {
 }
 
 /** The chat runtime's pane toolbar: AgentPaneToolbar fed from the chat session. */
-export function ChatHeader({ agent, state, onSwitchToTerminal, switching, onToggleChanges, changesOpen, onToggleAgentMap, agentMapOpen, subagentCount, agentMapPanelId, agentMapToggleId, showMenu, showName }: ChatHeaderProps) {
+export function ChatHeader({ agent, state, onSwitchToTerminal, switching, detailsToggle, showMenu, showName }: ChatHeaderProps) {
   const now = useNow(state.state === 'running' && state.turnStartedAt !== null);
   return (
     <AgentPaneToolbar
@@ -115,13 +107,10 @@ export function ChatHeader({ agent, state, onSwitchToTerminal, switching, onTogg
       model={state.model ?? agent.model}
       details={chatDetails(agent, state)}
       usage={chatUsage(state)}
-      changes={onToggleChanges ? { open: !!changesOpen, onToggle: onToggleChanges } : undefined}
-      agentMap={onToggleAgentMap && agentMapPanelId && agentMapToggleId
-        ? { open: !!agentMapOpen, onToggle: onToggleAgentMap, count: subagentCount ?? 0, panelId: agentMapPanelId, toggleId: agentMapToggleId }
-        : undefined}
       runtime={onSwitchToTerminal
         ? { value: 'chat', onChange: onSwitchToTerminal, disabled: switching, tip: <ChatDefaultTip agent={agent} /> }
         : undefined}
+      detailsToggle={detailsToggle}
       showMenu={showMenu}
       showName={showName}
     />

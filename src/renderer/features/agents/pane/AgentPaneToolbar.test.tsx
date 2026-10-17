@@ -27,15 +27,13 @@ describe('AgentPaneToolbar', () => {
   let ro: ReturnType<typeof installResizeObserver> | null = null;
   afterEach(() => { ro?.restore(); ro = null; });
 
-  it('is one 32px bar with status, activity, model, Changes and the switch, without the agent name', () => {
-    const onToggle = vi.fn();
+  it('is one 32px bar with status, activity, model, the details toggle and the switch, without the agent name', () => {
     render(
       <AgentPaneToolbar
         agent={agent}
         dot="working"
         activity="3:12 · Edit AgentRow.tsx"
         model="opus"
-        changes={{ open: false, onToggle }}
         runtime={{ value: 'chat', onChange: vi.fn() }}
         detailsToggle={<button type="button" data-testid="details-slot">Details</button>}
       />,
@@ -48,20 +46,16 @@ describe('AgentPaneToolbar', () => {
     expect(screen.getByTestId('pane-model')).toHaveTextContent('opus');
     expect(screen.getByTestId('pane-orchestrator')).toHaveTextContent('C');
     expect(screen.getByTestId('details-slot')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
-    expect(onToggle).toHaveBeenCalled();
     expect(screen.getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('folds Changes, the switch and the model into icons below 640px', () => {
+  it('folds the switch and the model into icons below 640px', () => {
     ro = installResizeObserver();
     render(
-      <AgentPaneToolbar agent={agent} dot="idle" model="opus" changes={{ open: false, onToggle: vi.fn() }} runtime={{ value: 'terminal', onChange: vi.fn() }} />,
+      <AgentPaneToolbar agent={agent} dot="idle" model="opus" runtime={{ value: 'terminal', onChange: vi.fn() }} />,
     );
     ro.resize(400);
     expect(screen.getByTestId('agent-pane-toolbar')).toHaveAttribute('data-narrow', 'true');
-    expect(screen.getByTestId('chat-changes-toggle')).toHaveAttribute('aria-label', 'Changes');
-    expect(screen.getByTestId('chat-changes-toggle')).toHaveTextContent('');
     expect(screen.getByRole('radio', { name: 'Terminal' })).toHaveTextContent('');
     expect(screen.queryByTestId('pane-model')).not.toBeInTheDocument();
     expect(screen.getByTestId('pane-orchestrator').getAttribute('aria-label')).toContain('Model opus');

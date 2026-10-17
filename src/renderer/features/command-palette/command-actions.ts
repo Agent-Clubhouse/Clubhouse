@@ -1,4 +1,5 @@
 import { useCommandPaletteStore } from '../../stores/commandPaletteStore';
+import { useAgentDetailsStore } from '../agents/details/detailsStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -59,6 +60,12 @@ export function getCommandActions(): CommandAction[] {
       // technically holds focus — that's the exact state we need to unwedge.
       global: true,
       execute: () => window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT)),
+    },
+    {
+      id: 'toggle-agent-details',
+      // Global so it works while typing in the composer.
+      global: true,
+      execute: () => useAgentDetailsStore.getState().toggle(),
     },
     {
       id: 'add-project',
