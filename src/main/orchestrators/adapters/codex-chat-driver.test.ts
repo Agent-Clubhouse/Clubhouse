@@ -156,6 +156,42 @@ describe('CodexChatDriver', () => {
     });
   });
 
+  it('passes translated MCP servers and reports the ones Codex cannot run', async () => {
+    const onLog = vi.fn();
+    const session = await new CodexChatDriver({ onLog }).start({
+      ...baseOpts,
+      mcpServers: {
+        clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
+        remote: { type: 'http', url: 'https://mcp.example.test/mcp', headers: { Authorization: 'Bearer x' } },
+        events: { type: 'sse', url: 'https://sse.example.test/sse' },
+      },
+    });
+    const iterator = session.events[Symbol.asyncIterator]();
+
+    expect(server.requests('thread/start')[0].params).toMatchObject({
+      config: {
+        mcp_servers: {
+          clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
+          remote: { url: 'https://mcp.example.test/mcp', http_headers: { Authorization: 'Bearer x' } },
+        },
+      },
+    });
+    expect(Object.keys((server.requests('thread/start')[0].params as { config: { mcp_servers: object } }).config.mcp_servers))
+      .toEqual(['clubhouse', 'remote']);
+    expect((await iterator.next()).value).toMatchObject({ type: 'session_started' });
+    expect((await iterator.next()).value).toEqual({
+      type: 'notice',
+      data: { level: 'warn', code: 'mcp_servers_skipped', message: "Left out MCP servers Codex can't run: events (Codex has no SSE transport)" },
+    });
+    expect(onLog).toHaveBeenCalledWith('warn', 'MCP servers Codex cannot run were left out', { skipped: [{ name: 'events', reason: 'Codex has no SSE transport' }] });
+    await session.close();
+  });
+
+  it('sends no MCP config when there are no servers', async () => {
+    await startSession();
+    expect(server.requests('thread/start')[0].params).not.toHaveProperty('config');
+  });
+
   it('resumes a native thread', async () => {
     const { next } = await startSession({ resumeNativeSessionId: fx.THREAD_ID });
 

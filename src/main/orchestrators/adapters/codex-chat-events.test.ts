@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CodexChatEventMapper, codexErrorCode, codexErrorName, toCodexInput } from './codex-chat-events';
+import { CodexChatEventMapper, codexErrorCode, codexErrorName, toCodexInput, toCodexMcpServers } from './codex-chat-events';
 import { isChatEvent, CHAT_CONTRACT_VERSION, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ServerNotification } from './codex-protocol';
 import * as fx from './codex-protocol/__fixtures__/app-server-session';
@@ -524,5 +524,61 @@ describe('codex chat helpers', () => {
       { type: 'image', url: 'data:image/png;base64,AAAA' },
       { type: 'mention', name: 'src/a.ts', path: 'src/a.ts' },
     ]);
+  });
+});
+
+describe('toCodexMcpServers', () => {
+  it('translates stdio and HTTP servers to the keys Codex reads', () => {
+    expect(toCodexMcpServers({
+      clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_MCP_PORT: 4123 } },
+      local: { command: 'uvx', args: [], cwd: 'tools' },
+      remote: { type: 'http', url: 'https://mcp.example.test/mcp', headers: { Authorization: 'Bearer x' } },
+      plain: { url: 'https://other.example.test/mcp', bearer_token_env_var: 'OTHER_TOKEN' },
+    })).toEqual({
+      servers: {
+        clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_MCP_PORT: '4123' } },
+        local: { command: 'uvx', cwd: 'tools' },
+        remote: { url: 'https://mcp.example.test/mcp', http_headers: { Authorization: 'Bearer x' } },
+        plain: { url: 'https://other.example.test/mcp', bearer_token_env_var: 'OTHER_TOKEN' },
+      },
+      skipped: [],
+    });
+  });
+
+  it('skips SSE and malformed servers rather than mis-wiring them', () => {
+    expect(toCodexMcpServers({
+      events: { type: 'sse', url: 'https://sse.example.test/sse' },
+      broken: { type: 'stdio' },
+      nothing: null,
+    })).toEqual({
+      servers: {},
+      skipped: [
+        { name: 'events', reason: 'Codex has no SSE transport' },
+        { name: 'broken', reason: 'not a stdio or HTTP server' },
+        { name: 'nothing', reason: 'not a stdio or HTTP server' },
+      ],
+    });
+  });
+
+  it('handles no servers', () => {
+    expect(toCodexMcpServers(undefined)).toEqual({ servers: {}, skipped: [] });
+  });
+});
+
+describe('MCP startup status', () => {
+  const status = (s: 'starting' | 'ready' | 'failed', error: string | null = null) => new CodexChatEventMapper().mapNotification({
+    method: 'mcpServer/startupStatus/updated',
+    params: { threadId: null, name: 'remote', status: s, error, failureReason: null },
+  });
+
+  it('reports a server that failed to start', () => {
+    expect(status('failed', 'connection refused')).toEqual([
+      { type: 'notice', data: { level: 'warn', code: 'mcp_server_failed', message: 'MCP server remote failed to start: connection refused' } },
+    ]);
+  });
+
+  it('stays quiet while servers start or once they are ready', () => {
+    expect(status('starting')).toEqual([]);
+    expect(status('ready')).toEqual([]);
   });
 });
