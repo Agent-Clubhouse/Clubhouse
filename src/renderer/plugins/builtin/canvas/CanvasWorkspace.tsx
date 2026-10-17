@@ -25,7 +25,7 @@ import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { useProjectStore } from '../../../stores/projectStore';
-import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
+import type { PluginAPI } from '../../../../shared/plugin-types';
 import { useBlueprintDrop } from './useBlueprintDrop';
 import { getProjectCanvasStore, useAppCanvasStore } from './main';
 import { applyParsedBlueprint, type ParseResult } from '../../../features/blueprints/parse-blueprint';
@@ -81,7 +81,7 @@ interface CanvasWorkspaceProps {
   onResizeView: (viewId: string, size: Size) => void;
   onFocusView: (viewId: string) => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
-  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
   onZoomView: (viewId: string | null) => void;
   onSelectView: (viewId: string | null) => void;
   onToggleSelectView: (viewId: string) => void;
@@ -125,7 +125,7 @@ interface CanvasViewCardProps {
   onDragEnd: (viewId: string, position: Position) => void;
   onResizeEnd: (viewId: string, size: Size, position: Position) => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
-  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
   onViewContextMenu: (viewId: string, event: React.MouseEvent) => void;
   isLayoutCenter: boolean;
 }

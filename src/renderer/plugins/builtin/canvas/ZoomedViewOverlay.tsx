@@ -12,7 +12,6 @@ import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-
 import { AgentCanvasView } from './AgentCanvasView';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 import { buildProjectContext } from './CanvasView';
-import type { AgentInfo } from '../../../../shared/plugin-types';
 import { Button } from '../../../components/Button';
 
 interface ZoomedViewOverlayProps {
@@ -21,7 +20,7 @@ interface ZoomedViewOverlayProps {
   viewport: Viewport;
   onClose: () => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
-  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
 }
 
 export function ZoomedViewOverlay({

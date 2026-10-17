@@ -1,11 +1,12 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { validateBuiltinPlugin } from '../builtin-plugin-testing';
 import { manifest } from './manifest';
 import * as canvasModule from './main';
 import { createMockContext, createMockAPI } from '../../testing';
 import { useUIStore } from '../../../stores/uiStore';
+import { queueAgentCard } from './agent-card-queue';
 
 describe('canvas main', () => {
   it('passes validateBuiltinPlugin', () => {
@@ -403,5 +404,51 @@ describe('canvas main', () => {
 
       warnSpy.mockRestore();
     });
+  });
+
+  // #2020: New agent from a card's picker opens the New agent page, which
+  // replaces the pane, so the canvas unmounts. A remount reloads the canvas
+  // from disk, so a card added while it was away would be lost. Cards are
+  // queued instead and placed once the remounted canvas has loaded.
+  it('places a sibling card queued while the canvas was unmounted, after it reloads', async () => {
+    const files = new Map<string, unknown>();
+    const storage = {
+      read: vi.fn(async (key: string) => files.get(key)),
+      write: vi.fn(async (key: string, value: unknown) => { files.set(key, value); }),
+      delete: vi.fn(async (key: string) => { files.delete(key); }),
+      list: vi.fn(async () => [...files.keys()]),
+    };
+    const api = createMockAPI({
+      context: { mode: 'project', projectId: 'proj-agent-card-queue', projectPath: '/tmp/proj-agent-card-queue' },
+      storage: { project: storage, projectLocal: storage, global: storage },
+    });
+    const store = canvasModule.getProjectCanvasStore('proj-agent-card-queue');
+
+    // First visit: a picker card at (100, 100), saved to disk.
+    const first = render(React.createElement(canvasModule.MainPanel, { api }));
+    await waitFor(() => expect(store.getState().loaded).toBe(true));
+    let parentId = '';
+    act(() => { parentId = store.getState().addView('agent', { x: 100, y: 100 }); });
+    await store.getState().saveCanvas(storage);
+    const parent = store.getState().views.find((v) => v.id === parentId)!;
+    first.unmount();
+
+    // The New agent page is open; the agent gets made and the card queued.
+    queueAgentCard(store, {
+      canvasId: store.getState().activeCanvasId,
+      parentViewId: parentId,
+      fallback: { position: parent.position, size: parent.size },
+      agentId: 'agent-made-on-page',
+    });
+
+    // Back on the canvas. Let the reload from disk finish before checking:
+    // a card placed before it would be wiped by it.
+    render(React.createElement(canvasModule.MainPanel, { api }));
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+
+    const placed = store.getState().views.find((v) => (v as { agentId?: string }).agentId === 'agent-made-on-page');
+    expect(placed).toBeDefined();
+    expect(placed!.position.x).toBeGreaterThanOrEqual(parent.position.x + parent.size.width);
+    expect(store.getState().views.find((v) => v.id === parentId)).toBeDefined();
   });
 });

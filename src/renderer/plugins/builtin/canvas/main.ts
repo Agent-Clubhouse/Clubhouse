@@ -3,7 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from 
 import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
-import { computeAdjacentPosition } from './canvas-operations';
+import { queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, type PendingAgentCard } from './agent-card-queue';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
@@ -192,12 +192,18 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const isRemote = projectId ? isRemoteProjectId(projectId) : false;
   const activeHostId = useUIStore((s) => s.activeHostId);
   const isRemoteApp = isAppMode && !!activeHostId;
+  // Whether this mount has loaded the canvas. The store outlives the panel,
+  // but a remount reloads it, so queued agent cards wait for this.
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
+    let cancelled = false;
+    setHydrated(false);
     // App-mode with active satellite: hydrate from remote app canvas state
     if (isRemoteApp && activeHostId) {
       const remoteState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
       if (remoteState) {
         store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
+        setHydrated(true);
         return;
       }
     }
@@ -205,6 +211,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const remoteState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
       if (remoteState) {
         store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
+        setHydrated(true);
         return;
       }
     }
@@ -213,7 +220,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     (async () => {
       await store.getState().loadCanvas(storage);
       await store.getState().loadWires(storage);
+      if (!cancelled) setHydrated(true);
     })();
+    return () => { cancelled = true; };
   }, [store, storage, isRemote, projectId, isRemoteApp, activeHostId]);
 
   // Subscribe to live remote canvas state updates (project-level)
@@ -506,43 +515,43 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().updateView(viewId, updates);
   }, [store, remoteForward]);
 
-  // LB-M68: Spawn a NEW agent card adjacent to a parent agent card. Used by
-  // AgentCanvasView's "+ New Agent" picker so the new agent lands as a sibling
-  // of the parent (instead of overwriting the parent). Position is computed
-  // from the parent's bounds and the existing canvas state, then snapped to
-  // grid. Persistence is handled by the existing scheduleSave debounce.
-  const handleCreateAgentCard = useCallback((
-    parentView: AgentCanvasView,
-    agent: { id: string; name: string; projectId?: string; orchestrator?: string; model?: string },
-  ) => {
-    const existingViews = store.getState().views;
-    const newSize = parentView.size; // mirror the parent dimensions for visual consistency
-    const position = computeAdjacentPosition(
-      parentView.position,
-      parentView.size,
-      newSize,
-      existingViews,
-    );
+  // LB-M68: a new agent made from a card's picker lands in a NEW card next to
+  // that card, which stays in picker mode. The agent is made elsewhere (the
+  // New agent page or AddAgentDialog), so the card is queued and placed once
+  // this mount has loaded the canvas, next to where the parent is by then
+  // (agent-card-queue.ts). Persistence is handled by the scheduleSave debounce.
+  const handleCreateAgentCard = useCallback((parentView: AgentCanvasView, agentId: string) => {
+    queueAgentCard(store, {
+      canvasId: store.getState().activeCanvasId,
+      parentViewId: parentView.id,
+      fallback: { position: parentView.position, size: parentView.size },
+      agentId,
+    });
+  }, [store]);
+
+  const placeQueuedAgentCard = useCallback((card: PendingAgentCard) => {
+    const { position, size: newSize } = placeAgentCard(card, store.getState().views);
 
     remoteForward({ type: 'addView', viewType: 'agent', position });
     const newViewId = store.getState().addView('agent', position);
     if (!newViewId) return;
 
-    const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
-    const displayName = agent.name || agent.id;
+    const agent = api.agents.list().find((a) => a.id === card.agentId);
+    const project = useProjectStore.getState().projects.find((p) => p.id === agent?.projectId);
+    const displayName = agent?.name || card.agentId;
     const updates: Partial<AgentCanvasView> = {
-      agentId: agent.id,
-      projectId: agent.projectId,
+      agentId: card.agentId,
+      projectId: agent?.projectId,
       title: displayName,
       displayName,
       size: newSize,
       metadata: {
-        agentId: agent.id,
-        projectId: agent.projectId ?? null,
-        agentName: agent.name ?? null,
+        agentId: card.agentId,
+        projectId: agent?.projectId ?? null,
+        agentName: agent?.name ?? null,
         projectName: project?.name ?? null,
-        orchestrator: agent.orchestrator ?? null,
-        model: agent.model ?? null,
+        orchestrator: agent?.orchestrator ?? null,
+        model: agent?.model ?? null,
       },
     };
     remoteForward({ type: 'updateView', viewId: newViewId, updates: updates as Record<string, unknown> });
@@ -552,7 +561,15 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       remoteForward({ type: 'resizeView', viewId: newViewId, size: newSize });
       store.getState().resizeView(newViewId, newSize);
     }
-  }, [store, remoteForward]);
+  }, [store, remoteForward, api]);
+
+  const [agentCardTick, setAgentCardTick] = useState(0);
+  useEffect(() => subscribeAgentCards(store, () => setAgentCardTick((n) => n + 1)), [store]);
+  useEffect(() => {
+    if (!hydrated || !loaded) return;
+    const { activeCanvasId: canvasId, canvases: all } = store.getState();
+    for (const card of takeAgentCards(store, canvasId, all.map((c) => c.id))) placeQueuedAgentCard(card);
+  }, [hydrated, loaded, activeCanvasId, agentCardTick, store, placeQueuedAgentCard]);
 
   const handleZoomView = useCallback((viewId: string | null) => {
     remoteForward({ type: 'zoomView', viewId });
