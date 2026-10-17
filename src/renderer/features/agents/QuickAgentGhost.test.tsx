@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QuickAgentGhost, QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import type { CompletedQuickAgent } from '../../../shared/types';
@@ -13,6 +13,7 @@ function makeCompleted(overrides: Partial<CompletedQuickAgent> = {}): CompletedQ
   return {
     id: 'quick-1',
     projectId: 'proj-1',
+    name: 'quick-fox',
     mission: 'Fix the bug in auth module',
     summary: 'Fixed authentication issue by updating token validation.',
     filesModified: ['src/auth.ts', 'src/auth.test.ts'],
@@ -33,7 +34,7 @@ function resetStores() {
 
 describe('QuickAgentGhost', () => {
   const defaultProps = {
-    completed: makeCompleted(),
+    completed: makeCompleted({ name: 'bouncy-salmon', orchestrator: 'claude-code', model: 'opus' }),
     onDismiss: vi.fn(),
     onDelete: vi.fn(),
   };
@@ -41,104 +42,77 @@ describe('QuickAgentGhost', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
+    window.clubhouse.git.diffNumstat = vi.fn().mockResolvedValue([
+      { path: 'src/auth.ts', added: 18, removed: 6, binary: false },
+      { path: 'src/auth.test.ts', added: 40, removed: 0, binary: false },
+    ]);
+    window.clubhouse.git.diff = vi.fn().mockResolvedValue({ original: 'a', modified: 'b' });
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({ events: [], totalEvents: 0 });
   });
 
-  it('renders without crash', () => {
+  it('shows Done in the toolbar with the mission, meta line and summary, and no chips', () => {
     render(<QuickAgentGhost {...defaultProps} />);
-    expect(screen.getByText('Fix the bug in auth module')).toBeInTheDocument();
+    expect(screen.getByTestId('state-word')).toHaveTextContent('Done');
+    expect(screen.getByTestId('quick-mission')).toHaveTextContent('Fix the bug in auth module');
+    expect(screen.getByText('bouncy-salmon · quick agent · Claude Code · opus · exit 0')).toBeInTheDocument();
+    expect(screen.getByTestId('quick-summary')).toHaveTextContent('Fixed authentication issue');
+    expect(screen.queryByText('Mission')).toBeNull();
+    expect(screen.queryByText('Headless')).toBeNull();
   });
 
-  it('shows exit badge for successful exit', () => {
-    render(<QuickAgentGhost {...defaultProps} />);
-    expect(screen.getByText('Done')).toBeInTheDocument();
+  it('lists files changed with diff sizes', async () => {
+    render(<QuickAgentGhost completed={{ ...defaultProps.completed, cwd: '/wt', baseSha: 'abc' }} onDismiss={vi.fn()} />);
+    expect(screen.getAllByTestId('file-row')).toHaveLength(2);
+    await waitFor(() => expect(screen.getByTestId('quick-files')).toHaveTextContent('+18'));
+    expect(screen.getByTestId('quick-files')).toHaveTextContent('2 · +58 −6');
+    expect(window.clubhouse.git.diffNumstat).toHaveBeenCalledWith('/wt', 'abc');
   });
 
-  it('shows cancelled badge', () => {
-    render(<QuickAgentGhost completed={makeCompleted({ cancelled: true })} onDismiss={vi.fn()} />);
-    expect(screen.getByText('Cancelled')).toBeInTheDocument();
+  it('Review changes shows the first file diff', async () => {
+    render(<QuickAgentGhost completed={{ ...defaultProps.completed, cwd: '/wt', baseSha: 'abc' }} onDismiss={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('quick-review-button'));
+    expect(await screen.findByTestId('run-file-diff')).toBeInTheDocument();
+    expect(window.clubhouse.git.diff).toHaveBeenCalledWith('/wt', 'src/auth.ts', false, 'abc');
   });
 
-  it('shows killed badge for signal exit', () => {
-    render(<QuickAgentGhost completed={makeCompleted({ exitCode: 137 })} onDismiss={vi.fn()} />);
-    expect(screen.getByText('Killed')).toBeInTheDocument();
+  it('says it ended without a summary', () => {
+    render(<QuickAgentGhost completed={makeCompleted({ summary: null, exitCode: 1 })} onDismiss={vi.fn()} />);
+    expect(screen.getByTestId('state-word')).toHaveTextContent('Error');
+    expect(screen.getByTestId('quick-summary')).toHaveTextContent('It ended without writing a summary.');
   });
 
-  it('shows error exit badge', () => {
-    render(<QuickAgentGhost completed={makeCompleted({ exitCode: 1 })} onDismiss={vi.fn()} />);
-    expect(screen.getByText('Exit 1')).toBeInTheDocument();
-  });
-
-  it('shows mission and summary', () => {
-    render(<QuickAgentGhost {...defaultProps} />);
-    expect(screen.getByText('Mission')).toBeInTheDocument();
-    expect(screen.getByText('Fix the bug in auth module')).toBeInTheDocument();
-    expect(screen.getByText('Summary')).toBeInTheDocument();
-    expect(screen.getByText('Fixed authentication issue by updating token validation.')).toBeInTheDocument();
-  });
-
-  it('shows "Interrupted" when no summary', () => {
-    render(<QuickAgentGhost completed={makeCompleted({ summary: undefined })} onDismiss={vi.fn()} />);
-    expect(screen.getByText(/Interrupted/)).toBeInTheDocument();
-  });
-
-  it('shows files modified count', () => {
-    render(<QuickAgentGhost {...defaultProps} />);
-    expect(screen.getByText('Files modified (2)')).toBeInTheDocument();
-    expect(screen.getByText('src/auth.ts')).toBeInTheDocument();
-  });
-
-  it('expands file list when more than 3 files', () => {
-    const manyFiles = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'];
-    render(<QuickAgentGhost completed={makeCompleted({ filesModified: manyFiles })} onDismiss={vi.fn()} />);
-    expect(screen.getByText('+2 more')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('+2 more'));
-    expect(screen.getByText('Show less')).toBeInTheDocument();
-    expect(screen.getByText('d.ts')).toBeInTheDocument();
-    expect(screen.getByText('e.ts')).toBeInTheDocument();
+  it('says stopped for a cancelled run', () => {
+    render(<QuickAgentGhost completed={makeCompleted({ summary: null, cancelled: true, exitCode: 143 })} onDismiss={vi.fn()} />);
+    expect(screen.getByTestId('quick-summary')).toHaveTextContent('Stopped before it wrote a summary.');
   });
 
   it('calls onDismiss when Dismiss clicked', () => {
     render(<QuickAgentGhost {...defaultProps} />);
-    fireEvent.click(screen.getByText('Dismiss'));
+    fireEvent.click(screen.getByTestId('quick-dismiss-button'));
     expect(defaultProps.onDismiss).toHaveBeenCalled();
   });
 
-  it('calls onDelete when Delete clicked', () => {
+  it('asks before Delete', () => {
     render(<QuickAgentGhost {...defaultProps} />);
-    fireEvent.click(screen.getByText('Delete'));
+    fireEvent.click(screen.getByTestId('quick-delete-button'));
+    expect(defaultProps.onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
     expect(defaultProps.onDelete).toHaveBeenCalled();
   });
 
   it('hides Delete button when onDelete not provided', () => {
     render(<QuickAgentGhost completed={makeCompleted()} onDismiss={vi.fn()} />);
-    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('quick-delete-button')).toBeNull();
   });
 
-  it('shows transcript viewer toggle for headless agents', () => {
+  it('shows the tools used and duration as plain text', () => {
+    render(<QuickAgentGhost completed={makeCompleted({ durationMs: 90000, toolsUsed: ['Read', 'Edit', 'Bash'] })} onDismiss={vi.fn()} />);
+    expect(screen.getByTestId('quick-tools')).toHaveTextContent('Used Read, Edit and Bash, ran for 1m 30s');
+  });
+
+  it('shows a headless record in the run monitor layout', () => {
     render(<QuickAgentGhost completed={makeCompleted({ headless: true })} onDismiss={vi.fn()} />);
-    expect(screen.getByText('View transcript')).toBeInTheDocument();
-  });
-
-  it('toggles transcript viewer on click', () => {
-    render(<QuickAgentGhost completed={makeCompleted({ headless: true })} onDismiss={vi.fn()} />);
-    fireEvent.click(screen.getByText('View transcript'));
-    expect(screen.getByTestId('transcript-viewer')).toBeInTheDocument();
-    expect(screen.getByText('Hide transcript')).toBeInTheDocument();
-  });
-
-  it('hides transcript toggle for non-headless agents', () => {
-    render(<QuickAgentGhost completed={makeCompleted({ headless: false })} onDismiss={vi.fn()} />);
-    expect(screen.queryByText('View transcript')).not.toBeInTheDocument();
-  });
-
-  it('shows duration and tools when available', () => {
-    render(<QuickAgentGhost
-      completed={makeCompleted({ durationMs: 90000, toolsUsed: ['Read', 'Edit'] })}
-      onDismiss={vi.fn()}
-    />);
-    expect(screen.getByText('1m 30s')).toBeInTheDocument();
-    expect(screen.getByText('Read')).toBeInTheDocument();
-    expect(screen.getByText('Edit')).toBeInTheDocument();
+    expect(screen.getByTestId('headless-run-finished')).toBeInTheDocument();
   });
 });
 
@@ -159,9 +133,15 @@ describe('QuickAgentGhostCompact', () => {
     expect(screen.getByText('Fix the bug in auth module')).toBeInTheDocument();
   });
 
-  it('shows orchestrator badge', () => {
+  it('shows the provider as plain text', () => {
     render(<QuickAgentGhostCompact {...defaultProps} />);
     expect(screen.getByText('Claude Code')).toBeInTheDocument();
+  });
+
+  it('can be dismissed by keyboard (the button is focusable)', () => {
+    render(<QuickAgentGhostCompact {...defaultProps} />);
+    const btn = screen.getByRole('button', { name: /Dismiss/ });
+    expect(btn.className).toContain('focus-visible:opacity-100');
   });
 
   it('calls onDismiss on trash button click', () => {
