@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { FeedbackStatus } from '../../../shared/feedback-types';
 import { FEEDBACK_NOTICE_TEXT, useFeedbackStore } from '../../stores/feedbackStore';
 import { FeedbackTelemetryPrompt, type TelemetryShareAsk } from './FeedbackTelemetryPrompt';
 
@@ -32,6 +33,15 @@ function formatDate(iso: string | null): string | null {
   if (!iso) return null;
   const t = Date.parse(iso);
   return Number.isFinite(t) ? new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : null;
+}
+
+/** Why the invitation we just sent didn't connect, as far as the notice tells. */
+export function connectFailedMessage(notice: FeedbackStatus['notice']): string {
+  if (notice === 'connection-uncertain') {
+    return 'Couldn\'t confirm the connection. The feedback server can be slow to wake up and may still have accepted the invitation, so try the same one again.';
+  }
+  if (notice === 'access-required') return 'That invitation wasn\'t accepted. It may have expired, been revoked or been used up.';
+  return 'Couldn\'t connect with that invitation.';
 }
 
 const STATE_TEXT: Record<string, string> = {
@@ -79,7 +89,7 @@ export function FeedbackSettingsView() {
     try {
       const result = await window.clubhouse.feedback.connect(invitation);
       setStatus(result.status);
-      setMessage(result.connected ? 'Connected.' : 'Couldn\'t connect with that invitation.');
+      setMessage(result.connected ? 'Connected.' : connectFailedMessage(result.status.notice));
       if (result.connected) {
         // telemetry-exempt: optional offer; without it Feedback still works and the panel stays off.
         setShareAsk(await framebriarTelemetryAsk().catch((): null => null));

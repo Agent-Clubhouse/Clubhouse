@@ -38,6 +38,19 @@ describe('FeedbackSettingsView', () => {
     expect(screen.getByTestId('feedback-connected').textContent).toMatch(/Connected · access expires/);
   });
 
+  it.each([
+    ['connection-uncertain', /may still have accepted the invitation, so try the same one again/],
+    ['access-required', /wasn't accepted\. It may have expired, been revoked or been used up/],
+    [null, /^Couldn't connect with that invitation\.$/],
+  ] as const)('explains a failed connect with notice %s', async (notice, text) => {
+    setFeedback(true, disconnected);
+    vi.mocked(window.clubhouse.feedback.connect).mockResolvedValue({ connected: false, status: { ...disconnected, notice } } as never);
+    render(<FeedbackSettingsView />);
+    fireEvent.change(screen.getByLabelText('Invitation'), { target: { value: 'inv' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+    expect(screen.getByTestId('feedback-message').textContent).toMatch(text);
+  });
+
   it('shows the connection, its expiry and Disconnect', async () => {
     setFeedback(true);
     vi.mocked(window.clubhouse.feedback.disconnect).mockResolvedValue({ forgotten: true, revoked: true, status: disconnected });
