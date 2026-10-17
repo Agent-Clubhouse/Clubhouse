@@ -73,6 +73,23 @@ export function annexRestFlow<T>(method: string, pattern: RegExp, statusOf: () =
   }, { classify: () => (statusOf() >= 500 ? { error: 'unknown' } : 'ok') });
 }
 
+/**
+ * The trace context a satellite may continue from a WS message: only the
+ * remote spawn/wake messages carry one (they are mTLS-gated before this runs).
+ */
+export function wsTraceparent(type: string | undefined, tc: unknown): string | undefined {
+  if (type !== 'agent:spawn' && type !== 'agent:wake') return undefined;
+  return typeof tc === 'string' ? tc : undefined;
+}
+
+/**
+ * The trace context a satellite may continue from a REST request: only from
+ * an mTLS-authenticated desktop controller, never a bearer (mobile) client.
+ */
+export function restTraceparent(header: string | string[] | undefined, mtls: boolean): string | undefined {
+  return mtls && typeof header === 'string' ? header : undefined;
+}
+
 export function recordServerStarted(startMs: number, tls: boolean, atMs = Date.now()): void {
   replaySpan({
     name: 'clubhouse.annex.server.start',
@@ -113,7 +130,7 @@ function eventType(type: string): EventType {
   return (EVENT_TYPES.has(type) ? type : 'other') as EventType;
 }
 
-/** One broadcast: counted once (not per client), with its serialized size. */
+/** One broadcast: counted once (not per client), with its serialized UTF-8 size in bytes. */
 export function recordBroadcast(type: string, bytes: number, sendFailures: number): void {
   if (!isTelemetryActive()) return;
   const attrs = [ATTR.annexEventType(eventType(type))];

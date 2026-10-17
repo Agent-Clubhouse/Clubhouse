@@ -123,7 +123,8 @@ const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
  * Parse a W3C traceparent from an Annex peer. Only version 00, non-zero ids
  * and a sampled flag are accepted: an unsampled remote parent would make
  * ParentBased sampling drop this install's own spans, so this side starts its
- * own trace instead.
+ * own trace instead (sampled at its own rate). For a sampled parent,
+ * withRemoteParent still applies this install's own rate.
  */
 export function parseTraceparent(value: string): SpanContext | undefined {
   const m = TRACEPARENT.exec(value);
@@ -152,6 +153,8 @@ function errorTypeName(error: unknown): string {
 export function startSdk(opts: SdkOptions): TelemetryRuntime {
   const { scrub } = opts;
   const level = opts.level;
+  // Same clamp as FlowSampler: anything outside (0, 1] means record everything.
+  const remoteSampleRate = opts.sampleRate > 0 && opts.sampleRate <= 1 ? opts.sampleRate : 1;
   // At Errors level, flow spans are still recorded so the tail processor can
   // keep the ones that fail; Detailed-only spans are never recorded below Detailed.
   const spanLevel: TelemetryLevel = level === 'errors' ? 'standard' : level;
@@ -485,8 +488,15 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     },
 
     withRemoteParent(traceparent, fn) {
-      const spanContext = parseTraceparent(traceparent);
-      if (!spanContext) return fn();
+      const remote = parseTraceparent(traceparent);
+      if (!remote) return fn();
+      // ParentBased sampling would record every sampled remote trace, while
+      // the spans carry this install's own microsoft.sample_rate. Make this
+      // install's own decision at its own rate: kept traces continue the
+      // remote one, the rest continue it unsampled (and so are dropped). Either
+      // way this install records traces at exactly its configured rate.
+      const keep = remoteSampleRate >= 1 || Math.random() < remoteSampleRate;
+      const spanContext = keep ? remote : { ...remote, traceFlags: TraceFlags.NONE };
       const holder: RemoteParent = { spanContext, used: false };
       return context.with(context.active().setValue(REMOTE_PARENT, holder), fn);
     },

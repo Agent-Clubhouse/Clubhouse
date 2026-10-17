@@ -121,6 +121,18 @@ describe('startSdk', () => {
     expect(rt.traceparent()).toBeUndefined();
   });
 
+  it('applies its own sample rate to a sampled remote parent instead of always recording it', async () => {
+    const { rt, spans } = setup('standard', { sampleRate: 1e-9 });
+    active = rt;
+    const remote = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+    await rt.withRemoteParent(remote, async () => {
+      await rt.flow('clubhouse.agent.spawn', {}, async () => undefined);
+    });
+    await rt.forceFlush(1000);
+    // Declined at this install's rate: continued unsampled, so nothing is recorded.
+    expect(spans.getFinishedSpans()).toHaveLength(0);
+  });
+
   it('ignores unsampled, malformed or all-zero traceparents', () => {
     expect(parseTraceparent('00-0123456789abcdef0123456789abcdef-0123456789abcdef-00')).toBeUndefined();
     expect(parseTraceparent('01-0123456789abcdef0123456789abcdef-0123456789abcdef-01')).toBeUndefined();

@@ -16,7 +16,9 @@ import {
   pairResultFor,
   recordBroadcast,
   recordDiscover,
+  restTraceparent,
   routeTemplate,
+  wsTraceparent,
 } from './annex-telemetry';
 import { setRuntime } from './facade';
 import type { TelemetryRuntime } from './types';
@@ -72,6 +74,24 @@ describe('REST route templates', () => {
     expect(allowed.filter((v) => v !== 'other' && !templates.includes(v as never))).toEqual([]);
     expect(routeTemplate('GET', /^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/transcript(\?.*)?$/)).toBe('GET /api/v1/agents/:id/sessions/:id/transcript');
   }, 30_000); // importing the satellite module is slow on a loaded machine
+});
+
+describe('satellite trace context', () => {
+  const tc = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+  it('takes tc only from remote spawn/wake messages', () => {
+    expect(wsTraceparent('agent:spawn', tc)).toBe(tc);
+    expect(wsTraceparent('agent:wake', tc)).toBe(tc);
+    expect(wsTraceparent('pty:input', tc)).toBeUndefined();
+    expect(wsTraceparent('some:new-type', tc)).toBeUndefined();
+    expect(wsTraceparent('agent:spawn', 42)).toBeUndefined();
+  });
+
+  it('takes the REST traceparent header only from mTLS controllers', () => {
+    expect(restTraceparent(tc, true)).toBe(tc);
+    expect(restTraceparent(tc, false)).toBeUndefined();
+    expect(restTraceparent([tc, tc], true)).toBeUndefined();
+    expect(restTraceparent(undefined, true)).toBeUndefined();
+  });
 });
 
 describe('controller connect', () => {

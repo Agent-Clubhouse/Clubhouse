@@ -519,7 +519,8 @@ The 7 errors and 31 warnings in §2.1 (identity request errors, WS errors, heart
 - `c.annex.clients` (gauge) treats mTLS clients as `desktop` and bearer clients as `mobile`.
 - No permission scopes exist, so `c.annex.control.denied` is counted by channel (`ws`/`rest`): control messages and destructive routes that require mTLS.
 - `c.annex.remote_spawn` covers the send. The satellite's ack isn't correlated today, so the satellite's own `c.agent.spawn`, continued from the same trace, is the end-to-end view.
-- `c.annex.rest` (Detailed) carries `c.annex.route` (40 templates kept in sync with `ANNEX_HTTP_ROUTE_TABLE` by a test) and `c.http.class`. It continues an inbound `traceparent` header.
+- `c.annex.rest` (Detailed) carries `c.annex.route` (40 templates kept in sync with `ANNEX_HTTP_ROUTE_TABLE` by a test) and `c.http.class`. It continues an inbound `traceparent` header from mTLS controllers only.
+- `c.annex.events.bytes` counts UTF-8 bytes of the serialized message.
 
 ### 4.13 Goobers (`goobers-*.ts`)
 
@@ -1054,7 +1055,7 @@ requests
    - `traceparent` contains only random IDs and a sampled flag, so receiving it reveals nothing.
    - If both installs point at the **same** App Insights resource (the common one-person, two-machines case), `c.annex.remote_spawn` on the controller and `c.agent.spawn` on the satellite appear as one end-to-end transaction. `clubhouse.annex.role` and `service.instance.id` tell them apart.
    - Protocol compatibility: `tc` is an optional field. Old satellites ignore unknown fields (they parse JSON loosely). Confirm this in Phase 6 against the dual-instance E2E.
-   - As shipped: the controller adds `tc` to `agent:spawn` / `agent:wake` (inside `c.annex.remote_spawn`) and a `traceparent` header to `satelliteHttpsRequest` while a span is recording. The satellite accepts only version `00` with the sampled flag set; an unsampled parent would make ParentBased sampling drop the satellite's own spans, so the satellite starts its own trace instead. The remote parent applies to the **next root flow only**: process callbacks registered under it can't hang later flows off the controller's trace.
+   - As shipped: the controller adds `tc` to `agent:spawn` / `agent:wake` (inside `c.annex.remote_spawn`) and a `traceparent` header to `satelliteHttpsRequest` while a span is recording. The satellite accepts only version `00` with the sampled flag set; an unsampled parent would make ParentBased sampling drop the satellite's own spans, so the satellite starts its own trace instead. A sampled parent is kept at the **satellite's own** sample rate: a declined one is continued unsampled, so it is dropped rather than recorded with the wrong `microsoft.sample_rate`, and the satellite records exactly its configured share. The REST header is honoured only from mTLS controllers, never from bearer (mobile) clients. The remote parent applies to the **next root flow only**: process callbacks registered under it can't hang later flows off the controller's trace.
 3. **No per-event spans for the event stream.** That includes PTY data fan-out, hook and chat event fan-out (`broadcastAndBuffer`), and controller-side `handleSatelliteMessage`. These are counters with byte totals (§4.12).
 4. **Peer identity is never an attribute.** No fingerprints, aliases, hostnames, IPs or ports. `c.annex.client.kind` (desktop/mobile) and peer counts are allowed.
 5. **The iOS app is out of scope.** If it later adopts OTel, it should reuse this registry's names for the shared flows (pair, connect, permission) and honor rule 2. Satellite-side spans already cover its server interactions.

@@ -63,6 +63,8 @@ import {
   recordServerStarted,
   recordSnapshotBuild,
   recordTlsFallback,
+  restTraceparent,
+  wsTraceparent,
 } from '../telemetry/annex-telemetry';
 import type {
   AnnexStatus,
@@ -685,7 +687,7 @@ function broadcastWs(message: object): void {
       }
     }
   }
-  recordBroadcast((message as { type?: string }).type ?? 'other', data.length, sendFailures);
+  recordBroadcast((message as { type?: string }).type ?? 'other', Buffer.byteLength(data), sendFailures);
 }
 
 /** Broadcast a message and push it to the replay buffer. */
@@ -2090,8 +2092,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (route) {
     const match = url.match(route.pattern);
     if (match) {
-      const header = req.headers.traceparent;
-      await withRemoteParent(typeof header === 'string' ? header : undefined, () =>
+      await withRemoteParent(restTraceparent(req.headers.traceparent, isMtlsAuthenticated), () =>
         annexRestFlow(method, route.pattern, () => res.statusCode, () => route.handler({ req, res, url, method, requireMtls }, match)),
       );
       return;
@@ -2180,7 +2181,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   }
 
   const payload = msg.payload || {};
-  const traceparent = typeof msg.tc === 'string' ? msg.tc : undefined;
+  const traceparent = wsTraceparent(type, msg.tc);
 
   switch (type) {
     case 'pty:input': {
