@@ -1,11 +1,18 @@
 import { _electron as electron, type Page } from '@playwright/test';
-import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-import { recordElectronApp, trackOpenApp } from './e2e-cleanup';
+import {
+  assertDisposableProfile,
+  buildLaunchEnv,
+  createDisposableProfile,
+  seedProfile,
+  type DisposableProfile,
+} from './app-profile';
+import { recordElectronApp, trackOpenApp, untrackOpenApp } from './e2e-cleanup';
 
 const APP_PATH = path.resolve(__dirname, '..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
+
+export type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;
 
 export interface LaunchOptions {
   /**
@@ -14,9 +21,7 @@ export interface LaunchOptions {
    * mount — UI surfaces gated on these flags read them once on mount and
    * won't react to a later IPC write.
    *
-   * When provided, a temp `userData` directory is created and seeded with
-   * `experimental-settings.json`, then passed to electron via the
-   * `CLUBHOUSE_USER_DATA` env var.
+   * Seeded as `experimental-settings.json` in the launch's profile.
    */
   experimental?: Record<string, boolean>;
 
@@ -30,80 +35,100 @@ export interface LaunchOptions {
   pluginsDir?: string;
 
   /**
-   * JSON files to seed in the isolated Electron userData directory before
-   * launch, keyed by filename (for example `mcp-settings.json`).
+   * JSON files to seed in the launch's userData directory before launch,
+   * keyed by filename (for example `mcp-settings.json`).
    */
   userDataFiles?: Record<string, unknown>;
+
+  /**
+   * Reuse a disposable profile the test owns (from `createDisposableProfile`)
+   * — for restart/persistence tests that relaunch against the same state. The
+   * test disposes it. Without this, every launch gets a fresh profile of its
+   * own, so a launch never runs against an inherited or real profile.
+   */
+  profile?: DisposableProfile;
+
+  /** Readable tag for the profile directory name (e.g. `satellite`). */
+  label?: string;
+
+  /** Extra Electron command-line arguments (e.g. `--disable-gpu`). */
+  args?: string[];
+
+  /**
+   * `'skip'` (default) dismisses first-run onboarding so it can't overlay the
+   * UI. `'show'` leaves it alone, for tests of onboarding itself.
+   */
+  onboarding?: 'skip' | 'show';
 
   /** Launch a packaged Clubhouse executable instead of the webpack entry. */
   executablePath?: string;
 
   /**
-   * Extra environment for the app process, applied last. Chat E2E uses this
-   * to put fake CLIs first on PATH (see e2e/chat-fake-cli.ts).
+   * Extra environment for the app process. Chat E2E uses this to put fake
+   * CLIs first on PATH (see e2e/chat-fake-cli.ts). May not set the profile or
+   * auto-update variables — the primitive owns those.
    */
   env?: Record<string, string>;
 }
 
-/**
- * Launch the Electron app and return the renderer window (skipping DevTools).
- * DevTools opens automatically for unpackaged builds, so firstWindow() may
- * return the DevTools page instead of the renderer.
- */
-export async function launchApp(opts: LaunchOptions = {}) {
-  let userDataDir: string | undefined;
-  const env = { ...process.env };
-  // Never let the auto-updater run during E2E. A real "update available/ready"
-  // banner appearing mid-run overlays the UI and flakes unrelated tests (editor
-  // focus clicks, canvas context menus). Belt-and-suspenders with the
-  // isPackaged gate — this also covers a packaged smoke-test launch.
-  env.CLUBHOUSE_DISABLE_AUTO_UPDATE = '1';
-  if (opts.experimental || opts.userDataFiles) {
-    userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-e2e-'));
-  }
-  if (opts.experimental && userDataDir) {
-    fs.writeFileSync(
-      path.join(userDataDir, 'experimental-settings.json'),
-      JSON.stringify(opts.experimental, null, 2),
-      'utf-8',
-    );
-  }
-  if (opts.userDataFiles && userDataDir) {
-    for (const [filename, value] of Object.entries(opts.userDataFiles)) {
-      if (path.basename(filename) !== filename) {
-        throw new Error(`Invalid userData seed filename: ${filename}`);
-      }
-      fs.writeFileSync(
-        path.join(userDataDir, filename),
-        JSON.stringify(value, null, 2),
-        'utf-8',
-      );
-    }
-  }
-  if (userDataDir) {
-    env.CLUBHOUSE_USER_DATA = userDataDir;
-  }
-  if (opts.pluginsDir) {
-    env.CLUBHOUSE_PLUGINS_DIR = opts.pluginsDir;
-  }
-  Object.assign(env, opts.env);
+export interface LaunchedApp {
+  electronApp: ElectronApp;
+  window: Page;
+  /** The profile directory (`CLUBHOUSE_USER_DATA`) this launch ran against. */
+  userDataDir: string;
+  profile: DisposableProfile;
+}
 
-  const electronApp = await electron.launch({
-    ...(opts.executablePath ? { executablePath: opts.executablePath } : {}),
-    args: opts.executablePath ? [] : [MAIN_ENTRY],
-    cwd: APP_PATH,
-    env,
-  });
+/**
+ * The single E2E launch primitive: allocate (or validate) a disposable
+ * profile, launch Electron against it with auto-update disabled, pick the
+ * renderer window (skipping DevTools), and dismiss onboarding.
+ *
+ * A profile created here is removed when the worker exits (and by the local
+ * global-teardown sweep); specs that inspect it after quitting may also
+ * remove it themselves. If the launch fails partway, the app is closed and an
+ * owned profile is removed before the error propagates.
+ */
+export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
+  const ownsProfile = !opts.profile;
+  const profile = opts.profile ?? createDisposableProfile({ label: opts.label });
+
+  let electronApp: ElectronApp;
+  try {
+    if (!ownsProfile) assertDisposableProfile(profile);
+    seedProfile(profile, { experimental: opts.experimental, userDataFiles: opts.userDataFiles });
+    const env = buildLaunchEnv(process.env, { profile, pluginsDir: opts.pluginsDir, env: opts.env });
+    electronApp = await electron.launch({
+      ...(opts.executablePath ? { executablePath: opts.executablePath } : {}),
+      args: [...(opts.args ?? []), ...(opts.executablePath ? [] : [MAIN_ENTRY])],
+      cwd: APP_PATH,
+      env,
+    });
+  } catch (err) {
+    if (ownsProfile) profile.dispose();
+    throw err;
+  }
 
   // Register for cleanup before doing anything else that can throw — a launch
   // that dies during window discovery must still be reapable.
-  recordElectronApp(electronApp.process().pid, userDataDir);
+  recordElectronApp(electronApp.process().pid, profile.userDataDir);
   trackOpenApp(electronApp);
 
-  // Collect all windows that open, then pick the renderer (non-devtools) one.
-  const rendererWindow = await findRendererWindow(electronApp);
-  await rendererWindow.waitForLoadState('load');
+  try {
+    // Collect all windows that open, then pick the renderer (non-devtools) one.
+    const rendererWindow = await findRendererWindow(electronApp);
+    await rendererWindow.waitForLoadState('load');
+    if ((opts.onboarding ?? 'skip') === 'skip') await dismissOnboarding(rendererWindow);
+    return { electronApp, window: rendererWindow, userDataDir: profile.userDataDir, profile };
+  } catch (err) {
+    untrackOpenApp(electronApp);
+    await electronApp.close().catch(() => {});
+    if (ownsProfile) profile.dispose();
+    throw err;
+  }
+}
 
+async function dismissOnboarding(rendererWindow: Page): Promise<void> {
   // Mark onboarding as completed so it doesn't appear during E2E tests.
   await rendererWindow.evaluate(() => {
     localStorage.setItem('clubhouse_onboarding', JSON.stringify({ completed: true, cohort: null }));
@@ -121,13 +146,9 @@ export async function launchApp(opts: LaunchOptions = {}) {
   } catch {
     // Modal never appeared — onboarding was already completed
   }
-
-  return { electronApp, window: rendererWindow, userDataDir };
 }
 
-async function findRendererWindow(
-  electronApp: Awaited<ReturnType<typeof electron.launch>>,
-) {
+async function findRendererWindow(electronApp: ElectronApp) {
   // Fast path: pick the first renderer window already open.
   // Avoid evaluating inside candidate pages here: a not-yet-ready renderer can
   // hang evaluation while DevTools is open. The app renderer has a stable file
