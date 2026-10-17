@@ -1,4 +1,7 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getAttributeSpec } from '../../shared/telemetry/attributes';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
 import { setRuntime } from './facade';
@@ -54,6 +57,32 @@ describe('agent signals', () => {
     expect(spans[0].attrs).toEqual([ATTR.mcpToolKind('group'), ATTR.mcpTool('send_message'), ATTR.mcpResult('ok')]);
     expect(spans[1]).toMatchObject({ outcome: 'error', errorType: 'mcp_tool_threw' });
     expect(JSON.stringify(spans)).not.toContain('proj_x7q');
+  });
+
+  it('names global tools and never names plugin tools', () => {
+    recordMcpToolCall('notify_user', Date.now(), 'ok', true);
+    recordMcpToolCall('plugin__acme_tool__navigate', Date.now(), 'ok', false);
+    recordMcpToolCall('unknown_tool', Date.now(), 'threw', false);
+    const attrs = (rt.replaySpan as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0].attrs.slice(0, 2));
+    expect(attrs).toEqual([
+      [ATTR.mcpToolKind('global'), ATTR.mcpTool('notify_user')],
+      [ATTR.mcpToolKind('plugin'), ATTR.mcpTool('other')],
+      [ATTR.mcpToolKind('other'), ATTR.mcpTool('other')],
+    ]);
+  });
+
+  it('lists every Clubhouse MCP tool suffix and global tool registered under clubhouse-mcp/tools', () => {
+    const dir = path.resolve(__dirname, '../services/clubhouse-mcp/tools');
+    const names = new Set<string>();
+    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))) {
+      const src = fs.readFileSync(path.join(dir, file), 'utf8');
+      for (const m of src.matchAll(/nameSuffix:\s*'([a-z_]+)'/g)) names.add(m[1]);
+      for (const m of src.matchAll(/registerGlobalTool\(\s*'([a-z_]+)'/g)) names.add(m[1]);
+    }
+    expect(names.size).toBeGreaterThan(20);
+    const allowed = getAttributeSpec('clubhouse.mcp.tool')?.values ?? [];
+    expect([...names].filter((n) => !allowed.includes(n))).toEqual([]);
+    expect(allowed.filter((v) => v !== 'other' && !names.has(v))).toEqual([]);
   });
 
   it('records binary lookup time by tier', () => {

@@ -10,6 +10,7 @@ import {
   _resetAgentTelemetryForTests,
   agentKillStage,
   agentOutput,
+  agentRunKilled,
   agentRunStarted,
   agentShellReady,
   agentSwept,
@@ -79,9 +80,24 @@ describe('agent runs', () => {
     agentKillStage('cx1', 'sigkill');
     exit('cx1', 137);
     const counts = (rt.count as ReturnType<typeof vi.fn>).mock.calls;
-    expect(counts).toContainEqual(['clubhouse.agent.kill.escalations', 1, [ATTR.killStage('sigterm')]]);
-    expect(counts).toContainEqual(['clubhouse.agent.kill.escalations', 1, [ATTR.killStage('sigkill')]]);
+    // The first stage of a kill is not an escalation.
+    expect(counts.filter((c) => c[0] === 'clubhouse.agent.kill.escalations')).toEqual([
+      ['clubhouse.agent.kill.escalations', 1, [ATTR.killStage('sigkill')]],
+    ]);
     expect(counts).toContainEqual(['clubhouse.agent.runs', 1, [ATTR.agentRuntime('headless'), ATTR.orchestrator('codex-cli'), ATTR.agentExitClass('killed_escalated')]]);
+  });
+
+  it('ends a hard-killed run as a user kill at sigkill', () => {
+    agentRunStarted('a4', 'pty');
+    agentRunKilled('a4', 'sigkill');
+    exit('a4', 1); // a late exit after the kill is ignored
+    expect(rt.replaySpan).toHaveBeenCalledTimes(1);
+    expect(rt.replaySpan).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'clubhouse.agent.run',
+      outcome: 'cancelled',
+      attrs: expect.arrayContaining([ATTR.agentExitClass('killed_user'), ATTR.killStage('sigkill')]),
+    }));
+    expect((rt.count as ReturnType<typeof vi.fn>).mock.calls.some((c) => c[0] === 'clubhouse.agent.kill.escalations')).toBe(false);
   });
 
   it('closes a replaced run and labels a swept one', () => {

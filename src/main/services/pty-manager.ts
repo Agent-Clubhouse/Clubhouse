@@ -11,7 +11,7 @@ import * as headlessTerminal from './pty-headless-terminal';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
-import { agentKillStage, agentOutput, agentRunStarted, agentShellReady, agentSwept } from '../telemetry/agent-telemetry';
+import { agentKillStage, agentOutput, agentRunKilled, agentRunStarted, agentShellReady, agentSwept } from '../telemetry/agent-telemetry';
 
 /** Pattern matching common API key environment variable names. */
 const API_KEY_ENV_PATTERN = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AZURE_OPENAI_API_KEY|MISTRAL_API_KEY|COHERE_API_KEY|HUGGING_FACE_TOKEN|HF_TOKEN)$/;
@@ -563,6 +563,9 @@ export function kill(agentId: string): void {
     if (annexEventBus.isActive()) {
       headlessTerminal.dispose(agentId);
     }
+    // cleanupSession makes onExit skip this session, so no exit broadcast
+    // follows: end the run here.
+    agentRunKilled(agentId, 'sigkill');
     cleanupSession(agentId);
   }
 }
@@ -574,6 +577,7 @@ export function killAll(exitCommand: string = '/exit\r'): Promise<void> {
   for (const id of ids) {
     const session = sessions.get(id);
     if (!session) continue;
+    agentKillStage(id, 'exit_command');
     try {
       session.process.write(exitCommand);
     } catch {
@@ -588,6 +592,7 @@ export function killAll(exitCommand: string = '/exit\r'): Promise<void> {
         if (session) {
           console.warn(`[pty-manager] killAll: process ${id} did not exit within grace period, sending SIGKILL`);
           try { session.process.kill(); } catch { /* dead */ }
+          agentRunKilled(id, 'sigkill');
         }
         cleanupSession(id);
       }

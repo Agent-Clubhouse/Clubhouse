@@ -69,14 +69,21 @@ export function recordPermission(opts: {
 
 // --- Clubhouse MCP --------------------------------------------------------------
 
-const MCP_KINDS = new Set(['clubhouse', 'browser', 'terminal', 'group']);
+const MCP_KINDS = new Set(['clubhouse', 'browser', 'terminal', 'group', 'plugin']);
 
-/** One MCP tool call served by the bridge. `toolName` is only parsed locally, never exported raw. */
+/**
+ * One MCP tool call served by the bridge. `toolName` is only parsed locally,
+ * never exported raw: the binding segment is dropped, and the suffix only
+ * survives if it is on the registry's fixed list. Plugin tool names are
+ * plugin-authored, so they are always `other`.
+ */
 export function recordMcpToolCall(toolName: string, startMs: number, result: 'ok' | 'tool_error' | 'threw', global: boolean): void {
   if (!isTelemetryActive()) return;
+  type Kind = Parameters<typeof ATTR.mcpToolKind>[0];
+  type Tool = Parameters<typeof ATTR.mcpTool>[0];
   const match = /^([a-z]+)__[A-Za-z0-9_]+__([A-Za-z_]+)$/.exec(toolName);
-  const kind = (global ? 'global' : match && MCP_KINDS.has(match[1]) ? match[1] : 'other') as Parameters<typeof ATTR.mcpToolKind>[0];
-  const tool = (match ? match[2] : 'other') as Parameters<typeof ATTR.mcpTool>[0];
+  const kind: Kind = global ? 'global' : match && MCP_KINDS.has(match[1]) ? (match[1] as Kind) : 'other';
+  const tool: Tool = global ? (toolName as Tool) : match && kind !== 'plugin' && kind !== 'other' ? (match[2] as Tool) : 'other';
   const endMs = Date.now();
   replaySpan({
     name: 'clubhouse.mcp.tool_call',

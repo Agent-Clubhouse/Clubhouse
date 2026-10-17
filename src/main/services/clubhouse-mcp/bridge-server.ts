@@ -6,7 +6,7 @@
 import * as http from 'http';
 import { appLog } from '../log-service';
 import { getAgentNonce } from '../agent-registry';
-import { getScopedToolList, callTool, parseToolName, buildToolKey } from './tool-registry';
+import { getScopedToolList, callTool, parseToolName, buildToolKey, isGlobalTool } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
@@ -141,7 +141,7 @@ async function handleToolsCall(
   });
 
   const callStartMs = Date.now();
-  const isGlobal = parseToolName(toolName) === null;
+  const isGlobal = isGlobalTool(toolName);
   try {
     const result = await callTool(agentId, toolName, args);
     recordMcpToolCall(toolName, callStartMs, result.isError ? 'tool_error' : 'ok', isGlobal);

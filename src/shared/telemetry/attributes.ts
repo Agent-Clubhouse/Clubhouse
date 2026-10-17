@@ -116,8 +116,6 @@ export const ERROR_TYPES = [
   'apply_spawn_failed',
   'apply_failed',
   // Agents (§4.4, Phase 4)
-  'pty_spawn_failed',
-  'headless_no_pid',
   'mcp_tool_error',
   'mcp_tool_threw',
 ] as const;
@@ -251,12 +249,24 @@ export const ATTR = {
   toolResult: enumAttr('clubhouse.tool.result', ['ok', 'error']),
   permissionDecision: enumAttr('clubhouse.permission.decision', ['allow', 'deny', 'ask']),
   permissionResult: enumAttr('clubhouse.permission.result', ['resolved', 'timeout']),
-  mcpToolKind: enumAttr('clubhouse.mcp.tool_kind', ['clubhouse', 'browser', 'terminal', 'group', 'global', 'other']),
-  /** The Clubhouse tool suffix (static per binding kind); anything else is `other`. */
+  mcpToolKind: enumAttr('clubhouse.mcp.tool_kind', ['clubhouse', 'browser', 'terminal', 'group', 'plugin', 'global', 'other']),
+  /**
+   * The Clubhouse tool suffix (or global tool name) from this fixed list;
+   * anything else, and every plugin tool, is `other`. A test keeps it in sync
+   * with the tools registered under clubhouse-mcp/tools.
+   */
   mcpTool: enumAttr('clubhouse.mcp.tool', [
-    'send_message', 'read_output', 'wake_agent', 'sleep_agent', 'clear_agent', 'compact_agent', 'shoulder_tap',
-    'broadcast', 'list_members', 'navigate', 'run_command', 'toggle_polling', 'nudge_polling', 'clear_topic',
-    'delete_messages', 'other',
+    // agent
+    'send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent',
+    // browser
+    'navigate', 'screenshot', 'get_console', 'click', 'type', 'evaluate', 'get_page_content', 'get_accessibility_tree',
+    // group project
+    'list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'read_message', 'get_project_info',
+    'set_project_info', 'shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'query_polling',
+    'nudge_polling', 'clear_topic', 'delete_messages',
+    // global
+    'notify_user',
+    'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),

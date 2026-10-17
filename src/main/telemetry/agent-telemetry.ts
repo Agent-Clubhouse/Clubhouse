@@ -88,13 +88,29 @@ export function agentOutput(agentId: string, bytes: number, atMs?: number): void
   tel.count('clubhouse.agent.time_to_first_output', ((atMs ?? Date.now()) - run.startMs) / 1000, base(run));
 }
 
-/** A kill reached `stage`. Stages only move forward. */
+/**
+ * A kill reached `stage`. Stages only move forward. The first stage a kill
+ * starts at (exit command for PTY, SIGTERM for headless) is not an
+ * escalation; only later stages are counted.
+ */
 export function agentKillStage(agentId: string, stage: KillStage): void {
   const run = runs.get(agentId);
   if (!run) return;
-  if (run.killStage && KILL_ORDER.indexOf(stage) <= KILL_ORDER.indexOf(run.killStage)) return;
+  const previous = run.killStage;
+  if (previous && KILL_ORDER.indexOf(stage) <= KILL_ORDER.indexOf(previous)) return;
   run.killStage = stage;
-  if (stage !== 'exit_command') tel.count('clubhouse.agent.kill.escalations', 1, [ATTR.killStage(stage)]);
+  if (previous) tel.count('clubhouse.agent.kill.escalations', 1, [ATTR.killStage(stage)]);
+}
+
+/**
+ * End a run whose session was removed without an exit broadcast (a hard
+ * kill, or quit). The run is classified as a user kill at `stage`.
+ */
+export function agentRunKilled(agentId: string, stage: KillStage, atMs = Date.now()): void {
+  const run = runs.get(agentId);
+  if (!run) return;
+  if (!run.killStage || KILL_ORDER.indexOf(stage) > KILL_ORDER.indexOf(run.killStage)) run.killStage = stage;
+  endRun(agentId, null, 'killed_user', atMs);
 }
 
 /** The stale sweeper removed this run's process. */
