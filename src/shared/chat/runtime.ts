@@ -158,7 +158,11 @@ export interface ChatDriverStartOptions {
   resumeNativeSessionId?: string;
   /** MCP servers to attach, keyed by name (the Clubhouse bridge plus project servers). */
   mcpServers?: Record<string, unknown>;
-  /** Provider-specific extra CLI args (e.g. Copilot --agent / --source). */
+  /**
+   * Provider-specific extra CLI args (e.g. Copilot --agent / --source).
+   * Best-effort: drivers whose transport can't pass CLI args (the Claude Agent
+   * SDK) ignore them and should log that they did.
+   */
   extraArgs?: string[];
 }
 
@@ -184,6 +188,7 @@ export interface ChatDriverSession {
   respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void>;
   answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;
   setLevel(level: PermissionLevel): Promise<void>;
+  /** Effort is applied according to `capabilities.effortSwitch`; with 'restart' it takes effect on the next start. */
   setModel(modelId: string, effort?: string): Promise<void>;
   compact(): Promise<void>;
   /** Stop the CLI process. Resolves when it has exited. */

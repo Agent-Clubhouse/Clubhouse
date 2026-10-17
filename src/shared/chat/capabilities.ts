@@ -47,6 +47,8 @@ export interface ChatCapabilities {
   images: boolean;
   slashCommands: boolean;
   modelSwitch: 'live' | 'per_turn' | 'restart' | 'none';
+  /** Reasoning-effort changes: applied live, only on the next start (Claude takes --effort at launch), or not supported. */
+  effortSwitch: 'live' | 'per_turn' | 'restart' | 'none';
   /** Levels the driver can switch to without restarting the session. */
   liveLevels: readonly PermissionLevel[];
   /** How the user logs in when auth is missing. */
@@ -72,6 +74,7 @@ export const MINIMAL_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze({
   images: false,
   slashCommands: false,
   modelSwitch: 'none',
+  effortSwitch: 'none',
   liveLevels: [],
   login: 'terminal',
   systemPrompt: false,
