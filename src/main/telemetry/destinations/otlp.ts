@@ -21,6 +21,8 @@ export interface OtlpDestinationOptions {
    * Annex), read at connect time because they start after telemetry does.
    */
   reservedPorts?: () => number[];
+  /** Cumulative by default, which most OTLP backends expect (spec §6.8). */
+  temporality?: 'cumulative' | 'delta';
 }
 
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void;
@@ -79,7 +81,9 @@ export function createOtlpExporters(opts: OtlpDestinationOptions): DestinationEx
       url: signalUrl(opts.endpoint, 'metrics'),
       headers,
       httpAgentOptions,
-      temporalityPreference: AggregationTemporalityPreference.DELTA,
+      temporalityPreference: opts.temporality === 'delta'
+        ? AggregationTemporalityPreference.DELTA
+        : AggregationTemporalityPreference.CUMULATIVE,
     }),
     logExporter: new OTLPLogExporter({ url: signalUrl(opts.endpoint, 'logs'), headers, httpAgentOptions }),
   };

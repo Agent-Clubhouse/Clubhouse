@@ -63,6 +63,30 @@ async function quitAndWait(electronApp: Awaited<ReturnType<typeof launchApp>>['e
   await electronApp.close();
 }
 
+/** Whether the app's main process can encrypt with safeStorage (false on keyring-less Linux runners). */
+async function secureStorageAvailable(electronApp: Awaited<ReturnType<typeof launchApp>>['electronApp']): Promise<boolean> {
+  return electronApp.evaluate(({ safeStorage }) => safeStorage.isEncryptionAvailable());
+}
+
+/**
+ * With encryption available, the Phase 1 plaintext secret must have moved to
+ * telemetry-secret.bin and be gone from telemetry-settings.json. Without it,
+ * by design the plaintext stays put (it is the only copy) and no secret file
+ * is created.
+ */
+async function expectLegacySecretHandled(dir: string, encryption: boolean): Promise<void> {
+  const settingsText = await fs.promises.readFile(path.join(dir, 'telemetry-settings.json'), 'utf-8');
+  const secretExists = fs.existsSync(path.join(dir, 'telemetry-secret.bin'));
+  if (encryption) {
+    expect(secretExists).toBe(true);
+    expect(settingsText).not.toContain('InstrumentationKey');
+    expect(JSON.parse(settingsText).destination).toBe('azure');
+  } else {
+    expect(secretExists).toBe(false);
+    expect(settingsText).toContain('InstrumentationKey');
+  }
+}
+
 function expectNoMachineIdentifiers(received: Received[]): void {
   const all = received.map((r) => r.body).join('\n');
   expect(all).not.toContain(os.hostname());
@@ -81,6 +105,9 @@ test.describe('Telemetry export', () => {
           enabled: true,
           level: 'standard',
           sampleRate: 1,
+          // Phase 1 file shape (plaintext destination) with consent recorded:
+          // exercises the Phase 2 migration on startup.
+          consentVersion: 1,
           destination: { kind: 'otlp', endpoint: `http://127.0.0.1:${mock.port}` },
         },
       },
@@ -142,6 +169,7 @@ test.describe('Telemetry export', () => {
             enabled: true,
             level: 'standard',
             sampleRate: 1,
+            consentVersion: 1,
             destination: {
               kind: 'azure',
               connectionString: `InstrumentationKey=00000000-0000-4000-8000-0000000000e2;IngestionEndpoint=https://127.0.0.1:${mock.port}/`,
@@ -150,6 +178,7 @@ test.describe('Telemetry export', () => {
         },
       });
       await expect(launched.window.locator('body')).toBeVisible();
+      const encryption = await secureStorageAvailable(launched.electronApp);
       await quitAndWait(launched.electronApp);
 
       const tracks = mock.received.filter((r) => r.url.startsWith('/v2.1/track'));
@@ -160,6 +189,9 @@ test.describe('Telemetry export', () => {
       expectNoMachineIdentifiers(mock.received);
       // Only the configured endpoint's ingestion path was ever hit.
       for (const r of mock.received) expect(r.url.startsWith('/v2.1/track')).toBe(true);
+
+      // The seeded file is the Phase 1 shape with a plaintext secret.
+      await expectLegacySecretHandled(launched.userDataDir!, encryption);
     } finally {
       delete process.env.CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST;
       if (prevCa === undefined) delete process.env.NODE_EXTRA_CA_CERTS;
@@ -168,6 +200,39 @@ test.describe('Telemetry export', () => {
       mock.server.close();
       fs.rmSync(caDir, { recursive: true, force: true });
       if (launched?.userDataDir) fs.rmSync(launched.userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('Phase 1 file with the flag off: plaintext secret is still migrated, nothing exported', async () => {
+    const mock = await startMockIngestion();
+    const { electronApp, window, userDataDir } = await launchApp({
+      experimental: { telemetry: false },
+      userDataFiles: {
+        'telemetry-settings.json': {
+          enabled: true,
+          level: 'standard',
+          sampleRate: 1,
+          destination: {
+            kind: 'azure',
+            connectionString: `InstrumentationKey=00000000-0000-4000-8000-0000000000e3;IngestionEndpoint=https://127.0.0.1:${mock.port}/`,
+          },
+        },
+      },
+    });
+    try {
+      await expect(window.locator('body')).toBeVisible();
+      const encryption = await secureStorageAvailable(electronApp);
+      if (encryption) {
+        // Migration runs after ready regardless of flags; wait for it.
+        await expect.poll(() => fs.existsSync(path.join(userDataDir!, 'telemetry-secret.bin')), { timeout: 15_000 }).toBe(true);
+      }
+      await quitAndWait(electronApp);
+      await expectLegacySecretHandled(userDataDir!, encryption);
+      expect(mock.received).toEqual([]);
+    } finally {
+      await electronApp.close().catch(() => {});
+      mock.server.close();
+      if (userDataDir) fs.rmSync(userDataDir, { recursive: true, force: true });
     }
   });
 
@@ -181,6 +246,8 @@ test.describe('Telemetry export', () => {
           enabled: true,
           level: 'errors',
           sampleRate: 1,
+          // Export starts only once consent is recorded (Phase 2).
+          consentVersion: 1,
           destination: { kind: 'otlp', endpoint: `http://127.0.0.1:${mock.port}` },
         },
       },

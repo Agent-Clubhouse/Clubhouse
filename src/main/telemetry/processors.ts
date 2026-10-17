@@ -179,6 +179,8 @@ export class RedactionLogProcessor implements LogRecordProcessor {
 export interface ObserveHooks {
   tee?: PreviewTee;
   onFailure(signal: Signal, httpClass: ReturnType<typeof classifyExportError>): void;
+  /** Every export result, success or failure (the Settings test event reads these). */
+  onResult?(signal: Signal, result: ExportResult): void;
 }
 
 function hrToMs(t: [number, number]): number {
@@ -188,6 +190,7 @@ function hrToMs(t: [number, number]): number {
 function observe(signal: Signal, hooks: ObserveHooks, cb: (r: ExportResult) => void): (r: ExportResult) => void {
   return (result) => {
     if (result.code !== ExportResultCode.SUCCESS) hooks.onFailure(signal, classifyExportError(result.error));
+    hooks.onResult?.(signal, result);
     cb(result);
   };
 }

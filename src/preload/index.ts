@@ -22,6 +22,7 @@ import { mcpBinding } from './mcpBinding';
 import { canvas } from './canvas';
 import { hookServer } from './hookServer';
 import { goobers } from './goobers';
+import { telemetrySettings } from './telemetrySettings';
 import { telemetry } from './telemetry';
 
 export const api = {
@@ -64,6 +65,7 @@ export const api = {
   ...canvas,
   ...hookServer,
   ...goobers,
+  ...telemetrySettings,
   ...telemetry,
 };
 

@@ -1,16 +1,25 @@
 /**
- * Telemetry settings (`telemetry-settings.json` in userData) and the
- * `experimental.telemetry` gate.
+ * Telemetry settings and the `experimental.telemetry` gate (spec §6.8).
  *
- * Phase 1 stores the destination secret (connection string / OTLP header
- * values) in this 0600 file. Phase 2 moves secrets to `safeStorage` with the
- * Settings UI; until then the whole feature sits behind the experimental flag.
+ * Non-secret settings live in `telemetry-settings.json` (0600) through the
+ * TELEMETRY_SETTINGS managed-settings definition. Secrets (the connection
+ * string and OTLP header values) live in `telemetry-secret.bin`, encrypted
+ * with safeStorage (secret-store.ts).
+ *
+ * Phase 1 kept the secret in plaintext in telemetry-settings.json under a
+ * `destination` object. `migrate()` converts that shape on load but keeps the
+ * object as `legacyDestination` until `migrateLegacySecrets()` (after app
+ * ready) has moved it into the secret store and rewritten the file without
+ * it, so no save can drop the only copy.
  */
+import * as fs from 'fs';
 import { app } from 'electron';
-import { createSettingsStore } from '../services/settings-store';
+import { createManagedSettings } from '../services/managed-settings';
 import * as experimentalSettings from '../services/experimental-settings';
+import { TELEMETRY_SETTINGS } from '../../shared/settings-definitions';
 import { TELEMETRY_LEVELS, type TelemetryLevel } from '../../shared/telemetry/attributes';
-import type { TelemetryIdentity } from './ids';
+import type { TelemetrySettingsFile } from '../../shared/telemetry/settings-types';
+import { getSecretPath, getSecureStorageState, updateSecrets, type TelemetrySecrets } from './secret-store';
 
 export const EXPERIMENTAL_FLAG = 'telemetry';
 
@@ -28,32 +37,121 @@ export interface OtlpDestinationConfig {
 
 export type DestinationConfig = AzureDestinationConfig | OtlpDestinationConfig;
 
-export interface TelemetrySettings extends Partial<TelemetryIdentity> {
-  enabled: boolean;
-  level: TelemetryLevel;
-  destination: DestinationConfig | null;
-  /** Advanced trace sample rate in (0, 1]. */
-  sampleRate: number;
-  /** App version seen at the previous start, for `clubhouse.startup.kind`. */
-  lastVersion?: string;
+/** The Phase 1 on-disk destination, still holding a plaintext secret. */
+interface LegacyDestination {
+  kind?: unknown;
+  connectionString?: unknown;
+  endpoint?: unknown;
+  headers?: unknown;
 }
 
-export const DEFAULT_TELEMETRY_SETTINGS: TelemetrySettings = {
-  enabled: false,
-  level: 'standard',
-  destination: null,
-  sampleRate: 1,
-};
+export interface TelemetrySettings extends TelemetrySettingsFile {
+  legacyDestination?: LegacyDestination;
+}
 
-const store = createSettingsStore<TelemetrySettings>(
-  'telemetry-settings.json',
-  DEFAULT_TELEMETRY_SETTINGS,
-  undefined,
-  { mode: 0o600 },
-);
+export const DEFAULT_TELEMETRY_SETTINGS: TelemetrySettings = { ...TELEMETRY_SETTINGS.defaults };
 
-export const getTelemetrySettings = store.get;
-export const updateTelemetrySettings = store.update;
+/** Convert a Phase 1 file (destination object) to the Phase 2 shape. */
+export function migrateTelemetrySettings(raw: Record<string, unknown>): TelemetrySettings {
+  const settings = { ...raw } as unknown as TelemetrySettings & { destination: unknown };
+  const legacy = settings.destination;
+  if (legacy && typeof legacy === 'object') {
+    const d = legacy as LegacyDestination;
+    settings.legacyDestination = d;
+    settings.destination = d.kind === 'otlp' ? 'otlp' : 'azure';
+    if (d.kind === 'otlp' && typeof d.endpoint === 'string') settings.otlpEndpoint = d.endpoint;
+    if (d.kind === 'otlp' && d.headers && typeof d.headers === 'object') {
+      settings.otlpHeaderNames = Object.keys(d.headers as object);
+    }
+    // Phase 1 users configured the destination by hand in this file, so the
+    // host counts as confirmed; consent is still asked for in the UI.
+    if (d.kind === 'otlp' && typeof d.endpoint === 'string') {
+      try {
+        settings.otlpConfirmedHost = new URL(d.endpoint).host;
+      } catch {
+        // Invalid endpoint: validation reports it on start.
+      }
+    }
+  } else if (legacy === null || (legacy !== 'azure' && legacy !== 'otlp')) {
+    settings.destination = 'azure';
+  }
+  if (!TELEMETRY_LEVELS.includes(settings.level)) settings.level = 'standard';
+  if (!Array.isArray(settings.otlpHeaderNames)) settings.otlpHeaderNames = [];
+  if (settings.otlpTemporality !== 'delta') settings.otlpTemporality = 'cumulative';
+  if (typeof settings.consentVersion !== 'number') settings.consentVersion = 0;
+  return settings as TelemetrySettings;
+}
+
+const managed = createManagedSettings<TelemetrySettings>(TELEMETRY_SETTINGS as typeof TELEMETRY_SETTINGS & { defaults: TelemetrySettings }, {
+  migrate: migrateTelemetrySettings,
+  mode: 0o600,
+});
+
+export const getTelemetrySettings = managed.store.get;
+export const updateTelemetrySettings = managed.store.update;
+
+/** Secrets carried by a not-yet-migrated Phase 1 file. */
+export function legacySecrets(settings: TelemetrySettings = getTelemetrySettings()): TelemetrySecrets {
+  const d = settings.legacyDestination;
+  if (!d) return {};
+  const out: TelemetrySecrets = {};
+  if (typeof d.connectionString === 'string') out.connectionString = d.connectionString;
+  if (d.headers && typeof d.headers === 'object') {
+    out.otlpHeaders = Object.fromEntries(
+      Object.entries(d.headers as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'),
+    );
+  }
+  return out;
+}
+
+/**
+ * Move a Phase 1 plaintext secret into the secret store and wipe it from
+ * telemetry-settings.json. Call after `app.whenReady()`. If secure storage is
+ * unavailable the plaintext stays put (it is the only copy) and is used for
+ * this run; returns false.
+ */
+export async function migrateLegacySecrets(): Promise<boolean> {
+  const settings = getTelemetrySettings();
+  if (!settings.legacyDestination) return true;
+  if (getSecureStorageState() === 'unavailable') return false;
+  const legacy = legacySecrets(settings);
+  await updateSecrets((current) => ({
+    connectionString: current.connectionString ?? legacy.connectionString,
+    otlpHeaders: current.otlpHeaders ?? legacy.otlpHeaders,
+  }));
+  await updateTelemetrySettings((s) => {
+    const next = { ...s };
+    delete next.legacyDestination;
+    return next;
+  });
+  return true;
+}
+
+/** Destination plus secrets, ready for validation and the exporters. */
+export function resolveDestination(settings: TelemetrySettings, secrets: TelemetrySecrets): DestinationConfig | null {
+  const merged: TelemetrySecrets = { ...legacySecrets(settings), ...secrets };
+  if (settings.destination === 'azure') {
+    return merged.connectionString ? { kind: 'azure', connectionString: merged.connectionString } : null;
+  }
+  if (!settings.otlpEndpoint) return null;
+  const headers: Record<string, string> = {};
+  for (const name of settings.otlpHeaderNames) {
+    const value = merged.otlpHeaders?.[name];
+    if (typeof value === 'string') headers[name] = value;
+  }
+  return { kind: 'otlp', endpoint: settings.otlpEndpoint, headers };
+}
+
+/** Cheap, synchronous pre-check used before `ready` (no decryption). */
+export function hasDestinationConfigured(settings: TelemetrySettings): boolean {
+  if (settings.legacyDestination) return true;
+  if (settings.destination === 'otlp') return !!settings.otlpEndpoint;
+  try {
+    return fs.existsSync(getSecretPath());
+  } catch {
+    return false;
+  }
+}
 
 export function isExperimentEnabled(): boolean {
   try {
@@ -92,8 +190,9 @@ export function isAllowedAzureIngestionHost(url: URL): boolean {
   const testHost = process.env[TEST_AZURE_HOST_ENV];
   return !app.isPackaged && !!testHost && url.host === testHost;
 }
-const HEADER_TOKEN_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-const RESERVED_HEADERS = new Set(['content-type', 'content-length', 'host']);
+
+export const HEADER_TOKEN_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+export const RESERVED_HEADERS = new Set(['content-type', 'content-length', 'host']);
 const IKEY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type DestinationValidation =

@@ -50,6 +50,18 @@ export interface ReplaySpan {
   errorType?: ErrorType;
 }
 
+/** One exporter result, kept briefly for the Settings test event. */
+export interface ExportRecord {
+  signal: 'traces' | 'metrics' | 'logs';
+  ok: boolean;
+  /** Epoch ms when the result arrived. */
+  at: number;
+  httpStatus?: number;
+  /** Error code (`ENOTFOUND`, `CERT_HAS_EXPIRED`, ...) or name. */
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export interface TelemetryRuntime {
   readonly level: TelemetryLevel;
   flow<T>(name: SpanName, opts: FlowOptions, fn: (span: SpanHandle) => T, extras?: FlowExtras<T>): T;
@@ -59,6 +71,8 @@ export interface TelemetryRuntime {
   exception(error: unknown, opts: ExceptionOptions): void;
   replaySpan(span: ReplaySpan): void;
   preview(): PreviewItem[];
+  /** Export results that arrived at or after `sinceMs`, oldest first. */
+  recentExports(sinceMs: number): ExportRecord[];
   forceFlush(timeoutMs: number): Promise<void>;
   shutdown(timeoutMs: number): Promise<void>;
 }
