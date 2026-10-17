@@ -17,6 +17,7 @@ import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 import type {
   AvailableCommand,
   ChatCapabilities,
+  ChatModelOption,
   ChatDriverId,
   ChatEvent,
   ChatEventDataMap,
@@ -203,6 +204,12 @@ export interface ChatViewState {
   subagents: Record<string, SubagentInfo>;
   usage: ChatUsage;
   commands: AvailableCommand[];
+  /** Model choices from session_info (empty: no model menu). */
+  models: ChatModelOption[];
+  /** Effort choices from session_info, in the provider's order. */
+  efforts: string[];
+  /** The provider's own name for each live level. */
+  levelNames: Partial<Record<PermissionLevel, string>>;
   queued: QueuedMessage[];
   /** Native messages the driver didn't recognize (protocol drift), by name. */
   protocolUnknown: Record<string, number>;
@@ -231,6 +238,9 @@ export function createChatViewState(agentId: string): ChatViewState {
     subagents: {},
     usage: { turn: null, session: null, limits: [], context: null },
     commands: [],
+    models: [],
+    efforts: [],
+    levelNames: {},
     queued: [],
     protocolUnknown: {},
   };
@@ -374,6 +384,10 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         nativeSessionId: d.nativeSessionId ?? state.nativeSessionId,
         model: d.model ?? state.model,
         level: d.level ?? state.level,
+        // A new session (or another driver) sends its own picker lists in session_info.
+        models: [],
+        efforts: [],
+        levelNames: {},
         state: 'idle',
       };
     }
@@ -385,6 +399,10 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         nativeSessionId: d.nativeSessionId ?? state.nativeSessionId,
         model: d.model ?? state.model,
         cliVersion: d.cliVersion ?? state.cliVersion,
+        // Picker lists: present replaces (empty clears), absent leaves unchanged.
+        models: d.models ?? state.models,
+        efforts: d.efforts ?? state.efforts,
+        levelNames: d.levelNames ?? state.levelNames,
         capabilities: d.capabilities
           ? { ...(state.capabilities ?? MINIMAL_CHAT_CAPABILITIES), ...d.capabilities }
           : state.capabilities,

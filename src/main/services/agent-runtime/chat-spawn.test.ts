@@ -195,6 +195,26 @@ describe('chat spawn', () => {
       }]);
     });
 
+    it('opens the terminal for a CLI that needs a login, without trying the other drivers', async () => {
+      const { sdk, stream } = drivers();
+      sdk.probe = async () => ({ handshakeOk: true, needsLogin: true, loginHint: 'run claude, then /login', capabilities: sdk.capabilities });
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+      expect(sdk.sessions).toHaveLength(0);
+      expect(stream.sessions).toHaveLength(0);
+      expect(toasts()).toEqual([{
+        level: 'info', code: 'login_required',
+        message: 'Claude Code needs you to log in. Opening the terminal so you can log in (run claude, then /login). Chat starts next time.',
+      }]);
+    });
+
+    it('probes through the profile\'s command prefix', async () => {
+      const { sdk } = drivers();
+      const calls: unknown[][] = [];
+      sdk.probe = async (...args: unknown[]) => { calls.push(args); return { handshakeOk: true, capabilities: sdk.capabilities }; };
+      expect(await tryStartChatAgent(params, provider, { A: '1' }, 'wsl -e', null)).toBe(true);
+      expect(calls[0]).toEqual([expect.any(String), { A: '1' }, { commandPrefix: 'wsl -e' }]);
+    });
+
     it('keeps chat on a newer-than-tested CLI and notes it in the transcript only', async () => {
       const { sdk } = drivers();
       sdk.probe = async () => ({ handshakeOk: true, cliVersion: '2.1.900', capabilities: sdk.capabilities });

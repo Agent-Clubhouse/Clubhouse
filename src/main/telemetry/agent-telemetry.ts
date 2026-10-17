@@ -11,7 +11,8 @@
  * Phase 4b adds the agent kind (noted by spawnAgent just before the process
  * starts) and the `clubhouse.agent.kill` span, replayed at exit from the
  * moment killAgent was asked. The spawn tree lives in spawn-telemetry.ts.
- * Chat runs are mapped from the chat event bus later (spec §9.1).
+ * Chat runs open here from the chat event bus (chat-telemetry.ts, spec §9.1)
+ * and close on the same exit broadcast.
  *
  * No OpenTelemetry imports: part of the main bundle. The orchestrator lookup
  * is injected at install time so the runtime managers don't pick up a
@@ -25,7 +26,7 @@ import { clearToolCalls } from './agent-signals';
 
 export { recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
 
-type Runtime = 'pty' | 'headless';
+type Runtime = 'pty' | 'headless' | 'chat';
 type Kind = Parameters<typeof ATTR.agentKind>[0];
 type KillTrigger = Parameters<typeof ATTR.killTrigger>[0];
 type Orchestrator = Parameters<typeof ATTR.orchestrator>[0];
@@ -99,6 +100,16 @@ export function agentRunStarted(agentId: string, runtime: Runtime, atMs = Date.n
     bytes: 0,
     swept: false,
   });
+}
+
+/** True while a run is open for this agent (chat sessions use it so a context clear doesn't restart the run). */
+export function hasActiveRun(agentId: string): boolean {
+  return runs.has(agentId);
+}
+
+/** Drop a run without recording it (a chat start that fell back to the terminal never was a chat run). */
+export function discardRun(agentId: string): void {
+  runs.delete(agentId);
 }
 
 /** PTY only: the shell accepted the agent command. */

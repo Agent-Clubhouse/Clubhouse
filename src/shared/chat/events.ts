@@ -197,6 +197,8 @@ export type ChatErrorCode =
   | 'protocol_error'
   | 'driver_stream_failed'
   | 'auth_required'
+  /** A billing or account problem (account on hold, payment): logging in again won't fix it. */
+  | 'account_issue'
   | 'rate_limited'
   | 'context_overflow'
   | 'tool_failed'

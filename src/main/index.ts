@@ -51,6 +51,7 @@ import { getTelemetrySettings } from './telemetry/settings';
 import { getSettings as getExperimentalSettings } from './services/experimental-settings';
 import { NEW_CHROME_ARG, NEW_CHROME_FLAG } from '../shared/chrome-flag';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
+import { installChatTelemetry } from './telemetry/chat-telemetry';
 import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { getAgentOrchestrator } from './services/agent-registry';
 
@@ -89,6 +90,7 @@ registerTelemetryRendererHandlers({
 installCrashTelemetry();
 installLifecycleTelemetry();
 installAgentTelemetry(getAgentOrchestrator);
+installChatTelemetry();
 // Before registerAllHandlers, so every app invoke handler is timed at the
 // Detailed level. Telemetry's own handlers (registered above) stay untimed.
 installIpcTelemetry(ipcMain);

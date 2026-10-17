@@ -229,9 +229,9 @@ export function claudeQuestionInput(input: Obj, answers: ChatQuestionAnswers): O
 const API_ERROR_CODES: Record<string, ChatErrorCode> = {
   authentication_failed: 'auth_required',
   oauth_org_not_allowed: 'auth_required',
-  account_on_hold: 'auth_required',
+  account_on_hold: 'account_issue',
   verification_required: 'auth_required',
-  billing_error: 'auth_required',
+  billing_error: 'account_issue',
   cloud_credential_error: 'auth_required',
   rate_limit: 'rate_limited',
   max_output_tokens: 'max_tokens',
@@ -799,12 +799,13 @@ export class ClaudeChatDriver implements ChatDriver {
   ) {}
 
   /** Zero-token check: spawn, complete `initialize`, close. Sends no prompt. */
-  async probe(binaryPath: string, env?: Record<string, string>): Promise<ChatDriverProbe> {
+  async probe(binaryPath: string, env?: Record<string, string>, opts?: { commandPrefix?: string }): Promise<ChatDriverProbe> {
     const capabilities = claudeCapabilities('ask');
     const transport = this.createTransport({
       binary: binaryPath,
       cwd: os.homedir(),
       env,
+      commandPrefix: opts?.commandPrefix,
       permissionMode: 'default',
       includePartialMessages: false,
       log: this.deps.log,

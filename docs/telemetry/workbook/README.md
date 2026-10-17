@@ -23,6 +23,7 @@ A one-click **Deploy to Azure** button and optional alert rules come in Phase 7.
 | Plugins and canvas (Phase 5) | Plugin activations and failures by plugin, origin and error, activation retries, plugin module requests, canvas loads by result, registry fetches, plugin installs/updates/uninstalls by failure stage, plugin update checks |
 | Agents | Spawns and spawn failures by orchestrator, runtime and error; spawn time and spawn steps; CLI binary lookup by tier; how runs end; readiness; kills by trigger and stage; kill escalations; tool calls by bucket; Clubhouse MCP tool calls; permission waits; shoulder tap deliveries; durable create and delete |
 | Annex | Pairing results; connects by address family; connect and discovery failures; identity regenerations and TLS fallbacks; reconnects by attempt; disconnects by reason; heartbeat RTT; control requests denied; remote spawns; the satellite event stream by type; connected clients; snapshot build and replays; REST routes (Detailed level) |
+| Chat | Turns by driver and end reason (p50/p95), failed turns by error type, time to first token, protocol drift by driver and version, stalled turns, tokens by driver, chat permission waits |
 | Goobers | Data age by model; stream mode changes; stream reconnects and terminal stops; liveness transitions; activation and daemon control; the poll loop (Detailed level) |
 
 Permission panels live on the Agents tab. Detailed-level panels (tool-call time on Agents, slowest IPC invokes on Reliability, REST routes on Annex) stay empty below the Detailed level.

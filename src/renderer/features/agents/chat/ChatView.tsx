@@ -51,6 +51,26 @@ function ProtocolDriftNote({ counts }: { counts: Record<string, number> }) {
   );
 }
 
+/** Shown after the CLI reports it needs a login: the terminal runs the CLI's own login flow. */
+function LoginBanner({ state, onSwitchToTerminal }: { state: ChatViewState; onSwitchToTerminal?: () => void }) {
+  const last = state.items[state.items.length - 1];
+  if (!last || last.kind !== 'error' || last.code !== 'auth_required') return null;
+  return (
+    <div className="flex items-center gap-2.5 flex-wrap text-[12.5px] text-ctp-subtext0 px-0.5" data-testid="chat-login-banner" role="status">
+      <span>This CLI needs you to log in.</span>
+      {onSwitchToTerminal && (
+        <button
+          type="button"
+          onClick={onSwitchToTerminal}
+          className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium"
+        >
+          Log in in the terminal
+        </button>
+      )}
+    </div>
+  );
+}
+
 function PlanHandoff({ state, onImplement }: { state: ChatViewState; onImplement: (level: PermissionLevel) => void }) {
   const level = implementLevel(state.capabilities);
   if (!level || !needsManualPlanHandoff(state)) return null;
@@ -169,6 +189,9 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           level={state.level}
           model={state.model}
           effort={state.effort}
+          models={state.models}
+          efforts={state.efforts}
+          levelNames={state.levelNames}
           commands={state.commands}
           text={draft}
           onTextChange={setDraft}
@@ -178,6 +201,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           onSend={onSend}
           onStop={() => { void actions.interrupt(); }}
           onLevelChange={(l) => { void actions.setLevel(l); }}
+          onModelChange={actions.setModel ? (m, e) => { void actions.setModel?.(m, e); } : undefined}
         />
       </>
     );
@@ -216,6 +240,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
             <div className="w-full max-w-[740px] flex flex-col gap-2">
               <ProtocolDriftNote counts={state.protocolUnknown} />
+              <LoginBanner state={state} onSwitchToTerminal={onSwitchToTerminal} />
               {state.plan.length > 0 && <TaskList entries={state.plan} />}
               {state.queued.length > 0 && <QueueList queued={state.queued} />}
               {dock}

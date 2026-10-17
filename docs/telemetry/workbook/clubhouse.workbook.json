@@ -133,6 +133,14 @@
             "style": "link"
           },
           {
+            "id": "chat",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Chat",
+            "subTarget": "chat",
+            "style": "link"
+          },
+          {
             "id": "goobers",
             "cellValue": "selectedTab",
             "linkTarget": "parameter",
@@ -1345,6 +1353,119 @@
         "value": "annex"
       },
       "name": "tab-annex"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Native chat (spec \u00a74.4 chat turns, \u00a79.1), mapped from the chat event bus. Protocol drift and stalled turns are the early warnings for a CLI release that broke a driver (\u00a712 H2)."
+            },
+            "name": "text-chat"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.turn\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), end_reason = tostring(customDimensions[\"clubhouse.turn.end_reason\"])\n| summarize turns = sum(itemCount), p50_s = round(percentile(duration, 50) / 1000, 1), p95_s = round(percentile(duration, 95) / 1000, 1) by driver, end_reason\n| order by turns desc",
+              "size": 0,
+              "title": "Chat turns by driver and end reason",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Chat turns by driver and end reason"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.turn\"\n| where tostring(customDimensions[\"clubhouse.turn.end_reason\"]) == \"error\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), error_type = tostring(customDimensions[\"error.type\"])\n| summarize turns = sum(itemCount) by driver, error_type, application_Version\n| order by turns desc",
+              "size": 0,
+              "title": "Failed chat turns by error type",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Failed chat turns by error type"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.turn\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), ttft_ms = toint(customDimensions[\"clubhouse.turn.time_to_first_token_ms\"])\n| where isnotnull(ttft_ms)\n| summarize p50_s = round(percentile(ttft_ms, 50) / 1000.0, 2), p95_s = round(percentile(ttft_ms, 95) / 1000.0, 2) by driver",
+              "size": 0,
+              "title": "Time to first token (s)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Time to first token (s)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.chat.protocol.unknown\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), kind = tostring(customDimensions[\"clubhouse.chat.protocol.kind\"])\n| summarize messages = sum(value) by driver, kind, application_Version\n| order by messages desc",
+              "size": 0,
+              "title": "Protocol drift by driver and version",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Protocol drift by driver and version"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.turn.stalled\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"])\n| summarize stalled = sum(value) by driver, bin(timestamp, 1d)",
+              "size": 0,
+              "title": "Stalled turns by driver",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Stalled turns by driver"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.tokens\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), token_type = tostring(customDimensions[\"gen_ai.token.type\"])\n| summarize tokens = sum(value) by driver, token_type",
+              "size": 0,
+              "title": "Tokens by driver",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Tokens by driver"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.permission\"\n| where tostring(customDimensions[\"clubhouse.permission.path\"]) == \"chat\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), decision = tostring(customDimensions[\"clubhouse.permission.decision\"]), source = tostring(customDimensions[\"clubhouse.permission.source\"])\n| summarize requests = sum(itemCount), p50_s = round(percentile(duration, 50) / 1000, 1), p95_s = round(percentile(duration, 95) / 1000, 1) by driver, decision, source",
+              "size": 0,
+              "title": "Chat permission waits",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Chat permission waits"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "chat"
+      },
+      "name": "tab-chat"
     },
     {
       "type": 12,
