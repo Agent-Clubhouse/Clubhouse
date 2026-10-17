@@ -12,7 +12,7 @@ import type { StreamJsonEvent } from '../services/jsonl-parser';
  *   {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"pong"}}
  *   {"type":"turn.completed","usage":{"input_tokens":15599,…}}
  *
- * `headless-manager` and `transcript-parser` match on `assistant`, `user`,
+ * `headless-manager` and `shared/headless-transcript` match on `assistant`, `user`,
  * `result` and `content_block_*`, so none of these ever matched: a headless
  * Codex run produced no transcript, no tool history, no completion signal and
  * no token usage.

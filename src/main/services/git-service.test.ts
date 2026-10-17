@@ -1289,6 +1289,39 @@ describe('getDiffNumstat', () => {
     expect(await getDiffNumstat(DIR)).toEqual([]);
   });
 
+  it('passes a large maxBuffer to diff and ls-files', async () => {
+    const opts: any[] = [];
+    vi.mocked(execFile).mockImplementation((_f: any, args: any, o: any, cb: any) => {
+      opts.push({ a: (args as string[])[0], maxBuffer: o.maxBuffer });
+      cb(null, (args as string[])[0] === 'rev-parse' ? `${ROOT}\n` : '', '');
+      return {} as any;
+    });
+    await getDiffNumstat(DIR);
+    expect(opts.find((o) => o.a === 'diff').maxBuffer).toBeGreaterThanOrEqual(16 * 1024 * 1024);
+    expect(opts.find((o) => o.a === 'ls-files').maxBuffer).toBeGreaterThanOrEqual(16 * 1024 * 1024);
+  });
+
+  it('reuses untracked line counts while size and mtime are unchanged (2s poll)', async () => {
+    mockRepo('', 'cached-once.txt\x00');
+    vi.mocked(fs.promises.stat).mockResolvedValue({ isFile: () => true, size: 4, mtimeMs: 111 } as any);
+    vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from('a\nb\n') as any);
+    await getDiffNumstat(DIR);
+    const second = await getDiffNumstat(DIR);
+    expect(second).toEqual([{ path: 'cached-once.txt', added: 2, removed: 0, binary: false }]);
+    expect(fs.promises.readFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads at most 200 untracked files per call; the rest list without counts', async () => {
+    const names = Array.from({ length: 205 }, (_, i) => `budget-${i}.txt`);
+    mockRepo('', names.join('\x00') + '\x00');
+    vi.mocked(fs.promises.stat).mockResolvedValue({ isFile: () => true, size: 2, mtimeMs: 7 } as any);
+    vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from('x\n') as any);
+    const result = await getDiffNumstat(DIR);
+    expect(result).toHaveLength(205);
+    expect(fs.promises.readFile).toHaveBeenCalledTimes(200);
+    expect(result[204]).toEqual({ path: 'budget-204.txt', added: 0, removed: 0, binary: false });
+  });
+
   it('rejects a base that looks like a flag without running git', async () => {
     mockGitExec(() => '');
     expect(await getDiffNumstat(DIR, '--output=/tmp/x')).toEqual([]);

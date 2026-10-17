@@ -34,10 +34,10 @@ function validateFilePath(filePath: string): void {
   }
 }
 
-function gitExec(args: string[], cwd: string, timeout = 10000, op: GitOp = 'other'): Promise<string> {
+function gitExec(args: string[], cwd: string, timeout = 10000, op: GitOp = 'other', maxBuffer?: number): Promise<string> {
   const startMs = Date.now();
   return new Promise((resolve, reject) => {
-    nodeExecFile('git', args, { cwd, encoding: 'utf-8', timeout }, (error, stdout, stderr) => {
+    nodeExecFile('git', args, { cwd, encoding: 'utf-8', timeout, ...(maxBuffer ? { maxBuffer } : {}) }, (error, stdout, stderr) => {
       if (isTelemetryActive()) tel.count('clubhouse.git.subprocess.duration', (Date.now() - startMs) / 1000, [ATTR.gitOp(op)]);
       if (error) {
         (error as any).stderr = stderr;
@@ -508,7 +508,7 @@ async function readWorktrees(dirPath: string): Promise<GitWorktreeEntry[]> {
  */
 export async function getHeadSha(dirPath: string): Promise<string | null> {
   try {
-    const sha = (await gitExec(['rev-parse', '--verify', 'HEAD'], dirPath)).trim();
+    const sha = (await gitExec(['rev-parse', '--verify', 'HEAD'], dirPath, undefined, 'head_sha')).trim();
     return /^[0-9a-f]{7,64}$/i.test(sha) ? sha : null;
   } catch {
     // telemetry-exempt: not a repo or no commits yet; null is the answer.
@@ -553,8 +553,15 @@ export function parseNumstatZ(output: string): GitNumstatEntry[] {
 
 /** Untracked files larger than this are reported as binary without reading them. */
 const UNTRACKED_MAX_BYTES = 1024 * 1024;
-/** Upper bound on untracked files read per call, so a stray build dir can't stall it. */
+/** Upper bound on untracked files listed per call, so a stray build dir can't stall it. */
 const UNTRACKED_MAX_FILES = 1000;
+/** Upper bound on untracked files actually read per call (the monitor polls every 2s); the rest list without counts. */
+const UNTRACKED_MAX_READS = 200;
+/** numstat and ls-files output in a big repo can pass execFile's 1 MB default. */
+const NUMSTAT_MAX_BUFFER = 16 * 1024 * 1024;
+/** Line counts of untracked files by path, reused while size and mtime are unchanged. */
+const untrackedCache = new Map<string, { size: number; mtimeMs: number; added: number; binary: boolean }>();
+const UNTRACKED_CACHE_MAX = 4000;
 
 /**
  * Line count of an untracked file's contents, where every line is an
@@ -569,14 +576,22 @@ export function countUntrackedLines(content: Uint8Array): { added: number; binar
   return { added: lines, binary: false };
 }
 
-async function untrackedEntry(root: string, relPath: string): Promise<GitNumstatEntry> {
+async function untrackedEntry(root: string, relPath: string, budget: { reads: number }): Promise<GitNumstatEntry> {
   try {
     const full = path.join(root, relPath);
     const stat = await fs.promises.stat(full);
     if (!stat.isFile() || stat.size > UNTRACKED_MAX_BYTES) {
       return { path: relPath, added: 0, removed: 0, binary: stat.isFile() };
     }
+    const cached = untrackedCache.get(full);
+    if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+      return { path: relPath, added: cached.added, removed: 0, binary: cached.binary };
+    }
+    if (budget.reads <= 0) return { path: relPath, added: 0, removed: 0, binary: false };
+    budget.reads--;
     const { added, binary } = countUntrackedLines(await fs.promises.readFile(full));
+    if (untrackedCache.size >= UNTRACKED_CACHE_MAX) untrackedCache.delete(untrackedCache.keys().next().value as string);
+    untrackedCache.set(full, { size: stat.size, mtimeMs: stat.mtimeMs, added, binary });
     return { path: relPath, added, removed: 0, binary };
   } catch {
     // telemetry-exempt: the file vanished or is unreadable; list it without counts.
@@ -597,16 +612,18 @@ export async function getDiffNumstat(dirPath: string, base?: string): Promise<Gi
   try {
     // Run from the top level so ls-files lists the whole repo and both
     // commands report root-relative paths.
-    const root = (await gitExec(['rev-parse', '--show-toplevel'], dirPath)).trim();
+    const root = (await gitExec(['rev-parse', '--show-toplevel'], dirPath, undefined, 'diff_numstat')).trim();
     if (!root) return [];
     const [diffRaw, untrackedRaw] = await Promise.all([
-      gitExec(['diff', '--numstat', '-z', ref, '--'], root),
-      gitExec(['ls-files', '--others', '--exclude-standard', '-z'], root),
+      gitExec(['diff', '--numstat', '-z', ref, '--'], root, undefined, 'diff_numstat', NUMSTAT_MAX_BUFFER),
+      gitExec(['ls-files', '--others', '--exclude-standard', '-z'], root, undefined, 'diff_numstat', NUMSTAT_MAX_BUFFER),
     ]);
     const entries = parseNumstatZ(diffRaw);
     const seen = new Set(entries.map((e) => e.path));
     const untracked = untrackedRaw.split('\0').filter((p) => p && !seen.has(p)).slice(0, UNTRACKED_MAX_FILES);
-    entries.push(...(await Promise.all(untracked.map((p) => untrackedEntry(root, p)))));
+    const budget = { reads: UNTRACKED_MAX_READS };
+    // Sequential so the read budget is honoured; cached files cost one stat each.
+    for (const p of untracked) entries.push(await untrackedEntry(root, p, budget));
     return entries;
   } catch {
     // telemetry-exempt: polled diff stats; not a repo or a bad base means no stats.
