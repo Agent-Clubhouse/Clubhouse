@@ -39,6 +39,28 @@ describe('uiStore', () => {
     mockRendererLog.mockClear();
   });
 
+  describe('openRuntimeSettings', () => {
+    it('opens app settings on Orchestrators, focused on the provider runtime row', () => {
+      useUIStore.setState({ explorerTab: 'agents', settingsSubPage: 'about', settingsContext: 'proj-1' });
+      getState().openRuntimeSettings('codex-cli');
+      expect(getState()).toMatchObject({
+        explorerTab: 'settings',
+        previousExplorerTab: 'agents',
+        settingsContext: 'app',
+        settingsSubPage: 'orchestrators',
+        settingsFocus: 'runtime:codex-cli',
+      });
+      getState().setSettingsFocus(null);
+      expect(getState().settingsFocus).toBeNull();
+    });
+
+    it('keeps the tab to return to when already in settings', () => {
+      useUIStore.setState({ explorerTab: 'settings', previousExplorerTab: 'agents' });
+      getState().openRuntimeSettings('claude-code');
+      expect(getState().previousExplorerTab).toBe('agents');
+    });
+  });
+
   describe('settingsSubPage default', () => {
     it('defaults to orchestrators', () => {
       expect(getState().settingsSubPage).toBe('orchestrators');

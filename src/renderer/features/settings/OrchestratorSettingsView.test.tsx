@@ -7,6 +7,8 @@ import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { OrchestratorSettingsView } from './OrchestratorSettingsView';
+import { useUIStore } from '../../stores/uiStore';
+import { CHAT_DEFAULT_TIP_KEY } from '../agents/chat/chat-default-tip';
 
 // Mock ProjectAgentDefaultsSection to avoid deep component tree
 vi.mock('./ProjectAgentDefaultsSection', () => ({
@@ -414,6 +416,28 @@ describe('OrchestratorSettingsView', () => {
       render(<OrchestratorSettingsView />);
       expect(await screen.findByTestId('runtime-mode-github-copilot')).toBeInTheDocument();
       expect(screen.queryByText('Hook server')).not.toBeInTheDocument();
+    });
+
+    it('records an explicit Terminal choice so the Chat default tip never shows', async () => {
+      setChatFlag(true);
+      localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
+      render(<OrchestratorSettingsView />);
+      const row = await screen.findByTestId('runtime-mode-claude-code');
+      fireEvent.click(within(row).getByRole('radio', { name: 'Terminal' }));
+      expect(localStorage.getItem(CHAT_DEFAULT_TIP_KEY)).toBe('chose_terminal');
+      localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
+    });
+
+    it('scrolls to and outlines the provider runtime row for the deep link, then clears the focus', async () => {
+      setChatFlag(true);
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      useUIStore.getState().openRuntimeSettings('claude-code');
+      render(<OrchestratorSettingsView />);
+      const row = await screen.findByTestId('runtime-mode-claude-code');
+      await waitFor(() => expect(row).toHaveAttribute('data-highlighted', 'true'));
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' });
+      expect(useUIStore.getState().settingsFocus).toBeNull();
     });
 
     it('is not shown for disabled orchestrators', async () => {

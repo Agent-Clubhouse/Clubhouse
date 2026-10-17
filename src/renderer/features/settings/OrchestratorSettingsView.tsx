@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useOrchestratorStore, DEFAULT_HOOK_SERVER_ORCHESTRATOR } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
@@ -7,6 +7,8 @@ import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
 import { Toggle } from '../../components/Toggle';
+import { useUIStore } from '../../stores/uiStore';
+import { noteExplicitTerminalChoice } from '../agents/chat/chat-default-tip';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import type { AgentRuntimeMode, ChatRuntimeSettings } from '../../../shared/chat';
@@ -55,6 +57,8 @@ function useChatRuntimeSettings() {
   }, []);
 
   const setRuntimeMode = async (orchestratorId: string, mode: AgentRuntimeMode) => {
+    // An explicit Terminal choice means the "Agents now open in Chat" tip is never needed.
+    if (mode === 'terminal') noteExplicitTerminalChoice();
     setRuntimeSettings((prev) => ({ ...prev, [orchestratorId]: { ...prev[orchestratorId], mode } }));
     try {
       const current = (await window.clubhouse.chat.getRuntimeSettings()) ?? {};
@@ -123,6 +127,29 @@ function AppAgentSettings() {
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
   const { chatEnabled, runtimeSettings, setRuntimeMode } = useChatRuntimeSettings();
+
+  // Deep link (uiStore.openRuntimeSettings): scroll to the provider's runtime
+  // row and outline it briefly. Falls back to the provider's card when the
+  // row isn't shown (provider disabled).
+  const settingsFocus = useUIStore((s) => s.settingsFocus);
+  const setSettingsFocus = useUIStore((s) => s.setSettingsFocus);
+  const runtimeRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [highlightedRuntime, setHighlightedRuntime] = useState<string | null>(null);
+  useEffect(() => {
+    if (!settingsFocus?.startsWith('runtime:') || !chatEnabled) return;
+    const providerId = settingsFocus.slice('runtime:'.length);
+    const target = runtimeRowRefs.current[providerId] ?? cardRefs.current[providerId];
+    if (!target) return; // rows not rendered yet; retried when they are
+    target.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    setHighlightedRuntime(providerId);
+    setSettingsFocus(null);
+  }, [settingsFocus, chatEnabled, allOrchestrators, enabled, setSettingsFocus]);
+  useEffect(() => {
+    if (!highlightedRuntime) return;
+    const t = setTimeout(() => setHighlightedRuntime(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightedRuntime]);
 
   useEffect(() => {
     loadSettings().then(() => checkAllAvailability());
@@ -310,7 +337,7 @@ function AppAgentSettings() {
           const runtimeMode = runtimeSettings[o.id]?.mode ?? DEFAULT_RUNTIME_MODE;
 
           return (
-            <div key={o.id} className="rounded-lg bg-ctp-mantle border border-surface-0">
+            <div key={o.id} ref={(el) => { cardRefs.current[o.id] = el; }} className="rounded-lg bg-ctp-mantle border border-surface-0">
               <div className="flex items-center justify-between py-2 px-3">
                 <div className="flex items-center gap-3">
                   <div
@@ -347,7 +374,14 @@ function AppAgentSettings() {
               {showExpansion && (
                 <div className="border-t border-surface-0 px-3 py-2.5 pl-8 space-y-2.5">
                   {chatEnabled && (
-                    <div className="flex items-center justify-between gap-3" data-testid={`runtime-mode-${o.id}`}>
+                    <div
+                      ref={(el) => { runtimeRowRefs.current[o.id] = el; }}
+                      className={`flex items-center justify-between gap-3 rounded-md transition-[outline-color] ${
+                        highlightedRuntime === o.id ? 'outline outline-1 outline-offset-4 outline-ctp-accent' : 'outline-transparent'
+                      }`}
+                      data-testid={`runtime-mode-${o.id}`}
+                      data-highlighted={highlightedRuntime === o.id ? 'true' : undefined}
+                    >
                       <div className="min-w-0">
                         <div className="text-xs text-ctp-text font-medium">Runtime</div>
                         <div className="text-[11px] text-ctp-subtext0 mt-0.5">

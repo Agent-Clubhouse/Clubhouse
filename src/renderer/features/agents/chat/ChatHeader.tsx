@@ -4,6 +4,7 @@ import type { ChatDriverId, UsageLimit } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { AgentAvatar } from '../AgentAvatar';
 import { formatElapsed, formatTokens } from './view-model';
+import { ChatDefaultTip } from './ChatDefaultTip';
 
 const DRIVER_LABELS: Record<ChatDriverId, string> = {
   claude_agent_sdk: 'Agent SDK',
@@ -150,7 +151,12 @@ export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, swi
       <div className="ml-auto flex items-center gap-2.5">
         {limits.map((l) => <LimitMeter key={l.window} limit={l} />)}
         {context && context.size > 0 && <ContextRing used={context.used} size={context.size} />}
-        {onSwitchToTerminal && <RuntimeSwitch value="chat" onChange={onSwitchToTerminal} disabled={switching} />}
+        {onSwitchToTerminal && (
+          <span className="relative">
+            <RuntimeSwitch value="chat" onChange={onSwitchToTerminal} disabled={switching} />
+            <ChatDefaultTip agent={agent} />
+          </span>
+        )}
       </div>
     </div>
   );
