@@ -14,6 +14,7 @@ import { sanitizeSvg } from '../utils/sanitize-svg';
 import { ProjectTree } from './sidebar/ProjectTree';
 import { FilterResults } from './sidebar/FilterResults';
 import { useKeyboardShortcutsStore, formatBinding } from '../stores/keyboardShortcutsStore';
+import { Tooltip, formatShortcut } from '../components/Tooltip';
 import { NeedsYou, NeedsYouStrip } from './sidebar/NeedsYou';
 import { ListBody } from './sidebar/ListBody';
 import { SettingsNav } from './sidebar/SettingsNav';
@@ -252,16 +253,16 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
   const isOpen = useCommandPaletteStore((s) => s.isOpen);
   const binding = useKeyboardShortcutsStore((s) => s.shortcuts['command-palette']?.currentBinding);
   const mac = window.clubhouse.platform === 'darwin';
-  // ⌘K on macOS (symbols run together there), Ctrl+K elsewhere.
-  const shortcut = binding ? (mac ? formatBinding(binding).replace(/\+/g, '') : formatBinding(binding)) : '';
+  // ⌘K on macOS, Ctrl+K elsewhere; the keycap spells it "Ctrl K".
+  const shortcut = binding ? formatShortcut(binding) : '';
   return (
+    <Tooltip content="Command palette" shortcutAction="command-palette">
     <button
       type="button"
       data-testid="chrome-palette-button"
       aria-label="Command palette"
       aria-keyshortcuts={binding ? binding.replace('Meta', mac ? 'Meta' : 'Control') : undefined}
       aria-pressed={isOpen}
-      title={shortcut ? `Command palette (${shortcut})` : 'Command palette'}
       onClick={onOpen}
       className={`flex-shrink-0 h-7 rounded-md border flex items-center justify-center cursor-pointer focus-ring ${
         mac || !shortcut ? 'w-7' : 'px-2 text-xs font-medium whitespace-nowrap'
@@ -269,6 +270,7 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
     >
       {mac || !shortcut ? CommandGlyph : shortcut.replace(/\+/g, ' ')}
     </button>
+    </Tooltip>
   );
 }
 

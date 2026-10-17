@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import type { Agent, AgentDetailedStatus, Project } from '../../../shared/types';
 import { AgentRow, MarkedText } from './AgentRow';
+import { Button } from '../../components/Button';
 import { ProjectSquare } from './ProjectGroup';
 import { useTreeKeyboard } from './ProjectTree';
 import { agentDot, filterTree } from './treeModel';
@@ -51,15 +52,15 @@ export function FilterResults(props: FilterResultsProps) {
             No agent or project here matches <span className="text-ctp-text">{q}</span>.
           </p>
           <div>
-            <button
-              type="button"
+            <Button
+              kind="ghost"
               data-testid="filter-search-everything"
               onClick={props.onSearchEverything}
-              className="h-7 px-2.5 rounded-md border border-surface-1 flex items-center gap-1.5 text-xs font-medium text-ctp-text hover:bg-surface-0 cursor-pointer focus-ring"
+              className="focus-ring"
+              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
               Search everything
-            </button>
+            </Button>
           </div>
           <p className="text-xs text-ctp-overlay1">Opens the command palette with {q} already typed.</p>
         </div>

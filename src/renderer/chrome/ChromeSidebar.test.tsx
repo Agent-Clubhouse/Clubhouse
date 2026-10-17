@@ -284,12 +284,10 @@ describe('ChromeSidebar', () => {
         (window.clubhouse as { platform: string }).platform = 'darwin';
         const { unmount } = render(<ChromeSidebar />);
         expect(screen.getByTestId('chrome-palette-button').textContent).toBe('');
-        expect(screen.getByTestId('chrome-palette-button').getAttribute('title')).toBe('Command palette (⌘K)');
         unmount();
         (window.clubhouse as { platform: string }).platform = 'win32';
         render(<ChromeSidebar />);
         expect(screen.getByTestId('chrome-palette-button').textContent).toBe('Ctrl K');
-        expect(screen.getByTestId('chrome-palette-button').getAttribute('title')).toBe('Command palette (Ctrl+K)');
         fireEvent.click(screen.getByTestId('chrome-palette-button'));
         expect(useCommandPaletteStore.getState().isOpen).toBe(true);
         expect(screen.getByTestId('chrome-palette-button').getAttribute('aria-pressed')).toBe('true');
