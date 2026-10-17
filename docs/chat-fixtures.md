@@ -185,14 +185,14 @@ A handshake-only script (initialize, then close) should send no model request. T
 
 ### Before committing
 
-The recorder replaces the current directory with `/workspace/project` and your home directory with `/home/user`. Add `--redact <from>=<to>` for anything else. Then read the file. Things that come from your machine:
+By default the recorder replaces the current directory with `/workspace/project`, your home directory with `/home/user` and the temp directory with `/tmp`, each both as given and as its resolved real path (`/private/var/…` on macOS). It also scrubs key-, token- and email-shaped strings (`SECRET_REDACTIONS` in `fixture-format.mjs`). Add `--redact <from>=<to>` or `--redact-regex <pattern>=<to>` for anything else. Pattern matching can't catch everything, so read the file. Things that come from your machine:
 
 - Claude's `initialize` response includes your account email, organization and plan, plus your slash commands, agents, skills and MCP servers.
 - Copilot's `authMethods` can include the CLI install path, and its command list includes your skills.
 - Codex's `userAgent` and `codexHome`, and any MCP server names.
 - Session titles and file contents from the scratch repo.
 
-Trim long lists (commands, models) to a few entries, and add `match` to client entries where the fixture's point is a decision (approve vs deny). Run `npx vitest run --project main scripts/chat-fixtures` to check the fixture parses, then write a test that replays it.
+Trim long lists (commands, models) to a few entries, and add `match` to client entries where the fixture's point is a decision (approve vs deny). Run `npx vitest run --project main scripts/chat-fixtures` to check the fixture parses and passes the leak guard. The guard fails on home paths other than `/home/user`, Anthropic keys, GitHub and bearer tokens, and email addresses outside `example.com`. Then write a test that replays it.
 
 ### Refreshing after a CLI version bump
 

@@ -11,6 +11,7 @@ import {
   parseFixture,
   redactValue,
   remapCliMessage,
+  SECRET_REDACTIONS,
 } from './fixture-format.mjs';
 
 const FAKE_CLI = path.join(__dirname, 'fake-cli.mjs');
@@ -26,7 +27,7 @@ beforeEach(async () => {
   tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'chat-fixtures-test-'));
 });
 afterEach(async () => {
-  await fs.promises.rm(tmp, { recursive: true, force: true });
+  await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 async function writeFixture(name: string, lines: unknown[]): Promise<string> {
@@ -113,6 +114,58 @@ describe('fixture format', () => {
         expect(h.description).toBeTruthy();
       }
     }
+  });
+});
+
+describe('committed fixtures', () => {
+  /** Things a recording can leak that must never reach the repo. */
+  const FORBIDDEN: Array<[string, RegExp]> = [
+    ['a macOS home path', /\/Users\//],
+    ['a Linux home path other than /home/user', /\/home\/(?!user\b)/],
+    ['a Windows home path', /[A-Za-z]:(\\\\|\\)+Users/i],
+    ['an Anthropic API key', /sk-ant-/],
+    ['a GitHub token', /\bgh[pousr]_|github_pat_/],
+    ['a bearer token', /Bearer /],
+    ['an email outside example.com', /[A-Za-z0-9._%+-]+@(?!example\.com\b)[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/],
+  ];
+
+  async function listFiles(dir: string): Promise<string[]> {
+    const out: string[] = [];
+    for (const entry of await fs.promises.readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...await listFiles(full));
+      else out.push(full);
+    }
+    return out;
+  }
+
+  it('contain no personal paths, keys, tokens or real email addresses', async () => {
+    const leaks: string[] = [];
+    for (const file of await listFiles(FIXTURES)) {
+      const lines = (await fs.promises.readFile(file, 'utf8')).split('\n');
+      lines.forEach((line, i) => {
+        for (const [what, pattern] of FORBIDDEN) {
+          if (pattern.test(line)) leaks.push(`${path.relative(FIXTURES, file)}:${i + 1}: ${what}`);
+        }
+      });
+    }
+    expect(leaks).toEqual([]);
+  });
+
+  it('default secret redactions turn leaks into placeholders the guard accepts', () => {
+    const leaked = {
+      account: { email: 'jane.doe@corp.example.io' },
+      env: ['ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnop', 'GH_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123'],
+      header: 'Authorization: Bearer abc.def.ghi-123456',
+      keep: 'user@example.com',
+    };
+    const clean = redactValue(leaked, SECRET_REDACTIONS);
+    expect(clean).toEqual({
+      account: { email: 'user@example.com' },
+      env: ['ANTHROPIC_API_KEY=REDACTED_ANTHROPIC_KEY', 'GH_TOKEN=REDACTED_GITHUB_TOKEN'],
+      header: 'Authorization: REDACTED_BEARER_TOKEN',
+      keep: 'user@example.com',
+    });
   });
 });
 
@@ -233,5 +286,55 @@ describe('record', () => {
     const recorded = await loadFixture(out);
     expect(recorded.entries.map((e: { from: string; msg?: { method?: string } }) => `${e.from}:${e.msg?.method ?? ''}`).slice(0, 2))
       .toEqual(['client:initialize', 'cli:']);
+  });
+  it('scrubs temp paths and secrets by default, even ones the CLI prints', async () => {
+    const tmpReal = await fs.promises.realpath(os.tmpdir());
+    const leaky = await writeFixture('leaky.jsonl', [
+      header('acp'),
+      { from: 'client', msg: { jsonrpc: '2.0', id: 1, method: 'initialize' } },
+      { from: 'cli', msg: { jsonrpc: '2.0', id: 1, result: {
+        account: { email: 'jane@corp.example.io' },
+        scratch: path.join(tmpReal, 'session-1'),
+        token: 'sk-ant-api03-abcdefghijklmnop',
+      } } },
+    ]);
+    const script = path.join(tmp, 'steps.jsonl');
+    await fs.promises.writeFile(script, jsonl([{ send: { jsonrpc: '2.0', id: 1, method: 'initialize' } }, { await: { id: 1 } }]));
+    const out = path.join(tmp, 'leaky-recorded.jsonl');
+    const result = await run([RECORD, '--protocol', 'acp', '--out', out, '--script', script,
+      '--', process.execPath, FAKE_CLI, '--fake-fixture', leaky]);
+    expect(result.code).toBe(0);
+    const text = await fs.promises.readFile(out, 'utf8');
+    expect(text).not.toContain('jane@corp');
+    expect(text).not.toContain('sk-ant-');
+    expect(text).not.toContain(tmpReal);
+    const recorded = await loadFixture(out);
+    expect(recorded.entries[1].msg.result).toEqual({
+      account: { email: 'user@example.com' },
+      scratch: `/tmp${path.sep}session-1`,
+      token: 'REDACTED_ANTHROPIC_KEY',
+    });
+  });
+
+  it('keeps a final stdout line that has no trailing newline', async () => {
+    const tail = path.join(tmp, 'tail.js');
+    await fs.promises.writeFile(tail, `process.stdout.write('{"tail":true}');\n`);
+    const out = path.join(tmp, 'tail.jsonl');
+    const result = await run([RECORD, '--protocol', 'acp', '--out', out, '--', process.execPath, tail]);
+    expect(result.code).toBe(0);
+    const recorded = await loadFixture(out);
+    expect(recorded.entries.map((e: { msg?: unknown; exit?: unknown }) => e.msg ?? e.exit))
+      .toEqual([{ tail: true }, { code: 0 }]);
+  });
+
+  it('records an exit entry when the CLI cannot be started', async () => {
+    const out = path.join(tmp, 'missing.jsonl');
+    const result = await run([RECORD, '--protocol', 'acp', '--out', out, '--', 'clubhouse-no-such-cli-xyz']);
+    const recorded = await loadFixture(out);
+    const last = recorded.entries.at(-1);
+    expect(last.exit.code).not.toBe(0);
+    expect(result.code).toBe(last.exit.code);
+    // Windows goes through cmd.exe, which starts fine and reports the miss itself.
+    if (process.platform !== 'win32') expect(last).toMatchObject({ exit: { code: 127 }, error: expect.stringContaining('ENOENT') });
   });
 });

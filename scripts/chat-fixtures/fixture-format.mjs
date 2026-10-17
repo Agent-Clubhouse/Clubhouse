@@ -148,12 +148,32 @@ export function remapCliMessage(protocol, msg, idMap) {
   return msg;
 }
 
-/** Replace every occurrence of each `[from, to]` pair inside string values, recursively. */
+/**
+ * Key- and identity-shaped strings scrubbed from every recording by default:
+ * API keys, GitHub tokens, bearer tokens, JWTs and email addresses (other
+ * than the example.com placeholders fixtures use). Replacements avoid the
+ * prefixes the committed-fixture guard test rejects.
+ */
+export const SECRET_REDACTIONS = [
+  [/sk-ant-[\w-]{8,}/g, 'REDACTED_ANTHROPIC_KEY'],
+  [/\bsk-[A-Za-z0-9_-]{20,}/g, 'REDACTED_API_KEY'],
+  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, 'REDACTED_GITHUB_TOKEN'],
+  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, 'REDACTED_GITHUB_TOKEN'],
+  [/\bBearer [A-Za-z0-9._~+/=-]{8,}/g, 'REDACTED_BEARER_TOKEN'],
+  [/\beyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}/g, 'REDACTED_JWT'],
+  [/[A-Za-z0-9._%+-]+@(?!example\.com\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g, 'user@example.com'],
+];
+
+/**
+ * Apply each `[from, to]` pair to every string value, recursively. `from` is
+ * either a literal string (every occurrence is replaced) or a global RegExp.
+ */
 export function redactValue(value, pairs) {
   if (typeof value === 'string') {
     let out = value;
     for (const [from, to] of pairs) {
-      if (from) out = out.split(from).join(to);
+      if (from instanceof RegExp) out = out.replace(from, to);
+      else if (from) out = out.split(from).join(to);
     }
     return out;
   }

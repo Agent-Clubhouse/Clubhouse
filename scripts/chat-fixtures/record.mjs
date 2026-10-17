@@ -26,19 +26,22 @@
 //   --script <path>             run a scripted session instead of proxying
 //   --await-timeout-ms <n>      per-await timeout in script mode (default 120000)
 //   --redact <from>=<to>        extra string replacement, repeatable
+//   --redact-regex <re>=<to>    extra regex replacement (global), repeatable
 //   --no-default-redactions     keep the home directory and cwd verbatim
 //
-// The home directory and cwd are replaced with stable placeholders by
-// default. Review the output before committing: account emails, org names,
+// By default the cwd, home and temp directories become stable placeholders,
+// and key-, token- and email-shaped strings are scrubbed. Review the output before committing: account emails, org names,
 // MCP server names and slash commands come from your machine.
 
 import { spawn } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import {
   FIXTURE_FORMAT,
   FIXTURE_VERSION,
   PROTOCOLS,
+  SECRET_REDACTIONS,
   deepSubset,
   fillTemplate,
   redactValue,
@@ -48,6 +51,7 @@ import {
 
 const REDACTED_CWD = '/workspace/project';
 const REDACTED_HOME = '/home/user';
+const REDACTED_TMP = '/tmp';
 
 function parseArgs(argv) {
   const sep = argv.indexOf('--');
@@ -82,6 +86,11 @@ function parseArgs(argv) {
       const eq = value.indexOf('=');
       if (eq <= 0) throw new Error(`--redact expects <from>=<to>, got ${value}`);
       opts.redactions.push([value.slice(0, eq), value.slice(eq + 1)]);
+    } else if (arg === '--redact-regex') {
+      const value = next();
+      const eq = value.lastIndexOf('=');
+      if (eq <= 0) throw new Error(`--redact-regex expects <pattern>=<to>, got ${value}`);
+      opts.redactions.push([new RegExp(value.slice(0, eq), 'g'), value.slice(eq + 1)]);
     } else throw new Error(`unknown option ${arg}`);
   }
   if (!PROTOCOLS.includes(opts.protocol)) {
@@ -91,13 +100,28 @@ function parseArgs(argv) {
   return opts;
 }
 
-/** Pairs applied to every string in the recording, longest first so the cwd wins over the home directory it sits in. */
+/**
+ * Pairs applied to every string in the recording. Literal paths go longest
+ * first so the cwd wins over the home directory it sits in; secret-shaped
+ * patterns run after.
+ */
 function redactionPairs(opts) {
-  const pairs = [...opts.redactions];
+  const literals = opts.redactions.filter(([from]) => typeof from === 'string');
+  const patterns = opts.redactions.filter(([from]) => from instanceof RegExp);
   if (opts.defaultRedactions) {
-    pairs.push([process.cwd(), REDACTED_CWD], [homedir(), REDACTED_HOME]);
+    // Each directory as given and resolved: macOS reports /var/… for the
+    // temp dir while tools print /private/var/….
+    for (const [dir, to] of [[process.cwd(), REDACTED_CWD], [homedir(), REDACTED_HOME], [tmpdir(), REDACTED_TMP]]) {
+      literals.push([dir, to]);
+      try {
+        const real = realpathSync(dir);
+        if (real !== dir) literals.push([real, to]);
+      } catch {}
+    }
+    patterns.push(...SECRET_REDACTIONS);
   }
-  return pairs.sort((a, b) => b[0].length - a[0].length);
+  literals.sort((a, b) => b[0].length - a[0].length);
+  return [...literals, ...patterns];
 }
 
 /**
@@ -136,41 +160,55 @@ async function main() {
   };
 
   const child = spawnCli(opts.command, opts.commandArgs);
-  let exited = false;
-  const exitPromise = new Promise((resolve) => {
-    child.on('exit', (code, signal) => {
-      exited = true;
-      entries.push({ from: 'cli', t: t(), exit: { code: code ?? (signal ? 1 : 0) } });
-      notify();
-      resolve();
-    });
-    child.on('error', (err) => {
-      process.stderr.write(`record: failed to start ${opts.command}: ${err.message}\n`);
-      exited = true;
-      notify();
-      resolve();
-    });
-  });
+  // Writes after the CLI has gone (or never started) are dropped, not fatal.
+  child.stdin.on('error', () => {});
 
   let outBuffer = '';
+  const recordLine = (line) => {
+    let msg;
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      entries.push({ from: 'cli', t: t(), raw: line });
+      return;
+    }
+    entries.push({ from: 'cli', t: t(), msg });
+    cliMessages.push(msg);
+  };
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
     if (!scriptMode) process.stdout.write(chunk);
     const { lines, rest } = splitLines(outBuffer + chunk);
     outBuffer = rest;
-    for (const line of lines) {
-      let msg;
-      try {
-        msg = JSON.parse(line);
-      } catch {
-        entries.push({ from: 'cli', t: t(), raw: line });
-        continue;
-      }
-      entries.push({ from: 'cli', t: t(), msg });
-      cliMessages.push(msg);
-    }
+    for (const line of lines) recordLine(line);
     notify();
   });
+
+  // Settle on `close`, not `exit`: `exit` can fire before the last stdout
+  // chunk is read. A spawn failure emits `error` instead and is recorded as
+  // exit code 127, like a shell's "command not found".
+  let exited = false;
+  let exitCode = 0;
+  const exitPromise = new Promise((resolve) => {
+    const settle = (entry) => {
+      if (exited) return;
+      exited = true;
+      exitCode = entry.exit.code;
+      entries.push(entry);
+      notify();
+      resolve();
+    };
+    child.on('close', (code, signal) => {
+      if (outBuffer.trim()) recordLine(outBuffer.replace(/\r$/, ''));
+      outBuffer = '';
+      settle({ from: 'cli', t: t(), exit: { code: code ?? (signal ? 1 : 0) } });
+    });
+    child.on('error', (err) => {
+      process.stderr.write(`record: failed to start ${opts.command}: ${err.message}\n`);
+      settle({ from: 'cli', t: t(), exit: { code: 127 }, error: err.message });
+    });
+  });
+
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk) => {
     process.stderr.write(chunk);
@@ -266,7 +304,7 @@ async function main() {
   };
   await writeFile(opts.out, serializeFixture(header, redactValue(entries, pairs)));
   process.stderr.write(`record: wrote ${entries.length} entries to ${opts.out}\n`);
-  process.exitCode = child.exitCode ?? 0;
+  process.exitCode = exitCode;
 }
 
 main().catch((err) => {

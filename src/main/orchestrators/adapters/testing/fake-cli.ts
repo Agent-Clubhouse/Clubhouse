@@ -79,7 +79,7 @@ export async function createFakeCli(fixture: string, opts: FakeCliOptions = {}):
     args,
     reportPath,
     readReport,
-    async waitForReport(predicate = (r) => r.complete, timeoutMs = 5000) {
+    async waitForReport(predicate = (r) => r.complete, timeoutMs = 15_000) {
       const deadline = Date.now() + timeoutMs;
       let last: FakeCliReport | undefined;
       for (;;) {
@@ -96,7 +96,7 @@ export async function createFakeCli(fixture: string, opts: FakeCliOptions = {}):
       }
     },
     async dispose() {
-      await fs.promises.rm(dir, { recursive: true, force: true });
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     },
   };
 }

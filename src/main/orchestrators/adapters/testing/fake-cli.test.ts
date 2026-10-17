@@ -8,7 +8,7 @@ import { EventLog, NdjsonPeer, chatFixturePath, writeFakeCliShims } from './fake
 describe('writeFakeCliShims', () => {
   let dir: string | undefined;
   afterEach(async () => {
-    if (dir) await fs.promises.rm(dir, { recursive: true, force: true });
+    if (dir) await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   it('a shim named like the real CLI completes the codex handshake through the production spawn path', async () => {

@@ -42,7 +42,7 @@ export async function installFakeClis(fixtures: Partial<Record<ChatFixtureCli, s
       return JSON.parse(await fs.promises.readFile(file, 'utf8')) as FakeCliReport;
     },
     async cleanup() {
-      await fs.promises.rm(root, { recursive: true, force: true });
+      await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     },
   };
 }
