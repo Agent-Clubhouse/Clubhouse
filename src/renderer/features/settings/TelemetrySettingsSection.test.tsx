@@ -283,4 +283,38 @@ describe('TelemetrySettingsSection', () => {
     await screen.findByText('Preview data');
     expect(screen.queryByText('Get the Clubhouse Workbook')).toBeNull();
   });
+
+  describe('Clubhouse developer (Framebriar) panel', () => {
+    const fb = (o: Partial<TelemetryDestinationStatus> = {}): TelemetryDestinationStatus => ({
+      id: 'framebriar', kind: 'framebriar', label: 'Clubhouse developer (Framebriar)', enabled: false, level: 'standard',
+      preset: 'user_activity', configured: false, active: false, health: { state: 'off' }, offlineQueue: false, ...o,
+    });
+
+    it('needs Feedback connected before it can be switched on', async () => {
+      mockApi(makeStatus({ destinations: [destStatus('azure'), destStatus('otlp'), fb()] }));
+      render(<TelemetrySettingsSection />);
+      const panel = await screen.findByRole('region', { name: 'Clubhouse developer (Framebriar)' });
+      expect(within(panel).getByTestId('telemetry-framebriar-needs-feedback').textContent).toBe('Connect Feedback in Settings, Feedback first.');
+      expect(within(panel).getByLabelText('Send telemetry to the Clubhouse developer')).toBeDisabled();
+      expect(within(panel).getByLabelText('Clubhouse developer (Framebriar) filter')).toHaveValue('user_activity');
+    });
+
+    it('turns it off through its own destination id', async () => {
+      const api = mockApi(makeStatus({ destinations: [destStatus('azure'), destStatus('otlp'), fb({ configured: true, enabled: true, active: true, host: 'framebriar.example.net' })] }));
+      const setEnabled = vi.spyOn(api, 'setEnabled').mockResolvedValue({ ok: true, status: makeStatus() } as never);
+      render(<TelemetrySettingsSection />);
+      const panel = await screen.findByRole('region', { name: 'Clubhouse developer (Framebriar)' });
+      fireEvent.click(within(panel).getByLabelText('Send telemetry to the Clubhouse developer'));
+      await waitFor(() => expect(setEnabled).toHaveBeenCalledWith('framebriar', false, {}));
+      expect(within(panel).getByText('Send test event')).not.toBeDisabled();
+    });
+
+    it('is absent when the status has no Framebriar destination', async () => {
+      mockApi(makeStatus());
+      render(<TelemetrySettingsSection />);
+      await screen.findByRole('region', { name: 'Azure Application Insights' });
+      expect(screen.queryByTestId('telemetry-panel-framebriar')).toBeNull();
+    });
+  });
 });
+

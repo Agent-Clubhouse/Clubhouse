@@ -261,6 +261,7 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
     try {
       await s.start();
       expect(s.status()).toMatchObject({ started: true, connected: false, canCapture: false });
+      expect(s.telemetryExport()).toBeNull();
 
       const { connected, status } = await s.connect('i'.repeat(43));
       expect(connected).toBe(true);
@@ -269,6 +270,12 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       // Only the refresh credential is on disk, encrypted.
       const stored = fs.readFileSync(path.join(dataDir, 'enrollment.json'), 'utf8');
       expect(stored).not.toContain('iiiiiiiiii');
+
+      // Clubhouse's own telemetry can go to Framebriar now: OTLP URL, current token, feedback session.
+      const exp = s.telemetryExport()!;
+      expect(exp.host).toBe('fb.example');
+      expect(exp.options('traces').url).toBe('https://fb.example/api/v1/otlp/v1/traces');
+      expect(await exp.options('metrics').headers()).toEqual({ authorization: `Bearer ${'t'.repeat(43)}` });
 
       const draft = await s.captureDraft(async () => PNG);
       const withShot = await s.send({ draftId: draft.draftId, notes: 'see screenshot', includeScreenshot: true, scene: 'agents' });
@@ -282,9 +289,12 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       expect(srv.reports.get(textOnly.id)).toMatchObject({ report: { media: null, notes: 'text only' } });
       expect(srv.reports.get(textOnly.id)!.media).toBeUndefined();
       expect(s.status().outbox.pending).toBe(0);
+      // Reports and telemetry share one session, so they correlate.
+      expect(srv.reports.get(withShot.id)!.report.sessionId).toBe(exp.sessionId);
 
       const out = await s.disconnect();
       expect(out).toMatchObject({ forgotten: true, revoked: true, status: { connected: false, canCapture: false } });
+      expect(s.telemetryExport()).toBeNull();
     } finally {
       await s.shutdown();
     }

@@ -13,8 +13,8 @@ import type { TelemetryLevel } from './attributes';
  * here, to `clubhouse.telemetry.destination` in the attribute registry, and
  * one adapter.
  */
-export type TelemetryDestinationKind = 'azure' | 'otlp';
-export const TELEMETRY_DESTINATION_KINDS: readonly TelemetryDestinationKind[] = ['azure', 'otlp'];
+export type TelemetryDestinationKind = 'azure' | 'otlp' | 'framebriar';
+export const TELEMETRY_DESTINATION_KINDS: readonly TelemetryDestinationKind[] = ['azure', 'otlp', 'framebriar'];
 export type OtlpTemporality = 'cumulative' | 'delta';
 
 /**
@@ -46,6 +46,20 @@ export interface TelemetryDestinationEntry {
   /** The host the user last confirmed sending to (kinds with user-entered endpoints). */
   confirmedHost?: string;
   otlp?: OtlpDestinationSettings;
+  /** Framebriar (the developer's feedback service): no user fields; how its switch got set. */
+  framebriar?: FramebriarDestinationSettings;
+}
+
+/**
+ * The Framebriar destination follows Feedback (spec §6.11): it is turned on
+ * automatically when Feedback is connected and telemetry export is on, and off
+ * again when either stops, unless the user set its switch themselves.
+ */
+export interface FramebriarDestinationSettings {
+  /** The current `enabled` came from the Feedback link, not the user. */
+  autoEnabled: boolean;
+  /** The user turned it off themselves: the link never turns it back on. */
+  userOff: boolean;
 }
 
 /** Bump when what we collect widens materially; forces re-consent. */

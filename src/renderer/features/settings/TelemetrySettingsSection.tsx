@@ -156,6 +156,7 @@ export function TelemetrySettingsSection() {
   const dest = (id: string) => status.destinations.find((d) => d.id === id);
   const azure = dest('azure');
   const otlp = dest('otlp');
+  const framebriar = dest('framebriar');
   const azureOn = azure?.enabled === true;
   const otlpOn = otlp?.enabled === true;
 
@@ -375,6 +376,37 @@ export function TelemetrySettingsSection() {
           {testLine('otlp')}
         </div>
       </section>
+
+      {/* Clubhouse developer (Framebriar), through Feedback */}
+      {framebriar && (
+        <section className="rounded-md border border-surface-1 px-4 py-4 space-y-4 mt-4" aria-label={framebriar.label} data-testid="telemetry-panel-framebriar">
+          <div className="text-sm text-ctp-text font-medium">{framebriar.label}</div>
+          <p className="text-xs text-ctp-subtext0">
+            While Feedback is connected and export is on, user activity and errors also go to the Clubhouse developer, so feedback reports come with context. It turns on and off with Feedback; switch it off here to stop it.
+          </p>
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-ctp-text">Send telemetry</div>
+            <Toggle
+              ariaLabel="Send telemetry to the Clubhouse developer"
+              checked={framebriar.enabled}
+              disabled={!framebriar.configured && !framebriar.enabled}
+              onChange={(v) => void handleResult('framebriar', 'framebriar', (ack) => api().setEnabled('framebriar', v, ack))}
+            />
+          </div>
+          {!framebriar.configured && (
+            <p className="text-xs text-ctp-subtext1" data-testid="telemetry-framebriar-needs-feedback">Connect Feedback in Settings, Feedback first.</p>
+          )}
+          <DestinationControls
+            dest={framebriar}
+            onFilter={(level, preset) => void handleResult('framebriar', 'framebriar', () => api().setFilter('framebriar', level, preset))}
+          />
+          <div className="flex items-center gap-3">
+            <button type="button" className={buttonClass} disabled={!framebriar.active} onClick={() => void runTest('framebriar')}>Send test event</button>
+            {testLine('framebriar')}
+          </div>
+          {errorLine('framebriar')}
+        </section>
+      )}
 
       {/* Advanced */}
       <details className="mt-6">

@@ -33,6 +33,7 @@ import {
   type TelemetrySettingsFile,
 } from '../../shared/telemetry/settings-types';
 import { getSecretPath, getSecureStorageState, updateSecrets, type TelemetrySecrets } from './secret-store';
+import { getFramebriarTelemetrySource } from './destinations/framebriar-source';
 
 export const EXPERIMENTAL_FLAG = 'telemetry';
 
@@ -82,6 +83,11 @@ const PHASE2_KEYS: Array<keyof Phase2Fields> = [
 function defaultEntry(kind: TelemetryDestinationKind): TelemetryDestinationEntry {
   const entry: TelemetryDestinationEntry = { id: kind, kind, enabled: false, level: 'standard', preset: 'all' };
   if (kind === 'otlp') entry.otlp = { endpoint: '', headerNames: [], temporality: 'cumulative' };
+  // The developer's feedback service gets "User activity and errors" only.
+  if (kind === 'framebriar') {
+    entry.preset = 'user_activity';
+    entry.framebriar = { autoEnabled: false, userOff: false };
+  }
   return entry;
 }
 
@@ -100,9 +106,13 @@ function normalizeEntry(raw: unknown): TelemetryDestinationEntry | null {
     id: typeof r.id === 'string' && r.id ? r.id : kind,
     enabled: r.enabled === true,
     level: normalizeLevel(r.level),
-    preset: TELEMETRY_FILTER_PRESETS.includes(r.preset as never) ? (r.preset as TelemetryDestinationEntry['preset']) : 'all',
+    preset: TELEMETRY_FILTER_PRESETS.includes(r.preset as never) ? (r.preset as TelemetryDestinationEntry['preset']) : defaultEntry(kind).preset,
   };
   if (typeof r.confirmedHost === 'string') entry.confirmedHost = r.confirmedHost;
+  if (kind === 'framebriar') {
+    const f = (r.framebriar && typeof r.framebriar === 'object' ? r.framebriar : {}) as Record<string, unknown>;
+    entry.framebriar = { autoEnabled: f.autoEnabled === true, userOff: f.userOff === true };
+  }
   if (kind === 'otlp') {
     const o = (r.otlp && typeof r.otlp === 'object' ? r.otlp : {}) as Record<string, unknown>;
     entry.otlp = {
@@ -268,6 +278,7 @@ export function resolveDestination(entry: TelemetryDestinationEntry | undefined,
 
 /** Cheap, synchronous pre-check of one entry, used before `ready` (no decryption). */
 export function isEntryConfigured(entry: TelemetryDestinationEntry, settings: TelemetrySettings): boolean {
+  if (entry.kind === 'framebriar') return getFramebriarTelemetrySource()?.() != null;
   if (entry.kind === 'otlp') {
     return !!entry.otlp?.endpoint || (settings.legacyDestination?.kind === 'otlp');
   }

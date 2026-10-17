@@ -19,7 +19,8 @@ import type {
   FramebriarSnapshot,
   SafeStorageLike,
 } from '../../vendor/framebriar/adapters/node/index.mjs';
-import { createFramebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
+import { createFramebriar, otlpExporterOptions } from '../../vendor/framebriar/adapters/node/index.mjs';
+import type { FramebriarTelemetryExport } from '../../telemetry/destinations/framebriar-source';
 import type { FeedbackCaptureResult, FeedbackSendInput, FeedbackSendResult, FeedbackStatus } from '../../../shared/feedback-types';
 
 export const FRAMEBRIAR_APP_ID = 'clubhouse';
@@ -236,6 +237,31 @@ export class FeedbackService {
 
   cancel(draftId: string): void {
     this.drafts.delete(draftId);
+  }
+
+  /**
+   * True while telemetry may go to Framebriar: connected, or enrolled but briefly
+   * offline (the token refreshes on reconnect). Expired, revoked or disconnected
+   * enrollment stops it.
+   */
+  get telemetryConnected(): boolean {
+    const access = this.fb?.access.status();
+    return !!access && (access.connected || access.state === 'offline');
+  }
+
+  /**
+   * Framebriar's OTLP endpoints for Clubhouse's own telemetry pipeline (spec §6.11):
+   * URL and headers from the SDK's otlpExporterOptions (the token is fetched at export
+   * time and never leaves main), plus the feedback session id for correlation.
+   */
+  telemetryExport(): FramebriarTelemetryExport | null {
+    const fb = this.fb;
+    if (!fb || !this.telemetryConnected) return null;
+    return {
+      host: new URL(fb.access.endpoint).host,
+      options: (signal) => otlpExporterOptions(fb.access, signal),
+      sessionId: fb.feedback.sessionId,
+    };
   }
 
   async shutdown(): Promise<void> {
