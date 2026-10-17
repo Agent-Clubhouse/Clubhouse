@@ -249,6 +249,12 @@ export function ChromeTitleBar() {
   const activeTabLabel = orderedTabs.find((t) => t.id === explorerTab)?.label;
   const crumb = useBreadcrumb(projectLabel, activeTabLabel);
 
+  // ⌘1–9 select these tabs in order (spec §5.3), wherever the tab sits.
+  const setTitleTabs = useChromeStore((s) => s.setTitleTabs);
+  useEffect(() => {
+    setTitleTabs(orderedTabs.map((t) => ({ id: t.id, disabled: t.disabled })));
+  }, [orderedTabs, setTitleTabs]);
+
   // The More menu lists tabs by recent use (spec §4.2).
   useEffect(() => {
     if (inProjectView && activeProjectId) touchTab(activeProjectId, explorerTab);

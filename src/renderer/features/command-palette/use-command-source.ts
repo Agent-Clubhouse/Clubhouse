@@ -12,6 +12,9 @@ import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CommandItem, SETTINGS_PAGES } from './command-registry';
 import { openNewQuickAgent } from '../../chrome/startPage';
+import { isNewChromeEnabled } from '../../chrome/chromeFlag';
+import { useChromeStore } from '../../chrome/chromeStore';
+import { groupProjectAgents } from '../../chrome/sidebar/treeModel';
 
 /** Canvas metadata loaded from storage for non-active projects */
 interface CrossProjectCanvas {
@@ -25,7 +28,8 @@ interface CrossProjectCanvas {
 /** Helper to get formatted shortcut string for a given shortcut ID */
 function getShortcut(shortcuts: Record<string, { currentBinding: string }>, id: string): string | undefined {
   const def = shortcuts[id];
-  return def ? formatBinding(def.currentBinding) : undefined;
+  // Unbound (a user binding took its default) or not in this shell's set.
+  return def?.currentBinding ? formatBinding(def.currentBinding) : undefined;
 }
 
 const CANVAS_TAB = 'plugin:canvas';
@@ -180,17 +184,20 @@ export function useCommandSource(): CommandItem[] {
 
   const agentItems = useMemo((): CommandItem[] => {
     const items: CommandItem[] = [];
-    let durableIdx = 0;
+    // switch-agent-N numbers: durable agents in the legacy shell, the sidebar's
+    // rows in the new one (command-actions.ts).
+    const activeAgents = Object.values(agents).filter((a) => a.projectId === activeProjectId);
+    let numbered: string[];
+    if (isNewChromeEnabled()) {
+      const { durable, quick, sleeping } = groupProjectAgents(activeAgents);
+      numbered = [...durable, ...quick, ...sleeping].map((a) => a.id);
+    } else {
+      numbered = activeAgents.filter((a) => a.kind === 'durable').map((a) => a.id);
+    }
     for (const [agentId, agent] of Object.entries(agents)) {
       const project = projects.find((p) => p.id === agent.projectId);
-      const isDurableInActive = agent.projectId === activeProjectId && agent.kind === 'durable';
-      let agentShortcut: string | undefined;
-      if (isDurableInActive) {
-        durableIdx++;
-        if (durableIdx <= 9) {
-          agentShortcut = getShortcut(shortcuts, `switch-agent-${durableIdx}`);
-        }
-      }
+      const index = numbered.indexOf(agentId);
+      const agentShortcut = index >= 0 && index < 9 ? getShortcut(shortcuts, `switch-agent-${index + 1}`) : undefined;
       items.push({
         id: `agent:${agentId}`,
         label: agent.name,
@@ -305,13 +312,16 @@ export function useCommandSource(): CommandItem[] {
       category: 'Navigation',
       execute: () => { if (activeProjectId) setExplorerTab('agents', activeProjectId); },
     });
-    items.push({
-      id: 'nav:home',
-      label: 'Go to Home',
-      category: 'Navigation',
-      shortcut: getShortcut(shortcuts, 'go-home'),
-      execute: () => setActiveProject(null),
-    });
+    // The new shell has no Home (spec §5.2).
+    if (!isNewChromeEnabled()) {
+      items.push({
+        id: 'nav:home',
+        label: 'Go to Home',
+        category: 'Navigation',
+        shortcut: getShortcut(shortcuts, 'go-home'),
+        execute: () => setActiveProject(null),
+      });
+    }
     items.push({
       id: 'nav:help',
       label: 'Open Help',
@@ -364,15 +374,18 @@ export function useCommandSource(): CommandItem[] {
       label: 'Toggle Sidebar',
       category: 'Actions',
       shortcut: getShortcut(shortcuts, 'toggle-sidebar'),
-      execute: () => toggleExplorerCollapse(),
+      execute: () => (isNewChromeEnabled() ? useChromeStore.getState().toggleSidebar() : toggleExplorerCollapse()),
     });
-    items.push({
-      id: 'action:toggle-accessory',
-      label: 'Toggle Accessory Panel',
-      category: 'Actions',
-      shortcut: getShortcut(shortcuts, 'toggle-accessory'),
-      execute: () => toggleAccessoryCollapse(),
-    });
+    // The new shell has no accessory column.
+    if (!isNewChromeEnabled()) {
+      items.push({
+        id: 'action:toggle-accessory',
+        label: 'Toggle Accessory Panel',
+        category: 'Actions',
+        shortcut: getShortcut(shortcuts, 'toggle-accessory'),
+        execute: () => toggleAccessoryCollapse(),
+      });
+    }
     items.push({
       id: 'action:new-quick-agent',
       label: 'New Quick Agent',
