@@ -6,7 +6,7 @@ Before diving in, read [PRINCIPLES.md](PRINCIPLES.md) — it describes the value
 
 ## Development Setup
 
-**Prerequisites:** Node.js 22+, npm, Git
+**Prerequisites:** Node.js 22.12+, npm, Git
 
 ```bash
 git clone https://github.com/Agent-Clubhouse/Clubhouse.git

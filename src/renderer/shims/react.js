@@ -6,7 +6,7 @@ const R = globalThis.React;
 export default R;
 export const {
   Activity, Children, Component, Fragment, Profiler, PureComponent,
-  StrictMode, Suspense, act, cache, cacheSignal, captureOwnerStack,
+  StrictMode, Suspense, ViewTransition, act, addTransitionType, cache, cacheSignal, captureOwnerStack,
   cloneElement, createContext, createElement, createRef, forwardRef,
   isValidElement, lazy, memo, startTransition, unstable_useCacheRefresh,
   use, useActionState, useCallback, useContext, useDebugValue,

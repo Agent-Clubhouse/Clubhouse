@@ -81,9 +81,13 @@ describe('MermaidDiagram', () => {
     const config = mermaidInitialize.mock.calls[0][0] as {
       themeVariables: Record<string, string>;
       theme: string;
+      layout: string;
+      look: string;
       securityLevel: string;
     };
     expect(config.theme).toBe('base');
+    expect(config.layout).toBe('dagre');
+    expect(config.look).toBe('classic');
     expect(config.securityLevel).toBe('strict');
     expect(config.themeVariables.background).toBe('rgb(30, 30, 46)');
     expect(config.themeVariables.textColor).toBe('rgb(205, 214, 244)');
