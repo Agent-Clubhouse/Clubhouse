@@ -3,7 +3,8 @@ import { useProjectStore } from '../../stores/projectStore';
 import { Button } from '../../components/Button';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
-import { useKeyboardShortcutsStore, formatBinding } from '../../stores/keyboardShortcutsStore';
+import { useKeyboardShortcutsStore } from '../../stores/keyboardShortcutsStore';
+import { formatShortcut } from '../../components/Tooltip';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 
 /**
@@ -126,9 +127,8 @@ export function FirstRun() {
     reportChromeFeature('host_settings_open');
   };
 
-  // ⌘⇧N on macOS (symbols run together there), Ctrl+Shift+N elsewhere.
-  const formatted = newAgentBinding ? formatBinding(newAgentBinding) : null;
-  const shortcut = formatted && IS_MAC ? formatted.replace(/\+/g, '') : formatted;
+  // ⇧⌘N on macOS, Ctrl+Shift+N elsewhere.
+  const shortcut = newAgentBinding ? formatShortcut(newAgentBinding) : null;
 
   return (
     <div
