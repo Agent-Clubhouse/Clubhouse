@@ -1,22 +1,17 @@
 import { useEffect, useMemo } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
-import { usePluginStore } from '../plugins/plugin-store';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { ResizeDivider } from '../components/ResizeDivider';
-import { ProjectPanelLayout } from '../components/ProjectPanelLayout';
 import { MainContentView } from '../panels/MainContentView';
-import { AccessoryPanel } from '../panels/AccessoryPanel';
 import { PluginContentView } from '../panels/PluginContentView';
 import { AnnexDisabledView } from '../panels/AnnexDisabledView';
 import { HelpView } from '../features/help/HelpView';
 import { SatelliteDashboard } from '../features/annex/SatelliteDashboard';
 import { ChromeSidebar } from './ChromeSidebar';
-import { useChromeStore } from './chromeStore';
+import { useChromeStore, syncProjectScopeWithActiveAgent } from './chromeStore';
+import { useSidebarMode } from './listTabs';
 import { reportChromeSurface, reportChromeActionFailed, reportChromeView } from './telemetry';
-
-/** Width of the temporary second column for `sidebar-content` tabs until Phase 2a swaps them into the sidebar. */
-const LIST_COLUMN_WIDTH = 260;
 
 function AppPluginContent({ pluginId }: { pluginId: string }) {
   const activeHostId = useUIStore((s) => s.activeHostId);
@@ -56,28 +51,12 @@ function NoProjectContent() {
 }
 
 function ProjectContent() {
-  const explorerTab = useUIStore((s) => s.explorerTab);
-  const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
-  const layout = usePluginStore((s) => (activePluginId ? s.plugins[activePluginId]?.manifest.contributes?.tab?.layout : undefined));
-  // Tabs with their own list keep a temporary second column in Phase 1.
-  const hasListColumn = !!activePluginId && (layout ?? 'sidebar-content') === 'sidebar-content';
-
+  const mode = useSidebarMode();
   useEffect(() => {
-    reportChromeSurface(hasListColumn ? 'sidebar_list' : 'sidebar_agents');
-  }, [hasListColumn]);
-
-  return (
-    <div className="h-full min-h-0 flex flex-row">
-      {hasListColumn && (
-        <div style={{ width: LIST_COLUMN_WIDTH }} className="flex-shrink-0 min-h-0">
-          <AccessoryPanel />
-        </div>
-      )}
-      <div className="flex-1 min-w-0 min-h-0">
-        <MainContentView />
-      </div>
-    </div>
-  );
+    reportChromeSurface(mode === 'list' ? 'sidebar_list' : 'sidebar_agents');
+  }, [mode]);
+  // A tab's own list lives in the sidebar (spec §4.6), so the pane is just the tab's content.
+  return <MainContentView />;
 }
 
 export function ChromeBody() {
@@ -96,6 +75,8 @@ export function ChromeBody() {
 
   const lastProjectId = useChromeStore((s) => s.lastProjectId);
   const setLastProjectId = useChromeStore((s) => s.setLastProjectId);
+
+  useEffect(() => syncProjectScopeWithActiveAgent(), []);
 
   // Remember the most recently active local project.
   useEffect(() => {
@@ -122,7 +103,8 @@ export function ChromeBody() {
   }, [explorerTab]);
 
   const content = useMemo(() => {
-    if (isSettings) return <ProjectPanelLayout />;
+    // The settings navigator is in the sidebar; the pane shows the selected page.
+    if (isSettings) return <MainContentView />;
     if (isHelp) return <HelpView />;
     if (appPluginId) return <AppPluginContent pluginId={appPluginId} />;
     if (!activeProjectId) {

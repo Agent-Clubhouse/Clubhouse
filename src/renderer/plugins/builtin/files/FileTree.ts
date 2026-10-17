@@ -4,6 +4,7 @@ import type { FileNode } from '../../../../shared/types';
 import { fileState } from './state';
 import { getFileIconColor } from './file-icons';
 import { fuzzyMatch } from '../../../features/command-palette/fuzzy-match';
+import { useChromeScope } from '../../../chrome/scope';
 
 // ── Icons ──────────────────────────────────────────────────────────────
 
@@ -511,7 +512,13 @@ export function FileTree({ api }: { api: PluginAPI }) {
   // editor tab.  Used so the toolbar's New File/Folder targets the folder the
   // user picked, not the editor's parent dir.  Wave 10 #2.
   const [navSelectedPath, setNavSelectedPath] = useState<string | null>(null);
-  const [rootPath, setRootPath] = useState<string>('.');
+  // New chrome: the root follows the sidebar selection (agent worktree or
+  // project root) and the worktree picker is hidden (spec §4.5).
+  const scope = useChromeScope(api.context.projectId);
+  const scopeRoot = scope ? scope.relativeRoot : null;
+  const scopeRootRef = useRef(scopeRoot);
+  scopeRootRef.current = scopeRoot;
+  const [rootPath, setRootPath] = useState<string>(() => scopeRoot ?? '.');
   const [worktrees, setWorktrees] = useState<string[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string>('');
   // Filter
@@ -700,7 +707,8 @@ export function FileTree({ api }: { api: PluginAPI }) {
       try {
         const savedRoot = await api.storage.project.read('files:lastRootPath');
         if (cancelled) return;
-        if (typeof savedRoot === 'string' && savedRoot) {
+        // In the new chrome the scope decides the root; the saved root is the legacy picker's.
+        if (scopeRootRef.current === null && typeof savedRoot === 'string' && savedRoot) {
           setRootPath(savedRoot);
         }
 
@@ -887,16 +895,24 @@ export function FileTree({ api }: { api: PluginAPI }) {
   }, [getVisibleNodes]);
 
   // Handle root path change (worktree selector)
-  const handleRootChange = useCallback((newRoot: string) => {
+  const resetForRoot = useCallback((newRoot: string) => {
     setRootPath(newRoot);
     setExpanded(new Set());
     setSelectedPath(null);
     setFocusedPath(null);
     setMultiSelectedPaths(new Set());
     fileState.setSelectedPath(null);
+  }, []);
+  const handleRootChange = useCallback((newRoot: string) => {
+    resetForRoot(newRoot);
     api.storage.project.write('files:lastRootPath', newRoot).catch(() => {});
     api.storage.project.write('files:lastSelectedPath', '').catch(() => {});
-  }, [api]);
+  }, [api, resetForRoot]);
+
+  // Follow scope changes without touching the legacy picker's saved root.
+  useEffect(() => {
+    if (scopeRoot !== null && scopeRoot !== rootPath) resetForRoot(scopeRoot);
+  }, [scopeRoot, rootPath, resetForRoot]);
 
   // Expand all directories
   const expandAll = useCallback(async () => {
@@ -1297,7 +1313,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
           : null,
 
         // Worktree selector
-        worktrees.length > 0
+        worktrees.length > 0 && scopeRoot === null
           ? React.createElement('select', {
               className: 'flex-1 min-w-0 text-xs bg-surface-0 text-ctp-text border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none',
               value: rootPath,

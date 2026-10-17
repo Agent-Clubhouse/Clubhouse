@@ -56,6 +56,8 @@ export interface ProjectGroupProps {
   finishedOpen: boolean;
   activeProjectId: string | null;
   activeAgentId: string | null;
+  /** The header itself is the selection (project-root scope). */
+  headerSelected: boolean;
   selectedCompletedId: string | null;
   onSelectProject: (projectId: string) => void;
   onToggleCollapsed: (projectId: string) => void;
@@ -81,7 +83,7 @@ const ROW_INDENT = 26;
 export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroupProps) {
   const {
     project, iconUrl, agents, detailed, completed, collapsed, pinned, sleepingOpen, finishedOpen,
-    activeProjectId, activeAgentId, selectedCompletedId,
+    activeProjectId, activeAgentId, headerSelected, selectedCompletedId,
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onNewAgent,
     onSelectAgent, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator,
   } = props;
@@ -111,7 +113,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     >
       {dropIndicator && <div className="absolute -top-px left-2 right-2 h-0.5 rounded-full bg-ctp-accent" />}
       <div
-        className={`group h-7 flex items-center rounded-md mx-1.5 ${isActiveProject && !activeAgentId ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+        className={`group h-7 flex items-center rounded-md mx-1.5 ${headerSelected ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
         style={{ paddingLeft: HEADER_INDENT }}
         draggable
         onDragStart={(e) => dragHandlers.onDragStart(e, project.id)}
@@ -130,6 +132,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
           type="button"
           data-testid={`project-${project.id}`}
           data-active={isActiveProject}
+          aria-current={headerSelected ? 'true' : undefined}
           onClick={() => onSelectProject(project.id)}
           title={label}
           className="min-w-0 flex-1 h-full flex items-center gap-2 text-left cursor-pointer"
