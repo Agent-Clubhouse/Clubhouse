@@ -1,16 +1,14 @@
 /**
- * E2E Behavioral Spec: Agent Lifecycle — Spawn, Message, Exit
+ * E2E Behavioral Spec: Agent Lifecycle — Spawn, Run, Exit
  *
  * TC-CRIT-01: Core product flow had zero E2E coverage.
  *
  * Tests the full lifecycle end-to-end using IPC stubs for CI compatibility:
- *   sleeping → wake → running → send message → response in feed → exit → sleeping
- *
- * Uses structuredMode agents because they expose deterministic, testid-addressable
- * UI for both message input and response rendering — no PTY canvas interaction needed.
+ *   sleeping → wake → running (terminal view) → exit → sleeping
  *
  * IPC stubs replace the real Claude CLI spawn with in-process fake events so the
- * spec runs in CI without any orchestrator installed.
+ * spec runs in CI without any orchestrator installed. The exit is simulated with
+ * the same `pty:exit` event the PTY manager sends when the CLI process ends.
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
@@ -43,7 +41,6 @@ function writeLifecycleAgent() {
           id: AGENT_ID,
           name: 'lifecycle-test',
           color: 'indigo',
-          structuredMode: true,
           createdAt: new Date().toISOString(),
         },
       ],
@@ -69,11 +66,9 @@ function cleanupLifecycleAgent() {
 /**
  * Replace real IPC handlers with CI stubs.
  *
- * agent:spawn-agent        — fires waking then awoke events; renderer transitions
- *                            through waking → running without a real Claude process.
- * agent:kill-agent         — fires sleeping; store transitions agent back to sleeping.
- * agent:send-structured-message — fires text_delta + text_done to simulate a reply.
- * agent:cancel-structured  — no-op (stop button calls this before killAgent).
+ * agent:spawn-agent — fires waking then awoke events; renderer transitions
+ *                     through waking → running without a real Claude process.
+ * agent:kill-agent  — fires sleeping; store transitions agent back to sleeping.
  */
 async function installLifecycleStub(app: ElectronApp) {
   await app.evaluate(({ ipcMain, BrowserWindow }) => {
@@ -97,33 +92,16 @@ async function installLifecycleStub(app: ElectronApp) {
       const win = getWin();
       if (win) win.webContents.send('agent:agent-sleeping', agentId);
     });
-
-    ipcMain.removeHandler('agent:send-structured-message');
-    ipcMain.handle(
-      'agent:send-structured-message',
-      async (_evt, agentId: string, message: string) => {
-        const win = getWin();
-        if (!win) return;
-        const now = Date.now();
-        win.webContents.send('agent:structured-event', agentId, {
-          type: 'text_delta',
-          timestamp: now,
-          data: { text: `Echo: ${message}` },
-        });
-        setTimeout(() => {
-          if (win.isDestroyed()) return;
-          win.webContents.send('agent:structured-event', agentId, {
-            type: 'text_done',
-            timestamp: Date.now(),
-            data: { text: `Echo: ${message}` },
-          });
-        }, 80);
-      },
-    );
-
-    ipcMain.removeHandler('agent:cancel-structured');
-    ipcMain.handle('agent:cancel-structured', async () => {});
   });
+}
+
+/** Simulate the CLI process ending, as the PTY manager reports it. */
+async function simulatePtyExit(app: ElectronApp, agentId: string) {
+  await app.evaluate(({ BrowserWindow }, id) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('pty:exit', id, 0);
+    }
+  }, agentId);
 }
 
 // ---------------------------------------------------------------------------
@@ -136,8 +114,7 @@ let window: Page;
 test.beforeAll(async () => {
   writeLifecycleAgent();
 
-  // structuredMode experimental flag must be on from first mount — write before launch
-  ({ electronApp, window } = await launchApp({ experimental: { structuredMode: true } }));
+  ({ electronApp, window } = await launchApp());
 
   await installLifecycleStub(electronApp);
   await addProject(electronApp, window, FIXTURE_DIR);
@@ -175,7 +152,7 @@ test.describe('Agent Lifecycle — Sleeping State', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. Wake → Running — click wake, assert StructuredAgentView renders
+// 2. Wake → Running — click wake, assert the terminal view renders
 // ---------------------------------------------------------------------------
 
 test.describe('Agent Lifecycle — Wake to Running', () => {
@@ -184,50 +161,27 @@ test.describe('Agent Lifecycle — Wake to Running', () => {
     await expect(wakeBtn).toBeVisible({ timeout: 5_000 });
     await wakeBtn.click();
 
-    await expect(
-      window.locator('[data-testid="structured-agent-view"]'),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(window.locator('[data-testid="agent-terminal"]')).toBeVisible({ timeout: 10_000 });
+    await expect(window.locator('[data-testid="wake-button"]')).not.toBeVisible();
   });
 
-  test('running agent exposes message input and stop button', async () => {
-    await expect(window.locator('[data-testid="message-input"]')).toBeVisible({ timeout: 5_000 });
-    await expect(window.locator('[data-testid="stop-button"]')).toBeVisible({ timeout: 5_000 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 3. Message exchange — send a message, assert response appears in feed
-// ---------------------------------------------------------------------------
-
-test.describe('Agent Lifecycle — Message Exchange', () => {
-  test('sending a message produces a text response in the event feed', async () => {
-    const input = window.locator('[data-testid="message-input"]');
-    await expect(input).toBeVisible({ timeout: 5_000 });
-    await expect(input).toBeEnabled({ timeout: 5_000 });
-
-    const TEST_MSG = 'hello lifecycle test';
-    await input.fill(TEST_MSG);
-    await input.press('Enter');
-
-    // Stub fires text_delta → MessageStream renders the echoed text in the feed
-    const feed = window.locator('[data-testid="event-feed"]');
-    await expect(feed).toBeVisible({ timeout: 5_000 });
-    await expect(feed.locator(`text=Echo: ${TEST_MSG}`)).toBeVisible({ timeout: 8_000 });
+  test('agent list item no longer shows sleeping while running', async () => {
+    const item = window.locator(`[data-testid="agent-item-${AGENT_ID}"]`);
+    await expect(item).not.toContainText(/sleeping/i, { timeout: 5_000 });
   });
 });
 
 // ---------------------------------------------------------------------------
-// 4. Exit → Sleeping — click stop, assert agent returns to sleeping state
+// 3. Exit → Sleeping — the CLI exits, assert agent returns to sleeping state
 // ---------------------------------------------------------------------------
 
 test.describe('Agent Lifecycle — Exit to Sleeping', () => {
-  test('clicking stop transitions agent back to sleeping state', async () => {
-    const stopBtn = window.locator('[data-testid="stop-button"]');
-    await expect(stopBtn).toBeVisible({ timeout: 5_000 });
-    await stopBtn.click();
+  test('process exit transitions agent back to sleeping state', async () => {
+    await simulatePtyExit(electronApp, AGENT_ID);
 
-    // Stub fires agent:agent-sleeping → store sets status sleeping → SleepingAgent renders
+    // Renderer handles pty:exit → store sets status sleeping → SleepingAgent renders
     await expect(window.locator('[data-testid="wake-button"]')).toBeVisible({ timeout: 10_000 });
+    await expect(window.locator('[data-testid="agent-terminal"]')).not.toBeVisible();
   });
 
   test('agent list item shows sleeping status after exit', async () => {

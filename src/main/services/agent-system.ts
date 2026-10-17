@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable, isAgentFileCapable } from '../orchestrators';
+import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable } from '../orchestrators';
 import { waitReady as waitHookServerReady, portEnv as hookPortEnv } from './hook-server';
 import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
@@ -14,8 +14,6 @@ import { getDurableConfig, addSessionEntry } from './agent-config';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
-import * as experimentalSettings from './experimental-settings';
-import * as structuredManager from './structured-manager';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
@@ -50,8 +48,6 @@ export interface SpawnAgentParams {
   maxTurns?: number;
   maxBudgetUsd?: number;
   freeAgentMode?: boolean;
-  /** When true, spawn this agent in structured mode instead of PTY */
-  structuredMode?: boolean;
   /** When true, attempt to resume the previous CLI session instead of starting fresh */
   resume?: boolean;
   /** Specific session ID to resume (provider-specific format) */
@@ -72,18 +68,14 @@ export function isHeadlessAgent(agentId: string): boolean {
   return headlessManager.isHeadless(agentId);
 }
 
-export function isStructuredAgent(agentId: string): boolean {
-  return structuredManager.isStructuredSession(agentId);
-}
-
 /**
- * Whether an agent currently has a live session in the main process — a PTY,
- * a headless run, or a structured session. Live sessions outlive the renderer
- * window, so this is the source of truth when a reopened window reconciles
- * status (see `getRunningAgentIds`).
+ * Whether an agent currently has a live session in the main process — a PTY or
+ * a headless run. Live sessions outlive the renderer window, so this is the
+ * source of truth when a reopened window reconciles status (see
+ * `getRunningAgentIds`).
  */
 export function isAgentRunning(agentId: string): boolean {
-  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || isStructuredAgent(agentId);
+  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId);
 }
 
 /**
@@ -187,14 +179,13 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
 
     // For durable agents, fall back to stored config for flags that callers may
     // not pass (e.g. session resume after app update only carries a subset of
-    // fields).  This ensures freeAgentMode, structuredMode, and model are
+    // fields).  This ensures freeAgentMode, model and the agent file are
     // honoured even when the resume path doesn't explicitly provide them.
     if (params.kind === 'durable') {
       try {
         const durableConfig = await getDurableConfig(params.projectPath, params.agentId);
         if (durableConfig) {
           if (params.freeAgentMode === undefined) params = { ...params, freeAgentMode: durableConfig.freeAgentMode };
-          if (params.structuredMode === undefined && durableConfig.structuredMode) params = { ...params, structuredMode: durableConfig.structuredMode };
           if (params.model === undefined && durableConfig.model) params = { ...params, model: durableConfig.model };
           if (params.agentFile === undefined && durableConfig.agentFile) params = { ...params, agentFile: durableConfig.agentFile };
           if (params.agentSource === undefined && durableConfig.agentSource) params = { ...params, agentSource: durableConfig.agentSource };
@@ -202,73 +193,7 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
       } catch { /* config not available — use caller-provided values */ }
     }
 
-    // Try structured path when enabled and provider supports it
-    // Quick agents use structured mode based on project spawn mode setting.
-    // Durable agents opt in via per-agent structuredMode config flag.
-    // TODO: Apply launch wrapper transform to structured path once adapter architecture supports external binary override
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
-    // Structured Mode is gated behind an experimental flag. When the flag is off,
-    // ignore both the per-agent durable config and project spawn-mode preference
-    // so existing behavior is preserved for opted-out users.
-    const structuredFlagEnabled = !!experimentalSettings.getSettings().structuredMode;
-    const useStructured = structuredFlagEnabled
-      && ((spawnMode === 'structured' && params.kind === 'quick') || !!params.structuredMode);
-    const hasMission = !!params.mission && params.mission.trim() !== '';
-    // For durable agents in structured mode without a mission, use a default open-ended prompt.
-    // This allows the structured UI to launch and accept messages interactively.
-    const structuredMission = hasMission ? params.mission! :
-      (useStructured && params.kind === 'durable'
-        ? 'You are ready for interactive work. Wait for instructions from the user.'
-        : '');
-    const canLaunchStructured = useStructured && (hasMission || params.kind === 'durable');
-    if (useStructured && !canLaunchStructured) {
-      appLog('core:agent', 'warn', 'Structured mode requested but mission is empty — falling back to PTY', {
-        meta: { agentId: params.agentId, kind: params.kind },
-      });
-    }
-    if (canLaunchStructured && isStructuredCapable(provider)) {
-      appLog('core:agent', 'info', `Spawning ${params.kind} agent in structured mode`, {
-        meta: {
-          agentId: params.agentId,
-          orchestrator: provider.id,
-          cwd: params.cwd,
-          model: params.model,
-          allowedTools: allowedTools?.join(',') || 'none',
-          commandPrefix: commandPrefix || 'none',
-          freeAgentMode: params.freeAgentMode,
-          permissionMode,
-        },
-      });
-      agentRegistry.setRuntime(params.agentId, 'structured');
-      const adapter = provider.createStructuredAdapter();
-      // Delegate --agent / --source flag construction to the provider so the
-      // structured (ACP) and PTY paths share one source of truth.  Providers
-      // that don't implement AgentFileCapable correctly produce no flags here,
-      // matching the no-op behavior already present on the PTY path.
-      const extraArgs = isAgentFileCapable(provider)
-        ? provider.buildAgentFileArgs({
-            agentFile: params.agentFile,
-            agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
-          })
-        : [];
-      await structuredManager.startStructuredSession(params.agentId, adapter, {
-        mission: structuredMission,
-        systemPrompt: params.systemPrompt,
-        model: params.model,
-        cwd: params.cwd,
-        env: profileEnv,
-        allowedTools,
-        freeAgentMode: params.freeAgentMode,
-        permissionMode,
-        commandPrefix,
-        ...(extraArgs.length > 0 ? { extraArgs } : {}),
-      }, (exitAgentId) => {
-        if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
-        untrackAgent(exitAgentId);
-      });
-      broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
-      return;
-    }
 
     // Try headless path for quick agents when enabled
     if (spawnMode === 'headless' && params.kind === 'quick' && isHeadlessCapable(provider)) {
@@ -528,11 +453,6 @@ export async function killAgent(agentId: string, projectPath: string, orchestrat
   try {
     const tracked = agentRegistry.get(agentId);
 
-    if (tracked?.runtime === 'structured' || (!tracked && structuredManager.isStructuredSession(agentId))) {
-      untrackAgent(agentId);
-      await structuredManager.cancelSession(agentId);
-      return;
-    }
     if (tracked?.runtime === 'headless' || (!tracked && headlessManager.isHeadless(agentId))) {
       untrackAgent(agentId);
       headlessManager.kill(agentId);

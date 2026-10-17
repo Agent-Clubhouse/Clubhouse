@@ -24,7 +24,6 @@ export interface TemplateConfig {
   orchestrator: string;
   useWorktree: boolean;
   freeAgentMode: boolean;
-  structuredMode: boolean;
   mcpIds?: string[];
 }
 
@@ -34,7 +33,6 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
   const [color, setColor] = useState(personaColor);
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(true);
-  const [structuredMode, setStructuredMode] = useState(false);
   const [freeAgentMode, setFreeAgentMode] = useState(false);
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
@@ -47,18 +45,6 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
 
   const selectedOrch = allOrchestrators.find((o) => o.id === orchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
-  const supportsStructured = selectedOrch?.capabilities?.structuredMode ?? false;
-
-  // Structured Mode is gated behind an experimental flag — hide the toggle
-  // entirely when the flag is off so the surface is invisible to opted-out users.
-  const [structuredModeFlag, setStructuredModeFlag] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    window.clubhouse.app.getExperimentalSettings()
-      .then((flags) => { if (!cancelled) setStructuredModeFlag(!!flags.structuredMode); })
-      .catch(() => { /* leave hidden on failure */ });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     if (!projectPath) return;
@@ -82,8 +68,6 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
       orchestrator,
       useWorktree,
       freeAgentMode,
-      // Never propagate structuredMode when the experimental flag is off.
-      structuredMode: structuredModeFlag ? structuredMode : false,
       mcpIds: selectedMcps.length > 0 ? selectedMcps : undefined,
     });
   };
@@ -207,27 +191,6 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use git worktree</span>
             <span className="text-xs text-ctp-subtext0/70 ml-1">(isolated branch + directory)</span>
           </label>
-
-          {/* Structured Mode (experimental — hidden unless opted in) */}
-          {structuredModeFlag && (
-            <label
-              data-testid="structured-mode-field"
-              className={`flex items-center gap-2 mb-3 ${supportsStructured ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-              title={supportsStructured ? 'Run in structured mode with rich event streaming' : 'Not supported by this orchestrator'}
-            >
-              <input
-                type="checkbox"
-                checked={structuredMode}
-                onChange={(e) => setStructuredMode(e.target.checked)}
-                disabled={!supportsStructured}
-                className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
-              />
-              <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use Structured Mode</span>
-              <span className="text-xs text-ctp-subtext0/70 ml-1">
-                {supportsStructured ? '(rich event UI)' : '(not supported)'}
-              </span>
-            </label>
-          )}
 
           {/* Free Agent Mode */}
           <label

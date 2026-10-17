@@ -10,9 +10,32 @@ export interface HeadlessSettings {
   projectOverrides?: Record<string, SpawnMode>;
 }
 
+/**
+ * Map any spawn mode that no longer exists (the removed `structured` mode) to
+ * `interactive`, so those quick agents run in the terminal.
+ */
+function normalizeMode(mode: unknown): SpawnMode | undefined {
+  if (mode === 'headless' || mode === 'interactive') return mode;
+  return mode === undefined ? undefined : 'interactive';
+}
+
+export function migrateHeadlessSettings(raw: Record<string, unknown>): HeadlessSettings {
+  const settings = { ...raw } as HeadlessSettings & Record<string, unknown>;
+  if (settings.defaultMode !== undefined) settings.defaultMode = normalizeMode(settings.defaultMode);
+  if (settings.projectOverrides) {
+    const overrides: Record<string, SpawnMode> = {};
+    for (const [projectPath, mode] of Object.entries(settings.projectOverrides)) {
+      const normalized = normalizeMode(mode);
+      if (normalized) overrides[projectPath] = normalized;
+    }
+    settings.projectOverrides = overrides;
+  }
+  return settings;
+}
+
 const store = createSettingsStore<HeadlessSettings>('headless-settings.json', {
   enabled: true,
-});
+}, migrateHeadlessSettings);
 
 export const getSettings = store.get;
 export const saveSettings = store.save;

@@ -55,7 +55,6 @@ export function exportAgentAsTemplate(
     mcpServers: options.mcpServers?.length ? options.mcpServers : undefined,
     freeAgent: agent.freeAgentMode ?? undefined,
     useWorktree: agent.worktreePath ? true : undefined,
-    structured: agent.structuredMode ?? undefined,
     matchBy: {
       name: agent.name,
     },

@@ -85,7 +85,6 @@ class TestProvider extends BaseProvider {
       hooks: false,
       sessionResume: false,
       permissions: false,
-      structuredMode: false,
     };
   }
 

@@ -15,7 +15,6 @@ describe('persona-pattern', () => {
         mcpIds: ['github', 'linear'],
         mcpConfigs: { github: { token: 'x' } },
         freeAgentMode: true,
-        structuredMode: false,
         mission: 'implement-and-ship',
         buildCommand: 'npm run build',
         sourceControlProvider: 'azure-devops',

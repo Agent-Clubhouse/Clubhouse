@@ -42,14 +42,6 @@ describe('headlessStore', () => {
       expect(getState().defaultMode).toBe('headless');
     });
 
-    it('loads structured mode from backend', async () => {
-      mockGetHeadlessSettings.mockResolvedValue({ defaultMode: 'structured' });
-
-      await getState().loadSettings();
-
-      expect(getState().defaultMode).toBe('structured');
-    });
-
     it('migrates legacy enabled boolean', async () => {
       mockGetHeadlessSettings.mockResolvedValue({ enabled: true });
 
@@ -69,14 +61,14 @@ describe('headlessStore', () => {
     it('loads projectOverrides from backend', async () => {
       mockGetHeadlessSettings.mockResolvedValue({
         defaultMode: 'interactive',
-        projectOverrides: { '/project-a': 'headless', '/project-b': 'structured' },
+        projectOverrides: { '/project-a': 'headless', '/project-b': 'interactive' },
       });
 
       await getState().loadSettings();
 
       expect(getState().projectOverrides).toEqual({
         '/project-a': 'headless',
-        '/project-b': 'structured',
+        '/project-b': 'interactive',
       });
     });
 
@@ -120,10 +112,10 @@ describe('headlessStore', () => {
     it('persists defaultMode with current projectOverrides', async () => {
       useHeadlessStore.setState({ projectOverrides: { '/p': 'headless' } });
 
-      await getState().setDefaultMode('structured');
+      await getState().setDefaultMode('headless');
 
       expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
-        defaultMode: 'structured',
+        defaultMode: 'headless',
         projectOverrides: { '/p': 'headless' },
       });
     });
@@ -153,11 +145,6 @@ describe('headlessStore', () => {
       expect(getState().getProjectMode('/some/project')).toBe('headless');
     });
 
-    it('returns structured when global is structured and no project override', () => {
-      useHeadlessStore.setState({ defaultMode: 'structured', projectOverrides: {} });
-      expect(getState().getProjectMode('/some/project')).toBe('structured');
-    });
-
     it('project override headless overrides global interactive', () => {
       useHeadlessStore.setState({
         defaultMode: 'interactive',
@@ -172,14 +159,6 @@ describe('headlessStore', () => {
         projectOverrides: { '/my/project': 'interactive' },
       });
       expect(getState().getProjectMode('/my/project')).toBe('interactive');
-    });
-
-    it('project override structured overrides global headless', () => {
-      useHeadlessStore.setState({
-        defaultMode: 'headless',
-        projectOverrides: { '/my/project': 'structured' },
-      });
-      expect(getState().getProjectMode('/my/project')).toBe('structured');
     });
 
     it('falls back to global for projects without override', () => {
@@ -215,11 +194,6 @@ describe('headlessStore', () => {
       expect(getState().projectOverrides).toEqual({ '/my/project': 'headless' });
     });
 
-    it('supports structured as project override', async () => {
-      await getState().setProjectMode('/my/project', 'structured');
-      expect(getState().projectOverrides).toEqual({ '/my/project': 'structured' });
-    });
-
     it('preserves existing overrides when adding new one', async () => {
       useHeadlessStore.setState({
         projectOverrides: { '/project-a': 'headless' },
@@ -238,9 +212,9 @@ describe('headlessStore', () => {
         projectOverrides: { '/my/project': 'headless' },
       });
 
-      await getState().setProjectMode('/my/project', 'structured');
+      await getState().setProjectMode('/my/project', 'interactive');
 
-      expect(getState().projectOverrides).toEqual({ '/my/project': 'structured' });
+      expect(getState().projectOverrides).toEqual({ '/my/project': 'interactive' });
     });
 
     it('persists to backend with current defaultMode', async () => {
@@ -275,7 +249,7 @@ describe('headlessStore', () => {
       // Simulate a subscriber that modifies defaultMode when projectOverrides changes
       const unsub = useHeadlessStore.subscribe((state, prevState) => {
         if (state.projectOverrides !== prevState.projectOverrides) {
-          useHeadlessStore.setState({ defaultMode: 'structured' });
+          useHeadlessStore.setState({ defaultMode: 'headless' });
         }
       });
 
@@ -369,7 +343,7 @@ describe('headlessStore', () => {
       // Simulate a subscriber that modifies defaultMode when projectOverrides changes
       const unsub = useHeadlessStore.subscribe((state, prevState) => {
         if (state.projectOverrides !== prevState.projectOverrides) {
-          useHeadlessStore.setState({ defaultMode: 'structured' });
+          useHeadlessStore.setState({ defaultMode: 'headless' });
         }
       });
 
@@ -409,14 +383,6 @@ describe('headlessStore', () => {
       // Other projects use global
       expect(getState().getProjectMode('/other/project')).toBe('headless');
     });
-
-    it('structured override overrides headless global', async () => {
-      await getState().setDefaultMode('headless');
-      await getState().setProjectMode('/my/project', 'structured');
-
-      expect(getState().getProjectMode('/my/project')).toBe('structured');
-      expect(getState().getProjectMode('/other/project')).toBe('headless');
-    });
   });
 
   // ============================================================
@@ -437,7 +403,7 @@ describe('headlessStore', () => {
       const promise = getState().setDefaultMode('headless');
 
       // Concurrent mutation while save is in-flight
-      useHeadlessStore.setState({ projectOverrides: { '/a': 'headless', '/b': 'structured' } });
+      useHeadlessStore.setState({ projectOverrides: { '/a': 'headless', '/b': 'interactive' } });
 
       resolveSave();
       await promise;
@@ -460,7 +426,7 @@ describe('headlessStore', () => {
       const promise = getState().setProjectMode('/a', 'headless');
 
       // Concurrent mutation while save is in-flight
-      useHeadlessStore.setState({ defaultMode: 'structured' });
+      useHeadlessStore.setState({ defaultMode: 'headless' });
 
       resolveSave();
       await promise;
@@ -485,7 +451,7 @@ describe('headlessStore', () => {
       const promise = getState().clearProjectMode('/a');
 
       // Concurrent mutation while save is in-flight
-      useHeadlessStore.setState({ defaultMode: 'structured' });
+      useHeadlessStore.setState({ defaultMode: 'headless' });
 
       resolveSave();
       await promise;

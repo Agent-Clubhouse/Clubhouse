@@ -25,7 +25,7 @@ These namespaces are useful for feature adoption metrics but their meta contains
 
 - `core:agent` — agent spawn/kill events (strip: agentId, model, projectPath, binary, args)
 - `core:mcp` — MCP bridge lifecycle (strip: tool names, binding details)
-- `core:structured` — structured mode lifecycle (strip: session details)
+- ~~`core:structured` — structured mode lifecycle (strip: session details)~~ (removed with structured mode, #1937)
 - `core:headless` — headless agent lifecycle (strip: mission, PID)
 - `core:hook-server` — hook server health
 - `core:annex` — annex server start/stop (strip: peer fingerprints, IPs)
@@ -53,7 +53,7 @@ core:shutdown       []                              everything
 core:safe-mode      [attempt]                       lastEnabledPlugins
 core:agent          [kind]                          agentId, model, projectPath, binary, args, cwd
 core:mcp            []                              all meta
-core:structured     []                              all meta
+core:structured     (removed with structured mode, #1937)
 core:headless       []                              all meta
 update:check        [currentVersion, latestVersion] sourceUrl, downloadPath
 update:download     []                              everything
@@ -116,7 +116,7 @@ The message and stack trace are always stripped.
 |-------|--------|--------|---------|
 | `usage/agent-spawned` | `core:agent` | kind, isStructured | Agent type adoption |
 | `usage/agent-killed` | `core:agent` | (none) | Session length proxy |
-| `usage/structured-session` | `core:structured` | (none) | Structured mode adoption |
+| ~~`usage/structured-session`~~ | ~~`core:structured`~~ | (none) | Removed with structured mode (#1937) |
 | `usage/mcp-binding-created` | `core:mcp` | (none) | MCP adoption |
 | `usage/plugin-installed` | `marketplace` | (none) | Marketplace engagement |
 | `usage/headless-spawned` | `core:headless` | (none) | Headless mode adoption |

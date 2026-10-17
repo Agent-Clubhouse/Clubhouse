@@ -16,7 +16,6 @@ import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, digestS
 import type { DigestSince } from '../../shared/group-project-types';
 import { agentRegistry } from '../services/agent-registry';
 import * as ptyManager from '../services/pty-manager';
-import * as structuredManager from '../services/structured-manager';
 import { writeChunkedBracketedPaste, submitAfterPaste } from '../services/clubhouse-mcp/tools/agent-tools';
 import { getProvider } from '../orchestrators';
 import type { PasteSubmitTiming } from '../orchestrators';
@@ -259,8 +258,6 @@ export function registerGroupProjectHandlers(): void {
           ptyManager.write(agentId as string, message as string);
           ptyManager.write(agentId as string, '\r');
         }
-      } else if (reg.runtime === 'structured') {
-        await structuredManager.sendMessage(agentId as string, message as string);
       } else {
         throw new Error(`Agent runtime "${reg.runtime}" does not support input`);
       }

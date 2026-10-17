@@ -55,11 +55,15 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       orchestrator?: string;
       freeAgentMode?: boolean;
       mcpIds?: string[];
+      /** @deprecated Structured mode was removed; ignored. */
       structuredMode?: boolean;
       persona?: string;
     }): Promise<string> {
       if (options.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
         throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);
+      }
+      if (options.structuredMode !== undefined) {
+        console.warn(`[plugin:${ctx.pluginId}] agents.createDurable: 'structuredMode' is deprecated and ignored (structured mode was removed).`);
       }
 
       let projectId = ctx.projectId;
@@ -78,7 +82,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
 
       const model = options.model && options.model !== 'default' ? options.model : undefined;
       const config = await window.clubhouse.agent.createDurable(
-        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds, undefined, options.structuredMode, options.persona,
+        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds, undefined, options.persona,
       );
       return useAgentStore.getState().spawnDurableAgent(projectId, projectPath, config, false);
     },

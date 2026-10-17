@@ -34,6 +34,7 @@ import { useLockStore } from './stores/lockStore';
 import { initMcpBindingListener, useMcpBindingStore } from './stores/mcpBindingStore';
 import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivity';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
+import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
 
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
@@ -743,6 +744,8 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initNotificationClearing());
   cleanups.push(initAgentAttentionListener());
   cleanups.push(initStaleStatusCleanup());
+
+  showStructuredModeRemovedNotice().catch(() => { /* best-effort one-time notice */ });
   cleanups.push(initKeyboardShortcuts());
   cleanups.push(initAnnexListener());
   cleanups.push(initAnnexClientListener());

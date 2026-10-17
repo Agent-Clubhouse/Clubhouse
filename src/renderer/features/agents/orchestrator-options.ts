@@ -33,7 +33,6 @@ export function buildOrchestratorOptions(
           hooks: false,
           sessionResume: false,
           permissions: false,
-          structuredMode: false,
         },
       });
   }

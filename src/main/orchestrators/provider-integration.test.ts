@@ -34,7 +34,7 @@ import * as fsp from 'fs/promises';
 import { ClaudeCodeProvider } from './claude-code-provider';
 import { CopilotCliProvider } from './copilot-cli-provider';
 import { CodexCliProvider } from './codex-cli-provider';
-import { isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable } from './types';
+import { isHookCapable, isHeadlessCapable, isSessionCapable } from './types';
 import { clearBinaryCache } from './shared';
 
 /** Check if path's basename matches a known binary name (with or without Windows extensions) */
@@ -731,8 +731,6 @@ describe('Provider integration tests', () => {
         supportsPositionalMission: true,
         supportsAutoResumeAfterUpdate: true,
         permissions: true,
-        structuredMode: true,
-        structuredProtocol: 'acp',
       });
     });
 
@@ -745,14 +743,13 @@ describe('Provider integration tests', () => {
       expect(caps.permissions).toBe(true);
     });
 
-    it('CodexCli: headless, structuredOutput, hooks, permissions, and structuredMode', () => {
+    it('CodexCli: headless, structuredOutput, hooks, and permissions', () => {
       const caps = new CodexCliProvider().getCapabilities();
       expect(caps.headless).toBe(true);
       expect(caps.structuredOutput).toBe(true);
       expect(caps.hooks).toBe(true);
       expect(caps.sessionResume).toBe(true);
       expect(caps.permissions).toBe(true);
-      expect(caps.structuredMode).toBe(true);
     });
 
     it('all providers return an object with all required keys', () => {
@@ -1111,12 +1108,6 @@ describe('Provider integration tests', () => {
       expect(isSessionCapable(new CodexCliProvider())).toBe(true);
     });
 
-    it('isStructuredCapable returns true for ClaudeCode, CopilotCli, and CodexCli', () => {
-      expect(isStructuredCapable(new ClaudeCodeProvider())).toBe(true);
-      expect(isStructuredCapable(new CopilotCliProvider())).toBe(true);
-      expect(isStructuredCapable(new CodexCliProvider())).toBe(true);
-    });
-
     it('type narrowing grants access to sub-interface methods', () => {
       const provider = new ClaudeCodeProvider();
       if (isHookCapable(provider)) {
@@ -1128,9 +1119,6 @@ describe('Provider integration tests', () => {
         expect(typeof provider.listSessions).toBe('function');
         expect(typeof provider.readSessionTranscript).toBe('function');
         expect(typeof provider.extractSessionId).toBe('function');
-      }
-      if (isStructuredCapable(provider)) {
-        expect(typeof provider.createStructuredAdapter).toBe('function');
       }
       if (isHeadlessCapable(provider)) {
         expect(typeof provider.buildHeadlessCommand).toBe('function');

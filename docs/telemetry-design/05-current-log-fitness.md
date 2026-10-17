@@ -78,12 +78,12 @@ The telemetry plugin does not require changes to the log format, the appLog API,
 
 | Category | Namespaces | Count |
 |----------|-----------|-------|
-| Core system | `core:agent`, `core:mcp`, `core:structured`, `core:headless`, `core:pty`, `core:process`, `core:startup`, `core:shutdown`, `core:safe-mode`, `core:hook-server`, `core:ipc`, `core:security`, `core:window`, `core:plugins`, `core:plugin-storage` | 15 |
+| Core system | `core:agent`, `core:mcp`, ~~`core:structured`~~ (removed, #1937), `core:headless`, `core:pty`, `core:process`, `core:startup`, `core:shutdown`, `core:safe-mode`, `core:hook-server`, `core:ipc`, `core:security`, `core:window`, `core:plugins`, `core:plugin-storage` | 15 |
 | Agent/config | `core:agent-config`, `core:agent-settings`, `core:agent-queue`, `core:materialization`, `core:config-pipeline`, `core:config-diff`, `core:orchestrator`, `core:companion` | 8 |
 | Files/project | `core:file`, `core:git`, `core:project`, `core:project-store`, `core:group-project` | 5 |
 | Networking | `core:annex`, `core:annex-client`, `core:annex-server` | 3 |
 | Updates | `update:check`, `update:download`, `update:apply`, `update:apply-on-quit`, `update:apply-detect`, `update:fetch`, `update:history`, `update:retry`, `update:session-resume` | 9 |
 | Marketplace | `marketplace`, `marketplace:custom`, `marketplace:updates` | 3 |
 | App | `app:ipc`, `app:test` | 2 |
-| Structured mode | `core:structured:acp`, `core:structured:codex` | 2 |
+| Structured mode (removed, #1937) | ~~`core:structured:acp`~~, ~~`core:structured:codex`~~ | 2 |
 | **Total** | | **47** |

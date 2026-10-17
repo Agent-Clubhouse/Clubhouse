@@ -5,7 +5,7 @@ import { appLog } from './log-service';
 
 export const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
-export type AgentRuntime = 'pty' | 'headless' | 'structured';
+export type AgentRuntime = 'pty' | 'headless';
 
 export interface AgentRegistration {
   projectPath: string;

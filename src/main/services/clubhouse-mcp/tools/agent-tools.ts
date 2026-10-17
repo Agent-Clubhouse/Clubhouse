@@ -10,7 +10,6 @@ import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
 import * as ptyManager from '../../pty-manager';
-import * as structuredManager from '../../structured-manager';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import { getProvider } from '../../../orchestrators';
@@ -302,8 +301,6 @@ export function registerAgentTools(): void {
 
             await submitAfterPaste(targetId, timing);
           }
-        } else if (reg.runtime === 'structured') {
-          await structuredManager.sendMessage(targetId, taggedMessage);
         } else {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
         }
@@ -562,11 +559,6 @@ export function registerAgentTools(): void {
 
           await sleep(timing.initialDelayMs);
           ptyManager.write(targetId, '\r');
-        } else if (reg.runtime === 'structured') {
-          await structuredManager.sendMessage(
-            targetId,
-            `[TASK:${taskId}] [FROM:${senderLabel}] File delivered: ${filePath} — read this file for content from ${senderLabel}.`,
-          );
         } else {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
         }

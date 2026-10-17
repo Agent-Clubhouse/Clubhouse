@@ -273,13 +273,6 @@ vi.mock('../services/headless-manager', () => ({
   isHeadlessAgent: vi.fn(() => false),
 }));
 
-vi.mock('../services/structured-manager', () => ({
-  startSession: vi.fn(),
-  cancelSession: vi.fn(),
-  sendMessage: vi.fn(),
-  respondPermission: vi.fn(),
-}));
-
 vi.mock('../orchestrators/shared', () => ({
   buildSummaryInstruction: vi.fn(() => ''),
   readQuickSummary: vi.fn(() => null),

@@ -14,7 +14,7 @@ vi.mock('fs', () => ({
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from './settings-store';
-import { getSpawnMode, setProjectSpawnMode, getSettings, saveSettings } from './headless-settings';
+import { getSpawnMode, setProjectSpawnMode, getSettings, saveSettings, migrateHeadlessSettings } from './headless-settings';
 
 describe('headless-settings', () => {
   beforeEach(() => {
@@ -100,24 +100,32 @@ describe('headless-settings', () => {
     });
 
     it('returns defaultMode when set', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ defaultMode: 'structured' }));
-      expect(getSpawnMode('/project')).toBe('structured');
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ defaultMode: 'interactive' }));
+      expect(getSpawnMode('/project')).toBe('interactive');
     });
 
     it('defaultMode takes precedence over legacy enabled', async () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
         enabled: true,
-        defaultMode: 'structured',
+        defaultMode: 'interactive',
       }));
-      expect(getSpawnMode('/project')).toBe('structured');
+      expect(getSpawnMode('/project')).toBe('interactive');
     });
 
-    it('project override structured overrides global headless', async () => {
+    it('maps a legacy structured defaultMode to interactive', async () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        enabled: true,
+        defaultMode: 'structured',
+      }));
+      expect(getSpawnMode('/project')).toBe('interactive');
+    });
+
+    it('maps a legacy structured project override to interactive, even over global headless', async () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
         defaultMode: 'headless',
         projectOverrides: { '/my/project': 'structured' },
       }));
-      expect(getSpawnMode('/my/project')).toBe('structured');
+      expect(getSpawnMode('/my/project')).toBe('interactive');
     });
 
     it('handles mixed modes across projects', async () => {
@@ -129,8 +137,67 @@ describe('headless-settings', () => {
         },
       }));
       expect(getSpawnMode('/project-a')).toBe('headless');
-      expect(getSpawnMode('/project-b')).toBe('structured');
+      expect(getSpawnMode('/project-b')).toBe('interactive'); // legacy structured
       expect(getSpawnMode('/project-c')).toBe('interactive'); // global default
+    });
+  });
+
+  // ============================================================
+  // migrateHeadlessSettings
+  // ============================================================
+  describe('migrateHeadlessSettings', () => {
+    it('leaves valid modes untouched', () => {
+      const raw = {
+        enabled: false,
+        defaultMode: 'headless',
+        projectOverrides: { '/a': 'interactive', '/b': 'headless' },
+      };
+      expect(migrateHeadlessSettings(raw)).toEqual(raw);
+    });
+
+    it('rewrites legacy structured defaultMode and overrides to interactive', () => {
+      expect(migrateHeadlessSettings({
+        enabled: true,
+        defaultMode: 'structured',
+        projectOverrides: { '/a': 'structured', '/b': 'headless' },
+      })).toEqual({
+        enabled: true,
+        defaultMode: 'interactive',
+        projectOverrides: { '/a': 'interactive', '/b': 'headless' },
+      });
+    });
+
+    it('rewrites any unknown mode value to interactive', () => {
+      expect(migrateHeadlessSettings({
+        defaultMode: 'bogus',
+        projectOverrides: { '/a': 42 },
+      })).toEqual({
+        defaultMode: 'interactive',
+        projectOverrides: { '/a': 'interactive' },
+      });
+    });
+
+    it('does not add defaultMode or projectOverrides when absent', () => {
+      const migrated = migrateHeadlessSettings({ enabled: true });
+      expect(migrated).toEqual({ enabled: true });
+      expect(migrated).not.toHaveProperty('defaultMode');
+      expect(migrated).not.toHaveProperty('projectOverrides');
+    });
+
+    it('does not mutate its input', () => {
+      const raw = { defaultMode: 'structured', projectOverrides: { '/a': 'structured' } };
+      migrateHeadlessSettings(raw);
+      expect(raw).toEqual({ defaultMode: 'structured', projectOverrides: { '/a': 'structured' } });
+    });
+
+    it('is applied when loading settings from disk', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        defaultMode: 'structured',
+        projectOverrides: { '/p': 'structured' },
+      }));
+      const settings = getSettings();
+      expect(settings.defaultMode).toBe('interactive');
+      expect(settings.projectOverrides).toEqual({ '/p': 'interactive' });
     });
   });
 

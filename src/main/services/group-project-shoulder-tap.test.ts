@@ -40,11 +40,6 @@ vi.mock('./pty-manager', () => ({
   getBuffer: (...args: unknown[]) => mockGetBuffer(...args),
 }));
 
-const mockStructuredSend = vi.fn().mockResolvedValue(undefined);
-vi.mock('./structured-manager', () => ({
-  sendMessage: (...args: unknown[]) => mockStructuredSend(...args),
-}));
-
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { _resetAllBoardsForTesting, getBulletinBoard } from './group-project-bulletin';
@@ -60,7 +55,6 @@ describe('executeShoulderTap', () => {
     store.clear();
     mockPtyWrite.mockClear();
     mockGetBuffer.mockClear();
-    mockStructuredSend.mockClear();
     bindingManager._resetForTesting();
     _resetAllBoardsForTesting();
     groupProjectRegistry._resetForTesting();
@@ -127,34 +121,37 @@ describe('executeShoulderTap', () => {
     agentRegistry.untrack('agent-1');
   });
 
-  it('delivers to structured agents', async () => {
-    const project = await groupProjectRegistry.create('StructProj');
+  it('reports unsupported-runtime for headless agents', async () => {
+    const project = await groupProjectRegistry.create('HeadlessProj');
 
-    agentRegistry.register('agent-s', {
+    agentRegistry.register('agent-h', {
       projectPath: '/test',
       orchestrator: 'claude-code',
-      runtime: 'structured',
+      runtime: 'headless',
     });
 
-    bindingManager.bind('agent-s', {
+    bindingManager.bind('agent-h', {
       targetId: project.id,
       targetKind: 'group-project',
-      label: 'StructProj',
+      label: 'HeadlessProj',
       agentName: 'falcon',
-      targetName: 'StructProj',
+      targetName: 'HeadlessProj',
     });
 
     const result = await executeShoulderTap({
       projectId: project.id,
       senderLabel: 'user',
-      targetAgentId: 'agent-s',
+      targetAgentId: 'agent-h',
       message: 'Urgent request',
     });
 
-    expect(result.delivered).toHaveLength(1);
-    expect(mockStructuredSend).toHaveBeenCalledWith('agent-s', expect.stringContaining('Group Project notification'));
+    expect(result.delivered).toHaveLength(0);
+    expect(result.failed).toEqual([
+      expect.objectContaining({ agentId: 'agent-h', status: 'unsupported-runtime' }),
+    ]);
+    expect(mockPtyWrite).not.toHaveBeenCalled();
 
-    agentRegistry.untrack('agent-s');
+    agentRegistry.untrack('agent-h');
   });
 
   it('reports not-running when agent is not registered', async () => {

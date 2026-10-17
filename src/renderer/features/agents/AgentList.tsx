@@ -300,7 +300,7 @@ function AgentListInner() {
   const sendAgentCreateDurable = useAnnexClientStore((s) => s.sendAgentCreateDurable);
   const sendAgentReorder = useAnnexClientStore((s) => s.sendAgentReorder);
 
-  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean, persona?: string) => {
+  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], persona?: string) => {
     if (!activeProject) return;
     setShowDialog(false);
 
@@ -334,7 +334,7 @@ function AgentListInner() {
 
     try {
       const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, structuredMode, persona
+        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, persona
       );
       if (tempId) removeAgent(tempId);
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
@@ -354,13 +354,13 @@ function AgentListInner() {
     if (!activeProject) return;
     setPendingTemplate(null);
 
-    const { persona, name, color, model, useWorktree, orchestrator: orch, freeAgentMode: fam, structuredMode: sm, mcpIds } = templateConfig;
+    const { persona, name, color, model, useWorktree, orchestrator: orch, freeAgentMode: fam, mcpIds } = templateConfig;
 
     const tempId = registerCreatingAgent(activeProject.id, name, color, undefined, undefined);
     try {
       const config = await window.clubhouse.agent.createDurable(
         activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree,
-        orch, fam || undefined, mcpIds, undefined, sm || undefined, persona.id,
+        orch, fam || undefined, mcpIds, undefined, persona.id,
       );
       if (tempId) removeAgent(tempId);
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);

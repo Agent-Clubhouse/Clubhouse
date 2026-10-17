@@ -292,6 +292,11 @@ vi.mock('./plugins/builtin/canvas/canvas-sync', () => ({
   applyCanvasMutation: vi.fn(),
 }));
 
+const mockShowStructuredModeRemovedNotice = vi.fn(async () => {});
+vi.mock('./services/structured-mode-removal-notice', () => ({
+  showStructuredModeRemovedNotice: () => mockShowStructuredModeRemovedNotice(),
+}));
+
 
 vi.mock('./stores/soundStore', () => ({
   useSoundStore: Object.assign(
@@ -340,6 +345,17 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.window.onCanvasMutation).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToAgent).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToPluginSettings).toHaveBeenCalled();
+  });
+
+  it('shows the one-time structured-mode-removed notice on init', () => {
+    expect(mockShowStructuredModeRemovedNotice).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a failing structured-mode-removed notice break init', () => {
+    cleanup();
+    mockShowStructuredModeRemovedNotice.mockRejectedValueOnce(new Error('IPC down'));
+    expect(() => { cleanup = initAppEventBridge(); }).not.toThrow();
+    expect(mockShowStructuredModeRemovedNotice).toHaveBeenCalledTimes(2);
   });
 
   it('should register agent lifecycle listeners', () => {

@@ -287,8 +287,8 @@ Each entry in the \`agents\` array supports per-agent overrides:
 
 Editable fields: \`persona\`, \`mission\`, \`buildCommand\`, \`testCommand\`,
 \`lintCommand\`, \`sourceControlProvider\`, \`clubhouseModeOverride\`,
-\`freeAgentMode\`, \`model\`, \`orchestrator\`, \`structuredMode\`, \`mcpIds\`,
-\`mcpConfigs\`, \`mcpOverride\`.
+\`freeAgentMode\`, \`model\`, \`orchestrator\`, \`mcpIds\`, \`mcpConfigs\`,
+\`mcpOverride\`.
 
 Each of \`buildCommand\`, \`testCommand\`, \`lintCommand\`, and
 \`sourceControlProvider\` is a per-agent override of the matching wildcard; when

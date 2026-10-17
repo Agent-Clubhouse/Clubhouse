@@ -25,7 +25,6 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     orchestrator: 'claude-code',
     model: 'opus',
     freeAgentMode: true,
-    structuredMode: false,
     worktreePath: '/home/user/.clubhouse/agents/scout',
     ...overrides,
   } as Agent;
@@ -78,7 +77,14 @@ describe('exportAgentAsTemplate', () => {
     expect(agentDef.model).toBe('opus');
     expect(agentDef.freeAgent).toBe(true);
     expect(agentDef.useWorktree).toBe(true);
-    expect(agentDef.structured).toBe(false);
+    expect(agentDef).not.toHaveProperty('structured');
+  });
+
+  it('does not export the removed structured flag from a legacy agent record', () => {
+    const agent = makeAgent({ structuredMode: true } as unknown as Partial<Agent>);
+    const result = exportAgentAsTemplate(agent);
+
+    expect(result.agents![0]).not.toHaveProperty('structured');
   });
 
   it('inlines instruction content', () => {
@@ -181,7 +187,6 @@ describe('exportAgentAsTemplate', () => {
       orchestrator: undefined,
       model: undefined,
       freeAgentMode: undefined,
-      structuredMode: undefined,
       worktreePath: undefined,
     });
     const result = exportAgentAsTemplate(agent);
@@ -191,7 +196,6 @@ describe('exportAgentAsTemplate', () => {
     expect(agentDef.model).toBeUndefined();
     expect(agentDef.freeAgent).toBeUndefined();
     expect(agentDef.useWorktree).toBeUndefined();
-    expect(agentDef.structured).toBeUndefined();
   });
 });
 

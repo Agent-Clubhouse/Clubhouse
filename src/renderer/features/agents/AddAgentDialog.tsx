@@ -10,7 +10,7 @@ import type { McpCatalogEntry } from '../../../shared/types';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], structuredMode?: boolean, persona?: string) => void;
+  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], persona?: string) => void;
   projectPath?: string;
   /** Surfaced when the most recent create attempt failed, so the user sees why instead of a silently dead button. */
   error?: string | null;
@@ -21,7 +21,6 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
-  const [structuredMode, setStructuredMode] = useState(false);
   const [freeAgentMode, setFreeAgentMode] = useState(false);
   const [persona, setPersona] = useState('');
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
@@ -35,18 +34,6 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
 
   const selectedOrch = allOrchestrators.find((o) => o.id === orchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
-  const supportsStructured = selectedOrch?.capabilities?.structuredMode ?? false;
-
-  // Structured Mode is gated behind an experimental flag — hide the toggle
-  // entirely when the flag is off so the surface is invisible to opted-out users.
-  const [structuredModeFlag, setStructuredModeFlag] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    window.clubhouse.app.getExperimentalSettings()
-      .then((flags) => { if (!cancelled) setStructuredModeFlag(!!flags.structuredMode); })
-      .catch(() => { /* leave hidden on failure */ });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     if (!projectPath) return;
@@ -64,10 +51,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    // Never propagate structuredMode when the experimental flag is off — keeps
-    // a stale checkbox state from a prior render from leaking into the agent.
-    const sm = structuredModeFlag && structuredMode ? true : undefined;
-    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined, sm, persona || undefined);
+    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined, persona || undefined);
   };
 
   return (
@@ -200,27 +184,6 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
               (isolated branch + directory)
             </span>
           </label>
-
-          {/* Structured Mode (experimental — hidden unless opted in) */}
-          {structuredModeFlag && (
-            <label
-              data-testid="structured-mode-field"
-              className={`flex items-center gap-2 mb-3 ${supportsStructured ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-              title={supportsStructured ? 'Run in structured mode with rich event streaming' : 'Not supported by this orchestrator'}
-            >
-              <input
-                type="checkbox"
-                checked={structuredMode}
-                onChange={(e) => setStructuredMode(e.target.checked)}
-                disabled={!supportsStructured}
-                className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
-              />
-              <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use Structured Mode</span>
-              <span className="text-xs text-ctp-subtext0/70 ml-1">
-                {supportsStructured ? '(rich event UI)' : '(not supported)'}
-              </span>
-            </label>
-          )}
 
           {/* Free Agent Mode */}
           <label
