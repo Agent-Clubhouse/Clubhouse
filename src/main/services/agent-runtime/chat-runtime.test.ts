@@ -381,6 +381,44 @@ describe('ChatAgentRuntime', () => {
     expect(types()).not.toContain('session_ended');
   });
 
+  it('runs the pre-prompt hook before new prompts but not before steering', async () => {
+    const driver = new FakeChatDriver();
+    const order: string[] = [];
+    const beforePrompt = vi.fn(async () => { order.push('checkpoint'); });
+    const { runtime } = makeRuntime(driver, { beforePrompt });
+    await runtime.start();
+    const realSend = driver.last.send.bind(driver.last);
+    driver.last.send = async (content, delivery) => { order.push(`send:${delivery}`); return realSend(content, delivery); };
+
+    await runtime.sendMessage('first', { source: 'user' });
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    await flush();
+    await runtime.sendMessage('steer this', { source: 'user' });
+    expect(order).toEqual(['checkpoint', 'send:prompt', 'send:steer']);
+  });
+
+  it('sends the prompt anyway when the pre-prompt hook runs past its 5 s bound', async () => {
+    const driver = new FakeChatDriver();
+    const beforePrompt = vi.fn(() => new Promise<void>(() => {}));
+    const { runtime } = makeRuntime(driver, { beforePrompt });
+    await runtime.start();
+    const sent: string[] = [];
+    const realSend = driver.last.send.bind(driver.last);
+    driver.last.send = async (content, delivery) => { sent.push(delivery); return realSend(content, delivery); };
+
+    vi.useFakeTimers();
+    try {
+      const sending = runtime.sendMessage('first', { source: 'user' });
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(sent).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      await sending;
+      expect(sent).toEqual(['prompt']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('rejects actions once ended', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);

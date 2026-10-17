@@ -1,5 +1,6 @@
 import { ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { CheckpointTurn, ChangesResult, RevertResult } from '../shared/chat-checkpoints';
 import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult, StagedChatAttachment } from '../shared/chat';
 import { CHAT_IMAGE_MAX_BYTES } from '../shared/chat';
 
@@ -42,6 +43,14 @@ export const chat = {
       ipcRenderer.invoke(IPC.CHAT.SAVE_RUNTIME_SETTINGS, settings),
     getAgentRuntime: (agentId: string, provider?: string): Promise<ChatAgentRuntimeInfo> =>
       ipcRenderer.invoke(IPC.CHAT.GET_AGENT_RUNTIME, agentId, provider),
+    listCheckpoints: (agentId: string): Promise<CheckpointTurn[]> =>
+      ipcRenderer.invoke(IPC.CHAT.LIST_CHECKPOINTS, agentId),
+    getChanges: (agentId: string, scope: { turnId: string } | { sessionId: string }, filePath?: string): Promise<ChangesResult> =>
+      ipcRenderer.invoke(IPC.CHAT.GET_CHANGES, agentId, scope, filePath),
+    revertTurn: (agentId: string, turnId: string, force?: boolean): Promise<RevertResult> =>
+      ipcRenderer.invoke(IPC.CHAT.REVERT_TURN, agentId, turnId, force),
+    undoRevert: (agentId: string, turnId: string): Promise<RevertResult> =>
+      ipcRenderer.invoke(IPC.CHAT.UNDO_REVERT, agentId, turnId),
     /** An agent didn't get the chat it asked for: it fell back to another driver or the terminal. */
     onRuntimeNotice: (callback: (agentId: string, notice: { level: 'info' | 'warn'; code: string; message: string }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, agentId: string, notice: { level: 'info' | 'warn'; code: string; message: string }) =>

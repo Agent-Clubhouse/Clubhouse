@@ -14,6 +14,7 @@ import { createChatViewState, type ChatViewState } from '../../../stores/chatSto
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { ChatHeader } from './ChatHeader';
 import { ChatStream, type StreamJump } from './ChatStream';
+import { ChangesPanel } from './ChangesPanel';
 import { AgentMapPanel } from './AgentMapPanel';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { Composer, QueueList, TaskList } from './Composer';
@@ -65,6 +66,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const [draft, setDraft] = useChatDraft(agent.id);
+  const [changesOpen, setChangesOpen] = useState(false);
   const [attachments, setAttachments] = useChatAttachments(agent.id);
   const [agentMapOpen, setAgentMapOpen] = useState(false);
   const [selectedSubagent, setSelectedSubagent] = useState<string | null>(null);
@@ -75,6 +77,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   // The map exists only when the driver reports subagents and there are some.
   const hasAgentMap = agentMap.mode !== 'none' && agentMap.nodes.length > 0;
   const openSubagent = useCallback((subagentId: string) => {
+    setChangesOpen(false);
     setAgentMapOpen(true);
     setSelectedSubagent(subagentId);
   }, []);
@@ -175,8 +178,11 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
         providerName={providerName}
         onSwitchToTerminal={onSwitchToTerminal}
         switching={switching}
+        onToggleChanges={() => { setAgentMapOpen(false); setChangesOpen((v) => !v); }}
+        changesOpen={changesOpen}
         {...(hasAgentMap && {
-          onToggleAgentMap: () => setAgentMapOpen((v) => !v),
+          // One side panel at a time, so the stream keeps its width.
+          onToggleAgentMap: () => { setChangesOpen(false); setAgentMapOpen((v) => !v); },
           agentMapOpen,
           subagentCount: agentMap.nodes.length,
           agentMapPanelId: mapPanelId,
@@ -195,6 +201,14 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
             </div>
           </div>
         </div>
+        {changesOpen && (
+          <ChangesPanel
+            agentId={agent.id}
+            sessionId={state.sessionId}
+            refreshKey={`${state.turnId ?? 'idle'}:${state.state ?? ''}`}
+            onClose={() => setChangesOpen(false)}
+          />
+        )}
         {hasAgentMap && agentMapOpen && (
           <AgentMapPanel
             id={mapPanelId}

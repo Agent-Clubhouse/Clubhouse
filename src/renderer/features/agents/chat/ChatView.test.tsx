@@ -620,6 +620,28 @@ describe('ChatView review fixes', () => {
   });
 });
 
+describe('ChatView changes panel', () => {
+  it('opens and closes the Changes panel from the header', async () => {
+    renderFixture('claude', 'conversation');
+    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
+    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close changes' }));
+    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
+  });
+
+  it('shows one side panel at a time: Changes and the agent map', async () => {
+    renderFixture('claude', 'subagents');
+    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
+    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
+    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
+    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-agent-map-toggle')).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
 describe('ChatView permission extras', () => {
   it('sends a denial message when the driver carries one', () => {
     const { actions } = renderFixture('claude', 'approval');
