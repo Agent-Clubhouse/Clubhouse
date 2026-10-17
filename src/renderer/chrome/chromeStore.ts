@@ -40,6 +40,18 @@ interface PersistedChromeState {
   idleOpen?: boolean;
 }
 
+/** Options an app view takes for one visit. */
+export interface AppLaunchParams {
+  /** Review: show only agents that need you, without changing the saved filter. */
+  needsYouOnly?: boolean;
+}
+
+export interface AppLaunch {
+  id: string;
+  params: AppLaunchParams;
+  seq: number;
+}
+
 export interface ChromeState {
   /**
    * The project whose header is selected, which makes the project root the
@@ -54,6 +66,19 @@ export interface ChromeState {
   composerFocusPending: boolean;
   requestComposer: () => void;
   consumeComposerFocus: () => void;
+  /**
+   * The latest request to open an app view (Canvas, Review) with options for
+   * that visit, such as Review's "Needs you only" from Needs you. The view reads
+   * it when it mounts or when `seq` changes. Not persisted.
+   */
+  appLaunch: AppLaunch | null;
+  launchApp: (id: string, params?: AppLaunchParams) => void;
+  /**
+   * The agent an app view is showing (Review's current agent), so the sidebar
+   * selection follows it while that view is open. Not persisted.
+   */
+  appViewAgentId: string | null;
+  setAppViewAgent: (agentId: string | null) => void;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   lastProjectId: string | null;
@@ -216,6 +241,10 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     composerFocusPending: false,
     requestComposer: () => set({ composerFocusPending: true }),
     consumeComposerFocus: () => { if (get().composerFocusPending) set({ composerFocusPending: false }); },
+    appLaunch: null,
+    launchApp: (id, params = {}) => set({ appLaunch: { id, params, seq: (get().appLaunch?.seq ?? 0) + 1 } }),
+    appViewAgentId: null,
+    setAppViewAgent: (agentId) => { if (get().appViewAgentId !== agentId) set({ appViewAgentId: agentId }); },
 
     resizeSidebar: (delta) => {
       const { sidebarWidth, sidebarCollapsed } = get();

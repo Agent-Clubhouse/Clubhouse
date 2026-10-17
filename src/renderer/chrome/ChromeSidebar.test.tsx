@@ -198,6 +198,27 @@ describe('ChromeSidebar', () => {
     expect(screen.getByTestId('app-row-review')).toBeTruthy();
   });
 
+  it('opens Review from Needs you with Needs you only for that visit, and plainly from the app row', () => {
+    registerAppPlugin('review', 'Review');
+    usePluginStore.setState({ appEnabled: ['review'] });
+    render(<ChromeSidebar />);
+    fireEvent.click(within(screen.getByTestId('needs-you')).getByText('Review'));
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:review');
+    expect(useChromeStore.getState().appLaunch).toMatchObject({ id: 'review', params: { needsYouOnly: true } });
+    fireEvent.click(screen.getByTestId('app-row-review'));
+    expect(useChromeStore.getState().appLaunch).toMatchObject({ id: 'review', params: {} });
+  });
+
+  it('selects the agent Review is showing while Review is open', () => {
+    registerAppPlugin('review', 'Review');
+    usePluginStore.setState({ appEnabled: ['review'] });
+    useUIStore.setState({ explorerTab: 'plugin:app:review' });
+    act(() => useChromeStore.getState().setAppViewAgent('a1'));
+    render(<ChromeSidebar />);
+    expect(screen.getByTestId('agent-item-a1').getAttribute('data-active')).toBe('true');
+    act(() => useChromeStore.getState().setAppViewAgent(null));
+  });
+
   describe('drag to reorder', () => {
     const dataTransfer = { setData: () => {}, effectAllowed: '', dropEffect: '' };
     const drag = (fromId: string, toId: string) => {
