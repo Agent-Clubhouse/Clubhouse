@@ -13,8 +13,8 @@ import type { TelemetryLevel } from './attributes';
  * here, to `clubhouse.telemetry.destination` in the attribute registry, and
  * one adapter.
  */
-export type TelemetryDestinationKind = 'azure' | 'otlp';
-export const TELEMETRY_DESTINATION_KINDS: readonly TelemetryDestinationKind[] = ['azure', 'otlp'];
+export type TelemetryDestinationKind = 'azure' | 'otlp' | 'framebriar';
+export const TELEMETRY_DESTINATION_KINDS: readonly TelemetryDestinationKind[] = ['azure', 'otlp', 'framebriar'];
 export type OtlpTemporality = 'cumulative' | 'delta';
 
 /**
@@ -46,6 +46,18 @@ export interface TelemetryDestinationEntry {
   /** The host the user last confirmed sending to (kinds with user-entered endpoints). */
   confirmedHost?: string;
   otlp?: OtlpDestinationSettings;
+  /** Framebriar (the developer's feedback service): no user fields, only the user's Off. */
+  framebriar?: FramebriarDestinationSettings;
+}
+
+/**
+ * The Framebriar destination follows Feedback (spec §6.11): its `enabled` is
+ * derived, true exactly while Feedback is connected, another destination is
+ * exporting, its host is confirmed, and the user hasn't switched it off.
+ */
+export interface FramebriarDestinationSettings {
+  /** The user turned it off themselves ("Not now", or its switch): it stays off until they turn it on. */
+  userOff: boolean;
 }
 
 /** Bump when what we collect widens materially; forces re-consent. */
@@ -94,6 +106,8 @@ export interface TelemetryDestinationStatus {
   health: TelemetryDestinationHealth;
   /** Items wait in the offline queue when the network is down (Azure only). */
   offlineQueue: boolean;
+  /** Framebriar only: the user switched it off, so don't offer it again. */
+  userOff?: boolean;
 }
 
 export interface TelemetryStatus {
@@ -132,6 +146,8 @@ export interface TelemetryAcknowledgements {
   consent?: boolean;
   /** The host the confirm step named. */
   host?: string;
+  /** Framebriar's host, when the confirm step also named it (it follows this destination on). */
+  followHost?: string;
   weakStorage?: boolean;
 }
 
@@ -147,6 +163,8 @@ export type TelemetryEnableResult =
       host?: string;
       /** Every host that would receive data once this is confirmed, for the consent dialog. */
       hosts?: string[];
+      /** Framebriar's host when it is among `hosts` unconfirmed (the one `ack.followHost` must name). */
+      followHost?: string;
       status: TelemetryStatus;
     };
 

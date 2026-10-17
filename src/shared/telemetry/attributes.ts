@@ -268,7 +268,7 @@ export const ATTR = {
   telemetrySignal: enumAttr('clubhouse.telemetry.signal', ['traces', 'metrics', 'logs']),
   httpClass: enumAttr('clubhouse.http.class', ['2xx', '3xx', '4xx', '5xx', 'network', 'timeout']),
   /** A destination kind. Add new kinds here too (settings-types.ts TelemetryDestinationKind). */
-  telemetryDestination: enumAttr('clubhouse.telemetry.destination', ['azure', 'otlp']),
+  telemetryDestination: enumAttr('clubhouse.telemetry.destination', ['azure', 'otlp', 'framebriar']),
 
   // Agents (§5.1 examples; instrumented from Phase 3)
   agentKind: enumAttr('clubhouse.agent.kind', ['durable', 'quick', 'companion']),

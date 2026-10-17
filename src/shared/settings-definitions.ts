@@ -94,6 +94,7 @@ export const TELEMETRY_SETTINGS: SettingsDefinition<TelemetrySettingsFile> = {
     destinations: [
       { id: 'azure', kind: 'azure', enabled: false, level: 'standard', preset: 'all' },
       { id: 'otlp', kind: 'otlp', enabled: false, level: 'standard', preset: 'all', otlp: { endpoint: '', headerNames: [], temporality: 'cumulative' } },
+      { id: 'framebriar', kind: 'framebriar', enabled: false, level: 'standard', preset: 'user_activity', framebriar: { userOff: false } },
     ],
     sampleRate: 1,
     consentVersion: 0,

@@ -14,6 +14,7 @@ import { isPreviewEligible } from '../preview-eligible';
 import { appLog } from '../log-service';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { FeedbackService } from './feedback-service';
+import { notifyFramebriarConnectionChanged, setFramebriarTelemetrySource } from '../../telemetry/destinations/framebriar-source';
 
 let service: FeedbackService | null = null;
 let quitting = false;
@@ -34,6 +35,16 @@ export function getFeedbackService(): FeedbackService {
     });
     // The button, notices and Settings follow main's status in every window.
     s.onChange((status) => broadcastToAllWindows(IPC.FEEDBACK.STATUS_CHANGED, status));
+    // Telemetry export to Framebriar follows Feedback's connection (spec §6.11).
+    setFramebriarTelemetrySource(() => (service === s ? s.telemetryExport() : null));
+    let wasConnected = false;
+    s.onChange(() => {
+      const now = s.telemetryConnected;
+      if (now !== wasConnected) {
+        wasConnected = now;
+        notifyFramebriarConnectionChanged();
+      }
+    });
     service = s;
   }
   return service;
@@ -53,6 +64,9 @@ export function startFeedbackIfEnabled(): void {
 async function stopService(): Promise<void> {
   const s = service;
   service = null;
+  setFramebriarTelemetrySource(null);
+  // Telemetry drops the Framebriar destination along with Feedback.
+  if (s?.telemetryConnected) notifyFramebriarConnectionChanged();
   await s?.shutdown();
 }
 

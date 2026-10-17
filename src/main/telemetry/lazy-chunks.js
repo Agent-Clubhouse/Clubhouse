@@ -15,3 +15,7 @@ export function loadAzureDestination() {
 export function loadOtlpDestination() {
   return import(/* webpackChunkName: "telemetry-otlp" */ './destinations/otlp');
 }
+
+export function loadFramebriarDestination() {
+  return import(/* webpackChunkName: "telemetry-framebriar" */ './destinations/framebriar');
+}

@@ -104,6 +104,7 @@ export function configuredRecordingLevel(settings: TelemetrySettings = getTeleme
 
 const START_ERRORS: Record<string, string> = {
   missing_destination: 'No destination is configured.',
+  feedback_not_connected: 'Connect Feedback (Settings, Feedback) to send telemetry to the developer.',
   missing_connection_string: 'No connection string is saved.',
   invalid_instrumentation_key: 'The connection string has no valid InstrumentationKey.',
   missing_ingestion_endpoint: 'The connection string has no IngestionEndpoint.',

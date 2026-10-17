@@ -75,6 +75,8 @@ interface PendingConfirm {
   host?: string;
   /** Every host that would receive data, for the consent step. */
   hosts?: string[];
+  /** Framebriar's host when the dialog also confirms it. */
+  followHost?: string;
   /** Destination id the user is turning on or saving. */
   target: string;
   retry: (ack: TelemetryAcknowledgements) => Promise<TelemetryEnableResult>;
@@ -144,7 +146,7 @@ export function TelemetrySettingsSection() {
       return true;
     }
     if ('needs' in result) {
-      setConfirm({ needs: result.needs, host: result.host, hosts: result.hosts, target, retry: run, onSuccess });
+      setConfirm({ needs: result.needs, host: result.host, hosts: result.hosts, followHost: result.followHost, target, retry: run, onSuccess });
       return false;
     }
     setError({ panel, message: 'message' in result ? result.message : 'Something went wrong.' });
@@ -156,6 +158,7 @@ export function TelemetrySettingsSection() {
   const dest = (id: string) => status.destinations.find((d) => d.id === id);
   const azure = dest('azure');
   const otlp = dest('otlp');
+  const framebriar = dest('framebriar');
   const azureOn = azure?.enabled === true;
   const otlpOn = otlp?.enabled === true;
 
@@ -165,6 +168,8 @@ export function TelemetrySettingsSection() {
     if (confirm.needs.includes('consent')) ack.consent = true;
     if (confirm.needs.includes('weak_storage')) ack.weakStorage = true;
     if (confirm.needs.includes('destination') || confirm.needs.includes('consent')) ack.host = confirm.host;
+    // The dialog listed Framebriar's host: confirm exactly the one shown.
+    if (confirm.followHost) ack.followHost = confirm.followHost;
     const pending = confirm;
     setConfirm(null);
     await handleResult(pending.target, pending.target, pending.retry, ack, pending.onSuccess);
@@ -375,6 +380,37 @@ export function TelemetrySettingsSection() {
           {testLine('otlp')}
         </div>
       </section>
+
+      {/* Clubhouse developer (Framebriar), through Feedback */}
+      {framebriar && (
+        <section className="rounded-md border border-surface-1 px-4 py-4 space-y-4 mt-4" aria-label={framebriar.label} data-testid="telemetry-panel-framebriar">
+          <div className="text-sm text-ctp-text font-medium">{framebriar.label}</div>
+          <p className="text-xs text-ctp-subtext0">
+            User activity and errors can also go to the Clubhouse developer, so feedback reports come with context. Once you confirm the developer&apos;s host, this sends only while Feedback is connected and another destination here is on. Switch it off to stop it until you switch it back on.
+          </p>
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-ctp-text">Send telemetry</div>
+            <Toggle
+              ariaLabel="Send telemetry to the Clubhouse developer"
+              checked={framebriar.enabled}
+              disabled={!framebriar.configured && !framebriar.enabled}
+              onChange={(v) => void handleResult('framebriar', 'framebriar', (ack) => api().setEnabled('framebriar', v, ack))}
+            />
+          </div>
+          {!framebriar.configured && (
+            <p className="text-xs text-ctp-subtext1" data-testid="telemetry-framebriar-needs-feedback">Connect Feedback in Settings, Feedback first.</p>
+          )}
+          <DestinationControls
+            dest={framebriar}
+            onFilter={(level, preset) => void handleResult('framebriar', 'framebriar', () => api().setFilter('framebriar', level, preset))}
+          />
+          <div className="flex items-center gap-3">
+            <button type="button" className={buttonClass} disabled={!framebriar.active} onClick={() => void runTest('framebriar')}>Send test event</button>
+            {testLine('framebriar')}
+          </div>
+          {errorLine('framebriar')}
+        </section>
+      )}
 
       {/* Advanced */}
       <details className="mt-6">

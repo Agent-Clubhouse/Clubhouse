@@ -21,7 +21,7 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const LIMIT_BYTES = 2 * 1024 * 1024;
 const SDK_CHUNK = 'telemetry-sdk';
-const DESTINATION_CHUNKS = ['telemetry-azure', 'telemetry-otlp'];
+const DESTINATION_CHUNKS = ['telemetry-azure', 'telemetry-otlp', 'telemetry-framebriar'];
 
 /** Load the TypeScript webpack config with a minimal transpile-only hook. */
 function loadMainConfig() {
