@@ -96,6 +96,23 @@ describe('startSdk', () => {
     expect(JSON.stringify(record?.attributes)).not.toContain('secret');
   });
 
+  it('puts the install id on spans and log records but never on metrics', async () => {
+    const installId = '0f1e2d3c-4b5a-4968-8776-655443322110';
+    const { rt, spans, logs, metrics } = setup('standard', {
+      resourceAttributes: { 'service.name': 'clubhouse', 'enduser.pseudo.id': installId },
+    });
+    active = rt;
+    rt.flow('clubhouse.telemetry.test', {}, () => 1);
+    rt.event('clubhouse.telemetry.test');
+    rt.count('clubhouse.app.sessions', 1, [ATTR.startupKind('cold')]);
+    await rt.forceFlush(1000);
+    expect(spans.getFinishedSpans()[0].attributes['enduser.pseudo.id']).toBe(installId);
+    expect(logs.getFinishedLogRecords()[0].attributes['enduser.pseudo.id']).toBe(installId);
+    const points = metrics.getMetrics().flatMap((m) => m.scopeMetrics.flatMap((s) => s.metrics.flatMap((x) => x.dataPoints)));
+    expect(points.length).toBeGreaterThan(0);
+    for (const p of points) expect(p.attributes['enduser.pseudo.id']).toBeUndefined();
+  });
+
   it('applies return-value classification and abort signals', async () => {
     const { rt, spans } = setup();
     active = rt;

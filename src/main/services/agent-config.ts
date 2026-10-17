@@ -10,6 +10,7 @@ import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-s
 import { resolveOrchestrator } from './agent-system';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
+import { persist } from '../telemetry/persist';
 
 /** Non-blocking git command execution. Prevents UI freezes in large repos. */
 function execGitAsync(cmd: string, cwd: string): Promise<string> {
@@ -384,12 +385,14 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
         } else {
           // Non-empty but every record is invalid (e.g. `[null]`) — this is
           // corruption, not an intentionally empty list. Fall back to backup.
+          persist.recovery('agents', 'primary_corrupt');
           appLog('core:agent-config', 'error', 'agents.json has no valid agent records — attempting recovery from backup', {
             meta: { configPath },
           });
         }
       }
     } catch (err) {
+      persist.recovery('agents', 'primary_corrupt');
       appLog('core:agent-config', 'error', 'Failed to parse agents.json — attempting recovery from backup', {
         meta: { configPath, error: err instanceof Error ? err.message : String(err) },
       });
@@ -406,6 +409,7 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
         if (valid.length > 0) {
           agents = valid;
           source = 'backup';
+          persist.recovery('agents', 'restored_from_backup');
           appLog('core:agent-config', 'warn', `Recovered ${agents.length} agent(s) from backup`, {
             meta: {
               backupPath,
@@ -418,6 +422,7 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
           await writeAgentsToDiskSkippingBackup(projectPath, agents);
         }
       } catch (backupErr) {
+        persist.recovery('agents', 'backup_corrupt');
         appLog('core:agent-config', 'error', 'Backup agents.json.bak is also corrupt', {
           meta: { backupPath, error: backupErr instanceof Error ? backupErr.message : String(backupErr) },
         });
@@ -523,8 +528,10 @@ async function writeAgentsToDiskWithOptions(
   // files if the process crashes mid-write. We update the backup only after the
   // main file rename succeeds so a crash can never leave both files corrupt.
   const tmpPath = configPath + '.tmp.' + randomUUID().slice(0, 8);
-  await fsp.writeFile(tmpPath, JSON.stringify(agents, null, 2), 'utf-8');
-  await fsp.rename(tmpPath, configPath);
+  await persist.timed('agents', async () => {
+    await fsp.writeFile(tmpPath, JSON.stringify(agents, null, 2), 'utf-8');
+    await fsp.rename(tmpPath, configPath);
+  });
 
   if (!skipBackup && previousConfig !== null) {
     const backupTmpPath = backupPath + '.tmp.' + randomUUID().slice(0, 8);
@@ -628,7 +635,12 @@ async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void>
   }
   while (entry.pendingFlush || entry.dirty) {
     if (entry.pendingFlush) {
-      await entry.pendingFlush;
+      const waitStart = Date.now();
+      try {
+        await entry.pendingFlush;
+      } finally {
+        persist.barrierWait('agents', Date.now() - waitStart);
+      }
       continue;
     }
     await startFlush(projectPath, entry);
@@ -658,6 +670,7 @@ function startFlush(projectPath: string, entry: CacheEntry): Promise<void> {
       }
       const currentSnapshot = JSON.stringify(currentAgents);
       if (currentSnapshot !== entry.diskSnapshot) {
+        persist.recovery('agents', 'external_change_merged');
         appLog('core:agent-config', 'warn', 'Detected external agents.json change; merging instead of overwriting it', {
           meta: { projectPath },
         });

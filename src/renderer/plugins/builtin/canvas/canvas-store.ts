@@ -6,6 +6,7 @@ import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, Ag
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { generateZoneWireId, type ZoneWireDefinition } from './zone-wire-store';
+import { persist } from '../../../telemetry/persist';
 import {
   createView as createViewOp,
   createPluginView as createPluginViewOp,
@@ -389,6 +390,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         if (primary.status !== 'ok') {
           const backup = await readInstancesCopy(storage, STORAGE_KEY_INSTANCES_BACKUP);
           if (backup.status === 'ok') {
+            persist.recovery('canvas', 'restored_from_backup');
             rendererLog('canvas', 'warn', 'Primary canvas data missing/corrupt — recovered from backup', {
               meta: { primary: primary.status, backupCanvases: backup.canvases.length },
             });
@@ -399,6 +401,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
             const error = primary.status === 'unreadable'
               ? primary.error
               : (backup as Extract<InstancesCopy, { status: 'unreadable' }>).error;
+            persist.recovery('canvas', 'unreadable');
             rendererLog('canvas', 'error', 'Canvas data unreadable — not loading, saves blocked', {
               meta: { primary: primary.status, backup: backup.status, error: errorMessage(error) },
             });
@@ -425,6 +428,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           canvases = chosen.status === 'degraded' ? chosen.canvases : [createCanvasInstance()];
           _recoverySnapshot = chosen.raw;
           _canvasPersist = 'snapshot-first';
+          persist.recovery('canvas', 'records_dropped');
           rendererLog('canvas', 'warn', 'Canvas data had malformed records — loaded what was valid', {
             meta: { issues: chosen.status === 'degraded' ? chosen.issues : ['instances is not a non-empty array'] },
           });
@@ -458,6 +462,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     saveCanvas: async (storage) => {
       if (_canvasPersist === 'blocked') {
+        persist.guardBlocked('canvas', 'not_hydrated');
         rendererLog('canvas', 'warn', 'saveCanvas skipped — canvas was not hydrated from storage');
         return;
       }
@@ -477,6 +482,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         }
         const hasData = (v: unknown) => v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0);
         if (hasData(primary) || hasData(backup)) {
+          persist.guardBlocked('canvas', 'verify_empty');
           rendererLog('canvas', 'error', 'Canvas data appeared after an empty load — reloading instead of overwriting it');
           await get().loadCanvas(storage);
           return;

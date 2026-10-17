@@ -1,0 +1,524 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## Clubhouse\nTemplate version 1 \u00b7 telemetry schema 1 \u00b7 generated from the attribute registry; see docs/telemetry/workbook/README.md."
+      },
+      "name": "text-3"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "tr",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ]
+            }
+          },
+          {
+            "id": "ver",
+            "version": "KqlParameterItem/1.0",
+            "name": "Version",
+            "label": "App version",
+            "type": 2,
+            "multiSelect": true,
+            "quote": "'",
+            "delimiter": ",",
+            "query": "customMetrics | where timestamp {TimeRange} | where name == \"clubhouse.app.sessions\" | distinct application_Version | order by application_Version desc",
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::all"
+              ],
+              "selectAllValue": "All",
+              "showDefault": false
+            },
+            "defaultValue": "value::all",
+            "queryType": 0,
+            "resourceType": "microsoft.insights/components"
+          }
+        ]
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "overview",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Overview",
+            "subTarget": "overview",
+            "style": "link"
+          },
+          {
+            "id": "reliability",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Reliability",
+            "subTarget": "reliability",
+            "style": "link"
+          },
+          {
+            "id": "startup",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Startup and updates",
+            "subTarget": "startup",
+            "style": "link"
+          },
+          {
+            "id": "integrity",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Data integrity",
+            "subTarget": "integrity",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Data from Clubhouse's opt-in telemetry export. Nothing here contains prompts, paths or names; see the telemetry spec \u00a75."
+            },
+            "name": "text-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "union requests, customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| summarize installs = dcount(user_Id) by bin(timestamp, 1d)",
+              "size": 0,
+              "title": "Active installs per day",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Active installs per day"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.sessions\"\n| extend kind = tostring(customDimensions[\"clubhouse.startup.kind\"])\n| summarize sessions = sum(value) by kind, bin(timestamp, 1d)",
+              "size": 0,
+              "title": "Sessions by startup kind",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "barchart"
+            },
+            "name": "Sessions by startup kind"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.sessions\"\n| summarize sessions = sum(value) by application_Version\n| order by sessions desc",
+              "size": 0,
+              "title": "Version mix (sessions)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "piechart"
+            },
+            "name": "Version mix (sessions)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let sessions = customMetrics | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.app.sessions\" | summarize s = sum(value) by day = bin(timestamp, 1d);\nlet unclean = customMetrics | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.app.unclean_exits\" | summarize u = sum(value) by day = bin(timestamp, 1d);\nsessions\n| join kind=leftouter unclean on day\n| project day, crash_free_pct = round(100.0 * (s - coalesce(u, 0.0)) / s, 1)",
+              "size": 0,
+              "title": "Crash-free sessions",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Crash-free sessions"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.unclean_exits\"\n| extend previous = tostring(customDimensions[\"clubhouse.shutdown.previous\"])\n| summarize exits = sum(value) by previous, bin(timestamp, 1d)",
+              "size": 0,
+              "title": "Unclean exits by previous state",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "barchart"
+            },
+            "name": "Unclean exits by previous state"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange}\n| where name == \"clubhouse.app.unclean_exit\"\n| extend crashed = tostring(customDimensions[\"clubhouse.update.from_version\"]), previous = tostring(customDimensions[\"clubhouse.shutdown.previous\"])\n| summarize exits = sum(itemCount), installs = dcount(user_Id) by crashed, previous\n| order by exits desc",
+              "size": 0,
+              "title": "Unclean exits by the version that crashed",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Unclean exits by the version that crashed"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      },
+      "name": "tab-overview"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "exceptions\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| extend origin = tostring(customDimensions[\"clubhouse.exception.origin\"]), handled = tostring(customDimensions[\"clubhouse.exception.handled\"])\n| summarize count = sum(itemCount), installs = dcount(user_Id) by type, origin, handled\n| top 25 by count desc",
+              "size": 0,
+              "title": "Exceptions by type and origin",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Exceptions by type and origin"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "exceptions\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| extend origin = tostring(customDimensions[\"clubhouse.exception.origin\"])\n| summarize count = sum(itemCount) by origin, bin(timestamp, 1h)",
+              "size": 0,
+              "title": "Exceptions over time by origin",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Exceptions over time by origin"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.renderer.gone\", \"clubhouse.child_process.gone\")\n| extend reason = coalesce(tostring(customDimensions[\"clubhouse.renderer.gone_reason\"]), tostring(customDimensions[\"clubhouse.child_process.gone_reason\"]))\n| summarize count = sum(itemCount) by name, reason",
+              "size": 0,
+              "title": "Renderer and child-process exits",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Renderer and child-process exits"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.renderer.unresponsive\"\n| extend window = tostring(customDimensions[\"clubhouse.window.kind\"])\n| summarize hangs = sum(itemCount), p95_s = round(percentile(duration, 95) / 1000, 1) by window",
+              "size": 0,
+              "title": "Window hangs",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Window hangs"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.process.eventloop_blocked\"\n| extend flow = tostring(customDimensions[\"clubhouse.blocked.flow\"])\n| summarize stalls = sum(itemCount), installs = dcount(user_Id) by flow\n| order by stalls desc",
+              "size": 0,
+              "title": "Main-thread stalls by running flow",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Main-thread stalls by running flow"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.process.eventloop.delay.p99\", \"clubhouse.process.eventloop.delay.max\")\n| summarize delay_s = avg(value) by name, bin(timestamp, 1h)",
+              "size": 0,
+              "title": "Event-loop delay (s)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Event-loop delay (s)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.process.memory\"\n| extend type = tostring(customDimensions[\"clubhouse.process.type\"])\n| summarize mb = avg(value) / 1048576 by type, bin(timestamp, 1h)",
+              "size": 0,
+              "title": "Memory by process type (MB)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Memory by process type (MB)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.renderer.long_frames\"\n| extend view = tostring(customDimensions[\"clubhouse.view\"])\n| summarize frames = sum(value) by view, bin(timestamp, 1h)",
+              "size": 0,
+              "title": "Long frames by view",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Long frames by view"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "reliability"
+      },
+      "name": "tab-reliability"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.startup\"\n| extend kind = tostring(customDimensions[\"clubhouse.startup.kind\"])\n| summarize starts = sum(itemCount), p50_s = round(percentile(duration, 50) / 1000, 2), p95_s = round(percentile(duration, 95) / 1000, 2) by kind, application_Version\n| order by application_Version desc",
+              "size": 0,
+              "title": "Startup time by kind and version",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Startup time by kind and version"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "dependencies\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name startswith \"clubhouse.app.startup.\"\n| summarize p50_ms = percentile(duration, 50), p95_ms = percentile(duration, 95) by name\n| order by p50_ms desc",
+              "size": 0,
+              "title": "Startup phases (p50 ms)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "barchart"
+            },
+            "name": "Startup phases (p50 ms)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.startup\" and success == false\n| summarize count = sum(itemCount) by error = tostring(customDimensions[\"error.type\"])",
+              "size": 0,
+              "title": "Failed startups",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Failed startups"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let checks = customMetrics | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.update.checks\" | summarize n = sum(value) by stage = strcat(\"check: \", tostring(customDimensions[\"clubhouse.update.result\"]));\nlet applies = requests | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.update.apply\" | summarize n = todouble(sum(itemCount)) by stage = strcat(\"apply: \", tostring(customDimensions[\"clubhouse.update.result\"]));\nlet verified = customEvents | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.update.apply_verified\" | summarize n = todouble(sum(itemCount)) by stage = strcat(\"verified: \", tostring(customDimensions[\"clubhouse.update.apply.verified\"]));\nunion checks, applies, verified\n| order by stage asc",
+              "size": 0,
+              "title": "Update funnel",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Update funnel"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.update.apply_verified\"\n| extend verified = tostring(customDimensions[\"clubhouse.update.apply.verified\"]), install = tostring(customDimensions[\"clubhouse.install.kind\"])\n| summarize applies = sum(itemCount), not_taken = sumif(itemCount, verified == \"not_taken\") by install",
+              "size": 0,
+              "title": "Applies that did not take, by install kind",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Applies that did not take, by install kind"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.update.failures\"\n| extend phase = tostring(customDimensions[\"clubhouse.update.phase\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize failures = sum(value) by phase, error\n| order by failures desc",
+              "size": 0,
+              "title": "Update failures by phase and error",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Update failures by phase and error"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.safe_mode\"\n| summarize count = sum(itemCount) by trigger = tostring(customDimensions[\"clubhouse.safe_mode.trigger\"])",
+              "size": 0,
+              "title": "Safe-mode decisions",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Safe-mode decisions"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "startup"
+      },
+      "name": "tab-startup"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Persistence integrity (spec \u00a712 H1): the largest regression cluster since March. Any recovery or guard block deserves a look."
+            },
+            "name": "text-2"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.persist.writes\"\n| extend store = tostring(customDimensions[\"clubhouse.persist.store\"]), result = tostring(customDimensions[\"clubhouse.persist.result\"])\n| summarize writes = sum(value), failed = sumif(value, result == \"failed\") by store\n| extend failure_pct = round(100.0 * failed / writes, 3)",
+              "size": 0,
+              "title": "Write failures by store",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Write failures by store"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.persist.write.duration\"\n| extend store = tostring(customDimensions[\"clubhouse.persist.store\"])\n| summarize avg_ms = round(1000 * sum(valueSum) / sum(valueCount), 1), max_ms = round(1000 * max(valueMax), 1) by store",
+              "size": 0,
+              "title": "Write time by store (ms)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Write time by store (ms)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.persist.recovery\"\n| extend store = tostring(customDimensions[\"clubhouse.persist.store\"]), action = tostring(customDimensions[\"clubhouse.persist.action\"])\n| summarize count = sum(itemCount), installs = dcount(user_Id) by store, action\n| order by count desc",
+              "size": 0,
+              "title": "Recoveries by store and action",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Recoveries by store and action"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.persist.guard_blocks\"\n| extend store = tostring(customDimensions[\"clubhouse.persist.store\"]), reason = tostring(customDimensions[\"clubhouse.persist.guard_reason\"])\n| summarize blocked = sum(value) by store, reason",
+              "size": 0,
+              "title": "Saves blocked by data-loss guards",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Saves blocked by data-loss guards"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.persist.flush_barrier.wait\"\n| extend store = tostring(customDimensions[\"clubhouse.persist.store\"])\n| summarize avg_ms = round(1000 * sum(valueSum) / sum(valueCount), 1), max_ms = round(1000 * max(valueMax), 1) by store",
+              "size": 0,
+              "title": "Flush barrier waits (ms)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Flush barrier waits (ms)"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "integrity"
+      },
+      "name": "tab-integrity"
+    }
+  ],
+  "fallbackResourceIds": [
+    "Azure Monitor"
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

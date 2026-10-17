@@ -59,6 +59,10 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   updateApplyMode: { good: ATTR.updateApplyMode('on_quit'), key: 'clubhouse.update.apply.mode' },
   applyVerified: { good: ATTR.applyVerified('not_taken'), key: 'clubhouse.update.apply.verified' },
   processType: { good: ATTR.processType('gpu'), key: 'clubhouse.process.type' },
+  persistStore: { good: ATTR.persistStore('plugin_kv'), key: 'clubhouse.persist.store' },
+  persistResult: { good: ATTR.persistResult('failed'), key: 'clubhouse.persist.result' },
+  persistAction: { good: ATTR.persistAction('restored_from_backup'), key: 'clubhouse.persist.action' },
+  persistGuardReason: { good: ATTR.persistGuardReason('verify_empty'), key: 'clubhouse.persist.guard_reason' },
 };
 
 describe('telemetry attribute registry', () => {
@@ -109,6 +113,10 @@ describe('telemetry attribute registry', () => {
         "clubhouse.logging.enabled",
         "clubhouse.orchestrator",
         "clubhouse.outcome",
+        "clubhouse.persist.action",
+        "clubhouse.persist.guard_reason",
+        "clubhouse.persist.result",
+        "clubhouse.persist.store",
         "clubhouse.process",
         "clubhouse.process.type",
         "clubhouse.projects.count",

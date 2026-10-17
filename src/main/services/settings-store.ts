@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { persist } from '../telemetry/persist';
 
 export interface SettingsStore<T> {
   get(): T;
@@ -66,6 +67,7 @@ export function createSettingsStore<T>(
       cacheLoaded = true;
     } catch (err) {
       if (fs.existsSync(filePath)) {
+        persist.recovery('settings', 'reset_to_default');
         console.warn(
           `[settings-store] Failed to parse ${filename}, using defaults:`,
           err instanceof Error ? err.message : err,
@@ -86,7 +88,7 @@ export function createSettingsStore<T>(
         // Note: appLog cannot be imported here (circular: settings-store → log-service → log-settings → settings-store).
         console.warn(`[settings-store] Previous write to ${filename} failed:`, err instanceof Error ? err.message : err);
       })
-      .then(async () => {
+      .then(() => persist.timed('settings', async () => {
         if (options?.mode == null) {
           await fs.promises.writeFile(filePath, serialized, 'utf-8');
           return;
@@ -96,7 +98,7 @@ export function createSettingsStore<T>(
         // pre-existing file (e.g. created 0644 by hand or an older version) too.
         // No-op on Windows, where POSIX modes don't apply.
         if (process.platform !== 'win32') await fs.promises.chmod(filePath, options.mode);
-      })
+      }))
       .catch((err) => {
         console.error(`[settings-store] Write to ${filename} failed — cache may diverge from disk:`, err instanceof Error ? err.message : err);
         throw err;

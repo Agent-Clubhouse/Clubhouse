@@ -143,7 +143,10 @@ export function checkPreviousSession(crashLoop: boolean): void {
     const prev = JSON.parse(fs.readFileSync(file, 'utf-8')) as Partial<SessionRecord>;
     if (prev.clean === false) {
       const previous = crashLoop ? 'crash_loop' : 'unknown_exit';
-      tel.event('clubhouse.app.unclean_exit', [ATTR.previousExit(previous)]);
+      // Attribute the exit to the version that crashed, not the one starting now.
+      const attrs = [ATTR.previousExit(previous)];
+      if (typeof prev.version === 'string' && /^\d+\.\d+\.\d+/.test(prev.version)) attrs.push(ATTR.updateFromVersion(prev.version));
+      tel.event('clubhouse.app.unclean_exit', attrs);
       tel.count('clubhouse.app.unclean_exits', 1, [ATTR.previousExit(previous)]);
     }
   } catch {

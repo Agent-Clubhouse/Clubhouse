@@ -8,6 +8,7 @@ import { appLog } from './log-service';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 import { pathExists } from './fs-utils';
+import { persist } from '../telemetry/persist';
 
 const CURRENT_VERSION = 1;
 
@@ -262,10 +263,12 @@ async function readStore(): Promise<ProjectStoreV1> {
       appLog('core:project-store', 'error', 'Failed to parse or validate projects.json — quarantining and attempting recovery from backup', {
         meta: { storePath, error: err instanceof Error ? err.message : String(err) },
       });
+      persist.recovery('projects', 'primary_corrupt');
       // Quarantine the corrupt file so it is not silently overwritten by the next write
       try {
         const quarantinePath = await getQuarantinePath();
         await fsp.rename(storePath, quarantinePath);
+        persist.recovery('projects', 'quarantined');
         appLog('core:project-store', 'info', 'Corrupt projects.json quarantined', {
           meta: { corrupted: storePath, quarantined: quarantinePath },
         });
@@ -283,6 +286,7 @@ async function readStore(): Promise<ProjectStoreV1> {
       const raw = JSON.parse(await fsp.readFile(backupPath, 'utf-8'));
       store = migrate(raw).store;
       if (store.projects.length > 0) {
+        persist.recovery('projects', 'restored_from_backup');
         appLog('core:project-store', 'warn', `Recovered ${store.projects.length} project(s) from backup`, {
           meta: {
             backupPath,
@@ -293,6 +297,7 @@ async function readStore(): Promise<ProjectStoreV1> {
         await writeStore(store);
       }
     } catch (backupErr) {
+      persist.recovery('projects', 'backup_corrupt');
       appLog('core:project-store', 'error', 'Backup projects.json.bak is also corrupt', {
         meta: { backupPath, error: backupErr instanceof Error ? backupErr.message : String(backupErr) },
       });
@@ -328,8 +333,10 @@ async function writeStore(store: ProjectStoreV1): Promise<void> {
   // Atomic write: write to temp file then rename — prevents partial/corrupt
   // files if the process crashes mid-write.
   const tmpPath = storePath + '.tmp.' + randomUUID().slice(0, 8);
-  await fsp.writeFile(tmpPath, JSON.stringify(store, null, 2), 'utf-8');
-  await fsp.rename(tmpPath, storePath);
+  await persist.timed('projects', async () => {
+    await fsp.writeFile(tmpPath, JSON.stringify(store, null, 2), 'utf-8');
+    await fsp.rename(tmpPath, storePath);
+  });
 
   appLog('core:project-store', 'info', `Wrote ${store.projects.length} project(s) to disk`, {
     meta: { storePath, projectIds: store.projects.map((p) => p.id) },

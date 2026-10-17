@@ -9,6 +9,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import type { BulletinMessage, TopicDigest, DigestSince } from '../../shared/group-project-types';
 import { appLog } from './log-service';
+import { persist } from '../telemetry/persist';
 
 /** Default max message body size in bytes. */
 const MAX_BODY_BYTES = 100 * 1024;
@@ -207,7 +208,7 @@ class BulletinBoard {
 
     const flushPromise = (async () => {
       await ensureDir(path.dirname(bulletinPath(this.projectId)));
-      await fsp.writeFile(bulletinPath(this.projectId), JSON.stringify(data, null, 2), 'utf-8');
+      await persist.timed('bulletin', () => fsp.writeFile(bulletinPath(this.projectId), JSON.stringify(data, null, 2), 'utf-8'));
       this.dirty = false;
     })().catch((err) => {
       appLog('core:group-project', 'error', 'Failed to write bulletin board', {

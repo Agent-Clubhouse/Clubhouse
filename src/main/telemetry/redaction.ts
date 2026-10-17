@@ -23,6 +23,7 @@ export type AttrValue = string | number | boolean;
 export type AttrBag = Record<string, unknown>;
 
 const HASH_RE = /^[0-9a-f]{16}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,6}(?:-[0-9A-Za-z.]{1,32})?$/;
 const EXCEPTION_TYPE_RE = /^[A-Za-z_$][\w$.]{0,63}$/;
 
@@ -40,6 +41,11 @@ export function sanitizeAttribute(key: string, value: unknown, scrub: Scrubber):
   }
   if (key === SDK_ATTRIBUTE_KEYS.sampleRate) {
     return typeof value === 'number' && value > 0 && value <= 100 ? value : undefined;
+  }
+
+  if (key === SDK_ATTRIBUTE_KEYS.endUserPseudoId) {
+    // Only ever the random install UUID (spec §5.2).
+    return typeof value === 'string' && UUID_RE.test(value) ? value : undefined;
   }
 
   if (key === SDK_ATTRIBUTE_KEYS.customEventName) {

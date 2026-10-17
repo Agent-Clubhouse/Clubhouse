@@ -130,7 +130,10 @@ describe('unclean exits', () => {
   it('reports a previous session that never marked itself clean', () => {
     fs.writeFileSync(file(), JSON.stringify({ startedAt: 'x', version: '0.42.0', clean: false }));
     checkPreviousSession(false);
-    expect(rt.event).toHaveBeenCalledWith('clubhouse.app.unclean_exit', [ATTR.previousExit('unknown_exit')]);
+    expect(rt.event).toHaveBeenCalledWith('clubhouse.app.unclean_exit', [
+      ATTR.previousExit('unknown_exit'),
+      ATTR.updateFromVersion('0.42.0'),
+    ]);
     expect(rt.count).toHaveBeenCalledWith('clubhouse.app.unclean_exits', 1, [ATTR.previousExit('unknown_exit')]);
   });
 

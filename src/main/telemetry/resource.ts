@@ -72,7 +72,8 @@ export function buildResourceAttributes(input: ResourceInputs): Record<(typeof R
     'service.version': input.appVersion,
     'service.instance.id': input.instanceId,
     'clubhouse.install.id': input.installId,
-    // App Insights maps enduser.pseudo.id to user_Id.
+    // Also copied onto every span and log record by the SDK: the Azure
+    // exporter fills user_Id from item attributes, not from the resource.
     'enduser.pseudo.id': input.installId,
     'clubhouse.channel': channelForVersion(input.appVersion),
     'deployment.environment.name': input.isPackaged ? 'production' : 'development',

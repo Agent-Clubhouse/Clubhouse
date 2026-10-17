@@ -9,6 +9,7 @@ import type {
   PluginFileRequest,
 } from '../../shared/plugin-types';
 import { appLog } from './log-service';
+import { persist } from '../telemetry/persist';
 
 // Track which projects have already had .gitignore updated this session
 const gitignoreEnsured = new Set<string>();
@@ -131,6 +132,7 @@ async function readJsonFileOrQuarantine(file: string): Promise<JsonFileRead> {
     return { found: true, value: JSON.parse(raw) };
   } catch {
     const quarantinePath = getCorruptQuarantinePath(file);
+    persist.recovery('plugin_kv', 'quarantined');
     try {
       await fs.rename(file, quarantinePath);
     } catch {
@@ -139,6 +141,9 @@ async function readJsonFileOrQuarantine(file: string): Promise<JsonFileRead> {
     return { found: false };
   }
 }
+
+/** Keys whose backup fallback was already reported this session. */
+const reportedBackupReads = new Set<string>();
 
 export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
@@ -151,13 +156,23 @@ export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   // Primary missing, corrupt (and now quarantined) or unreadable — fall back
   // to the backup.
   const backup = await readJsonFileOrQuarantine(getBackupPath(file));
-  if (backup.found) return backup.value;
+  if (backup.found) {
+    // Writes always produce both copies, so any fallback to the backup means
+    // the primary was lost, torn or unreadable. Reported once per key per
+    // session: until the next write, every read takes this path.
+    if (!reportedBackupReads.has(file)) {
+      reportedBackupReads.add(file);
+      persist.recovery('plugin_kv', 'restored_from_backup');
+    }
+    return backup.value;
+  }
 
   // Neither copy could be used. Only report "absent" when nothing was
   // unreadable; otherwise throw so the caller does not mistake an I/O failure
   // for an empty key and overwrite real data with defaults.
   const error = primary.error ?? backup.error;
   if (error) {
+    persist.recovery('plugin_kv', 'unreadable');
     appLog('core:plugin-storage', 'warn', 'Plugin storage key is unreadable', {
       meta: { pluginId: req.pluginId, key: req.key, error: error instanceof Error ? error.message : String(error) },
     });
@@ -178,8 +193,10 @@ export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
 
   // Backup first, then primary. A crash between the two leaves one intact,
   // complete copy on disk for readKey to recover from either way.
-  await fs.writeFile(getBackupPath(file), json, 'utf-8');
-  await fs.writeFile(file, json, 'utf-8');
+  await persist.timed('plugin_kv', async () => {
+    await fs.writeFile(getBackupPath(file), json, 'utf-8');
+    await fs.writeFile(file, json, 'utf-8');
+  });
 }
 
 export async function deleteKey(req: PluginStorageDeleteRequest): Promise<void> {
