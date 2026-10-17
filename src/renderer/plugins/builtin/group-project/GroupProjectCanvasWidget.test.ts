@@ -220,7 +220,7 @@ describe('GroupProjectCanvasWidget — MCP required gate', () => {
   it('renders an MCP-required placeholder when MCP is disabled', () => {
     expect(source).toContain('!mcpEnabled');
     expect(source).toContain('group-project-mcp-disabled');
-    expect(source).toContain('MCP Required');
+    expect(source).toContain('MCP required');
   });
 
   it('directs user to enable MCP in settings', () => {

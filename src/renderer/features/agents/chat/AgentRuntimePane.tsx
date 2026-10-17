@@ -19,7 +19,8 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useToastStore } from '../../../stores/toastStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
-import { RuntimeSwitch } from './ChatHeader';
+import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
+import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
 import { noteExplicitTerminalChoice } from './chat-default-tip';
@@ -199,8 +200,13 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
 
   return (
     <div className="flex flex-col h-full">
-      <div className="h-8 flex-shrink-0 flex items-center justify-end px-3 border-b border-surface-0 bg-ctp-base" data-testid="terminal-runtime-bar">
-        <RuntimeSwitch value="terminal" onChange={() => requestSwitch('chat')} disabled={switching} />
+      <div data-testid="terminal-runtime-bar">
+        <TerminalPaneToolbar
+          agent={agent}
+          runtime={{ value: 'terminal', onChange: () => requestSwitch('chat'), disabled: switching }}
+          showMenu={context === 'main'}
+          showName={!isNewChromeEnabled()}
+        />
       </div>
       <div className="flex-1 min-h-0 relative">{terminal}</div>
       {confirmDialog}

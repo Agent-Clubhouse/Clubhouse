@@ -95,7 +95,7 @@ function JumpListButton({
 }: {
   agents: AgentInfo[];
   currentIndex: number;
-  AgentAvatar: React.ComponentType<{ agentId: string; size?: 'sm' | 'md'; showStatusRing?: boolean }>;
+  AgentAvatar: React.ComponentType<{ agentId: string; size?: '2xs' | 'sm' | 'md'; showStatusRing?: boolean }>;
   onJumpTo: (index: number) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -202,7 +202,7 @@ export function FloatingBar({
   agentName: string;
   agentStatus: string;
   detailedState: string | null;
-  AgentAvatar: React.ComponentType<{ agentId: string; size?: 'sm' | 'md'; showStatusRing?: boolean }>;
+  AgentAvatar: React.ComponentType<{ agentId: string; size?: '2xs' | 'sm' | 'md'; showStatusRing?: boolean }>;
   isRunning: boolean;
   onSleep: () => void;
   includeSleeping: boolean;

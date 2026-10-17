@@ -449,7 +449,7 @@ describe('Dashboard', () => {
         },
       });
       render(<Dashboard />);
-      expect(screen.getByText('Editing src/main.ts')).toBeInTheDocument();
+      expect(screen.getByText('Working · Editing src/main.ts')).toBeInTheDocument();
     });
 
     it('shows quick sessions count when more than 3', () => {

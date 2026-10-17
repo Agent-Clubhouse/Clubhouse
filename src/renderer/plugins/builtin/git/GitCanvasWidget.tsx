@@ -4,6 +4,7 @@ import type { GitInfo, GitStatusFile } from '../../../../shared/types';
 import { createGitOps } from './remote-git';
 import { evaluateSelectionPersistence } from './selection';
 import { Spinner } from '../../../components/Spinner';
+import { WidgetPicker, projectRows } from '../canvas/WidgetPicker';
 
 const GIT_POLL_INTERVAL_MS = 3000;
 
@@ -29,15 +30,6 @@ function statusInfo(code: string): StatusInfo {
   if (c.startsWith('R')) return { label: 'Renamed', color: 'text-ctp-mauve', short: 'R' };
   if (c.startsWith('C')) return { label: 'Copied', color: 'text-ctp-info', short: 'C' };
   return { label: 'Changed', color: 'text-ctp-overlay0', short: '~' };
-}
-
-function projectColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 55%, 55%)`;
 }
 
 // ── Component ───────────────────────────────────────────────────────
@@ -152,33 +144,11 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
   // Step 1: Project picker
   if (!projectId) {
     return (
-      <div className="flex flex-col h-full p-2">
-        <div className="text-xs font-medium text-ctp-subtext1 uppercase tracking-wider mb-2">
-          Select a repo
-        </div>
-        <div className="flex-1 overflow-y-auto space-y-1">
-          {projects.map((p) => {
-            const color = projectColor(p.name);
-            const initials = p.name.slice(0, 2).toUpperCase();
-            return (
-              <button
-                key={p.id}
-                className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg bg-surface-0 hover:bg-surface-1 text-left transition-colors"
-                onClick={() => handleSelectProject(p.id)}
-                data-testid={`project-picker-${p.id}`}
-              >
-                <div
-                  className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
-                  style={{ backgroundColor: color }}
-                >
-                  {initials}
-                </div>
-                <span className="text-[11px] text-ctp-text truncate">{p.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <WidgetPicker
+        searchPlaceholder="Find a project"
+        emptyText="No projects open"
+        sections={[{ id: 'projects', rows: projectRows(projects, handleSelectProject, { testIdPrefix: 'project-picker-' }) }]}
+      />
     );
   }
 

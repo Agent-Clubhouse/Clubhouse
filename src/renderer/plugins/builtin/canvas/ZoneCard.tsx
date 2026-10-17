@@ -9,6 +9,7 @@ import type { ZoneCanvasView } from './canvas-types';
 import { ZONE_CARD_HEIGHT, ZONE_CARD_WIDTH } from './canvas-types';
 import { InlineRename } from './InlineRename';
 import { getAllThemeIds, getTheme } from '../../../themes';
+import { CANVAS_Z } from './canvas-chrome';
 
 interface ZoneCardProps {
   zone: ZoneCanvasView;
@@ -156,7 +157,7 @@ const ZoneThemePicker = React.forwardRef<HTMLDivElement, ZoneThemePickerProps>(
           top: rect.bottom + 8,
           left: rect.left + rect.width / 2,
           transform: 'translateX(-50%)',
-          zIndex: 10000,
+          zIndex: CANVAS_Z.zonePopover,
         }}
         onMouseDown={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}

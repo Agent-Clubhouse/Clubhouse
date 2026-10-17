@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { CanvasView } from './canvas-types';
+import { Tooltip } from '../../../components/Tooltip';
 
 interface CanvasSearchProps {
   views: CanvasView[];
@@ -152,21 +153,23 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
     });
   }, [focusWorkspace]);
 
-  const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
+  const btnClass = 'w-7 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors';
 
   if (!isOpen) {
     return (
-      <button
-        onClick={handleToggle}
-        className={btnClass}
-        title="Search views (⌘F)"
-        data-testid="canvas-search-toggle"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-      </button>
+      <Tooltip content="Search views (⌘F)">
+        <button
+          onClick={handleToggle}
+          className={btnClass}
+          aria-label="Search views (⌘F)"
+          data-testid="canvas-search-toggle"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      </Tooltip>
     );
   }
 
@@ -181,12 +184,12 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search cards…"
-            className="w-48 h-6 pl-6 pr-2 text-xs bg-surface-0 border border-surface-1 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring-dim"
+            className="w-48 h-7 pl-6 pr-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text placeholder:text-ctp-overlay1 focus-ring-dim"
             data-testid="canvas-search-input"
           />
           <svg
             width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-            className="absolute left-1.5 top-1/2 -translate-y-1/2 text-ctp-overlay0"
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-ctp-overlay1"
           >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -198,43 +201,45 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
             {((selectedIndex - 1 + filteredViews.length) % filteredViews.length) + 1} / {filteredViews.length}
           </span>
         )}
-        <button
-          onClick={handleToggle}
-          className={btnClass}
-          title="Close search"
-          data-testid="canvas-search-close"
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+        <Tooltip content="Close search">
+          <button
+            onClick={handleToggle}
+            className={btnClass}
+            aria-label="Close search"
+            data-testid="canvas-search-close"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </Tooltip>
       </div>
 
       {/* Results dropdown */}
       <div
-        className="absolute top-8 right-0 w-64 max-h-64 overflow-y-auto bg-ctp-mantle border border-surface-1 rounded-lg shadow-lg z-dropdown"
+        className="absolute top-9 right-0 w-64 max-h-64 overflow-y-auto py-1 bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl z-dropdown"
         data-testid="canvas-search-results"
       >
         {filteredViews.length === 0 ? (
-          <div className="px-3 py-2 text-xs text-ctp-overlay0">No matching cards</div>
+          <div className="px-3 py-1.5 text-xs text-ctp-overlay1">No matching cards</div>
         ) : (
           filteredViews.map((view, index) => (
             <button
               key={view.id}
-              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 text-xs transition-colors ${
+              className={`w-full text-left h-7 px-3 flex items-center gap-2 text-xs transition-colors ${
                 index === selectedIndex
-                  ? 'bg-surface-1 text-ctp-text'
-                  : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text'
+                  ? 'bg-surface-0 text-ctp-text'
+                  : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'
               }`}
               onClick={() => handleSelect(view.id)}
               onMouseEnter={() => setSelectedIndex(index)}
               data-testid={`canvas-search-result-${view.id}`}
             >
-              <span className="text-[9px] font-mono uppercase tracking-wider text-ctp-overlay0 w-12 flex-shrink-0">
+              <span className="truncate flex-1">{view.displayName || view.title}</span>
+              <span className="text-xs text-ctp-overlay1 flex-shrink-0">
                 {TYPE_LABELS[view.type] ?? view.type}
               </span>
-              <span className="truncate">{view.displayName || view.title}</span>
             </button>
           ))
         )}

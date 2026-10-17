@@ -32,7 +32,6 @@ import {
   deleteSoundPack,
   getSoundData,
   resolveSlotPack,
-  resolveActivePack,
 } from './sound-service';
 import { resetAllSettingsStoresForTests } from './settings-store';
 
@@ -400,25 +399,6 @@ describe('sound-service', () => {
       expect(resolveSlotPack('error')).toBe('pack-b');
       expect(resolveSlotPack('agent-wake')).toBe('pack-c');
       expect(resolveSlotPack('notification')).toBeNull();
-    });
-  });
-
-  describe('resolveActivePack (legacy compat)', () => {
-    it('returns first assigned pack', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({
-          slotAssignments: { error: { packId: 'my-pack' } },
-          eventSettings: {},
-        }),
-      );
-      expect(resolveActivePack()).toBe('my-pack');
-    });
-
-    it('returns null when no slots assigned', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({ slotAssignments: {}, eventSettings: {} }),
-      );
-      expect(resolveActivePack()).toBeNull();
     });
   });
 });

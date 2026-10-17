@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canvas-types';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
-import { EmptyState } from '../../../components/EmptyState';
-import { useWheelContainment } from '../../../hooks/useWheelContainment';
+import { WidgetPicker, projectRows, type PickerRow, type PickerSection } from './WidgetPicker';
+import { StatusDot } from '../../../features/agents/agent-status';
+import { cardDot, DOT_WORD } from './CanvasView';
 import { AgentView } from '../../../features/agents/chat/AgentView';
 
 interface AgentCanvasViewProps {
@@ -21,15 +22,6 @@ interface AgentCanvasViewProps {
    * to the current card.
    */
   onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
-}
-
-function projectColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 55%, 55%)`;
 }
 
 export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgentCard }: AgentCanvasViewProps) {
@@ -96,23 +88,37 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     setSelectedProjectId(null);
   }, []);
 
-  // #1536: Contain plain wheel/trackpad scrolling inside the picker's scroll
-  // regions so it never pans the canvas underneath. The canvas workspace
-  // routes any wheel event that bubbles up to it into a pan (see
-  // useViewportControls.handleWheel), and the card content wrapper only stops
-  // wheel propagation while the view is selected (CanvasView.tsx), so an
-  // unselected — or even selected — picker would otherwise scroll the list AND
-  // pan the canvas at the same time, including at the list's top/bottom
-  // boundary. Ctrl/Cmd+wheel is a canvas zoom gesture and is intentionally
-  // allowed to bubble so zoom keeps working while hovering the picker.
-  const handlePickerWheel = useWheelContainment();
-
   // Resolve the active project for agent creation
   const activeProjectForCreate = useMemo(() => {
     const pid = isAppMode ? selectedProjectId : api.context.projectId;
     if (!pid) return null;
     return projects.find((p) => p.id === pid) ?? null;
   }, [isAppMode, selectedProjectId, api.context.projectId, projects]);
+
+  // A newly created agent lands in a sibling card next to this one (LB-M68),
+  // and this card stays in picker mode for rapid spawning. Falls back to
+  // assigning the agent here when no callback is wired (e.g. unit tests,
+  // popout view).
+  const placeNewAgent = useCallback((agentId: string) => {
+    const newAgent = api.agents.list().find((a) => a.id === agentId);
+    if (!newAgent) return;
+    if (onCreateAgentCard) {
+      onCreateAgentCard(view, newAgent);
+    } else {
+      handlePickAgent(newAgent);
+    }
+  }, [api.agents, handlePickAgent, onCreateAgentCard, view]);
+
+  // New agent. Whatever creates the agent hands its id to `onCreated`, which
+  // places the card. Today that is AddAgentDialog. When the New agent page
+  // (#2031) replaces it, open the page here and have it call `onCreated` with
+  // the created durable agent's id.
+  const pendingCreatedRef = useRef<((agentId: string) => void) | null>(null);
+  const openNewAgent = useCallback((onCreated: (agentId: string) => void) => {
+    setCreateError(null);
+    pendingCreatedRef.current = onCreated;
+    setShowCreateDialog(true);
+  }, []);
 
   const handleCreateDurable = useCallback(async (
     name: string, color: string, model: string, useWorktree: boolean,
@@ -134,17 +140,9 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         persona,
       });
       setShowCreateDialog(false);
-      const newAgent = api.agents.list().find((a) => a.id === agentId);
-      if (!newAgent) return;
-      // LB-M68: prefer creating a sibling card adjacent to this card so the
-      // user can see the new agent next to its parent. This card stays in
-      // picker mode for rapid spawning. Fall back to assigning to the current
-      // card when no callback is wired (e.g. unit tests, popout view).
-      if (onCreateAgentCard) {
-        onCreateAgentCard(view, newAgent);
-      } else {
-        handlePickAgent(newAgent);
-      }
+      const onCreated = pendingCreatedRef.current ?? placeNewAgent;
+      pendingCreatedRef.current = null;
+      onCreated(agentId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('Failed to create durable agent:', err);
@@ -153,7 +151,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
       // signal at all (#1564). Keep the dialog open so they can retry.
       setCreateError(message);
     }
-  }, [activeProjectForCreate, api.agents, handlePickAgent, onCreateAgentCard, view]);
+  }, [activeProjectForCreate, api.agents, placeNewAgent]);
 
   // Agent assigned but not yet available in the store (e.g. sleeping durable
   // agent created by a blueprint import, or remote agent that hasn't synced yet).
@@ -188,49 +186,25 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     );
   }
 
-  // No agent assigned — show picker
+  // No agent assigned — show the shared picker
   if (!view.agentId) {
     // App mode: two-step picker (project -> agents)
     if (isAppMode && !selectedProjectId) {
       return (
-        <div className="flex flex-col h-full p-2">
-          <div className="text-xs font-medium text-ctp-subtext1 uppercase tracking-wider mb-2">
-            Select a project
-          </div>
-          <div
-            className="flex-1 overflow-y-auto overscroll-contain space-y-1"
-            onWheel={handlePickerWheel}
-            data-testid="canvas-agent-picker-scroll"
-          >
-            {projects.length === 0 ? (
-              <EmptyState title="No projects open" compact />
-            ) : (
-              projects.map((p) => {
-                const agentCount = agents.filter((a) => a.projectId === p.id).length;
-                const color = projectColor(p.name);
-                const initials = p.name.slice(0, 2).toUpperCase();
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedProjectId(p.id)}
-                    className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg bg-surface-0 hover:bg-surface-1 text-left transition-colors"
-                  >
-                    <div
-                      className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-ctp-base flex-shrink-0"
-                      style={{ backgroundColor: color }}
-                    >
-                      {initials}
-                    </div>
-                    <span className="text-[11px] text-ctp-text truncate flex-1">{p.name}</span>
-                    {agentCount > 0 && (
-                      <span className="text-xs text-ctp-overlay0">{agentCount}</span>
-                    )}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
+        <WidgetPicker
+          searchPlaceholder="Find a project"
+          emptyText="No projects open"
+          scrollTestId="canvas-agent-picker-scroll"
+          sections={[{
+            id: 'projects',
+            rows: projectRows(projects, setSelectedProjectId, {
+              meta: (pid) => {
+                const n = agents.filter((a) => a.projectId === pid && a.kind === 'durable').length;
+                return n > 0 ? String(n) : undefined;
+              },
+            }),
+          }]}
+        />
       );
     }
 
@@ -242,65 +216,50 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     ).filter((a) => a.kind === 'durable');
 
     const { AgentAvatar } = api.widgets;
+    const toRow = (agent: AgentInfo): PickerRow => {
+      const dot = cardDot(agent, api.agents.getDetailedStatus(agent.id), null);
+      return {
+        id: agent.id,
+        label: agent.name || agent.id,
+        leading: (
+          <>
+            <StatusDot dot={dot} />
+            <AgentAvatar agentId={agent.id} size="2xs" />
+          </>
+        ),
+        meta: DOT_WORD[dot],
+        muted: dot === 'sleeping',
+        testId: `canvas-agent-pick-${agent.id}`,
+        onSelect: () => handlePickAgent(agent),
+      };
+    };
+    const awake = filteredAgents.filter((a) => a.status !== 'sleeping');
+    const sleeping = filteredAgents.filter((a) => a.status === 'sleeping');
+    const sections: PickerSection[] = [];
+    if (awake.length > 0) sections.push({ id: 'awake', rows: awake.map(toRow) });
+    if (sleeping.length > 0) sections.push({ id: 'sleeping', label: awake.length > 0 ? 'Sleeping' : undefined, rows: sleeping.map(toRow) });
+    const projectName = isAppMode && selectedProjectId ? projects.find((p) => p.id === selectedProjectId)?.name : undefined;
 
     return (
-      <div className="flex flex-col h-full p-2">
-        {isAppMode && selectedProjectId && (
-          <button
-            onClick={handleBackToProjects}
-            className="text-xs text-ctp-overlay0 hover:text-ctp-text flex items-center gap-1 mb-2"
-          >
-            &larr; Back
-          </button>
-        )}
-        <div className="text-xs font-medium text-ctp-subtext1 uppercase tracking-wider mb-2">
-          Assign an agent
-        </div>
-        <div
-          className="flex-1 overflow-y-auto overscroll-contain space-y-1"
-          onWheel={handlePickerWheel}
-          data-testid="canvas-agent-picker-scroll"
-        >
-          {filteredAgents.length === 0 ? (
-            <EmptyState title={isAppMode ? 'No agents in this project' : 'No agents available'} compact />
-          ) : (
-            filteredAgents.map((agent) => (
-              <button
-                key={agent.id}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-0 hover:bg-surface-1 text-left transition-colors"
-                onClick={() => handlePickAgent(agent)}
-                data-testid={`canvas-agent-pick-${agent.id}`}
-              >
-                <AgentAvatar agentId={agent.id} size="sm" showStatusRing />
-                <span className="text-xs text-ctp-text truncate flex-1">
-                  {agent.name || agent.id}
-                </span>
-                <span className={`text-xs ${
-                  agent.status === 'running' ? 'text-ctp-success' :
-                  agent.status === 'error' ? 'text-ctp-error' :
-                  'text-ctp-overlay0'
-                }`}>{agent.status}</span>
-              </button>
-            ))
-          )}
-        </div>
-        <button
-          onClick={() => { setCreateError(null); setShowCreateDialog(true); }}
-          data-testid="canvas-create-agent"
-          className="w-full mt-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg
-            bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 transition-colors text-xs cursor-pointer"
-        >
-          + New Agent
-        </button>
+      <>
+        <WidgetPicker
+          searchPlaceholder={projectName ? `Find an agent in ${projectName}` : 'Find an agent'}
+          emptyText={isAppMode ? 'No agents in this project' : 'No agents available'}
+          onBack={isAppMode && selectedProjectId ? handleBackToProjects : undefined}
+          backLabel="Projects"
+          scrollTestId="canvas-agent-picker-scroll"
+          sections={sections}
+          footer={{ label: 'New agent', testId: 'canvas-create-agent', onSelect: () => openNewAgent(placeNewAgent) }}
+        />
         {showCreateDialog && activeProjectForCreate && (
           <AddAgentDialog
-            onClose={() => { setShowCreateDialog(false); setCreateError(null); }}
+            onClose={() => { setShowCreateDialog(false); setCreateError(null); pendingCreatedRef.current = null; }}
             onCreate={handleCreateDurable}
             projectPath={activeProjectForCreate.path}
             error={createError}
           />
         )}
-      </div>
+      </>
     );
   }
 

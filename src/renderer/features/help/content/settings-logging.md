@@ -1,12 +1,12 @@
-# Logging & Diagnostics
+# Logging and diagnostics
 
 Clubhouse includes structured, namespace-based logging. Logs are stored locally and never sent externally.
 
-## Quick Setup
+## Quick setup
 
 **Settings > Logging** — Toggle logging on, set a level, and enable relevant namespaces.
 
-## Log Levels
+## Log levels
 
 | Level | Use For |
 |-------|---------|
@@ -44,11 +44,11 @@ Each namespace can be toggled independently.
 
 Oldest entries are pruned automatically when limits are reached.
 
-## Log Files
+## Log files
 
 The full path to your log directory is shown in Settings with a direct **Open in Finder** link.
 
-## Common Diagnostic Scenarios
+## Common diagnostic scenarios
 
 | Problem | Configuration |
 |---------|--------------|

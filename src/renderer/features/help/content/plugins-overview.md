@@ -27,7 +27,7 @@ Plugins extend Clubhouse with custom views, commands, and integrations.
 
 External plugins load from `~/.clubhouse/plugins/`. External loading is **disabled by default** for security.
 
-1. **Settings > Plugins** — Enable **External Plugins** in the External section
+1. **Settings > Plugins** — Turn on **Allow external plugins** under **From the marketplace**
 2. Download or create a plugin directory
 3. Place it in `~/.clubhouse/plugins/`
 4. Restart Clubhouse

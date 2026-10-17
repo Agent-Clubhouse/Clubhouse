@@ -1,12 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { WireFlowDots, WireFlowDotFilters } from './WireFlowDots';
+import { WireFlowDots } from './WireFlowDots';
 
 function renderWithSvg(element: React.ReactElement) {
   return render(
     <svg>
       <defs>
-        <WireFlowDotFilters />
         <path id="wire-path-test-wire" d="M 0 0 C 80 0, 220 0, 300 0" />
       </defs>
       {element}
@@ -99,12 +98,13 @@ describe('WireFlowDots', () => {
     expect(anim?.getAttribute('values')).toBe('0;1;1;0');
   });
 
-  it('renders shared glow filters', () => {
+  it('draws dots without a glow filter', () => {
     const { container } = renderWithSvg(
-      <WireFlowDots wireKey="test-wire" activity="ambient" />,
+      <WireFlowDots wireKey="test-wire" activity="active-forward" />,
     );
-    expect(container.querySelector('#wire-dot-glow-ambient')).toBeTruthy();
-    expect(container.querySelector('#wire-dot-glow-active')).toBeTruthy();
+    const dot = container.querySelector('[data-testid="wire-dot-fwd-test-wire-0"]');
+    expect(dot?.getAttribute('filter')).toBeNull();
+    expect(container.querySelector('feGaussianBlur')).toBeNull();
   });
 
   it('uses small radius for ambient dots', () => {
@@ -121,22 +121,6 @@ describe('WireFlowDots', () => {
     );
     const dot = container.querySelector('[data-testid="wire-dot-fwd-test-wire-0"]');
     expect(dot?.getAttribute('r')).toBe('3.5');
-  });
-
-  it('uses stronger glow filter for active dots', () => {
-    const { container } = renderWithSvg(
-      <WireFlowDots wireKey="test-wire" activity="active-forward" />,
-    );
-    const blur = container.querySelector('#wire-dot-glow-active feGaussianBlur');
-    expect(blur?.getAttribute('stdDeviation')).toBe('3.5');
-  });
-
-  it('uses subtle glow filter for ambient dots', () => {
-    const { container } = renderWithSvg(
-      <WireFlowDots wireKey="test-wire" activity="ambient" />,
-    );
-    const blur = container.querySelector('#wire-dot-glow-ambient feGaussianBlur');
-    expect(blur?.getAttribute('stdDeviation')).toBe('2');
   });
 
   // Wave 10 #4: A2A wires must always pulse blue, even when bidirectional.

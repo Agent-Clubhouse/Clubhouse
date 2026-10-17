@@ -167,6 +167,8 @@ export function registerWindowHandlers(): void {
     if (params.agentId) additionalArguments.push(`--popout-agent-id=${params.agentId}`);
     if (params.canvasId) additionalArguments.push(`--popout-canvas-id=${params.canvasId}`);
     if (params.projectId) additionalArguments.push(`--popout-project-id=${params.projectId}`);
+    // The popout's own title bar shows it (a canvas popout shows the canvas name).
+    if (params.title) additionalArguments.push(`--popout-title=${encodeURIComponent(params.title)}`);
     // Popouts get the same layout as the main window, for their bare title bar.
     if (newChromeEnabled()) additionalArguments.push(NEW_CHROME_ARG);
 

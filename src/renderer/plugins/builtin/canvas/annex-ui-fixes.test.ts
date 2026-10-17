@@ -42,7 +42,7 @@ describe('annex UI fixes', () => {
       // The overlay must be absolutely positioned over the entire workspace
       expect(source).toMatch(/absolute\s+inset-0/);
       // The overlay must have a high z-index to sit above canvas content
-      expect(source).toContain('z-[9998]');
+      expect(source).toContain('zIndex: CANVAS_Z.paneOverlay');
     });
 
     it('overlay renders Session paused message', () => {
