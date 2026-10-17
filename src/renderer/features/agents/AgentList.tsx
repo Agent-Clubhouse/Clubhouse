@@ -21,6 +21,7 @@ import { useAnnexClientStore } from '../../stores/annexClientStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 import type { PersonaTemplate } from '../personas';
 import { EmptyState } from '../../components/EmptyState';
+import { createDurableAgent, createDurableAgentFromTemplate } from './create-agent';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
@@ -71,7 +72,6 @@ function AgentListInner() {
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
   const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
   const spawnQuickAgent = useAgentStore((s) => s.spawnQuickAgent);
-  const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const deleteDialogAgent = useAgentStore((s) => s.deleteDialogAgent);
   const applyPersonaDialogAgent = useAgentStore((s) => s.applyPersonaDialogAgent);
@@ -294,55 +294,16 @@ function AgentListInner() {
     setQuickTargetParentId(null);
   };
 
-  const registerCreatingAgent = useAgentStore((s) => s.registerCreatingAgent);
-  const removeAgent = useAgentStore((s) => s.removeAgent);
 
-  const sendAgentCreateDurable = useAnnexClientStore((s) => s.sendAgentCreateDurable);
   const sendAgentReorder = useAnnexClientStore((s) => s.sendAgentReorder);
 
   const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], persona?: string) => {
     if (!activeProject) return;
     setShowDialog(false);
-
-    if (isRemote && activeProjectId) {
-      // Remote project — proxy create to satellite via REST
-      const remoteParts = parseNamespacedId(activeProjectId);
-      if (!remoteParts) return;
-      try {
-        await sendAgentCreateDurable(remoteParts.satelliteId, remoteParts.agentId, {
-          name,
-          color,
-          model: model !== 'default' ? model : undefined,
-          useWorktree,
-          orchestrator,
-          freeAgentMode,
-          mcpIds,
-        });
-        // Snapshot refresh is broadcast by the satellite — controller will update automatically
-      } catch (err) {
-        console.error('Failed to create remote durable agent:', err);
-        useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
-      }
-      return;
-    }
-
-    // Local project — create locally
-    // Show agent in 'creating' state immediately while worktree is set up
-    const tempId = useWorktree
-      ? registerCreatingAgent(activeProject.id, name, color, orchestrator, freeAgentMode)
-      : null;
-
-    try {
-      const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, persona
-      );
-      if (tempId) removeAgent(tempId);
-      await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
-    } catch (err) {
-      if (tempId) removeAgent(tempId);
-      console.error('Failed to create durable agent:', err);
-      useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
-    }
+    await createDurableAgent(
+      { id: activeProject.id, path: activeProject.path },
+      { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona },
+    );
   };
 
   const handleGallerySelect = (persona: PersonaTemplate, color: string) => {
@@ -353,22 +314,7 @@ function AgentListInner() {
   const handleCreateFromTemplate = async (templateConfig: TemplateConfig) => {
     if (!activeProject) return;
     setPendingTemplate(null);
-
-    const { persona, name, color, model, useWorktree, orchestrator: orch, freeAgentMode: fam, mcpIds } = templateConfig;
-
-    const tempId = registerCreatingAgent(activeProject.id, name, color, undefined, undefined);
-    try {
-      const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree,
-        orch, fam || undefined, mcpIds, undefined, persona.id,
-      );
-      if (tempId) removeAgent(tempId);
-      await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
-    } catch (err) {
-      if (tempId) removeAgent(tempId);
-      console.error('Failed to create agent from template:', err);
-      useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
-    }
+    await createDurableAgentFromTemplate({ id: activeProject.id, path: activeProject.path }, templateConfig);
   };
 
   const isThinking = useCallback((id: string) => {

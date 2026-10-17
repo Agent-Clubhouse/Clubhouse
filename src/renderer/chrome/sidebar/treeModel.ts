@@ -1,0 +1,108 @@
+import type { Agent, AgentDetailedStatus } from '../../../shared/types';
+
+/**
+ * Pure helpers behind the sidebar tree (docs/chrome-redesign-spec.md §4.2).
+ * Kept free of React and stores so ordering and grouping rules are unit-tested
+ * on their own.
+ */
+
+/** What the status dot on a row shows. */
+export type AgentDot = 'working' | 'idle' | 'needs' | 'error' | 'sleeping' | 'starting';
+
+export function agentDot(agent: Agent, detailed: AgentDetailedStatus | undefined): AgentDot {
+  if (agent.status === 'error' || detailed?.state === 'tool_error') return 'error';
+  if (detailed?.state === 'needs_permission') return 'needs';
+  if (agent.status === 'sleeping') return 'sleeping';
+  if (agent.status === 'creating' || agent.status === 'spawning' || agent.status === 'waking') return 'starting';
+  if (detailed?.state === 'working') return 'working';
+  return 'idle';
+}
+
+export interface NeedsAttentionItem {
+  agent: Agent;
+  reason: 'permission' | 'tool_error' | 'error';
+  message: string;
+}
+
+/**
+ * Agents waiting on the user, across every given project. Mirrors the old Home
+ * "Needs attention" rule: a permission prompt, a failed tool, or an errored agent.
+ * Local host only in Phase 1; Phase 3 adds connected satellites.
+ */
+export function selectNeedsAttention(
+  agents: Record<string, Agent>,
+  detailed: Record<string, AgentDetailedStatus>,
+  projectIds: ReadonlySet<string>,
+): NeedsAttentionItem[] {
+  const items: NeedsAttentionItem[] = [];
+  for (const agent of Object.values(agents)) {
+    if (!projectIds.has(agent.projectId)) continue;
+    const d = detailed[agent.id];
+    if (d?.state === 'needs_permission') {
+      items.push({ agent, reason: 'permission', message: d.message || (d.toolName ? `Wants to use ${d.toolName}` : 'Waiting for permission') });
+    } else if (d?.state === 'tool_error') {
+      items.push({ agent, reason: 'tool_error', message: d.message || (d.toolName ? `${d.toolName} failed` : 'A tool failed') });
+    } else if (agent.status === 'error') {
+      items.push({ agent, reason: 'error', message: agent.errorMessage || 'Stopped with an error' });
+    }
+  }
+  // Oldest request first, so the queue reads in the order things happened.
+  return items.sort((a, b) => (detailed[a.agent.id]?.timestamp ?? 0) - (detailed[b.agent.id]?.timestamp ?? 0));
+}
+
+/** Pinned projects first (in project order), then the rest (in project order). */
+export function orderProjects<T extends { id: string }>(projects: T[], pinnedIds: readonly string[]): { pinned: T[]; rest: T[] } {
+  const pinnedSet = new Set(pinnedIds);
+  return {
+    pinned: projects.filter((p) => pinnedSet.has(p.id)),
+    rest: projects.filter((p) => !pinnedSet.has(p.id)),
+  };
+}
+
+/**
+ * Move `draggedId` to sit before `targetId` in the full project order. Returns
+ * null when nothing changes, so callers can skip a write.
+ */
+export function moveProject(orderedIds: readonly string[], draggedId: string, targetId: string): string[] | null {
+  if (draggedId === targetId) return null;
+  const from = orderedIds.indexOf(draggedId);
+  const to = orderedIds.indexOf(targetId);
+  if (from === -1 || to === -1) return null;
+  const next = orderedIds.filter((id) => id !== draggedId);
+  next.splice(next.indexOf(targetId), 0, draggedId);
+  return next.every((id, i) => id === orderedIds[i]) ? null : next;
+}
+
+export interface ProjectAgentGroups {
+  /** Durable agents that are not asleep, in saved order. */
+  durable: Agent[];
+  /** Durable agents that are asleep; folded into one row. */
+  sleeping: Agent[];
+  /** Running quick agents. */
+  quick: Agent[];
+}
+
+export function groupProjectAgents(agents: Agent[]): ProjectAgentGroups {
+  const durable: Agent[] = [];
+  const sleeping: Agent[] = [];
+  const quick: Agent[] = [];
+  for (const agent of agents) {
+    if (agent.kind === 'quick') quick.push(agent);
+    else if (agent.kind === 'durable' && agent.status === 'sleeping') sleeping.push(agent);
+    else if (agent.kind === 'durable') durable.push(agent);
+  }
+  return { durable, sleeping, quick };
+}
+
+export interface ProjectRollup { working: number; waiting: number }
+
+export function projectRollup(agents: Agent[], detailed: Record<string, AgentDetailedStatus>): ProjectRollup {
+  let working = 0;
+  let waiting = 0;
+  for (const agent of agents) {
+    const dot = agentDot(agent, detailed[agent.id]);
+    if (dot === 'working') working++;
+    else if (dot === 'needs' || dot === 'error') waiting++;
+  }
+  return { working, waiting };
+}

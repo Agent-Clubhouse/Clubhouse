@@ -173,7 +173,7 @@ export const ATTR = {
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [
-    'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save',
+    'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create',
   ]),
 } as const;
 

@@ -12,7 +12,7 @@ import {
 describe('chromeStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null });
+    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
   });
 
   afterEach(() => {
@@ -21,7 +21,7 @@ describe('chromeStore', () => {
 
   describe('loadChromeState', () => {
     it('defaults to a 264px expanded sidebar when nothing is stored', () => {
-      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false, lastProjectId: null });
+      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
     });
 
     it('reads persisted width and collapsed state', () => {
@@ -36,7 +36,7 @@ describe('chromeStore', () => {
 
     it('falls back to defaults on corrupt JSON', () => {
       localStorage.setItem(CHROME_STORAGE_KEY, '{not json');
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
     });
 
     it('reads the last selected project', () => {
@@ -46,7 +46,47 @@ describe('chromeStore', () => {
 
     it('never reads the legacy panel sizes key', () => {
       localStorage.setItem('clubhouse_panel_sizes', JSON.stringify({ explorerWidth: 390, explorerCollapsed: true }));
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
+    });
+  });
+
+  describe('tree state', () => {
+    it('reads pins, collapsed projects and expanded folds, ignoring junk', () => {
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 2, pinnedProjectIds: ['a', 3], collapsedProjectIds: ['b'], expandedFolds: 'nope' }));
+      expect(loadChromeState()).toMatchObject({ pinnedProjectIds: ['a'], collapsedProjectIds: ['b'], expandedFolds: [] });
+    });
+
+    it('reads a version 1 payload without tree state', () => {
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 1, sidebarWidth: 280, sidebarCollapsed: false }));
+      expect(loadChromeState()).toEqual({ sidebarWidth: 280, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
+    });
+
+    it('togglePinned adds and removes a project', () => {
+      useChromeStore.getState().togglePinned('p1');
+      expect(useChromeStore.getState().pinnedProjectIds).toEqual(['p1']);
+      useChromeStore.getState().togglePinned('p1');
+      expect(useChromeStore.getState().pinnedProjectIds).toEqual([]);
+    });
+
+    it('toggleCollapseAll collapses everything, then expands everything', () => {
+      useChromeStore.getState().setProjectCollapsed('p1', true);
+      useChromeStore.getState().toggleCollapseAll(['p1', 'p2']);
+      expect(new Set(useChromeStore.getState().collapsedProjectIds)).toEqual(new Set(['p1', 'p2']));
+      useChromeStore.getState().toggleCollapseAll(['p1', 'p2']);
+      expect(useChromeStore.getState().collapsedProjectIds).toEqual([]);
+    });
+
+    it('forgetProjects drops state for removed projects only', () => {
+      useChromeStore.setState({ pinnedProjectIds: ['p1', 'p2'], collapsedProjectIds: ['p2'], expandedFolds: ['p2:sleeping', 'p1:finished'], lastProjectId: 'p2' });
+      useChromeStore.getState().forgetProjects(['p2']);
+      expect(useChromeStore.getState()).toMatchObject({ pinnedProjectIds: ['p1'], collapsedProjectIds: [], expandedFolds: ['p1:finished'], lastProjectId: null });
+    });
+
+    it('toggleFold tracks folds per project', () => {
+      useChromeStore.getState().toggleFold('p1', 'sleeping');
+      expect(useChromeStore.getState().expandedFolds).toEqual(['p1:sleeping']);
+      useChromeStore.getState().toggleFold('p1', 'sleeping');
+      expect(useChromeStore.getState().expandedFolds).toEqual([]);
     });
   });
 
@@ -90,7 +130,7 @@ describe('chromeStore', () => {
       useChromeStore.getState().toggleSidebar();
       expect(localStorage.getItem(CHROME_STORAGE_KEY)).toBeNull();
       vi.advanceTimersByTime(400);
-      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 1, sidebarWidth: 310, sidebarCollapsed: true, lastProjectId: null });
+      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 2, sidebarWidth: 310, sidebarCollapsed: true, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
       expect(localStorage.getItem('clubhouse_panel_sizes')).toBe('{"explorerWidth":200}');
     });
   });
