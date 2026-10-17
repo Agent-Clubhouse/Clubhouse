@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { Button } from '../../components/Button';
+import { ClaudeMascot, CodexMascot, CopilotMascot, SleepingMascot } from '../../features/agents/SleepingMascots';
+import type { OrchestratorId } from '../../../shared/types';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useKeyboardShortcutsStore } from '../../stores/keyboardShortcutsStore';
@@ -23,12 +25,15 @@ const INSTALL_URLS: Record<string, string> = {
 
 const IS_MAC = typeof window !== 'undefined' && window.clubhouse?.platform === 'darwin';
 
-/**
- * The provider mascots above the title. They come from #2019's awake mascots;
- * until those land this slot stays empty.
- */
-function MascotSlot() {
-  return <div data-testid="first-run-mascots" aria-hidden="true" />;
+/** The three provider mascots above the title, awake (#2019's drawings). */
+function Mascots() {
+  return (
+    <div data-testid="first-run-mascots" aria-hidden="true" className="flex items-end gap-1.5 mb-[18px]">
+      <ClaudeMascot size={52} awake />
+      <CodexMascot size={52} awake />
+      <CopilotMascot size={52} awake />
+    </div>
+  );
 }
 
 function Step({ n, title, active, children, detail }: { n: number; title: string; active?: boolean; detail: React.ReactNode; children?: React.ReactNode }) {
@@ -65,6 +70,9 @@ function AgentClis() {
         const url = INSTALL_URLS[o.id];
         return (
           <li key={o.id} className="h-[30px] flex items-center gap-1.5 text-xs whitespace-nowrap">
+            <span aria-hidden="true" className={`flex-shrink-0 flex ${found ? '' : 'opacity-45'}`}>
+              <SleepingMascot orchestrator={o.id as OrchestratorId} size={24} awake />
+            </span>
             <span className={found ? 'text-ctp-text' : 'text-ctp-subtext1'}>{o.displayName}</span>
             {!avail ? (
               <span className="text-ctp-overlay1">checking</span>
@@ -139,7 +147,7 @@ export function FirstRun() {
       onDrop={drop}
     >
       <div className="w-[480px] max-w-full px-6 pt-[84px] pb-10 flex flex-col">
-        <MascotSlot />
+        <Mascots />
         <h1 className="text-lg font-semibold text-ctp-text">Welcome to Clubhouse</h1>
         <p className="mt-1 text-[13px] text-ctp-overlay1">Run coding agents side by side, each on its own branch.</p>
 

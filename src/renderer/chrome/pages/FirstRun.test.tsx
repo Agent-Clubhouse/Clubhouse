@@ -43,9 +43,22 @@ describe('FirstRun', () => {
     expect(window.clubhouse.agent.checkOrchestrator).toHaveBeenCalledWith(undefined, 'copilot-cli');
   });
 
-  it('leaves a slot for the mascots', () => {
+  it('shows the three provider mascots, awake, above the title', () => {
     render(<FirstRun />);
-    expect(screen.getByTestId('first-run-mascots')).toBeTruthy();
+    const mascots = screen.getByTestId('first-run-mascots');
+    expect(mascots.querySelectorAll('svg')).toHaveLength(3);
+    expect(mascots.textContent).not.toContain('z');
+    expect(mascots.compareDocumentPosition(screen.getByRole('heading', { level: 1 })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("leads each CLI with its mascot, dimmed when it isn't installed", async () => {
+    render(<FirstRun />);
+    const clis = screen.getByTestId('first-run-clis');
+    await waitFor(() => expect(clis.textContent).toContain('found'));
+    const rows = within(clis).getAllByRole('listitem');
+    expect(rows.map((r) => r.querySelectorAll('[data-testid="agent-mascot"]').length)).toEqual([1, 1]);
+    expect(rows[0].querySelector('.opacity-45')).toBeNull();
+    expect(rows[1].querySelector('.opacity-45')).not.toBeNull();
   });
 
   it('adds a dropped folder', () => {
