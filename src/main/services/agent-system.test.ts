@@ -432,6 +432,11 @@ describe('agent-system', () => {
       );
     });
 
+    it.each([['durable', true], ['quick', false]] as const)('asks the provider for an interactive session only for %s agents', async (kind, interactive) => {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind, mission: 'Go' });
+      expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive }));
+    });
+
     it('throws with descriptive error when pre-flight check fails', async () => {
       mockProvider.checkAvailability.mockResolvedValueOnce({
         available: false,

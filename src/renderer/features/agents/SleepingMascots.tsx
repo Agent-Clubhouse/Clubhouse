@@ -1,308 +1,214 @@
 /**
- * Orchestrator-specific sleeping mascots for the SleepingAgent view.
- * Each renders a 200×200 SVG (100×100 viewBox) with animated Zzz.
+ * Provider mascots for the agent-state views (#2019), redrawn from each
+ * product's public look on a 96×96 viewBox and drawn at 44 to 96px.
+ *
+ * - Claude Code: the terminal pixel creature on a 6px grid, napping by a cursor block.
+ * - Codex: a one-color blossom creature whose body is the rounded hexagon of six
+ *   lobes; it keeps a terminal prompt as its mouth.
+ * - Copilot: a rounded pilot with the goggles pushed up while it naps.
+ *
+ * Brand tints come from the named `brand-*` tokens in index.css (themes can
+ * tune them); everything else in each drawing uses theme tokens.
  */
 
 import type { OrchestratorId } from '../../../shared/types';
 
-/* ── Shared Zzz animation ─────────────────────────────────────────── */
+export interface MascotProps {
+  /** Rendered width and height in px. */
+  size?: number;
+  /** Awake pose: eyes open, no z's. */
+  awake?: boolean;
+  /** Failed launch: dimmed, no z's. */
+  error?: boolean;
+}
 
-function SleepingZzz({ x, y }: { x: number; y: number }) {
+/** Three monospace z's drifting up and to the right. */
+function Zzz({ x, y }: { x: number; y: number }) {
   return (
-    <>
-      <text x={x} y={y} fill="#6c7086" fontSize="11" fontWeight="bold" fontFamily="monospace">
-        <tspan className="animate-pulse">z</tspan>
-      </text>
-      <text
-        x={x + 6}
-        y={y - 8}
-        fill="#585b70"
-        fontSize="9"
-        fontWeight="bold"
-        fontFamily="monospace"
-      >
-        <tspan className="animate-pulse" style={{ animationDelay: '0.3s' }}>
-          z
-        </tspan>
-      </text>
-      <text
-        x={x + 11}
-        y={y - 15}
-        fill="#45475a"
-        fontSize="7"
-        fontWeight="bold"
-        fontFamily="monospace"
-      >
-        <tspan className="animate-pulse" style={{ animationDelay: '0.6s' }}>
-          z
-        </tspan>
-      </text>
-    </>
+    <g className="fill-ctp-overlay0 font-mono" fontWeight={700} aria-hidden="true">
+      <text x={x} y={y} fontSize={13} className="motion-safe:animate-pulse">z</text>
+      <text x={x + 8} y={y - 9} fontSize={10} opacity={0.7} className="motion-safe:animate-pulse" style={{ animationDelay: '0.3s' }}>z</text>
+      <text x={x + 14} y={y - 16} fontSize={8} opacity={0.45} className="motion-safe:animate-pulse" style={{ animationDelay: '0.6s' }}>z</text>
+    </g>
   );
 }
 
-/* ── Claude Code mascot ───────────────────────────────────────────── */
+/* ── Claude Code ─────────────────────────────────────────────────── */
 
-export function ClaudeCodeSleeping() {
-  const bodyColor = '#d4896b';
-  const legColor = '#be7a5e';
+const CC_U = 6;
+const CC_OX = 6;
+const CC_OY = 26;
 
+function Px({ c, r, w = 1, h = 1, className = 'fill-brand-claude', opacity }: { c: number; r: number; w?: number; h?: number; className?: string; opacity?: number }) {
+  return <rect x={CC_OX + c * CC_U} y={CC_OY + r * CC_U} width={w * CC_U} height={h * CC_U} className={className} opacity={opacity} />;
+}
+
+/** A pixel "Z": top bar, a three-step diagonal, bottom bar. */
+function PixelZ({ x, y, s }: { x: number; y: number; s: number }) {
   return (
-    <svg width="200" height="200" viewBox="0 0 100 100" className="drop-shadow-lg">
-      {/* Ground shadow */}
-      <ellipse cx="50" cy="90" rx="30" ry="3" fill="#181825" opacity="0.3" />
+    <g className="fill-ctp-overlay0" aria-hidden="true">
+      <rect x={x} y={y} width={5 * s} height={s} />
+      <rect x={x + 3 * s} y={y + s} width={s} height={s} />
+      <rect x={x + 2 * s} y={y + 2 * s} width={s} height={s} />
+      <rect x={x + s} y={y + 3 * s} width={s} height={s} />
+      <rect x={x} y={y + 4 * s} width={5 * s} height={s} />
+    </g>
+  );
+}
 
-      {/* Ears / top bumps */}
-      <rect x="20" y="20" width="12" height="10" rx="2" fill={bodyColor} />
-      <rect x="68" y="20" width="12" height="10" rx="2" fill={bodyColor} />
-
-      {/* Main body — wide blocky rectangle */}
-      <rect x="20" y="27" width="60" height="38" rx="3" fill={bodyColor} />
-
-      {/* Arms — stubs on sides */}
-      <rect x="10" y="36" width="10" height="14" rx="3" fill={bodyColor} />
-      <rect x="80" y="36" width="10" height="14" rx="3" fill={bodyColor} />
-
-      {/* Sleeping eyes — peaceful closed arcs */}
-      <path
-        d="M 34 42 Q 38 37 42 42"
-        stroke="#2a1f1a"
-        strokeWidth="2.5"
-        fill="none"
-        strokeLinecap="round"
-      />
-      <path
-        d="M 58 42 Q 62 37 66 42"
-        stroke="#2a1f1a"
-        strokeWidth="2.5"
-        fill="none"
-        strokeLinecap="round"
-      />
-
-      {/* Subtle blush */}
-      <circle cx="30" cy="48" r="4" fill="#e88" opacity="0.15" />
-      <circle cx="70" cy="48" r="4" fill="#e88" opacity="0.15" />
-
-      {/* Legs — 4 legs in 2 pairs */}
-      <rect x="24" y="65" width="9" height="14" rx="2" fill={legColor} />
-      <rect x="35" y="65" width="9" height="14" rx="2" fill={legColor} />
-      <rect x="56" y="65" width="9" height="14" rx="2" fill={legColor} />
-      <rect x="67" y="65" width="9" height="14" rx="2" fill={legColor} />
-
-      <SleepingZzz x={80} y={16} />
+export function ClaudeMascot({ size = 88, awake, error }: MascotProps) {
+  const ink = 'fill-brand-claude-ink';
+  return (
+    <svg viewBox="0 0 96 96" width={size} height={size} shapeRendering="crispEdges" className="block" aria-hidden="true" data-mascot="claude-code">
+      <rect x={12} y={CC_OY + 7 * CC_U + 6} width={72} height={2} className="fill-surface-1" />
+      <Px c={2} r={0} w={10} h={5} />
+      <Px c={2} r={0} w={10} h={1} className="fill-ctp-text" opacity={0.1} />
+      <Px c={0} r={2} w={2} h={1} />
+      <Px c={12} r={2} w={2} h={1} />
+      <Px c={3} r={5} h={2} />
+      <Px c={5} r={5} h={2} />
+      <Px c={8} r={5} h={2} />
+      <Px c={10} r={5} h={2} />
+      {awake ? (
+        <>
+          <Px c={4} r={1} className={ink} />
+          <Px c={9} r={1} className={ink} />
+        </>
+      ) : (
+        <>
+          <rect x={CC_OX + 3.5 * CC_U} y={CC_OY + 1.6 * CC_U} width={2 * CC_U} height={3} className={ink} />
+          <rect x={CC_OX + 8.5 * CC_U} y={CC_OY + 1.6 * CC_U} width={2 * CC_U} height={3} className={ink} />
+        </>
+      )}
+      {!awake && <rect x={CC_OX + 13.5 * CC_U} y={CC_OY + 5 * CC_U} width={CC_U} height={2 * CC_U} className="fill-ctp-overlay0" opacity={0.55} />}
+      {!awake && !error && (
+        <>
+          <PixelZ x={68} y={4} s={2.4} />
+          <PixelZ x={84} y={-2} s={1.6} />
+        </>
+      )}
     </svg>
   );
 }
 
-/* ── GitHub Copilot mascot ────────────────────────────────────────── */
+/* ── Codex ───────────────────────────────────────────────────────── */
 
-export function CopilotSleeping() {
+const CX_D = 15;
+const CX_R = 22;
+const CX_CX = 48;
+const CX_CY = 46;
+const CX_LOBES: Array<[number, number]> = [-90, -30, 30, 90, 150, 210].map((a) => [
+  CX_CX + CX_D * Math.cos((a * Math.PI) / 180),
+  CX_CY + CX_D * Math.sin((a * Math.PI) / 180),
+]);
+
+/** Six short arcs where neighboring lobes meet, a pinwheel that suggests the blossom's strokes. */
+const CX_SEAMS = (() => {
+  const f = (n: number) => n.toFixed(1);
+  return CX_LOBES.map(([x, y], k) => {
+    const [nx, ny] = CX_LOBES[(k + 1) % 6];
+    const mx = (x + nx) / 2;
+    const my = (y + ny) / 2;
+    const h = Math.sqrt(CX_R * CX_R - (CX_D * CX_D) / 4);
+    const len = Math.hypot(mx - CX_CX, my - CX_CY);
+    const ux = (mx - CX_CX) / len;
+    const uy = (my - CX_CY) / len;
+    const a0 = Math.atan2(my + uy * h - y, mx + ux * h - x);
+    const a1 = Math.atan2(my - uy * h - y, mx - ux * h - x);
+    let d = a1 - a0;
+    if (d > Math.PI) d -= 2 * Math.PI;
+    if (d < -Math.PI) d += 2 * Math.PI;
+    const a2 = a0 + d * 0.32;
+    return `M${f(x + CX_R * Math.cos(a0))} ${f(y + CX_R * Math.sin(a0))}A${CX_R} ${CX_R} 0 0 ${d > 0 ? 1 : 0} ${f(x + CX_R * Math.cos(a2))} ${f(y + CX_R * Math.sin(a2))}`;
+  }).join('');
+})();
+
+export function CodexMascot({ size = 88, awake, error }: MascotProps) {
   return (
-    <svg width="200" height="200" viewBox="0 0 100 100" className="drop-shadow-lg">
-      <defs>
-        <linearGradient id="copilotHelmetGrad" x1="0" y1="0" x2="0.5" y2="1">
-          <stop offset="0%" stopColor="#26D9C4" />
-          <stop offset="50%" stopColor="#1ABFAE" />
-          <stop offset="100%" stopColor="#0FA898" />
-        </linearGradient>
-        <linearGradient id="copilotVisorGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#B8C8D8" />
-          <stop offset="100%" stopColor="#98A8B8" />
-        </linearGradient>
-      </defs>
-
-      {/* Ground shadow */}
-      <ellipse cx="50" cy="88" rx="28" ry="3" fill="#181825" opacity="0.3" />
-
-      {/* Helmet dome — teal rounded spaceman helmet */}
-      <ellipse cx="50" cy="38" rx="36" ry="30" fill="url(#copilotHelmetGrad)" />
-
-      {/* Helmet highlight — specular reflection */}
-      <ellipse cx="40" cy="20" rx="18" ry="8" fill="#4EEEDE" opacity="0.25" />
-
-      {/* Ear covers — communication headset style */}
-      <rect x="6" y="34" width="12" height="18" rx="5" fill="#1ABFAE" stroke="#16A89A" strokeWidth="1" />
-      <rect x="82" y="34" width="12" height="18" rx="5" fill="#1ABFAE" stroke="#16A89A" strokeWidth="1" />
-      {/* Ear cover inner detail — speaker grille */}
-      <rect x="9" y="38" width="6" height="10" rx="3" fill="#128F82" />
-      <rect x="85" y="38" width="6" height="10" rx="3" fill="#128F82" />
-      {/* Ear cover accent lines */}
-      <line x1="11" y1="40" x2="13" y2="40" stroke="#0E7A6E" strokeWidth="0.8" />
-      <line x1="11" y1="43" x2="13" y2="43" stroke="#0E7A6E" strokeWidth="0.8" />
-      <line x1="11" y1="46" x2="13" y2="46" stroke="#0E7A6E" strokeWidth="0.8" />
-      <line x1="87" y1="40" x2="89" y2="40" stroke="#0E7A6E" strokeWidth="0.8" />
-      <line x1="87" y1="43" x2="89" y2="43" stroke="#0E7A6E" strokeWidth="0.8" />
-      <line x1="87" y1="46" x2="89" y2="46" stroke="#0E7A6E" strokeWidth="0.8" />
-
-
-      {/* Goggles on forehead — pushed up */}
-      <rect x="22" y="16" width="22" height="16" rx="7" fill="#5AB8E8" stroke="#4AA8D8" strokeWidth="1.5" />
-      <rect x="56" y="16" width="22" height="16" rx="7" fill="#5AB8E8" stroke="#4AA8D8" strokeWidth="1.5" />
-      {/* Goggle bridge */}
-      <rect x="44" y="21" width="12" height="6" rx="3" fill="#5AB8E8" />
-
-      {/* Goggle lenses — reflective blue */}
-      <rect x="25" y="19" width="16" height="10" rx="5" fill="#2060A0" />
-      <rect x="59" y="19" width="16" height="10" rx="5" fill="#2060A0" />
-      {/* Goggle lens reflection */}
-      <rect x="27" y="20" width="6" height="4" rx="2" fill="#4090D0" opacity="0.4" />
-      <rect x="61" y="20" width="6" height="4" rx="2" fill="#4090D0" opacity="0.4" />
-
-      {/* Open face visor — lighter panel where eyes are visible */}
-      <rect x="22" y="38" width="56" height="30" rx="10" fill="url(#copilotVisorGrad)" />
-
-      {/* Visor inner shadow */}
-      <rect x="24" y="40" width="52" height="26" rx="8" fill="#8898A8" opacity="0.3" />
-
-      {/* Visor top edge highlight */}
-      <rect x="28" y="38" width="44" height="1.5" rx="0.75" fill="#D0DDE8" opacity="0.5" />
-
-      {/* Closed eyes — simple dark slits */}
-      <line x1="31" y1="52" x2="45" y2="52" stroke="#0a1830" strokeWidth="2.5" strokeLinecap="round" />
-      <line x1="55" y1="52" x2="69" y2="52" stroke="#0a1830" strokeWidth="2.5" strokeLinecap="round" />
-
-
-      <SleepingZzz x={78} y={8} />
+    <svg viewBox="0 0 96 96" width={size} height={size} className="block" aria-hidden="true" data-mascot="codex-cli">
+      <ellipse cx={48} cy={85} rx={awake ? 26 : 31} ry={2.5} className="fill-surface-1" />
+      <g transform={awake ? undefined : 'translate(0 4) rotate(-7 48 82)'}>
+        <g className="fill-brand-codex">
+          {CX_LOBES.map(([x, y], i) => <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r={CX_R} />)}
+        </g>
+        {/* Below 40px the seams drop out so the silhouette and face stay clean. */}
+        {size >= 40 && <path d={CX_SEAMS} fill="none" className="stroke-ctp-base" strokeWidth={2.6} strokeLinecap="round" opacity={0.36} />}
+        {awake ? (
+          <>
+            <rect x={35} y={34} width={7} height={11} rx={3.5} className="fill-ctp-base" />
+            <rect x={54} y={34} width={7} height={11} rx={3.5} className="fill-ctp-base" />
+            <path d="M40.5 51.5l4.5 4-4.5 4" className="stroke-ctp-base" strokeWidth={3.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <rect x={48.5} y={58} width={8} height={3.2} rx={1.6} className="fill-ctp-base" />
+          </>
+        ) : (
+          <>
+            <path d="M34 41q4.5 4 9 0M53 41q4.5 4 9 0" className="stroke-ctp-base" strokeWidth={3.4} fill="none" strokeLinecap="round" />
+            <rect x={44} y={54} width={8} height={3.2} rx={1.6} className="fill-ctp-base" opacity={0.5} />
+          </>
+        )}
+      </g>
+      {!awake && !error && <Zzz x={74} y={14} />}
     </svg>
   );
 }
 
-/* ── Generic robot mascot ─────────────────────────────────────────── */
+/* ── Copilot ─────────────────────────────────────────────────────── */
 
-export function GenericRobotSleeping() {
+export function CopilotMascot({ size = 88, awake, error }: MascotProps) {
+  const gy = awake ? 40 : 18;
   return (
-    <svg width="200" height="200" viewBox="0 0 100 100" className="drop-shadow-lg">
-      {/* Ground shadow */}
-      <ellipse cx="50" cy="93" rx="24" ry="3" fill="#181825" opacity="0.3" />
-
-      {/* Antenna */}
-      <line x1="50" y1="14" x2="50" y2="6" stroke="#5a5a6e" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="50" cy="5" r="3" fill="#3a3a4c" />
-      {/* Dim antenna glow */}
-      <circle cx="50" cy="5" r="1.5" fill="#5a5a6e" opacity="0.3" />
-
-      {/* Head — dome shape */}
-      <rect x="28" y="14" width="44" height="28" rx="12" fill="#6a6a7e" />
-      {/* Head highlight */}
-      <rect x="32" y="16" width="36" height="4" rx="2" fill="#7a7a8e" opacity="0.35" />
-
-      {/* Visor / face area */}
-      <rect x="32" y="22" width="36" height="14" rx="5" fill="#3a3a4c" />
-
-      {/* Closed eyes — horizontal lines */}
-      <line x1="38" y1="29" x2="44" y2="29" stroke="#8a8a9e" strokeWidth="2" strokeLinecap="round" />
-      <line x1="56" y1="29" x2="62" y2="29" stroke="#8a8a9e" strokeWidth="2" strokeLinecap="round" />
-
-      {/* Small eyelash accents */}
-      <line x1="37" y1="29" x2="36" y2="27" stroke="#8a8a9e" strokeWidth="0.7" strokeLinecap="round" />
-      <line x1="45" y1="29" x2="46" y2="27" stroke="#8a8a9e" strokeWidth="0.7" strokeLinecap="round" />
-      <line x1="55" y1="29" x2="54" y2="27" stroke="#8a8a9e" strokeWidth="0.7" strokeLinecap="round" />
-      <line x1="63" y1="29" x2="64" y2="27" stroke="#8a8a9e" strokeWidth="0.7" strokeLinecap="round" />
-
-      {/* Neck */}
-      <rect x="42" y="42" width="16" height="8" rx="3" fill="#5a5a6e" />
-
-      {/* Body */}
-      <rect x="26" y="48" width="48" height="30" rx="6" fill="#5a5a6e" />
-      {/* Body highlight */}
-      <rect x="30" y="50" width="40" height="4" rx="2" fill="#6a6a7e" opacity="0.3" />
-
-      {/* Chest panel */}
-      <rect x="36" y="55" width="28" height="16" rx="3" fill="#4a4a5c" stroke="#6a6a7e" strokeWidth="0.5" />
-
-      {/* Power LED (dim / off) */}
-      <circle cx="50" cy="63" r="2.5" fill="#2a1515" />
-      <circle cx="50" cy="63" r="1.2" fill="#4a2020" opacity="0.4" />
-
-      {/* Panel details — small screws / rivets */}
-      <circle cx="39" cy="58" r="1" fill="#5a5a6e" />
-      <circle cx="61" cy="58" r="1" fill="#5a5a6e" />
-      <circle cx="39" cy="68" r="1" fill="#5a5a6e" />
-      <circle cx="61" cy="68" r="1" fill="#5a5a6e" />
-
-      {/* Arms (hanging down, relaxed) */}
-      <rect x="17" y="50" width="9" height="22" rx="4" fill="#5a5a6e" />
-      <rect x="74" y="50" width="9" height="22" rx="4" fill="#5a5a6e" />
-      {/* Hands */}
-      <circle cx="21.5" cy="73" r="4.5" fill="#4a4a5c" />
-      <circle cx="78.5" cy="73" r="4.5" fill="#4a4a5c" />
-
-      {/* Legs */}
-      <rect x="33" y="78" width="10" height="12" rx="3" fill="#4a4a5c" />
-      <rect x="57" y="78" width="10" height="12" rx="3" fill="#4a4a5c" />
-      {/* Feet */}
-      <rect x="31" y="87" width="14" height="4" rx="2" fill="#3a3a4c" />
-      <rect x="55" y="87" width="14" height="4" rx="2" fill="#3a3a4c" />
-
-      <SleepingZzz x={74} y={10} />
+    <svg viewBox="0 0 96 96" width={size} height={size} className="block" aria-hidden="true" data-mascot="copilot-cli">
+      <ellipse cx={48} cy={88} rx={26} ry={2.5} className="fill-surface-1" />
+      <rect x={10} y={44} width={11} height={20} rx={5.5} className="fill-ctp-text" opacity={0.85} />
+      <rect x={75} y={44} width={11} height={20} rx={5.5} className="fill-ctp-text" opacity={0.85} />
+      <rect x={17} y={30} width={62} height={52} rx={24} className="fill-ctp-text" />
+      <rect x={25} y={44} width={46} height={28} rx={12} className="fill-ctp-base" />
+      {!awake && <path d="M34 57q5 4 10 0M52 57q5 4 10 0" className="stroke-ctp-text" strokeWidth={3} fill="none" strokeLinecap="round" />}
+      <g className="fill-brand-copilot">
+        <rect x={21} y={gy} width={25} height={19} rx={8} />
+        <rect x={50} y={gy} width={25} height={19} rx={8} />
+        <rect x={44} y={gy + 6} width={8} height={6} rx={3} />
+      </g>
+      <rect x={25} y={gy + 4} width={17} height={11} rx={5} className="fill-ctp-crust" opacity={0.85} />
+      <rect x={54} y={gy + 4} width={17} height={11} rx={5} className="fill-ctp-crust" opacity={0.85} />
+      <rect x={27} y={gy + 5} width={6} height={3} rx={1.5} className="fill-ctp-text" opacity={0.25} />
+      <rect x={56} y={gy + 5} width={6} height={3} rx={1.5} className="fill-ctp-text" opacity={0.25} />
+      {!awake && !error && <Zzz x={76} y={18} />}
     </svg>
   );
 }
 
-/* ── Codex CLI mascot ────────────────────────────────────────────── */
+/* ── Any other provider ──────────────────────────────────────────── */
 
-export function CodexCliSleeping() {
+/** A plain robot in theme colors for providers without a mascot of their own. */
+export function GenericMascot({ size = 88, awake, error }: MascotProps) {
   return (
-    <svg width="200" height="200" viewBox="0 0 100 100" className="drop-shadow-lg">
-      {/* Ground shadow */}
-      <ellipse cx="50" cy="90" rx="18" ry="2.5" fill="#181825" opacity="0.3" />
-
-      {/* Arms — smooth leaf/paddle shapes, behind body */}
-      <ellipse cx="20" cy="60" rx="7" ry="18" transform="rotate(-12, 20, 60)" fill="#D0D0D8" />
-      <ellipse cx="80" cy="60" rx="7" ry="18" transform="rotate(12, 80, 60)" fill="#D0D0D8" />
-
-      {/* Body — tapered cup shape (wide top, narrow bottom) */}
-      <path
-        d="M 30 46 Q 30 44 32 44 L 68 44 Q 70 44 70 46 L 63 82 Q 61 88 50 88 Q 39 88 37 82 Z"
-        fill="#E0E0E8"
-      />
-
-      {/* Body highlight */}
-      <path
-        d="M 33 46 L 67 46 L 65 52 L 35 52 Z"
-        fill="#EAEAF0"
-        opacity="0.4"
-      />
-
-      {/* Head — smooth oval */}
-      <ellipse cx="50" cy="28" rx="24" ry="20" fill="#E8E8EC" />
-
-      {/* Head highlight */}
-      <ellipse cx="44" cy="18" rx="14" ry="8" fill="#F0F0F6" opacity="0.35" />
-
-      {/* Visor / face panel */}
-      <ellipse cx="50" cy="32" rx="18" ry="12" fill="#0a0a14" />
-
-      {/* Sleeping eyes — dim blue crescents */}
-      <ellipse cx="40" cy="34" rx="5" ry="3" fill="#3a6a9a" opacity="0.4" />
-      <ellipse cx="60" cy="34" rx="5" ry="3" fill="#3a6a9a" opacity="0.4" />
-      {/* Eyelid overlay — visor covers top of eye */}
-      <ellipse cx="40" cy="32" rx="5.5" ry="3" fill="#0a0a14" />
-      <ellipse cx="60" cy="32" rx="5.5" ry="3" fill="#0a0a14" />
-
-      {/* Codex indigo accent at neck */}
-      <rect x="36" y="43" width="28" height="1.5" rx="0.75" fill="#6B6BDE" opacity="0.25" />
-
-      {/* Codex terminal prompt on chest >_ */}
-      <path d="M 44 60 L 48 63 L 44 66" stroke="#9898B0" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.35" />
-      <line x1="50" y1="66" x2="56" y2="66" stroke="#9898B0" strokeWidth="1.2" strokeLinecap="round" opacity="0.35" />
-
-      <SleepingZzz x={68} y={8} />
+    <svg viewBox="0 0 96 96" width={size} height={size} className="block" aria-hidden="true" data-mascot="generic">
+      <ellipse cx={48} cy={86} rx={26} ry={2.5} className="fill-surface-1" />
+      <path d="M48 22v-8" className="stroke-ctp-overlay1" strokeWidth={2} strokeLinecap="round" />
+      <circle cx={48} cy={12} r={3} className="fill-ctp-overlay1" />
+      <rect x={22} y={22} width={52} height={36} rx={14} className="fill-ctp-subtext0" />
+      <rect x={28} y={30} width={40} height={20} rx={7} className="fill-ctp-base" />
+      {awake ? (
+        <>
+          <rect x={36} y={36} width={6} height={8} rx={3} className="fill-ctp-subtext0" />
+          <rect x={54} y={36} width={6} height={8} rx={3} className="fill-ctp-subtext0" />
+        </>
+      ) : (
+        <path d="M35 41q4 3 8 0M53 41q4 3 8 0" className="stroke-ctp-subtext0" strokeWidth={2.6} fill="none" strokeLinecap="round" />
+      )}
+      <rect x={28} y={62} width={40} height={22} rx={7} className="fill-ctp-overlay1" />
+      {!awake && !error && <Zzz x={74} y={18} />}
     </svg>
   );
 }
 
-/* ── Mascot selector ──────────────────────────────────────────────── */
-
-export function SleepingMascot({ orchestrator }: { orchestrator?: OrchestratorId }) {
-  switch (orchestrator) {
-    case 'claude-code':
-      return <ClaudeCodeSleeping />;
-    case 'copilot-cli':
-      return <CopilotSleeping />;
-    case 'codex-cli':
-      return <CodexCliSleeping />;
-    default:
-      return <GenericRobotSleeping />;
-  }
+/** The mascot for an agent's provider, sleeping unless `awake`. */
+export function SleepingMascot({ orchestrator, size = 88, awake, error }: MascotProps & { orchestrator?: OrchestratorId }) {
+  const props = { size, awake, error };
+  const art = orchestrator === 'claude-code' ? <ClaudeMascot {...props} />
+    : orchestrator === 'codex-cli' ? <CodexMascot {...props} />
+      : orchestrator === 'copilot-cli' ? <CopilotMascot {...props} />
+        : <GenericMascot {...props} />;
+  return <span className={`inline-block ${error ? 'opacity-50' : ''}`} data-testid="agent-mascot">{art}</span>;
 }
