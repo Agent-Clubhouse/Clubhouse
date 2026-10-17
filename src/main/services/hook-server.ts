@@ -6,6 +6,7 @@ import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as permissionQueue from './annex-permission-queue';
+import { recordHookEvent, recordPermission } from '../telemetry/agent-signals';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 
@@ -157,6 +158,7 @@ function handlePermissionRequest(
   agentId: string,
   normalized: { toolName?: string; toolInput?: Record<string, unknown>; message?: string },
   res: http.ServerResponse,
+  orchestratorId?: string,
 ): void {
   const toolName = normalized.toolName || 'unknown';
   const startedAt = Date.now();
@@ -182,6 +184,13 @@ function handlePermissionRequest(
 
   decision.then((result) => {
     const permissionDecision = result === 'timeout' ? 'ask' : result;
+    recordPermission({
+      startMs: startedAt,
+      orchestrator: orchestratorId,
+      toolName,
+      decision: permissionDecision,
+      timedOut: result === 'timeout',
+    });
     const responseBody = JSON.stringify({
       hookSpecificOutput: { permissionDecision },
     });
@@ -331,12 +340,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       },
     });
 
+    recordHookEvent(provider.id, normalized.kind, normalized.toolName);
+
     const hookEvent = buildHookEvent(provider, normalized);
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
     annexEventBus.emitHookEvent(agentId, hookEvent as any);
 
     if (normalized.kind === 'permission_request') {
-      handlePermissionRequest(agentId, normalized, res);
+      handlePermissionRequest(agentId, normalized, res, provider.id);
       return; // Don't respond yet — the promise will handle it
     }
   } catch (err) {

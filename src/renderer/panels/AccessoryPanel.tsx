@@ -12,10 +12,13 @@ import { AgentList } from '../features/agents/AgentList';
 import { SettingsSubPage } from '../../shared/types';
 
 
-function SettingsCategoryNav() {
-  const settingsContext = useUIStore((s) => s.settingsContext);
-  const settingsSubPage = useUIStore((s) => s.settingsSubPage);
-  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
+export interface SettingsCategory { label: string; page: SettingsSubPage }
+
+/**
+ * The settings categories, split into app-wide and per-project pages. Shared by
+ * the legacy settings column and the new chrome's sidebar settings navigator.
+ */
+export function useSettingsCategories(): { app: SettingsCategory[]; project: SettingsCategory[] } {
   const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
@@ -31,11 +34,49 @@ function SettingsCategoryNav() {
     });
   }, [previewChannel]);
 
-  const navButton = (label: string, page: SettingsSubPage) => (
+  const app: SettingsCategory[] = [
+    { label: 'About', page: 'about' },
+    { label: 'Orchestrators & Agents', page: 'orchestrators' },
+    { label: 'Profiles', page: 'profiles' },
+    { label: 'Display & UI', page: 'display' },
+    { label: 'External Editor', page: 'editor' },
+    { label: 'Keyboard Shortcuts', page: 'keyboard-shortcuts' },
+    { label: 'Notifications & Alerts', page: 'notifications' },
+    { label: 'Plugins', page: 'plugins' },
+    ...(showAnnex ? [{ label: 'Annex', page: 'annex' as SettingsSubPage }, { label: 'Annex Control', page: 'annex-control' as SettingsSubPage }] : []),
+    { label: 'Clubhouse MCP', page: 'mcp' },
+    ...(showGoobers ? [{ label: 'Goobers', page: 'goobers' as SettingsSubPage }] : []),
+    { label: 'Updates', page: 'updates' },
+    { label: 'Logging', page: 'logging' },
+    ...(showExperimental ? [{ label: 'Experimental', page: 'experimental' as SettingsSubPage }] : []),
+    { label: "What's New", page: 'whats-new' },
+  ];
+  const project: SettingsCategory[] = [
+    { label: 'Project Settings', page: 'project' },
+    { label: 'Orchestrators & Agents', page: 'orchestrators' },
+    { label: 'Notifications & Alerts', page: 'notifications' },
+    { label: 'Plugins', page: 'plugins' },
+  ];
+  return { app, project };
+}
+
+/** Whether `page` is the selected settings page (plugin detail counts as Plugins). */
+export function isSettingsPageActive(current: SettingsSubPage, page: SettingsSubPage): boolean {
+  return current === page || (page === 'plugins' && current === 'plugin-detail');
+}
+
+function SettingsCategoryNav() {
+  const settingsContext = useUIStore((s) => s.settingsContext);
+  const settingsSubPage = useUIStore((s) => s.settingsSubPage);
+  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
+  const { app, project } = useSettingsCategories();
+
+  const navButton = ({ label, page }: SettingsCategory) => (
     <button
+      key={page}
       onClick={() => setSettingsSubPage(page)}
       className={`w-full px-3 py-2 text-sm text-left cursor-pointer ${
-        settingsSubPage === page || (page === 'plugins' && settingsSubPage === 'plugin-detail')
+        isSettingsPageActive(settingsSubPage, page)
           ? 'text-ctp-text bg-surface-1'
           : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
       }`}
@@ -54,33 +95,7 @@ function SettingsCategoryNav() {
         </span>
       </div>
       <nav className="py-1 flex-1 flex flex-col min-h-0 overflow-y-auto">
-        {isApp ? (
-          <>
-            {navButton('About', 'about')}
-            {navButton('Orchestrators & Agents', 'orchestrators')}
-            {navButton('Profiles', 'profiles')}
-            {navButton('Display & UI', 'display')}
-            {navButton('External Editor', 'editor')}
-            {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
-            {navButton('Notifications & Alerts', 'notifications')}
-            {navButton('Plugins', 'plugins')}
-            {showAnnex && navButton('Annex', 'annex')}
-            {showAnnex && navButton('Annex Control', 'annex-control')}
-            {navButton('Clubhouse MCP', 'mcp')}
-            {showGoobers && navButton('Goobers', 'goobers')}
-            {navButton('Updates', 'updates')}
-            {navButton('Logging', 'logging')}
-            {showExperimental && navButton('Experimental', 'experimental')}
-            {navButton("What's New", 'whats-new')}
-          </>
-        ) : (
-          <>
-            {navButton('Project Settings', 'project')}
-            {navButton('Orchestrators & Agents', 'orchestrators')}
-            {navButton('Notifications & Alerts', 'notifications')}
-            {navButton('Plugins', 'plugins')}
-          </>
-        )}
+        {(isApp ? app : project).map(navButton)}
       </nav>
     </div>
   );
