@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { reportChromeActionFailed } from './telemetry';
 
 /**
  * State for the new chrome shell. Persisted under its own key so the legacy
@@ -44,6 +45,7 @@ export function loadChromeState(): Pick<ChromeState, 'sidebarWidth' | 'sidebarCo
       sidebarCollapsed: parsed.sidebarCollapsed === true,
     };
   } catch {
+    // telemetry-exempt: read at module load, before telemetry is connected; corrupt state falls back to defaults
     return defaults;
   }
 }
@@ -58,6 +60,8 @@ function persistChromeState(state: Pick<ChromeState, 'sidebarWidth' | 'sidebarCo
     localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify(payload));
   } catch (err) {
     console.warn('[store:chrome] Failed to persist chrome state (quota?):', err instanceof Error ? err.message : err);
+    // telemetry-exempt: reported through reportChromeActionFailed (clubhouse.ui.action_failed)
+    reportChromeActionFailed('chrome_state_save', err);
   }
 }
 

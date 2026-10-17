@@ -21,6 +21,7 @@ export async function loadChromeFlag(): Promise<boolean> {
     const settings = await window.clubhouse.app.getExperimentalSettings();
     enabled = settings?.[NEW_CHROME_FLAG] === true;
   } catch {
+    // telemetry-exempt: runs before the first render and before telemetry is connected; failing closed to the legacy shell is the handling
     enabled = false;
   }
   useChromeFlagStore.setState({ enabled });

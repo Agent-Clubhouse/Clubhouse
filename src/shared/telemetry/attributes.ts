@@ -158,6 +158,23 @@ export const ATTR = {
   childProcessGoneReason: enumAttr('clubhouse.child_process.gone_reason', [
     'clean-exit', 'abnormal-exit', 'killed', 'crashed', 'oom', 'launch-failed', 'integrity-failure', 'memory-eviction',
   ]),
+
+  // Chrome redesign (docs/chrome-redesign-spec.md §8). Bounded: plugin-owned
+  // lists report `sidebar_list`, plugin ids are never values.
+  /** Where in the new chrome the user is, beside the coarse `clubhouse.view`. */
+  uiSurface: enumAttr('clubhouse.ui.surface', [
+    'sidebar_agents', 'sidebar_list', 'sidebar_settings', 'start_page', 'first_run', 'host_menu', 'more_menu', 'hover_card', 'row_menu',
+  ]),
+  /** Feature-usage events from the new chrome. */
+  uiFeature: enumAttr('clubhouse.ui.feature', [
+    'sidebar_toggle', 'sidebar_resize', 'tab_select', 'project_select', 'agent_select', 'app_item_open',
+    'needs_you_select', 'project_collapse', 'project_collapse_all', 'project_pin', 'project_reorder',
+    'fold_toggle', 'completed_dismiss', 'completed_clear', 'new_agent_open', 'search_open',
+  ]),
+  /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
+  uiAction: enumAttr('clubhouse.ui.action', [
+    'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save',
+  ]),
 } as const;
 
 /**
@@ -269,6 +286,10 @@ export const EVENTS = {
   'clubhouse.renderer.gone': { level: 'errors' },
   /** A GPU or utility process exited (`child-process-gone`). */
   'clubhouse.child_process.gone': { level: 'errors' },
+  /** A renderer catch site swallowed or toasted an error (spec §12.4). Attributes: `clubhouse.ui.action`, `error.type`. */
+  'clubhouse.ui.action_failed': { level: 'errors' },
+  /** A chrome feature was used. Attributes: `clubhouse.ui.feature`, `clubhouse.ui.surface`. */
+  'clubhouse.ui.feature_used': { level: 'standard' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

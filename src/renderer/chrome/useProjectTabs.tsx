@@ -5,6 +5,7 @@ import { usePluginStore } from '../plugins/plugin-store';
 import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { sanitizeSvg } from '../utils/sanitize-svg';
+import { reportChromeActionFailed } from './telemetry';
 
 /**
  * The per-project tab list: the core Agents tab plus every enabled project or
@@ -26,6 +27,7 @@ export function loadTabOrder(projectId: string): string[] | null {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : null;
   } catch {
+    // telemetry-exempt: a missing or corrupt saved order just means default order
     return null;
   }
 }
@@ -35,6 +37,8 @@ export function saveTabOrder(projectId: string, order: string[]): void {
     localStorage.setItem(TAB_ORDER_KEY_PREFIX + projectId, JSON.stringify(order));
   } catch (err) {
     console.warn('[ExplorerRail] Failed to persist tab order to localStorage (quota?):', err instanceof Error ? err.message : err);
+    // telemetry-exempt: reported through reportChromeActionFailed (clubhouse.ui.action_failed)
+    reportChromeActionFailed('tab_order_save', err);
   }
 }
 

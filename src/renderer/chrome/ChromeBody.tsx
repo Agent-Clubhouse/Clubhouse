@@ -13,7 +13,7 @@ import { HelpView } from '../features/help/HelpView';
 import { SatelliteDashboard } from '../features/annex/SatelliteDashboard';
 import { ChromeSidebar } from './ChromeSidebar';
 import { useChromeStore } from './chromeStore';
-import { reportChromeFeature, reportChromeSurface, reportChromeActionFailed } from './telemetry';
+import { reportChromeSurface, reportChromeActionFailed, reportChromeView } from './telemetry';
 
 /** Width of the temporary second column for `sidebar-content` tabs until Phase 2a swaps them into the sidebar. */
 const LIST_COLUMN_WIDTH = 260;
@@ -107,6 +107,11 @@ export function ChromeBody() {
     if (isSettings) reportChromeSurface('sidebar_settings');
   }, [isSettings]);
 
+  // clubhouse.view for slow-frame and render-error signals (spec §8).
+  useEffect(() => {
+    reportChromeView(explorerTab);
+  }, [explorerTab]);
+
   const content = useMemo(() => {
     if (isSettings) return <ProjectPanelLayout />;
     if (isHelp) return <HelpView />;
@@ -118,10 +123,6 @@ export function ChromeBody() {
     return <ProjectContent />;
   }, [isSettings, isHelp, appPluginId, activeProjectId, activeHostId]);
 
-  const onResize = (delta: number) => {
-    resizeSidebar(delta);
-    reportChromeFeature('sidebar_resize');
-  };
 
   return (
     <div className="flex-1 min-h-0 flex flex-row" data-testid="chrome-body">
@@ -131,7 +132,7 @@ export function ChromeBody() {
         </div>
       )}
       <ResizeDivider
-        onResize={onResize}
+        onResize={resizeSidebar}
         onToggleCollapse={toggleSidebar}
         collapsed={sidebarCollapsed}
         collapseDirection="left"

@@ -18,6 +18,8 @@ export interface ResourceInputs {
   instanceId: string;
   level: TelemetryLevel;
   annexRole: 'none' | 'satellite' | 'controller' | 'both';
+  /** Which chrome shell this session runs (docs/chrome-redesign-spec.md §8). Fixed for the session. */
+  uiChrome: 'legacy' | 'v2';
 }
 
 /** Keys we set. Anything else on the resource is a bug (asserted in tests). */
@@ -37,6 +39,7 @@ export const RESOURCE_KEYS = [
   'clubhouse.telemetry.schema',
   'clubhouse.telemetry.level',
   'clubhouse.annex.role',
+  'clubhouse.ui.chrome',
 ] as const;
 
 const OS_TYPE: Partial<Record<NodeJS.Platform, string>> = {
@@ -81,5 +84,6 @@ export function buildResourceAttributes(input: ResourceInputs): Record<(typeof R
     'clubhouse.telemetry.schema': TELEMETRY_SCHEMA_VERSION,
     'clubhouse.telemetry.level': input.level,
     'clubhouse.annex.role': input.annexRole,
+    'clubhouse.ui.chrome': input.uiChrome,
   };
 }

@@ -1,43 +1,61 @@
 /**
  * Telemetry call sites owned by the chrome redesign (docs/chrome-redesign-spec.md §8,
- * telemetry spec §9.1).
+ * telemetry spec §9.1), built on the renderer facade.
  *
- * These are deliberately thin stubs. The renderer telemetry facade ships in
- * telemetry Phase 3; once it is on main, each function below forwards to it and
- * the matching attribute values are added to src/shared/telemetry/attributes.ts
- * in the same PR. Until then they record nothing, so call sites can land now
- * without inventing a second pipeline.
+ * - `clubhouse.view` stays the coarse enum from the telemetry spec; the chrome
+ *   sets it from the active tab and pane (`viewForTab`).
+ * - `clubhouse.ui.surface` says where in the chrome the user is, and rides on
+ *   feature-usage events.
+ * - `clubhouse.ui.action_failed` reports catch sites that would otherwise only
+ *   toast or swallow.
+ * - `clubhouse.ui.chrome` (`legacy` | `v2`) is a resource attribute set by main
+ *   for the whole session, so it is not repeated here.
+ *
+ * Every function is a cheap no-op while telemetry is off.
  */
+import { ATTR, setTelemetryView, tel, type TelemetryView } from '../telemetry';
 
-/** Bounded set of chrome surfaces (`c.ui.surface`). Plugin-owned lists all report `sidebar_list`. */
-export type ChromeSurface =
-  | 'sidebar_agents'
-  | 'sidebar_list'
-  | 'sidebar_settings'
-  | 'start_page'
-  | 'first_run'
-  | 'host_menu'
-  | 'more_menu'
-  | 'hover_card'
-  | 'row_menu';
+export type ChromeSurface = Parameters<typeof ATTR.uiSurface>[0];
+export type ChromeFeature = Parameters<typeof ATTR.uiFeature>[0];
+export type ChromeAction = Parameters<typeof ATTR.uiAction>[0];
 
-/** Feature-usage events raised by the new chrome. */
-export type ChromeFeature =
-  | 'sidebar_toggle'
-  | 'sidebar_resize'
-  | 'tab_select'
-  | 'project_select'
-  | 'app_item_open';
+const BUILTIN_VIEWS: Record<string, TelemetryView> = {
+  'plugin:terminal': 'terminal',
+  'plugin:files': 'files',
+  'plugin:git': 'git',
+  'plugin:canvas': 'canvas',
+  'plugin:app:canvas': 'canvas',
+};
 
-export function reportChromeSurface(_surface: ChromeSurface): void {
-  // Stub: forwards to the renderer facade once telemetry Phase 3 lands.
+/** Map the active explorer tab to the bounded `clubhouse.view` value. */
+export function viewForTab(explorerTab: string): TelemetryView {
+  if (explorerTab === 'agents') return 'agent';
+  if (explorerTab === 'settings') return 'settings';
+  if (BUILTIN_VIEWS[explorerTab]) return BUILTIN_VIEWS[explorerTab];
+  if (explorerTab.startsWith('plugin:')) return 'plugin';
+  return 'other';
 }
 
-export function reportChromeFeature(_feature: ChromeFeature): void {
-  // Stub: forwards to the renderer facade once telemetry Phase 3 lands.
+let currentSurface: ChromeSurface = 'sidebar_agents';
+
+export function reportChromeView(explorerTab: string): void {
+  setTelemetryView(viewForTab(explorerTab));
 }
 
-/** `c.ui.action_failed` for catch sites in the new chrome. */
-export function reportChromeActionFailed(_action: string, _error: unknown): void {
-  // Stub: forwards to the renderer facade once telemetry Phase 3 lands.
+export function reportChromeSurface(surface: ChromeSurface): void {
+  currentSurface = surface;
+}
+
+export function getChromeSurface(): ChromeSurface {
+  return currentSurface;
+}
+
+export function reportChromeFeature(feature: ChromeFeature): void {
+  tel.event('clubhouse.ui.feature_used', [ATTR.uiFeature(feature), ATTR.uiSurface(currentSurface)]);
+}
+
+/** `clubhouse.ui.action_failed` plus the exception class and stack (never the message). */
+export function reportChromeActionFailed(action: ChromeAction, error: unknown): void {
+  tel.event('clubhouse.ui.action_failed', [ATTR.uiAction(action), ATTR.errorType('unknown')]);
+  tel.exception(error, { handled: true, attrs: [ATTR.uiAction(action)] });
 }
