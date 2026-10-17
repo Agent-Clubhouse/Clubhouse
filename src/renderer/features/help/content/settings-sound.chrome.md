@@ -4,30 +4,27 @@ Sounds live on the **Notifications & alerts** page: open Settings with `⌘,` an
 
 ## Event sounds
 
-Each event has its own row: the pack its sound comes from, a volume slider, **Preview**, and a switch to turn it off.
+Each event has its own row: the pack its sound comes from (or **System default**), a volume slider, **Preview**, and a switch to turn it off.
 
 | Event | Plays when |
 |-------|------------|
-| **Agent finished** | An agent completes its task |
+| **Agent Finished** | An agent completes its task |
 | **Error** | An agent hits an error |
-| **Permission request** | An agent is waiting for your approval |
-| **Permission granted** and **Permission denied** | You answer a permission request |
-| **Agent wake** and **Agent sleep** | A durable agent wakes or goes to sleep |
-| **Agent focus** | You switch to an agent |
-| **General notification** | Any other notification |
+| **Permission Request** | An agent is waiting for your approval |
+| **Permission Granted** and **Permission Denied** | You answer a permission request |
+| **Agent Wake** and **Agent Sleep** | A durable agent wakes or goes to sleep |
+| **Agent Focus** | You switch to an agent |
+| **General Notification** | Any other notification |
 
-Mix sounds from different packs, or use **Apply all** on a pack card to take every sound from it.
+Mix sounds from different packs, or click **Apply to all** on a pack to take every sound from it. **Reset to system sounds** puts every event back on the system default.
 
 ## Sound packs
 
-A pack is a folder of audio files, one per event. Supported formats are `.mp3`, `.wav` and `.ogg`.
+A pack is a folder of audio files, one per event. Supported formats are `.mp3`, `.wav` and `.ogg`. Packs come from two places:
 
-| Source | Notes |
-|--------|-------|
-| **OS default** | Your system's notification sound |
-| **Your own** | Put files in `~/.clubhouse/sounds/<pack-name>/`, or click **Import sound pack** and pick a folder. You can delete these. |
-| **From plugins** | Marked as plugin packs. You can't delete these here. |
+- **Your own.** Put files in `~/.clubhouse/sounds/<pack-name>/`, or click **Import pack…** and pick a folder. You can delete these.
+- **Plugins.** These are marked **From a plugin**, and you can't delete them here.
 
 ## Per project
 
-A project can use a different pack. Open its settings, pick **Notifications & alerts**, and set **Sound pack override**.
+A project can use different sounds. Open its settings, pick **Notifications & alerts**, and use **Sound pack override**. Until you change it, the project uses the global sounds.

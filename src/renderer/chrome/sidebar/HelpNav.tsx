@@ -148,7 +148,13 @@ export function HelpNav() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Escape' && query) { e.preventDefault(); setQuery(''); } }}
+            // Esc clears the search; in an empty field it goes back to Agents, as Esc does elsewhere in the sidebar.
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape') return;
+              e.preventDefault();
+              if (query) setQuery('');
+              else useUIStore.getState().toggleHelp();
+            }}
             placeholder="Search help"
             aria-label="Search help"
             data-testid="help-search"

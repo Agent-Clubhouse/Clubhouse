@@ -41,6 +41,13 @@ describe('HelpNav', () => {
     expect(screen.getByTestId('help-nav-topic-navigation').getAttribute('aria-current')).toBe('page');
   });
 
+  it('goes back to Agents on Esc in an empty search field', () => {
+    useUIStore.setState({ explorerTab: 'help', previousExplorerTab: 'agents' });
+    render(<HelpNav />);
+    fireEvent.keyDown(screen.getByTestId('help-search'), { key: 'Escape' });
+    expect(useUIStore.getState().explorerTab).toBe('agents');
+  });
+
   it('explains retired layout words when nothing matches', () => {
     useUIStore.setState({ helpSearchQuery: 'accessory panel' });
     render(<HelpNav />);

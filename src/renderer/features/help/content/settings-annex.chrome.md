@@ -15,8 +15,9 @@ The page also shows the server status and how many devices are connected.
 ## Control another machine
 
 1. In Settings, pick **Annex control** and turn on **Connect to satellites**.
-2. Click **Add satellite**, or **Scan** to find satellites on the network.
-3. Enter the satellite's PIN.
+2. Click **Add satellite**. Satellites found on the network are listed. Click **Scan** to look again.
+3. Click **Pair** on the satellite you want.
+4. Enter the satellite's PIN and click **Pair**.
 
 After pairing, the two machines reconnect on their own. No PIN is needed again.
 
@@ -42,7 +43,7 @@ While a controller is connected, the satellite shows a lock screen naming the co
 - Everything stays on your local network. There's no cloud service in between.
 - Each instance has its own key pair. After pairing, connections use mutual TLS, and each side checks the other's certificate.
 - After 3 wrong PINs from one address, pairing slows down. After 6, it locks for 5 minutes.
-- **Reset Annex** and **Reset Annex control** forget all pairings, so every device has to pair again.
+- **Reset Annex** on the Annex page, and **Forget all satellites** on the Annex control page, drop all pairings, so every device has to pair again.
 
 ## If something goes wrong
 

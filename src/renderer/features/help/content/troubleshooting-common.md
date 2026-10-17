@@ -20,7 +20,7 @@ To reduce interruptions: enable headless mode or Free Agent mode for quick agent
 1. **App-level enabled?** — **Settings > Plugins** — toggle on.
 2. **Project-level enabled?** — **Project Settings > Plugins** — toggle on for this project.
 3. **API version compatible?** — Check `plugins:loader` logs for version mismatch errors.
-4. **External plugins enabled?** — **Enable External Plugins** in the External section of **Settings > Plugins** must be on.
+4. **External plugins enabled?** — **Allow external plugins** in **Settings > Plugins** must be on.
 
 ## Git Not Detected
 

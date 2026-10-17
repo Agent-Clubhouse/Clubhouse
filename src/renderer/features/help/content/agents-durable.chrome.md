@@ -1,17 +1,17 @@
 # Durable agents
 
-Durable agents are for ongoing work. Each keeps its own Git worktree and branch, survives restarts, and sleeps until you wake it.
+Durable agents are for ongoing work. Each keeps its own Git worktree and branch, survives restarts, and can sleep and wake again later.
 
 ## Creating one
 
 1. Click **New** at the top of the sidebar and choose **Durable agent…**. Or hover a project and click its **+** button.
 2. Set the **Name**, **Color**, **Model** and **Orchestrator**. Optionally pick a **Persona**, **MCPs** and **Free Agent Mode**.
 3. Leave **Use git worktree** on to give the agent its own branch.
-4. Click **Create agent**. The agent appears under its project, sleeping until you give it work.
+4. Click **Create agent**. The agent appears under its project and starts right away. Select it to give it work.
 
 To start from a saved setup, choose **Agent from a template…** under **New**.
 
-## Waking and giving it work
+## Waking a sleeping agent
 
 - Select the project's name. On the start page, choose the agent under **Wake a sleeping agent**, type what it should do, and press `⌘Enter`.
 - Or use **Wake** in the agent's row menu or hover card, then type in its pane.
@@ -36,7 +36,7 @@ Open **Settings** from the agent's row menu or hover card.
 |---------|--------------|
 | **Appearance** | Name, color and icon |
 | **Orchestrator** and **Model** | What runs the agent. Changes apply the next time it starts or wakes. |
-| **Runtime** | Whether the agent opens as a chat or a terminal |
+| **Runtime** | Chat or terminal. Shown only when the experimental Chat feature is on. |
 | **Persona** | A role the agent takes on, such as reviewer or researcher |
 | **Instructions** | Markdown that guides the agent: style, limits, how to work |
 | **Permissions** | Tools the agent may use without asking, and tools it's always denied |
@@ -47,7 +47,11 @@ With **Clubhouse mode** on, project defaults sync to the agent when it wakes. Se
 
 ## Deleting
 
-Choose **Delete** in the row menu. You decide what happens to its work:
+Stop the agent first, then choose **Delete** in the row menu. What the dialog offers depends on the agent's worktree:
+
+- **No worktree**: **Remove** takes it out of Clubhouse.
+- **Worktree with nothing uncommitted or unpushed**: **Delete** removes the agent and its worktree, and **Leave files** keeps the worktree on disk.
+- **Worktree with uncommitted or unpushed work**: you choose what happens to that work:
 
 | Option | What happens |
 |--------|--------------|

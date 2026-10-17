@@ -1,6 +1,6 @@
 # Terminal and transcripts
 
-Select an agent and the pane shows what it's doing. Depending on the orchestrator and the agent's **Runtime** setting, that's a chat view or a terminal.
+Select an agent and the pane shows what it's doing, usually in a terminal. With the experimental Chat feature turned on, an agent's **Runtime** setting can show it as a chat instead.
 
 ## The agent's terminal
 
@@ -29,20 +29,16 @@ Common requests are file edits, shell commands, deletions and Git operations. In
 
 ## Transcripts
 
-The transcript is a structured log of what the agent did:
+A headless quick agent has no terminal to scroll back through, so its summary card has **View transcript** once it finishes. The transcript lists, in order:
 
-| Field | Meaning |
-|-------|---------|
-| **Time** | When it happened |
-| **Event** | A tool call, a permission request, an error or the finish |
-| **Tool** | Such as Read, Edit or Bash |
-| **Input and output** | What went in and what came back |
-| **Status** | Succeeded, failed or pending |
+- each tool the agent called, by name, such as Read, Edit or Bash;
+- what the agent wrote between tool calls;
+- a final result line, with the cost and duration when the orchestrator reports them.
 
-Open it from the agent's pane, or from a finished quick agent's summary.
+Long transcripts load the most recent events first, and earlier ones load as you scroll up.
 
 ## A terminal of your own
 
-To work by hand in an agent's worktree, select the agent and open the **Terminal** tab in the title bar, or choose **Open terminal** on the agent's hover card. The shell opens in the agent's worktree and runs separately from the agent. Select the project's name instead to get a shell at the project root.
+To work by hand in an agent's worktree, select the agent and open the **Terminal** tab in the title bar, or choose **Open terminal** on the agent's hover card. Both need the Terminal plugin on for the project. The shell opens in the agent's worktree and runs separately from the agent. Select the project's name instead to get a shell at the project root.
 
 Each one keeps running when you switch away, so you can come back to it.

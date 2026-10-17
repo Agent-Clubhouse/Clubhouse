@@ -27,9 +27,9 @@ Not sure which one? Turn them all off, restart, then turn them back on one at a 
 
 ### Reset a project
 
-Deletes the project's `.clubhouse/` folder: agents, skills, templates and plugin config. Source code is untouched. Use it as a last resort when a project's setup is broken.
+Deletes the project's `.clubhouse/` folder: agent definitions, skills, personas, plugin data, and every durable agent's worktree. Anything an agent hasn't committed and pushed is lost. Your main checkout is not touched. Use it as a last resort when a project's setup is broken.
 
-Open the project's settings from its menu in the sidebar, then click **Reset project** at the bottom of the first page.
+Open the project's settings from its menu in the sidebar, then click **Reset project** at the bottom of **General**.
 
 ### Close a project
 

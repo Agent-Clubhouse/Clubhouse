@@ -14,14 +14,14 @@ my-plugin/
 
 Community plugins use `manifest.json`. Built-in plugins use TypeScript (`manifest.ts`, `main.ts`).
 
-## Manifest: required fields
+## Required manifest fields
 
 ```json
 {
   "id": "my-plugin",
   "name": "My Plugin",
   "version": "1.0.0",
-  "engine": { "api": 0.5 },
+  "engine": { "api": 0.9 },
   "scope": "project"
 }
 ```
@@ -31,7 +31,7 @@ Community plugins use `manifest.json`. Built-in plugins use TypeScript (`manifes
 | `id` | Unique identifier |
 | `name` | Display name |
 | `version` | Semver string |
-| `engine.api` | Minimum Plugin API version (current: **0.5**) |
+| `engine.api` | Plugin API version (current: **0.9**; 0.5 and 0.6 are deprecated) |
 | `scope` | `"project"`, `"app"`, or `"dual"` |
 
 **Optional:** `description`, `author`, `main`, `permissions`, `settingsPanel`, `externalRoots`, `allowedCommands`, `contributes`
@@ -61,7 +61,7 @@ All receive `{ api: PluginAPI }` as props.
 
 ## Key API namespaces
 
-| Namespace | Permission | Key Methods |
+| Namespace | Permission | Main methods |
 |-----------|------------|-------------|
 | `api.project` | files | `readFile`, `writeFile`, `deleteFile`, `listDirectory` |
 | `api.files` | files | `readTree`, `stat`, `rename`, `copy`, `showInFolder` |

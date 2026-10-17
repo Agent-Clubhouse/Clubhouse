@@ -6,7 +6,7 @@ Plugins add views, commands and tools to Clubhouse.
 
 | Scope | Where it shows up | Works with |
 |-------|-------------------|------------|
-| **Project** | A tab in the title bar, for each project it's on in | That project's files, Git and agents |
+| **Project** | A tab in the title bar, in each project where it's turned on | That project's files, Git and agents |
 | **App** | The row under Search, beside Canvas and Review, or an icon in the sidebar footer | Everything, not tied to a project |
 | **Dual** | Both | Either |
 
@@ -32,12 +32,12 @@ A project tab with its own list, such as Files or Git, swaps the sidebar to that
 
 External plugins load from `~/.clubhouse/plugins/`. Loading them is off by default.
 
-1. In **Settings > Plugins**, turn on **Enable external plugins** under **External**.
+1. In **Settings > Plugins**, turn on **Allow external plugins** under **From the marketplace**.
 2. Put the plugin's folder in `~/.clubhouse/plugins/`.
 3. Restart Clubhouse.
 4. Turn it on for the app, then for each project that needs it.
 
-To uninstall, delete its folder from `~/.clubhouse/plugins/` or use the uninstall option in its settings.
+To uninstall, delete its folder from `~/.clubhouse/plugins/` or click its uninstall button in **Settings > Plugins**.
 
 ## Trust
 
@@ -64,4 +64,4 @@ Plugins can put a count or a dot on their title-bar tab. Turn plugin badges off 
 
 ## Plugin settings
 
-Some plugins have settings of their own. In **Settings > Plugins**, click **View details** on the plugin.
+Some plugins have settings of their own. In **Settings > Plugins**, click the gear button on the plugin's row.

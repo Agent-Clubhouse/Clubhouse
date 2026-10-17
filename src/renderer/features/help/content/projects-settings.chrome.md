@@ -4,7 +4,7 @@ Open a project's settings from its menu in the sidebar (**Project settings**), o
 
 | Page | What's there |
 |------|--------------|
-| **General** (the first page) | Name, icon, color, launch wrapper, blueprint bundle, and closing or resetting the project |
+| **General** | Name, icon, color, launch wrapper, blueprint bundle, and closing or resetting the project |
 | **Orchestrators & agents** | The project's default orchestrator and agent defaults |
 | **Notifications & alerts** | Badge and sound overrides for this project |
 | **Plugins** | Which plugins are on in this project |
@@ -17,7 +17,7 @@ Open a project's settings from its menu in the sidebar (**Project settings**), o
 | **Icon** | Upload a PNG, JPG or SVG and crop it. Clear it to go back to the letter icon. |
 | **Color** | The project's color in the sidebar and title bar. |
 | **Launch wrapper** | Runs agents through a wrapper command, when your setup needs one. |
-| **Blueprint bundle** | Exports every canvas in the project as one bundle, for sharing or backup. |
+| **Blueprint bundle** | **Export canvases** saves every canvas in the project as one bundle, for sharing or backup. |
 
 ## Orchestrators & agents
 
@@ -26,7 +26,7 @@ Each setting here can follow the app-wide value or override it for this project:
 - **Default orchestrator** for new agents. Only orchestrators that are turned on and installed are listed.
 - **Quick agent mode**: interactive or headless.
 - **Free agent permission mode**: Auto or skip all permissions.
-- **Clubhouse mode**, which keeps durable agents in sync with project defaults. See **Clubhouse mode**.
+- **Clubhouse Mode**, which keeps durable agents in sync with project defaults. See **Clubhouse mode**.
 - **MCP override** and **Session name on quit**.
 
 ## Plugins
@@ -38,4 +38,4 @@ Turn plugins on or off for this project. A plugin has to be on in **Settings > P
 | Action | Effect |
 |--------|--------|
 | **Close project** | Removes the project from Clubhouse. Files on disk are untouched, and you can add it again any time. `⇧⌘W` closes the active project. |
-| **Reset project** | Deletes the `.clubhouse/` folder: agents, skills, templates and plugin config. Source code is untouched. This can't be undone. |
+| **Reset project** | Deletes the `.clubhouse/` folder: agent definitions, skills, personas, plugin data, and every durable agent's worktree. Work an agent hasn't committed and pushed is lost. Your main checkout is not touched. This can't be undone. |

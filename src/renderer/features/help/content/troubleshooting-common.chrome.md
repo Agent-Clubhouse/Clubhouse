@@ -6,7 +6,7 @@ Quick fixes for problems people run into most.
 
 Check these in order:
 
-1. **Is the orchestrator installed?** In **Settings > Orchestrators & agents**, each orchestrator shows whether its CLI was found. If it wasn't, follow the setup prompt.
+1. **Is the orchestrator installed?** In **Settings > Orchestrators & agents**, an orchestrator whose CLI wasn't found can't be turned on, and its switch says **CLI not found**. Install the CLI so it's on your `PATH`, then restart Clubhouse.
 2. **Is it turned on?** Check its switch on the same page.
 3. **Is it signed in?** Most orchestrators need an API key or a login. See the orchestrator's own docs.
 
@@ -22,7 +22,7 @@ To be asked less, use headless mode or Free Agent Mode for quick agents.
 2. **On for this project?** Open the project's settings, pick **Plugins**, and turn it on.
 3. **Where to look.** A project plugin shows up as a tab in the title bar. If the tabs don't fit, look in the **More** menu at the end. An app plugin shows up beside Canvas and Review, in that row's **More** menu, or as an icon in the sidebar footer.
 4. **Compatible?** Look for version errors from `plugins:loader` in the logs.
-5. **External plugin?** **Enable external plugins** under **External** in **Settings > Plugins** has to be on.
+5. **External plugin?** **Allow external plugins** in **Settings > Plugins** has to be on.
 
 ## Git isn't detected
 

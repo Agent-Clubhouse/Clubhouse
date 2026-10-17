@@ -13,7 +13,7 @@ vi.mock('./HelpTopicList', () => ({
 }));
 vi.mock('./HelpContentPane', () => ({
   HelpContentPane: ({ markdown, variant }: { markdown: string | null; variant?: string }) => (
-    <div data-testid="help-content-pane" data-variant={variant ?? 'classic'}>{markdown?.split('\n')[0]}</div>
+    <div data-testid="help-content-pane" data-variant={variant ?? 'classic'}>{markdown?.split(/\r?\n/)[0]}</div>
   ),
 }));
 vi.mock('./HelpSearchResults', () => ({

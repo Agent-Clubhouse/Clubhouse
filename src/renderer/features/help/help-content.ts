@@ -160,6 +160,23 @@ export const HELP_SECTIONS: HelpSection[] = [
 ];
 
 const section = (id: string) => HELP_SECTIONS.find((s) => s.id === id)!;
+const retitle = (topics: HelpTopic[], titles: Record<string, string>) => topics.map((t) => ({ ...t, title: titles[t.id] ?? t.title }));
+
+const PERSONA_TITLES: Record<string, string> = {
+  'persona-project-manager': 'Project manager or coordinator',
+  'persona-qa': 'QA and quality control',
+  'persona-ui-lead': 'UI and design lead',
+  'persona-quality-auditor': 'Quality auditor',
+  'persona-executor-pr-only': 'Executor (PR only)',
+  'persona-executor-merge': 'Executor (full merge)',
+  'persona-doc-updater': 'Documentation updater',
+};
+const COOKBOOK_TITLES: Record<string, string> = {
+  'cookbook-long-running-job': 'Long-running job',
+  'cookbook-ui-work': 'UI work',
+  'cookbook-group-project': 'Group project (multi-app)',
+  'cookbook-bake-off': 'Bake-off (A/B testing)',
+};
 
 /**
  * The new shell's articles (#2017, decided 2026-10-17): one version per shell.
@@ -227,8 +244,8 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
       { id: 'troubleshooting-safe-mode', title: 'Safe mode and recovery', content: troubleshootingSafeModeChrome },
     ],
   },
-  { ...section('personas'), title: 'Agent personas' },
-  { ...section('cookbooks'), title: 'Cookbooks' },
+  { ...section('personas'), title: 'Agent personas', topics: retitle(section('personas').topics, PERSONA_TITLES) },
+  { ...section('cookbooks'), title: 'Cookbooks', topics: retitle(section('cookbooks').topics, COOKBOOK_TITLES) },
 ];
 
 /** Annex lives in Settings only on builds that show the Annex pages (preview-eligible). */

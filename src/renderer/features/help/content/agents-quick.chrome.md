@@ -17,7 +17,7 @@ For more options, click **New** at the top of the sidebar and choose **Quick age
 - **Free Agent Mode**, to let the agent act without asking for permission;
 - a **Project** picker, when you start it from outside a project.
 
-## Free Agent Mode
+## Free agent mode
 
 Free Agent Mode handles permission prompts for you. By default it skips them all. If your CLI supports `--permission-mode auto`, you can switch to **Auto** under **Free agent permission mode** in **Settings > Orchestrators & agents**, for all projects or one. Auto runs a safety check that allows safe actions and blocks risky ones, like force pushes, mass deletions and sending credentials out.
 
@@ -29,18 +29,18 @@ Free Agent Mode handles permission prompts for you. By default it skips them all
 | **File edits and commands** | Applied right away | Need your approval |
 | **Speed** | Faster | Slower, since it waits for you |
 
-Set the default under **Quick agent mode** in **Settings > Orchestrators & agents**, for all projects or one. Headless and Free Agent Mode are separate settings.
+Set it with **Default quick agent mode** in **Settings > Orchestrators & agents**, or **Quick agent mode** in a project's own **Orchestrators & agents** page. Headless and Free Agent Mode are separate settings.
 
 ## When it finishes
 
-Finished quick agents wait for you in two places: the project's start page, under **Finished, waiting on you**, and the **N finished quick agents** row under the project in the sidebar. Open one to see its summary:
+Finished quick agents wait for you in two places: the project's start page, under **Finished, waiting on you**, and the **N finished quick agents** row under the project in the sidebar. Open one to see its summary card:
 
-| Field | Meaning |
-|-------|---------|
-| **Exit code** | `0` means it succeeded |
-| **Files changed** | Files it created, edited or deleted |
-| **Duration** | How long it ran |
-| **Cost** | Estimated API cost, in USD |
-| **Tools used** | A summary of its tool calls |
+- whether it succeeded, with its exit code;
+- its orchestrator and model, and a **Headless** tag if it ran headless;
+- what it reported back when it finished;
+- how long it ran and which tools it used;
+- the files it modified.
 
-From the summary you can read the transcript and look at the diffs. **Dismiss** removes one when you're done, and **Clear all** removes the rest.
+For a headless quick agent, the card can also show its transcript. See **Terminal and transcripts**.
+
+**Dismiss** removes one when you're done. **Clear all**, on the start page and on the sidebar row, removes every finished quick agent in the project.

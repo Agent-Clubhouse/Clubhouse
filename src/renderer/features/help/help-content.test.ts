@@ -110,9 +110,8 @@ describe('help-content in the new shell', () => {
   it('uses sentence-case titles', () => {
     for (const s of CHROME_HELP_SECTIONS) {
       expect(s.title).not.toMatch(/&/);
-      if (['personas', 'cookbooks'].includes(s.id)) continue;
       for (const t of s.topics) {
-        expect(t.title, t.title).not.toMatch(/ & |\s(?!Git\b|CLI\b)[A-Z][a-z]/);
+        expect(t.title, t.title).not.toMatch(/ & |\s(?!Git\b|CLI\b|PR\b|UI\b|QA\b|A\/B\b)\(?[A-Z][a-z]/);
       }
     }
   });
@@ -130,7 +129,7 @@ describe('help-content in the new shell', () => {
 
   it('points only at settings pages that exist', () => {
     const pages = ['About', 'Orchestrators & agents', 'Profiles', 'Display & UI', 'External editor', 'Keyboard shortcuts',
-      'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Clubhouse MCP', 'Updates', 'Logging', 'Feedback', "What's New"];
+      'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Clubhouse MCP', 'Updates', 'Logging', 'Feedback', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {
         const page = m[1].split(' > ')[0];

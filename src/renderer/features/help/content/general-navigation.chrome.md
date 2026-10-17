@@ -16,7 +16,7 @@ From top to bottom:
 - **Search** opens the command palette, and **New** starts an agent in the active project.
 - **Canvas**, **Review** and other app-wide plugins.
 - **Needs you** lists agents waiting on a permission or stopped by an error, across every connected host. It hides when nothing is waiting.
-- **Projects** lists every project with its agents. Pinned projects come first, then recent ones, and projects you haven't touched for a while fold into one idle row.
+- **Projects** lists every project with its agents. Pinned projects come first, then the rest in your order, and projects you haven't touched for a while fold into one idle row.
 - The footer has **Add project**, Help and Settings.
 
 Inside a project, sleeping agents fold into one row, and so do finished quick agents. Click a project's name to open its start page, or the arrow beside it to collapse it. Drag a project to reorder it, or use **Move up** and **Move down** in its menu.

@@ -26,20 +26,20 @@ The dot at the start of a row is the agent's status:
 
 Agents that need you or hit an error also appear under **Needs you** at the top of the sidebar, so you don't have to look through every project.
 
-Hover a row for details: the orchestrator and model, branch, worktree and MCP servers. The card also has **Open terminal**, **Stop** or **Wake**, and **Settings**.
+Hover a row for details: the orchestrator and model, branch, worktree and MCP servers. The card also has **Stop** or **Wake** and **Settings**, plus **Open terminal** when the project has the Terminal plugin on.
 
 ## Row menu
 
 Right-click a row, or use its **⋯** button, for:
 
-- **Stop**, **Wake**, or **Wake & resume** to continue the last session;
-- **Pop out**, which opens the agent in its own window and stays in sync with the main one;
+- **Stop**, **Wake**, or **Wake & Resume** to continue the last session;
+- **Pop Out**, which opens the agent in its own window and stays in sync with the main one;
 - **Settings**, for a durable agent's name, model, instructions and more;
 - **Apply persona…** and **Extract persona…**;
-- **Delete** for a durable agent, or **Remove** for a quick one;
-- **Move up** and **Move down**.
+- **Delete** for a stopped durable agent, or **Remove** for a quick one that has stopped;
+- **Move up** and **Move down**, which reorder durable agents within their project.
 
-You can also drag rows to reorder agents within a project. The order is saved per project.
+Agent rows can't be dragged. Only projects can.
 
 ## Switching agents
 
