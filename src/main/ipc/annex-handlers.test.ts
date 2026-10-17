@@ -1,4 +1,7 @@
+import { settingsChanged } from '../telemetry/feature-events';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('../telemetry/feature-events', () => ({ settingsChanged: vi.fn(), themeChanged: vi.fn(), popoutOpened: vi.fn(), blueprintTransfer: vi.fn(), recordToolsList: vi.fn() }));
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
@@ -88,6 +91,12 @@ describe('annex-handlers', () => {
     const result = await handler({});
     expect(annexSettings.getSettings).toHaveBeenCalled();
     expect(result).toEqual({ enableServer: false, enableClient: false, deviceName: 'My Mac' });
+  });
+
+  it('SAVE_SETTINGS reports clubhouse.settings.changed with key annex', async () => {
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Mac' });
+    await handlers.get(IPC.ANNEX.SAVE_SETTINGS)!({}, { enableServer: false, enableClient: false, deviceName: 'Mac' });
+    expect(settingsChanged).toHaveBeenCalledWith('annex');
   });
 
   it('SAVE_SETTINGS starts server when enabling enableServer', async () => {

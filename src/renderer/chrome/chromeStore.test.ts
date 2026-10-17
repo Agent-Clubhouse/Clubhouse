@@ -156,4 +156,20 @@ describe('chromeStore', () => {
       (window.clubhouse as { newChromeLayout?: boolean }).newChromeLayout = undefined;
     });
   });
+
+  it('forgets every stored project with a prefix: an unpaired satellite', () => {
+    useChromeStore.setState({
+      pinnedProjectIds: ['p1', 'remote||s1||a'],
+      collapsedProjectIds: ['remote||s1||b', 'remote||s2||c'],
+      expandedFolds: ['remote||s1||a:sleeping', 'p1:finished'],
+      lastProjectId: 'p1',
+    });
+    useChromeStore.getState().forgetProjectsWithPrefix('remote||s1||');
+    expect(useChromeStore.getState()).toMatchObject({
+      pinnedProjectIds: ['p1'],
+      collapsedProjectIds: ['remote||s2||c'],
+      expandedFolds: ['p1:finished'],
+      lastProjectId: 'p1',
+    });
+  });
 });

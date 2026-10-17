@@ -15,11 +15,12 @@ export type FixtureScenario =
   | 'plan'
   | 'steer'
   | 'subagents'
+  | 'agent_map'
   | 'turn_error'
   | 'protocol_drift';
 
 export const FIXTURE_SCENARIOS: readonly FixtureScenario[] = [
-  'conversation', 'approval', 'plan', 'steer', 'subagents', 'turn_error', 'protocol_drift',
+  'conversation', 'approval', 'plan', 'steer', 'subagents', 'agent_map', 'turn_error', 'protocol_drift',
 ];
 
 function begin(p: FixtureProvider, agentId?: string): ChatFixture {
@@ -197,6 +198,29 @@ function subagents(p: FixtureProvider, agentId?: string): ChatEvent[] {
   return f.events;
 }
 
+/** Two subagents in one turn, as in the mockup's agent map: one finished, one still working. */
+function agentMap(p: FixtureProvider, agentId?: string): ChatEvent[] {
+  const f = begin(p, agentId);
+  const t = 'turn-1';
+  const names = p === 'claude' ? ['Explore', 'code-reviewer'] : ['worker-1', 'worker-2'];
+  const task = p === 'codex' ? 'collabAgentToolCall' : 'Task';
+  f.prompt(t, 'Audit every place that renders agent chips and make them consistent.');
+  f.emit('tool_call', { toolCallId: 'task-1', kind: 'other', title: 'Find every consumer of AgentChips', status: 'in_progress', toolName: task }, { turnId: t });
+  f.emit('subagent', { subagentId: 'sub-1', name: names[0], description: 'Find every consumer of AgentChips', status: 'running', parentToolCallId: 'task-1' }, { turnId: t });
+  f.tool(t, { toolCallId: 'sub1-read', kind: 'read', title: 'Read src/renderer/features/agents/AgentListItem.tsx', status: 'in_progress', subagentId: 'sub-1' });
+  f.tool(t, { toolCallId: 'sub1-search', kind: 'search', title: 'Search "AgentChips" in src', status: 'in_progress', subagentId: 'sub-1' });
+  f.say(t, 'sub1-m', 'Found 3 consumers: AgentListItem, AgentHoverCard (new), DurableAgentRow.', { subagentId: 'sub-1' });
+  f.emit('subagent', { subagentId: 'sub-1', name: names[0], status: 'completed', parentToolCallId: 'task-1', toolCount: 12, usage: { total: 9800 } }, { turnId: t, advanceMs: 41000 });
+  f.emit('tool_call_update', { toolCallId: 'task-1', status: 'completed', durationMs: 41000 }, { turnId: t });
+
+  f.emit('tool_call', { toolCallId: 'task-2', kind: 'other', title: 'Review the chip styles for contrast', status: 'in_progress', toolName: task }, { turnId: t });
+  f.emit('subagent', { subagentId: 'sub-2', name: names[1], description: 'Review the chip styles for contrast', status: 'running', parentToolCallId: 'task-2' }, { turnId: t });
+  f.tool(t, { toolCallId: 'sub2-read', kind: 'read', title: 'Read ChipStyles.ts', status: 'in_progress', subagentId: 'sub-2' });
+  f.emit('tool_call', { toolCallId: 'sub2-cmd', kind: 'execute', title: 'npx contrast-check', status: 'in_progress', toolName: 'Bash', subagentId: 'sub-2' }, { turnId: t });
+  f.say(t, 'm-1', 'Waiting on the reviewer before I change the styles.');
+  return f.events;
+}
+
 function turnError(p: FixtureProvider, agentId?: string): ChatEvent[] {
   const f = begin(p, agentId);
   const t = 'turn-1';
@@ -227,6 +251,7 @@ const BUILDERS: Record<FixtureScenario, (p: FixtureProvider, agentId?: string) =
   plan,
   steer,
   subagents,
+  agent_map: agentMap,
   turn_error: turnError,
   protocol_drift: protocolDrift,
 };

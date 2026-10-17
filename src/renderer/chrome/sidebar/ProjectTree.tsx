@@ -24,9 +24,10 @@ export interface ProjectTreeProps {
   /** The project whose header is selected (project-root scope), if any. */
   projectScopeId: string | null;
   selectedCompletedId: string | null;
-  onReorder: (orderedIds: string[]) => void;
+  /** Absent on a satellite host: its project order is not changed from here. */
+  onReorder?: (orderedIds: string[]) => void;
   onSelectProject: (projectId: string) => void;
-  onNewAgent: (projectId: string) => void;
+  onNewAgent?: (projectId: string) => void;
   onSelectAgent: (agent: Agent) => void;
   onSelectCompleted: (projectId: string, completedId: string) => void;
   onDismissCompleted: (projectId: string, completedId: string) => void;
@@ -80,7 +81,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       const next = dragId && sameSection ? moveProject(displayIds, dragId, id) : null;
       setDragId(null);
       setOverId(null);
-      if (next) onReorder(next);
+      if (next) onReorder?.(next);
     },
     onDragEnd: () => { setDragId(null); setOverId(null); },
   }), [dragId, displayIds, pinnedSet, onReorder]);
@@ -119,6 +120,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       onTogglePinned={onTogglePinned}
       onToggleFold={onToggleFold}
       onNewAgent={props.onNewAgent}
+      draggable={!!onReorder}
       onSelectAgent={props.onSelectAgent}
       onSelectCompleted={props.onSelectCompleted}
       onDismissCompleted={props.onDismissCompleted}

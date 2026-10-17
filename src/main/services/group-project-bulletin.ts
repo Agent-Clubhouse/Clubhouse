@@ -10,6 +10,15 @@ import { app } from 'electron';
 import type { BulletinMessage, TopicDigest, DigestSince } from '../../shared/group-project-types';
 import { appLog } from './log-service';
 import { persist } from '../telemetry/persist';
+import { tel } from '../telemetry/facade';
+import { ATTR } from '../../shared/telemetry/attributes';
+
+type BulletinPostResult = Parameters<typeof ATTR.bulletinPostResult>[0];
+
+/** Counted for every post, MCP or UI (spec §12 H8; P0 while #1830 is open). */
+function recordBulletinPost(result: BulletinPostResult): void {
+  tel.count('clubhouse.group.bulletin.posts', 1, [ATTR.bulletinPostResult(result)]);
+}
 
 /** Default max message body size in bytes. */
 const MAX_BODY_BYTES = 100 * 1024;
@@ -227,6 +236,7 @@ class BulletinBoard {
     await this.ensureLoaded();
 
     if (Buffer.byteLength(body, 'utf-8') > MAX_BODY_BYTES) {
+      recordBulletinPost('rejected');
       throw new Error(`Message body exceeds ${MAX_BODY_BYTES} byte limit`);
     }
 
@@ -247,12 +257,14 @@ class BulletinBoard {
     topicMessages.push(message);
 
     // Prune per-topic (skip protected topics)
+    let evictedOwn = 0;
     if (!this.protectedTopics.has(canonicalTopic) && topicMessages.length > this.maxPerTopic) {
-      topicMessages.splice(0, topicMessages.length - this.maxPerTopic);
+      evictedOwn = topicMessages.splice(0, topicMessages.length - this.maxPerTopic).length;
     }
 
     // Prune globally
-    this.pruneGlobal();
+    const evictedBoard = this.pruneGlobal();
+    recordBulletinPost(evictedBoard > 0 ? 'evicted_topic' : evictedOwn > 0 ? 'evicted_message' : 'ok');
 
     this.dirty = true;
     this.scheduleFlush();
@@ -336,12 +348,13 @@ class BulletinBoard {
     return messages;
   }
 
-  private pruneGlobal(): void {
+  /** Returns how many messages were evicted to stay under the board-wide cap. */
+  private pruneGlobal(): number {
     let total = 0;
     for (const messages of this.topics.values()) {
       total += messages.length;
     }
-    if (total <= this.maxTotal) return;
+    if (total <= this.maxTotal) return 0;
 
     // Collect all messages from NON-protected topics, sort oldest first, remove until under limit
     const all: Array<{ topic: string; index: number; timestamp: number }> = [];
@@ -374,6 +387,7 @@ class BulletinBoard {
         this.topics.set(topic, filtered);
       }
     }
+    return Math.min(toRemove, all.length);
   }
 
   // ── Topic protection ────────────────────────────────────────────────────

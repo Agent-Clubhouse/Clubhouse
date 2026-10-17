@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { settingsChanged } from '../telemetry/feature-events';
 import { IPC } from '../../shared/ipc-channels';
 import type { AnnexSettings } from '../../shared/types';
 import * as annexSettings from '../services/annex-settings';
@@ -30,6 +31,7 @@ export function registerAnnexHandlers(): void {
     async (_event, settings) => {
     const previous = annexSettings.getSettings();
     await annexSettings.saveSettings(settings);
+    settingsChanged('annex');
 
     // Server toggle (independent of client)
     if (settings.enableServer && !previous.enableServer) {

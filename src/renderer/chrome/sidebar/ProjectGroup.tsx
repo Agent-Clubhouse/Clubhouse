@@ -63,7 +63,9 @@ export interface ProjectGroupProps {
   onToggleCollapsed: (projectId: string) => void;
   onTogglePinned: (projectId: string) => void;
   onToggleFold: (projectId: string, fold: ProjectFold) => void;
-  onNewAgent: (projectId: string) => void;
+  /** Absent for a satellite's projects, which can't be changed from here. */
+  onNewAgent?: (projectId: string) => void;
+  draggable?: boolean;
   onSelectAgent: (agent: Agent) => void;
   onSelectCompleted: (projectId: string, completedId: string) => void;
   onDismissCompleted: (projectId: string, completedId: string) => void;
@@ -85,7 +87,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     project, iconUrl, agents, detailed, completed, collapsed, pinned, sleepingOpen, finishedOpen,
     activeProjectId, activeAgentId, headerSelected, selectedCompletedId,
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onNewAgent,
-    onSelectAgent, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator,
+    onSelectAgent, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
   } = props;
   const label = project.displayName || project.name;
   const groups = groupProjectAgents(agents);
@@ -115,7 +117,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
       <div
         className={`group h-7 flex items-center rounded-md mx-1.5 ${headerSelected ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
         style={{ paddingLeft: HEADER_INDENT }}
-        draggable
+        draggable={draggable}
         onDragStart={(e) => dragHandlers.onDragStart(e, project.id)}
         onDragEnd={dragHandlers.onDragEnd}
       >
@@ -152,15 +154,17 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
           >
             {PinIcon}
           </button>
-          <button
-            type="button"
-            title="New agent"
-            aria-label={`New agent in ${label}`}
-            onClick={() => onNewAgent(project.id)}
-            className="w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1"
-          >
-            {PlusIcon}
-          </button>
+          {onNewAgent && (
+            <button
+              type="button"
+              title="New agent"
+              aria-label={`New agent in ${label}`}
+              onClick={() => onNewAgent(project.id)}
+              className="w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1"
+            >
+              {PlusIcon}
+            </button>
+          )}
         </span>
         <span className="flex-shrink-0 flex group-hover:hidden group-focus-within:hidden items-center gap-1 pr-1.5 text-xs text-ctp-subtext0">
           {pinned && <span className="text-ctp-overlay0">pinned</span>}
