@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CodexChatEventMapper, codexErrorCode, toCodexInput } from './codex-chat-events';
+import { CodexChatEventMapper, codexErrorCode, codexErrorName, toCodexInput } from './codex-chat-events';
 import { isChatEvent, CHAT_CONTRACT_VERSION, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ServerNotification } from './codex-protocol';
 import * as fx from './codex-protocol/__fixtures__/app-server-session';
@@ -50,14 +50,15 @@ describe('CodexChatEventMapper', () => {
     });
   });
 
-  it('carries turn ids and message ids', () => {
+  it('carries message ids and leaves turn ids to the runtime', () => {
     const events = mapAll(mapper, fx.completedTurnNotifications);
     const chunks = events.filter((e) => e.type === 'agent_message_chunk');
     expect(chunks.map((e) => e.data)).toEqual([
       { messageId: 'item-agent-1', text: 'Running ' },
       { messageId: 'item-agent-1', text: 'the tests.' },
     ]);
-    expect(chunks.every((e) => e.turnId === fx.TURN_ID)).toBe(true);
+    expect(events.every((e) => e.turnId === undefined)).toBe(true);
+    expect(events.find((e) => e.type === 'turn_started')?.data).toEqual({ trigger: 'prompt', nativeTurnId: fx.TURN_ID });
     expect(events.find((e) => e.type === 'agent_message')?.data).toEqual({ messageId: 'item-agent-1', text: 'Running the tests.' });
   });
 
@@ -106,7 +107,7 @@ describe('CodexChatEventMapper', () => {
   it('maps a retrying error with its stable code', () => {
     const events = mapAll(mapper, fx.completedTurnNotifications);
     expect(events.find((e) => e.type === 'error')?.data).toEqual({
-      code: 'responseStreamDisconnected',
+      code: 'unknown',
       message: 'stream disconnected',
       fatal: false,
       willRetry: true,
@@ -126,8 +127,7 @@ describe('CodexChatEventMapper', () => {
     const [error] = mapper.mapNotification(fx.failedTurnCompleted);
     expect(error).toEqual({
       type: 'error',
-      turnId: fx.SECOND_TURN_ID,
-      data: { code: 'usageLimitExceeded', message: 'usage limit reached', fatal: false },
+      data: { code: 'rate_limited', message: 'usage limit reached', fatal: false },
     });
   });
 
@@ -198,7 +198,6 @@ describe('CodexChatEventMapper', () => {
 
       expect(event).toMatchObject({
         type: 'permission_request',
-        turnId: fx.TURN_ID,
         data: {
           requestId: '0',
           title: 'Run npm install',
@@ -261,10 +260,62 @@ describe('CodexChatEventMapper', () => {
 
     it('returns null for server requests the contract cannot express', () => {
       expect(mapper.mapServerRequest({
-        method: 'item/tool/requestUserInput',
+        method: 'item/tool/call',
         id: 5,
-        params: { ...at, itemId: 'q', questions: [], isBlocking: true, autoResolutionMs: null },
+        params: { ...at, callId: 'c', namespace: null, tool: 't', arguments: {} },
       })).toBeNull();
+    });
+  });
+
+  describe('questions', () => {
+    const request = {
+      method: 'item/tool/requestUserInput' as const,
+      id: 5,
+      params: {
+        ...at,
+        itemId: 'item-q-1',
+        isBlocking: true,
+        autoResolutionMs: null,
+        questions: [
+          { id: 'q1', header: 'Scope', question: 'Which package?', isOther: false, isSecret: false, options: [{ label: 'app', description: 'The app' }, { label: 'lib', description: '' }] },
+          { id: 'q2', header: '', question: 'Anything else?', isOther: false, isSecret: false, options: null },
+        ],
+      },
+    };
+
+    it('maps requestUserInput to a question event', () => {
+      expect(mapper.mapServerRequest(request)).toEqual([{
+        type: 'question',
+        data: {
+          requestId: '5',
+          toolCallId: 'item-q-1',
+          questions: [
+            { id: 'q1', prompt: 'Which package?', header: 'Scope', options: [{ id: 'app', label: 'app', description: 'The app' }, { id: 'lib', label: 'lib' }], allowFreeText: false },
+            { id: 'q2', prompt: 'Anything else?', allowFreeText: true },
+          ],
+        },
+      }]);
+    });
+
+    it('resolves answers into the Codex reply', () => {
+      mapper.mapServerRequest(request);
+
+      const resolved = mapper.resolveQuestion('5', { q1: 'app', q2: ['no', 'thanks'] });
+
+      expect(resolved?.reply).toEqual({
+        id: 5,
+        method: 'item/tool/requestUserInput',
+        result: { answers: { q1: { answers: ['app'] }, q2: { answers: ['no', 'thanks'] } } },
+      });
+      expect(resolved?.event).toEqual({ type: 'question_resolved', data: { requestId: '5', answers: { q1: 'app', q2: ['no', 'thanks'] } } });
+      expect(mapper.resolveQuestion('5', {})).toBeUndefined();
+    });
+
+    it('a question Codex withdraws resolves as cancelled', () => {
+      mapper.mapServerRequest(request);
+      expect(mapper.mapNotification({ method: 'serverRequest/resolved', params: { threadId: fx.THREAD_ID, requestId: 5 } })).toEqual([
+        { type: 'question_resolved', data: { requestId: '5', answers: {}, cancelled: true } },
+      ]);
     });
   });
 
@@ -273,15 +324,42 @@ describe('CodexChatEventMapper', () => {
       { type: 'protocol_unknown', data: { driver: 'codex_app_server', kind: 'notification', name: 'thread/new' } },
     ]);
     expect(mapper.mapUnrecognized({ kind: 'request', id: 1, method: 'x/y', params: {} })[0].data).toMatchObject({ kind: 'request', name: 'x/y' });
-    expect(mapper.mapUnrecognized({ kind: 'other', message: {} })[0].data).toMatchObject({ kind: 'event' });
+    expect(mapper.mapUnrecognized({ kind: 'other', message: {} })[0].data).toMatchObject({ kind: 'field' });
   });
 });
 
 describe('codex chat helpers', () => {
-  it('codexErrorCode handles string, object and null infos', () => {
-    expect(codexErrorCode('unauthorized')).toBe('unauthorized');
-    expect(codexErrorCode({ httpConnectionFailed: { httpStatusCode: 502 } })).toBe('httpConnectionFailed');
-    expect(codexErrorCode(null)).toBe('codex_error');
+  it('codexErrorName reads string and object infos', () => {
+    expect(codexErrorName('unauthorized')).toBe('unauthorized');
+    expect(codexErrorName({ httpConnectionFailed: { httpStatusCode: 502 } })).toBe('httpConnectionFailed');
+    expect(codexErrorName(null)).toBeUndefined();
+  });
+
+  it.each([
+    ['contextWindowExceeded', 'context_overflow'],
+    ['usageLimitExceeded', 'rate_limited'],
+    ['rateLimitExceeded', 'rate_limited'],
+    ['unauthorized', 'auth_required'],
+    ['cyberPolicy', 'refusal'],
+    ['sandboxError', 'tool_failed'],
+    ['badRequest', 'protocol_error'],
+    ['serverOverloaded', 'unknown'],
+  ] as const)('codexErrorCode maps %s to %s', (info, code) => {
+    expect(codexErrorCode(info)).toBe(code);
+  });
+
+  it('a policy refusal ends the turn as refusal', () => {
+    const mapper = new CodexChatEventMapper();
+    const turn = { ...fx.failedTurnCompleted.params.turn, error: { ...fx.failedTurnCompleted.params.turn.error!, codexErrorInfo: 'cyberPolicy' as const } };
+    const events = mapper.mapNotification({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn } });
+    expect(events[1]).toMatchObject({ type: 'turn_ended', data: { stopReason: 'refusal' } });
+  });
+
+  it('maps a thread rename to session_info', () => {
+    const mapper = new CodexChatEventMapper();
+    expect(mapper.mapNotification({ method: 'thread/name/updated', params: { threadId: fx.THREAD_ID, threadName: 'Fix tests' } })).toEqual([
+      { type: 'session_info', data: { title: 'Fix tests' } },
+    ]);
   });
 
   it('toCodexInput converts contract content blocks', () => {

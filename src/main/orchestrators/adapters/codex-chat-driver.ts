@@ -5,7 +5,7 @@
 // the session lifecycle.
 
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type PermissionLevel } from '../../../shared/chat/capabilities';
-import type { ChatEventDraft, ContentBlock, MessageDelivery } from '../../../shared/chat/events';
+import type { ChatEventDraft, ChatQuestionAnswers, ContentBlock, MessageDelivery } from '../../../shared/chat/events';
 import type {
   ChatDriver,
   ChatDriverProbe,
@@ -31,12 +31,11 @@ import { resolveStructuredSpawn } from './structured-spawn';
 type LogFn = (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 
 /** What the Codex app-server driver supports live, on the pinned v2 stable surface. */
-export const CODEX_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze({
+const codexCapabilities: ChatCapabilities = {
   ...MINIMAL_CHAT_CAPABILITIES,
   steer: true,
   interrupt: true,
   resume: 'native',
-  fork: true,
   subagents: 'ids_only',
   usage: 'tokens',
   limits: true,
@@ -46,7 +45,10 @@ export const CODEX_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze({
   modelSwitch: 'per_turn',
   liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
   login: 'terminal',
-}) as ChatCapabilities;
+  // thread/start takes developerInstructions.
+  systemPrompt: true,
+};
+export const CODEX_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze(codexCapabilities);
 
 /** How long close() waits for the process to exit before giving up. */
 const CLOSE_TIMEOUT_MS = 5_000;
@@ -148,6 +150,8 @@ class CodexChatSession implements ChatDriverSession {
       onLog,
       onCodexNotification: (n) => this.onNotification(n),
       onCodexServerRequest: (request) => {
+        const threadId = threadOf(request.params);
+        const fromSubagent = this.threadId !== undefined && threadId !== undefined && threadId !== this.threadId;
         const events = this.mapper.mapServerRequest(request);
         if (events === null) {
           // The contract can't express this request yet. Decline it so the
@@ -156,7 +160,9 @@ class CodexChatSession implements ChatDriverSession {
           this.emit({ type: 'protocol_unknown', data: { driver: 'codex_app_server', kind: 'request', name: request.method } });
           return;
         }
-        events.forEach((e) => this.emit(e));
+        for (const event of events) {
+          this.emit(fromSubagent ? tagSubagent(event, threadId) ?? event : event);
+        }
       },
       onUnrecognizedMessage: (message) => this.mapper.mapUnrecognized(message).forEach((e) => this.emit(e)),
       onExit: (code, signal) => {
@@ -267,6 +273,7 @@ class CodexChatSession implements ChatDriverSession {
     await this.client.turnInterrupt(threadId);
   }
 
+  /** Codex approvals carry only a decision, so denial messages and edited inputs are dropped. */
   async respondPermission(requestId: string, optionId: string): Promise<void> {
     const resolved = this.mapper.resolvePermission(requestId, optionId);
     if (!resolved) throw new Error(`No open Codex permission request ${requestId} with option ${optionId}`);
@@ -280,8 +287,11 @@ class CodexChatSession implements ChatDriverSession {
     this.emit(resolved.event);
   }
 
-  async answerQuestion(requestId: string): Promise<void> {
-    throw new Error(`Codex chat does not support questions (request ${requestId})`);
+  async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> {
+    const resolved = this.mapper.resolveQuestion(requestId, answers);
+    if (!resolved) throw new Error(`No open Codex question ${requestId}`);
+    this.client.respondToServerRequest(resolved.reply.id, resolved.reply.method, resolved.reply.result);
+    this.emit(resolved.event);
   }
 
   async setLevel(level: PermissionLevel): Promise<void> {
@@ -309,12 +319,21 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   private onNotification(notification: ServerNotification): void {
-    // Subagent threads stream on the same connection; their traffic belongs
-    // to the subagent, not this chat. Account-level notifications have no
-    // thread and always apply.
-    const params = notification.params as { threadId?: unknown } | undefined;
-    if (this.threadId && typeof params?.threadId === 'string' && params.threadId !== this.threadId) return;
-    this.mapper.mapNotification(notification).forEach((e) => this.emit(e));
+    const threadId = threadOf(notification.params);
+    const events = this.mapper.mapNotification(notification);
+    // Account-level notifications have no thread and always apply.
+    if (!this.threadId || threadId === undefined || threadId === this.threadId) {
+      events.forEach((e) => this.emit(e));
+      return;
+    }
+    // Subagent threads stream on the same connection. Their messages and tool
+    // calls are shown under the subagent (its thread id is the subagentId the
+    // mapper gives collabAgentToolCall receivers); their turn lifecycle,
+    // usage and state belong to the subagent, not this chat.
+    for (const event of events) {
+      const tagged = tagSubagent(event, threadId);
+      if (tagged) this.emit(tagged);
+    }
   }
 
   private emit(event: ChatEventDraft): void {
@@ -331,5 +350,32 @@ class CodexChatSession implements ChatDriverSession {
   private requireThread(): string {
     if (!this.threadId) throw new Error('Codex chat session has no thread yet');
     return this.threadId;
+  }
+}
+
+function threadOf(params: unknown): string | undefined {
+  const threadId = (params as { threadId?: unknown } | undefined)?.threadId;
+  return typeof threadId === 'string' ? threadId : undefined;
+}
+
+/** The event attributed to a subagent, or null when it has no place in the parent chat. */
+function tagSubagent(event: ChatEventDraft, subagentId: string): ChatEventDraft | null {
+  switch (event.type) {
+    case 'agent_message_chunk':
+    case 'agent_message':
+    case 'agent_thought_chunk':
+    case 'agent_thought':
+    case 'tool_call':
+    case 'permission_request':
+    case 'question':
+      return { ...event, data: { ...event.data, subagentId } } as ChatEventDraft;
+    case 'tool_call_update':
+    case 'permission_resolved':
+    case 'question_resolved':
+    case 'protocol_unknown':
+      // Keyed by ids the parent already knows about.
+      return event;
+    default:
+      return null;
   }
 }

@@ -6,7 +6,9 @@
 // plan text, open permission requests and their native decisions).
 
 import type {
+  ChatErrorCode,
   ChatEventDraft,
+  ChatQuestionAnswers,
   ChatSessionState,
   ContentBlock,
   PermissionOption,
@@ -51,6 +53,12 @@ export type CodexPermissionReply =
       result: CodexServerRequestResult<'item/fileChange/requestApproval'>;
     };
 
+export interface CodexQuestionReply {
+  id: RequestId;
+  method: 'item/tool/requestUserInput';
+  result: CodexServerRequestResult<'item/tool/requestUserInput'>;
+}
+
 interface OpenPermission {
   id: RequestId;
   method: Extract<CodexServerRequestMethod, 'item/commandExecution/requestApproval' | 'item/fileChange/requestApproval'>;
@@ -60,6 +68,7 @@ interface OpenPermission {
 export class CodexChatEventMapper {
   private readonly planText = new Map<string, string>();
   private readonly openPermissions = new Map<string, OpenPermission>();
+  private readonly openQuestions = new Map<string, RequestId>();
 
   /** Translate one notification. Known methods with no chat meaning map to nothing. */
   mapNotification(notification: ServerNotification): ChatEventDraft[] {
@@ -69,16 +78,15 @@ export class CodexChatEventMapper {
         return state ? [{ type: 'session_state', data: { state } }] : [];
       }
       case 'turn/started':
-        return [{ type: 'turn_started', turnId: notification.params.turn.id, data: { trigger: 'prompt' } }];
+        return [{ type: 'turn_started', data: { trigger: 'prompt', nativeTurnId: notification.params.turn.id } }];
       case 'turn/completed': {
         const { turn } = notification.params;
         const events: ChatEventDraft[] = [];
         if (turn.status === 'failed' && turn.error) {
-          events.push({ type: 'error', turnId: turn.id, data: { ...errorData(turn.error), fatal: false } });
+          events.push({ type: 'error', data: { ...errorData(turn.error), fatal: false } });
         }
         events.push({
           type: 'turn_ended',
-          turnId: turn.id,
           data: {
             stopReason: stopReason(turn.status, turn.error),
             ...(turn.durationMs != null && { durationMs: turn.durationMs }),
@@ -87,45 +95,42 @@ export class CodexChatEventMapper {
         return events;
       }
       case 'item/started':
-        return this.mapItemStarted(notification.params.item, notification.params.turnId);
+        return this.mapItemStarted(notification.params.item);
       case 'item/completed':
-        return this.mapItemCompleted(notification.params.item, notification.params.turnId);
+        return this.mapItemCompleted(notification.params.item);
       case 'item/agentMessage/delta': {
-        const { itemId, delta, turnId } = notification.params;
-        return [{ type: 'agent_message_chunk', turnId, data: { messageId: itemId, text: delta } }];
+        const { itemId, delta } = notification.params;
+        return [{ type: 'agent_message_chunk', data: { messageId: itemId, text: delta } }];
       }
       case 'item/reasoning/summaryTextDelta':
       case 'item/reasoning/textDelta': {
-        const { itemId, delta, turnId } = notification.params;
-        return [{ type: 'agent_thought_chunk', turnId, data: { messageId: itemId, text: delta } }];
+        const { itemId, delta } = notification.params;
+        return [{ type: 'agent_thought_chunk', data: { messageId: itemId, text: delta } }];
       }
       case 'item/plan/delta': {
-        const { itemId, delta, turnId } = notification.params;
+        const { itemId, delta } = notification.params;
         const markdown = (this.planText.get(itemId) ?? '') + delta;
         this.planText.set(itemId, markdown);
-        return [{ type: 'plan_document', turnId, data: { planId: itemId, markdown, status: 'streaming' } }];
+        return [{ type: 'plan_document', data: { planId: itemId, markdown, status: 'streaming' } }];
       }
       case 'item/commandExecution/outputDelta': {
-        const { itemId, delta, turnId } = notification.params;
+        const { itemId, delta } = notification.params;
         return [{
           type: 'tool_call_update',
-          turnId,
           data: { toolCallId: itemId, content: [{ type: 'terminal', output: delta }], contentMode: 'append' },
         }];
       }
       case 'item/fileChange/patchUpdated': {
-        const { itemId, changes, turnId } = notification.params;
+        const { itemId, changes } = notification.params;
         return [{
           type: 'tool_call_update',
-          turnId,
           data: { toolCallId: itemId, content: diffContent(changes), contentMode: 'replace' },
         }];
       }
       case 'turn/plan/updated': {
-        const { plan, turnId } = notification.params;
+        const { plan } = notification.params;
         return [{
           type: 'plan',
-          turnId,
           data: {
             entries: plan.map((step) => ({
               content: step.step,
@@ -135,11 +140,10 @@ export class CodexChatEventMapper {
         }];
       }
       case 'thread/tokenUsage/updated': {
-        const { tokenUsage, turnId } = notification.params;
+        const { tokenUsage } = notification.params;
         const { total, last, modelContextWindow } = tokenUsage;
         return [{
           type: 'usage',
-          turnId,
           data: {
             scope: 'session',
             tokens: {
@@ -159,11 +163,11 @@ export class CodexChatEventMapper {
         return limits.length > 0 ? [{ type: 'usage', data: { scope: 'session', limits } }] : [];
       }
       case 'error': {
-        const { error, willRetry, turnId } = notification.params;
-        return [{ type: 'error', turnId, data: { ...errorData(error), fatal: false, willRetry } }];
+        const { error, willRetry } = notification.params;
+        return [{ type: 'error', data: { ...errorData(error), fatal: false, willRetry } }];
       }
       case 'model/rerouted':
-        return [{ type: 'model_changed', turnId: notification.params.turnId, data: { modelId: notification.params.toModel } }];
+        return [{ type: 'model_changed', data: { modelId: notification.params.toModel } }];
       case 'warning':
         return [{ type: 'notice', data: { level: 'warn', code: 'codex_warning', message: notification.params.message } }];
       case 'deprecationNotice':
@@ -174,8 +178,17 @@ export class CodexChatEventMapper {
       }
       case 'serverRequest/resolved': {
         const requestId = String(notification.params.requestId);
-        if (!this.openPermissions.delete(requestId)) return [];
-        return [{ type: 'permission_resolved', data: { requestId, decision: 'cancelled', by: 'agent' } }];
+        if (this.openPermissions.delete(requestId)) {
+          return [{ type: 'permission_resolved', data: { requestId, decision: 'cancelled', by: 'agent' } }];
+        }
+        if (this.openQuestions.delete(requestId)) {
+          return [{ type: 'question_resolved', data: { requestId, answers: {}, cancelled: true } }];
+        }
+        return [];
+      }
+      case 'thread/name/updated': {
+        const { threadName } = notification.params;
+        return threadName ? [{ type: 'session_info', data: { title: threadName } }] : [];
       }
       default:
         return [];
@@ -183,9 +196,9 @@ export class CodexChatEventMapper {
   }
 
   /**
-   * Translate a server request into a permission request. Returns null for
-   * requests the chat contract can't express yet; the driver must answer
-   * those itself (the client's error reply keeps the turn from blocking).
+   * Translate a server request into a permission request or a question.
+   * Returns null for requests the chat contract can't express yet; the driver
+   * must answer those itself so the turn isn't left blocked.
    */
   mapServerRequest(request: ServerRequest): ChatEventDraft[] | null {
     switch (request.method) {
@@ -203,7 +216,6 @@ export class CodexChatEventMapper {
         this.openPermissions.set(requestId, { id: request.id, method: request.method, decisions });
         return [{
           type: 'permission_request',
-          turnId: params.turnId,
           data: {
             requestId,
             title: params.command ? `Run ${params.command}` : 'Run a command',
@@ -226,7 +238,6 @@ export class CodexChatEventMapper {
         this.openPermissions.set(requestId, { id: request.id, method: request.method, decisions });
         return [{
           type: 'permission_request',
-          turnId: params.turnId,
           data: {
             requestId,
             title: 'Apply file changes',
@@ -238,9 +249,52 @@ export class CodexChatEventMapper {
           },
         }];
       }
+      case 'item/tool/requestUserInput': {
+        const { params } = request;
+        const requestId = String(request.id);
+        this.openQuestions.set(requestId, request.id);
+        return [{
+          type: 'question',
+          data: {
+            requestId,
+            toolCallId: params.itemId,
+            questions: params.questions.map((q) => ({
+              id: q.id,
+              prompt: q.question,
+              ...(q.header && { header: q.header }),
+              // Codex answers by label, so the label doubles as the option id.
+              ...(q.options && {
+                options: q.options.map((o) => ({ id: o.label, label: o.label, ...(o.description && { description: o.description }) })),
+              }),
+              allowFreeText: q.isOther || !q.options || q.options.length === 0,
+            })),
+          },
+        }];
+      }
       default:
         return null;
     }
+  }
+
+  /**
+   * Answer an open question. Returns the reply to send to Codex and the
+   * question_resolved event, or undefined when the request isn't open.
+   */
+  resolveQuestion(
+    requestId: string,
+    answers: ChatQuestionAnswers,
+  ): { reply: CodexQuestionReply; event: ChatEventDraft } | undefined {
+    const id = this.openQuestions.get(requestId);
+    if (id === undefined) return undefined;
+    this.openQuestions.delete(requestId);
+    const result: CodexQuestionReply['result'] = { answers: {} };
+    for (const [questionId, answer] of Object.entries(answers)) {
+      result.answers[questionId] = { answers: Array.isArray(answer) ? answer : [answer] };
+    }
+    return {
+      reply: { id, method: 'item/tool/requestUserInput', result },
+      event: { type: 'question_resolved', data: { requestId, answers } },
+    };
   }
 
   /**
@@ -271,21 +325,20 @@ export class CodexChatEventMapper {
   /** A message the vendored schema doesn't know, as the protocol-drift event. */
   mapUnrecognized(message: CodexUnrecognizedMessage): ChatEventDraft[] {
     if (message.kind === 'other') {
-      return [{ type: 'protocol_unknown', data: { driver: 'codex_app_server', kind: 'event', name: '(no method)' } }];
+      return [{ type: 'protocol_unknown', data: { driver: 'codex_app_server', kind: 'field', name: '(message without id or method)' } }];
     }
     return [{ type: 'protocol_unknown', data: { driver: 'codex_app_server', kind: message.kind, name: message.method } }];
   }
 
-  private mapItemStarted(item: ThreadItem, turnId: string): ChatEventDraft[] {
+  private mapItemStarted(item: ThreadItem): ChatEventDraft[] {
     switch (item.type) {
       case 'commandExecution':
-        return [{ type: 'tool_call', turnId, data: commandToolCall(item, 'in_progress') }];
+        return [{ type: 'tool_call', data: commandToolCall(item, 'in_progress') }];
       case 'fileChange':
-        return [{ type: 'tool_call', turnId, data: fileChangeToolCall(item, 'in_progress') }];
+        return [{ type: 'tool_call', data: fileChangeToolCall(item, 'in_progress') }];
       case 'mcpToolCall':
         return [{
           type: 'tool_call',
-          turnId,
           data: {
             toolCallId: item.id,
             kind: 'other',
@@ -298,7 +351,6 @@ export class CodexChatEventMapper {
       case 'dynamicToolCall':
         return [{
           type: 'tool_call',
-          turnId,
           data: {
             toolCallId: item.id,
             kind: 'other',
@@ -311,19 +363,16 @@ export class CodexChatEventMapper {
       case 'webSearch':
         return [{
           type: 'tool_call',
-          turnId,
           data: { toolCallId: item.id, kind: 'fetch', title: item.query ? `Search: ${item.query}` : 'Web search', status: 'in_progress', toolName: 'webSearch' },
         }];
       case 'imageView':
         return [{
           type: 'tool_call',
-          turnId,
           data: { toolCallId: item.id, kind: 'read', title: `View ${item.path}`, status: 'completed', toolName: 'imageView', locations: [{ path: item.path }] },
         }];
       case 'collabAgentToolCall':
         return item.receiverThreadIds.map((threadId) => ({
           type: 'subagent' as const,
-          turnId,
           data: { subagentId: threadId, name: item.tool, status: 'running' as const, parentToolCallId: item.id, nativeSessionId: threadId },
         }));
       default:
@@ -331,26 +380,25 @@ export class CodexChatEventMapper {
     }
   }
 
-  private mapItemCompleted(item: ThreadItem, turnId: string): ChatEventDraft[] {
+  private mapItemCompleted(item: ThreadItem): ChatEventDraft[] {
     switch (item.type) {
       // User messages are recorded by the chat runtime when it sends them, so
       // Codex's echo of the user's input is not re-emitted here.
       case 'userMessage':
         return [];
       case 'agentMessage':
-        return [{ type: 'agent_message', turnId, data: { messageId: item.id, text: item.text } }];
+        return [{ type: 'agent_message', data: { messageId: item.id, text: item.text } }];
       case 'reasoning': {
         const text = (item.summary.length > 0 ? item.summary : item.content).join('\n\n');
-        return text ? [{ type: 'agent_thought', turnId, data: { messageId: item.id, text } }] : [];
+        return text ? [{ type: 'agent_thought', data: { messageId: item.id, text } }] : [];
       }
       case 'plan':
         this.planText.delete(item.id);
-        return [{ type: 'plan_document', turnId, data: { planId: item.id, markdown: item.text, status: 'ready' } }];
+        return [{ type: 'plan_document', data: { planId: item.id, markdown: item.text, status: 'ready' } }];
       case 'commandExecution': {
         const call = commandToolCall(item, commandStatus(item.status));
         return [{
           type: 'tool_call_update',
-          turnId,
           data: {
             toolCallId: item.id,
             status: call.status,
@@ -363,13 +411,11 @@ export class CodexChatEventMapper {
       case 'fileChange':
         return [{
           type: 'tool_call_update',
-          turnId,
           data: { toolCallId: item.id, status: commandStatus(item.status), content: diffContent(item.changes), contentMode: 'replace' },
         }];
       case 'mcpToolCall':
         return [{
           type: 'tool_call_update',
-          turnId,
           data: {
             toolCallId: item.id,
             status: item.status === 'failed' ? 'failed' : 'completed',
@@ -381,7 +427,6 @@ export class CodexChatEventMapper {
       case 'dynamicToolCall':
         return [{
           type: 'tool_call_update',
-          turnId,
           data: {
             toolCallId: item.id,
             status: item.status === 'failed' || item.success === false ? 'failed' : 'completed',
@@ -390,17 +435,16 @@ export class CodexChatEventMapper {
           },
         }];
       case 'webSearch':
-        return [{ type: 'tool_call_update', turnId, data: { toolCallId: item.id, status: 'completed' } }];
+        return [{ type: 'tool_call_update', data: { toolCallId: item.id, status: 'completed' } }];
       case 'collabAgentToolCall': {
         const status = item.status === 'failed' ? 'failed' : item.status === 'interrupted' ? 'cancelled' : item.status === 'completed' ? 'completed' : 'running';
         return item.receiverThreadIds.map((threadId) => ({
           type: 'subagent' as const,
-          turnId,
           data: { subagentId: threadId, name: item.tool, status, parentToolCallId: item.id, nativeSessionId: threadId },
         }));
       }
       case 'contextCompaction':
-        return [{ type: 'notice', turnId, data: { level: 'info', code: 'context_compacted', message: 'Context compacted' } }];
+        return [{ type: 'notice', data: { level: 'info', code: 'context_compacted', message: 'Context compacted' } }];
       default:
         return [];
     }
@@ -430,18 +474,46 @@ function stopReason(status: TurnStatus, error: TurnError | null): TurnStopReason
       return 'end_turn';
     case 'interrupted':
       return 'cancelled';
-    default:
-      return error?.codexErrorInfo === 'contextWindowExceeded' ? 'max_tokens' : 'error';
+    default: {
+      const native = codexErrorName(error?.codexErrorInfo ?? null);
+      if (native === 'contextWindowExceeded') return 'max_tokens';
+      if (native === 'cyberPolicy' || native === 'misalignmentPolicyViolation') return 'refusal';
+      return 'error';
+    }
   }
 }
 
-/** `codexErrorInfo` is a string or a single-key object; its name is the stable code. */
-export function codexErrorCode(info: CodexErrorInfo | null): string {
-  if (info == null) return 'codex_error';
-  return typeof info === 'string' ? info : Object.keys(info)[0] ?? 'codex_error';
+/** `codexErrorInfo` is a string or a single-key object; this is its name. */
+export function codexErrorName(info: CodexErrorInfo | null): string | undefined {
+  if (info == null) return undefined;
+  return typeof info === 'string' ? info : Object.keys(info)[0];
 }
 
-function errorData(error: TurnError): { code: string; message: string } {
+/** Codex error kinds on the contract's closed ChatErrorCode set. */
+export function codexErrorCode(info: CodexErrorInfo | null): ChatErrorCode {
+  switch (codexErrorName(info)) {
+    case 'contextWindowExceeded':
+      return 'context_overflow';
+    case 'usageLimitExceeded':
+    case 'rateLimitExceeded':
+    case 'sessionBudgetExceeded':
+      return 'rate_limited';
+    case 'unauthorized':
+      return 'auth_required';
+    case 'cyberPolicy':
+    case 'misalignmentPolicyViolation':
+      return 'refusal';
+    case 'badRequest':
+    case 'activeTurnNotSteerable':
+      return 'protocol_error';
+    case 'sandboxError':
+      return 'tool_failed';
+    default:
+      return 'unknown';
+  }
+}
+
+function errorData(error: TurnError): { code: ChatErrorCode; message: string } {
   return {
     code: codexErrorCode(error.codexErrorInfo),
     message: error.additionalDetails ? `${error.message} (${error.additionalDetails})` : error.message,

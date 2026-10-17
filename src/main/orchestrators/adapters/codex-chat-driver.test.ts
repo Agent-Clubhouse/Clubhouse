@@ -217,17 +217,30 @@ describe('CodexChatDriver', () => {
     });
   });
 
-  it('streams mapped turn events for its own thread only', async () => {
+  it('attributes subagent-thread messages to the subagent and drops its lifecycle', async () => {
     const { take } = await startSession();
     await take(1);
 
-    server.send({ method: 'item/agentMessage/delta', params: { threadId: 'subagent-thread', turnId: 't', itemId: 'x', delta: 'ignored' } });
+    const sub = { threadId: 'subagent-thread', turnId: 'sub-turn' };
+    server.send({ method: 'turn/started', params: { threadId: sub.threadId, turn: { ...fx.turnStartResult.turn, id: 'sub-turn' } } });
+    server.send({ method: 'item/agentMessage/delta', params: { ...sub, itemId: 'x', delta: 'from sub' } });
     server.send(fx.completedTurnNotifications[6]); // agent delta on our thread
     server.send({ method: 'account/rateLimits/updated', params: { rateLimits: fx.rateLimitsResult.rateLimits } });
 
-    const [chunk, usage] = await take(2);
-    expect(chunk).toMatchObject({ type: 'agent_message_chunk', data: { text: 'Running ' } });
+    const [subChunk, chunk, usage] = await take(3);
+    expect(subChunk).toEqual({ type: 'agent_message_chunk', data: { messageId: 'x', text: 'from sub', subagentId: 'subagent-thread' } });
+    expect(chunk).toEqual({ type: 'agent_message_chunk', data: { messageId: 'item-agent-1', text: 'Running ' } });
     expect(usage).toMatchObject({ type: 'usage', data: { scope: 'session' } });
+  });
+
+  it('tags a subagent approval with its subagent id', async () => {
+    const { take } = await startSession();
+    await take(1);
+
+    server.send({ ...fx.commandApprovalRequest, id: 9, params: { ...fx.commandApprovalRequest.params, threadId: 'subagent-thread' } });
+
+    const [request] = await take(1);
+    expect(request).toMatchObject({ type: 'permission_request', data: { requestId: '9', subagentId: 'subagent-thread' } });
   });
 
   it('interrupt is a no-op when idle and targets the active turn otherwise', async () => {
@@ -325,14 +338,14 @@ describe('CodexChatDriver', () => {
     await take(1);
 
     server.send({
-      method: 'item/tool/requestUserInput',
+      method: 'item/tool/call',
       id: 7,
-      params: { threadId: fx.THREAD_ID, turnId: fx.TURN_ID, itemId: 'q', questions: [], isBlocking: true, autoResolutionMs: null },
+      params: { threadId: fx.THREAD_ID, turnId: fx.TURN_ID, callId: 'c', namespace: null, tool: 't', arguments: {} },
     });
 
     expect(server.received[server.received.length - 1]).toMatchObject({ id: 7, error: { code: -32601 } });
     expect(await take(1)).toEqual([
-      { type: 'protocol_unknown', data: { driver: 'codex_app_server', kind: 'request', name: 'item/tool/requestUserInput' } },
+      { type: 'protocol_unknown', data: { driver: 'codex_app_server', kind: 'request', name: 'item/tool/call' } },
     ]);
   });
 
@@ -347,9 +360,25 @@ describe('CodexChatDriver', () => {
     ]);
   });
 
-  it('answerQuestion is unsupported', async () => {
-    const { session } = await startSession();
-    await expect(session.answerQuestion('q1', 'yes')).rejects.toThrow('does not support questions');
+  it('round-trips a question', async () => {
+    const { session, take } = await startSession();
+    await take(1);
+
+    server.send({
+      method: 'item/tool/requestUserInput',
+      id: 8,
+      params: {
+        threadId: fx.THREAD_ID, turnId: fx.TURN_ID, itemId: 'q', isBlocking: true, autoResolutionMs: null,
+        questions: [{ id: 'q1', header: '', question: 'Which?', isOther: true, isSecret: false, options: null }],
+      },
+    });
+    expect(await take(1)).toMatchObject([{ type: 'question', data: { requestId: '8' } }]);
+
+    await session.answerQuestion('8', { q1: 'the app' });
+
+    expect(server.received[server.received.length - 1]).toEqual({ id: 8, result: { answers: { q1: { answers: ['the app'] } } } });
+    expect(await take(1)).toEqual([{ type: 'question_resolved', data: { requestId: '8', answers: { q1: 'the app' } } }]);
+    await expect(session.answerQuestion('8', {})).rejects.toThrow('No open Codex question 8');
   });
 
   // ── Ending ───────────────────────────────────────────────────────────────
@@ -425,7 +454,6 @@ describe('codex driver helpers', () => {
       steer: true,
       interrupt: true,
       resume: 'native',
-      fork: true,
       subagents: 'ids_only',
       usage: 'tokens',
       limits: true,
@@ -433,6 +461,7 @@ describe('codex driver helpers', () => {
       modelSwitch: 'per_turn',
       liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
       login: 'terminal',
+      systemPrompt: true,
     });
   });
 });
