@@ -698,6 +698,66 @@
   color: rgb(var(--ctp-subtext1));
 }
 
+/* Help articles in the new shell (#2017): 13.5px body, 20px title, plain tables. */
+.help-content-chrome h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.help-content-chrome h2 {
+  font-size: 14px;
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+
+.help-content-chrome h3 {
+  font-size: 13.5px;
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+.help-content-chrome p,
+.help-content-chrome ul,
+.help-content-chrome ol {
+  font-size: 13.5px;
+  line-height: 1.65;
+  margin-bottom: 12px;
+}
+
+.help-content-chrome li {
+  line-height: 1.65;
+}
+
+.help-content-chrome code {
+  font-size: 12px;
+}
+
+.help-content-chrome table {
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.help-content-chrome th,
+.help-content-chrome td {
+  border: 0;
+  border-top: 1px solid rgb(var(--ctp-surface0));
+  padding: 6px 12px 6px 0;
+  vertical-align: top;
+}
+
+.help-content-chrome th {
+  background: none;
+  border-top: 0;
+  color: rgb(var(--ctp-overlay1));
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.help-content-chrome strong {
+  font-weight: 500;
+}
+
 /* Chat message markdown (features/agents/chat) */
 .chat-markdown > :first-child { margin-top: 0; }
 .chat-markdown > :last-child { margin-bottom: 0; }

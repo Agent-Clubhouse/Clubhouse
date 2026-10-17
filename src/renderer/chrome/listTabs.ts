@@ -16,13 +16,14 @@ export function isListTab(explorerTab: string, layout: 'sidebar-content' | 'full
   return (layout ?? 'sidebar-content') === 'sidebar-content';
 }
 
-/** What the sidebar body shows: the agent tree, a project tab's list, or the settings navigator. */
-export type SidebarMode = 'tree' | 'list' | 'settings';
+/** What the sidebar body shows: the agent tree, a project tab's list, the settings navigator, or Help topics. */
+export type SidebarMode = 'tree' | 'list' | 'settings' | 'help';
 
 export function useSidebarMode(): SidebarMode {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const pluginId = explorerTab.startsWith('plugin:') && !explorerTab.startsWith('plugin:app:') ? explorerTab.slice('plugin:'.length) : null;
   const layout = usePluginStore((s) => (pluginId ? s.plugins[pluginId]?.manifest.contributes?.tab?.layout : undefined));
   if (explorerTab === 'settings') return 'settings';
+  if (explorerTab === 'help') return 'help';
   return isListTab(explorerTab, layout) ? 'list' : 'tree';
 }

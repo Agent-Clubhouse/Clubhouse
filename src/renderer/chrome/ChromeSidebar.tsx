@@ -15,6 +15,7 @@ import { ProjectTree } from './sidebar/ProjectTree';
 import { NeedsYou, NeedsYouStrip } from './sidebar/NeedsYou';
 import { ListBody } from './sidebar/ListBody';
 import { SettingsNav } from './sidebar/SettingsNav';
+import { HelpNav } from './sidebar/HelpNav';
 import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
 import { useSidebarMode } from './listTabs';
 import { SCOPE_FOLLOWING_TABS } from './scope';
@@ -419,7 +420,11 @@ export function ChromeSidebar() {
   ] : [];
 
   // The breadcrumb, or Esc inside the sidebar, returns from a list or Settings to Agents (spec §4.6).
-  const backToAgents = () => (mode === 'settings' ? useUIStore.getState().toggleSettings() : setExplorerTab('agents', activeProjectId ?? undefined));
+  const backToAgents = () => {
+    if (mode === 'settings') useUIStore.getState().toggleSettings();
+    else if (mode === 'help') useUIStore.getState().toggleHelp();
+    else setExplorerTab('agents', activeProjectId ?? undefined);
+  };
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
     if (mode === 'tree' || e.key !== 'Escape' || e.defaultPrevented) return;
     const target = e.target as HTMLElement;
@@ -467,9 +472,9 @@ export function ChromeSidebar() {
 
       {mode !== 'tree' && (
         <>
-          <SidebarBreadcrumb current={mode === 'settings' ? 'Settings' : listLabel ?? 'List'} onBack={backToAgents} />
+          <SidebarBreadcrumb current={mode === 'settings' ? 'Settings' : mode === 'help' ? 'Help' : listLabel ?? 'List'} onBack={backToAgents} />
           <NeedsYouStrip items={needs} onSelect={selectNeedsYou} onReview={reviewEnabled ? () => openAppItem('review') : undefined} />
-          {mode === 'settings' ? <SettingsNav /> : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
+          {mode === 'settings' ? <SettingsNav /> : mode === 'help' ? <HelpNav /> : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
         </>
       )}
 

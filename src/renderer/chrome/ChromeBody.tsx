@@ -10,13 +10,20 @@ import { HelpView } from '../features/help/HelpView';
 import { SatelliteDashboard } from '../features/annex/SatelliteDashboard';
 import { ChromeSidebar } from './ChromeSidebar';
 import { useChromeStore, syncProjectScopeWithActiveAgent, syncProjectActivityWithAgents } from './chromeStore';
-import { useSidebarMode } from './listTabs';
+import { useSidebarMode, type SidebarMode } from './listTabs';
 import { useChromeScope } from './scope';
 import { hostOf } from './hosts';
 import { ProjectStartPage } from './pages/ProjectStartPage';
 import { FirstRun } from './pages/FirstRun';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
-import { reportChromePage, reportChromeSurface, reportChromeView } from './telemetry';
+import { reportChromePage, reportChromeSurface, reportChromeView, type ChromeSurface } from './telemetry';
+
+const SURFACE_FOR_MODE: Record<SidebarMode, ChromeSurface> = {
+  tree: 'sidebar_agents',
+  list: 'sidebar_list',
+  settings: 'sidebar_settings',
+  help: 'sidebar_help',
+};
 
 function AppPluginContent({ pluginId }: { pluginId: string }) {
   const activeHostId = useUIStore((s) => s.activeHostId);
@@ -105,7 +112,7 @@ export function ChromeBody() {
       return;
     }
     reportChromeView(explorerTab);
-    reportChromeSurface(mode === 'settings' ? 'sidebar_settings' : mode === 'list' ? 'sidebar_list' : 'sidebar_agents');
+    reportChromeSurface(SURFACE_FOR_MODE[mode]);
   }, [page, explorerTab, mode]);
 
   const content = useMemo(() => {
