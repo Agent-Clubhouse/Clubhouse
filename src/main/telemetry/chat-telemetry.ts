@@ -25,7 +25,7 @@
 import type { ChatDriverId, ChatEvent, ChatEventDataMap, TokenUsage } from '../../shared/chat';
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { onChatEvent } from '../services/agent-runtime/chat-event-bus';
-import { agentOutput, agentRunStarted, hasActiveRun, toolBucket } from './agent-telemetry';
+import { agentOutput, agentRunStarted, discardRun, hasActiveRun, toolBucket } from './agent-telemetry';
 import { isTelemetryActive, replaySpan, tel } from './facade';
 import type { ErrorType } from './types';
 
@@ -48,7 +48,8 @@ interface Turn {
   startMs: number;
   lastEventMs: number;
   firstTokenMs?: number;
-  toolCalls: number;
+  /** Tool call ids seen this turn; dropped with the turn. */
+  toolIds: Set<string>;
   tokens?: TokenUsage;
   costUsd?: number;
   costIsEstimate?: boolean;
@@ -60,12 +61,11 @@ interface Turn {
 
 interface Tool {
   toolName: string | undefined;
-  counted: boolean;
 }
 
 const sessions = new Map<string, Session>();
 const turns = new Map<string, Turn>();
-/** Tool calls by `${sessionId}:${toolCallId}`. */
+/** Tool calls not yet completed, by `${sessionId}:${toolCallId}`. Removed once counted. */
 const tools = new Map<string, Tool>();
 /** Pending permissions by `${sessionId}:${requestId}`. */
 const permissions = new Map<string, { startMs: number; toolName: string | undefined }>();
@@ -144,7 +144,7 @@ function endTurn(session: Session, turn: Turn, data: ChatEventDataMap['turn_ende
   const driver = ATTR.chatDriver(session.driver);
   const orchestrator = ATTR.orchestrator(session.orchestrator);
 
-  const attrs: TelAttr[] = [driver, orchestrator, ATTR.turnEndReason(reason), ATTR.turnToolCalls(turn.toolCalls)];
+  const attrs: TelAttr[] = [driver, orchestrator, ATTR.turnEndReason(reason), ATTR.turnToolCalls(turn.toolIds.size)];
   if (turn.firstTokenMs !== undefined) attrs.push(ATTR.turnTimeToFirstTokenMs(turn.firstTokenMs - turn.startMs));
   if (tokens?.input !== undefined) attrs.push(ATTR.genAiInputTokens(tokens.input));
   if (tokens?.output !== undefined) attrs.push(ATTR.genAiOutputTokens(tokens.output));
@@ -198,13 +198,24 @@ export function handleChatEvent(event: ChatEvent): void {
       if (turn) turn.waiting = event.data.state === 'waiting_permission' || event.data.state === 'waiting_input';
       return;
     }
-    case 'session_ended':
+    case 'session_ended': {
+      const reason = event.data.reason;
+      if (reason === 'fallback') {
+        // A failed chat start that fell back to the terminal: not a chat run or turn.
+        discardRun(session.agentId);
+      } else if (turn) {
+        // The CLI went away mid-turn (some drivers send no turn_ended then):
+        // a stop cancels the turn, anything else fails it.
+        if (reason !== 'stopped') turn.errorCode ??= 'process_exited';
+        endTurn(session, turn, { stopReason: reason === 'stopped' ? 'cancelled' : 'error' }, event.ts);
+      }
       dropSession(sid);
       if (turns.size === 0) stopStallTimer();
       return;
+    }
 
     case 'turn_started':
-      turns.set(sid, { turnId: event.turnId, startMs: event.ts, lastEventMs: event.ts, toolCalls: 0, waiting: false, stalled: false });
+      turns.set(sid, { turnId: event.turnId, startMs: event.ts, lastEventMs: event.ts, toolIds: new Set(), waiting: false, stalled: false });
       ensureStallTimer();
       return;
     case 'turn_ended': {
@@ -227,10 +238,10 @@ export function handleChatEvent(event: ChatEvent): void {
 
     case 'tool_call': {
       const key = `${sid}:${event.data.toolCallId}`;
-      if (!tools.has(key)) {
-        tools.set(key, { toolName: event.data.toolName, counted: false });
-        if (turn) turn.toolCalls++;
-      }
+      // A tool_call can repeat (an upsert); count each call once per turn.
+      const seen = turn ? turn.toolIds.has(event.data.toolCallId) : false;
+      turn?.toolIds.add(event.data.toolCallId);
+      if (!seen && !tools.has(key)) tools.set(key, { toolName: event.data.toolName });
       if (event.data.status === 'completed' || event.data.status === 'failed') countTool(session, key, event.data.status);
       return;
     }
@@ -248,6 +259,8 @@ export function handleChatEvent(event: ChatEvent): void {
       const pending = permissions.get(key);
       if (!pending) return;
       permissions.delete(key);
+      // The agent withdrew its own request (e.g. the turn moved on): nobody decided anything.
+      if (event.data.by === 'agent') return;
       recordChatPermission(session, pending, event.data, event.ts);
       return;
     }
@@ -275,8 +288,9 @@ export function handleChatEvent(event: ChatEvent): void {
 
 function countTool(session: Session, key: string, status: 'completed' | 'failed'): void {
   const tool = tools.get(key);
-  if (!tool || tool.counted) return;
-  tool.counted = true;
+  if (!tool) return;
+  // Counted once: drop it, so a later update for the same call finds nothing to count.
+  tools.delete(key);
   tel.count('clubhouse.agent.tool_calls', 1, [
     ATTR.orchestrator(session.orchestrator),
     ATTR.toolBucket(toolBucket(tool.toolName)),

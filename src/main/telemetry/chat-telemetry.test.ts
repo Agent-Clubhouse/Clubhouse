@@ -5,7 +5,7 @@ vi.mock('../services/agent-exit-broadcast', () => ({ onAgentExit: vi.fn() }));
 import type { ChatEvent } from '../../shared/chat';
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { publishChatEvent, removeAllChatEventListeners } from '../services/agent-runtime/chat-event-bus';
-import { ChatFixture, chatFixture, FIXTURE_AGENT_ID, FIXTURE_PROVIDERS, PROFILES } from '../../renderer/features/agents/chat/fixtures';
+import { ChatFixture, chatFixture, FIXTURE_AGENT_ID, FIXTURE_PROVIDERS, FIXTURE_SCENARIOS, PROFILES, type FixtureProvider } from '../../renderer/features/agents/chat/fixtures';
 import { _activeRunsForTests, _resetAgentTelemetryForTests, installAgentTelemetry } from './agent-telemetry';
 import {
   TURN_STALL_MS,
@@ -33,6 +33,35 @@ const spans = (name: string): ReplaySpan[] =>
 const counts = (name: string): Array<{ value: number; attrs: TelAttr[] }> =>
   vi.mocked(rt.count).mock.calls.filter((c) => c[0] === name).map((c) => ({ value: c[1] as number, attrs: (c[2] ?? []) as TelAttr[] }));
 const attr = (attrs: TelAttr[], key: string) => attrs.find((a) => a.key === key)?.value;
+
+/** Append every other event kind a session can carry, with text in each free-form field, then end it. */
+function withEverything(events: ChatEvent[], secret: string): ChatEvent[] {
+  const last = events[events.length - 1];
+  let seq = last.seq;
+  const ev = (type: ChatEvent['type'], data: unknown, turnId?: string) =>
+    ({ ...last, seq: ++seq, ts: last.ts + seq, type, data, ...(turnId ? { turnId } : { turnId: undefined }) }) as ChatEvent;
+  return [
+    ...events,
+    ev('session_info', { title: secret, nativeSessionId: secret, cliVersion: '9.9.9', model: secret }),
+    ev('notice', { level: 'warn', code: 'untested_cli_version', message: secret }),
+    ev('commands_available', { commands: [{ name: secret, description: secret }] }),
+    ev('permission_request', { requestId: 'p-x', title: secret, description: secret, toolName: secret, rawInput: { command: secret }, options: [] }),
+    ev('permission_resolved', { requestId: 'p-x', decision: 'allow', by: 'user', optionId: secret }),
+    ev('permission_request', { requestId: 'p-y', title: secret, toolName: 'Bash', options: [] }),
+    ev('permission_resolved', { requestId: 'p-y', decision: 'cancelled', by: 'timeout' }),
+    ev('question', { requestId: 'q-x', questions: [{ id: 'a', prompt: secret, allowFreeText: true }] }),
+    ev('question_resolved', { requestId: 'q-x', answers: { a: secret } }),
+    ev('error', { code: 'tool_failed', message: secret, fatal: false }),
+    ev('session_ended', { reason: 'process_exit', exitCode: 1, message: secret }),
+  ];
+}
+
+function session(p: FixtureProvider): ChatFixture {
+  const f = new ChatFixture();
+  const prof = PROFILES[p];
+  f.start(prof.driver, prof.provider, prof.capabilities);
+  return f;
+}
 
 beforeEach(() => {
   rt = fakeRuntime();
@@ -193,15 +222,19 @@ describe('runs, privacy and cost when off', () => {
     expect(attr(counts('clubhouse.agent.time_to_first_output')[0].attrs, 'clubhouse.agent.runtime')).toBe('chat');
   });
 
-  it('exports no text, ids or paths from any fixture', () => {
+  it('exports no text, ids or paths from any fixture or lifecycle event', () => {
+    const SECRET = 'SECRET-text /Users/me/project';
     for (const p of FIXTURE_PROVIDERS) {
-      for (const s of ['conversation', 'approval', 'plan', 'steer', 'subagents', 'turn_error', 'protocol_drift'] as const) {
-        publish(chatFixture(p, s, `${FIXTURE_AGENT_ID}-${p}-${s}`));
+      for (const s of FIXTURE_SCENARIOS) {
+        const agentId = `${FIXTURE_AGENT_ID}-${p}-${s}`;
+        publish(withEverything(chatFixture(p, s, agentId), SECRET));
       }
     }
     const all: TelAttr[] = [
       ...vi.mocked(rt.replaySpan).mock.calls.flatMap((c) => c[0].attrs),
       ...vi.mocked(rt.count).mock.calls.flatMap((c) => (c[2] ?? []) as TelAttr[]),
+      ...vi.mocked(rt.event).mock.calls.flatMap((c) => (c[1] ?? []) as TelAttr[]),
+      ...vi.mocked(rt.replayTree).mock.calls.flatMap((c) => [c[0].root, ...c[0].children].flatMap((n) => n.attrs)),
     ];
     expect(all.length).toBeGreaterThan(0);
     for (const a of all) {
@@ -209,8 +242,13 @@ describe('runs, privacy and cost when off', () => {
       if (typeof a.value === 'string') {
         expect(a.value).not.toMatch(/[/\s]/);
         expect(a.value).not.toContain(FIXTURE_AGENT_ID);
+        expect(a.value).not.toContain('SECRET');
       }
     }
+    // Exceptions would carry stack text; the subscriber never reports any.
+    expect(rt.exception).not.toHaveBeenCalled();
+    // Every span and metric emitted is a registered name.
+    for (const c of vi.mocked(rt.replaySpan).mock.calls) expect(c[0].name).toMatch(/^clubhouse\./);
   });
 
   it('does nothing while telemetry is off', () => {
@@ -226,5 +264,79 @@ describe('runs, privacy and cost when off', () => {
     publish(chatFixture('copilot', 'conversation'));
     const [turn] = spans('clubhouse.agent.turn');
     expect(() => ATTR.chatDriver(attr(turn.attrs, 'clubhouse.chat.driver') as never)).not.toThrow();
+  });
+});
+
+describe('review fixes', () => {
+  it('fails an open turn when the CLI exits mid-turn without turn_ended', () => {
+    const f = session('codex');
+    f.prompt('t1', 'go');
+    f.emit('session_ended', { reason: 'process_exit', exitCode: 1 }, { advanceMs: 3000 });
+    publish(f.events);
+    const [turn] = spans('clubhouse.agent.turn');
+    expect(turn).toMatchObject({ outcome: 'error', errorType: 'process_exited' });
+    expect(attr(turn.attrs, 'clubhouse.turn.end_reason')).toBe('error');
+    expect(_openTurnsForTests()).toBe(0);
+  });
+
+  it('keeps a chat error code when the CLI then exits mid-turn', () => {
+    const f = session('codex');
+    f.prompt('t1', 'go');
+    f.emit('error', { code: 'driver_stream_failed', message: 'x', fatal: true }, { turnId: 't1' });
+    f.emit('session_ended', { reason: 'error' });
+    publish(f.events);
+    expect(spans('clubhouse.agent.turn')[0]).toMatchObject({ outcome: 'error', errorType: 'driver_stream_failed' });
+  });
+
+  it('cancels an open turn when the session is stopped', () => {
+    const f = session('claude');
+    f.prompt('t1', 'go');
+    f.emit('session_ended', { reason: 'stopped', exitCode: 0 });
+    publish(f.events);
+    const [turn] = spans('clubhouse.agent.turn');
+    expect(turn.outcome).toBe('cancelled');
+    expect(attr(turn.attrs, 'clubhouse.turn.end_reason')).toBe('cancelled');
+  });
+
+  it('does not count a chat start that fell back to the terminal', () => {
+    const f = session('claude');
+    f.emit('session_ended', { reason: 'fallback', message: 'Chat start failed; using the terminal' });
+    publish(f.events);
+    expect(_activeRunsForTests()).toBe(0);
+    expect(spans('clubhouse.agent.turn')).toHaveLength(0);
+    expect(counts('clubhouse.agent.runs')).toHaveLength(0);
+  });
+
+  it('skips permissions the agent withdrew itself', () => {
+    const f = session('claude');
+    f.prompt('t1', 'go');
+    f.emit('permission_request', { requestId: 'r1', title: 't', toolName: 'Bash', options: [] }, { turnId: 't1' });
+    f.emit('permission_resolved', { requestId: 'r1', decision: 'cancelled', by: 'agent' });
+    publish(f.events);
+    expect(spans('clubhouse.agent.permission')).toHaveLength(0);
+    expect(counts('clubhouse.agent.permission.wait')).toHaveLength(0);
+  });
+
+  it('records a timed-out chat permission as a timeout', () => {
+    const f = session('claude');
+    f.emit('permission_request', { requestId: 'r1', title: 't', toolName: 'Bash', options: [] });
+    f.emit('permission_resolved', { requestId: 'r1', decision: 'cancelled', by: 'timeout' });
+    publish(f.events);
+    const [perm] = spans('clubhouse.agent.permission');
+    expect(perm.outcome).toBe('timeout');
+    expect(attr(perm.attrs, 'clubhouse.permission.result')).toBe('timeout');
+  });
+
+  it('counts a tool call once even if it repeats or updates after completing', () => {
+    const f = session('claude');
+    f.prompt('t1', 'go');
+    f.emit('tool_call', { toolCallId: 'c1', kind: 'execute', title: 'ls', status: 'in_progress', toolName: 'Bash' }, { turnId: 't1' });
+    f.emit('tool_call_update', { toolCallId: 'c1', status: 'completed' }, { turnId: 't1' });
+    f.emit('tool_call_update', { toolCallId: 'c1', status: 'completed' }, { turnId: 't1' });
+    f.emit('tool_call', { toolCallId: 'c1', kind: 'execute', title: 'ls', status: 'completed', toolName: 'Bash' }, { turnId: 't1' });
+    f.end('t1', { stopReason: 'end_turn' });
+    publish(f.events);
+    expect(counts('clubhouse.agent.tool_calls')).toHaveLength(1);
+    expect(attr(spans('clubhouse.agent.turn')[0].attrs, 'clubhouse.turn.tool_calls')).toBe(1);
   });
 });

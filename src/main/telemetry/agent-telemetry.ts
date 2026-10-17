@@ -76,6 +76,11 @@ export function hasActiveRun(agentId: string): boolean {
   return runs.has(agentId);
 }
 
+/** Drop a run without recording it (a chat start that fell back to the terminal never was a chat run). */
+export function discardRun(agentId: string): void {
+  runs.delete(agentId);
+}
+
 /** PTY only: the shell accepted the agent command. */
 export function agentShellReady(agentId: string, atMs = Date.now()): void {
   const run = runs.get(agentId);
