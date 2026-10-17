@@ -1,24 +1,23 @@
-/** Types for an agent's branch against main (#2032), shared by git-branch.ts (main) and Agent details. */
+/** Types for an agent's branch against main (#2032), shared by git-service.ts (main) and Agent details. */
 
 import type { ChangedFile } from './chat-checkpoints';
+
+/** Branch views don't detect renames: a moved file shows as deleted and added. */
+export type BranchFileStatus = Exclude<ChangedFile['status'], 'renamed'>;
 
 export interface BranchChanges {
   /** False when the folder isn't in a git work tree. */
   available: boolean;
-  /** The checked-out branch ("HEAD" when detached). */
+  /** The checked-out branch, or the short sha of a detached HEAD. */
   branch?: string;
-  /** Short name of the base branch ("main"). */
+  /** Short name of the main line ("main"). */
   base?: string;
-  /** Commit the branch left the base at. */
+  /** Commit the branch left the main line at. */
   mergeBase?: string;
-  /** No main or master branch, or no history in common with it. */
+  /** No main line (origin/HEAD, main or master) with history in common. */
   noBase?: boolean;
   /** Changes since the merge base: committed, uncommitted and untracked. */
   files: ChangedFile[];
-  /** Commits on the branch since the merge base. */
-  ahead: number;
-  /** Entries in `git status`: uncommitted and untracked files. */
-  uncommitted: number;
 }
 
 /** One file's change on the branch. An untracked file comes back as its whole text. */
@@ -26,4 +25,6 @@ export interface BranchFilePatch {
   patch?: string;
   newText?: string;
   binary?: boolean;
+  /** Over 1 MB: not read or diffed. */
+  tooLarge?: boolean;
 }

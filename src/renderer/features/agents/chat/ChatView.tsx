@@ -112,7 +112,11 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const rootRef = useRef<HTMLDivElement>(null);
-  const narrow = useNarrow(rootRef);
+  const columnRef = useRef<HTMLDivElement>(null);
+  // The composer fits the transcript column, which the details column narrows.
+  const narrow = useNarrow(columnRef);
+  // Below 640px of pane there's no room beside the transcript, so details hides.
+  const paneNarrow = useNarrow(rootRef);
   // A popout near its 300px minimum height keeps the conversation, not the composer chrome.
   const short = useShortWindow() && context === 'popout';
   const composerLayout: ComposerLayout = short ? 'line' : narrow ? 'narrow' : 'wide';
@@ -126,7 +130,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const hasAgentMap = agentMap.mode !== 'none' && agentMap.nodes.length > 0;
   // Details is offered in the main pane; popouts and canvas cards are too small for its column.
   const detailsAvailable = context === 'main';
-  const detailsOpen = useAgentDetailsStore((s) => s.open) && detailsAvailable;
+  const detailsOpen = useAgentDetailsStore((s) => s.open) && detailsAvailable && !paneNarrow;
   const revealDetails = useAgentDetailsStore((s) => s.reveal);
   const openSubagent = useCallback((subagentId: string) => {
     revealDetails({ agentId: agent.id, card: 'subagents', subagentId });
@@ -221,7 +225,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   }
 
   return (
-    <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-view-context={context} data-state={state.state ?? 'none'}>
+    <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-agent-pane={agent.id} data-view-context={context} data-state={state.state ?? 'none'}>
       <ChatHeader
         agent={agent}
         state={state}
@@ -232,7 +236,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         detailsToggle={detailsAvailable ? <DetailsToggle /> : undefined}
       />
       <div className="flex-1 min-h-0 flex">
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div ref={columnRef} className="flex-1 min-w-0 flex flex-col">
           {/* Canvas cards stay quiet: the focused view announces replies, not every card on the board. */}
           <ChatStream
             state={state}

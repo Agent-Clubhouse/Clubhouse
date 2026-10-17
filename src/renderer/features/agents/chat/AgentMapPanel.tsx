@@ -22,16 +22,16 @@ import { scrollWithin } from './scroll';
 import { ChevronDown, ChevronRight } from './icons';
 import { formatDuration, formatElapsed, formatTokens, type AgentMap, type AgentMapNode, type AgentMapStatus } from './view-model';
 
-/** Subagent states in the shared status words; cancelled and unknown have their own. */
+/** Subagent states in the shared status words; a stopped subagent is Done, and one the driver never settled says so. */
 const STATUS_LABELS: Record<AgentMapStatus, string> = {
   running: DOT_LABEL.working,
   completed: DOT_LABEL.idle,
   failed: DOT_LABEL.error,
-  cancelled: 'Stopped',
+  cancelled: DOT_LABEL.idle,
   unknown: 'Status not reported',
 };
 const STATUS_DOT: Record<AgentMapStatus, AgentDot | null> = {
-  running: 'working', completed: 'idle', failed: 'error', cancelled: 'sleeping', unknown: null,
+  running: 'working', completed: 'idle', failed: 'error', cancelled: 'idle', unknown: null,
 };
 
 function NodeDot({ status }: { status: AgentMapStatus }) {

@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { BranchChanges, BranchFilePatch } from '../shared/git-branch';
-import type { GitLogEntry, GitNumstatEntry } from '../shared/types';
+import type { GitNumstatEntry } from '../shared/types';
 
 export const git = {
   git: {
@@ -47,7 +47,5 @@ export const git = {
     ipcRenderer.invoke(IPC.GIT.BRANCH_CHANGES, dirPath, base),
   branchFilePatch: (dirPath: string, filePath: string, base?: string): Promise<BranchFilePatch> =>
     ipcRenderer.invoke(IPC.GIT.BRANCH_FILE_PATCH, dirPath, filePath, base),
-  branchLog: (dirPath: string, base?: string): Promise<GitLogEntry[]> =>
-    ipcRenderer.invoke(IPC.GIT.BRANCH_LOG, dirPath, base),
   },
 };

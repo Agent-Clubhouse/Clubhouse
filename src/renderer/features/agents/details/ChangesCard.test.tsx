@@ -150,6 +150,13 @@ describe('ChangesCard', () => {
     expect(window.clubhouse.git.branchFilePatch).toHaveBeenCalledWith('/w', 'src/app.ts', undefined);
   });
 
+  it('says a file is too large instead of reading it', async () => {
+    window.clubhouse.git.branchFilePatch = vi.fn(async () => ({ tooLarge: true }));
+    render(<ChangesCard open onToggle={() => {}} cwd="/w" branch={branch} agentId="agent-1" scope="branch" onScope={() => {}} />);
+    fireEvent.click(screen.getByTitle('src/notes.md'));
+    expect(await screen.findByText('Too large to show here (over 1 MB).')).toBeInTheDocument();
+  });
+
   it('offers Session and Last turn for a chat agent', () => {
     const onScope = vi.fn();
     render(<ChangesCard open onToggle={() => {}} cwd="/w" branch={branch} chat={{ sessionId: 's1', refreshKey: 'k' }} agentId="agent-1" scope="branch" onScope={onScope} />);

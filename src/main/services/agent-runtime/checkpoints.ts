@@ -295,7 +295,7 @@ export async function readSkipped(root: string, commit: string): Promise<{ large
 }
 
 /** Parse `git diff --numstat -z -M` output, which lists renames as "a\tb\t\0old\0new\0". */
-export function parseNumstat(raw: string, nameStatus: Map<string, ChangeStatus>): ChangedFile[] {
+function parseNumstat(raw: string, nameStatus: Map<string, ChangeStatus>): ChangedFile[] {
   const out: ChangedFile[] = [];
   const parts = raw.split('\0');
   let i = 0;
@@ -325,7 +325,7 @@ export function parseNumstat(raw: string, nameStatus: Map<string, ChangeStatus>)
   return out;
 }
 
-export function parseNameStatus(raw: string): Map<string, ChangeStatus> {
+function parseNameStatus(raw: string): Map<string, ChangeStatus> {
   const map = new Map<string, ChangeStatus>();
   const parts = raw.split('\0');
   for (let i = 0; i < parts.length;) {

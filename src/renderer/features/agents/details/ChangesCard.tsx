@@ -47,9 +47,12 @@ function DiffBar({ added, removed }: { added: number; removed: number }) {
 type Diff = Parameters<typeof DiffCard>[0]['diff'];
 
 /** Files as rows; clicking one opens its diff under it. */
-function FileList({ files, loadDiff, max }: { files: ChangedFile[]; loadDiff: (path: string) => Promise<Diff | null>; max?: number }) {
+/** A diff, or why there's none: too large to read, or nothing to show. */
+type DiffResult = Diff | 'tooLarge' | null;
+
+function FileList({ files, loadDiff, max }: { files: ChangedFile[]; loadDiff: (path: string) => Promise<DiffResult>; max?: number }) {
   const [open, setOpen] = useState<string | null>(null);
-  const [diff, setDiff] = useState<Diff | null | 'loading' | 'failed'>(null);
+  const [diff, setDiff] = useState<DiffResult | 'loading' | 'failed'>(null);
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
@@ -93,6 +96,7 @@ function FileList({ files, loadDiff, max }: { files: ChangedFile[]; loadDiff: (p
               <div className="mt-0.5 mb-2 ml-7 mr-2.5" data-testid="changes-file-diff">
                 {diff === 'loading' && <p className="text-xs text-ctp-overlay1 py-1">Loading…</p>}
                 {diff === 'failed' && <p className="text-xs text-ctp-overlay1 py-1">No diff to show for this file.</p>}
+                {diff === 'tooLarge' && <p className="text-xs text-ctp-overlay1 py-1">Too large to show here (over 1 MB).</p>}
                 {diff && typeof diff === 'object' && <DiffCard diff={diff} />}
               </div>
             )}
@@ -112,8 +116,9 @@ function FileList({ files, loadDiff, max }: { files: ChangedFile[]; loadDiff: (p
 
 /** The branch against its merge base with main. */
 function BranchBody({ cwd, changes }: { cwd: string; changes: BranchChanges | null }) {
-  const loadDiff = useCallback(async (p: string): Promise<Diff | null> => {
+  const loadDiff = useCallback(async (p: string): Promise<DiffResult> => {
     const r = await window.clubhouse.git.branchFilePatch(cwd, p, undefined);
+    if (r.tooLarge) return 'tooLarge';
     if (r.binary) return null;
     if (r.patch) return { type: 'diff', path: p, unifiedDiff: r.patch };
     if (r.newText !== undefined) return { type: 'diff', path: p, newText: r.newText };
@@ -175,7 +180,7 @@ export function CheckpointChanges({ agentId, sessionId, refreshKey, scope }: {
     return () => { cancelled = true; };
   }, [agentId, target, refreshKey]);
 
-  const loadDiff = useCallback(async (p: string): Promise<Diff | null> => {
+  const loadDiff = useCallback(async (p: string): Promise<DiffResult> => {
     if (!target) return null;
     const r = await window.clubhouse.chat.getChanges(agentId, target, p);
     return r.patch ? { type: 'diff', path: p, unifiedDiff: r.patch } : null;

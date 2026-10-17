@@ -31,24 +31,72 @@ import { useAgentDetailsStore } from './detailsStore';
 
 export type CardId = 'changes' | 'subagents' | 'canvases' | 'context' | 'mcp' | 'session';
 
+/** A worktree inside the project, as a path relative to it; null when it lives elsewhere. */
+export function relativeFolder(worktree: string | undefined, projectPath: string | undefined): string | null {
+  if (!worktree || !projectPath) return null;
+  const root = projectPath.replace(/[\\/]+$/, '');
+  if (worktree.length <= root.length + 1 || !worktree.startsWith(root)) return null;
+  const sep = worktree[root.length];
+  return sep === '/' || sep === '\\' ? worktree.slice(root.length + 1) : null;
+}
+
 /** The agent's folder on this machine, for git; none for agents on another machine. */
 export function agentCwd(agent: Agent, projectPath: string | undefined): string | undefined {
   if (isRemoteProjectId(agent.projectId)) return undefined;
   return agent.worktreePath || projectPath;
 }
 
-/** The branch against main, refreshed when `refreshKey` changes (turn end, hook status). */
+/** Minimum gap between branch reads while an agent is busy (each tool event bumps the refresh key). */
+export const BRANCH_REFRESH_MS = 2_000;
+
+/**
+ * The branch against main, re-read when `refreshKey` changes (turn end, hook
+ * status). Reads are throttled to one per BRANCH_REFRESH_MS and never
+ * overlap: a change during a read runs once more after it.
+ */
 export function useBranchChanges(cwd: string | undefined, refreshKey: unknown): BranchChanges | null {
   const [changes, setChanges] = useState<BranchChanges | null>(null);
+  const lastRun = useRef(0);
+  const inFlight = useRef(false);
+  const pending = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cwdRef = useRef(cwd);
+  cwdRef.current = cwd;
+  /** The current effect's scheduler, so a read that ends after a newer change still runs once more. */
+  const scheduleRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     if (!cwd) { setChanges(null); return; }
-    let cancelled = false;
-    window.clubhouse.git.branchChanges(cwd, undefined).then(
-      (r) => { if (!cancelled) setChanges(r); },
-      // telemetry-exempt: the card shows "not a git repository" and the rest of details keeps working.
-      () => { if (!cancelled) setChanges({ available: false, files: [], ahead: 0, uncommitted: 0 }); },
-    );
-    return () => { cancelled = true; };
+    let alive = true;
+    const run = () => {
+      timer.current = null;
+      if (inFlight.current) { pending.current = true; return; }
+      inFlight.current = true;
+      pending.current = false;
+      lastRun.current = Date.now();
+      const dir = cwd;
+      Promise.resolve().then(() => window.clubhouse.git.branchChanges(dir, undefined)).then(
+        (r) => { if (alive && cwdRef.current === dir) setChanges(r); },
+        // telemetry-exempt: the card shows "not a git repository" and the rest of details keeps working.
+        () => { if (alive && cwdRef.current === dir) setChanges({ available: false, files: [] }); },
+      ).finally(() => {
+        inFlight.current = false;
+        if (pending.current) scheduleRef.current?.();
+      });
+    };
+    const schedule = () => {
+      if (timer.current) return;
+      const wait = Math.max(0, BRANCH_REFRESH_MS - (Date.now() - lastRun.current));
+      timer.current = setTimeout(run, wait);
+    };
+    scheduleRef.current = schedule;
+    schedule();
+    return () => {
+      alive = false;
+      if (scheduleRef.current === schedule) scheduleRef.current = null;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+    };
   }, [cwd, refreshKey]);
   return changes;
 }
@@ -204,8 +252,9 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         if (e.key !== 'Escape' || e.defaultPrevented) return;
         e.preventDefault();
         setOpen(false);
-        // Focus goes back to the toolbar button that shows details.
-        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="agent-details-toggle"]')?.focus());
+        // Focus goes back to this pane's toolbar button.
+        const pane = e.currentTarget.closest('[data-agent-pane]');
+        requestAnimationFrame(() => pane?.querySelector<HTMLElement>('[data-testid="agent-details-toggle"]')?.focus());
       }}
     >
       <div className="flex-shrink-0 h-[26px] flex items-center gap-1.5 px-1 text-xs text-ctp-overlay1">
@@ -351,7 +400,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           </CardRow>
         )}
         {runningFor && <CardRow label="Running">{runningFor}</CardRow>}
-        {cwd && <CardRow label="Folder"><span className="font-mono text-[11.5px] break-all">{agent.worktreePath && projectPath && agent.worktreePath.startsWith(projectPath) ? agent.worktreePath.slice(projectPath.length + 1) : cwd}</span></CardRow>}
+        {cwd && <CardRow label="Folder"><span className="font-mono text-[11.5px] break-all">{relativeFolder(agent.worktreePath, projectPath) ?? cwd}</span></CardRow>}
         {(branch?.branch || agent.branch) && <CardRow label="Branch"><span className="font-mono text-[11.5px] break-all">{branch?.branch ?? agent.branch}</span></CardRow>}
       </DetailsCard>
     </aside>

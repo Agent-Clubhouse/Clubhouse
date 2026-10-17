@@ -10,7 +10,7 @@
  * during a turn, confirm "Interrupt and switch?" first).
  */
 
-import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { AgentRuntimeMode, ChatAgentRuntimeInfo } from '../../../../shared/chat';
 import { useChatStore } from '../../../stores/chatStore';
@@ -23,6 +23,7 @@ import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
 import { AgentDetails } from '../details/AgentDetails';
 import { DetailsToggle } from '../details/DetailsToggle';
 import { useAgentDetailsStore } from '../details/detailsStore';
+import { useNarrow } from '../pane/useNarrow';
 import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
@@ -213,9 +214,12 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
 
 /** A terminal in the main pane: the pane toolbar above it and Agent details beside it (#2032). */
 function MainTerminal({ agent, terminal, runtime }: { agent: Agent; terminal: ReactNode; runtime?: { value: 'terminal'; onChange: () => void; disabled?: boolean } }) {
-  const detailsOpen = useAgentDetailsStore((s) => s.open);
+  const paneRef = useRef<HTMLDivElement>(null);
+  // Below 640px of pane there's no room beside the terminal, so details hides.
+  const paneNarrow = useNarrow(paneRef);
+  const detailsOpen = useAgentDetailsStore((s) => s.open) && !paneNarrow;
   return (
-    <div className="flex flex-col h-full">
+    <div ref={paneRef} className="flex flex-col h-full" data-agent-pane={agent.id}>
       <div data-testid={runtime ? 'terminal-runtime-bar' : 'terminal-pane-bar'}>
         <TerminalPaneToolbar
           agent={agent}

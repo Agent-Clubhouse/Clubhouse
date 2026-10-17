@@ -18,6 +18,8 @@ function readOpen(): boolean {
 }
 
 function writeOpen(open: boolean): void {
+  // Popouts have no details column; their ⌥⌘D mustn't change the main window's.
+  if (typeof window !== 'undefined' && window.clubhouse?.window?.isPopout?.()) return;
   try {
     localStorage.setItem(KEY, open ? '1' : '0');
   } catch {
