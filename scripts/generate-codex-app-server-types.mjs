@@ -113,9 +113,11 @@ try {
       if (drift.length > 50) console.error(`  …and ${drift.length - 50} more`);
       if (versionDrift) console.error('  changed: generated-meta.ts');
       console.error('Run: node scripts/generate-codex-app-server-types.mjs');
-      process.exit(1);
+      // exitCode rather than exit() so the finally block still removes the temp dir.
+      process.exitCode = 1;
+    } else {
+      console.log('Vendored codex app-server bindings match.');
     }
-    console.log('Vendored codex app-server bindings match.');
   } else {
     fs.rmSync(targetDir, { recursive: true, force: true });
     fs.cpSync(outDir, targetDir, { recursive: true });

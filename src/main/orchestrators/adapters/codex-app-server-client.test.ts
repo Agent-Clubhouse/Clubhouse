@@ -379,6 +379,51 @@ describe('CodexAppServerClient', () => {
       expect(client.getActiveTurnId(fx.THREAD_ID)).toBeUndefined();
     });
 
+    it('turnStart records the active turn from its reply, before turn/started', async () => {
+      const client = await startClient();
+
+      const started = client.turnStart({ threadId: fx.THREAD_ID, input: [textInput('hi')] });
+      emitMessage(mockProc, { id: 2, result: fx.turnStartResult });
+      await started;
+      expect(client.getActiveTurnId(fx.THREAD_ID)).toBe(fx.TURN_ID);
+
+      const steer = client.turnSteer(fx.THREAD_ID, [textInput('more')]);
+      expect(lastSent(mockProc)).toMatchObject({ method: 'turn/steer', params: { expectedTurnId: fx.TURN_ID } });
+      emitMessage(mockProc, { id: 3, result: fx.turnSteerResult });
+      await steer;
+    });
+
+    it('a turnStart reply arriving after turn/completed does not revive the turn', async () => {
+      const client = await startClient();
+
+      const started = client.turnStart({ threadId: fx.THREAD_ID, input: [textInput('hi')] });
+      emitMessage(mockProc, fx.interruptedTurnCompleted); // completes TURN_ID first
+      emitMessage(mockProc, { id: 2, result: fx.turnStartResult });
+      await started;
+
+      expect(client.getActiveTurnId(fx.THREAD_ID)).toBeUndefined();
+    });
+
+    it('a turnStart reply for a finished turn does not mark it active', async () => {
+      const client = await startClient();
+
+      const started = client.turnStart({ threadId: fx.THREAD_ID, input: [textInput('hi')] });
+      emitMessage(mockProc, { id: 2, result: { turn: { ...fx.turnStartResult.turn, status: 'completed' } } });
+      await started;
+
+      expect(client.getActiveTurnId(fx.THREAD_ID)).toBeUndefined();
+    });
+
+    it('clears tracked turns after flushing buffered output on exit', async () => {
+      const client = await startClient();
+
+      // A final line with no newline is only dispatched by the exit flush.
+      emitData(mockProc, JSON.stringify(fx.completedTurnNotifications[1]));
+      mockProc.emit('exit', 0, null);
+
+      expect(client.getActiveTurnId(fx.THREAD_ID)).toBeUndefined();
+    });
+
     it('a late turn/completed for an older turn keeps the newer active turn', async () => {
       const client = await startClient();
 
@@ -639,6 +684,52 @@ describe('CodexAppServerClient', () => {
         error: { code: CODEX_RPC_INTERNAL_ERROR, message: "Clubhouse failed to handle 'item/commandExecution/requestApproval'" },
       });
       expect(onLog).toHaveBeenCalledWith('error', 'Codex onCodexServerRequest handler threw', { error: 'ui gone' });
+    });
+
+    it('answers with an internal error when an async handler rejects', async () => {
+      const onLog = vi.fn();
+      const client = await startClient({ onLog, onCodexServerRequest: async () => { throw new Error('async gone'); } });
+
+      emitMessage(mockProc, fx.commandApprovalRequest);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(lastSent(mockProc)).toEqual({
+        id: 0,
+        error: { code: CODEX_RPC_INTERNAL_ERROR, message: "Clubhouse failed to handle 'item/commandExecution/requestApproval'" },
+      });
+      expect(onLog).toHaveBeenCalledWith('error', 'Codex onCodexServerRequest handler rejected', { error: 'async gone' });
+      expect(client.getOpenServerRequests().size).toBe(0);
+    });
+
+    it('an async handler that answers then rejects is not answered twice', async () => {
+      const client: CodexAppServerClient = await startClient({
+        onCodexServerRequest: async (req) => {
+          client.respondToCommandApproval(req.id, 'accept');
+          throw new Error('after answering');
+        },
+      });
+
+      emitMessage(mockProc, fx.commandApprovalRequest);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(sentMessages(mockProc)).toEqual([{ id: 0, result: { decision: 'accept' } }]);
+    });
+
+    it('an async handler that resolves later leaves the request open until answered', async () => {
+      let answer: () => void = () => {};
+      const client: CodexAppServerClient = await startClient({
+        onCodexServerRequest: (req) => new Promise<void>((resolve) => {
+          answer = () => { client.respondToCommandApproval(req.id, 'decline'); resolve(); };
+        }),
+      });
+
+      emitMessage(mockProc, fx.commandApprovalRequest);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(client.getOpenServerRequests().size).toBe(1);
+
+      answer();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sentMessages(mockProc)).toEqual([{ id: 0, result: { decision: 'decline' } }]);
     });
 
     it('does not double-answer when the handler answered before throwing', async () => {

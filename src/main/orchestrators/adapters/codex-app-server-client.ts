@@ -41,9 +41,11 @@ export interface CodexAppServerClientOpts
   /**
    * A server request whose method the vendored schema knows. Codex blocks the
    * turn until it is answered with respondToServerRequest (or one of the
-   * approval helpers). With no handler, the client answers with an error.
+   * approval helpers). With no handler, the client answers with an error, and
+   * a handler that throws or rejects while the request is still open gets an
+   * internal-error reply, so a broken handler can't hang the turn.
    */
-  onCodexServerRequest?: (request: ServerRequest) => void;
+  onCodexServerRequest?: (request: ServerRequest) => void | Promise<void>;
   /**
    * A message the vendored schema has no type for — usually a method from a
    * newer Codex. Unknown server requests have already been answered with
@@ -76,6 +78,8 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
 
   private initializeResult: InitializeResponse | null = null;
   private readonly activeTurns = new Map<string, string>();
+  /** Last completed turn per thread, so a late turn/start reply can't revive it. */
+  private readonly completedTurns = new Map<string, string>();
   private readonly openServerRequests = new Map<RequestId, CodexServerRequestMethod>();
 
   /** The server's `initialize` result, once start() has resolved. */
@@ -145,8 +149,18 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
     return this.request('thread/read', params);
   }
 
-  turnStart(params: TurnStartParams) {
-    return this.request('turn/start', params);
+  /**
+   * Start a turn. The reply already carries the new turn, so it becomes the
+   * thread's active turn here rather than waiting for turn/started; until then
+   * a steer would start a second turn and an interrupt would find nothing.
+   */
+  async turnStart(params: TurnStartParams) {
+    const result = await this.request('turn/start', params);
+    const turn = result?.turn;
+    if (turn?.status === 'inProgress' && this.completedTurns.get(params.threadId) !== turn.id) {
+      this.activeTurns.set(params.threadId, turn.id);
+    }
+    return result;
   }
 
   /**
@@ -302,6 +316,9 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
         }
         break;
       case 'turn/completed':
+        if (notification.params?.turn?.id) {
+          this.completedTurns.set(notification.params.threadId, notification.params.turn.id);
+        }
         if (this.activeTurns.get(notification.params?.threadId) === notification.params?.turn?.id) {
           this.activeTurns.delete(notification.params.threadId);
         }
@@ -330,9 +347,22 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
       return;
     }
     const request = { id, method, params } as ServerRequest;
-    const ok = this.invokeHandler('onCodexServerRequest', () => handler(request));
-    if (!ok && this.openServerRequests.has(id)) {
-      this.respondWithError(id, CODEX_RPC_INTERNAL_ERROR, `Clubhouse failed to handle '${method}'`);
+    const failIfOpen = () => {
+      if (this.openServerRequests.has(id)) {
+        this.respondWithError(id, CODEX_RPC_INTERNAL_ERROR, `Clubhouse failed to handle '${method}'`);
+      }
+    };
+    let returned: void | Promise<void> = undefined;
+    const ok = this.invokeHandler('onCodexServerRequest', () => { returned = handler(request); });
+    if (!ok) {
+      failIfOpen();
+    } else if (returned && typeof (returned as Promise<void>).then === 'function') {
+      (returned as Promise<void>).then(undefined, (err: unknown) => {
+        this.log('error', 'Codex onCodexServerRequest handler rejected', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        failIfOpen();
+      });
     }
   }
 
@@ -382,8 +412,11 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
   }
 
   protected override handleProcessExit(code: number | null, signal: string | null): void {
-    this.activeTurns.clear();
-    this.openServerRequests.clear();
     super.handleProcessExit(code, signal);
+    // After super, which flushes buffered stdout that could otherwise
+    // repopulate these.
+    this.activeTurns.clear();
+    this.completedTurns.clear();
+    this.openServerRequests.clear();
   }
 }
