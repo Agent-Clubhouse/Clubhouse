@@ -24,6 +24,8 @@ import { isMcpEnabled } from './mcp-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
+import { getAgentRuntime, isChatAgent } from './agent-runtime';
+import { tryStartChatAgent } from './agent-runtime/chat-spawn';
 
 /** Expand leading `~` or `~/` to the user's home directory. */
 export function expandHome(p: string): string {
@@ -75,7 +77,7 @@ export function isHeadlessAgent(agentId: string): boolean {
  * `getRunningAgentIds`).
  */
 export function isAgentRunning(agentId: string): boolean {
-  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId);
+  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || isChatAgent(agentId);
 }
 
 /**
@@ -181,9 +183,10 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
     // not pass (e.g. session resume after app update only carries a subset of
     // fields).  This ensures freeAgentMode, model and the agent file are
     // honoured even when the resume path doesn't explicitly provide them.
+    let durableConfig: Awaited<ReturnType<typeof getDurableConfig>> | undefined;
     if (params.kind === 'durable') {
       try {
-        const durableConfig = await getDurableConfig(params.projectPath, params.agentId);
+        durableConfig = await getDurableConfig(params.projectPath, params.agentId);
         if (durableConfig) {
           if (params.freeAgentMode === undefined) params = { ...params, freeAgentMode: durableConfig.freeAgentMode };
           if (params.model === undefined && durableConfig.model) params = { ...params, model: durableConfig.model };
@@ -194,6 +197,26 @@ export async function spawnAgent(inParams: SpawnAgentParams): Promise<void> {
     }
 
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
+
+    // Chat runtime (experimental): durable agents whose provider is set to
+    // Chat and has a registered driver. Falls through to the terminal otherwise.
+    const startedInChat = await tryStartChatAgent({
+      agentId: params.agentId,
+      projectPath: params.projectPath,
+      cwd: params.cwd,
+      kind: params.kind,
+      model: params.model,
+      mission: params.mission,
+      systemPrompt: params.systemPrompt,
+      freeAgentMode: params.freeAgentMode,
+      permissionMode,
+      resume: params.resume,
+      sessionId: params.sessionId,
+    }, provider, profileEnv, commandPrefix, durableConfig);
+    if (startedInChat) {
+      broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+      return;
+    }
 
     // Try headless path for quick agents when enabled
     if (spawnMode === 'headless' && params.kind === 'quick' && isHeadlessCapable(provider)) {
@@ -453,6 +476,10 @@ export async function killAgent(agentId: string, projectPath: string, orchestrat
   try {
     const tracked = agentRegistry.get(agentId);
 
+    if (tracked?.runtime === 'chat' || isChatAgent(agentId)) {
+      await getAgentRuntime(agentId)?.stop();
+      return;
+    }
     if (tracked?.runtime === 'headless' || (!tracked && headlessManager.isHeadless(agentId))) {
       untrackAgent(agentId);
       headlessManager.kill(agentId);

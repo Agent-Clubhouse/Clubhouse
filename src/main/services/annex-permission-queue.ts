@@ -222,6 +222,25 @@ export function onPermissionRequest(fn: PermissionRequestListener): () => void {
   return () => { listeners.delete(fn); };
 }
 
+/**
+ * Withdraw a pending entry without deciding it, e.g. when a chat agent's
+ * request was answered in chat. Resolves the entry's promise with 'timeout'
+ * (no decision) and records the reason, so the audit log doesn't show a
+ * decision nobody made.
+ */
+export function cancelPermission(requestId: string, reason: string, expectedAgentId?: string): boolean {
+  const entry = pending.get(requestId);
+  if (!entry) return false;
+  if (expectedAgentId !== undefined && entry.agentId !== expectedAgentId) return false;
+  clearTimeout(entry.timer);
+  pending.delete(requestId);
+  appLog(NS, 'info', 'Permission withdrawn', {
+    meta: { requestId, agentId: entry.agentId, toolName: entry.toolName, reason },
+  });
+  entry.resolve('timeout');
+  return true;
+}
+
 /** Clear all pending permissions for an agent (e.g., when agent stops). */
 export function clearForAgent(agentId: string): void {
   let count = 0;

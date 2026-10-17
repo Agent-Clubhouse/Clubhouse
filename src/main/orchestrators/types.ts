@@ -284,6 +284,8 @@ export interface OrchestratorProvider {
   checkAvailability(envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }>;
   buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult>;
   getExitCommand(): string;
+  /** Absolute path of the user's installed CLI (throws when it can't be found). */
+  getBinaryPath?(): string;
 
   // Instructions
   readInstructions(worktreePath: string): Promise<string>;

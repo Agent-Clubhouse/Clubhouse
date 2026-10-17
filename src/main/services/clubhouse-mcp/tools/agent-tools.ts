@@ -9,150 +9,17 @@ import { buildToolName } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
-import * as ptyManager from '../../pty-manager';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
-import { getProvider } from '../../../orchestrators';
-import type { PasteSubmitTiming } from '../../../orchestrators';
 import { requireString, optionalString, numberWithDefault } from './validation';
+import { getAgentRuntime } from '../../agent-runtime';
+import { chatEventsToText } from '../../agent-runtime/chat-text';
+import { writeLineThenEnter } from '../../agent-runtime/pty-input';
+import { DEFAULT_PASTE_TIMING } from '../../agent-runtime/pty-runtime';
+import { getProvider } from '../../../orchestrators';
 
-// ── Chunked bracketed paste ─────────────────────────────────────────────────
-
-/** Sleep helper for async delays. */
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Write multi-line content to a PTY using chunked bracketed paste.
- *
- * Sends the bracketed paste start marker, then the body (optionally in
- * chunks with delays between them), then the end marker.
- *
- * Small delays are ALWAYS inserted after the start marker and before the
- * end marker to prevent race conditions where the CLI hasn't entered or
- * exited paste mode before content/markers arrive.  This applies to all
- * providers, not just slow CLIs.
- *
- * When chunkSize is set and the body exceeds it, the body is split into
- * chunks with `chunkDelayMs` between each write.
- *
- * A dedicated `postEndMarkerDelayMs` is inserted AFTER the end marker to
- * give the CLI time to exit paste mode before any subsequent writes (like
- * an Enter keystroke).  Without this, `\r` can be folded into the paste.
- */
-export async function writeChunkedBracketedPaste(
-  agentId: string,
-  body: string,
-  chunkSize?: number,
-  chunkDelayMs = 30,
-  postEndMarkerDelayMs = 150,
-): Promise<void> {
-  ptyManager.write(agentId, '\x1b[200~');
-
-  // Always delay after start marker so the CLI can enter paste mode
-  await sleep(chunkDelayMs);
-
-  if (!chunkSize || body.length <= chunkSize) {
-    ptyManager.write(agentId, body);
-  } else {
-    for (let offset = 0; offset < body.length; offset += chunkSize) {
-      if (offset > 0) await sleep(chunkDelayMs);
-      ptyManager.write(agentId, body.slice(offset, offset + chunkSize));
-    }
-  }
-
-  // Always delay before end marker so the last write is fully processed
-  await sleep(chunkDelayMs);
-
-  ptyManager.write(agentId, '\x1b[201~');
-
-  // Delay AFTER end marker so the CLI can exit paste mode before \r arrives
-  await sleep(postEndMarkerDelayMs);
-}
-
-/**
- * Wait until the agent's PTY buffer length is unchanged for `quiescenceMs`,
- * or until `maxWaitMs` elapses (whichever comes first).
- *
- * Used to detect when a TUI like GitHub Copilot CLI has finished rendering
- * its paste-preview UI before sending the submit Enter.  GHCP's preview
- * render time varies with network latency; a fixed sleep races against it,
- * causing the `\r` to be folded into the bracketed paste and swallowed.
- *
- * Returns `quiet: true` if the buffer settled, `quiet: false` if maxWait
- * fired first.  Either way the caller should proceed — quiet:false just
- * means we gave up waiting and will fall back to the existing retry logic.
- */
-export async function waitForBufferQuiescence(
-  agentId: string,
-  options: { quiescenceMs: number; maxWaitMs: number; pollMs?: number },
-): Promise<{ quiet: boolean; waitedMs: number }> {
-  const pollMs = options.pollMs ?? 50;
-  const startTs = Date.now();
-  let lastLen = ptyManager.getBuffer(agentId)?.length ?? 0;
-  let lastChangeTs = startTs;
-
-  while (Date.now() - startTs < options.maxWaitMs) {
-    await sleep(pollMs);
-    const cur = ptyManager.getBuffer(agentId)?.length ?? 0;
-    if (cur !== lastLen) {
-      lastLen = cur;
-      lastChangeTs = Date.now();
-    } else if (Date.now() - lastChangeTs >= options.quiescenceMs) {
-      return { quiet: true, waitedMs: Date.now() - startTs };
-    }
-  }
-  return { quiet: false, waitedMs: Date.now() - startTs };
-}
-
-/**
- * Submit content that was just pasted into an agent's PTY.
- *
- * Sends `\r` (Enter) with provider-specific delays and buffer health checks.
- * If the first Enter doesn't trigger processing (buffer doesn't grow), a
- * second Enter is sent as a retry — some CLIs show a paste preview that
- * requires Enter to accept before another Enter actually submits.
- *
- * When `timing.quiescenceMs` is set, the fixed `initialDelayMs` and
- * `retryDelayMs` sleeps are replaced with quiescence waits capped at those
- * values.  This addresses GitHub Copilot CLI's variable paste-preview
- * render time — a fixed 1200ms delay races against network jitter and
- * causes the `\r` to be folded into the paste payload (then ignored).
- */
-export async function submitAfterPaste(
-  agentId: string,
-  timing: PasteSubmitTiming,
-): Promise<void> {
-  const bufferBefore = ptyManager.getBuffer(agentId)?.length ?? 0;
-
-  if (timing.quiescenceMs) {
-    await waitForBufferQuiescence(agentId, {
-      quiescenceMs: timing.quiescenceMs,
-      maxWaitMs: timing.initialDelayMs,
-      pollMs: timing.quiescencePollMs,
-    });
-  } else {
-    await sleep(timing.initialDelayMs);
-  }
-  ptyManager.write(agentId, '\r');
-
-  if (timing.quiescenceMs) {
-    await waitForBufferQuiescence(agentId, {
-      quiescenceMs: timing.quiescenceMs,
-      maxWaitMs: timing.retryDelayMs,
-      pollMs: timing.quiescencePollMs,
-    });
-  } else {
-    await sleep(timing.retryDelayMs);
-  }
-  const bufferAfterFirst = ptyManager.getBuffer(agentId)?.length ?? 0;
-  if (bufferAfterFirst > bufferBefore) return; // First Enter worked
-
-  // Second Enter — submit the message
-  ptyManager.write(agentId, '\r');
-  await sleep(timing.finalCheckDelayMs);
-}
+// PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
+export { sleep, writeChunkedBracketedPaste, waitForBufferQuiescence, submitAfterPaste } from '../../agent-runtime/pty-input';
 
 // ── File-backed message helpers ─────────────────────────────────────────────
 
@@ -267,43 +134,14 @@ export function registerAgentTools(): void {
       }
 
       try {
-        if (reg.runtime === 'pty') {
-          const isMultiLine = taggedMessage.includes('\n');
-
-          appLog('core:mcp', 'info', 'send_message: writing to PTY', {
-            meta: { targetAgent: targetId, taskId, isMultiLine, forceSubmit, messageLength: taggedMessage.length },
-          });
-
-          // Resolve provider-specific paste submit timing up front.
-          const provider = getProvider(reg.orchestrator);
-          const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming()
-            ?? { initialDelayMs: 500, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 50, postEndMarkerDelayMs: 150 };
-
-          if (isMultiLine) {
-            // Chunked bracketed paste: send start marker, body in chunks
-            // with delays, then end marker.  Slow CLIs (GHCP) need this
-            // to avoid mangling or truncating multi-line paste content.
-            await writeChunkedBracketedPaste(
-              targetId,
-              taggedMessage,
-              timing.chunkSize,
-              timing.chunkDelayMs,
-              timing.postEndMarkerDelayMs,
-            );
-          } else {
-            ptyManager.write(targetId, taggedMessage);
-          }
-
-          if (forceSubmit) {
-            appLog('core:mcp', 'info', 'send_message: using paste submit timing', {
-              meta: { targetAgent: targetId, taskId, orchestrator: reg.orchestrator, timing },
-            });
-
-            await submitAfterPaste(targetId, timing);
-          }
-        } else {
+        const runtime = getAgentRuntime(targetId);
+        if (!runtime) {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
         }
+        appLog('core:mcp', 'info', 'send_message: delivering', {
+          meta: { targetAgent: targetId, taskId, runtime: runtime.kind, forceSubmit, messageLength: taggedMessage.length },
+        });
+        await runtime.sendMessage(taggedMessage, { source: 'mcp', taskId, submit: forceSubmit });
 
         const submitNote = forceSubmit ? '' : ' (force_submit=false, message injected without submitting)';
         const resultText = isBidirectional
@@ -392,18 +230,16 @@ export function registerAgentTools(): void {
       lines = Math.min(lines, 500);
 
       try {
-        if (reg.runtime === 'pty') {
-          const buffer = ptyManager.getBuffer(targetId);
-          if (!buffer) {
-            return { content: [{ type: 'text', text: 'No output available' }] };
-          }
-          // Take last N lines
-          const allLines = buffer.split('\n');
-          const lastLines = allLines.slice(-lines).join('\n');
-          return { content: [{ type: 'text', text: lastLines }] };
-        } else {
+        const runtime = getAgentRuntime(targetId);
+        if (!runtime) {
           return { content: [{ type: 'text', text: `Output reading not supported for runtime "${reg.runtime}"` }], isError: true };
         }
+        const slice = await runtime.readTranscript({ tail: runtime.kind === 'chat' ? lines * 4 : lines });
+        const text = slice.text ?? chatEventsToText(slice.events ?? [], lines);
+        if (!text) {
+          return { content: [{ type: 'text', text: 'No output available' }] };
+        }
+        return { content: [{ type: 'text', text }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `Failed to read output: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
@@ -547,20 +383,17 @@ export function registerAgentTools(): void {
           meta: { sourceAgent: agentId, targetAgent: targetId, taskId, filePath, contentLength: content.length },
         });
 
-        if (reg.runtime === 'pty') {
-          // Send single-line notification to PTY
-          const ptyLine = `[TASK:${taskId}] [FROM:${senderLabel}] File delivered: ${filePath} — read this file for content from ${senderLabel}.`;
-          ptyManager.write(targetId, ptyLine);
-
-          // Submit with Enter
-          const provider = getProvider(reg.orchestrator);
-          const timing = provider?.getPasteSubmitTiming()
-            ?? { initialDelayMs: 500, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 50, postEndMarkerDelayMs: 150 };
-
-          await sleep(timing.initialDelayMs);
-          ptyManager.write(targetId, '\r');
-        } else {
+        const runtime = getAgentRuntime(targetId);
+        if (!runtime) {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
+        }
+        const notice = `[TASK:${taskId}] [FROM:${senderLabel}] File delivered: ${filePath} — read this file for content from ${senderLabel}.`;
+        if (runtime.kind === 'pty') {
+          // Terminals keep the single fixed-delay Enter this tool has always sent.
+          const timing = getProvider(reg.orchestrator)?.getPasteSubmitTiming() ?? DEFAULT_PASTE_TIMING;
+          await writeLineThenEnter(targetId, notice, timing.initialDelayMs);
+        } else {
+          await runtime.sendMessage(notice, { source: 'mcp', taskId });
         }
 
         return {
@@ -600,12 +433,11 @@ export function registerAgentTools(): void {
       }
 
       try {
-        if (reg.runtime === 'pty') {
-          ptyManager.write(targetId, '/clear');
-          ptyManager.write(targetId, '\r');
-        } else {
+        const runtime = getAgentRuntime(targetId);
+        if (!runtime) {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support /clear` }], isError: true };
         }
+        await runtime.clearContext();
 
         appLog('core:mcp', 'info', 'clear_agent: /clear sent', { meta: { sourceAgent: agentId, targetAgent: targetId } });
         return { content: [{ type: 'text', text: `Sent /clear to agent ${targetId}.` }] };
@@ -637,12 +469,11 @@ export function registerAgentTools(): void {
       }
 
       try {
-        if (reg.runtime === 'pty') {
-          ptyManager.write(targetId, '/compact');
-          ptyManager.write(targetId, '\r');
-        } else {
+        const runtime = getAgentRuntime(targetId);
+        if (!runtime) {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support /compact` }], isError: true };
         }
+        await runtime.compact();
 
         appLog('core:mcp', 'info', 'compact_agent: /compact sent', { meta: { sourceAgent: agentId, targetAgent: targetId } });
         return { content: [{ type: 'text', text: `Sent /compact to agent ${targetId}.` }] };

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { appLog } from './log-service';
 import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
+import { getAgentRuntime } from './agent-runtime';
 import { getProvider, isSessionCapable, supportsAutoResumeAfterUpdate } from '../orchestrators';
 import { pathExists } from './fs-utils';
 import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo, FreeAgentPermissionMode, ResumeStrategy } from '../../shared/types';
@@ -27,7 +28,7 @@ export async function captureSessionState(
   const sessions: RestartSessionEntry[] = [];
 
   for (const [agentId, reg] of all) {
-    if (reg.runtime !== 'pty') continue;
+    if (reg.runtime !== 'pty' && reg.runtime !== 'chat') continue;
     const provider = getProvider(reg.orchestrator);
     if (!provider) continue;
 
@@ -35,7 +36,11 @@ export async function captureSessionState(
     const cwd = meta0?.worktreePath || reg.projectPath;
 
     let sessionId: string | null = null;
-    if (isSessionCapable(provider)) {
+    const runtime = getAgentRuntime(agentId);
+    if (runtime?.kind === 'chat') {
+      // Chat runtimes know their native session id exactly; resume re-enters chat.
+      sessionId = runtime.getNativeSessionId() ?? null;
+    } else if (isSessionCapable(provider)) {
       // Preferred: scrape the id the CLI printed into its own terminal.
       const buffer = ptyManager.getBuffer(agentId);
       sessionId = provider.extractSessionId(buffer);

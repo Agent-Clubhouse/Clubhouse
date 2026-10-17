@@ -31,4 +31,6 @@ CLI ⇄ protocol client ⇄ ChatDriverSession ──ChatEventDraft──▶ chat
 - **Clubhouse owns history.** The transcript of `ChatEvent`s is what the chat renders. The CLI's native session id is used only to resume the model's context.
 - **Drivers stay thin.** They translate protocol traffic and report capabilities. Lifecycle, queueing for drivers without native queues, checkpoints, transcripts and fallback live in the chat runtime.
 - **Capabilities, not provider checks.** If a feature differs by provider, add a field to `ChatCapabilities`.
+- **Who emits what.** Drivers emit `turn_started` / `turn_ended` for every turn they run, plus message, thought, tool, permission, question, plan, subagent, usage, mode, model, command and error events. The chat runtime emits `session_started`, `session_state`, `session_ended`, `user_message` and `permission_resolved` itself, and tags turn-scoped events with the current `turnId` when a driver doesn't.
+- **Testing a driver.** `src/main/services/agent-runtime/fake-chat-driver.ts` is an in-memory driver the runtime tests use. Replay fixtures through your driver and assert the drafts it yields.
 - **Unknown native messages** become `protocol_unknown` events (the `c.chat.protocol.unknown` telemetry signal) rather than being dropped silently.

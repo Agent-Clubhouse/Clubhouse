@@ -15,8 +15,8 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, digestSinceArg } from './validation';
 import type { DigestSince } from '../../shared/group-project-types';
 import { agentRegistry } from '../services/agent-registry';
-import * as ptyManager from '../services/pty-manager';
-import { writeChunkedBracketedPaste, submitAfterPaste } from '../services/clubhouse-mcp/tools/agent-tools';
+import { getAgentRuntime } from '../services/agent-runtime';
+import { injectPtyText } from '../services/agent-runtime/pty-input';
 import { getProvider } from '../orchestrators';
 import type { PasteSubmitTiming } from '../orchestrators';
 
@@ -245,21 +245,14 @@ export function registerGroupProjectHandlers(): void {
       const reg = agentRegistry.get(agentId as string);
       if (!reg) throw new Error(`Agent ${agentId} is not registered`);
 
-      if (reg.runtime === 'pty') {
-        const isMultiLine = (message as string).includes('\n');
-        if (isMultiLine) {
-          const provider = getProvider(reg.orchestrator);
-          const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming()
-            ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
-
-          await writeChunkedBracketedPaste(agentId as string, message as string, timing.chunkSize, timing.chunkDelayMs);
-          await submitAfterPaste(agentId as string, timing);
-        } else {
-          ptyManager.write(agentId as string, message as string);
-          ptyManager.write(agentId as string, '\r');
-        }
+      const runtime = getAgentRuntime(agentId as string);
+      if (!runtime) throw new Error(`Agent runtime "${reg.runtime}" does not support input`);
+      if (runtime.kind === 'pty') {
+        const timing: PasteSubmitTiming = getProvider(reg.orchestrator)?.getPasteSubmitTiming()
+          ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
+        await injectPtyText(agentId as string, message as string, timing);
       } else {
-        throw new Error(`Agent runtime "${reg.runtime}" does not support input`);
+        await runtime.sendMessage(message as string, { source: 'group_project' });
       }
 
       return true;

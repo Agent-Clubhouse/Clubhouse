@@ -502,8 +502,12 @@ describe('group-project-handlers', () => {
     it('uses chunked paste for multi-line PTY messages', async () => {
       const handler = getHandler(IPC.GROUP_PROJECT.INJECT_MESSAGE);
       await handler(fakeEvent, 'agent-1', 'line1\nline2');
-      expect(mockWriteChunkedBracketedPaste).toHaveBeenCalledWith('agent-1', 'line1\nline2', expect.any(Number), expect.any(Number));
-      expect(mockSubmitAfterPaste).toHaveBeenCalled();
+      // Terminal delivery is unchanged: a bracketed paste, then Enter.
+      const writes = mockPtyWrite.mock.calls.map((c) => c[1]);
+      expect(writes).toContain('\x1b[200~');
+      expect(writes).toContain('line1\nline2');
+      expect(writes).toContain('\x1b[201~');
+      expect(writes).toContain('\r');
     });
 
     it('uses simple write for single-line PTY messages', async () => {

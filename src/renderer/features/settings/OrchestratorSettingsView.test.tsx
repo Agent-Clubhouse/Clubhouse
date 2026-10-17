@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -321,6 +321,113 @@ describe('OrchestratorSettingsView', () => {
           expect(orchToggle).toHaveAttribute('title', 'At least one orchestrator must be enabled');
         });
       });
+    });
+  });
+
+  describe('runtime (Chat / Terminal) control', () => {
+    const getRuntimeSettings = vi.fn();
+    const saveRuntimeSettings = vi.fn();
+
+    beforeEach(() => {
+      getRuntimeSettings.mockReset().mockResolvedValue({});
+      saveRuntimeSettings.mockReset().mockResolvedValue(undefined);
+      window.clubhouse.chat.getRuntimeSettings = getRuntimeSettings;
+      window.clubhouse.chat.saveRuntimeSettings = saveRuntimeSettings;
+    });
+
+    function setChatFlag(on: boolean) {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue(on ? { chat: true } : {});
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+    }
+
+    it('is hidden on stable builds even when a Chat flag is saved', async () => {
+      setChatFlag(true);
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+      render(<OrchestratorSettingsView />);
+      await waitFor(() => expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalled());
+      expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
+      expect(getRuntimeSettings).not.toHaveBeenCalled();
+    });
+
+    it('is hidden when the experimental Chat flag is off', async () => {
+      setChatFlag(false);
+      render(<OrchestratorSettingsView />);
+      await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+      expect(screen.getByText('Hook server')).toBeInTheDocument();
+      expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
+      expect(getRuntimeSettings).not.toHaveBeenCalled();
+    });
+
+    it('shows Chat selected by default when the flag is on and nothing is saved', async () => {
+      setChatFlag(true);
+      render(<OrchestratorSettingsView />);
+      const row = await screen.findByTestId('runtime-mode-claude-code');
+      expect(within(row).getByText('Runtime')).toBeInTheDocument();
+      expect(within(row).getByText(/Agents for this provider open in chat/)).toBeInTheDocument();
+      expect(within(row).getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
+      expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'false');
+      // The hook server toggle is still there alongside it.
+      expect(screen.getByText('Hook server')).toBeInTheDocument();
+    });
+
+    it('reflects a saved Terminal setting', async () => {
+      setChatFlag(true);
+      getRuntimeSettings.mockResolvedValue({ 'claude-code': { mode: 'terminal' } });
+      render(<OrchestratorSettingsView />);
+      const row = await screen.findByTestId('runtime-mode-claude-code');
+      await waitFor(() => {
+        expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'true');
+      });
+    });
+
+    it('saves by merging into the stored settings without clobbering other providers', async () => {
+      setChatFlag(true);
+      getRuntimeSettings.mockResolvedValue({
+        'codex-cli': { mode: 'terminal' },
+        'claude-code': { mode: 'chat', driver: 'claude_agent_sdk' },
+      });
+      render(<OrchestratorSettingsView />);
+      const row = await screen.findByTestId('runtime-mode-claude-code');
+      fireEvent.click(within(row).getByRole('radio', { name: 'Terminal' }));
+
+      await waitFor(() => {
+        expect(saveRuntimeSettings).toHaveBeenCalledWith({
+          'codex-cli': { mode: 'terminal' },
+          'claude-code': { mode: 'terminal', driver: 'claude_agent_sdk' },
+        });
+      });
+      expect(within(row).getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('shows for enabled orchestrators without hook support, without a hook server toggle', async () => {
+      setChatFlag(true);
+      useOrchestratorStore.setState({
+        enabled: ['github-copilot'],
+        allOrchestrators: [{
+          id: 'github-copilot',
+          displayName: 'GitHub Copilot',
+          shortName: 'GHCP',
+          capabilities: { headless: false, structuredOutput: false, hooks: false, sessionResume: false, permissions: false },
+        }],
+        availability: { 'github-copilot': { available: true } },
+      } as any);
+      render(<OrchestratorSettingsView />);
+      expect(await screen.findByTestId('runtime-mode-github-copilot')).toBeInTheDocument();
+      expect(screen.queryByText('Hook server')).not.toBeInTheDocument();
+    });
+
+    it('is not shown for disabled orchestrators', async () => {
+      setChatFlag(true);
+      useOrchestratorStore.setState({
+        enabled: ['claude-code'],
+        allOrchestrators: [
+          { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true } },
+          { id: 'codex-cli', displayName: 'Codex CLI', shortName: 'CX', capabilities: { headless: true, structuredOutput: false, hooks: true, sessionResume: false, permissions: false } },
+        ],
+      } as any);
+      render(<OrchestratorSettingsView />);
+      expect(await screen.findByTestId('runtime-mode-claude-code')).toBeInTheDocument();
+      expect(screen.queryByTestId('runtime-mode-codex-cli')).not.toBeInTheDocument();
     });
   });
 

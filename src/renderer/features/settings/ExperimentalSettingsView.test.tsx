@@ -58,6 +58,23 @@ describe('ExperimentalSettingsView', () => {
     });
   });
 
+  it('renders the Chat feature toggle and saves it under the chat id', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({ goobers: true });
+    render(<ExperimentalSettingsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Chat')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/native chat view\. The terminal stays available for every provider\./)).toBeInTheDocument();
+
+    const row = screen.getByText('Chat').closest('.flex.items-center.justify-between') as HTMLElement;
+    const toggle = row.querySelector('button.rounded-full') as HTMLElement;
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ goobers: true, chat: true });
+    });
+  });
+
   it('does not list Clubhouse MCP as experimental (promoted)', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {

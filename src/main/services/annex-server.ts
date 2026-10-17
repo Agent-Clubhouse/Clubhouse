@@ -30,7 +30,8 @@ import * as fileService from './file-service';
 import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
 import { isSessionCapable, getProvider } from '../orchestrators';
-import { writeChunkedBracketedPaste, submitAfterPaste } from './clubhouse-mcp/tools/agent-tools';
+import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
+import { injectPtyText } from './agent-runtime/pty-input';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 
@@ -39,7 +40,7 @@ import { appLog } from './log-service';
  * Centralises the compound check so new execution modes only need updating here.
  */
 function isAgentRunning(agentId: string): boolean {
-  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId);
+  return ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || isChatAgent(agentId);
 }
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -102,6 +103,7 @@ const wsBearerTokens = new WeakMap<WebSocket, string>();
 
 let unsubPtyData: (() => void) | null = null;
 let unsubHookEvent: (() => void) | null = null;
+let unsubChatEvent: (() => void) | null = null;
 let unsubPtyExit: (() => void) | null = null;
 let unsubAgentSpawned: (() => void) | null = null;
 let unsubPermissionRequest: (() => void) | null = null;
@@ -140,6 +142,7 @@ function releaseMtlsLockIfLastClient(hasMtlsClient: boolean): boolean {
 function unsubscribeEventBus(): void {
   unsubPtyData?.();
   unsubHookEvent?.();
+  unsubChatEvent?.();
   unsubPtyExit?.();
   unsubAgentSpawned?.();
   unsubPermissionRequest?.();
@@ -148,6 +151,7 @@ function unsubscribeEventBus(): void {
   unsubGroupProjectRegistry?.();
   unsubPtyData = null;
   unsubHookEvent = null;
+  unsubChatEvent = null;
   unsubPtyExit = null;
   unsubAgentSpawned = null;
   unsubPermissionRequest = null;
@@ -218,6 +222,7 @@ function getDetailedStatus(agentId: string): AgentDetailedStatus | null {
 
 /** Resolve the execution mode of an agent. */
 export function getAgentExecutionMode(agentId: string): AgentExecutionMode {
+  if (isChatAgent(agentId)) return 'chat';
   if (isHeadlessAgent(agentId)) return 'headless';
   return 'pty';
 }
@@ -1581,7 +1586,10 @@ async function handleAgentMessageRoute(ctx: AnnexRouteContext, match: RegExpMatc
     }
     const mode = getAgentExecutionMode(agentId);
     try {
-      if (mode === 'pty' && ptyManager.isRunning(agentId)) {
+      const runtime = getAgentRuntime(agentId);
+      if (runtime?.kind === 'chat') {
+        await runtime.sendMessage(message, { source: 'annex' });
+      } else if (mode === 'pty' && ptyManager.isRunning(agentId)) {
         ptyManager.write(agentId, message);
       } else {
         sendJson(ctx.res, 400, { error: `cannot send message to agent in '${mode}' mode` });
@@ -1844,17 +1852,12 @@ async function handleGroupProjectInjectRoute(ctx: AnnexRouteContext): Promise<vo
       return;
     }
     try {
-      if (reg.runtime === 'pty') {
-        const isMultiLine = message.includes('\n');
-        if (isMultiLine) {
-          const provider = getProvider(reg.orchestrator);
-          const timing = provider?.getPasteSubmitTiming() ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
-          await writeChunkedBracketedPaste(agentId, message, timing.chunkSize, timing.chunkDelayMs);
-          await submitAfterPaste(agentId, timing);
-        } else {
-          ptyManager.write(agentId, message);
-          ptyManager.write(agentId, '\r');
-        }
+      const runtime = getAgentRuntime(agentId);
+      if (runtime?.kind === 'pty') {
+        const timing = getProvider(reg.orchestrator)?.getPasteSubmitTiming() ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
+        await injectPtyText(agentId, message, timing);
+      } else if (runtime) {
+        await runtime.sendMessage(message, { source: 'annex' });
       }
       sendJson(ctx.res, 200, { ok: true });
     } catch (err) {
@@ -2577,6 +2580,10 @@ export function start(): void {
 
   unsubPtyData = annexEventBus.onPtyData((agentId, data) => {
     broadcastAndBuffer('pty:data', { agentId, data });
+  });
+
+  unsubChatEvent = onChatEvent((event) => {
+    broadcastAndBuffer('chat:event', { agentId: event.agentId, event });
   });
 
   unsubHookEvent = annexEventBus.onHookEvent((agentId, event) => {

@@ -21,6 +21,7 @@ import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-t
 import { exportAgentAsTemplate } from '../blueprints/agent-template-export';
 import { serializeManifest } from '../blueprints/blueprint-export';
 import { PERSONA_TEMPLATES } from '../personas';
+import type { AgentRuntimeMode } from '../../../shared/chat';
 
 type SettingsTab = 'main' | 'quick';
 
@@ -399,9 +400,23 @@ export function AgentSettingsView({ agent }: Props) {
   // Persona state (per-agent override of project default)
   const [agentPersona, setAgentPersona] = useState('');
 
+  // Chat / Terminal runtime override ('' = provider default). Only offered
+  // when the experimental Chat flag is on.
+  const [chatFlagEnabled, setChatFlagEnabled] = useState(false);
+  const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | ''>('');
+
   useEffect(() => {
     loadClubhouseSettings();
   }, [loadClubhouseSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Same gate as main: the flag only counts in preview-eligible builds.
+    Promise.all([window.clubhouse.app.getExperimentalSettings(), window.clubhouse.app.isPreviewEligible()])
+      .then(([s, eligible]) => { if (!cancelled) setChatFlagEnabled(s?.chat === true && eligible === true); })
+      .catch(() => { /* flag stays off */ });
+    return () => { cancelled = true; };
+  }, []);
 
   // Load clubhouse mode override + persona from durable config
   useEffect(() => {
@@ -411,6 +426,7 @@ export function AgentSettingsView({ agent }: Props) {
         const config = await window.clubhouse.agent.getDurableConfig(projectPath, agent.id);
         setClubhouseModeOverride(config?.clubhouseModeOverride ?? false);
         setAgentPersona(config?.persona ?? '');
+        setRuntimeMode(config?.runtimeMode ?? '');
       } catch {
         // ignore
       }
@@ -421,6 +437,12 @@ export function AgentSettingsView({ agent }: Props) {
     if (!projectPath) return;
     setAgentPersona(value);
     await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { persona: value });
+  };
+
+  const handleRuntimeModeChange = async (value: AgentRuntimeMode | '') => {
+    if (!projectPath) return;
+    setRuntimeMode(value);
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { runtimeMode: value === '' ? null : value });
   };
 
   // Load materialization preview when managed
@@ -957,6 +979,28 @@ export function AgentSettingsView({ agent }: Props) {
                   />
                 )}
               </div>
+
+              {/* Runtime (Chat / Terminal) override — experimental Chat flag only */}
+              {chatFlagEnabled && (
+                <div title={isRunning ? 'Stop the agent to change this' : undefined}>
+                  <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Runtime</span>
+                  <select
+                    aria-label="Runtime"
+                    value={runtimeMode}
+                    onChange={(e) => handleRuntimeModeChange(e.target.value as AgentRuntimeMode | '')}
+                    disabled={isRunning}
+                    title={isRunning ? 'Stop the agent to change this' : undefined}
+                    className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">Provider default</option>
+                    <option value="chat">Chat</option>
+                    <option value="terminal">Terminal</option>
+                  </select>
+                  <p className="mt-1 text-xs text-ctp-subtext0/60">
+                    Overrides this provider's Chat / Terminal setting for this agent. Applied the next time the agent starts.
+                  </p>
+                </div>
+              )}
 
               {/* Persona */}
               <div>

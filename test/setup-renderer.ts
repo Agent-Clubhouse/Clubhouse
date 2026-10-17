@@ -490,6 +490,18 @@ vi.stubGlobal('clubhouse', {
     clearOffline: async () => ({ ok: false }),
     deleteLocalData: async () => ({ ok: false }),
   },
+  chat: {
+    readTranscript: async () => [],
+    sendMessage: async () => ({ delivery: 'prompt' }),
+    interrupt: asyncNoop,
+    respondPermission: asyncNoop,
+    answerQuestion: asyncNoop,
+    setLevel: asyncNoop,
+    setModel: asyncNoop,
+    getRuntimeSettings: async () => ({}),
+    saveRuntimeSettings: asyncNoop,
+    onEvent: () => noop,
+  },
   window: {
     createPopout: asyncNoop,
     closePopout: asyncNoop,

@@ -141,6 +141,18 @@ export const IPC = {
     PERMISSION_PENDING: 'agent:permission-pending',            // Main → Renderer
     PERMISSION_SETTLED: 'agent:permission-settled',            // Main → Renderer
   },
+  CHAT: {
+    EVENT: 'chat:event',                                       // Main → Renderer
+    READ_TRANSCRIPT: 'chat:read-transcript',
+    SEND_MESSAGE: 'chat:send-message',
+    INTERRUPT: 'chat:interrupt',
+    RESPOND_PERMISSION: 'chat:respond-permission',
+    ANSWER_QUESTION: 'chat:answer-question',
+    SET_LEVEL: 'chat:set-level',
+    SET_MODEL: 'chat:set-model',
+    GET_RUNTIME_SETTINGS: 'chat:get-runtime-settings',
+    SAVE_RUNTIME_SETTINGS: 'chat:save-runtime-settings',
+  },
   FILE: {
     READ_TREE: 'file:read-tree',
     READ: 'file:read',

@@ -368,6 +368,55 @@ describe('AgentSettingsView', () => {
     });
   });
 
+  describe('runtime override', () => {
+    it('is hidden when the experimental Chat flag is off', async () => {
+      renderSettings();
+      expect(await screen.findByText('Free Agent Mode')).toBeInTheDocument();
+      await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+      expect(screen.queryByLabelText('Runtime')).not.toBeInTheDocument();
+    });
+
+    it('shows Provider default when no override is saved', async () => {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+      renderSettings();
+      const select = await screen.findByLabelText('Runtime') as HTMLSelectElement;
+      expect(select.value).toBe('');
+      expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Provider default', 'Chat', 'Terminal']);
+    });
+
+    it('loads and persists the override, using null for Provider default', async () => {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ runtimeMode: 'terminal' });
+      const updateMock = vi.fn().mockResolvedValue(undefined);
+      (window.clubhouse.agent as any).updateDurableConfig = updateMock;
+      renderSettings();
+
+      const select = await screen.findByLabelText('Runtime') as HTMLSelectElement;
+      await waitFor(() => expect(select.value).toBe('terminal'));
+
+      fireEvent.change(select, { target: { value: 'chat' } });
+      await waitFor(() => {
+        expect(updateMock).toHaveBeenCalledWith('/project', 'agent-1', { runtimeMode: 'chat' });
+      });
+
+      fireEvent.change(select, { target: { value: '' } });
+      await waitFor(() => {
+        expect(updateMock).toHaveBeenCalledWith('/project', 'agent-1', { runtimeMode: null });
+      });
+    });
+
+    it('is disabled with a tooltip while the agent is running', async () => {
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
+      renderSettings({ status: 'running' });
+      const select = await screen.findByLabelText('Runtime');
+      expect(select).toBeDisabled();
+      expect(select).toHaveAttribute('title', 'Stop the agent to change this');
+    });
+  });
+
   describe('persona dropdown', () => {
     it('renders with "Project default" selected when agent has no persona', async () => {
       (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});

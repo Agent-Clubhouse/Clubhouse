@@ -237,3 +237,22 @@ describe('annex-permission-queue', () => {
     });
   });
 });
+
+describe('cancelPermission', () => {
+  it('withdraws an entry without a decision', async () => {
+    const queue = await import('./annex-permission-queue');
+    const { requestId, decision } = queue.createPermission('agent-c', 'Bash', undefined, 'npm test', 60_000);
+    expect(queue.cancelPermission(requestId, 'answered in chat', 'agent-c')).toBe(true);
+    await expect(decision).resolves.toBe('timeout');
+    expect(queue.getPermission(requestId)).toBeUndefined();
+    expect(queue.cancelPermission(requestId, 'again')).toBe(false);
+  });
+
+  it('refuses to withdraw another agent\'s entry', async () => {
+    const queue = await import('./annex-permission-queue');
+    const { requestId } = queue.createPermission('agent-d', 'Edit', undefined, undefined, 60_000);
+    expect(queue.cancelPermission(requestId, 'wrong owner', 'agent-x')).toBe(false);
+    expect(queue.getPermission(requestId)).toBeDefined();
+    queue.clearForAgent('agent-d');
+  });
+});

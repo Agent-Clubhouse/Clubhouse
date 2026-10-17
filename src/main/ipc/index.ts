@@ -3,6 +3,7 @@ import { registerProjectHandlers } from './project-handlers';
 import { registerFileHandlers } from './file-handlers';
 import { registerGitHandlers } from './git-handlers';
 import { registerAgentHandlers } from './agent-handlers';
+import { registerChatHandlers } from './chat-handlers';
 import { registerAgentSettingsHandlers } from './agent-settings-handlers';
 import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
@@ -50,6 +51,7 @@ export function registerAllHandlers(): void {
   registerFileHandlers();
   registerGitHandlers();
   registerAgentHandlers();
+  registerChatHandlers();
   registerAgentSettingsHandlers();
   registerAppHandlers();
   registerPluginHandlers();
