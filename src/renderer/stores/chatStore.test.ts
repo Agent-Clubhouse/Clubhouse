@@ -513,6 +513,8 @@ describe('useChatStore', () => {
     await store.setModel(AGENT, 'opus', 'high');
 
     expect(chat.sendMessage).toHaveBeenCalledWith(AGENT, 'hi', 'auto');
+    await store.send(AGENT, '', 'auto', ['staged-1']);
+    expect(chat.sendMessage).toHaveBeenLastCalledWith(AGENT, '', 'auto', ['staged-1']);
     expect(chat.interrupt).toHaveBeenCalledWith(AGENT);
     expect(chat.respondPermission).toHaveBeenCalledWith(AGENT, 'p1', 'a', { message: 'go ahead' });
     expect(chat.answerQuestion).toHaveBeenCalledWith(AGENT, 'q1', { db: 'pg' });
